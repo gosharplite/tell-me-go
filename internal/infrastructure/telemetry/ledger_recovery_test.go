@@ -19,7 +19,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 	t.Parallel()
 	t.Run("FullRecovery", func(t *testing.T) {
 		t.Parallel()
-	// 1. Use t.TempDir() to set up a clean workspace.
+		// 1. Use t.TempDir() to set up a clean workspace.
 
 		tempDir := t.TempDir()
 
@@ -149,7 +149,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 
 	t.Run("InvalidLogContent", func(t *testing.T) {
 		t.Parallel()
-	// To truly trigger parseUsage error after Open, we might need something that makes scanner fail.
+		// To truly trigger parseUsage error after Open, we might need something that makes scanner fail.
 		// But parseUsage also returns error if it can't open the file (covered by UnreadableLogFile).
 		// Let's try to make it skip invalid lines and still work for valid ones.
 

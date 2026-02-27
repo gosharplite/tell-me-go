@@ -104,7 +104,7 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.Histo
 	}
 
 	if err := a.applyConfig(initCtx); err != nil {
-		a.emit(events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
+		a.emit(initCtx, events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
 	}
 	return a
 }
@@ -131,7 +131,9 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	tracker := a.tracker
 	a.mu.Unlock()
 
-	a.events.Publish(events.ConfigUpdated{Limits: cfg.Limits})
+	if err := a.events.Publish(ctx, events.ConfigUpdated{Limits: cfg.Limits}); err != nil {
+		return err
+	}
 
 	if a.engine != nil {
 		a.engine.Reconfigure(cfg, tracker)
@@ -146,8 +148,10 @@ func (a *agent) Subscribe(sub func(events.Event)) {
 	a.events.Subscribe(sub)
 }
 
-func (a *agent) emit(e events.Event) {
-	a.events.Publish(e)
+func (a *agent) emit(ctx context.Context, e events.Event) {
+	if a.events != nil {
+		_ = a.events.Publish(ctx, e)
+	}
 }
 
 // SetLimits sets the operational limits for the agent.
@@ -176,7 +180,7 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 	if err := a.applyConfig(ctx); err != nil {
 		return err
 	}
-	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
+	a.emit(ctx, events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
 }
 

@@ -165,7 +165,7 @@ func (e *ToolExecutor) Shutdown() {
 	e.mu.Lock()
 	pool := e.pool
 	e.mu.Unlock()
-	
+
 	if pool != nil {
 		pool.Shutdown()
 	}
@@ -204,7 +204,7 @@ func (c *resultCollector) Wait(ctx context.Context) ([]domaintools.ToolResult, e
 				c.trs[res.index] = res.tr
 				isCompleted[res.index] = true
 				if c.bus != nil {
-					c.bus.Publish(events.ToolResultEvent{Name: res.name, Result: res.tr})
+					_ = c.bus.Publish(ctx, events.ToolResultEvent{Name: res.name, Result: res.tr})
 				}
 				completedCount++
 			}
@@ -221,11 +221,11 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	}
 
 	if turn >= maxToolTurns {
-		e.publishLimitError(maxToolTurns)
+		e.publishLimitError(ctx, maxToolTurns)
 		return nil, llm.ErrMaxTurnsReached
 	}
 
-	e.publishCallEvent(calls, turn, maxToolTurns)
+	e.publishCallEvent(ctx, calls, turn, maxToolTurns)
 
 	e.mu.RLock()
 	bus := e.events
@@ -263,7 +263,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 			bus := e.events
 			e.mu.RUnlock()
 			if bus != nil {
-				bus.Publish(events.SystemMessageEvent{
+				_ = bus.Publish(ctx, events.SystemMessageEvent{
 					Message: tr.Text,
 					Level:   "warn",
 				})
@@ -284,24 +284,24 @@ func (e *ToolExecutor) extractFunctionCalls(respContent *llm.Content) []*llm.Fun
 	return functionCalls
 }
 
-func (e *ToolExecutor) publishLimitError(maxToolTurns int) {
+func (e *ToolExecutor) publishLimitError(ctx context.Context, maxToolTurns int) {
 	e.mu.RLock()
 	bus := e.events
 	e.mu.RUnlock()
 	if bus != nil {
-		bus.Publish(events.SystemMessageEvent{
+		_ = bus.Publish(ctx, events.SystemMessageEvent{
 			Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
 			Level:   "error",
 		})
 	}
 }
 
-func (e *ToolExecutor) publishCallEvent(calls []*llm.FunctionCall, turn int, maxToolTurns int) {
+func (e *ToolExecutor) publishCallEvent(ctx context.Context, calls []*llm.FunctionCall, turn int, maxToolTurns int) {
 	e.mu.RLock()
 	bus := e.events
 	e.mu.RUnlock()
 	if bus != nil {
-		bus.Publish(events.ToolCallEvent{
+		_ = bus.Publish(ctx, events.ToolCallEvent{
 			Calls:    calls,
 			Turn:     turn,
 			MaxTurns: maxToolTurns,
@@ -480,7 +480,7 @@ func (e *ToolExecutor) executeSerialTask(ctx context.Context, i int, fc *llm.Fun
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				tr = e.handlePanic(r, fc.Name)
+				tr = e.handlePanic(ctx, r, fc.Name)
 			}
 		}()
 		tr = e.executeTool(ctx, fc)
@@ -516,7 +516,7 @@ func (e *ToolExecutor) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 				resChan <- toolExecResult{
 					index: i,
 					name:  fc.Name,
-					tr:    e.handlePanic(r, fc.Name),
+					tr:    e.handlePanic(ctx, r, fc.Name),
 				}
 			}
 		}()
@@ -534,7 +534,7 @@ func (e *ToolExecutor) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 	}
 }
 
-func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.ToolResult {
+func (e *ToolExecutor) handlePanic(ctx context.Context, r interface{}, toolName string) domaintools.ToolResult {
 	stack := debug.Stack()
 
 	e.mu.RLock()
@@ -543,7 +543,7 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 
 	if bus != nil {
 		msg := fmt.Sprintf("CRITICAL: Panic in tool executor while running %q: %v\n%s", toolName, r, string(stack))
-		bus.Publish(events.SystemMessageEvent{
+		_ = bus.Publish(ctx, events.SystemMessageEvent{
 			Message: msg,
 			Level:   "error",
 		})
@@ -707,7 +707,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		defer func() {
 			if r := recover(); r != nil {
 				outCh <- domaintools.ToolOutput{
-					Result: e.handlePanic(r, tool.Name),
+					Result: e.handlePanic(ctx, r, tool.Name),
 					Err:    nil,
 				}
 			}

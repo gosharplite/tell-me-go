@@ -15,12 +15,13 @@ import (
 func TestTestEventBus(t *testing.T) {
 	t.Parallel()
 	bus := &TestEventBus{}
+	ctx := context.Background()
 
 	type MyEvent struct{ ID int }
 	type OtherEvent struct{}
 
-	bus.Publish(MyEvent{ID: 1})
-	bus.Publish(OtherEvent{})
+	bus.Publish(ctx, MyEvent{ID: 1})
+	bus.Publish(ctx, OtherEvent{})
 
 	if len(bus.getEvents()) != 2 {
 		t.Errorf("Expected 2 events, got %d", len(bus.getEvents()))
@@ -57,7 +58,7 @@ func TestTestEventBus_Subscribe(t *testing.T) {
 		}
 	})
 
-	bus.Publish(MyEvent{ID: 42})
+	bus.Publish(context.Background(), MyEvent{ID: 42})
 	assert.Equal(t, 42, receivedID, "Subscriber should have received the event with correct ID")
 }
 
@@ -74,9 +75,10 @@ func TestCountingEventBus(t *testing.T) {
 	t.Parallel()
 	bus := NewCountingEventBus()
 	type MyEvent struct{}
+	ctx := context.Background()
 
-	bus.Publish(MyEvent{})
-	bus.Publish(MyEvent{})
+	bus.Publish(ctx, MyEvent{})
+	bus.Publish(ctx, MyEvent{})
 
 	assert.Equal(t, 2, bus.GetCount())
 }

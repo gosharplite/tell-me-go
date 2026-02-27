@@ -64,22 +64,22 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	}
 
 	t.Run("Save", func(t *testing.T) {
-			if err := store.Save(ctx, []*llm.Content{content}); err != nil {
+		if err := store.Save(ctx, []*llm.Content{content}); err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
 	})
 
 	t.Run("VerifyJSONFile", func(t *testing.T) {
-			verifyJSONFile(t, filePath, "fake-image-data")
+		verifyJSONFile(t, filePath, "fake-image-data")
 	})
 
 	t.Run("VerifyAssetDirectory", func(t *testing.T) {
-			verifyAssetDir(t, tmpDir)
+		verifyAssetDir(t, tmpDir)
 	})
 
 	var loaded []*llm.Content
 	t.Run("LoadWithoutHydration", func(t *testing.T) {
-			var err error
+		var err error
 		loaded, err = store.Load(ctx)
 		if err != nil {
 			t.Fatalf("Load failed: %v", err)
@@ -88,7 +88,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	})
 
 	t.Run("ResolveAsset", func(t *testing.T) {
-			verifyResolve(t, ctx, store, loaded, "fake-image-data")
+		verifyResolve(t, ctx, store, loaded, "fake-image-data")
 	})
 }
 
@@ -939,7 +939,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-					tmpDir := t.TempDir()
+			tmpDir := t.TempDir()
 			filePath := filepath.Join(tmpDir, "test.jsonl")
 
 			baseFS := infrapersistence.NewOSFileSystem()

@@ -63,7 +63,7 @@ func TestZombieTool_Monitor(t *testing.T) {
 		mock := &mockExecutionObserver{}
 		z, _ := NewZombieTool(mock)
 		outCh := make(chan ToolOutput, 1)
-		
+
 		ctx := context.Background()
 		name := "test-tool"
 		start := time.Now()
@@ -86,7 +86,7 @@ func TestZombieTool_Monitor(t *testing.T) {
 		mock := &mockExecutionObserver{}
 		z, _ := NewZombieTool(mock)
 		outCh := make(chan ToolOutput, 1)
-		
+
 		ctx := context.Background()
 		name := "zombie-tool"
 		start := time.Now()
@@ -104,7 +104,7 @@ func TestZombieTool_Monitor(t *testing.T) {
 		mock := &mockExecutionObserver{}
 		z, _ := NewZombieTool(mock)
 		outCh := make(chan ToolOutput, 1)
-		
+
 		ctx, cancel := context.WithCancel(context.Background())
 		name := "cancelled-tool"
 		start := time.Now()

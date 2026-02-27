@@ -72,7 +72,7 @@ func TestGetMetrics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					got := getMetrics(tt.resp, tt.duration)
+			got := getMetrics(tt.resp, tt.duration)
 			if got == nil {
 				t.Fatal("getMetrics returned nil")
 			}

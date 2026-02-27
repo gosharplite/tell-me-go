@@ -12,7 +12,7 @@ import (
 func TestLoad(t *testing.T) {
 
 	t.Run("ValidConfig", func(t *testing.T) {
-			tmpDir := t.TempDir()
+		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "test.yaml")
 
 		yamlContent := `
@@ -43,14 +43,14 @@ AIURL: "http://test.url"
 	})
 
 	t.Run("NonExistentFile", func(t *testing.T) {
-			_, err := Load("non-existent.yaml")
+		_, err := Load("non-existent.yaml")
 		if err == nil {
 			t.Error("expected error for non-existent file, got nil")
 		}
 	})
 
 	t.Run("InvalidYAML", func(t *testing.T) {
-			tmpDir := t.TempDir()
+		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "invalid.yaml")
 		if err := os.WriteFile(configPath, []byte(": invalid"), 0644); err != nil {
 			t.Fatal(err)

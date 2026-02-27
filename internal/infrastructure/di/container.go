@@ -170,16 +170,17 @@ type sessionDeps struct {
 	bus              events.EventBus
 }
 
-func (d *sessionDeps) GetGateway() llm.LLMGateway                            { return d.gw }
-func (d *sessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
-func (d *sessionDeps) GetRegistry() tools.IToolRegistry                      { return d.reg }
-func (d *sessionDeps) GetEventBus() events.EventBus                         { return d.bus }
-func (d *sessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
-func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return d.pricingOverrides }
-func (d *sessionDeps) GetTracker() pricing.ICostTracker                      { return d.tracker }
-func (d *sessionDeps) GetPricingData() pricing.PricingData                  { return d.pricingData }
-func (d *sessionDeps) GetClient() llm.LLMClient                             { return d.client }
-
+func (d *sessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
+func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
+func (d *sessionDeps) GetRegistry() tools.IToolRegistry        { return d.reg }
+func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
+func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
+func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
+	return d.pricingOverrides
+}
+func (d *sessionDeps) GetTracker() pricing.ICostTracker    { return d.tracker }
+func (d *sessionDeps) GetPricingData() pricing.PricingData { return d.pricingData }
+func (d *sessionDeps) GetClient() llm.LLMClient            { return d.client }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
 func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {

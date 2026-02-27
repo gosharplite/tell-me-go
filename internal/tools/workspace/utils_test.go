@@ -29,7 +29,7 @@ func TestIsIgnoredDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					if got := isIgnoredDir(tt.input); got != tt.expected {
+			if got := isIgnoredDir(tt.input); got != tt.expected {
 				t.Errorf("isIgnoredDir(%q) = %v, want %v", tt.input, got, tt.expected)
 			}
 		})
@@ -78,7 +78,7 @@ func TestWalkAndProcess(t *testing.T) {
 	}
 
 	t.Run("safe path", func(t *testing.T) {
-			err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), tempDir, processor)
+		err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), tempDir, processor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,7 +88,7 @@ func TestWalkAndProcess(t *testing.T) {
 	})
 
 	t.Run("unsafe path", func(t *testing.T) {
-			err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), "/etc", processor)
+		err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), "/etc", processor)
 		if err == nil {
 			t.Error("expected error for unsafe path")
 		}

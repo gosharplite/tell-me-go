@@ -57,11 +57,13 @@ func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.
 		tiered := cs.GetTieredThreshold()
 		if tiered > 0 && tokens > tiered && !req.Metadata.SummarizationAttempted {
 			if t.Events != nil {
-				t.Events.Publish(events.SummarizationRequired{
+				if err := t.Events.Publish(ctx, events.SummarizationRequired{
 					Tokens:   tokens,
 					MaxLimit: tiered,
 					Reason:   "High-tier pricing threshold reached",
-				})
+				}); err != nil {
+					return tokens, err
+				}
 			}
 			// Attempt auto-summarization to try and get back into the cheap tier
 			n, err := t.autoSummarize(ctx, req)
@@ -89,11 +91,13 @@ func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.C
 
 	if tokens > int(float64(t.MaxTokens)*0.9) {
 		if t.Events != nil {
-			t.Events.Publish(events.SummarizationRequired{
+			if err := t.Events.Publish(ctx, events.SummarizationRequired{
 				Tokens:   tokens,
 				MaxLimit: t.MaxTokens,
 				Reason:   "Safety limit pressure (> 90%)",
-			})
+			}); err != nil {
+				return tokens, err
+			}
 		}
 
 		if !req.Metadata.SummarizationAttempted {
@@ -132,14 +136,18 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 
 	if tokens > limit {
 		if t.Events != nil {
-			t.Events.Publish(events.TokenLimitReachedEvent{
+			if err := t.Events.Publish(ctx, events.TokenLimitReachedEvent{
 				Tokens:   tokens,
 				MaxLimit: t.MaxTokens,
-			})
-			t.Events.Publish(events.SystemMessageEvent{
+			}); err != nil {
+				return err
+			}
+			if err := t.Events.Publish(ctx, events.SystemMessageEvent{
 				Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
 				Level:   "error",
-			})
+			}); err != nil {
+				return err
+			}
 		}
 		return llm.ErrContextLimitExceeded
 	}
@@ -165,10 +173,12 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	// 2. Logging
 	if t.Events != nil {
 		subsetTokens := t.Estimator.estimateTokens(req.History[start:end])
-		t.Events.Publish(events.SystemMessageEvent{
+		if err := t.Events.Publish(ctx, events.SystemMessageEvent{
 			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens),
 			Level:   "info",
-		})
+		}); err != nil {
+			return 0, err
+		}
 	}
 
 	// 3. Service Call
@@ -184,10 +194,12 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 
 	// Signal completion to the UI
 	if t.Events != nil {
-		t.Events.Publish(events.SystemMessageEvent{
+		if err := t.Events.Publish(ctx, events.SystemMessageEvent{
 			Message: "Auto-summarization complete. Context successfully compressed.",
 			Level:   "info",
-		})
+		}); err != nil {
+			return 0, err
+		}
 	}
 
 	// 4. State Mutation
@@ -209,7 +221,7 @@ func (t *tokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 		targetTurns = 2
 	}
 
-	startTurn, numTurns := t.locateCandidateBlock(turns, targetTurns)
+	startTurn, numTurns := t.locateCandidateBlock(ctx, turns, targetTurns)
 
 	if startTurn == -1 || numTurns < 2 {
 		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
@@ -222,11 +234,20 @@ func (t *tokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 	return startIdx, endIdx, numTurns, nil
 }
 
-func (t *tokenGatekeeper) locateCandidateBlock(turns [][]*llm.Content, target int) (int, int) {
+func (t *tokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int) (int, int) {
 	startTurn := -1
 	numTurns := 0
 
 	for i := 0; i < len(turns); i++ {
+		// SCALABLE: Periodic context check in potentially long loops
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return -1, 0
+			default:
+			}
+		}
+
 		if !t.isTurnPinned(turns[i]) {
 			if startTurn == -1 {
 				startTurn = i

@@ -208,7 +208,7 @@ func TestTraceTelemetry(t *testing.T) {
 		bus := events.NewSimpleEventBus()
 		RegisterTraceSubscriber(bus, logFile)
 
-		bus.Publish(events.TraceEvent{Trace: trace})
+		_ = bus.Publish(context.Background(), events.TraceEvent{Trace: trace})
 
 		// Flush event bus
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)

@@ -131,7 +131,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-					runUndoErrorTest(t, tc)
+			runUndoErrorTest(t, tc)
 		})
 	}
 }

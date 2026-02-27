@@ -178,8 +178,12 @@ type mockEventBus struct {
 	events []events.Event
 }
 
-func (m *mockEventBus) Publish(e events.Event) {
+func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.events = append(m.events, e)
+	return nil
 }
 
 func (m *mockEventBus) Subscribe(f func(events.Event))     {}

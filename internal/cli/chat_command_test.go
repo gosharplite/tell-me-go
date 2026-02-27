@@ -59,15 +59,17 @@ type mockSessionDeps struct {
 	bus              events.EventBus
 }
 
-func (d *mockSessionDeps) GetGateway() domain_llm.LLMGateway                            { return d.gw }
-func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
-func (d *mockSessionDeps) GetRegistry() domaintools.IToolRegistry                      { return d.reg }
-func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
-func (d *mockSessionDeps) GetPaths() *domain_persistence.Paths                         { return d.paths }
-func (d *mockSessionDeps) GetPricingOverrides() map[string]domain_pricing.ModelPricing { return d.pricingOverrides }
-func (d *mockSessionDeps) GetTracker() domain_pricing.ICostTracker                      { return d.tracker }
-func (d *mockSessionDeps) GetPricingData() domain_pricing.PricingData                  { return d.pricingData }
-func (d *mockSessionDeps) GetClient() domain_llm.LLMClient                             { return d.client }
+func (d *mockSessionDeps) GetGateway() domain_llm.LLMGateway       { return d.gw }
+func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
+func (d *mockSessionDeps) GetRegistry() domaintools.IToolRegistry  { return d.reg }
+func (d *mockSessionDeps) GetEventBus() events.EventBus            { return d.bus }
+func (d *mockSessionDeps) GetPaths() *domain_persistence.Paths     { return d.paths }
+func (d *mockSessionDeps) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
+	return d.pricingOverrides
+}
+func (d *mockSessionDeps) GetTracker() domain_pricing.ICostTracker    { return d.tracker }
+func (d *mockSessionDeps) GetPricingData() domain_pricing.PricingData { return d.pricingData }
+func (d *mockSessionDeps) GetClient() domain_llm.LLMClient            { return d.client }
 
 func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
 	paths := &domain_persistence.Paths{

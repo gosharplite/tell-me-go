@@ -89,7 +89,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					ctx, cancel := setupPipelineContext(tt.timeout)
+			ctx, cancel := setupPipelineContext(tt.timeout)
 			if cancel != nil {
 				defer cancel()
 			}
@@ -430,7 +430,7 @@ func TestRunPipeline_Advanced(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					res, err := executor.RunPipeline(context.Background(), tt.pipedParts, tt.config)
+			res, err := executor.RunPipeline(context.Background(), tt.pipedParts, tt.config)
 
 			verifyPipelineResult(t, res, err, tt.name, false, expectedResult{
 				ExitCode: tt.expectedExitCode,
@@ -824,7 +824,7 @@ func TestOpenOutputFile_Security(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					config := executionConfig{
+			config := executionConfig{
 				OutputFile: tt.path,
 				Append:     tt.append,
 			}
@@ -882,7 +882,7 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					config := executionConfig{
+			config := executionConfig{
 				OutputFile: tt.path,
 			}
 			f, err := executor.openOutputFile(config)

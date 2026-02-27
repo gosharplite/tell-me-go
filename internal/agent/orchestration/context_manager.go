@@ -112,6 +112,13 @@ func (cm *ContextManager) updateCache(snapshotVersion int, req *request) error {
 
 // Prepare prepares the history for the given turn, applying pruning and summarization.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
+	// SCALABLE: Immediate context check
+	select {
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	default:
+	}
+
 	cm.mu.RLock()
 	snapshotVersion := cm.version
 
@@ -178,6 +185,13 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 
 // AddContent appends content to the history in a thread-safe manner, validating role alternation.
 func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) error {
+	// SCALABLE: Immediate context check
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -236,6 +250,13 @@ func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content
 
 // SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
 func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
+	// SCALABLE: Immediate context check
+	select {
+	case <-ctx.Done():
+		return "", nil, ctx.Err()
+	default:
+	}
+
 	if cm.Summarizer == nil {
 		return "", nil, fmt.Errorf("%w: summarizer not initialized", llm.ErrTerminal)
 	}
@@ -254,9 +275,11 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	}
 	actualTurns := len(turnsForMetrics)
 	if cm.Events != nil {
-		cm.Events.Publish(events.SystemMessageEvent{
+		if err := cm.Events.Publish(ctx, events.SystemMessageEvent{
 			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", actualTurns, tokens),
-		})
+		}); err != nil {
+			return "", nil, err
+		}
 	}
 
 	// Slow LLM call outside the lock
@@ -381,7 +404,7 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	if len(currentContents) < endIdx {
 		return fmt.Errorf("%w: summarization aborted: history was pruned while summarizing", llm.ErrTerminal)
 	}
-	
+
 	// Robust check: did the messages we summarized change?
 	if err := cm.validateSummarizationSubset(ctx, currentContents, subset); err != nil {
 		return err

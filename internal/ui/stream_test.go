@@ -17,7 +17,7 @@ func TestStreamResponse(t *testing.T) {
 	renderer := NewRenderer(locker, &stdout, &stderr)
 
 	t.Run("Normal Streaming", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		stderr.Reset()
 		ctx := context.Background()
 		ch, finalize := renderer.StreamResponse(ctx, true, false)
@@ -41,7 +41,7 @@ func TestStreamResponse(t *testing.T) {
 	})
 
 	t.Run("Raw Output", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		stderr.Reset()
 		ctx := context.Background()
 		ch, finalize := renderer.StreamResponse(ctx, true, true)
@@ -60,7 +60,7 @@ func TestStreamResponse(t *testing.T) {
 	})
 
 	t.Run("Inline Data", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		stderr.Reset()
 		ctx := context.Background()
 		ch, finalize := renderer.StreamResponse(ctx, true, false)

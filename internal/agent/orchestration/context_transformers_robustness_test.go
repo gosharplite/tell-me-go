@@ -55,7 +55,7 @@ func TestGroupTurns_Robustness(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					turns, err := groupTurns(context.Background(), tt.history)
+			turns, err := groupTurns(context.Background(), tt.history)
 			if err != nil {
 				t.Fatalf("groupTurns failed: %v", err)
 			}
@@ -108,7 +108,7 @@ func TestIsTurnEmpty_ThoughtSignature(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					if got := isTurnEmpty(tt.turn); got != tt.expected {
+			if got := isTurnEmpty(tt.turn); got != tt.expected {
 				t.Errorf("%s: expected %v, got %v", tt.name, tt.expected, got)
 			}
 		})
@@ -117,7 +117,7 @@ func TestIsTurnEmpty_ThoughtSignature(t *testing.T) {
 
 func TestApplySummary_RoleAlternation(t *testing.T) {
 	t.Run("Starts after system", func(t *testing.T) {
-			history := []*llm.Content{
+		history := []*llm.Content{
 			{Role: "system"},
 			{Role: "user"}, {Role: "model"},
 			{Role: "user"}, {Role: "model"},
@@ -140,7 +140,7 @@ func TestApplySummary_RoleAlternation(t *testing.T) {
 	})
 
 	t.Run("Ends before model", func(t *testing.T) {
-			history := []*llm.Content{
+		history := []*llm.Content{
 			{Role: "user"}, {Role: "model"},
 			{Role: "user"}, {Role: "model"},
 		}

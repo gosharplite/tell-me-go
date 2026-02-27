@@ -236,7 +236,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					tt.setup()
+			tt.setup()
 
 			// For ResponseStreamEvent, we need to handle the channel closing
 			if ev, ok := tt.event.(events.ResponseStreamEvent); ok {
@@ -258,7 +258,7 @@ func TestUIBridge_RelayStream(t *testing.T) {
 	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
 
 	t.Run("Relays content", func(t *testing.T) {
-			ctx := context.Background()
+		ctx := context.Background()
 		stream := make(chan *llm.Content, 2)
 		uiCh := make(chan *llm.Content, 2)
 
@@ -277,7 +277,7 @@ func TestUIBridge_RelayStream(t *testing.T) {
 	})
 
 	t.Run("Handles context cancellation", func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
 		stream := make(chan *llm.Content)
 		uiCh := make(chan *llm.Content)
 
@@ -292,7 +292,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
 
 	t.Run("Returns existing context", func(t *testing.T) {
-			type contextKey string
+		type contextKey string
 		const testKey contextKey = "key"
 		ctx := context.WithValue(context.Background(), testKey, "value")
 		result := bridge.ensureContext(ctx, "test")
@@ -300,7 +300,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	})
 
 	t.Run("Returns background context and logs warning if nil", func(t *testing.T) {
-			mRenderer.On("LogSystemMessage", "test missing context", "warn").Once()
+		mRenderer.On("LogSystemMessage", "test missing context", "warn").Once()
 		var nilCtx context.Context
 		result := bridge.ensureContext(nilCtx, "test")
 		assert.NotNil(t, result)
@@ -529,7 +529,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mCapturer := &behaviorMockCapturer{tracker: tracker}
 	mHistoryRenderer := &behaviorMockHistoryRenderer{tracker: tracker}
 	mUIRenderer := &behaviorMockUIRenderer{tracker: tracker}
-	
+
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
@@ -551,11 +551,11 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 		Prompt:          "hello",
 		LastN:           5,
 		Config: &config.Config{
-			Model: "model",
-			Mode:  "mode",
+			Model:            "model",
+			Mode:             "mode",
 			SelectedProvider: "provider",
 		},
-		Deps: newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+		Deps:     newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
 		Capturer: mCapturer,
 	}
 
@@ -573,20 +573,20 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedSequence := []string{
-		"Capturer.IsTTY",          // Initial check in Run
-		"HistoryRenderer.Render",  // Rendering history because LastN > 0
-		"AgentFactory",            // Creating the agent
-		"Capturer.IsTTY",          // Check in setupUIRendering
-		"UIRenderer.SetUseColor",  // Config UI
-		"Chatter.Subscribe",       // Connect UI events
-		"Chatter.SetLimits",       // Apply constraints
+		"Capturer.IsTTY",             // Initial check in Run
+		"HistoryRenderer.Render",     // Rendering history because LastN > 0
+		"AgentFactory",               // Creating the agent
+		"Capturer.IsTTY",             // Check in setupUIRendering
+		"UIRenderer.SetUseColor",     // Config UI
+		"Chatter.Subscribe",          // Connect UI events
+		"Chatter.SetLimits",          // Apply constraints
 		"Chatter.SetTieredThreshold", // Apply cost threshold
-		"Chatter.Chat",            // Start conversation
-		"Chatter.Shutdown",        // Cleanup
+		"Chatter.Chat",               // Start conversation
+		"Chatter.Shutdown",           // Cleanup
 	}
 
 	assert.Equal(t, expectedSequence, tracker.sequence, "Orchestrator must follow exact coordination sequence")
-	
+
 	mChatter.AssertExpectations(t)
 	mCapturer.AssertExpectations(t)
 	mUIRenderer.AssertExpectations(t)

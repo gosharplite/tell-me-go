@@ -90,7 +90,7 @@ func TestHttpRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					mock := &mockHTTPClient{
+			mock := &mockHTTPClient{
 				DoFunc: func(req *http.Request) (*http.Response, error) {
 					return tt.mockResp, tt.mockErr
 				},
@@ -169,7 +169,7 @@ func TestReadExternalDocs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					mock := &mockHTTPClient{
+			mock := &mockHTTPClient{
 				DoFunc: func(req *http.Request) (*http.Response, error) {
 					return tt.mockResp, tt.mockErr
 				},
@@ -239,7 +239,7 @@ func TestSendTeamsMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					input := "n\n"
+			input := "n\n"
 			if tt.confirm {
 				input = "y\n"
 			}
@@ -326,7 +326,7 @@ func TestHttpRequest_Errors(t *testing.T) {
 	tool := newnetworkTool(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {
-			_, err := tool.HttpRequest(context.Background(), map[string]interface{}{"method": 123})
+		_, err := tool.HttpRequest(context.Background(), map[string]interface{}{"method": 123})
 		if err == nil {
 			t.Error("Expected error for invalid args")
 		}
@@ -338,14 +338,14 @@ func TestReadExternalDocs_Errors(t *testing.T) {
 	tool := newnetworkTool(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {
-			_, err := tool.ReadExternalDocs(context.Background(), map[string]interface{}{"url": 123})
+		_, err := tool.ReadExternalDocs(context.Background(), map[string]interface{}{"url": 123})
 		if err == nil {
 			t.Error("Expected error for invalid args")
 		}
 	})
 
 	t.Run("Empty URL", func(t *testing.T) {
-			_, err := tool.ReadExternalDocs(context.Background(), map[string]interface{}{"url": ""})
+		_, err := tool.ReadExternalDocs(context.Background(), map[string]interface{}{"url": ""})
 		if err == nil {
 			t.Error("Expected error for empty URL")
 		}
@@ -357,21 +357,21 @@ func TestSendTeamsMessage_Errors(t *testing.T) {
 	m := newteamsManager(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {
-			_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{"message": 123})
+		_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{"message": 123})
 		if err == nil {
 			t.Error("Expected error for invalid args")
 		}
 	})
 
 	t.Run("Empty Required Fields", func(t *testing.T) {
-			_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{"message": "", "webhook_url": ""})
+		_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{"message": "", "webhook_url": ""})
 		if err == nil {
 			t.Error("Expected error for empty fields")
 		}
 	})
 
 	t.Run("Insecure URL", func(t *testing.T) {
-			_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{
+		_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{
 			"message":     "hello",
 			"webhook_url": "http://insecure.com",
 			"reason":      "testing",

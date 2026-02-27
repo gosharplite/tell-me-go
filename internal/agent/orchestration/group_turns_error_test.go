@@ -45,7 +45,7 @@ func TestHistoryPruner_GroupTurnsErrorPropagation(t *testing.T) {
 
 			err := pruner.Transform(ctx, req)
 			require.Error(t, err, "Expected error from groupTurns for malformed history")
-			
+
 			// We haven't defined ErrInvalidPayload yet, so this will fail to compile or find the symbol if I use it here.
 			// But for TDD, I should use what I intend to define.
 			require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload sentinel")
@@ -88,18 +88,18 @@ func TestTokenGatekeeper_GroupTurnsErrorPropagation(t *testing.T) {
 
 func TestContextManager_GroupTurnsErrorPropagation(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Use mockHistoryManager from mocks_test.go
 	history := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		{Role: "", Parts: []*llm.Part{{Text: "invalid"}}},
 	}
 	mockHistory := &mockHistoryManager{contents: history}
-	
+
 	cm := &ContextManager{
-		History: mockHistory,
+		History:    mockHistory,
 		Summarizer: &mockSummarizer{},
-		Strategy: NewContextStrategy(&mockTokenCounter{}, nil),
+		Strategy:   NewContextStrategy(&mockTokenCounter{}, nil),
 	}
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")
@@ -141,7 +141,7 @@ func TestHistoryPruner_GroupTurnsEmptyRoleError(t *testing.T) {
 
 func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create a history with 10 turns
 	history := make([]*llm.Content, 20)
 	for i := 0; i < 20; i += 2 {
@@ -149,7 +149,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 		history[i+1] = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "m"}}}
 	}
 	mockHistory := &mockHistoryManager{contents: history}
-	
+
 	// Create a counter that sabotages the history to trigger groupTurns failure at line 251
 	mockCounter := &mockTokenCounterWithFn{
 		countFn: func(contents []*llm.Content) int {
@@ -159,7 +159,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 			return 10
 		},
 	}
-	
+
 	cm := &ContextManager{
 		History:    mockHistory,
 		Summarizer: &mockSummarizer{},
@@ -178,7 +178,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 
 func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create a history with 10 turns
 	history := make([]*llm.Content, 20)
 	for i := 0; i < 20; i += 2 {
@@ -186,7 +186,7 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 		history[i+1] = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "m"}}}
 	}
 	mockHistory := &mockHistoryManager{contents: history}
-	
+
 	// Mock summarizer that sabotages the subset to trigger validation failure
 	mockSumm := &mockSummarizer{
 		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
@@ -196,7 +196,7 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 			return "summary", nil, nil
 		},
 	}
-	
+
 	cm := &ContextManager{
 		History:    mockHistory,
 		Summarizer: mockSumm,
@@ -209,7 +209,7 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 }
 
 type mockTokenCounterWithFn struct {
-	countFn       func(contents []*llm.Content) int
+	countFn func(contents []*llm.Content) int
 }
 
 func (m *mockTokenCounterWithFn) Count(contents []*llm.Content) int {

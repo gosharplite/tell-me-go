@@ -29,7 +29,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 			SP:         mockSP,
 			ModulePath: "github.com/gosharplite/tell-me-go",
 		}
-		
+
 		pkgs := map[string][]string{
 			"github.com/gosharplite/tell-me-go/internal/domain": {
 				"github.com/gosharplite/tell-me-go/internal/agent", // Violation
@@ -61,7 +61,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 			SP:         mockSP,
 			ModulePath: "github.com/gosharplite/tell-me-go",
 		}
-		
+
 		pkgs := map[string][]string{
 			"github.com/gosharplite/tell-me-go/internal/domain": {},
 		}
@@ -82,7 +82,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 			SP:         mockSP,
 			ModulePath: "github.com/gosharplite/tell-me-go",
 		}
-		
+
 		m.Loader = &mockpackageProvider{err: fmt.Errorf("load error")}
 		_, err := m.VerifyArchitecture(context.Background(), nil)
 		if err == nil {

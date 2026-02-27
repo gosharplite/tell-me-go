@@ -34,7 +34,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	t.Setenv("ATLASSIAN_TOKEN", "token")
 
 	t.Run("Success on first attempt", func(t *testing.T) {
-			p := newAtlassianProvider()
+		p := newAtlassianProvider()
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
@@ -50,7 +50,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	})
 
 	t.Run("Retry on 429 then success", func(t *testing.T) {
-			p := newAtlassianProvider()
+		p := newAtlassianProvider()
 		p.baseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
@@ -79,7 +79,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	})
 
 	t.Run("Respect Retry-After header", func(t *testing.T) {
-			p := newAtlassianProvider()
+		p := newAtlassianProvider()
 		p.baseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
@@ -111,7 +111,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	})
 
 	t.Run("Max retries exceeded", func(t *testing.T) {
-			p := newAtlassianProvider()
+		p := newAtlassianProvider()
 		p.baseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
@@ -132,7 +132,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 	})
 
 	t.Run("Context cancellation", func(t *testing.T) {
-			p := newAtlassianProvider()
+		p := newAtlassianProvider()
 		p.baseDelay = 10 * time.Millisecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)

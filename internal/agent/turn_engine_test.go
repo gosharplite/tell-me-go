@@ -1199,7 +1199,7 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 
 	t.Run("Generic error", func(t *testing.T) {
 		t.Parallel()
-	// If err is nil, it returns false.
+		// If err is nil, it returns false.
 
 		_, retry := policy.ShouldRetry(c, nil, 0)
 		if retry {

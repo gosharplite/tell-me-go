@@ -51,10 +51,12 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 		req.Metadata.TotalTurnsKept += keptCount
 
 		if t.Events != nil {
-			t.Events.Publish(events.SystemMessageEvent{
+			if err := t.Events.Publish(ctx, events.SystemMessageEvent{
 				Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, len(newHistory)/2),
 				Level:   "info",
-			})
+			}); err != nil {
+				return err
+			}
 		}
 	}
 

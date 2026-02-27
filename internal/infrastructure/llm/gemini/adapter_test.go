@@ -213,7 +213,7 @@ func TestPart_ToSDK_LazyHydration_NoInlineData(t *testing.T) {
 func TestHydrateAsset_Errors(t *testing.T) {
 
 	t.Run("Resolver Error", func(t *testing.T) {
-			ctx := context.Background()
+		ctx := context.Background()
 		p := &llm.Part{AssetID: "fail-me"}
 		res := &genai.Part{}
 		resolver := &mockResolver{
@@ -230,7 +230,7 @@ func TestHydrateAsset_Errors(t *testing.T) {
 	})
 
 	t.Run("Already Hydrated", func(t *testing.T) {
-			ctx := context.Background()
+		ctx := context.Background()
 		p := &llm.Part{AssetID: "id1"}
 		res := &genai.Part{
 			InlineData: &genai.Blob{

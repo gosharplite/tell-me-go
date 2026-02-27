@@ -23,7 +23,7 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 	cs := NewContextStrategy(NewHeuristicTokenCounter(registry), nil)
 
 	t.Run("Base overhead", func(t *testing.T) {
-			registry.declarations = nil
+		registry.declarations = nil
 		// base = 300
 		got := cs.estimateTokens(nil)
 		if got != 300 {
@@ -32,7 +32,7 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 	})
 
 	t.Run("Tool Declarations", func(t *testing.T) {
-			registry.declarations = []*tools.ToolDeclaration{
+		registry.declarations = []*tools.ToolDeclaration{
 			{
 				Name:        "my_tool",
 				Description: "does something",
@@ -49,7 +49,7 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 	})
 
 	t.Run("Blob Handling", func(t *testing.T) {
-			contents := []*llm.Content{
+		contents := []*llm.Content{
 			{
 				Parts: []*llm.Part{
 					{
@@ -71,7 +71,7 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 	})
 
 	t.Run("Recursive Map/Slice", func(t *testing.T) {
-			contents := []*llm.Content{
+		contents := []*llm.Content{
 			{
 				Parts: []*llm.Part{
 					{
@@ -171,7 +171,7 @@ func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
 	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
 
 	t.Run("Zero Limits", func(t *testing.T) {
-			cs.SetLimits(0, 0, 0)
+		cs.SetLimits(0, 0, 0)
 		h, tool, hTurns := cs.getLimits()
 		if h <= 0 || tool <= 0 || hTurns <= 0 {
 			t.Errorf("expected limits to remain positive defaults, got %d, %d, %d", h, tool, hTurns)
@@ -183,7 +183,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	cs := setupWarningTest()
 
 	t.Run("History turn Warnings", func(t *testing.T) {
-			tests := []struct {
+		tests := []struct {
 			turns    int
 			expected string
 		}{
@@ -224,7 +224,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	})
 
 	t.Run("Clogged Warning", func(t *testing.T) {
-			w := cs.getCloggedWarning()
+		w := cs.getCloggedWarning()
 		if !contains(w, "CRITICAL") || !contains(w, "summarization failed") {
 			t.Errorf("expected clogged warning, got %q", w)
 		}
@@ -442,7 +442,7 @@ func TestContextStrategy_ConfigUpdatedEvent(t *testing.T) {
 		ContextWindow:    4444,
 	}
 
-	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits})
 	err := bus.Flush(ctx)
 	assert.NoError(t, err)
 

@@ -256,7 +256,7 @@ func TestConfigWatcher_ManualLimits(t *testing.T) {
 	cw := NewConfigWatcher(nil, 100, 10, 20)
 
 	t.Run("SetLimits_Positive", func(t *testing.T) {
-			cw.SetLimits(200, 15, 25)
+		cw.SetLimits(200, 15, 25)
 		tokens, toolTurns, historyTurns, _ := cw.GetLimits()
 		assert.Equal(t, 200, tokens)
 		assert.Equal(t, 15, toolTurns)
@@ -264,7 +264,7 @@ func TestConfigWatcher_ManualLimits(t *testing.T) {
 	})
 
 	t.Run("SetLimits_NonPositivePreserves", func(t *testing.T) {
-			cw.SetLimits(200, 15, 25) // Reset to known state
+		cw.SetLimits(200, 15, 25) // Reset to known state
 		cw.SetLimits(0, -1, -5)
 		tokens, toolTurns, historyTurns, _ := cw.GetLimits()
 		assert.Equal(t, 200, tokens)
@@ -276,7 +276,7 @@ func TestConfigWatcher_ManualLimits(t *testing.T) {
 func TestConfigWatcher_ApplyLimits(t *testing.T) {
 
 	t.Run("FullUpdate", func(t *testing.T) {
-			cw := NewConfigWatcher(nil, 100, 10, 20)
+		cw := NewConfigWatcher(nil, 100, 10, 20)
 		limits := events.Limits{
 			MaxHistoryTokens: 500,
 			MaxToolTurns:     30,
@@ -293,7 +293,7 @@ func TestConfigWatcher_ApplyLimits(t *testing.T) {
 	})
 
 	t.Run("PartialUpdate", func(t *testing.T) {
-			cw := NewConfigWatcher(nil, 100, 10, 20)
+		cw := NewConfigWatcher(nil, 100, 10, 20)
 		cw.tieredThreshold = 1000
 		limits := events.Limits{
 			MaxHistoryTokens: 0,
@@ -317,14 +317,14 @@ func TestConfigWatcher_SyncToStrategy(t *testing.T) {
 	cw.tieredThreshold = 3000
 
 	t.Run("ValidStrategy", func(t *testing.T) {
-			cs := NewContextStrategy(NewHeuristicTokenCounter(nil), nil)
+		cs := NewContextStrategy(NewHeuristicTokenCounter(nil), nil)
 		cw.SyncToStrategy(cs)
 		assert.Equal(t, 500000, cs.contextWindow)
 		assert.Equal(t, 3000, cs.GetTieredThreshold())
 	})
 
 	t.Run("NilStrategy", func(t *testing.T) {
-			assert.NotPanics(t, func() {
+		assert.NotPanics(t, func() {
 			cw.SyncToStrategy(nil)
 		})
 	})

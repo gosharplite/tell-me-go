@@ -41,6 +41,13 @@ func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *reque
 	canonical, transient := p.partitionTransformers()
 
 	for _, t := range canonical {
+		// SCALABLE: Responsive context cancellation between transformer stages
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err := t.Transform(ctx, req); err != nil {
 			return err
 		}
@@ -51,6 +58,13 @@ func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *reque
 	}
 
 	for _, t := range transient {
+		// SCALABLE: Responsive context cancellation between transformer stages
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err := t.Transform(ctx, req); err != nil {
 			return err
 		}

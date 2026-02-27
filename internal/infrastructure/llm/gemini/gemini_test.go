@@ -127,7 +127,7 @@ func TestSendChat_Scenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					runSendChatTest(t, tt)
+			runSendChatTest(t, tt)
 		})
 	}
 }
@@ -260,7 +260,7 @@ func TestStreamChat_Scenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					runStreamChatTest(t, tt)
+			runStreamChatTest(t, tt)
 		})
 	}
 }
@@ -384,7 +384,7 @@ func TestGenerateImages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					runGenerateImagesTest(t, tt)
+			runGenerateImagesTest(t, tt)
 		})
 	}
 }
@@ -529,7 +529,7 @@ func TestClassifyError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					got := client.classifyError(tt.err)
+			got := client.classifyError(tt.err)
 			if (got == nil) != (tt.expected == nil) {
 				t.Fatalf("expected error %v, got %v", tt.expected, got)
 			}
@@ -587,7 +587,7 @@ func TestToSDKTool(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					result := toSDKTool(tt.input)
+			result := toSDKTool(tt.input)
 			tt.validate(t, result)
 		})
 	}
@@ -599,7 +599,7 @@ func TestApplyThinkingBudget(t *testing.T) {
 	client := &Client{eventBus: bus}
 
 	t.Run("Under Budget", func(t *testing.T) {
-			config := &genai.ThinkingConfig{}
+		config := &genai.ThinkingConfig{}
 		client.applyThinkingBudget(config, 1000, 2000, "test-model")
 
 		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1000 {
@@ -608,7 +608,7 @@ func TestApplyThinkingBudget(t *testing.T) {
 	})
 
 	t.Run("Exceeds Max Budget", func(t *testing.T) {
-			localBus := events.NewSimpleEventBus()
+		localBus := events.NewSimpleEventBus()
 		localClient := &Client{eventBus: localBus}
 
 		var mu sync.Mutex
@@ -655,7 +655,7 @@ func TestHandleEmptyContent(t *testing.T) {
 	client := &Client{}
 
 	t.Run("FinishReason Other", func(t *testing.T) {
-			candidate := &genai.Candidate{
+		candidate := &genai.Candidate{
 			FinishReason: genai.FinishReasonSafety,
 		}
 		err := client.handleEmptyContent(candidate)
@@ -665,7 +665,7 @@ func TestHandleEmptyContent(t *testing.T) {
 	})
 
 	t.Run("FinishReason Stop", func(t *testing.T) {
-			candidate := &genai.Candidate{
+		candidate := &genai.Candidate{
 			FinishReason: genai.FinishReasonStop,
 		}
 		err := client.handleEmptyContent(candidate)
@@ -680,7 +680,7 @@ func TestHandleNoCandidates(t *testing.T) {
 	client := &Client{}
 
 	t.Run("With BlockReason", func(t *testing.T) {
-			resp := &genai.GenerateContentResponse{
+		resp := &genai.GenerateContentResponse{
 			PromptFeedback: &genai.GenerateContentResponsePromptFeedback{
 				BlockReason: "OTHER",
 			},
@@ -692,7 +692,7 @@ func TestHandleNoCandidates(t *testing.T) {
 	})
 
 	t.Run("Without BlockReason", func(t *testing.T) {
-			resp := &genai.GenerateContentResponse{}
+		resp := &genai.GenerateContentResponse{}
 		err := client.handleNoCandidates(resp)
 		if err == nil || !strings.Contains(err.Error(), "empty response from api") {
 			t.Errorf("expected generic empty response error, got %v", err)
@@ -705,7 +705,7 @@ func TestHandleSafetyBlock(t *testing.T) {
 	client := &Client{}
 
 	t.Run("With BlockReason", func(t *testing.T) {
-			resp := &genai.GenerateContentResponse{
+		resp := &genai.GenerateContentResponse{
 			PromptFeedback: &genai.GenerateContentResponsePromptFeedback{
 				BlockReason: "SAFETY",
 			},
@@ -717,7 +717,7 @@ func TestHandleSafetyBlock(t *testing.T) {
 	})
 
 	t.Run("Without BlockReason", func(t *testing.T) {
-			resp := &genai.GenerateContentResponse{}
+		resp := &genai.GenerateContentResponse{}
 		err := client.handleSafetyBlock(resp)
 		if err != nil {
 			t.Errorf("expected nil error, got %v", err)
@@ -730,7 +730,7 @@ func TestFormatFinishError(t *testing.T) {
 	client := &Client{}
 
 	t.Run("Without FinishMessage", func(t *testing.T) {
-			candidate := &genai.Candidate{
+		candidate := &genai.Candidate{
 			FinishReason: genai.FinishReasonSafety,
 		}
 		err := client.formatFinishError(candidate, "test prefix")
@@ -740,7 +740,7 @@ func TestFormatFinishError(t *testing.T) {
 	})
 
 	t.Run("With FinishMessage", func(t *testing.T) {
-			candidate := &genai.Candidate{
+		candidate := &genai.Candidate{
 			FinishReason:  genai.FinishReasonSafety,
 			FinishMessage: "something went wrong",
 		}
@@ -753,7 +753,7 @@ func TestFormatFinishError(t *testing.T) {
 
 func TestGemini_InternalErrors(t *testing.T) {
 	t.Run("Authenticator Error in NewClient", func(t *testing.T) {
-			errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
 		_, err := NewClient("http://localhost", "gemini-1.5-flash", errAuth, 0, "", 0, "", false, nil, 0)
 		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
 			t.Errorf("expected auth error, got %v", err)
@@ -761,7 +761,7 @@ func TestGemini_InternalErrors(t *testing.T) {
 	})
 
 	t.Run("Authenticator Error in prepareAuthHeader", func(t *testing.T) {
-			errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
 		c := &Client{authenticator: errAuth}
 		_, err := c.prepareAuthHeader(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
@@ -783,7 +783,7 @@ func TestGemini_EdgeCase_FindInParts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					if got := findInParts(tt.parts, tt.key); got != tt.want {
+			if got := findInParts(tt.parts, tt.key); got != tt.want {
 				t.Errorf("expected %q, got %q", tt.want, got)
 			}
 		})
@@ -840,7 +840,7 @@ func TestGemini_EdgeCase_ToSDKContent(t *testing.T) {
 	c := &Client{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					res := c.toSDKContent(context.Background(), tt.input, nil)
+			res := c.toSDKContent(context.Background(), tt.input, nil)
 			if len(res) != tt.wantLen {
 				t.Errorf("len: got %d, want %d", len(res), tt.wantLen)
 			}

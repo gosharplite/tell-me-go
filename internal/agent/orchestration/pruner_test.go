@@ -142,7 +142,7 @@ func TestPruner_CompositePolicy_ErrorPropagation(t *testing.T) {
 }
 
 func TestCompositePruningPolicy_MarkTurns_ErrorPropagation(t *testing.T) {
-	// Although historyPruner handles composites specifically, the MarkTurns method 
+	// Although historyPruner handles composites specifically, the MarkTurns method
 	// of compositePruningPolicy also has an error path that should be tested.
 	mockErr := errors.New("composite direct call failure")
 	mockSubPolicy := &mockPruningPolicy{

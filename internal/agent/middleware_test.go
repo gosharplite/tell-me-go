@@ -22,8 +22,12 @@ type mockEventBus struct {
 	events []events.Event
 }
 
-func (m *mockEventBus) Publish(e events.Event) {
+func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.events = append(m.events, e)
+	return nil
 }
 
 func (m *mockEventBus) Subscribe(f func(events.Event)) {}
@@ -87,12 +91,12 @@ func TestWithStatusReporter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			
+
 			bus := &mockEventBus{}
 			e := &turnEngine{events: bus}
 			mw := e.WithStatusReporter()
 			next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
-		
+
 			cs := orchestration.NewContextStrategy(nil, nil)
 			h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
 			cm := &orchestration.ContextManager{Strategy: cs, History: h}

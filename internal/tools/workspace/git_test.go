@@ -155,7 +155,7 @@ func TestGitTools(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					executor := &mockGitExecutor{
+			executor := &mockGitExecutor{
 				handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 					if name != "git" {
 						return nil, fmt.Errorf("expected git, got %s", name)
@@ -246,7 +246,7 @@ func TestGitDestructiveActions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					var input string
+			var input string
 			if tt.approved {
 				input = "y\n"
 			} else {

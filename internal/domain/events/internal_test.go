@@ -17,8 +17,8 @@ func TestEventRingBuffer_Basic(t *testing.T) {
 		t.Errorf("Expected length 0, got %d", buffer.len())
 	}
 
-	buffer.push(1)
-	buffer.push(2)
+	buffer.push(context.Background(), 1)
+	buffer.push(context.Background(), 2)
 
 	if buffer.len() != 2 {
 		t.Errorf("Expected length 2, got %d", buffer.len())
@@ -37,12 +37,12 @@ func TestEventRingBuffer_Basic(t *testing.T) {
 func TestEventRingBuffer_Eviction(t *testing.T) {
 	t.Parallel()
 	buffer := &eventRingBuffer{max: 3}
-	buffer.push(1)
-	buffer.push(2)
-	buffer.push(3)
+	buffer.push(context.Background(), 1)
+	buffer.push(context.Background(), 2)
+	buffer.push(context.Background(), 3)
 
 	// Buffer is now full [1, 2, 3]. Pushing next should evict 1.
-	buffer.push(4)
+	buffer.push(context.Background(), 4)
 
 	if buffer.len() != 3 {
 		t.Errorf("Expected length 3 after eviction, got %d", buffer.len())
@@ -55,8 +55,8 @@ func TestEventRingBuffer_Eviction(t *testing.T) {
 	}
 
 	// Buffer is now [3, 4]
-	buffer.push(5)
-	buffer.push(6) // Evicts 3
+	buffer.push(context.Background(), 5)
+	buffer.push(context.Background(), 6) // Evicts 3
 
 	if val := buffer.pop(); val != 4 {
 		t.Errorf("Expected popped value to be 4, got %v", val)
@@ -94,7 +94,7 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 
 			// Verify it doesn't panic on basic operations
 			bus.Subscribe(func(e Event) {})
-			bus.Publish("test")
+			bus.Publish(context.Background(), "test")
 			_ = bus.Flush(context.Background())
 			_ = bus.Shutdown(context.Background())
 		})
@@ -120,7 +120,7 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 	// Goroutine 1: Flush (will block on the subscriber channel)
 	go func() {
 		defer wg.Done()
-		bus.Publish("flush_trigger")
+		bus.Publish(context.Background(), "flush_trigger")
 		// Flush will wait for the blocked subscriber
 		_ = bus.Flush(context.Background())
 	}()

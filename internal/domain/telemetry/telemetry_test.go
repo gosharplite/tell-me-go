@@ -32,7 +32,7 @@ func TestTelemetry_Logging(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					var buf bytes.Buffer
+			var buf bytes.Buffer
 			oldOutput := log.Writer()
 			log.SetOutput(&buf)
 			t.Cleanup(func() {

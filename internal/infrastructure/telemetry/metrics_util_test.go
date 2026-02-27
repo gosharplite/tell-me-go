@@ -294,7 +294,7 @@ func TestGetPricing(t *testing.T) {
 
 	t.Run("Fallback on missing file", func(t *testing.T) {
 		t.Parallel()
-	// Use a different temp dir without assets
+		// Use a different temp dir without assets
 
 		anotherDir := t.TempDir()
 		pd := GetPricing(context.Background(), nil, filepath.Join(anotherDir, "output"))

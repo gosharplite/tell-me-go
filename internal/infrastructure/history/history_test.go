@@ -75,7 +75,7 @@ func TestHistoryManager_GetWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					window, err := m.GetWindow(ctx, tt.start, tt.end)
+			window, err := m.GetWindow(ctx, tt.start, tt.end)
 			if (err != nil) != tt.err {
 				t.Fatalf("expected error: %v, got: %v", tt.err, err)
 			}

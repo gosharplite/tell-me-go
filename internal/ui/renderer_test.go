@@ -60,7 +60,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("LogSystemMessage", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		stderr.Reset()
 		r.LogSystemMessage("test message", "error")
 		if !strings.Contains(stderr.String(), "test message") {
@@ -69,7 +69,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	})
 
 	t.Run("LogTurnStatus", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			Timestamp:        r.now(),
 			CurrentTurns:     0,
@@ -116,7 +116,7 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			Timestamp:       r.nowSafe(),
 			CurrentTurns:    1,
@@ -148,7 +148,7 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogToolCall([]*llm.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val", "reason": "my intent"}}}, 0, 5, true)
 		output := stderr.String()
 		if !strings.Contains(output, "Tool Action") || !strings.Contains(output, "my_tool") {
@@ -163,7 +163,7 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 	})
 
 	t.Run("LogToolResult_WithShowTools", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogToolResult("my_tool", tools.ToolResult{Text: "output", BinaryData: []tools.BinaryData{{MIMEType: "image/png", Data: []byte("xyz")}}}, true)
 		if !strings.Contains(stderr.String(), "Tool Result") || !strings.Contains(stderr.String(), "image/png") {
 			t.Errorf("expected stderr to contain 'Tool Result' and 'image/png', got %q", stderr.String())
@@ -178,7 +178,7 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("renderResponse_Markdown", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		content := &llm.Content{Parts: []*llm.Part{{Text: "# Title\nbody"}}}
 		r.renderResponse(content, false, false)
 		if !strings.Contains(stdout.String(), "Title") {
@@ -187,7 +187,7 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 	})
 
 	t.Run("renderResponse_Thoughts", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		content := &llm.Content{Parts: []*llm.Part{{Text: "I am thinking", IsThought: true}}}
 		r.renderResponse(content, true, false)
 		if !strings.Contains(stderr.String(), "Thinking") || !strings.Contains(stderr.String(), "I am thinking") {
@@ -203,7 +203,7 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("StreamResponse_Simple", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -225,7 +225,7 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 	})
 
 	t.Run("StreamResponse_WithThoughts", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -240,7 +240,7 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 	})
 
 	t.Run("StreamResponse_WithMedia", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -303,7 +303,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	}
 
 	t.Run("CumulativeToolDuration", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			Timestamp:  r.nowSafe(),
 			IsPostCall: true,
@@ -351,7 +351,7 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 	r := NewRenderer(locker, &stdout, &stderr)
 
 	t.Run("Anchoring enabled when rawOutput is false", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -375,7 +375,7 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 	})
 
 	t.Run("Anchoring disabled when rawOutput is true", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -400,7 +400,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 	r.(*stdUIRenderer).SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("Green cost in LogTurnStatus", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			IsPostCall:   true,
 			SessionCost:  1.2345,
@@ -418,7 +418,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 	})
 
 	t.Run("Yellow warning for token usage", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			Tokens:           850,
 			MaxHistoryTokens: 1000,
@@ -432,7 +432,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 	})
 
 	t.Run("Red error for token overflow", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			Tokens:           1100,
 			MaxHistoryTokens: 1000,
@@ -453,7 +453,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("Tool metrics omit total duration", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		m := &llm.Metrics{
 			PromptTokens:   100,
 			ResponseTokens: 50,
@@ -473,7 +473,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 	})
 
 	t.Run("Regular metrics include total duration", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			IsPostCall: true,
 			StartTime:  r.nowSafe().Add(-5 * time.Second),
@@ -537,7 +537,7 @@ func TestStdUIRenderer_GetTimestamp(t *testing.T) {
 	locker := &mockLocker{}
 
 	t.Run("Mocked time", func(t *testing.T) {
-			r := &stdUIRenderer{
+		r := &stdUIRenderer{
 			locker: locker,
 		}
 		r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 34, 56, 0, time.UTC) })
@@ -549,7 +549,7 @@ func TestStdUIRenderer_GetTimestamp(t *testing.T) {
 	})
 
 	t.Run("Nil now fallback", func(t *testing.T) {
-			r := &stdUIRenderer{locker: locker}
+		r := &stdUIRenderer{locker: locker}
 		got := r.getTimestamp()
 		// Just verify it doesn't panic and returns a valid looking timestamp (HH:MM:SS)
 		if len(got) != 8 || got[2] != ':' || got[5] != ':' {
@@ -604,7 +604,7 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 	r := NewRenderer(locker, &stdout, &stderr)
 
 	t.Run("Redraw on no scroll", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		stderr.Reset()
 		ctx := context.Background()
 		ch, finalize := r.StreamResponse(ctx, false, false)
@@ -621,7 +621,7 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 	})
 
 	t.Run("Failover on scroll", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		stderr.Reset()
 		ctx := context.Background()
 		ch, finalize := r.StreamResponse(ctx, false, false)
@@ -638,7 +638,7 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 	})
 
 	t.Run("Long response scroll detection", func(t *testing.T) {
-			stdout.Reset()
+		stdout.Reset()
 		stderr.Reset()
 
 		// Set a low threshold for scrolling simulation if possible,
@@ -670,7 +670,7 @@ func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
 	r.(*stdUIRenderer).SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("LogUsage terminal output for summaries", func(t *testing.T) {
-			stderr.Reset()
+		stderr.Reset()
 		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100, Cost: 0.05}
 		r.LogUsage(context.Background(), metrics, t.TempDir()+"/test.log", time.Now())
 
@@ -695,7 +695,7 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-					r := NewRenderer(locker, nil, nil).(*stdUIRenderer)
+			r := NewRenderer(locker, nil, nil).(*stdUIRenderer)
 			r.SetUseColor(tt.useColor)
 			ui := r.getUIState()
 			if got := ui.c(tt.input); got != tt.expected {
