@@ -5,10 +5,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -228,4 +231,147 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		assert.Contains(t, respPart["error"].(string), "Please call 'summarize_history' first")
 		assert.Nil(t, respPart["results"], "Results should be discarded to save space")
 	})
+}
+
+type cancelIntegrationRegistry struct {
+	declarations []*tools.ToolDeclaration
+	handlers     map[string]tools.ToolFunc
+}
+
+func (m *cancelIntegrationRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {
+	m.declarations = append(m.declarations, def)
+	if m.handlers == nil {
+		m.handlers = make(map[string]tools.ToolFunc)
+	}
+	m.handlers[def.Name] = handler
+}
+
+func (m *cancelIntegrationRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+	m.Register(def, handler)
+}
+
+func (m *cancelIntegrationRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	if h, ok := m.handlers[name]; ok {
+		return h(ctx, args)
+	}
+	return tools.ToolResult{}, errors.New("not found")
+}
+
+func (m *cancelIntegrationRegistry) IsSerial(name string) bool                 { return false }
+func (m *cancelIntegrationRegistry) IsLongRunning(name string) bool            { return false }
+func (m *cancelIntegrationRegistry) GetDeclarations() []*tools.ToolDeclaration { return m.declarations }
+
+func TestTurnEngine_CancellationIntegration(t *testing.T) {
+	bus := &events.SimpleEventBus{}
+	historyPath := filepath.Join(t.TempDir(), "history_cancel.jsonl")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+
+	reg := &cancelIntegrationRegistry{}
+
+	// Tool 1 & 2: Blocking
+	var wgStart sync.WaitGroup
+	wgStart.Add(2)
+	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool1"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
+		wgStart.Done()
+		<-ctx.Done()
+		return tools.ToolResult{}, ctx.Err()
+	}, tools.ToolOptions{})
+
+	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool2"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
+		wgStart.Done()
+		<-ctx.Done()
+		return tools.ToolResult{}, ctx.Err()
+	}, tools.ToolOptions{})
+
+	counter := &orchestration.HeuristicTokenCounter{}
+	strategy := orchestration.NewContextStrategy(counter, bus)
+	const maxTokens = 10000
+	strategy.SetLimits(maxTokens, 10, 10)
+
+	factory := &orchestration.PipelineFactory{
+		History:   h,
+		Events:    bus,
+		Estimator: strategy,
+	}
+
+	cm := orchestration.NewContextManager(strategy, h, bus, factory)
+	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: maxTokens, MaxToolTurns: 10, MaxHistoryTurns: 10})
+
+	gw := &integrationMockLLMGateway{}
+	// Real executor
+	exec := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus)
+
+	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 1. Setup: User prompt
+	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "run tools"}}})
+
+	// 2. Mock LLM returns 2 tool calls
+	modelResp := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "tool1", Args: map[string]any{"id": 1}}},
+			{FunctionCall: &llm.FunctionCall{Name: "tool2", Args: map[string]any{"id": 2}}},
+		},
+	}
+	ch := make(chan *llm.Content, 1)
+	ch <- modelResp
+	close(ch)
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch, func() (*llm.Content, *llm.Metrics, error) {
+		return modelResp, &llm.Metrics{PromptTokens: 100}, nil
+	})
+
+	// 3. Execute turn in goroutine
+	errCh := make(chan error, 1)
+	turn0 := engine.createTurn(0, time.Now())
+	turn0.State.ToolCallCount = make(map[string]int)
+
+	go func() {
+		errCh <- engine.executeTurn(ctx, turn0)
+	}()
+
+	// 4. Wait for both tools to start, then cancel
+	done := make(chan struct{})
+	go func() {
+		wgStart.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		cancel()
+	case <-time.After(5 * time.Second):
+		t.Fatal("Tools never started")
+	}
+
+	// 5. Assertions
+	err := <-errCh
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled))
+
+	// Inspect final history
+	hist, _ := h.GetWindow(context.Background(), 0, -1)
+
+	// Should have: user prompt, model tool calls, synthesized tool response
+	// The emergencySave should have triggered because the error was fatal (wrapped in agentError with llm.ErrTerminal)
+	assert.Equal(t, 3, len(hist))
+
+	// Check model response (the tool calls)
+	assert.Equal(t, "model", hist[1].Role)
+	assert.Equal(t, 2, len(hist[1].Parts))
+	assert.NotNil(t, hist[1].Parts[0].FunctionCall)
+	assert.NotNil(t, hist[1].Parts[1].FunctionCall)
+
+	// Check tool response
+	toolResp := hist[2]
+	assert.Equal(t, "user", toolResp.Role)
+	assert.Equal(t, 2, len(toolResp.Parts)) // Two function responses
+
+	for _, part := range toolResp.Parts {
+		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "Execution was interrupted or cancelled by the user.", part.FunctionResponse.Response["result"])
+	}
 }

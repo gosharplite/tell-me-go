@@ -585,14 +585,15 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 	toolStart := turn.Clock.Now()
 
 	toolResponse, err := turn.executor.Execute(ctx, turn.State.Response, turn.Index, turn.MaxToolTurns)
-	if err != nil {
-		return processResult{}, p.handleToolExecutionError(err)
-	}
 
 	if toolResponse != nil {
 		turn.State.ToolResponse = toolResponse
 		p.injectCircuitBreakerWarning(ctx, turn, toolResponse)
 		p.validatePayloadLimits(ctx, turn)
+	}
+
+	if err != nil {
+		return processResult{}, p.handleToolExecutionError(err)
 	}
 
 	if turn.State.Metrics != nil {

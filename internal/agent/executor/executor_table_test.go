@@ -931,15 +931,16 @@ func TestToolExecutor_ContextCancellation_Parallel(t *testing.T) {
 	}()
 
 	resp, err := exec.Execute(ctx, content, 0, 10)
-	// Execute might return context.Canceled from Wait, but if it doesn't and returns response,
-	// let's check parts. Wait returns error if context is cancelled.
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Expected context.Canceled, got %v", err)
 	}
 
-	// Since collector.Wait returns context.Canceled, the response is nil.
-	if resp != nil {
-		t.Errorf("Expected nil response on context cancellation, got %v", resp)
+	// Since the executor now synthesizes responses on cancellation to preserve history state,
+	// resp should NOT be nil, and the length of its parts must equal the number of original function calls.
+	if resp == nil {
+		t.Errorf("Expected non-nil response on context cancellation for history preservation")
+	} else if len(resp.Parts) != len(content.Parts) {
+		t.Errorf("Expected %d response parts, got %d", len(content.Parts), len(resp.Parts))
 	}
 }
 
