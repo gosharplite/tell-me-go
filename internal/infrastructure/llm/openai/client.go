@@ -67,7 +67,7 @@ type message struct {
 	Content          interface{} `json:"content"` // Never null for DeepSeek
 	ToolCalls        []toolCall  `json:"tool_calls,omitempty"`
 	ToolCallID       string      `json:"tool_call_id,omitempty"`
-	ReasoningContent string      `json:"reasoning_content,omitempty"`
+	ReasoningContent *string     `json:"reasoning_content,omitempty"`
 }
 
 type tool struct {
@@ -291,11 +291,18 @@ func (c *client) appendMessagesFromHistoryItem(
 
 	c.injectPersona(messages, personaInjected, role, &text, isOpenAI, isDeepSeek)
 
+	var reasoningPtr *string
+	if isDeepSeek && role == "assistant" {
+		reasoningPtr = &reasoning
+	} else if reasoning != "" {
+		reasoningPtr = &reasoning
+	}
+
 	*messages = append(*messages, message{
 		Role:             role,
 		ToolCalls:        toolCalls,
 		Content:          text,
-		ReasoningContent: reasoning,
+		ReasoningContent: reasoningPtr,
 	})
 	return nil
 }
@@ -441,8 +448,8 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 	c.parseResponseContent(msg.Content, content)
 
 	// Reasoning content (DeepSeek extension)
-	if msg.ReasoningContent != "" {
-		content.Parts = append(content.Parts, &llm.Part{Text: msg.ReasoningContent, IsThought: true})
+	if msg.ReasoningContent != nil && *msg.ReasoningContent != "" {
+		content.Parts = append(content.Parts, &llm.Part{Text: *msg.ReasoningContent, IsThought: true})
 	}
 
 	if err := c.parseResponseToolCalls(msg.ToolCalls, content); err != nil {

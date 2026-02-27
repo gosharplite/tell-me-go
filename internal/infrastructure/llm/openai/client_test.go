@@ -136,13 +136,14 @@ func testHistoryProcessing(t *testing.T) {
 
 func TestDeepSeekReasoning(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reasoning := "Thinking process"
 		resp := chatResponse{
 			Choices: []choice{
 				{
 					Message: message{
 						Role:             "assistant",
 						Content:          "Answer",
-						ReasoningContent: "Thinking process",
+						ReasoningContent: &reasoning,
 					},
 				},
 			},
@@ -432,8 +433,12 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 	}
 
 	msg := messages[1]
-	if msg.ReasoningContent != "Thinking..." {
-		t.Errorf("expected reasoning_content 'Thinking...', got %q", msg.ReasoningContent)
+	if msg.ReasoningContent == nil || *msg.ReasoningContent != "Thinking..." {
+		val := "<nil>"
+		if msg.ReasoningContent != nil {
+			val = *msg.ReasoningContent
+		}
+		t.Errorf("expected reasoning_content 'Thinking...', got %q", val)
 	}
 	if len(msg.ToolCalls) != 1 {
 		t.Errorf("expected 1 tool call, got %d", len(msg.ToolCalls))
@@ -902,5 +907,36 @@ func TestOpenAI_StreamRequestFailure(t *testing.T) {
 	_, err := c.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 	if err == nil || !strings.Contains(err.Error(), "request failed") {
 		t.Errorf("expected request failure error, got %v", err)
+	}
+}
+
+func TestDeepSeekEmptyReasoningContent(t *testing.T) {
+	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0)
+	history := []*llm.Content{
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{Text: "Just an answer"}, // No IsThought part
+			},
+		},
+	}
+
+	messages, _ := client.toOpenAIMessages(context.Background(), history, nil)
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(messages))
+	}
+
+	msg := messages[0]
+
+	// Verify JSON marshaling explicitly includes "reasoning_content": ""
+	b, _ := json.Marshal(msg)
+	var m map[string]interface{}
+	_ = json.Unmarshal(b, &m)
+
+	val, ok := m["reasoning_content"]
+	if !ok {
+		t.Error("expected reasoning_content field to be present in JSON for DeepSeek assistant message")
+	} else if val != "" {
+		t.Errorf("expected reasoning_content to be empty string, got %v", val)
 	}
 }
