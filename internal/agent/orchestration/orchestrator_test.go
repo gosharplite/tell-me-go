@@ -410,3 +410,185 @@ func TestUIBridge_RelayStream_ContextCancelledDuringSend(t *testing.T) {
 	bridge.relayStream(ctx, stream, uiCh)
 	// Should return when context is cancelled
 }
+
+// --- Behavioral Sequence Testing ---
+
+type behaviorTracker struct {
+	sequence []string
+}
+
+func (t *behaviorTracker) record(name string) {
+	t.sequence = append(t.sequence, name)
+}
+
+type behaviorMockChatter struct {
+	mock.Mock
+	tracker *behaviorTracker
+}
+
+func (m *behaviorMockChatter) Chat(ctx context.Context, s *ports.Session, prompt string) error {
+	m.tracker.record("Chatter.Chat")
+	args := m.Called(ctx, s, prompt)
+	return args.Error(0)
+}
+
+func (m *behaviorMockChatter) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+	m.tracker.record("Chatter.SetLimits")
+	args := m.Called(ctx, toolTurns, historyTokens, historyTurns)
+	return args.Error(0)
+}
+
+func (m *behaviorMockChatter) SetTieredThreshold(ctx context.Context, threshold int) error {
+	m.tracker.record("Chatter.SetTieredThreshold")
+	args := m.Called(ctx, threshold)
+	return args.Error(0)
+}
+
+func (m *behaviorMockChatter) Subscribe(sub func(events.Event)) {
+	m.tracker.record("Chatter.Subscribe")
+	m.Called(sub)
+}
+
+func (m *behaviorMockChatter) Shutdown(ctx context.Context) error {
+	m.tracker.record("Chatter.Shutdown")
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+type behaviorMockHistoryRenderer struct {
+	mock.Mock
+	tracker *behaviorTracker
+}
+
+func (m *behaviorMockHistoryRenderer) Render(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
+	m.tracker.record("HistoryRenderer.Render")
+	m.Called(w, h, n, options)
+}
+
+type behaviorMockUIRenderer struct {
+	mock.Mock
+	tracker *behaviorTracker
+}
+
+func (m *behaviorMockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
+	m.tracker.record("UIRenderer.StreamResponse")
+	args := m.Called(ctx, showThoughts, rawOutput)
+	return args.Get(0).(chan<- *llm.Content), args.Get(1).(func() *llm.Content)
+}
+
+func (m *behaviorMockUIRenderer) LogTurnStatus(status events.TurnStatus) {
+	m.tracker.record("UIRenderer.LogTurnStatus")
+	m.Called(status)
+}
+
+func (m *behaviorMockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
+	m.tracker.record("UIRenderer.LogUsage")
+	m.Called(ctx, metrics, logFile, startTime)
+}
+
+func (m *behaviorMockUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+	m.tracker.record("UIRenderer.LogToolCall")
+	m.Called(calls, turn, maxTurns, showTools)
+}
+
+func (m *behaviorMockUIRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {
+	m.tracker.record("UIRenderer.LogToolResult")
+	m.Called(name, result, showTools)
+}
+
+func (m *behaviorMockUIRenderer) LogSystemMessage(msg string, level string) {
+	m.tracker.record("UIRenderer.LogSystemMessage")
+	m.Called(msg, level)
+}
+
+func (m *behaviorMockUIRenderer) SetUseColor(use bool) {
+	m.tracker.record("UIRenderer.SetUseColor")
+	m.Called(use)
+}
+
+type behaviorMockCapturer struct {
+	mock.Mock
+	tracker *behaviorTracker
+}
+
+func (m *behaviorMockCapturer) IsTTY(v any) bool {
+	m.tracker.record("Capturer.IsTTY")
+	args := m.Called(v)
+	return args.Bool(0)
+}
+
+func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
+	m.tracker.record("Capturer.CapturePrompt")
+	args := m.Called(ctx, fs, lastN, raw)
+	return args.String(0), args.Error(1)
+}
+
+func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
+	tracker := &behaviorTracker{}
+	mChatter := &behaviorMockChatter{tracker: tracker}
+	mCapturer := &behaviorMockCapturer{tracker: tracker}
+	mHistoryRenderer := &behaviorMockHistoryRenderer{tracker: tracker}
+	mUIRenderer := &behaviorMockUIRenderer{tracker: tracker}
+	
+	mHistory := new(mockHistoryManager)
+	mEventBus := events.NewSimpleEventBus()
+
+	factory := func(params ports.ChatterParams) ports.Chatter {
+		tracker.record("AgentFactory")
+		return mChatter
+	}
+
+	params := RunParams{
+		HomeDir:         "home",
+		Version:         "1.0.0",
+		Loader:          nil,
+		SM:              nil,
+		Stdout:          io.Discard,
+		Stderr:          io.Discard,
+		AgentFactory:    factory,
+		HistoryRenderer: mHistoryRenderer,
+		UIRenderer:      mUIRenderer,
+		Prompt:          "hello",
+		LastN:           5,
+		Config: &config.Config{
+			Model: "model",
+			Mode:  "mode",
+			SelectedProvider: "provider",
+		},
+		Deps: newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+		Capturer: mCapturer,
+	}
+
+	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
+	mUIRenderer.On("SetUseColor", true).Return()
+	mChatter.On("Subscribe", mock.Anything).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+	mChatter.On("Shutdown", mock.Anything).Return(nil)
+
+	// Execute high-level Run function to cover it
+	err := Run(context.Background(), params)
+	require.NoError(t, err)
+
+	expectedSequence := []string{
+		"Capturer.IsTTY",          // Initial check in Run
+		"HistoryRenderer.Render",  // Rendering history because LastN > 0
+		"AgentFactory",            // Creating the agent
+		"Capturer.IsTTY",          // Check in setupUIRendering
+		"UIRenderer.SetUseColor",  // Config UI
+		"Chatter.Subscribe",       // Connect UI events
+		"Chatter.SetLimits",       // Apply constraints
+		"Chatter.SetTieredThreshold", // Apply cost threshold
+		"Chatter.Chat",            // Start conversation
+		"Chatter.Shutdown",        // Cleanup
+	}
+
+	assert.Equal(t, expectedSequence, tracker.sequence, "Orchestrator must follow exact coordination sequence")
+	
+	mChatter.AssertExpectations(t)
+	mCapturer.AssertExpectations(t)
+	mUIRenderer.AssertExpectations(t)
+	mHistoryRenderer.AssertExpectations(t)
+}

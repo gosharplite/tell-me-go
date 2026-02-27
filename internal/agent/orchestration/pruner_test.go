@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -74,4 +75,89 @@ func TestPruner_Policies_ContextCancelled(t *testing.T) {
 			require.Equal(t, 0, count)
 		})
 	}
+}
+
+func TestPruner_ApplyPolicies_ErrorPropagation(t *testing.T) {
+	// 1. Create a mock pruning policy that returns an error
+	mockErr := errors.New("mock policy failure")
+	mockPolicy := &mockPruningPolicy{
+		markTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+			return 0, mockErr
+		},
+	}
+
+	// 2. Instantiate Pruner (historyPruner)
+	pruner := &historyPruner{
+		Policy: mockPolicy,
+	}
+
+	// 3. Setup Request with history to trigger policy call
+	req := &ports.ContextRequest{
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "world"}}},
+		},
+	}
+
+	// 4. Execute Transform
+	err := pruner.Transform(context.Background(), req)
+
+	// 5. Assert exact error propagation
+	require.ErrorIs(t, err, mockErr)
+	require.Contains(t, err.Error(), "mock policy failure")
+}
+
+func TestPruner_CompositePolicy_ErrorPropagation(t *testing.T) {
+	// 1. Create a sub-policy that returns an error
+	mockErr := errors.New("composite sub-policy failure")
+	mockSubPolicy := &mockPruningPolicy{
+		markTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+			return 0, mockErr
+		},
+	}
+
+	// 2. Create Composite Policy
+	composite := &compositePruningPolicy{
+		Policies: []ports.PruningPolicy{mockSubPolicy},
+	}
+
+	// 3. Instantiate Pruner
+	pruner := &historyPruner{
+		Policy: composite,
+	}
+
+	// 4. Setup Request
+	req := &ports.ContextRequest{
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+		},
+	}
+
+	// 5. Execute
+	err := pruner.Transform(context.Background(), req)
+
+	// 6. Assert exact error propagation
+	require.ErrorIs(t, err, mockErr)
+	require.Contains(t, err.Error(), "composite sub-policy failure")
+}
+
+func TestCompositePruningPolicy_MarkTurns_ErrorPropagation(t *testing.T) {
+	// Although historyPruner handles composites specifically, the MarkTurns method 
+	// of compositePruningPolicy also has an error path that should be tested.
+	mockErr := errors.New("composite direct call failure")
+	mockSubPolicy := &mockPruningPolicy{
+		markTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+			return 0, mockErr
+		},
+	}
+
+	composite := &compositePruningPolicy{
+		Policies: []ports.PruningPolicy{mockSubPolicy},
+	}
+
+	turns := [][]*llm.Content{{{Role: "user"}}}
+	keep := make([]bool, 1)
+
+	_, err := composite.MarkTurns(context.Background(), turns, keep)
+	require.ErrorIs(t, err, mockErr)
 }

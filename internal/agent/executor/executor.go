@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"runtime/debug"
 	"sort"
@@ -44,10 +45,20 @@ type ToolExecutor struct {
 	pool               *concurrency.WorkerPool
 	strategy           resultStrategy
 	failures           *failureTracker
+	logger             domaintools.Logger
+	zombie             *domaintools.ZombieTool
 }
 
 // executorOption allows configuring the ToolExecutor.
 type executorOption func(*ToolExecutor)
+
+// WithLogger sets the logger for critical tool events.
+func WithLogger(logger domaintools.Logger) executorOption {
+	return func(e *ToolExecutor) {
+		e.logger = logger
+		e.zombie = domaintools.NewZombieTool(logger)
+	}
+}
 
 // WithLongRunningTimeout sets the timeout for long-running tools.
 func WithLongRunningTimeout(timeout time.Duration) executorOption {
@@ -76,13 +87,32 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
+		logger:             &defaultLogger{},
 	}
 
 	for _, opt := range opts {
 		opt(e)
 	}
 
+	if e.zombie == nil {
+		e.zombie = domaintools.NewZombieTool(e.logger)
+	}
+
 	return e
+}
+
+type defaultLogger struct{}
+
+func (d *defaultLogger) LogCritical(msg string) {
+	// The msg in domaintools.ZombieTool already includes the tool name prefix
+	// Original output used: telemetry.LogCritical("CRITICAL: Tool goroutine permanently leaked", name)
+	// Which produced: TELEMETRY CRITICAL: Tool goroutine permanently leaked: hanging_tool
+	// We want to match this as closely as possible for backward compatibility
+	log.Printf("TELEMETRY %s", msg)
+}
+
+func (d *defaultLogger) RecordLateCompletion(name string, dur time.Duration) {
+	telemetry.RecordLateCompletion(name, dur)
 }
 
 type failureTracker struct {
@@ -685,19 +715,19 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	defer cancel()
 
 	// Buffered channel prevents goroutine leak if the tool finishes after timeout
-	outCh := make(chan toolOutput, 1)
+	outCh := make(chan domaintools.ToolOutput, 1)
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				outCh <- toolOutput{
-					result: e.handlePanic(r, tool.Name),
-					err:    nil,
+				outCh <- domaintools.ToolOutput{
+					Result: e.handlePanic(r, tool.Name),
+					Err:    nil,
 				}
 			}
 		}()
 		res, execErr := reg.Execute(ctx, tool.Name, args)
-		outCh <- toolOutput{result: res, err: execErr}
+		outCh <- domaintools.ToolOutput{Result: res, Err: execErr}
 	}()
 
 	select {
@@ -721,7 +751,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 
 	case out := <-outCh:
 		// Tool finished successfully within the deadline
-		return out.result, out.err
+		return out.Result, out.Err
 	}
 }
 
@@ -762,30 +792,13 @@ func suggestTool(hallucinated string, validTools []string) string {
 	return closest
 }
 
-func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan toolOutput) {
+func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan domaintools.ToolOutput) {
 	e.mu.RLock()
 	zombieTimeout := e.zombieTimeout
+	zombie := e.zombie
 	e.mu.RUnlock()
 
-	timer := time.NewTimer(zombieTimeout)
-	defer timer.Stop()
-
-	select {
-	case <-outCh:
-		// Tool eventually finished, log the extreme latency
-		telemetry.RecordLateCompletion(name, time.Since(start))
-	case <-timer.C:
-		// Tool is permanently deadlocked
-		telemetry.LogCritical("CRITICAL: Tool goroutine permanently leaked", name)
-	case <-ctx.Done():
-		// Application/Session shutting down; safe to abandon due to buffered outCh
-		return
-	}
-}
-
-type toolOutput struct {
-	result domaintools.ToolResult
-	err    error
+	zombie.Monitor(ctx, name, start, outCh, zombieTimeout)
 }
 
 func formatToolExecutionError(err error, resultErr error) string {

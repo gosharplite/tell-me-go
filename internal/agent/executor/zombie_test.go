@@ -1,10 +1,7 @@
 package executor
 
 import (
-	"bytes"
 	"context"
-	"log"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -74,12 +71,22 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	}
 }
 
-func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
-	// Not parallel because it modifies global log
-	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
+type MockLogger struct {
+	CriticalLogs chan string
+}
 
+func (m *MockLogger) LogCritical(msg string) {
+	m.CriticalLogs <- msg
+}
+
+func (m *MockLogger) RecordLateCompletion(name string, d time.Duration) {
+	// Not used in this test
+}
+
+func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
+	t.Parallel()
+
+	mockLog := &MockLogger{CriticalLogs: make(chan string, 1)}
 	finishCh := make(chan struct{})
 	defer close(finishCh)
 
@@ -93,17 +100,24 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 	}
 
 	// Use very short zombie timeout
-	exec := NewToolExecutor(reg, nil, nil, WithZombieTimeout(1*time.Millisecond))
+	exec := NewToolExecutor(reg, nil, nil, 
+		WithZombieTimeout(1*time.Millisecond),
+		WithLogger(mockLog),
+	)
 	t.Cleanup(exec.Shutdown)
 	exec.toolTimeout = 1 * time.Millisecond
 
 	hangingTool := &domaintools.ToolDeclaration{Name: "hanging_tool"}
-	
+
 	// Should timeout
 	_, _ = exec.runWithTimeout(context.Background(), hangingTool, nil)
 
-	// Wait for monitorZombieTool to hit the timeout timer.C
-	time.Sleep(20 * time.Millisecond)
-
-	assert.Contains(t, buf.String(), "CRITICAL: Tool goroutine permanently leaked")
+	// Blocks exactly until the log occurs, or times out cleanly
+	select {
+	case msg := <-mockLog.CriticalLogs:
+		assert.Contains(t, msg, "CRITICAL: Tool goroutine permanently leaked")
+		assert.Contains(t, msg, "hanging_tool")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timeout waiting for critical log")
+	}
 }
