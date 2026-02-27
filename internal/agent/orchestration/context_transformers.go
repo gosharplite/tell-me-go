@@ -5,16 +5,10 @@ package orchestration
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-)
-
-var (
-	// ErrInvalidPayload is returned when the history content is malformed or invalid.
-	ErrInvalidPayload = errors.New("invalid payload history")
 )
 
 // emptyTurnFilter removes turns where both user and model messages have no meaningful content.

@@ -14,6 +14,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
+var (
+	// ErrInvalidPayload is returned when the history content is malformed or invalid.
+	ErrInvalidPayload = errors.New("invalid payload history")
+)
+
 type tokenEstimator interface {
 	estimateTokens(contents []*llm.Content) int
 }
@@ -27,6 +32,11 @@ type tokenGatekeeper struct {
 }
 
 func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	// 0. Domain Boundary Validation: Ensure history is structurally sound before processing
+	if _, err := groupTurns(ctx, req.History); err != nil {
+		return fmt.Errorf("gatekeeper validation failed: %w", err)
+	}
+
 	// Stage 1: Initial Analysis (includes Tiered Threshold)
 	tokens, err := t.handleTieredThreshold(ctx, req)
 	if err != nil {
