@@ -33,14 +33,14 @@ func TestTokenGatekeeper_DomainBoundaryValidation(t *testing.T) {
 				{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
 				nil,
 			},
-			expectedError: ErrInvalidPayload,
+			expectedError: errInvalidPayload,
 		},
 		{
 			name: "Empty Role",
 			history: []*llm.Content{
 				{Role: "", Parts: []*llm.Part{{Text: "Hello"}}},
 			},
-			expectedError: ErrInvalidPayload,
+			expectedError: errInvalidPayload,
 		},
 		{
 			name: "Nil Parts (not strictly invalid by groupTurns but often problematic)",

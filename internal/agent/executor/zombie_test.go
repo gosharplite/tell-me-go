@@ -91,7 +91,7 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 
 	// Use very short zombie timeout
 	exec, err := NewToolExecutor(reg, nil, nil, mockLog,
-		WithZombieTimeout(1*time.Millisecond),
+		withZombieTimeout(1*time.Millisecond),
 	)
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)

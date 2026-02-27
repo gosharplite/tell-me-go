@@ -55,9 +55,9 @@ func TestAgent_SetLimits(t *testing.T) {
 	require.NoError(t, err)
 
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
-	_ = a.events.Flush(context.Background())
+	_ = a.(*agent).events.Flush(context.Background())
 
-	limits := a.ctxManager.GetLimits()
+	limits := a.(*agent).ctxManager.GetLimits()
 	if limits.MaxHistoryTokens != 1000 || limits.MaxToolTurns != 5 || limits.MaxHistoryTurns != 10 {
 		t.Errorf("SetLimits failed: got %+v", limits)
 	}
@@ -117,13 +117,13 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 
 	a, err := New(client, bus, h, "test-provider", reg, sm, WithLoader(&config.YAMLConfigLoader{}))
 	require.NoError(t, err)
-	a.configWatcher.SetPaths(mainConfig, sessionConfig)
+	a.(*agent).configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
-	_ = a.applyConfig(context.Background())
-	_ = a.events.Flush(context.Background())
+	_ = a.(*agent).applyConfig(context.Background())
+	_ = a.(*agent).events.Flush(context.Background())
 
-	limits := a.ctxManager.GetLimits()
+	limits := a.(*agent).ctxManager.GetLimits()
 	if limits.MaxHistoryTokens != 1234 || limits.MaxToolTurns != 42 {
 		t.Errorf("ConfigWatcher integration failed: got %+v", limits)
 	}
@@ -141,10 +141,10 @@ func TestAgent_TieredThreshold(t *testing.T) {
 	a, err := New(client, bus, h, "test-provider", reg, sm)
 	require.NoError(t, err)
 	_ = a.SetTieredThreshold(context.Background(), 100000)
-	_ = a.events.Flush(context.Background())
+	_ = a.(*agent).events.Flush(context.Background())
 
-	if a.ctxManager.Strategy.GetTieredThreshold() != 100000 {
-		t.Errorf("expected TieredThreshold 100000, got %d", a.ctxManager.Strategy.GetTieredThreshold())
+	if a.(*agent).ctxManager.Strategy.GetTieredThreshold() != 100000 {
+		t.Errorf("expected TieredThreshold 100000, got %d", a.(*agent).ctxManager.Strategy.GetTieredThreshold())
 	}
 }
 
@@ -275,10 +275,10 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	require.NoError(t, err)
 
 	// Build pipeline
-	a.ctxManager.SetPipeline(a.ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
+	a.(*agent).ctxManager.SetPipeline(a.(*agent).ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	orchestration.RegisterInternal(reg, a.ctxManager)
+	orchestration.RegisterInternal(reg, a.(*agent).ctxManager)
 
 	// Verify that at least one transformer has the registry
 }
@@ -286,7 +286,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 func TestAgent_PinningFlow(t *testing.T) {
 	t.Parallel()
 	a, h, ctx := setupPinningFlowTest(t)
-	it := orchestration.NewInternalTools(a.ctxManager)
+	it := orchestration.NewInternalTools(a.(*agent).ctxManager)
 
 	t.Run("PinTurn", func(t *testing.T) {
 		t.Parallel()
@@ -326,7 +326,7 @@ func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h ports.Hist
 	}
 }
 
-func setupPinningFlowTest(t *testing.T) (*Agent, ports.HistoryManager, context.Context) {
+func setupPinningFlowTest(t *testing.T) (ports.Chatter, ports.HistoryManager, context.Context) {
 	t.Helper()
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
@@ -368,7 +368,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	}
 
 	// 5. Verify results
-	prepared, meta, err := a.ctxManager.Prepare(ctx, 11)
+	prepared, meta, err := a.(*agent).ctxManager.Prepare(ctx, 11)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -376,7 +376,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	verifyPinningResults(t, meta, prepared)
 }
 
-func setupPinningTest(t *testing.T) (*Agent, ports.HistoryManager, context.Context) {
+func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, context.Context) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "pin_prune.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
@@ -389,7 +389,7 @@ func setupPinningTest(t *testing.T) (*Agent, ports.HistoryManager, context.Conte
 	if err != nil {
 		panic(err)
 	}
-	return a, a.ctxManager.History, ctx
+	return a, a.(*agent).ctxManager.History, ctx
 }
 
 func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
@@ -436,16 +436,16 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	if a.tracker != tracker1 {
+	if a.(*agent).tracker != tracker1 {
 		t.Error("WithSessionCostTracker didn't set tracker")
 	}
 
 	// Test tracker replacement
 	tracker2 := &mockCostTracker{}
-	a.tracker = tracker2
-	_ = a.applyConfig(context.Background())
+	a.(*agent).tracker = tracker2
+	_ = a.(*agent).applyConfig(context.Background())
 
-	if a.tracker != tracker2 {
+	if a.(*agent).tracker != tracker2 {
 		t.Error("tracker didn't update after replacement and applyConfig")
 	}
 }
@@ -472,14 +472,14 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	if a.config.Model != "test-model" {
-		t.Errorf("expected model test-model, got %s", a.config.Model)
+	if a.(*agent).config.Model != "test-model" {
+		t.Errorf("expected model test-model, got %s", a.(*agent).config.Model)
 	}
-	if a.config.Mode != "chat" {
-		t.Errorf("expected mode chat, got %s", a.config.Mode)
+	if a.(*agent).config.Mode != "chat" {
+		t.Errorf("expected mode chat, got %s", a.(*agent).config.Mode)
 	}
-	if p, ok := a.config.PricingOverrides["test-model"]; !ok || p.Miss != 1.0 {
-		t.Errorf("pricing overrides not correctly set: %+v", a.config.PricingOverrides)
+	if p, ok := a.(*agent).config.PricingOverrides["test-model"]; !ok || p.Miss != 1.0 {
+		t.Errorf("pricing overrides not correctly set: %+v", a.(*agent).config.PricingOverrides)
 	}
 }
 
@@ -507,7 +507,7 @@ func TestAgent_Subscribe(t *testing.T) {
 
 	_ = a.SetLimits(context.Background(), 15, 2000, 20)
 
-	_ = a.events.Flush(context.Background())
+	_ = a.(*agent).events.Flush(context.Background())
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -538,18 +538,18 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	if a.tracker != tracker {
+	if a.(*agent).tracker != tracker {
 		t.Error("a.tracker does not match passed tracker")
 	}
 
 	// 2. Test direct setting (since we removed the ability to use the option at runtime)
 	tracker2 := &mockCostTracker{}
-	a.tracker = tracker2
-	if a.engine != nil {
-		a.engine.ApplyOptions(withCostTracker(tracker2))
+	a.(*agent).tracker = tracker2
+	if a.(*agent).engine != nil {
+		a.(*agent).engine.ApplyOptions(withCostTracker(tracker2))
 	}
 
-	if a.tracker != tracker2 {
+	if a.(*agent).tracker != tracker2 {
 		t.Error("a.tracker does not match updated tracker")
 	}
 }
@@ -611,7 +611,7 @@ func TestAgent_Shutdown(t *testing.T) {
 
 func TestAgent_Shutdown_NilDeps(t *testing.T) {
 	t.Parallel()
-	a := &Agent{}
+	a := &agent{}
 	err := a.Shutdown(context.Background())
 	if err != nil {
 		t.Errorf("Expected nil error for nil dependencies, got %v", err)
@@ -634,7 +634,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 	sess := ports.NewSession("test-cancel", h)
 
-	err = a.applyConfig(ctx)
+	err = a.(*agent).applyConfig(ctx)
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled from applyConfig, got %v", err)
 	}
@@ -675,7 +675,7 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	}
 
 	// Verify summarizer is bound to ContextManager
-	if a.ctxManager.Summarizer != mockSumm {
+	if a.(*agent).ctxManager.Summarizer != mockSumm {
 		t.Error("summarizer not bound to ContextManager")
 	}
 }

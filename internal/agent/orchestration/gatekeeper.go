@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	// ErrInvalidPayload is returned when the history content is malformed or invalid.
-	ErrInvalidPayload = errors.New("invalid payload history")
+	// errInvalidPayload is returned when the history content is malformed or invalid.
+	errInvalidPayload = errors.New("invalid payload history")
 )
 
 type tokenEstimator interface {
@@ -39,7 +39,7 @@ func (t *tokenGatekeeper) getStrategy() ThresholdStrategy {
 			return s
 		}
 	}
-	return &DynamicThresholdStrategy{Estimator: t.Estimator}
+	return &dynamicThresholdStrategy{Estimator: t.Estimator}
 }
 
 func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -105,7 +105,7 @@ func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 	n, err := t.autoSummarize(ctx, req)
 	if err != nil {
 		// Propagate critical errors, but continue if blocked
-		if errors.Is(err, ErrInvalidPayload) {
+		if errors.Is(err, errInvalidPayload) {
 			return tokens, err
 		}
 		if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {

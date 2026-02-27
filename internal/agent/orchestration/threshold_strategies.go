@@ -9,43 +9,43 @@ type ThresholdStrategy interface {
 	GetThreshold() int
 }
 
-// FreeTierStrategy implements a threshold strategy for the free tier.
-type FreeTierStrategy struct {
+// freeTierStrategy implements a threshold strategy for the free tier.
+type freeTierStrategy struct {
 	Threshold int
 }
 
 // Evaluate checks if tokens exceed the free tier threshold.
-func (s *FreeTierStrategy) Evaluate(tokens int) bool {
+func (s *freeTierStrategy) Evaluate(tokens int) bool {
 	return s.Threshold > 0 && tokens > s.Threshold
 }
 
 // GetThreshold returns the free tier threshold.
-func (s *FreeTierStrategy) GetThreshold() int {
+func (s *freeTierStrategy) GetThreshold() int {
 	return s.Threshold
 }
 
-// ProTierStrategy implements a threshold strategy for the pro tier.
-type ProTierStrategy struct {
+// proTierStrategy implements a threshold strategy for the pro tier.
+type proTierStrategy struct {
 	Threshold int
 }
 
 // Evaluate checks if tokens exceed the pro tier threshold.
-func (s *ProTierStrategy) Evaluate(tokens int) bool {
+func (s *proTierStrategy) Evaluate(tokens int) bool {
 	return s.Threshold > 0 && tokens > s.Threshold
 }
 
 // GetThreshold returns the pro tier threshold.
-func (s *ProTierStrategy) GetThreshold() int {
+func (s *proTierStrategy) GetThreshold() int {
 	return s.Threshold
 }
 
-// DynamicThresholdStrategy implements a threshold strategy that delegates to the estimator.
-type DynamicThresholdStrategy struct {
+// dynamicThresholdStrategy implements a threshold strategy that delegates to the estimator.
+type dynamicThresholdStrategy struct {
 	Estimator tokenEstimator
 }
 
 // Evaluate checks if tokens exceed the dynamic threshold from the estimator.
-func (s *DynamicThresholdStrategy) Evaluate(tokens int) bool {
+func (s *dynamicThresholdStrategy) Evaluate(tokens int) bool {
 	if cs, ok := s.Estimator.(*ContextStrategy); ok {
 		tiered := cs.GetTieredThreshold()
 		return tiered > 0 && tokens > tiered
@@ -54,7 +54,7 @@ func (s *DynamicThresholdStrategy) Evaluate(tokens int) bool {
 }
 
 // GetThreshold returns the dynamic threshold from the estimator.
-func (s *DynamicThresholdStrategy) GetThreshold() int {
+func (s *dynamicThresholdStrategy) GetThreshold() int {
 	if cs, ok := s.Estimator.(*ContextStrategy); ok {
 		return cs.GetTieredThreshold()
 	}

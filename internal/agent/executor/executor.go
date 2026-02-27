@@ -58,8 +58,8 @@ func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	}
 }
 
-// WithZombieTimeout sets the timeout for zombie tool detection.
-func WithZombieTimeout(timeout time.Duration) executorOption {
+// withZombieTimeout sets the timeout for zombie tool detection.
+func withZombieTimeout(timeout time.Duration) executorOption {
 	return func(e *ToolExecutor) {
 		e.zombieTimeout = timeout
 	}

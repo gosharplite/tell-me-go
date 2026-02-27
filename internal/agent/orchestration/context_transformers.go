@@ -94,11 +94,11 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 		}
 
 		if msg == nil {
-			return nil, fmt.Errorf("%w: nil message at index %d", ErrInvalidPayload, i)
+			return nil, fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
 		}
 
 		if msg.Role == "" {
-			return nil, fmt.Errorf("%w: empty role at index %d", ErrInvalidPayload, i)
+			return nil, fmt.Errorf("%w: empty role at index %d", errInvalidPayload, i)
 		}
 
 		if isTurnBoundary(msg, current) {

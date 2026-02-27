@@ -28,8 +28,8 @@ type runtimeConfig struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 }
 
-// Agent represents the chat orchestration logic (Stateless Service).
-type Agent struct {
+// agent represents the chat orchestration logic (Stateless Service).
+type agent struct {
 	mu            sync.RWMutex
 	gateway       domain_llm.LLMGateway
 	engine        *turnEngine
@@ -43,8 +43,8 @@ type Agent struct {
 	config runtimeConfig
 }
 
-// New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) (*Agent, error) {
+// New creates a new agent with required dependencies.
+func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) (ports.Chatter, error) {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -56,7 +56,7 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.Histo
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
 
-	a := &Agent{
+	a := &agent{
 		gateway:       client,
 		configWatcher: orchestration.NewConfigWatcher(cfg.loader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
@@ -108,7 +108,7 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.Histo
 	return a, nil
 }
 
-func (a *Agent) applyConfig(ctx context.Context) error {
+func (a *agent) applyConfig(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -143,11 +143,11 @@ func (a *Agent) applyConfig(ctx context.Context) error {
 	return nil
 }
 
-func (a *Agent) Subscribe(sub func(events.Event)) {
+func (a *agent) Subscribe(sub func(events.Event)) {
 	a.events.Subscribe(sub)
 }
 
-func (a *Agent) emit(ctx context.Context, e events.Event) {
+func (a *agent) emit(ctx context.Context, e events.Event) {
 	if a.events != nil {
 		_ = a.events.Publish(ctx, e)
 	}
@@ -155,20 +155,20 @@ func (a *Agent) emit(ctx context.Context, e events.Event) {
 
 // SetLimits sets the operational limits for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 	return a.applyConfig(ctx)
 }
 
 // SetTieredThreshold sets the tiered threshold for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetTieredThreshold(ctx context.Context, threshold int) error {
+func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
 	a.configWatcher.ApplyLimits(events.Limits{TieredThreshold: threshold})
 	return a.applyConfig(ctx)
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *Agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
+func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},
@@ -184,7 +184,7 @@ func (a *Agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 }
 
 // Shutdown gracefully stops the agent and its components.
-func (a *Agent) Shutdown(ctx context.Context) error {
+func (a *agent) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
