@@ -184,7 +184,7 @@ func (d *sessionDeps) GetClient() llm.LLMClient            { return d.client }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
 func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
-	return func(params ports.ChatterParams) ports.Chatter {
+	return func(params ports.ChatterParams) (ports.Chatter, error) {
 		telemetry.RegisterTraceSubscriber(params.EventBus, params.LogPath)
 
 		summarizer := infra_llm.NewSummarizer(params.Gateway, params.EventBus)

@@ -210,6 +210,7 @@ func TestFinalizeSession(t *testing.T) {
 
 	deps, hManager, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
 	assert.NoError(t, err)
+	assert.NotNil(t, cleanup)
 	defer cleanup()
 
 	b.FinalizeSession(ctx, hManager, deps, cfg)
@@ -244,7 +245,8 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 		ports.WithMode("assistant"),
 		ports.WithLogPath("tokens.log"),
 	)
-	agent := factory(params)
+	agent, err := factory(params)
+	assert.NoError(t, err)
 	assert.NotNil(t, agent)
 }
 

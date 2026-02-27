@@ -55,8 +55,8 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	// Wrap bootstrapper to override AgentFactory
 	container := &wrappedContainer{
 		Container: bootstrapper,
-		AgentFactory: func(params ports.ChatterParams) ports.Chatter {
-			return &integrationMockChatter{}
+		AgentFactory: func(params ports.ChatterParams) (ports.Chatter, error) {
+			return &integrationMockChatter{}, nil
 		},
 	}
 

@@ -147,7 +147,10 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		ports.WithPricingOverrides(sd.GetPricingOverrides()),
 		ports.WithCostTracker(sd.GetTracker()),
 	)
-	chatAgent := o.AgentFactory(params)
+	chatAgent, err := o.AgentFactory(params)
+	if err != nil {
+		return fmt.Errorf("failed to initialize agent: %w", err)
+	}
 
 	defer func() {
 		if err := chatAgent.Shutdown(ctx); err != nil {

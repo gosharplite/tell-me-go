@@ -597,10 +597,11 @@ func TestApplyThinkingBudget(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	client := &Client{eventBus: bus}
+	ctx := context.Background()
 
 	t.Run("Under Budget", func(t *testing.T) {
 		config := &genai.ThinkingConfig{}
-		client.applyThinkingBudget(config, 1000, 2000, "test-model")
+		client.applyThinkingBudget(ctx, config, 1000, 2000, "test-model")
 
 		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1000 {
 			t.Errorf("expected budget 1000, got %v", config.ThinkingBudget)
@@ -620,7 +621,7 @@ func TestApplyThinkingBudget(t *testing.T) {
 		})
 
 		config := &genai.ThinkingConfig{}
-		localClient.applyThinkingBudget(config, 3000, 1024, "test-model")
+		localClient.applyThinkingBudget(ctx, config, 3000, 1024, "test-model")
 
 		// Flush to ensure the event is processed
 		if err := localBus.Flush(context.Background()); err != nil {

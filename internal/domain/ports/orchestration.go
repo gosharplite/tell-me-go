@@ -173,7 +173,7 @@ func WithCostTracker(c pricing.ICostTracker) chatterOption {
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.
-type ChatterFactory func(params ChatterParams) Chatter
+type ChatterFactory func(params ChatterParams) (Chatter, error)
 
 // SessionConfig defines the configuration interface for a session.
 type SessionConfig interface {

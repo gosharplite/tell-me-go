@@ -29,7 +29,7 @@ type runtimeConfig struct {
 }
 
 // Agent represents the chat orchestration logic (Stateless Service).
-type agent struct {
+type Agent struct {
 	mu            sync.RWMutex
 	gateway       domain_llm.LLMGateway
 	engine        *turnEngine
@@ -44,7 +44,7 @@ type agent struct {
 }
 
 // New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) *agent {
+func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) (*Agent, error) {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -53,11 +53,10 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.Histo
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry), bus)
 	exec, err := executor.NewToolExecutor(registry, sm, bus, &executor.TelemetryLogger{})
 	if err != nil {
-		// NewToolExecutor only fails if logger is nil, which it isn't here.
-		panic(fmt.Sprintf("failed to create tool executor: %v", err))
+		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
 
-	a := &agent{
+	a := &Agent{
 		gateway:       client,
 		configWatcher: orchestration.NewConfigWatcher(cfg.loader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
@@ -104,12 +103,12 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.Histo
 	}
 
 	if err := a.applyConfig(initCtx); err != nil {
-		a.emit(initCtx, events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
+		a.emit(context.Background(), events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
 	}
-	return a
+	return a, nil
 }
 
-func (a *agent) applyConfig(ctx context.Context) error {
+func (a *Agent) applyConfig(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -144,11 +143,11 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	return nil
 }
 
-func (a *agent) Subscribe(sub func(events.Event)) {
+func (a *Agent) Subscribe(sub func(events.Event)) {
 	a.events.Subscribe(sub)
 }
 
-func (a *agent) emit(ctx context.Context, e events.Event) {
+func (a *Agent) emit(ctx context.Context, e events.Event) {
 	if a.events != nil {
 		_ = a.events.Publish(ctx, e)
 	}
@@ -156,20 +155,20 @@ func (a *agent) emit(ctx context.Context, e events.Event) {
 
 // SetLimits sets the operational limits for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+func (a *Agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 	return a.applyConfig(ctx)
 }
 
 // SetTieredThreshold sets the tiered threshold for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
+func (a *Agent) SetTieredThreshold(ctx context.Context, threshold int) error {
 	a.configWatcher.ApplyLimits(events.Limits{TieredThreshold: threshold})
 	return a.applyConfig(ctx)
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
+func (a *Agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},
@@ -185,7 +184,7 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 }
 
 // Shutdown gracefully stops the agent and its components.
-func (a *agent) Shutdown(ctx context.Context) error {
+func (a *Agent) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

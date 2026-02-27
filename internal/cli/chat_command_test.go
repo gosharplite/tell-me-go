@@ -123,8 +123,8 @@ func TestChatCommand_Execute(t *testing.T) {
 	mChatter := &mockChatter{}
 	mClient := &mockClient{}
 	mContainer := &mockContainer{
-		AgentFactory: func(params ports.ChatterParams) ports.Chatter {
-			return mChatter
+		AgentFactory: func(params ports.ChatterParams) (ports.Chatter, error) {
+			return mChatter, nil
 		},
 		Client: mClient,
 	}

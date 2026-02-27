@@ -116,8 +116,8 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params ports.ChatterParams) ports.Chatter {
-		return mChatter
+	factory := func(params ports.ChatterParams) (ports.Chatter, error) {
+		return mChatter, nil
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
@@ -314,8 +314,8 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params ports.ChatterParams) ports.Chatter {
-		return mChatter
+	factory := func(params ports.ChatterParams) (ports.Chatter, error) {
+		return mChatter, nil
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
@@ -348,8 +348,8 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params ports.ChatterParams) ports.Chatter {
-		return nil
+	factory := func(params ports.ChatterParams) (ports.Chatter, error) {
+		return nil, nil
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
@@ -533,9 +533,9 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params ports.ChatterParams) ports.Chatter {
+	factory := func(params ports.ChatterParams) (ports.Chatter, error) {
 		tracker.record("AgentFactory")
-		return mChatter
+		return mChatter, nil
 	}
 
 	params := RunParams{

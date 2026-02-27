@@ -164,8 +164,8 @@ func (m *mockFailingUIRenderer) LogSystemMessage(string, string)                
 func (m *mockFailingUIRenderer) LogAgentStatus(status string)                              {}
 
 func TestOrchestrator_ConfigError(t *testing.T) {
-	agentFactory := func(params ports.ChatterParams) ports.Chatter {
-		return &mockFailingChatter{err: errors.New("config failed")}
+	agentFactory := func(params ports.ChatterParams) (ports.Chatter, error) {
+		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
 	o := newOrchestrator("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{})
