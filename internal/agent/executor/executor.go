@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -210,9 +211,25 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 
 	// Orchestrate Execution
 	collector := newResultCollector(calls, bus)
+	startTime := time.Now()
 	go e.runExecutionPlan(ctx, calls, collector.ch, declinedMap)
 
 	results, err := collector.Wait(ctx)
+	duration := time.Since(startTime)
+
+	if err != nil {
+		slog.Error("Tool execution turn failed or was cancelled",
+			slog.Int("turn", turn),
+			slog.String("error", err.Error()),
+			slog.Int64("duration_ms", duration.Milliseconds()),
+		)
+	} else {
+		slog.Info("Tool execution turn completed",
+			slog.Int("turn", turn),
+			slog.Int("tool_calls", len(calls)),
+			slog.Int64("duration_ms", duration.Milliseconds()),
+		)
+	}
 
 	// Notify about circuit breaker events
 	for _, tr := range results {
@@ -301,18 +318,29 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 	for batchIdx, batch := range batches {
 		if err := ctx.Err(); err != nil {
+			slog.Warn("Execution plan interrupted", slog.String("reason", "context cancelled"), slog.Int("batch_idx", batchIdx))
 			e.failRemainingTasks(batches, batchIdx, -1, calls, resChan, err, "batch interrupted")
 			return
 		}
 
+		batchStart := time.Now()
 		if batch.isSerial {
 			if !e.executeSerialBatch(ctx, batch, calls, resChan) {
+				slog.Warn("Serial batch failed or interrupted, halting execution plan",
+					slog.Int("batch_idx", batchIdx),
+					slog.String("tool_name", calls[batch.tasks[0]].Name))
 				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, resChan, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
 				return // Exit the execution plan early
 			}
 		} else {
 			e.executeParallelBatch(ctx, batch, calls, resChan)
 		}
+
+		slog.Debug("Batch execution completed",
+			slog.Int("batch_idx", batchIdx),
+			slog.Bool("is_serial", batch.isSerial),
+			slog.Int("task_count", len(batch.tasks)),
+			slog.Int64("duration_ms", time.Since(batchStart).Milliseconds()))
 	}
 }
 
@@ -556,24 +584,53 @@ func classifyToolError(err error, resultErr error) (string, string) {
 
 func (e *ToolExecutor) finalizeToolExecution(callName string, result domaintools.ToolResult, err error, startTime time.Time, trace *telemetry.TurnTrace) domaintools.ToolResult {
 	status, msg := classifyToolError(err, result.Error)
+	duration := time.Since(startTime)
+
+	// [OPERATIONAL READINESS] Add structured logging for execution visibility
+	e.mu.RLock()
+	isSerial := e.registry.IsSerial(callName)
+	isLongRunning := e.registry.IsLongRunning(callName)
+	e.mu.RUnlock()
+
+	var errStr string
+	if err != nil {
+		errStr = err.Error()
+	} else if result.Error != nil {
+		errStr = result.Error.Error()
+	}
+
+	logAttrs := []any{
+		slog.String("tool_name", callName),
+		slog.Bool("is_serial", isSerial),
+		slog.Bool("is_long_running", isLongRunning),
+		slog.Int64("duration_ms", duration.Milliseconds()),
+		slog.String("status", status),
+	}
+	if errStr != "" {
+		logAttrs = append(logAttrs, slog.String("error_reason", errStr))
+	}
+
+	// [Metrics] TODO: tool_execution_duration_seconds tagged with tool_name and status
+
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(result.Error, context.DeadlineExceeded) {
+		slog.Warn("Tool execution timed out", logAttrs...)
+	} else if status == "error" {
+		slog.Error("Tool execution failed", logAttrs...)
+	} else {
+		slog.Info("Tool execution completed", logAttrs...)
+	}
 
 	if status == "user_declined" || status == "security_blocked" {
 		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
 			ToolName:  callName,
 			StartTime: startTime,
-			Duration:  time.Since(startTime),
+			Duration:  duration,
 			Status:    status,
 		})
 		return domaintools.ToolResult{Text: msg, Error: nil}
 	}
 
-	var errStr string
 	if status == "error" {
-		if err != nil {
-			errStr = err.Error()
-		} else {
-			errStr = result.Error.Error()
-		}
 		e.failures.recordFailure(callName)
 	} else {
 		e.failures.recordSuccess(callName)
@@ -582,7 +639,7 @@ func (e *ToolExecutor) finalizeToolExecution(callName string, result domaintools
 	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
 		ToolName:  callName,
 		StartTime: startTime,
-		Duration:  time.Since(startTime),
+		Duration:  duration,
 		Status:    status,
 		Error:     errStr,
 	})
@@ -673,8 +730,10 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		// The context expired (timeout or parent cancellation) before the tool finished
 		errCtx := ctx.Err()
 		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
+		errorWrapMsg := "tool execution failed"
 		if errCtx == context.DeadlineExceeded {
 			msg = fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout)
+			errorWrapMsg = "tool execution timed out"
 		}
 
 		// SCALABLE (GOOD): Implementing a telemetry watchdog for abandoned goroutines
@@ -682,7 +741,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 
 		return domaintools.ToolResult{
 			Text:  msg,
-			Error: fmt.Errorf("%w: %s", llm.ErrTransient, msg),
+			Error: fmt.Errorf("%w: %s: %w", llm.ErrTransient, errorWrapMsg, errCtx),
 		}, nil
 
 	case out := <-outCh:

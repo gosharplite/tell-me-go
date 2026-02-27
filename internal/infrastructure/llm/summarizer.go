@@ -6,6 +6,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -37,12 +38,24 @@ func (s *summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	}
 
 	respContent, metrics, err := finalize()
+	duration := time.Since(startTime)
+
 	if err != nil {
+		slog.Error("Summarization turn failed",
+			slog.Int("turns_summarized", len(subset)),
+			slog.Int64("duration_ms", duration.Milliseconds()),
+			slog.String("error", err.Error()),
+		)
 		if llm.IsTransient(err) {
 			return "", nil, fmt.Errorf("%w: summarization failed due to transient issue", err)
 		}
 		return "", nil, fmt.Errorf("%w: summarization failed permanently", err)
 	}
+
+	slog.Info("Summarization turn completed successfully",
+		slog.Int("turns_summarized", len(subset)),
+		slog.Int64("duration_ms", duration.Milliseconds()),
+	)
 
 	s.emitSummarizationMetrics(ctx, metrics, startTime)
 
