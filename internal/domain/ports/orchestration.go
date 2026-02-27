@@ -220,7 +220,7 @@ type ContextRequest struct {
 
 // PruningPolicy defines how to mark turns for pruning.
 type PruningPolicy interface {
-	MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int
+	MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error)
 	Name() string
 }
 

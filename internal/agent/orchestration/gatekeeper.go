@@ -145,7 +145,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	}
 
 	// 1. Locate the block
-	start, end, numTurns, err := t.findSummarizableRange(req.History)
+	start, end, numTurns, err := t.findSummarizableRange(ctx, req.History)
 	if err != nil {
 		req.Metadata.MaintenanceBlocked = true
 		return 0, err
@@ -186,8 +186,11 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	return numTurns, nil
 }
 
-func (t *tokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, int, int, error) {
-	turns := groupTurns(history)
+func (t *tokenGatekeeper) findSummarizableRange(ctx context.Context, history []*llm.Content) (int, int, int, error) {
+	turns, err := groupTurns(ctx, history)
+	if err != nil {
+		return 0, 0, 0, err
+	}
 
 	// We want to summarize about 50% of the history, but at least 2 turns.
 	targetTurns := len(turns) / 2

@@ -248,7 +248,11 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "History is too short to summarize yet.", nil, nil
 	}
 
-	actualTurns := len(groupTurns(subset))
+	turnsForMetrics, err := groupTurns(ctx, subset)
+	if err != nil {
+		return "", nil, err
+	}
+	actualTurns := len(turnsForMetrics)
 	if cm.Events != nil {
 		cm.Events.Publish(events.SystemMessageEvent{
 			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", actualTurns, tokens),
@@ -310,12 +314,21 @@ func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurn
 
 	var contents []*llm.Content
 	for {
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		default:
+		}
+
 		contents, err = cm.History.GetWindow(ctx, 0, windowSize)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		turns := groupTurns(contents)
+		turns, err := groupTurns(ctx, contents)
+		if err != nil {
+			return nil, 0, err
+		}
 		if len(turns) >= numTurns || windowSize >= totalEntries {
 			// Found enough turns or reached the end of history.
 			totalTurns := len(turns)
@@ -357,6 +370,14 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	}
 	// Robust check: did the messages we summarized change?
 	for i := range subset {
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+		}
+
 		if !llm.EqualContent(currentContents[i], subset[i]) {
 			return fmt.Errorf("%w: summarization aborted: history content changed while summarizing", llm.ErrTerminal)
 		}

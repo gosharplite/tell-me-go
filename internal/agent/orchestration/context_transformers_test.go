@@ -38,7 +38,8 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 			turns := make([][]*llm.Content, tt.historyLen)
 			keep := make([]bool, tt.historyLen)
 
-			p.MarkTurns(context.Background(), turns, keep)
+			_, err := p.MarkTurns(context.Background(), turns, keep)
+			require.NoError(t, err)
 			for i, k := range keep {
 				require.Equal(t, tt.expectKeep[i], k, "at index %d", i)
 			}
@@ -99,7 +100,8 @@ func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
 	}
 	keep := make([]bool, len(history))
 
-	count := p.MarkTurns(context.Background(), history, keep)
+	count, err := p.MarkTurns(context.Background(), history, keep)
+	require.NoError(t, err)
 
 	require.Equal(t, 3, count)
 
@@ -119,7 +121,8 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 	}
 	keep := make([]bool, len(history))
 
-	count := p.MarkTurns(context.Background(), history, keep)
+	count, err := p.MarkTurns(context.Background(), history, keep)
+	require.NoError(t, err)
 
 	require.Equal(t, 2, count)
 
@@ -144,7 +147,8 @@ func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
 	}
 	keep := make([]bool, len(history))
 
-	p.MarkTurns(context.Background(), history, keep)
+	_, err := p.MarkTurns(context.Background(), history, keep)
+	require.NoError(t, err)
 
 	// T0 kept by Pinning, T2 kept by SlidingWindow
 	expected := []bool{true, false, true}
@@ -609,7 +613,8 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 	}
 	keep := make([]bool, len(history))
 
-	p.MarkTurns(context.Background(), history, keep)
+	_, err := p.MarkTurns(context.Background(), history, keep)
+	require.NoError(t, err)
 
 	expected := []bool{true, false}
 	for i, k := range keep {
@@ -682,7 +687,8 @@ func TestHistoryPruner_Unbalanced(t *testing.T) {
 
 func TestGroupTurns_Helper(t *testing.T) {
 	history := []*llm.Content{{Role: "user"}, {Role: "model"}, {Role: "user"}}
-	turns := groupTurns(history)
+	turns, err := groupTurns(context.Background(), history)
+	require.NoError(t, err)
 	require.Len(t, turns, 2)
 	require.Len(t, turns[1], 1)
 }
@@ -709,7 +715,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 
 	t.Run("No pins", func(t *testing.T) {
 		history := generateMessageHistory(20)
-		start, end, numTurns, err := tg.findSummarizableRange(history)
+		start, end, numTurns, err := tg.findSummarizableRange(context.Background(), history)
 		require.NoError(t, err)
 		require.Equal(t, 5, numTurns)
 		require.Equal(t, 0, start)
@@ -719,7 +725,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 	t.Run("Pin turn 0", func(t *testing.T) {
 		history := generateMessageHistory(20)
 		history[0].Pinned = true
-		start, _, _, err := tg.findSummarizableRange(history)
+		start, _, _, err := tg.findSummarizableRange(context.Background(), history)
 		require.NoError(t, err)
 		require.Equal(t, 2, start)
 	})
@@ -729,7 +735,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 		for i := range history {
 			history[i].Pinned = true
 		}
-		_, _, _, err := tg.findSummarizableRange(history)
+		_, _, _, err := tg.findSummarizableRange(context.Background(), history)
 		require.Error(t, err)
 	})
 }
@@ -1148,10 +1154,14 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 
 func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 	t.Run("groupTurns with nil", func(t *testing.T) {
-		require.Nil(t, groupTurns(nil))
+		turns, err := groupTurns(context.Background(), nil)
+		require.NoError(t, err)
+		require.Nil(t, turns)
 	})
 	t.Run("groupTurns with empty", func(t *testing.T) {
-		require.Nil(t, groupTurns([]*llm.Content{}))
+		turns, err := groupTurns(context.Background(), []*llm.Content{})
+		require.NoError(t, err)
+		require.Nil(t, turns)
 	})
 }
 

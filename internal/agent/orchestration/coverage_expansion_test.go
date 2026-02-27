@@ -200,7 +200,7 @@ func TestTokenGatekeeper_FindSummarizableRange_ErrorPath(t *testing.T) {
 		{Role: "user", Pinned: true},
 		{Role: "model", Pinned: true},
 	}
-	_, _, _, err := tg.findSummarizableRange(history)
+	_, _, _, err := tg.findSummarizableRange(context.Background(), history)
 	assert.Error(t, err)
 }
 
