@@ -5,20 +5,22 @@ package executor
 
 import (
 	"log"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 )
 
-// TelemetryLogger implements the domaintools.Logger interface using the global telemetry functions.
+// TelemetryLogger implements the domaintools.ExecutionObserver interface using the global telemetry functions.
 type TelemetryLogger struct{}
 
-// LogCritical logs a critical event to the standard logger with a TELEMETRY prefix.
-func (l *TelemetryLogger) LogCritical(msg string) {
-	log.Printf("TELEMETRY %s", msg)
+// ExecutionTimedOut logs a critical event when a tool goroutine leaks.
+func (l *TelemetryLogger) ExecutionTimedOut(toolID string) {
+	log.Printf("TELEMETRY CRITICAL: Tool goroutine permanently leaked: %s", toolID)
 }
 
-// RecordLateCompletion records a tool completion that occurred after its context was cancelled.
-func (l *TelemetryLogger) RecordLateCompletion(name string, d time.Duration) {
-	telemetry.RecordLateCompletion(name, d)
+// ExecutionCompletedLate records a tool completion that occurred after its context was cancelled.
+func (l *TelemetryLogger) ExecutionCompletedLate(toolID string) {
+	// Note: We've lost the duration info here because the domain interface doesn't provide it.
+	// For now we just record it with 0 or we could store the start time if we had access to it.
+	// But according to the new ExecutionObserver interface, we only have toolID.
+	telemetry.RecordLateCompletion(toolID, 0)
 }

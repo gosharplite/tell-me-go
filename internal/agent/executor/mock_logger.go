@@ -3,23 +3,19 @@
 
 package executor
 
-import (
-	"time"
-)
-
-// MockLogger is a mock implementation of the domaintools.Logger interface for testing purposes.
+// MockLogger is a mock implementation of the domaintools.ExecutionObserver interface for testing purposes.
 type MockLogger struct {
 	CriticalLogs chan string
 }
 
-// LogCritical records a critical log message to the CriticalLogs channel.
-func (m *MockLogger) LogCritical(msg string) {
+// ExecutionTimedOut records a critical log message when a tool goroutine leaks.
+func (m *MockLogger) ExecutionTimedOut(toolID string) {
 	if m.CriticalLogs != nil {
-		m.CriticalLogs <- msg
+		m.CriticalLogs <- "CRITICAL: Tool goroutine permanently leaked: " + toolID
 	}
 }
 
-// RecordLateCompletion records a late completion event (not implemented in this mock).
-func (m *MockLogger) RecordLateCompletion(name string, d time.Duration) {
+// ExecutionCompletedLate records a late completion event (not implemented in this mock).
+func (m *MockLogger) ExecutionCompletedLate(toolID string) {
 	// Not used in tests requiring verification
 }

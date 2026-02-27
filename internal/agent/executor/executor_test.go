@@ -293,3 +293,10 @@ func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
 	assert.Equal(t, "test_tool", trace.ToolExecutions[0].ToolName)
 	assert.Equal(t, "success", trace.ToolExecutions[0].Status)
 }
+
+func TestNewToolExecutor_NilLogger(t *testing.T) {
+	reg := &mockToolRegistry{}
+	_, err := NewToolExecutor(reg, nil, nil, nil)
+	assert.Error(t, err)
+	assert.Equal(t, "ExecutionObserver is required", err.Error())
+}

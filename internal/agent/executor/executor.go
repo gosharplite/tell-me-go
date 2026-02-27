@@ -44,7 +44,7 @@ type ToolExecutor struct {
 	pool               *concurrency.WorkerPool
 	strategy           resultStrategy
 	failures           *failureTracker
-	logger             domaintools.Logger
+	observer           domaintools.ExecutionObserver
 	zombie             *domaintools.ZombieTool
 }
 
@@ -66,9 +66,9 @@ func WithZombieTimeout(timeout time.Duration) executorOption {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, logger domaintools.Logger, opts ...executorOption) (*ToolExecutor, error) {
-	if logger == nil {
-		return nil, errors.New("logger is required")
+func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, observer domaintools.ExecutionObserver, opts ...executorOption) (*ToolExecutor, error) {
+	if observer == nil {
+		return nil, errors.New("ExecutionObserver is required")
 	}
 
 	e := &ToolExecutor{
@@ -82,7 +82,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
-		logger:             logger,
+		observer:           observer,
 	}
 
 	for _, opt := range opts {
@@ -90,7 +90,11 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 	}
 
 	if e.zombie == nil {
-		e.zombie = domaintools.NewZombieTool(e.logger)
+		var err error
+		e.zombie, err = domaintools.NewZombieTool(e.observer)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return e, nil

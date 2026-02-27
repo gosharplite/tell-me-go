@@ -5,14 +5,14 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
-// Logger defines a simple logging interface for tool execution monitoring.
-// It decouples the monitoring logic from specific logging implementations.
-type Logger interface {
-	LogCritical(msg string)
-	RecordLateCompletion(name string, d time.Duration)
+// ExecutionObserver defines the domain's external monitoring needs.
+type ExecutionObserver interface {
+	ExecutionTimedOut(toolID string)
+	ExecutionCompletedLate(toolID string)
 }
 
 // ToolOutput captures the result and error of a tool execution.
@@ -24,12 +24,15 @@ type ToolOutput struct {
 
 // ZombieTool handles the monitoring of potentially leaked tool goroutines.
 type ZombieTool struct {
-	logger Logger
+	observer ExecutionObserver
 }
 
-// NewZombieTool creates a new ZombieTool with the given logger.
-func NewZombieTool(logger Logger) *ZombieTool {
-	return &ZombieTool{logger: logger}
+// NewZombieTool creates a new ZombieTool with the given observer.
+func NewZombieTool(observer ExecutionObserver) (*ZombieTool, error) {
+	if observer == nil {
+		return nil, errors.New("ExecutionObserver is required")
+	}
+	return &ZombieTool{observer: observer}, nil
 }
 
 // Monitor blocks until the tool finishes, the context is cancelled, or the zombie timeout is reached.
@@ -40,9 +43,9 @@ func (z *ZombieTool) Monitor(ctx context.Context, name string, start time.Time, 
 	select {
 	case <-outCh:
 		// Tool eventually finished, log the extreme latency
-		z.logger.RecordLateCompletion(name, time.Since(start))
+		z.observer.ExecutionCompletedLate(name)
 	case <-timer.C:
-		z.logger.LogCritical("CRITICAL: Tool goroutine permanently leaked: " + name)
+		z.observer.ExecutionTimedOut(name)
 	case <-ctx.Done():
 		return
 	}
