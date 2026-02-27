@@ -35,46 +35,20 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 		req.Metadata.KeptByPolicy = make(map[string]int)
 	}
 
-	// If it's a composite policy, we track sub-policies individually.
-	if cp, ok := t.Policy.(*compositePruningPolicy); ok {
-		for _, p := range cp.Policies {
-			count, err := p.MarkTurns(ctx, turns, keep)
-			if err != nil {
-				return err
-			}
-			req.Metadata.KeptByPolicy[p.Name()] = count
-		}
-	} else {
-		count, err := t.Policy.MarkTurns(ctx, turns, keep)
-		if err != nil {
-			return err
-		}
-		req.Metadata.KeptByPolicy[t.Policy.Name()] = count
+	if err := t.applyPruningPolicies(ctx, turns, keep, req.Metadata.KeptByPolicy); err != nil {
+		return err
 	}
 
 	// Construct new history and count pruned turns
-	var newHistory []*llm.Content
-	prunedCount := 0
-	for i, k := range keep {
-		if i%100 == 0 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-		}
-
-		if k {
-			newHistory = append(newHistory, turns[i]...)
-			req.Metadata.TotalTurnsKept++
-		} else {
-			prunedCount++
-		}
+	newHistory, prunedCount, keptCount, err := t.reconstructHistory(ctx, turns, keep)
+	if err != nil {
+		return err
 	}
 
 	if prunedCount > 0 {
 		req.History = newHistory
 		req.Metadata.PrunedTurns += prunedCount
+		req.Metadata.TotalTurnsKept += keptCount
 
 		if t.Events != nil {
 			t.Events.Publish(events.SystemMessageEvent{
@@ -85,6 +59,49 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 	}
 
 	return nil
+}
+
+func (t *historyPruner) applyPruningPolicies(ctx context.Context, turns [][]*llm.Content, keep []bool, keptByPolicy map[string]int) error {
+	// If it's a composite policy, we track sub-policies individually.
+	if cp, ok := t.Policy.(*compositePruningPolicy); ok {
+		for _, p := range cp.Policies {
+			count, err := p.MarkTurns(ctx, turns, keep)
+			if err != nil {
+				return err
+			}
+			keptByPolicy[p.Name()] = count
+		}
+	} else {
+		count, err := t.Policy.MarkTurns(ctx, turns, keep)
+		if err != nil {
+			return err
+		}
+		keptByPolicy[t.Policy.Name()] = count
+	}
+	return nil
+}
+
+func (t *historyPruner) reconstructHistory(ctx context.Context, turns [][]*llm.Content, keep []bool) ([]*llm.Content, int, int, error) {
+	var newHistory []*llm.Content
+	prunedCount := 0
+	keptCount := 0
+	for i, k := range keep {
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return nil, 0, 0, ctx.Err()
+			default:
+			}
+		}
+
+		if k {
+			newHistory = append(newHistory, turns[i]...)
+			keptCount++
+		} else {
+			prunedCount++
+		}
+	}
+	return newHistory, prunedCount, keptCount, nil
 }
 
 func (t *historyPruner) Priority() int { return 110 }

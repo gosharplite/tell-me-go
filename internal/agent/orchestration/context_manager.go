@@ -312,7 +312,6 @@ func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurn
 		windowSize = totalEntries
 	}
 
-	var contents []*llm.Content
 	for {
 		select {
 		case <-ctx.Done():
@@ -320,32 +319,11 @@ func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurn
 		default:
 		}
 
-		contents, err = cm.History.GetWindow(ctx, 0, windowSize)
+		found, subset, endIdx, err := cm.checkWindowSize(ctx, windowSize, numTurns, totalEntries)
 		if err != nil {
 			return nil, 0, err
 		}
-
-		turns, err := groupTurns(ctx, contents)
-		if err != nil {
-			return nil, 0, err
-		}
-		if len(turns) >= numTurns || windowSize >= totalEntries {
-			// Found enough turns or reached the end of history.
-			totalTurns := len(turns)
-			if numTurns >= totalTurns {
-				numTurns = totalTurns - 1 // Leave at least 1 turn
-			}
-			if numTurns < 1 {
-				return nil, 0, nil
-			}
-
-			endIdx = 0
-			for i := 0; i < numTurns; i++ {
-				endIdx += len(turns[i])
-			}
-			// subset is the first endIdx elements of contents.
-			// Since contents is already a deep clone from GetWindow, we can just slice it.
-			subset = contents[:endIdx]
+		if found {
 			return subset, endIdx, nil
 		}
 
@@ -355,6 +333,40 @@ func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurn
 			windowSize = totalEntries
 		}
 	}
+}
+
+func (cm *ContextManager) checkWindowSize(ctx context.Context, windowSize int, numTurns int, totalEntries int) (found bool, subset []*llm.Content, endIdx int, err error) {
+	contents, err := cm.History.GetWindow(ctx, 0, windowSize)
+	if err != nil {
+		return false, nil, 0, err
+	}
+
+	turns, err := groupTurns(ctx, contents)
+	if err != nil {
+		return false, nil, 0, err
+	}
+
+	if len(turns) >= numTurns || windowSize >= totalEntries {
+		// Found enough turns or reached the end of history.
+		totalTurns := len(turns)
+		if numTurns >= totalTurns {
+			numTurns = totalTurns - 1 // Leave at least 1 turn
+		}
+		if numTurns < 1 {
+			return true, nil, 0, nil
+		}
+
+		endIdx = 0
+		for i := 0; i < numTurns; i++ {
+			endIdx += len(turns[i])
+		}
+		// subset is the first endIdx elements of contents.
+		// Since contents is already a deep clone from GetWindow, we can just slice it.
+		subset = contents[:endIdx]
+		return true, subset, endIdx, nil
+	}
+
+	return false, nil, 0, nil
 }
 
 func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*llm.Content, endIdx int, summary string) error {
