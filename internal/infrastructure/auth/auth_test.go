@@ -49,7 +49,7 @@ func TestGetCachePath(t *testing.T) {
 
 func TestVertexAuth_Invalidate(t *testing.T) {
 	t.Parallel()
-	auth := &VertexAuth{Token: "some-token"}
+	auth := &VertexAuth{Token: "some-token", CacheDir: t.TempDir()}
 	cachePath := auth.getCachePath()
 	_ = os.MkdirAll(filepath.Dir(cachePath), 0700)
 	_ = os.WriteFile(cachePath, []byte("some-token"), 0600)
@@ -70,11 +70,10 @@ func TestVertexAuth_GetToken(t *testing.T) {
 	t.Run("Use cached token", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
-		auth := &VertexAuth{}
+		auth := &VertexAuth{CacheDir: t.TempDir()}
 		cachePath := auth.getCachePath()
 		_ = os.MkdirAll(filepath.Dir(cachePath), 0700)
 		_ = os.WriteFile(cachePath, []byte("cached-token"), 0600)
-		defer os.Remove(cachePath)
 
 		token, err := auth.getToken(ctx)
 		if err != nil {
@@ -89,13 +88,12 @@ func TestVertexAuth_GetToken(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
 		auth := &VertexAuth{
+			CacheDir: t.TempDir(),
 			tokenCmdFunc: func() ([]byte, error) {
 				return []byte("gcloud-token"), nil
 			},
 		}
 		cachePath := auth.getCachePath()
-		_ = os.Remove(cachePath) // ensure no cache
-		defer os.Remove(cachePath)
 
 		token, err := auth.getToken(ctx)
 		if err != nil {
@@ -158,16 +156,13 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	auth := &VertexAuth{
+		CacheDir: t.TempDir(),
 		tokenCmdFunc: func() ([]byte, error) {
 			// Simulate some work
 			time.Sleep(10 * time.Millisecond)
 			return []byte("concurrent-token"), nil
 		},
 	}
-	cachePath := auth.getCachePath()
-	_ = os.Remove(cachePath)
-	defer os.Remove(cachePath)
-
 	const n = 10
 	errChan := make(chan error, n)
 	for i := 0; i < n; i++ {
@@ -467,15 +462,11 @@ func TestVertexAuth_GetToken_GcloudError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	auth := &VertexAuth{
+		CacheDir: t.TempDir(),
 		tokenCmdFunc: func() ([]byte, error) {
 			return nil, fmt.Errorf("gcloud failure")
 		},
 	}
-
-	// Ensure cache is not present
-	cachePath := auth.getCachePath()
-	_ = os.Remove(cachePath)
-	defer os.Remove(cachePath)
 
 	_, err := auth.getToken(ctx)
 	if err == nil || !strings.Contains(err.Error(), "failed to get gcloud token") {
@@ -487,14 +478,11 @@ func TestVertexAuth_Apply_Error(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	auth := &VertexAuth{
+		CacheDir: t.TempDir(),
 		tokenCmdFunc: func() ([]byte, error) {
 			return nil, fmt.Errorf("mock gcloud error")
 		},
 	}
-	// Force cache miss to ensure tokenCmdFunc is called
-	cachePath := auth.getCachePath()
-	_ = os.Remove(cachePath)
-	defer os.Remove(cachePath)
 
 	req := &Request{Headers: make(map[string]string)}
 	err := auth.Apply(ctx, req)

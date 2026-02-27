@@ -37,6 +37,8 @@ type VertexAuth struct {
 	mu           sync.Mutex
 	Token        string
 	tokenCmdFunc func() ([]byte, error)
+	// CacheDir allows overriding the default cache location. Primarily for testing.
+	CacheDir string
 }
 
 func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
@@ -49,6 +51,9 @@ func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
 var getUID = os.Getuid
 
 func (a *VertexAuth) getCachePath() string {
+	if a.CacheDir != "" {
+		return filepath.Join(a.CacheDir, "token.txt")
+	}
 	uid := getUID()
 	uidStr := fmt.Sprintf("%d", uid)
 	if uid == -1 {
