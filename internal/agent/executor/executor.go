@@ -146,17 +146,26 @@ func newResultCollector(calls []*llm.FunctionCall, bus events.EventBus) *resultC
 }
 
 func (c *resultCollector) Wait(ctx context.Context) ([]domaintools.ToolResult, error) {
-	completed := 0
-	for completed < len(c.calls) {
+	completedCount := 0
+	isCompleted := make([]bool, len(c.calls))
+	for completedCount < len(c.calls) {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
-		case res := <-c.ch:
-			c.trs[res.index] = res.tr
-			if c.bus != nil {
-				c.bus.Publish(events.ToolResultEvent{Name: res.name, Result: res.tr})
+			for i := range c.trs {
+				if !isCompleted[i] {
+					c.trs[i] = domaintools.ToolResult{Text: "Execution was interrupted or cancelled by the user."}
+				}
 			}
-			completed++
+			return c.trs, ctx.Err()
+		case res := <-c.ch:
+			if !isCompleted[res.index] {
+				c.trs[res.index] = res.tr
+				isCompleted[res.index] = true
+				if c.bus != nil {
+					c.bus.Publish(events.ToolResultEvent{Name: res.name, Result: res.tr})
+				}
+				completedCount++
+			}
 		}
 	}
 	return c.trs, nil
@@ -188,9 +197,6 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	go e.runExecutionPlan(ctx, calls, collector.ch, declinedMap)
 
 	results, err := collector.Wait(ctx)
-	if err != nil {
-		return nil, err
-	}
 
 	// Notify about circuit breaker events
 	for _, tr := range results {
@@ -207,7 +213,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 		}
 	}
 
-	return e.assembleResponse(calls, results), nil
+	return e.assembleResponse(calls, results), err
 }
 
 func (e *ToolExecutor) extractFunctionCalls(respContent *llm.Content) []*llm.FunctionCall {
