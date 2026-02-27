@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func contains(s, substr string) bool {
@@ -442,7 +443,7 @@ func TestContextStrategy_ConfigUpdatedEvent(t *testing.T) {
 		ContextWindow:    4444,
 	}
 
-	bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits})
+	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
 	err := bus.Flush(ctx)
 	assert.NoError(t, err)
 

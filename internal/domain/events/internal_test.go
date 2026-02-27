@@ -94,7 +94,9 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 
 			// Verify it doesn't panic on basic operations
 			bus.Subscribe(func(e Event) {})
-			bus.Publish(context.Background(), "test")
+			if err := bus.Publish(context.Background(), "test"); err != nil {
+				t.Fatalf("failed to publish: %v", err)
+			}
 			_ = bus.Flush(context.Background())
 			_ = bus.Shutdown(context.Background())
 		})
@@ -120,7 +122,9 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 	// Goroutine 1: Flush (will block on the subscriber channel)
 	go func() {
 		defer wg.Done()
-		bus.Publish(context.Background(), "flush_trigger")
+		if err := bus.Publish(context.Background(), "flush_trigger"); err != nil {
+			t.Errorf("failed to publish: %v", err)
+		}
 		// Flush will wait for the blocked subscriber
 		_ = bus.Flush(context.Background())
 	}()

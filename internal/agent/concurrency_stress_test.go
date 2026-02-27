@@ -231,13 +231,15 @@ func TestContextManager_Race(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
-			bus.Publish(ctx, events.ConfigUpdated{
+			if err := bus.Publish(ctx, events.ConfigUpdated{
 				Limits: events.Limits{
 					MaxHistoryTokens: 1000 + i,
 					MaxToolTurns:     10,
 					MaxHistoryTurns:  20,
 				},
-			})
+			}); err != nil {
+				t.Errorf("failed to publish config update: %v", err)
+			}
 			time.Sleep(5 * time.Millisecond)
 		}
 	}()

@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestContextManager_PipelineMethods(t *testing.T) {
@@ -287,7 +288,7 @@ func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 		MaxHistoryTurns:  100,
 	}
 
-	bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits})
+	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
 	err := bus.Flush(ctx)
 	assert.NoError(t, err)
 
@@ -299,7 +300,7 @@ func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 
 	// Publish another update to ensure it updates again (rebuilds pipeline)
 	newLimits.MaxHistoryTokens = 8888
-	bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits})
+	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
 	err = bus.Flush(ctx)
 	assert.NoError(t, err)
 
