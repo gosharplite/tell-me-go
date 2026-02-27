@@ -25,47 +25,85 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 	}
 
 	// Group messages into turns (pairs)
-	turns := groupTurns(req.History)
+	turns, err := groupTurns(ctx, req.History)
+	if err != nil {
+		return err
+	}
 
 	keep := make([]bool, len(turns))
 	if req.Metadata.KeptByPolicy == nil {
 		req.Metadata.KeptByPolicy = make(map[string]int)
 	}
 
-	// If it's a composite policy, we track sub-policies individually.
-	if cp, ok := t.Policy.(*compositePruningPolicy); ok {
-		for _, p := range cp.Policies {
-			req.Metadata.KeptByPolicy[p.Name()] = p.MarkTurns(ctx, turns, keep)
-		}
-	} else {
-		req.Metadata.KeptByPolicy[t.Policy.Name()] = t.Policy.MarkTurns(ctx, turns, keep)
+	if err := t.applyPruningPolicies(ctx, turns, keep, req.Metadata.KeptByPolicy); err != nil {
+		return err
 	}
 
 	// Construct new history and count pruned turns
-	var newHistory []*llm.Content
-	prunedCount := 0
-	for i, k := range keep {
-		if k {
-			newHistory = append(newHistory, turns[i]...)
-			req.Metadata.TotalTurnsKept++
-		} else {
-			prunedCount++
-		}
+	newHistory, prunedCount, keptCount, err := t.reconstructHistory(ctx, turns, keep)
+	if err != nil {
+		return err
 	}
 
 	if prunedCount > 0 {
 		req.History = newHistory
 		req.Metadata.PrunedTurns += prunedCount
+		req.Metadata.TotalTurnsKept += keptCount
 
 		if t.Events != nil {
-			t.Events.Publish(events.SystemMessageEvent{
+			if err := t.Events.Publish(ctx, events.SystemMessageEvent{
 				Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, len(newHistory)/2),
 				Level:   "info",
-			})
+			}); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
+}
+
+func (t *historyPruner) applyPruningPolicies(ctx context.Context, turns [][]*llm.Content, keep []bool, keptByPolicy map[string]int) error {
+	// If it's a composite policy, we track sub-policies individually.
+	if cp, ok := t.Policy.(*compositePruningPolicy); ok {
+		for _, p := range cp.Policies {
+			count, err := p.MarkTurns(ctx, turns, keep)
+			if err != nil {
+				return err
+			}
+			keptByPolicy[p.Name()] = count
+		}
+	} else {
+		count, err := t.Policy.MarkTurns(ctx, turns, keep)
+		if err != nil {
+			return err
+		}
+		keptByPolicy[t.Policy.Name()] = count
+	}
+	return nil
+}
+
+func (t *historyPruner) reconstructHistory(ctx context.Context, turns [][]*llm.Content, keep []bool) ([]*llm.Content, int, int, error) {
+	var newHistory []*llm.Content
+	prunedCount := 0
+	keptCount := 0
+	for i, k := range keep {
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return nil, 0, 0, ctx.Err()
+			default:
+			}
+		}
+
+		if k {
+			newHistory = append(newHistory, turns[i]...)
+			keptCount++
+		} else {
+			prunedCount++
+		}
+	}
+	return newHistory, prunedCount, keptCount, nil
 }
 
 func (t *historyPruner) Priority() int { return 110 }
@@ -75,12 +113,16 @@ type compositePruningPolicy struct {
 	Policies []ports.PruningPolicy
 }
 
-func (p *compositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+func (p *compositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 	totalMarked := 0
 	for _, policy := range p.Policies {
-		totalMarked += policy.MarkTurns(ctx, turns, keep)
+		count, err := policy.MarkTurns(ctx, turns, keep)
+		if err != nil {
+			return 0, err
+		}
+		totalMarked += count
 	}
-	return totalMarked
+	return totalMarked, nil
 }
 
 func (p *compositePruningPolicy) Name() string { return "Composite" }
@@ -90,9 +132,9 @@ type slidingWindowPolicy struct {
 	MaxTurns int
 }
 
-func (p *slidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+func (p *slidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 	if p.MaxTurns <= 0 {
-		return 0
+		return 0, nil
 	}
 
 	totalTurns := len(turns)
@@ -103,10 +145,17 @@ func (p *slidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Cont
 
 	count := 0
 	for i := startWindow; i < totalTurns; i++ {
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			default:
+			}
+		}
 		keep[i] = true
 		count++
 	}
-	return count
+	return count, nil
 }
 
 func (p *slidingWindowPolicy) Name() string { return "SlidingWindow" }
@@ -114,28 +163,41 @@ func (p *slidingWindowPolicy) Name() string { return "SlidingWindow" }
 // importanceRankPolicy keeps turns containing function calls, responses, or data.
 type importanceRankPolicy struct{}
 
-func (p *importanceRankPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+func (p *importanceRankPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 	count := 0
 	for i, turn := range turns {
-		important := false
-		for _, msg := range turn {
-			for _, part := range msg.Parts {
-				if part.FunctionCall != nil || part.FunctionResponse != nil || part.InlineData != nil {
-					important = true
-					break
-				}
-			}
-			if important {
-				break
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			default:
 			}
 		}
 
-		if important {
+		if isTurnImportant(turn) {
 			keep[i] = true
 			count++
 		}
 	}
-	return count
+	return count, nil
+}
+
+func isTurnImportant(turn []*llm.Content) bool {
+	for _, msg := range turn {
+		if hasImportantParts(msg) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasImportantParts(msg *llm.Content) bool {
+	for _, part := range msg.Parts {
+		if part.FunctionCall != nil || part.FunctionResponse != nil || part.InlineData != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *importanceRankPolicy) Name() string { return "Importance" }
@@ -143,9 +205,17 @@ func (p *importanceRankPolicy) Name() string { return "Importance" }
 // pinningPolicy keeps turns that have at least one pinned message.
 type pinningPolicy struct{}
 
-func (p *pinningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+func (p *pinningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 	count := 0
 	for i, turn := range turns {
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			default:
+			}
+		}
+
 		pinned := false
 		for _, msg := range turn {
 			if msg.Pinned {
@@ -159,7 +229,7 @@ func (p *pinningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, k
 			count++
 		}
 	}
-	return count
+	return count, nil
 }
 
 func (p *pinningPolicy) Name() string { return "Pinning" }

@@ -9,6 +9,7 @@ import (
 )
 
 func TestClone(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		orig *Content
@@ -71,6 +72,7 @@ func TestClone(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			clone := tt.orig.clone()
 
 			// 1. Pointer inequality
@@ -221,6 +223,7 @@ func verifyFunctionResponseIndependence(t *testing.T, orig, clone *FunctionRespo
 }
 
 func TestNilClones(t *testing.T) {
+	t.Parallel()
 	var c *Content
 	if c.clone() != nil {
 		t.Error("cloning nil Content should return nil")
@@ -248,6 +251,7 @@ func TestNilClones(t *testing.T) {
 }
 
 func TestContentEqual(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		c1       *Content
@@ -294,6 +298,7 @@ func TestContentEqual(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := tt.c1.equal(tt.c2); got != tt.expected {
 				t.Errorf("Content.equal() = %v, want %v", got, tt.expected)
 			}
@@ -302,6 +307,7 @@ func TestContentEqual(t *testing.T) {
 }
 
 func TestPartEqual(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		p1       *Part
@@ -432,6 +438,7 @@ func TestPartEqual(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := tt.p1.equal(tt.p2); got != tt.expected {
 				t.Errorf("Part.equal() = %v, want %v", got, tt.expected)
 			}
@@ -440,6 +447,7 @@ func TestPartEqual(t *testing.T) {
 }
 
 func TestAddPart(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		initial  []*Part
@@ -537,6 +545,7 @@ func TestAddPart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			c := &Content{Parts: tt.initial}
 			c.AddPart(tt.newPart)
 

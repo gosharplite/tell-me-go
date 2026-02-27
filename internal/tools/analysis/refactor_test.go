@@ -21,6 +21,7 @@ func (m *mockTransform) Apply(ctx context.Context, fset *token.FileSet, files ma
 }
 
 func TestTransaction_Commit(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.go")
 	content := "package main\n\nfunc main() {}\n"
@@ -61,6 +62,7 @@ func TestTransaction_Commit(t *testing.T) {
 }
 
 func TestTransaction_Rollback(t *testing.T) {
+	t.Parallel()
 	tx := newTransaction()
 	path := "test_rollback.txt"
 	_ = os.WriteFile(path+".tmp", []byte("temp"), 0644)
@@ -74,6 +76,7 @@ func TestTransaction_Rollback(t *testing.T) {
 }
 
 func TestTransaction_LoadFile_Error(t *testing.T) {
+	t.Parallel()
 	tx := newTransaction()
 	_, err := tx.LoadFile("non_existent.go")
 	if err == nil {

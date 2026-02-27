@@ -24,7 +24,7 @@ func TestTelemetry_Logging(t *testing.T) {
 		{
 			name: "LogCritical",
 			logFunc: func() {
-				LogCritical("something bad happened", "CriticalError")
+				logCritical("something bad happened", "CriticalError")
 			},
 			contains: "TELEMETRY something bad happened: CriticalError",
 		},

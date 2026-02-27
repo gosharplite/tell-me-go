@@ -22,8 +22,12 @@ type mockEventBus struct {
 	events []events.Event
 }
 
-func (m *mockEventBus) Publish(e events.Event) {
+func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.events = append(m.events, e)
+	return nil
 }
 
 func (m *mockEventBus) Subscribe(f func(events.Event)) {}
@@ -42,6 +46,7 @@ func (m *mockProcessor) process(ctx context.Context, turn *turn) (processResult,
 }
 
 func TestWithStreaming(t *testing.T) {
+	t.Parallel()
 	bus := &mockEventBus{}
 	e := &turnEngine{events: bus}
 	mw := e.WithStreaming()
@@ -71,14 +76,7 @@ func TestWithStreaming(t *testing.T) {
 }
 
 func TestWithStatusReporter(t *testing.T) {
-	bus := &mockEventBus{}
-	e := &turnEngine{events: bus}
-	mw := e.WithStatusReporter()
-	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
-
-	cs := orchestration.NewContextStrategy(nil, nil)
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
-	cm := &orchestration.ContextManager{Strategy: cs, History: h}
+	t.Parallel()
 
 	tests := []struct {
 		name       string
@@ -92,7 +90,17 @@ func TestWithStatusReporter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bus.events = nil
+			t.Parallel()
+
+			bus := &mockEventBus{}
+			e := &turnEngine{events: bus}
+			mw := e.WithStatusReporter()
+			next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
+
+			cs := orchestration.NewContextStrategy(nil, nil)
+			h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
+			cm := &orchestration.ContextManager{Strategy: cs, History: h}
+
 			turn := &turn{
 				State:      &turnState{Phase: tt.phase},
 				CtxManager: cm,
@@ -107,6 +115,7 @@ func TestWithStatusReporter(t *testing.T) {
 }
 
 func TestWithMetrics(t *testing.T) {
+	t.Parallel()
 	bus := &mockEventBus{}
 	e := &turnEngine{events: bus}
 	mw := e.WithMetrics()
@@ -125,6 +134,7 @@ func TestWithMetrics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			bus.events = nil
 			state := &turnState{Phase: tt.phase}
 			if tt.hasMetrics {
@@ -164,13 +174,16 @@ func fillBuffer(t *testing.T, mw turnMiddleware, next *mockProcessor, turn *turn
 }
 
 func TestWithLoopDetector_Rotation(t *testing.T) {
+	t.Parallel()
 	t.Run("Fill Buffer", func(t *testing.T) {
+		t.Parallel()
 		mw, next, turn := setupLoopDetectorTest()
 		fillBuffer(t, mw, next, turn, domain_config.DefaultMaxLoopRepetitions)
 		assert.Len(t, turn.State.RecentResponseHashes, domain_config.DefaultMaxLoopRepetitions)
 	})
 
 	t.Run("Trigger Rotation", func(t *testing.T) {
+		t.Parallel()
 		mw, next, turn := setupLoopDetectorTest()
 		fillBuffer(t, mw, next, turn, domain_config.DefaultMaxLoopRepetitions)
 		oldestHash := turn.State.RecentResponseHashes[0]
@@ -184,6 +197,7 @@ func TestWithLoopDetector_Rotation(t *testing.T) {
 	})
 
 	t.Run("High Volume", func(t *testing.T) {
+		t.Parallel()
 		mw, next, turn := setupLoopDetectorTest()
 		fillBuffer(t, mw, next, turn, 100)
 		assert.Len(t, turn.State.RecentResponseHashes, domain_config.DefaultMaxLoopRepetitions)

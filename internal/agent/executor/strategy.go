@@ -16,13 +16,7 @@ type resultStrategy = ports.ResultStrategy
 type markdownStrategy struct{}
 
 func (s *markdownStrategy) Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part {
-	return &llm.Part{
-		FunctionResponse: &llm.FunctionResponse{
-			ID:       call.ID,
-			Name:     call.Name,
-			Response: map[string]interface{}{"result": result.Text},
-		},
-	}
+	return buildFunctionResponse(call.ID, call.Name, result.Text)
 }
 
 // jsonStrategy formats tool results as raw JSON.
@@ -31,11 +25,5 @@ type jsonStrategy struct{}
 func (s *jsonStrategy) Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part {
 	// For now it's similar to markdownStrategy but could differ in the future
 	// (e.g. returning structured data instead of just a 'result' string field).
-	return &llm.Part{
-		FunctionResponse: &llm.FunctionResponse{
-			ID:       call.ID,
-			Name:     call.Name,
-			Response: map[string]interface{}{"result": result.Text},
-		},
-	}
+	return buildFunctionResponse(call.ID, call.Name, result.Text)
 }

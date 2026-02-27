@@ -180,6 +180,7 @@ func Start(r Runner) { r.Run() }`
 }
 
 func TestSequenceAnalyzer_AnalyzeSequenceFlow_Basic(t *testing.T) {
+	t.Parallel()
 	pkgA, pkgB := setupMockPackages()
 	mockExec := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -209,6 +210,7 @@ func TestSequenceAnalyzer_AnalyzeSequenceFlow_Basic(t *testing.T) {
 }
 
 func TestSequenceAnalyzer_AnalyzeSequenceFlow_MaxDepth(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	pkgA, pkgB := setupMockPackages()
 
@@ -257,8 +259,10 @@ func LoopFunc() {}`
 }
 
 func TestSequenceAnalyzer_Helpers(t *testing.T) {
+	t.Parallel()
 	a := &sequenceAnalyzer{}
 	t.Run("exprToString", func(t *testing.T) {
+		t.Parallel()
 		tests := []struct {
 			expr ast.Expr
 			want string
@@ -275,6 +279,7 @@ func TestSequenceAnalyzer_Helpers(t *testing.T) {
 		}
 	})
 	t.Run("getReceiverTypeName", func(t *testing.T) {
+		t.Parallel()
 		fl := &ast.FieldList{List: []*ast.Field{{Type: &ast.Ident{Name: "R"}}}}
 		if got := a.getReceiverTypeName(fl); got != "R" {
 			t.Errorf("got %q, want %q", got, "R")
@@ -283,6 +288,7 @@ func TestSequenceAnalyzer_Helpers(t *testing.T) {
 }
 
 func TestSequenceAnalyzer_InterfaceTracing(t *testing.T) {
+	t.Parallel()
 	pkg, runMethod, implMethod := setupInterfaceMockPackage()
 	pkgPath := pkg.PkgPath
 

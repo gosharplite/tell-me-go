@@ -53,6 +53,7 @@ func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler t
 }
 
 func TestSessionCostTracker_Extended(t *testing.T) {
+	t.Parallel()
 	sm := &mockSM{}
 	pricing := domain_pricing.PricingData{
 		Models: map[string]domain_pricing.ModelPricing{
@@ -66,6 +67,7 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 	tracker := NewSessionCostTracker(sm, logFile, "test-mode", "test-model", pricing.Models["test-model"], pricing)
 
 	t.Run("Warmup", func(t *testing.T) {
+		t.Parallel()
 		content := `{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500, "cached_tokens": 100}` + "\n"
 		err := os.WriteFile(logFile, []byte(content), 0644)
 		if err != nil {
@@ -83,6 +85,7 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 	})
 
 	t.Run("AccumulateAndReturn", func(t *testing.T) {
+		t.Parallel()
 		mt := llm.Metrics{
 			PromptTokens:   1000,
 			ResponseTokens: 500,
@@ -101,6 +104,7 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 }
 
 func TestRegisterMetrics_Extended(t *testing.T) {
+	t.Parallel()
 	reg := &mockRegistry{}
 	sm := &mockSM{}
 
@@ -119,6 +123,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	}
 
 	t.Run("Call estimate_cost", func(t *testing.T) {
+		t.Parallel()
 		handler := reg.handlers["estimate_cost"]
 		// Create log file
 		_ = os.WriteFile(logFile, []byte(`{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500}`+"\n"), 0644)
@@ -133,6 +138,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	})
 
 	t.Run("Call get_cost_summary", func(t *testing.T) {
+		t.Parallel()
 		handler := reg.handlers["get_cost_summary"]
 
 		// Create a ledger file
@@ -154,6 +160,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 }
 
 func TestRecordSessionCost_Extended(t *testing.T) {
+	t.Parallel()
 	sm := &mockSM{}
 	tempDir := t.TempDir()
 	outputDir := filepath.Join(tempDir, "output")
@@ -181,6 +188,7 @@ func TestRecordSessionCost_Extended(t *testing.T) {
 }
 
 func TestTraceTelemetry(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 	logFile := filepath.Join(tempDir, "test.log")
 
@@ -196,10 +204,11 @@ func TestTraceTelemetry(t *testing.T) {
 	}
 
 	t.Run("RegisterTraceSubscriber", func(t *testing.T) {
+		t.Parallel()
 		bus := events.NewSimpleEventBus()
 		RegisterTraceSubscriber(bus, logFile)
 
-		bus.Publish(events.TraceEvent{Trace: trace})
+		_ = bus.Publish(context.Background(), events.TraceEvent{Trace: trace})
 
 		// Flush event bus
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -213,7 +222,9 @@ func TestTraceTelemetry(t *testing.T) {
 }
 
 func TestLedger_Extended(t *testing.T) {
+	t.Parallel()
 	t.Run("IsStale", func(t *testing.T) {
+		t.Parallel()
 		tempFile := filepath.Join(t.TempDir(), "stale.lock")
 		_ = os.WriteFile(tempFile, []byte(""), 0644)
 
@@ -230,6 +241,7 @@ func TestLedger_Extended(t *testing.T) {
 	})
 
 	t.Run("FindLogFiles", func(t *testing.T) {
+		t.Parallel()
 		tempDir := t.TempDir()
 		subDir := filepath.Join(tempDir, "subdir")
 		_ = os.Mkdir(subDir, 0755)
@@ -256,6 +268,7 @@ func TestLedger_Extended(t *testing.T) {
 	})
 
 	t.Run("AcquireAndReleaseLock", func(t *testing.T) {
+		t.Parallel()
 		tempDir := t.TempDir()
 		historyPath := filepath.Join(tempDir, "global_costs.json")
 
@@ -284,6 +297,7 @@ func TestLedger_Extended(t *testing.T) {
 }
 
 func TestMetricsManager_LoadHistory_Corrupted(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 	historyPath := filepath.Join(tempDir, "global_costs.json")
 	_ = os.WriteFile(historyPath, []byte("invalid json"), 0644)
@@ -301,6 +315,7 @@ func TestMetricsManager_LoadHistory_Corrupted(t *testing.T) {
 }
 
 func TestMetricsManager_Retention(t *testing.T) {
+	t.Parallel()
 	m := &metricsManager{}
 	now := time.Now()
 	history := []sessionCostRecord{
@@ -318,6 +333,7 @@ func TestMetricsManager_Retention(t *testing.T) {
 }
 
 func TestMetricsManager_LoadRetentionDays(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 	m := &metricsManager{}
 
@@ -335,6 +351,7 @@ func TestMetricsManager_LoadRetentionDays(t *testing.T) {
 }
 
 func TestResolveUsageForSummary_NoTracker(t *testing.T) {
+	t.Parallel()
 	sm := &mockSM{}
 	tempDir := t.TempDir()
 	logFile := filepath.Join(tempDir, "nonexistent.log")
@@ -349,6 +366,7 @@ func TestResolveUsageForSummary_NoTracker(t *testing.T) {
 }
 
 func TestIsStale_NonExistent(t *testing.T) {
+	t.Parallel()
 	if isStale("/nonexistent/path/to/lock") {
 		t.Error("Non-existent file should not be stale")
 	}

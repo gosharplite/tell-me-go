@@ -17,7 +17,6 @@ import (
 )
 
 func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name       string
 		maxTurns   int
@@ -38,7 +37,8 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 			turns := make([][]*llm.Content, tt.historyLen)
 			keep := make([]bool, tt.historyLen)
 
-			p.MarkTurns(context.Background(), turns, keep)
+			_, err := p.MarkTurns(context.Background(), turns, keep)
+			require.NoError(t, err)
 			for i, k := range keep {
 				require.Equal(t, tt.expectKeep[i], k, "at index %d", i)
 			}
@@ -49,13 +49,18 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 func TestHistoryPruner_Transform(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("Pruning occurred", func(t *testing.T) {
-		pruner := &historyPruner{
-			Policy: &slidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
-		}
-
-		req := &request{
-			History: []*llm.Content{
+	tests := []struct {
+		name    string
+		policy  ports.PruningPolicy
+		history []*llm.Content
+		cancel  bool
+		wantErr error
+		verify  func(t *testing.T, req *ports.ContextRequest)
+	}{
+		{
+			name:   "Pruning occurred",
+			policy: &slidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
+			history: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 				{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
 				{Role: "user", Parts: []*llm.Part{{Text: "3"}}},
@@ -63,33 +68,80 @@ func TestHistoryPruner_Transform(t *testing.T) {
 				{Role: "user", Parts: []*llm.Part{{Text: "5"}}},
 				{Role: "model", Parts: []*llm.Part{{Text: "6"}}},
 			},
-		}
+			verify: func(t *testing.T, req *ports.ContextRequest) {
+				require.Len(t, req.History, 2)
+				require.Equal(t, 2, req.Metadata.PrunedTurns)
+				count, ok := req.Metadata.KeptByPolicy["SlidingWindow"]
+				require.True(t, ok)
+				require.Equal(t, 1, count)
+			},
+		},
+		{
+			name:   "No pruning",
+			policy: &slidingWindowPolicy{MaxTurns: 10},
+			history: []*llm.Content{
+				{Role: "user"},
+			},
+			verify: func(t *testing.T, req *ports.ContextRequest) {
+				require.Equal(t, 0, req.Metadata.PrunedTurns)
+			},
+		},
+		{
+			name:   "Immediate Cancellation",
+			policy: &slidingWindowPolicy{MaxTurns: 1},
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
+			},
+			cancel:  true,
+			wantErr: context.Canceled,
+		},
+		{
+			name:   "Unbalanced history",
+			policy: &slidingWindowPolicy{MaxTurns: 1},
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "3"}}},
+			},
+			verify: func(t *testing.T, req *ports.ContextRequest) {
+				// Grouping: [1,2], [3]. MaxTurns 1 keeps the last turn: [3].
+				require.Len(t, req.History, 1)
+				require.Equal(t, "3", req.History[0].Parts[0].Text)
+			},
+		},
+	}
 
-		err := pruner.Transform(ctx, req)
-		require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pruner := &historyPruner{
+				Policy: tt.policy,
+			}
+			req := &ports.ContextRequest{
+				History: tt.history,
+			}
 
-		require.Len(t, req.History, 2)
-		require.Equal(t, 2, req.Metadata.PrunedTurns)
-		count, ok := req.Metadata.KeptByPolicy["SlidingWindow"]
-		require.True(t, ok)
-		require.Equal(t, 1, count)
-	})
+			testCtx := ctx
+			if tt.cancel {
+				var cancelFn context.CancelFunc
+				testCtx, cancelFn = context.WithCancel(ctx)
+				cancelFn()
+			}
 
-	t.Run("No pruning", func(t *testing.T) {
-		pruner := &historyPruner{
-			Policy: &slidingWindowPolicy{MaxTurns: 10},
-		}
-		req := &request{
-			History: []*llm.Content{{Role: "user"}},
-		}
-		err := pruner.Transform(ctx, req)
-		require.NoError(t, err)
-		require.Equal(t, 0, req.Metadata.PrunedTurns)
-	})
+			err := pruner.Transform(testCtx, req)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				if tt.verify != nil {
+					tt.verify(t, req)
+				}
+			}
+		})
+	}
 }
 
 func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
-	t.Parallel()
 	p := &importanceRankPolicy{}
 	history := [][]*llm.Content{
 		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
@@ -99,7 +151,8 @@ func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
 	}
 	keep := make([]bool, len(history))
 
-	count := p.MarkTurns(context.Background(), history, keep)
+	count, err := p.MarkTurns(context.Background(), history, keep)
+	require.NoError(t, err)
 
 	require.Equal(t, 3, count)
 
@@ -110,7 +163,6 @@ func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
 }
 
 func TestPinningPolicy_MarkTurns(t *testing.T) {
-	t.Parallel()
 	p := &pinningPolicy{}
 	history := [][]*llm.Content{
 		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
@@ -119,7 +171,8 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 	}
 	keep := make([]bool, len(history))
 
-	count := p.MarkTurns(context.Background(), history, keep)
+	count, err := p.MarkTurns(context.Background(), history, keep)
+	require.NoError(t, err)
 
 	require.Equal(t, 2, count)
 
@@ -130,7 +183,6 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 }
 
 func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
-	t.Parallel()
 	p := &compositePruningPolicy{
 		Policies: []ports.PruningPolicy{
 			&slidingWindowPolicy{MaxTurns: 1},
@@ -144,7 +196,8 @@ func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
 	}
 	keep := make([]bool, len(history))
 
-	p.MarkTurns(context.Background(), history, keep)
+	_, err := p.MarkTurns(context.Background(), history, keep)
+	require.NoError(t, err)
 
 	// T0 kept by Pinning, T2 kept by SlidingWindow
 	expected := []bool{true, false, true}
@@ -245,7 +298,7 @@ type dynamicMockEstimator struct {
 	tokens int
 }
 
-func (m *dynamicMockEstimator) EstimateTokens(contents []*llm.Content) int {
+func (m *dynamicMockEstimator) estimateTokens(contents []*llm.Content) int {
 	// If it contains a summary, return less tokens
 	for _, c := range contents {
 		for _, p := range c.Parts {
@@ -609,7 +662,8 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 	}
 	keep := make([]bool, len(history))
 
-	p.MarkTurns(context.Background(), history, keep)
+	_, err := p.MarkTurns(context.Background(), history, keep)
+	require.NoError(t, err)
 
 	expected := []bool{true, false}
 	for i, k := range keep {
@@ -618,7 +672,6 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 }
 
 func TestFinalContextValidator_Transform(t *testing.T) {
-	t.Parallel()
 	counter := &mockTokenCounter{}
 	strategy := NewContextStrategy(counter, nil)
 	validator := &finalContextValidator{Strategy: strategy}
@@ -658,31 +711,10 @@ func TestFinalContextValidator_Transform(t *testing.T) {
 	}
 }
 
-func TestHistoryPruner_Unbalanced(t *testing.T) {
-	ctx := context.Background()
-	pruner := &historyPruner{
-		Policy: &slidingWindowPolicy{MaxTurns: 1},
-	}
-
-	req := &request{
-		History: []*llm.Content{
-			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
-			{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
-			{Role: "user", Parts: []*llm.Part{{Text: "3"}}},
-		},
-	}
-
-	err := pruner.Transform(ctx, req)
-	require.NoError(t, err)
-
-	// Grouping: [1,2], [3]. MaxTurns 1 keeps the last turn: [3].
-	require.Len(t, req.History, 1)
-	require.Equal(t, "3", req.History[0].Parts[0].Text)
-}
-
 func TestGroupTurns_Helper(t *testing.T) {
 	history := []*llm.Content{{Role: "user"}, {Role: "model"}, {Role: "user"}}
-	turns := groupTurns(history)
+	turns, err := groupTurns(context.Background(), history)
+	require.NoError(t, err)
 	require.Len(t, turns, 2)
 	require.Len(t, turns[1], 1)
 }
@@ -709,7 +741,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 
 	t.Run("No pins", func(t *testing.T) {
 		history := generateMessageHistory(20)
-		start, end, numTurns, err := tg.findSummarizableRange(history)
+		start, end, numTurns, err := tg.findSummarizableRange(context.Background(), history)
 		require.NoError(t, err)
 		require.Equal(t, 5, numTurns)
 		require.Equal(t, 0, start)
@@ -719,7 +751,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 	t.Run("Pin turn 0", func(t *testing.T) {
 		history := generateMessageHistory(20)
 		history[0].Pinned = true
-		start, _, _, err := tg.findSummarizableRange(history)
+		start, _, _, err := tg.findSummarizableRange(context.Background(), history)
 		require.NoError(t, err)
 		require.Equal(t, 2, start)
 	})
@@ -729,7 +761,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 		for i := range history {
 			history[i].Pinned = true
 		}
-		_, _, _, err := tg.findSummarizableRange(history)
+		_, _, _, err := tg.findSummarizableRange(context.Background(), history)
 		require.Error(t, err)
 	})
 }
@@ -946,10 +978,14 @@ type mockTransformerEventBus struct {
 	publishFn func(event events.Event)
 }
 
-func (m *mockTransformerEventBus) Publish(event events.Event) {
+func (m *mockTransformerEventBus) Publish(ctx context.Context, event events.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if m.publishFn != nil {
 		m.publishFn(event)
 	}
+	return nil
 }
 
 func (m *mockTransformerEventBus) Subscribe(handler func(events.Event)) {}
@@ -1148,10 +1184,14 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 
 func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 	t.Run("groupTurns with nil", func(t *testing.T) {
-		require.Nil(t, groupTurns(nil))
+		turns, err := groupTurns(context.Background(), nil)
+		require.NoError(t, err)
+		require.Nil(t, turns)
 	})
 	t.Run("groupTurns with empty", func(t *testing.T) {
-		require.Nil(t, groupTurns([]*llm.Content{}))
+		turns, err := groupTurns(context.Background(), []*llm.Content{})
+		require.NoError(t, err)
+		require.Nil(t, turns)
 	})
 }
 
@@ -1222,6 +1262,7 @@ func TestTransientMerger_Transform(t *testing.T) {
 
 func TestCleanContent_NilSafety(t *testing.T) {
 	// This should not panic after the fix
+
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("cleanContent(nil) panicked: %v", r)

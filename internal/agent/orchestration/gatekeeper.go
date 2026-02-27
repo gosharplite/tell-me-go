@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -13,15 +14,40 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
+var (
+	// errInvalidPayload is returned when the history content is malformed or invalid.
+	errInvalidPayload = errors.New("invalid payload history")
+)
+
+type tokenEstimator interface {
+	estimateTokens(contents []*llm.Content) int
+}
+
 // tokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type tokenGatekeeper struct {
-	MaxTokens  int
-	Estimator  llm.TokenEstimator
-	Summarizer ports.Summarizer
-	Events     events.EventBus
+	MaxTokens   int
+	Estimator   tokenEstimator
+	Summarizer  ports.Summarizer
+	Events      events.EventBus
+	Strategies  map[string]ThresholdStrategy
+	DefaultTier string
+}
+
+func (t *tokenGatekeeper) getStrategy() ThresholdStrategy {
+	if t.Strategies != nil {
+		if s, ok := t.Strategies[t.DefaultTier]; ok {
+			return s
+		}
+	}
+	return &dynamicThresholdStrategy{Estimator: t.Estimator}
 }
 
 func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	// 0. Domain Boundary Validation: Ensure history is structurally sound before processing
+	if _, err := groupTurns(ctx, req.History); err != nil {
+		return fmt.Errorf("gatekeeper validation failed: %w", err)
+	}
+
 	// Stage 1: Initial Analysis (includes Tiered Threshold)
 	tokens, err := t.handleTieredThreshold(ctx, req)
 	if err != nil {
@@ -44,64 +70,53 @@ func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextReque
 }
 
 func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.ContextRequest) (int, error) {
-	tokens := t.Estimator.EstimateTokens(req.History)
+	tokens := t.Estimator.estimateTokens(req.History)
 	req.Metadata.OriginalTokenCount = tokens
 
-	// Nuanced check for TieredThreshold
-	if cs, ok := t.Estimator.(*ContextStrategy); ok {
-		tiered := cs.GetTieredThreshold()
-		if tiered > 0 && tokens > tiered && !req.Metadata.SummarizationAttempted {
-			if t.Events != nil {
-				t.Events.Publish(events.SummarizationRequired{
-					Tokens:   tokens,
-					MaxLimit: tiered,
-					Reason:   "High-tier pricing threshold reached",
-				})
-			}
-			// Attempt auto-summarization to try and get back into the cheap tier
-			n, err := t.autoSummarize(ctx, req)
-			if err != nil {
-				// Propagate critical errors, but continue if blocked
-				if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
-					return tokens, nil
-				}
-				return tokens, err
-			}
-			tokens = t.Estimator.EstimateTokens(req.History)
-			req.Metadata.SummarizedTurns = n
-		}
+	strategy := t.getStrategy()
+	if strategy.Evaluate(tokens) {
+		return t.triggerSummarization(ctx, req, tokens, strategy.GetThreshold(), "High-tier pricing threshold reached")
 	}
 	return tokens, nil
 }
 
 func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.ContextRequest, tokens int) (int, error) {
-	if t.MaxTokens <= 0 {
+	if t.MaxTokens > 0 && tokens > int(float64(t.MaxTokens)*0.9) {
+		return t.triggerSummarization(ctx, req, tokens, t.MaxTokens, "Safety limit pressure (> 90%)")
+	}
+	return tokens, nil
+}
+
+func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.ContextRequest, tokens, limit int, reason string) (int, error) {
+	if t.Events != nil {
+		if err := t.Events.Publish(ctx, events.SummarizationRequired{
+			Tokens:   tokens,
+			MaxLimit: limit,
+			Reason:   reason,
+		}); err != nil {
+			return tokens, err
+		}
+	}
+
+	if req.Metadata.SummarizationAttempted {
 		return tokens, nil
 	}
 
-	if tokens > int(float64(t.MaxTokens)*0.9) {
-		if t.Events != nil {
-			t.Events.Publish(events.SummarizationRequired{
-				Tokens:   tokens,
-				MaxLimit: t.MaxTokens,
-				Reason:   "Safety limit pressure (> 90%)",
-			})
+	n, err := t.autoSummarize(ctx, req)
+	if err != nil {
+		// Propagate critical errors, but continue if blocked
+		if errors.Is(err, errInvalidPayload) {
+			return tokens, err
 		}
-
-		if !req.Metadata.SummarizationAttempted {
-			n, err := t.autoSummarize(ctx, req)
-			if err != nil {
-				// Propagate critical errors, but continue if blocked
-				if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
-					return tokens, nil
-				}
-				return tokens, err
-			}
-			tokens = t.Estimator.EstimateTokens(req.History)
-			req.Metadata.SummarizedTurns = n
+		if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
+			return tokens, nil
 		}
+		return tokens, err
 	}
-	return tokens, nil
+
+	newTokens := t.Estimator.estimateTokens(req.History)
+	req.Metadata.SummarizedTurns = n
+	return newTokens, nil
 }
 
 func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {
@@ -121,14 +136,18 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 
 	if tokens > limit {
 		if t.Events != nil {
-			t.Events.Publish(events.TokenLimitReachedEvent{
+			if err := t.Events.Publish(ctx, events.TokenLimitReachedEvent{
 				Tokens:   tokens,
 				MaxLimit: t.MaxTokens,
-			})
-			t.Events.Publish(events.SystemMessageEvent{
+			}); err != nil {
+				return err
+			}
+			if err := t.Events.Publish(ctx, events.SystemMessageEvent{
 				Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
 				Level:   "error",
-			})
+			}); err != nil {
+				return err
+			}
 		}
 		return llm.ErrContextLimitExceeded
 	}
@@ -145,7 +164,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	}
 
 	// 1. Locate the block
-	start, end, numTurns, err := t.findSummarizableRange(req.History)
+	start, end, numTurns, err := t.findSummarizableRange(ctx, req.History)
 	if err != nil {
 		req.Metadata.MaintenanceBlocked = true
 		return 0, err
@@ -153,11 +172,13 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 
 	// 2. Logging
 	if t.Events != nil {
-		subsetTokens := t.Estimator.EstimateTokens(req.History[start:end])
-		t.Events.Publish(events.SystemMessageEvent{
+		subsetTokens := t.Estimator.estimateTokens(req.History[start:end])
+		if err := t.Events.Publish(ctx, events.SystemMessageEvent{
 			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens),
 			Level:   "info",
-		})
+		}); err != nil {
+			return 0, err
+		}
 	}
 
 	// 3. Service Call
@@ -173,10 +194,12 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 
 	// Signal completion to the UI
 	if t.Events != nil {
-		t.Events.Publish(events.SystemMessageEvent{
+		if err := t.Events.Publish(ctx, events.SystemMessageEvent{
 			Message: "Auto-summarization complete. Context successfully compressed.",
 			Level:   "info",
-		})
+		}); err != nil {
+			return 0, err
+		}
 	}
 
 	// 4. State Mutation
@@ -186,8 +209,11 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	return numTurns, nil
 }
 
-func (t *tokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, int, int, error) {
-	turns := groupTurns(history)
+func (t *tokenGatekeeper) findSummarizableRange(ctx context.Context, history []*llm.Content) (int, int, int, error) {
+	turns, err := groupTurns(ctx, history)
+	if err != nil {
+		return 0, 0, 0, err
+	}
 
 	// We want to summarize about 50% of the history, but at least 2 turns.
 	targetTurns := len(turns) / 2
@@ -195,7 +221,7 @@ func (t *tokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, in
 		targetTurns = 2
 	}
 
-	startTurn, numTurns := t.locateCandidateBlock(turns, targetTurns)
+	startTurn, numTurns := t.locateCandidateBlock(ctx, turns, targetTurns)
 
 	if startTurn == -1 || numTurns < 2 {
 		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
@@ -208,11 +234,20 @@ func (t *tokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, in
 	return startIdx, endIdx, numTurns, nil
 }
 
-func (t *tokenGatekeeper) locateCandidateBlock(turns [][]*llm.Content, target int) (int, int) {
+func (t *tokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int) (int, int) {
 	startTurn := -1
 	numTurns := 0
 
 	for i := 0; i < len(turns); i++ {
+		// SCALABLE: Periodic context check in potentially long loops
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return -1, 0
+			default:
+			}
+		}
+
 		if !t.isTurnPinned(turns[i]) {
 			if startTurn == -1 {
 				startTurn = i

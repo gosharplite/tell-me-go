@@ -108,6 +108,7 @@ func TestPrompt_MockEnv(t *testing.T) {
 
 func TestPrompt_EmptyPipe(t *testing.T) {
 	// Empty stdin (simulated pipe)
+
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,

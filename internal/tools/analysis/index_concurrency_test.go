@@ -19,6 +19,7 @@ func TestIndexer_Concurrency(t *testing.T) {
 	start := make(chan struct{})
 
 	t.Run("ParallelSearchAndRefresh", func(t *testing.T) {
+		t.Parallel()
 		var wg sync.WaitGroup
 
 		// 10 goroutines doing SearchSymbols

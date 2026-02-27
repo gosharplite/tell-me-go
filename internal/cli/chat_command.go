@@ -111,10 +111,26 @@ func (c *chatCommand) initializeCLI(args []string) (orchestration.Capturer, *cli
 func (c *chatCommand) performChat(ctx stdctx.Context, capturer orchestration.Capturer, opts *cliOptions, prompt string, cfg *domain_config.Config, deps ports.SessionDependencies) error {
 	uiRenderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
 	historyRenderer := &ui.StdHistoryRenderer{}
-	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.Loader, c.SM, c.Stdout, c.Stderr, c.Container.GetAgentFactory(), historyRenderer, uiRenderer)
 
-	sCfg := orchestration.NewSessionConfig(opts.configPath, opts.newSession, opts.lastN, opts.rawOutput, prompt, cfg)
-	return orch.Run(ctx, sCfg, deps, capturer)
+	return orchestration.Run(ctx, orchestration.RunParams{
+		HomeDir:         c.HomeDir,
+		Version:         c.Version,
+		Loader:          c.Loader,
+		SM:              c.SM,
+		Stdout:          c.Stdout,
+		Stderr:          c.Stderr,
+		AgentFactory:    c.Container.GetAgentFactory(),
+		HistoryRenderer: historyRenderer,
+		UIRenderer:      uiRenderer,
+		ConfigPath:      opts.configPath,
+		NewSession:      opts.newSession,
+		LastN:           opts.lastN,
+		RawOutput:       opts.rawOutput,
+		Prompt:          prompt,
+		Config:          cfg,
+		Deps:            deps,
+		Capturer:        capturer,
+	})
 }
 
 func (c *chatCommand) initializeConfiguration(args []string) (*cliOptions, *flag.FlagSet, *domain_config.Config, error) {

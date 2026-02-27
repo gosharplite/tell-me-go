@@ -13,19 +13,24 @@ import (
 )
 
 func TestOSFileSystem(t *testing.T) {
+	t.Parallel()
 	fs := &osFileSystem{}
 	ctx := context.Background()
 
 	t.Run("WriteAndRead", func(t *testing.T) {
+		t.Parallel()
 		testWriteAndRead(t, fs, ctx)
 	})
 	t.Run("StatAndMetadata", func(t *testing.T) {
+		t.Parallel()
 		testStatAndMetadata(t, fs, ctx)
 	})
 	t.Run("DirectoryOps", func(t *testing.T) {
+		t.Parallel()
 		testDirectoryOps(t, fs, ctx)
 	})
 	t.Run("Cleanup", func(t *testing.T) {
+		t.Parallel()
 		testCleanup(t, fs, ctx)
 	})
 }
@@ -142,6 +147,7 @@ func assertFileExists(t *testing.T, path string) {
 }
 
 func TestIsBinary(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		data []byte
@@ -154,6 +160,7 @@ func TestIsBinary(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := persistence.IsBinary(tt.data); got != tt.want {
 				t.Errorf("IsBinary() = %v, want %v", got, tt.want)
 			}
@@ -162,6 +169,7 @@ func TestIsBinary(t *testing.T) {
 }
 
 func TestOSFileSystem_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	fs := &osFileSystem{}
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.txt")
@@ -171,46 +179,55 @@ func TestOSFileSystem_ContextCancellation(t *testing.T) {
 	cancel()
 
 	t.Run("ReadDir cancelled", func(t *testing.T) {
+		t.Parallel()
 		if _, err := fs.ReadDir(ctx, "."); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("ReadFile cancelled", func(t *testing.T) {
+		t.Parallel()
 		if _, err := fs.ReadFile(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("MkdirAll cancelled", func(t *testing.T) {
+		t.Parallel()
 		if err := fs.MkdirAll(ctx, filepath.Join(tmpDir, "new"), 0755); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("Stat cancelled", func(t *testing.T) {
+		t.Parallel()
 		if _, err := fs.Stat(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("Open cancelled", func(t *testing.T) {
+		t.Parallel()
 		if _, err := fs.Open(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("OpenFile cancelled", func(t *testing.T) {
+		t.Parallel()
 		if _, err := fs.OpenFile(ctx, path, os.O_RDONLY, 0644); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("remove cancelled", func(t *testing.T) {
+		t.Parallel()
 		if err := fs.Remove(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("removeAll cancelled", func(t *testing.T) {
+		t.Parallel()
 		if err := fs.RemoveAll(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("Walk cancelled", func(t *testing.T) {
+		t.Parallel()
 		if err := fs.Walk(ctx, tmpDir, func(path string, info os.FileInfo, err error) error {
 			return nil
 		}); err == nil {
@@ -220,6 +237,7 @@ func TestOSFileSystem_ContextCancellation(t *testing.T) {
 }
 
 func TestOSFileSystem_OpenFile(t *testing.T) {
+	t.Parallel()
 	fs := &osFileSystem{}
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "openfile.txt")

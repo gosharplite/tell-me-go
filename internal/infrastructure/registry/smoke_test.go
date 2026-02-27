@@ -12,6 +12,7 @@ import (
 )
 
 func TestRegistrySmoke(t *testing.T) {
+	t.Parallel()
 	r := registry.New()
 
 	r.Register(&tools.ToolDeclaration{

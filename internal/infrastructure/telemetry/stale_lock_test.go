@@ -18,6 +18,7 @@ import (
 )
 
 func TestIsStale(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "is_stale_test")
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +52,7 @@ func TestIsStale(t *testing.T) {
 }
 
 func TestRecordCost_BreaksStaleLock(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "record_cost_stale_lock_test")
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +97,7 @@ func TestRecordCost_BreaksStaleLock(t *testing.T) {
 }
 
 func TestRecoverLedger_DetectedModel(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "recover_ledger_model_test")
 	if err != nil {
 		t.Fatal(err)

@@ -103,7 +103,11 @@ func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...stri
 }
 
 func TestSessionArchiving(t *testing.T) {
-	// 1. Setup isolated home directory
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
 	homeDir := t.TempDir()
 	env := []string{"TELL_ME_HOME=" + homeDir}
 
@@ -144,7 +148,11 @@ func TestSessionArchiving(t *testing.T) {
 }
 
 func TestBypassArchiving(t *testing.T) {
-	// 1. Setup isolated home directory
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
 	homeDir := t.TempDir()
 	env := []string{"TELL_ME_HOME=" + homeDir}
 
@@ -204,7 +212,11 @@ func runAgentStep(t *testing.T, dir string, env []string, input string, wantSubs
 }
 
 func TestEnvironmentPersistence(t *testing.T) {
-	// 1. Setup isolated home directory
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
 	homeDir := t.TempDir()
 	env := []string{"TELL_ME_HOME=" + homeDir}
 
@@ -252,7 +264,11 @@ func TestEnvironmentPersistence(t *testing.T) {
 }
 
 func TestStdinPiping(t *testing.T) {
-	// Use a fake config to avoid real API attempts but verify prompt capture
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
 	homeDir := t.TempDir()
 	env := []string{"TELL_ME_HOME=" + homeDir}
 
@@ -267,6 +283,10 @@ func TestStdinPiping(t *testing.T) {
 }
 
 func TestVersionFlag(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	stdout, _, err := runCommand("-v")
 	if err != nil {
 		t.Fatalf("Command failed: %v", err)
@@ -279,7 +299,11 @@ func TestVersionFlag(t *testing.T) {
 }
 
 func TestHelpOutput(t *testing.T) {
-	// Running with no args should show help/usage
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
 	stdout, stderr, err := runCommand()
 
 	if err == nil {
@@ -293,9 +317,14 @@ func TestHelpOutput(t *testing.T) {
 }
 
 func TestToolOrchestrationLoop(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	providers := []string{"google", "openai", "anthropic"}
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
 			server, _ := setupProviderMockServer(t, provider, "list_files", map[string]interface{}{"path": "."}, func(res string) string {
 				return "I have listed the files."
 			})
@@ -328,9 +357,14 @@ func TestToolOrchestrationLoop(t *testing.T) {
 }
 
 func TestWriteFileConfirmation(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	providers := []string{"google", "openai", "anthropic"}
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
 			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "test.txt", "content": "hello world"}, func(result string) string {
 				return "File written."
 			})
@@ -360,9 +394,14 @@ func TestWriteFileConfirmation(t *testing.T) {
 }
 
 func TestWriteFileDenial(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	providers := []string{"google", "openai", "anthropic"}
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
 			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "denied.txt", "content": "should not exist"}, func(result string) string {
 				if strings.Contains(result, "User explicitly denied this action.") {
 					return "Model acknowledges denial."
@@ -392,9 +431,14 @@ func TestWriteFileDenial(t *testing.T) {
 }
 
 func TestSecurityGate(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	providers := []string{"google", "openai", "anthropic"}
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
 			homeDir := t.TempDir()
 
 			// Use helper to encapsulate mock server logic
@@ -423,6 +467,10 @@ func TestSecurityGate(t *testing.T) {
 }
 
 func TestSymlinkAttack(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	homeDir := t.TempDir()
 	evilLink := filepath.Join(homeDir, "evil_link")
 	if err := os.Symlink("/etc/passwd", evilLink); err != nil {
@@ -454,6 +502,10 @@ func TestSymlinkAttack(t *testing.T) {
 }
 
 func TestManageTasks(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	provider := "google"
 	server, _ := setupProviderMockServer(t, provider, "manage_tasks", map[string]interface{}{
 		"action":  "add",
@@ -494,6 +546,10 @@ func TestManageTasks(t *testing.T) {
 }
 
 func TestManageScratchpad(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	provider := "google"
 	server, _ := setupProviderMockServer(t, provider, "manage_scratchpad", map[string]interface{}{
 		"action":  "write",

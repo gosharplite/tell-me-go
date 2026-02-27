@@ -21,6 +21,7 @@ import (
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
+	"github.com/stretchr/testify/require"
 )
 
 type toolBehavior struct {
@@ -33,7 +34,7 @@ type toolBehavior struct {
 	observe func() // Callback to signal execution
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
+func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...executorOption) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
 	reg := registry.New()
 	behaviors := make(map[string]*toolBehavior)
 	for name, behavior := range toolsMap {
@@ -74,7 +75,8 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	}
 
 	bus := &inframock.TestEventBus{}
-	exec := NewToolExecutor(reg, sm, bus)
+	exec, err := NewToolExecutor(reg, sm, bus, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	require.NoError(t, err)
 	exec.setStrategy(&mockStrategy{}) // Use simple strategy for easier verification
 	t.Cleanup(exec.Shutdown)
 
@@ -274,7 +276,7 @@ func TestToolExecutor_SafetyLimits(t *testing.T) {
 		}
 	})
 
-	t.Run("Long Running Tool - No Timeout", func(t *testing.T) {
+	t.Run("Long Running Tool - Extended Timeout", func(t *testing.T) {
 		t.Parallel()
 		toolsMap := map[string]toolBehavior{
 			"long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "finally finished"}, long: true},
@@ -325,12 +327,12 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 		t.Parallel()
 		toolsMap := map[string]toolBehavior{
 			"serial_panic": {panic: "serial kaboom", serial: true},
-			"next_tool":    {result: tools.ToolResult{Text: "should skip"}},
+			"next_serial":  {result: tools.ToolResult{Text: "should skip"}, serial: true},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "serial_panic"}},
-			{FunctionCall: &llm.FunctionCall{Name: "next_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "next_serial"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
@@ -466,7 +468,8 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 		reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc)
 	}
 
-	exec := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil)
+	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	exec.SetConcurrency(2, 0)
 	t.Cleanup(exec.Shutdown)
 
@@ -475,7 +478,7 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 		content.Parts = append(content.Parts, &llm.Part{FunctionCall: &llm.FunctionCall{Name: fmt.Sprintf("tool%d", i)}})
 	}
 
-	_, err := exec.Execute(context.Background(), content, 0, 10)
+	_, err = exec.Execute(context.Background(), content, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,6 +489,7 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 }
 
 func TestToolExecutor_SuggestTool(t *testing.T) {
+	t.Parallel()
 	validTools := []string{"list_files", "read_file", "write_file", "git_status", "ls", "patch"}
 
 	tests := []struct {
@@ -515,6 +519,7 @@ func TestToolExecutor_SuggestTool(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.hallucinated, func(t *testing.T) {
+			t.Parallel()
 			got := suggestTool(tt.hallucinated, validTools)
 			if got != tt.expected {
 				t.Errorf("suggestTool(%q) = %q, want %q", tt.hallucinated, got, tt.expected)
@@ -524,6 +529,7 @@ func TestToolExecutor_SuggestTool(t *testing.T) {
 }
 
 func TestLevenshteinDistance_UTF8(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		s1, s2 string
 		want   int
@@ -544,6 +550,7 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 }
 
 func TestWorkerPool_SubmitFailure(t *testing.T) {
+	t.Parallel()
 	p := concurrency.NewWorkerPool(1)
 	p.Shutdown()
 
@@ -562,6 +569,7 @@ func TestResultCollector(t *testing.T) {
 	}
 
 	t.Run("Ordering", func(t *testing.T) {
+		t.Parallel()
 		collector := newResultCollector(calls, nil)
 		collector.ch <- toolExecResult{index: 2, name: "tool2", tr: tools.ToolResult{Text: "res2"}}
 		collector.ch <- toolExecResult{index: 0, name: "tool0", tr: tools.ToolResult{Text: "res0"}}
@@ -581,6 +589,7 @@ func TestResultCollector(t *testing.T) {
 	})
 
 	t.Run("Context Cancellation", func(t *testing.T) {
+		t.Parallel()
 		ctx, cancel := context.WithCancel(context.Background())
 		collector := newResultCollector(calls, nil)
 		cancel()
@@ -594,9 +603,14 @@ func TestResultCollector(t *testing.T) {
 
 func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
-	e := &ToolExecutor{strategy: &mockStrategy{}}
+	reg := registry.New()
+	e, err := NewToolExecutor(reg, nil, nil, &MockLogger{})
+	require.NoError(t, err)
+	t.Cleanup(e.Shutdown)
+	e.setStrategy(&mockStrategy{})
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
+		t.Parallel()
 		calls := []*llm.FunctionCall{{Name: "get_image"}}
 		results := []tools.ToolResult{{
 			Text:       "Here is your image",
@@ -611,6 +625,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	})
 
 	t.Run("Multiple Binary Parts", func(t *testing.T) {
+		t.Parallel()
 		calls := []*llm.FunctionCall{{Name: "get_files"}}
 		results := []tools.ToolResult{{
 			BinaryData: []tools.BinaryData{
@@ -627,6 +642,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	})
 
 	t.Run("Multi-blob Interleaving and Ordering", func(t *testing.T) {
+		t.Parallel()
 		calls := []*llm.FunctionCall{{Name: "camera_snapshot"}}
 		results := []tools.ToolResult{{
 			Text: "Captured 2 photos",
@@ -642,6 +658,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	})
 
 	t.Run("Binary Data with No Text", func(t *testing.T) {
+		t.Parallel()
 		calls := []*llm.FunctionCall{{Name: "only_binary"}}
 		results := []tools.ToolResult{{
 			Text: "",
@@ -659,13 +676,15 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 }
 
 func TestToolExecutor_EventPublishing(t *testing.T) {
+	t.Parallel()
 	reg := registry.New()
 	reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "success"}, nil
 	})
 
 	bus := &inframock.TestEventBus{}
-	exec := NewToolExecutor(reg, nil, bus)
+	exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{
@@ -674,7 +693,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 		},
 	}
 
-	_, err := exec.Execute(context.Background(), content, 0, 5)
+	_, err = exec.Execute(context.Background(), content, 0, 5)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -689,8 +708,10 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 }
 
 func TestToolExecutor_Strategies(t *testing.T) {
+	t.Parallel()
 	reg := registry.New()
-	e := NewToolExecutor(reg, nil, nil)
+	e, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(e.Shutdown)
 	e.setStrategy(&markdownStrategy{})
 	e.setStrategy(&jsonStrategy{})
@@ -710,7 +731,8 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
-		exec := NewToolExecutor(reg, nil, bus)
+		exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
 		exec.setStrategy(&mockStrategy{})
 
@@ -730,7 +752,8 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
-		exec := NewToolExecutor(reg, nil, bus)
+		exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
 		exec.setStrategy(&mockStrategy{})
 
@@ -1024,4 +1047,54 @@ func TestToolExecutor_UserDeclinedBatch(t *testing.T) {
 	if res.tr.Text != expectedText {
 		t.Errorf("expected text %q, got %q", expectedText, res.tr.Text)
 	}
+}
+
+func TestToolExecutor_LongRunningTimeout(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Long Running Tool - Timeout Exceeded", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"very_long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "too late"}, long: true},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil, WithLongRunningTimeout(10*time.Millisecond))
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "very_long_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Tool execution timed out after 10ms")
+	})
+}
+
+func TestToolExecutor_ZombieTool(t *testing.T) {
+	t.Parallel()
+
+	reg := registry.New()
+	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "stubborn_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		time.Sleep(100 * time.Millisecond) // Ignores context!
+		return tools.ToolResult{Text: "finally finished"}, nil
+	}, registry.ToolOptions{LongRunning: true})
+
+	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
+
+	content := &llm.Content{Parts: []*llm.Part{
+		{FunctionCall: &llm.FunctionCall{Name: "stubborn_tool"}},
+	}}
+
+	resp, err := exec.Execute(context.Background(), content, 0, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	verifyErrorResponse(t, resp, "Tool execution timed out after 10ms")
+
+	// The stubborn tool is still running in the background...
+	// We can't easily wait for it without some signaling mechanism in the tool,
+	// but the fact that Execute returned proves that the agent is not hanging.
 }

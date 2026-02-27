@@ -11,6 +11,7 @@ import (
 )
 
 func TestAtomicWrite(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	ctx := context.Background()
 
@@ -59,6 +60,7 @@ func TestAtomicWrite(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if tt.setup != nil {
 				tt.setup(t)
 			}
@@ -104,6 +106,7 @@ func verifyFileState(t *testing.T, path string, expectedData []byte, expectedPer
 }
 
 func TestAtomicWrite_CancellationCleanup(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "cancel.txt")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -125,6 +128,7 @@ func TestAtomicWrite_CancellationCleanup(t *testing.T) {
 }
 
 func TestAtomicWrite_RenameFailure(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "target_dir")
 	err := os.MkdirAll(path, 0755)
@@ -149,6 +153,7 @@ func TestAtomicWrite_RenameFailure(t *testing.T) {
 }
 
 func TestAtomicWrite_OpenFileFailure(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	// Create a directory where we want to write, and make it read-only
 	// to force os.CreateTemp to fail.
@@ -177,6 +182,7 @@ func TestAtomicWrite_OpenFileFailure(t *testing.T) {
 }
 
 func TestAtomicWrite_Cancel(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "cancel.txt")
 	ctx, cancel := context.WithCancel(context.Background())

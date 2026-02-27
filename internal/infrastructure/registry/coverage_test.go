@@ -14,6 +14,7 @@ import (
 )
 
 func TestRegistry_DuplicateRegistration(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		actions  func(r tools.IToolRegistry)
@@ -55,6 +56,7 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			r := registry.New()
 			tt.actions(r)
 			tt.validate(t, r)
@@ -63,6 +65,7 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 }
 
 func TestRegistry_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		numRoutines int
@@ -72,6 +75,7 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			reg := registry.New()
 			var wg sync.WaitGroup
 

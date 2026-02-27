@@ -9,6 +9,7 @@ import (
 )
 
 func TestUncoveredBlock_Classify(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		block    uncoveredBlock
@@ -73,6 +74,7 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tt.block.Classify()
 			if tt.block.Category != tt.wantCat {
 				t.Errorf("Classify() Category = %v, want %v", tt.block.Category, tt.wantCat)
@@ -85,6 +87,7 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 }
 
 func TestParseCoverageLine(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		line    string
@@ -139,6 +142,7 @@ func TestParseCoverageLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := parseCoverageLine(tt.line, tt.prefix)
 			validateParseResult(t, got, err, tt.want, tt.wantErr)
 		})
@@ -170,6 +174,7 @@ func compareBlocks(t *testing.T, got, want *uncoveredBlock) {
 }
 
 func TestExtractFromLines(t *testing.T) {
+	t.Parallel()
 	lines := []string{"line1", "line2", "line3", "line4", "line5"}
 	tests := []struct {
 		name  string
@@ -211,6 +216,7 @@ func TestExtractFromLines(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var l []string
 			if tt.name != "empty lines" {
 				l = lines
@@ -224,6 +230,7 @@ func TestExtractFromLines(t *testing.T) {
 }
 
 func TestRenderReportSummary(t *testing.T) {
+	t.Parallel()
 	var sb strings.Builder
 	catStats := map[string]int{
 		"BUSINESS_LOGIC": 5,
@@ -254,6 +261,7 @@ func TestRenderReportSummary(t *testing.T) {
 }
 
 func TestAggregateCoverageStats(t *testing.T) {
+	t.Parallel()
 	blocks := []uncoveredBlock{
 		{Priority: "High", Category: "ERROR_HANDLING"},
 		{Priority: "High", Category: "BUSINESS_LOGIC"},
@@ -278,6 +286,7 @@ func TestAggregateCoverageStats(t *testing.T) {
 }
 
 func TestRenderBlockGaps(t *testing.T) {
+	t.Parallel()
 	var sb strings.Builder
 	blocks := []uncoveredBlock{
 		{File: "file1.go", Start: 1, End: 10, Category: "CAT1", Code: "code1", Priority: "High"},
@@ -307,6 +316,7 @@ func TestRenderBlockGaps(t *testing.T) {
 }
 
 func TestParseLineNum(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		part    string
@@ -320,6 +330,7 @@ func TestParseLineNum(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.part, func(t *testing.T) {
+			t.Parallel()
 			got, err := parseLineNum(tt.part)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("parseLineNum(%q) error = %v, wantErr %v", tt.part, err, tt.wantErr)
@@ -332,6 +343,7 @@ func TestParseLineNum(t *testing.T) {
 }
 
 func TestParseSymbolLine(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		pathAndRange string
@@ -350,6 +362,7 @@ func TestParseSymbolLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := parseSymbolLine(tt.pathAndRange, tt.prefix)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("parseSymbolLine(%q) error = %v, wantErr %v", tt.pathAndRange, err, tt.wantErr)
@@ -364,6 +377,7 @@ func TestParseSymbolLine(t *testing.T) {
 }
 
 func TestParseCoverageProfile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -388,6 +402,7 @@ func TestParseCoverageProfile(t *testing.T) {
 }
 
 func TestGetDetailedCoverageReport(t *testing.T) {
+	t.Parallel()
 	// This test is harder because it runs 'go test' and reads from FS.
 	// We can try to mock but getDetailedCoverage creates temp files and runs actual commands.
 
@@ -406,6 +421,7 @@ func TestGetDetailedCoverageReport(t *testing.T) {
 }
 
 func TestGetDetailedCoverageJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -420,9 +436,11 @@ func TestGetDetailedCoverageJSON(t *testing.T) {
 }
 
 func TestGetModuleName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		mock := &mockExecutor{
 			OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				return []byte("github.com/test/mod\n"), nil
@@ -435,6 +453,7 @@ func TestGetModuleName(t *testing.T) {
 	})
 
 	t.Run("failure", func(t *testing.T) {
+		t.Parallel()
 		mock := &mockExecutor{
 			OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				return nil, os.ErrNotExist
@@ -448,6 +467,7 @@ func TestGetModuleName(t *testing.T) {
 }
 
 func TestParseDetailedCoverage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -479,6 +499,7 @@ func TestParseDetailedCoverage(t *testing.T) {
 }
 
 func TestFormatDetailedCoverageReport(t *testing.T) {
+	t.Parallel()
 	blocks := []uncoveredBlock{
 		{File: "file1.go", Start: 1, End: 2, Category: "BUSINESS_LOGIC", Priority: "High", Code: "code1"},
 	}
@@ -492,6 +513,7 @@ func TestFormatDetailedCoverageReport(t *testing.T) {
 }
 
 func TestFormatDetailedCoverageJSON(t *testing.T) {
+	t.Parallel()
 	blocks := []uncoveredBlock{
 		{File: "file1.go", Start: 1, End: 2, Category: "BUSINESS_LOGIC", Priority: "High", Code: "code1"},
 	}
@@ -513,6 +535,7 @@ func TestFormatDetailedCoverageJSON(t *testing.T) {
 }
 
 func TestParseDetailedCoverage_FileReadError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -541,6 +564,7 @@ func TestParseDetailedCoverage_FileReadError(t *testing.T) {
 }
 
 func TestGetDetailedCoverage_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// We need to create a real temp file for the mock to "generate"
@@ -589,7 +613,9 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 }
 
 func TestFormatDetailedCoverageReport_MoreOptions(t *testing.T) {
+	t.Parallel()
 	// Test few high priority gaps and some medium
+
 	blocks := []uncoveredBlock{
 		{File: "f1.go", Priority: "High", Category: "BUS"},
 		{File: "f2.go", Priority: "Medium", Category: "ADAP"},
@@ -611,6 +637,7 @@ func TestFormatDetailedCoverageReport_MoreOptions(t *testing.T) {
 }
 
 func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -633,6 +660,7 @@ func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
 }
 
 func TestParseCoverageProfile_MalformedLine(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -654,6 +682,7 @@ func TestParseCoverageProfile_MalformedLine(t *testing.T) {
 }
 
 func TestGetDetailedCoverageReport_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -686,6 +715,7 @@ func TestGetDetailedCoverageReport_Success(t *testing.T) {
 }
 
 func TestGetDetailedCoverageJSON_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -718,6 +748,7 @@ func TestGetDetailedCoverageJSON_Success(t *testing.T) {
 }
 
 func TestExtractFromLines_EdgeCases(t *testing.T) {
+	t.Parallel()
 	lines := []string{"line1", "line2"}
 	// Test start = 0
 	got := extractFromLines(lines, 0, 1)
@@ -739,6 +770,7 @@ func TestExtractFromLines_EdgeCases(t *testing.T) {
 }
 
 func TestParseCoverageProfile_Empty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{}
 	r := strings.NewReader("")
@@ -752,6 +784,7 @@ func TestParseCoverageProfile_Empty(t *testing.T) {
 }
 
 func TestFormatDetailedCoverageReport_NoGaps(t *testing.T) {
+	t.Parallel()
 	report := formatDetailedCoverageReport("pkg", nil)
 	if !strings.Contains(report, "Total Gaps: 0") {
 		t.Error("report should indicate 0 gaps")
@@ -768,6 +801,7 @@ func (e *errorReader) Read(p []byte) (n int, err error) {
 }
 
 func TestParseCoverageProfile_ScannerError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{}
 	r := &errorReader{}
@@ -778,7 +812,9 @@ func TestParseCoverageProfile_ScannerError(t *testing.T) {
 }
 
 func TestParseCoverageLine_SpecialLines(t *testing.T) {
+	t.Parallel()
 	// Empty line
+
 	got, err := parseCoverageLine("", "")
 	if got != nil || err != nil {
 		t.Error("expected nil, nil for empty line")
@@ -792,7 +828,9 @@ func TestParseCoverageLine_SpecialLines(t *testing.T) {
 }
 
 func TestFormatDetailedCoverageReport_MediumSlots(t *testing.T) {
+	t.Parallel()
 	// len(high) < 5
+
 	var high []uncoveredBlock
 	for i := 0; i < 4; i++ {
 		high = append(high, uncoveredBlock{Priority: "High"})
@@ -820,6 +858,7 @@ func (d *delayedErrorReader) Read(p []byte) (n int, err error) {
 }
 
 func TestParseDetailedCoverage_ProfileError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{}
 	// Valid first line, then error
@@ -832,6 +871,7 @@ func TestParseDetailedCoverage_ProfileError(t *testing.T) {
 }
 
 func TestGetModuleName_WithTrailingSlash(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -845,6 +885,7 @@ func TestGetModuleName_WithTrailingSlash(t *testing.T) {
 }
 
 func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{}
 

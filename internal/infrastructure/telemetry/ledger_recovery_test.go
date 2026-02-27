@@ -16,8 +16,11 @@ import (
 )
 
 func TestLedgerRecoveryIntegration(t *testing.T) {
+	t.Parallel()
 	t.Run("FullRecovery", func(t *testing.T) {
+		t.Parallel()
 		// 1. Use t.TempDir() to set up a clean workspace.
+
 		tempDir := t.TempDir()
 
 		// 2. Create two subdirectories representing different modes/sessions.
@@ -87,6 +90,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 	})
 
 	t.Run("CorruptedLedger", func(t *testing.T) {
+		t.Parallel()
 		tempDir := t.TempDir()
 		historyPath := filepath.Join(tempDir, "global_costs.json")
 		require.NoError(t, os.WriteFile(historyPath, []byte("{broken}"), 0644))
@@ -113,6 +117,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 	})
 
 	t.Run("UnreadableLogFile", func(t *testing.T) {
+		t.Parallel()
 		tempDir := t.TempDir()
 		sm := security.NewSecurityManager(nil)
 		sm.RegisterSafePath(tempDir)
@@ -143,9 +148,11 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 	})
 
 	t.Run("InvalidLogContent", func(t *testing.T) {
+		t.Parallel()
 		// To truly trigger parseUsage error after Open, we might need something that makes scanner fail.
 		// But parseUsage also returns error if it can't open the file (covered by UnreadableLogFile).
 		// Let's try to make it skip invalid lines and still work for valid ones.
+
 		tempDir := t.TempDir()
 		sm := security.NewSecurityManager(nil)
 		sm.RegisterSafePath(tempDir)

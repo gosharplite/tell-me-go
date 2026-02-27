@@ -61,15 +61,11 @@ func (m *mockTokenCounter) Count(contents []*llm.Content) int {
 	return m.tokens
 }
 
-func (m *mockTokenCounter) CountTokens(text string) int {
-	return m.tokens
-}
-
 type mockEstimator struct {
 	tokens int
 }
 
-func (m *mockEstimator) EstimateTokens(contents []*llm.Content) int {
+func (m *mockEstimator) estimateTokens(contents []*llm.Content) int {
 	return m.tokens
 }
 
@@ -182,8 +178,12 @@ type mockEventBus struct {
 	events []events.Event
 }
 
-func (m *mockEventBus) Publish(e events.Event) {
+func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.events = append(m.events, e)
+	return nil
 }
 
 func (m *mockEventBus) Subscribe(f func(events.Event))     {}
@@ -204,4 +204,23 @@ func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextReque
 
 func (m *mockTransformer) Priority() int {
 	return m.priority
+}
+
+type mockPruningPolicy struct {
+	markTurnsFn func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error)
+	nameFn      func() string
+}
+
+func (m *mockPruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+	if m.markTurnsFn != nil {
+		return m.markTurnsFn(ctx, turns, keep)
+	}
+	return 0, nil
+}
+
+func (m *mockPruningPolicy) Name() string {
+	if m.nameFn != nil {
+		return m.nameFn()
+	}
+	return "MockPolicy"
 }

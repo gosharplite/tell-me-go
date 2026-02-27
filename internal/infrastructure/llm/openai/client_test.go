@@ -793,6 +793,7 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 
 	t.Run("HTTP Request Failure", func(t *testing.T) {
 		// A URL that will fail on Do()
+
 		c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "request failed") {
@@ -903,6 +904,7 @@ func TestOpenAI_StreamEdgeCases(t *testing.T) {
 
 func TestOpenAI_StreamRequestFailure(t *testing.T) {
 	// Use a non-existent URL to trigger Do() error
+
 	c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
 	_, err := c.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 	if err == nil || !strings.Contains(err.Error(), "request failed") {

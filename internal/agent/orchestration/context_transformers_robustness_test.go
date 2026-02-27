@@ -4,6 +4,7 @@
 package orchestration
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -54,7 +55,10 @@ func TestGroupTurns_Robustness(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			turns := groupTurns(tt.history)
+			turns, err := groupTurns(context.Background(), tt.history)
+			if err != nil {
+				t.Fatalf("groupTurns failed: %v", err)
+			}
 			if len(turns) != len(tt.expected) {
 				t.Fatalf("expected %d turns, got %d", len(tt.expected), len(turns))
 			}

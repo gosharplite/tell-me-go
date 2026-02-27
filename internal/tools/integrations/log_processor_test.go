@@ -31,6 +31,7 @@ func TestProcessLogContent(t *testing.T) {
 
 	t.Run("DefaultTailLines", func(t *testing.T) {
 		// Create content with 250 lines
+
 		var lines []string
 		for i := 1; i <= 250; i++ {
 			lines = append(lines, "line contents")

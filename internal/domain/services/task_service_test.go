@@ -69,6 +69,7 @@ func setupTaskService(t *testing.T) (*TaskService, *mockTaskRepo) {
 }
 
 func TestTaskService_Add(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, repo := setupTaskService(t)
 
@@ -85,6 +86,7 @@ func TestTaskService_Add(t *testing.T) {
 }
 
 func TestTaskService_Update(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, _ := setupTaskService(t)
 	_, _ = s.AddTask(ctx, "Initial task")
@@ -100,6 +102,7 @@ func TestTaskService_Update(t *testing.T) {
 }
 
 func TestTaskService_Delete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, _ := setupTaskService(t)
 	_, _ = s.AddTask(ctx, "To be deleted")
@@ -113,6 +116,7 @@ func TestTaskService_Delete(t *testing.T) {
 }
 
 func TestTaskService_Concurrency(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	repo := &mockTaskRepo{}
 	s := NewTaskService(repo)
@@ -137,9 +141,11 @@ func TestTaskService_Concurrency(t *testing.T) {
 }
 
 func TestTaskService_Initialize(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockTaskRepo{
 			tasks: []ports.Task{
 				{ID: 1, Content: "Task 1"},
@@ -169,6 +175,7 @@ func TestTaskService_Initialize(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockTaskRepo{
 			readErr: errors.New("read error"),
 		}
@@ -182,9 +189,11 @@ func TestTaskService_Initialize(t *testing.T) {
 }
 
 func TestTaskService_ClearTasks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
 		s, repo := setupTaskService(t)
 		_, _ = s.AddTask(ctx, "Task 1")
 		_, _ = s.AddTask(ctx, "Task 2")
@@ -203,6 +212,7 @@ func TestTaskService_ClearTasks(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockTaskRepo{}
 		s := NewTaskService(repo)
 		_, err := s.AddTask(ctx, "Task")
@@ -219,9 +229,11 @@ func TestTaskService_ClearTasks(t *testing.T) {
 }
 
 func TestTaskService_ErrorPaths(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("AddTask Empty Content", func(t *testing.T) {
+		t.Parallel()
 		s, _ := setupTaskService(t)
 		_, err := s.AddTask(ctx, "")
 		if err == nil {
@@ -230,6 +242,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("AddTask Write Error", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockTaskRepo{writeErr: errors.New("write fail")}
 		s := NewTaskService(repo)
 		_, err := s.AddTask(ctx, "Test")
@@ -239,6 +252,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("UpdateTask Not Found", func(t *testing.T) {
+		t.Parallel()
 		s, _ := setupTaskService(t)
 		_, err := s.UpdateTask(ctx, 999, "content", "status")
 		if err == nil {
@@ -247,6 +261,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("UpdateTask Write Error", func(t *testing.T) {
+		t.Parallel()
 		s, repo := setupTaskService(t)
 		_, _ = s.AddTask(ctx, "Task")
 		repo.writeErr = errors.New("write fail")
@@ -257,6 +272,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("DeleteTask Not Found", func(t *testing.T) {
+		t.Parallel()
 		s, _ := setupTaskService(t)
 		err := s.DeleteTask(ctx, 999)
 		if err == nil {
@@ -265,6 +281,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("DeleteTask Write Error", func(t *testing.T) {
+		t.Parallel()
 		s, repo := setupTaskService(t)
 		_, _ = s.AddTask(ctx, "Task")
 		repo.writeErr = errors.New("write fail")
@@ -276,6 +293,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 }
 
 func TestTaskService_ListTasks_Filter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, _ := setupTaskService(t)
 	_, _ = s.AddTask(ctx, "Pending 1")
@@ -295,6 +313,7 @@ func TestTaskService_ListTasks_Filter(t *testing.T) {
 }
 
 func TestTaskService_UpdateTask_Partial(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, _ := setupTaskService(t)
 	t1, _ := s.AddTask(ctx, "Task 1")
@@ -313,6 +332,7 @@ func TestTaskService_UpdateTask_Partial(t *testing.T) {
 }
 
 func TestTaskService_DeleteTask_Multiple(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, repo := setupTaskService(t)
 	_, _ = s.AddTask(ctx, "Task 1")

@@ -9,6 +9,7 @@ import (
 )
 
 func TestComplexityAnalyzer_Analyze(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	code := `package test
@@ -43,6 +44,7 @@ func Complex(a, b bool) {
 }
 
 func TestComplexityAnalyzer_Sorting(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	code := `package test

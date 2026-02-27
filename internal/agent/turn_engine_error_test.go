@@ -69,6 +69,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, t
 }
 
 func TestTurnEngine_TransientRecovery(t *testing.T) {
+	t.Parallel()
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
@@ -119,6 +120,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 }
 
 func TestTurnEngine_RateLimitRecovery(t *testing.T) {
+	t.Parallel()
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
@@ -174,6 +176,7 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 }
 
 func TestTurnEngine_FatalAuthFailure(t *testing.T) {
+	t.Parallel()
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
@@ -233,6 +236,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 }
 
 func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
+	t.Parallel()
 	tracker := &errorPhaseTracker{}
 
 	gw := &mockGateway{
@@ -280,6 +284,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 }
 
 func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
+	t.Parallel()
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
@@ -326,6 +331,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 }
 
 func TestTurnEngine_UnknownPhaseError(t *testing.T) {
+	t.Parallel()
 	gw := &mockGateway{}
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, &errorPhaseTracker{})
@@ -350,6 +356,7 @@ func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 }
 
 func TestTurnEngine_NilLLMResponse(t *testing.T) {
+	t.Parallel()
 	gw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
@@ -391,6 +398,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 }
 
 func TestTurnEngine_PersistenceFailure(t *testing.T) {
+	t.Parallel()
 	expectedErr := errors.New("mock db failure")
 
 	hm := &mockHistoryManager{
@@ -422,6 +430,7 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 }
 
 func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
+	t.Parallel()
 	expectedErr := llm.ErrTransient // Use transient error to hit the 'if isTransient' block
 
 	hm := &mockHistoryManager{
@@ -457,6 +466,7 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 }
 
 func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
+	t.Parallel()
 	step := &executionStep{}
 
 	ctx := context.Background()
@@ -500,6 +510,7 @@ func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
 }
 
 func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
+	t.Parallel()
 	step := &executionStep{}
 
 	expectedErr := llm.ErrTransient // Is transient

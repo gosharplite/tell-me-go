@@ -54,6 +54,7 @@ func (m *mockConfigRepo) GetAll(ctx context.Context) (map[string]string, error) 
 }
 
 func TestConfigService_Initialize(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -84,6 +85,7 @@ func TestConfigService_Initialize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repo := &mockConfigRepo{config: tt.repoData, err: tt.repoErr}
 			s := NewConfigService(repo)
 
@@ -102,9 +104,11 @@ func TestConfigService_Initialize(t *testing.T) {
 }
 
 func TestConfigService_Set(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Validation_EmptyKey", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockConfigRepo{config: make(map[string]string)}
 		s := NewConfigService(repo)
 		err := s.Set(ctx, "", "val")
@@ -114,6 +118,7 @@ func TestConfigService_Set(t *testing.T) {
 	})
 
 	t.Run("Success_NewKey", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockConfigRepo{config: make(map[string]string)}
 		s := NewConfigService(repo)
 		err := s.Set(ctx, "k1", "v1")
@@ -127,6 +132,7 @@ func TestConfigService_Set(t *testing.T) {
 	})
 
 	t.Run("RollbackOnFailure_NewKey", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockConfigRepo{config: make(map[string]string)}
 		s := NewConfigService(repo)
 		_ = s.Initialize(ctx)
@@ -144,6 +150,7 @@ func TestConfigService_Set(t *testing.T) {
 	})
 
 	t.Run("RollbackOnFailure_ExistingKey", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockConfigRepo{config: map[string]string{"existing": "old"}}
 		s := NewConfigService(repo)
 		_ = s.Initialize(ctx)
@@ -162,6 +169,7 @@ func TestConfigService_Set(t *testing.T) {
 }
 
 func TestConfigService_Get(t *testing.T) {
+	t.Parallel()
 	repo := &mockConfigRepo{config: map[string]string{"k1": "v1"}}
 	s := NewConfigService(repo)
 	_ = s.Initialize(context.Background())
@@ -179,6 +187,7 @@ func TestConfigService_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			val, err := s.Get(tt.key)
 			if (err != nil) != tt.expectedErr {
 				t.Errorf("Get() error = %v, expectedErr %v", err, tt.expectedErr)
@@ -191,9 +200,11 @@ func TestConfigService_Get(t *testing.T) {
 }
 
 func TestConfigService_Delete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Validation_EmptyKey", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockConfigRepo{}
 		s := NewConfigService(repo)
 		err := s.Delete(ctx, "")
@@ -203,6 +214,7 @@ func TestConfigService_Delete(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockConfigRepo{config: map[string]string{"k1": "v1"}}
 		s := NewConfigService(repo)
 		_ = s.Initialize(ctx)
@@ -219,6 +231,7 @@ func TestConfigService_Delete(t *testing.T) {
 	})
 
 	t.Run("Success_NonExistent", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockConfigRepo{config: make(map[string]string)}
 		s := NewConfigService(repo)
 		err := s.Delete(ctx, "nonexistent")
@@ -228,6 +241,7 @@ func TestConfigService_Delete(t *testing.T) {
 	})
 
 	t.Run("RollbackOnFailure", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockConfigRepo{config: map[string]string{"k1": "v1"}}
 		s := NewConfigService(repo)
 		_ = s.Initialize(ctx)
@@ -246,6 +260,7 @@ func TestConfigService_Delete(t *testing.T) {
 }
 
 func TestConfigService_GetAll(t *testing.T) {
+	t.Parallel()
 	repo := &mockConfigRepo{config: map[string]string{"k1": "v1", "k2": "v2"}}
 	s := NewConfigService(repo)
 	_ = s.Initialize(context.Background())
@@ -267,6 +282,7 @@ func TestConfigService_GetAll(t *testing.T) {
 }
 
 func TestConfigService_Concurrency(t *testing.T) {
+	t.Parallel()
 	repo := &mockConfigRepo{config: make(map[string]string)}
 	s := NewConfigService(repo)
 	ctx := context.Background()

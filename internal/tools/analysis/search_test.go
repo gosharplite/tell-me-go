@@ -17,6 +17,7 @@ import (
 )
 
 func TestListTodos(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		files    map[string]string
@@ -82,6 +83,7 @@ func TestListTodos(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			m, tempDir := setupTodoWorkspace(t, tt.files)
 			path := tempDir
 			if tt.path != "" {
@@ -119,6 +121,7 @@ func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, 
 }
 
 func TestSearchUsagesGlobally(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
@@ -169,6 +172,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 }
 
 func TestSearchManager_Errors(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
@@ -210,6 +214,7 @@ func TestSearchManager_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := tt.method(ctx, tt.args)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("%s: error = %v, wantErr %v", tt.name, err, tt.wantErr)

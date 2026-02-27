@@ -28,6 +28,7 @@ func (m *mockGitExecutor) CombinedOutput(ctx context.Context, name string, args 
 
 func TestGitTools(t *testing.T) {
 	// SecurityManager requires a reader for InteractionHandler
+
 	sm := security.NewSecurityManager(nil)
 	// Allow all paths for testing
 	sm.SetBypassActive(true)
@@ -301,6 +302,7 @@ func TestGitBlameSafety(t *testing.T) {
 
 func TestGitManagerInternal(t *testing.T) {
 	// Test the runGitCommand failure branch explicitly if not covered
+
 	m := &gitManager{
 		Exec: &mockGitExecutor{
 			handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {

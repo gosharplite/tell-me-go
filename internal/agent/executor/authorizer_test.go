@@ -13,6 +13,7 @@ import (
 )
 
 func TestRequestBatchConsent_Denied(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			return []*tools.ToolDeclaration{{Name: "dangerous_tool", RequiresConsent: true}}
@@ -28,7 +29,9 @@ func TestRequestBatchConsent_Denied(t *testing.T) {
 }
 
 func TestIdentifyConsentItems_Panic(t *testing.T) {
+	t.Parallel()
 	// A registry that panics on GetDeclarations
+
 	reg := &panicRegistry{panicOnGet: true}
 	auth := newSecurityAuthorizer(nil, reg)
 
@@ -40,8 +43,10 @@ func TestIdentifyConsentItems_Panic(t *testing.T) {
 }
 
 func TestAuthorizationPanic(t *testing.T) {
+	t.Parallel()
 	// Not really a panic in AuthorizeTool itself as it stands, but good to have if we add more logic.
 	// For now, let's just test basic authorization denial.
+
 	reg := &mockToolRegistry{}
 	sm := &mockSecurityManager{allowedCommands: map[string]bool{"allowed": true}}
 	auth := newSecurityAuthorizer(sm, reg)

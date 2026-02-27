@@ -13,6 +13,7 @@ import (
 )
 
 func TestIndexer_SymbolClassification(t *testing.T) {
+	t.Parallel()
 	code := `package test
 type MyStruct struct{}
 func (s *MyStruct) MyPointerMethod() {}
@@ -45,6 +46,7 @@ func unexported() {}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			syms, err := idx.SearchSymbols(ctx, tmpDir, tt.name, false)
 			require.NoError(t, err)
 
@@ -79,6 +81,7 @@ func setupIndexerWorkspace(t *testing.T, code string) (string, *indexer) {
 }
 
 func TestIndexer_FindImplementors(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644)
 	code := `package test
@@ -110,6 +113,7 @@ func (s S) M() {}
 }
 
 func TestIndexer_Lookup(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644)
 	code := `package test
@@ -134,6 +138,7 @@ type T struct{}
 }
 
 func TestIndexer_ErrorPersistence(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644)
 

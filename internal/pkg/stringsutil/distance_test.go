@@ -6,6 +6,7 @@ package stringsutil
 import "testing"
 
 func TestLevenshteinDistance(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		s1, s2 string
 		want   int

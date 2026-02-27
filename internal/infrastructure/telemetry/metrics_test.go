@@ -11,6 +11,7 @@ import (
 )
 
 func TestCostCalculator_Calculate(t *testing.T) {
+	t.Parallel()
 	pricingData := domain_pricing.PricingData{}
 	modelPricing := domain_pricing.ModelPricing{
 		Hit:         0.1,
@@ -43,6 +44,7 @@ func TestCostCalculator_Calculate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := calc.Calculate(tt.stats)
 			if got.TotalCost != tt.wantCost {
 				t.Errorf("Calculate() TotalCost = %v, want %v", got.TotalCost, tt.wantCost)
@@ -52,6 +54,7 @@ func TestCostCalculator_Calculate(t *testing.T) {
 }
 
 func TestAccumulate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		mt           llm.Metrics
@@ -80,6 +83,7 @@ func TestAccumulate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			stats := &domain_pricing.UsageStats{}
 			accumulate(stats, tt.mt)
 

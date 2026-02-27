@@ -11,6 +11,7 @@ import (
 )
 
 func TestAuditor_LogAudit(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "audit.log")
 	a := newAuditor()
@@ -33,6 +34,7 @@ func TestAuditor_LogAudit(t *testing.T) {
 }
 
 func TestAuditor_NoLogFile(t *testing.T) {
+	t.Parallel()
 	a := newAuditor()
 	// Should not panic or fail when logFile is empty
 	a.LogAudit("Action", "Test", "Detail", "Something")

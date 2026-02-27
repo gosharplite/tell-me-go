@@ -21,6 +21,7 @@ func TestCostLedgerSystem(t *testing.T) {
 
 	// 2. Verify shared state contract (Data Integrity)
 	t.Run("DataIntegrity", func(t *testing.T) {
+		t.Parallel()
 		historyPath := filepath.Join(tmpDir, "output", "global_costs.json")
 
 		// SessionCostRecord represents the structure of records in global_costs.json

@@ -11,13 +11,14 @@ import (
 )
 
 func TestEventRingBuffer_Basic(t *testing.T) {
+	t.Parallel()
 	buffer := &eventRingBuffer{max: 3}
 	if buffer.len() != 0 {
 		t.Errorf("Expected length 0, got %d", buffer.len())
 	}
 
-	buffer.push(1)
-	buffer.push(2)
+	buffer.push(context.Background(), 1)
+	buffer.push(context.Background(), 2)
 
 	if buffer.len() != 2 {
 		t.Errorf("Expected length 2, got %d", buffer.len())
@@ -34,13 +35,14 @@ func TestEventRingBuffer_Basic(t *testing.T) {
 }
 
 func TestEventRingBuffer_Eviction(t *testing.T) {
+	t.Parallel()
 	buffer := &eventRingBuffer{max: 3}
-	buffer.push(1)
-	buffer.push(2)
-	buffer.push(3)
+	buffer.push(context.Background(), 1)
+	buffer.push(context.Background(), 2)
+	buffer.push(context.Background(), 3)
 
 	// Buffer is now full [1, 2, 3]. Pushing next should evict 1.
-	buffer.push(4)
+	buffer.push(context.Background(), 4)
 
 	if buffer.len() != 3 {
 		t.Errorf("Expected length 3 after eviction, got %d", buffer.len())
@@ -53,8 +55,8 @@ func TestEventRingBuffer_Eviction(t *testing.T) {
 	}
 
 	// Buffer is now [3, 4]
-	buffer.push(5)
-	buffer.push(6) // Evicts 3
+	buffer.push(context.Background(), 5)
+	buffer.push(context.Background(), 6) // Evicts 3
 
 	if val := buffer.pop(); val != 4 {
 		t.Errorf("Expected popped value to be 4, got %v", val)
@@ -62,6 +64,7 @@ func TestEventRingBuffer_Eviction(t *testing.T) {
 }
 
 func TestEventRingBuffer_EmptyState(t *testing.T) {
+	t.Parallel()
 	buffer := &eventRingBuffer{max: 3}
 	if val := buffer.pop(); val != nil {
 		t.Errorf("Expected nil when popping empty buffer, got %v", val)
@@ -72,6 +75,7 @@ func TestEventRingBuffer_EmptyState(t *testing.T) {
 }
 
 func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		capacity int
@@ -82,6 +86,7 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			bus := NewSimpleEventBusWithCapacity(tt.capacity)
 			if bus.capacity != defaultMaxQueueSize {
 				t.Errorf("expected capacity %d, got %d", defaultMaxQueueSize, bus.capacity)
@@ -89,7 +94,9 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 
 			// Verify it doesn't panic on basic operations
 			bus.Subscribe(func(e Event) {})
-			bus.Publish("test")
+			if err := bus.Publish(context.Background(), "test"); err != nil {
+				t.Fatalf("failed to publish: %v", err)
+			}
 			_ = bus.Flush(context.Background())
 			_ = bus.Shutdown(context.Background())
 		})
@@ -97,6 +104,7 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 }
 
 func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
+	t.Parallel()
 	bus := NewSimpleEventBus()
 
 	blockSub := make(chan struct{})
@@ -114,7 +122,9 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 	// Goroutine 1: Flush (will block on the subscriber channel)
 	go func() {
 		defer wg.Done()
-		bus.Publish("flush_trigger")
+		if err := bus.Publish(context.Background(), "flush_trigger"); err != nil {
+			t.Errorf("failed to publish: %v", err)
+		}
 		// Flush will wait for the blocked subscriber
 		_ = bus.Flush(context.Background())
 	}()
@@ -145,6 +155,7 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 }
 
 func TestPumpEvents_ContextCancellation_LeakCheck(t *testing.T) {
+	t.Parallel()
 	bus := NewSimpleEventBus()
 	in := make(chan Event)
 	out := make(chan Event)
@@ -174,6 +185,7 @@ func TestPumpEvents_ContextCancellation_LeakCheck(t *testing.T) {
 }
 
 func TestPumpEvents_GracefulExit_OnInputClose(t *testing.T) {
+	t.Parallel()
 	bus := NewSimpleEventBus()
 	in := make(chan Event)
 	out := make(chan Event)
@@ -204,6 +216,7 @@ func TestPumpEvents_GracefulExit_OnInputClose(t *testing.T) {
 }
 
 func TestPumpEvents_BlockedOnOut_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	bus := NewSimpleEventBusWithCapacity(1)
 	in := make(chan Event)
 	out := make(chan Event) // Unbuffered, no one reading
@@ -236,5 +249,66 @@ func TestPumpEvents_BlockedOnOut_ContextCancellation(t *testing.T) {
 		// Success
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("pumpEvents goroutine leaked while blocked on out channel")
+	}
+}
+
+func TestSimpleEventBus_GetEffectiveCapacity(t *testing.T) {
+	t.Parallel()
+	bus := &SimpleEventBus{capacity: 0}
+	if cap := bus.getEffectiveCapacity(); cap != defaultMaxQueueSize {
+		t.Errorf("expected defaultMaxQueueSize for 0 capacity, got %d", cap)
+	}
+
+	bus.capacity = -5
+	if cap := bus.getEffectiveCapacity(); cap != defaultMaxQueueSize {
+		t.Errorf("expected defaultMaxQueueSize for negative capacity, got %d", cap)
+	}
+
+	bus.capacity = 42
+	if cap := bus.getEffectiveCapacity(); cap != 42 {
+		t.Errorf("expected 42 capacity, got %d", cap)
+	}
+}
+
+func TestSimpleEventBus_GetSafeContext(t *testing.T) {
+	t.Parallel()
+	bus := &SimpleEventBus{}
+	ctx := bus.getSafeContext()
+	if ctx == nil {
+		t.Fatal("expected non-nil context from getSafeContext")
+	}
+
+	expectedCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus.ctx = expectedCtx
+	if got := bus.getSafeContext(); got != expectedCtx {
+		t.Errorf("expected provided context, got %v", got)
+	}
+}
+
+func TestSimpleEventBus_HandleInternalEvent(t *testing.T) {
+	t.Parallel()
+	bus := &SimpleEventBus{}
+	ctx := context.Background()
+
+	// 1. Not an internal event
+	if handled := bus.handleInternalEvent(ctx, "normal-event"); handled {
+		t.Errorf("expected false for normal event, got true")
+	}
+
+	// 2. Flush event
+	done := make(chan error, 1)
+	fe := flushEvent{done: done}
+	if handled := bus.handleInternalEvent(ctx, fe); !handled {
+		t.Errorf("expected true for flush event, got false")
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("expected nil error from flush event, got %v", err)
+		}
+	default:
+		t.Error("expected flush event to be completed")
 	}
 }

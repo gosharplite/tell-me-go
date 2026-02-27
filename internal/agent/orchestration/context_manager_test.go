@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestContextManager_PipelineMethods(t *testing.T) {
@@ -286,7 +288,7 @@ func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 		MaxHistoryTurns:  100,
 	}
 
-	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
 	err := bus.Flush(ctx)
 	assert.NoError(t, err)
 
@@ -298,7 +300,7 @@ func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 
 	// Publish another update to ensure it updates again (rebuilds pipeline)
 	newLimits.MaxHistoryTokens = 8888
-	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
 	err = bus.Flush(ctx)
 	assert.NoError(t, err)
 
@@ -355,4 +357,50 @@ func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 	// Original: 25 messages. Turn 1 (24 msgs), Turn 2 (1 msg).
 	// After summarization of Turn 1: 2 summary messages + 1 message from Turn 2 = 3 messages.
 	assert.Equal(t, 3, history.GetTotalEntries())
+}
+
+func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
+	t.Parallel()
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	history := &mockHistoryManager{}
+	cm := NewContextManager(strategy, history, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := cm.Prepare(ctx, 1)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Expected context.Canceled, got %v", err)
+	}
+}
+
+func TestContextManager_AddContent_ContextCancellation_PreventsLeak(t *testing.T) {
+	t.Parallel()
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	history := &mockHistoryManager{}
+	cm := NewContextManager(strategy, history, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "test"}}})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Expected context.Canceled, got %v", err)
+	}
+}
+
+func TestContextManager_SummarizeRange_ContextCancellation_PreventsLeak(t *testing.T) {
+	t.Parallel()
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	history := &mockHistoryManager{}
+	cm := NewContextManager(strategy, history, nil, nil)
+	cm.Summarizer = &mockSummarizer{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := cm.SummarizeRange(ctx, 1, "")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Expected context.Canceled, got %v", err)
+	}
 }

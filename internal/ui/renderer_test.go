@@ -90,6 +90,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 
 	t.Run("LogUsage", func(t *testing.T) {
 		// LogUsage writes to a file
+
 		tmpFile := t.TempDir() + "/usage.log"
 		metrics := &llm.Metrics{
 			PromptTokens:   10,

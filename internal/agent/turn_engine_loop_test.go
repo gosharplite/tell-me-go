@@ -19,6 +19,7 @@ import (
 )
 
 func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
+	t.Parallel()
 	bus := &events.SimpleEventBus{}
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -78,6 +79,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 }
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
+	t.Parallel()
 	bus := &events.SimpleEventBus{}
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")

@@ -20,6 +20,7 @@ import (
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // integrationMockExecutor defines a mock for tool execution.
@@ -92,7 +93,9 @@ func (m *dynamicMockCounter) CountTokens(text string) int {
 }
 
 func TestTurnEngine_TruncationIntegration(t *testing.T) {
+	t.Parallel()
 	t.Run("Scenario A - Single Massive Payload", func(t *testing.T) {
+		t.Parallel()
 		bus := &events.SimpleEventBus{}
 		historyPath := filepath.Join(t.TempDir(), "history_a.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -168,6 +171,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	})
 
 	t.Run("Scenario B - Context Exhaustion", func(t *testing.T) {
+		t.Parallel()
 		bus := &events.SimpleEventBus{}
 		historyPath := filepath.Join(t.TempDir(), "history_b.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -262,6 +266,7 @@ func (m *cancelIntegrationRegistry) IsLongRunning(name string) bool            {
 func (m *cancelIntegrationRegistry) GetDeclarations() []*tools.ToolDeclaration { return m.declarations }
 
 func TestTurnEngine_CancellationIntegration(t *testing.T) {
+	t.Parallel()
 	bus := &events.SimpleEventBus{}
 	historyPath := filepath.Join(t.TempDir(), "history_cancel.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -299,7 +304,9 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	gw := &integrationMockLLMGateway{}
 	// Real executor
-	exec := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus)
+	exec, err := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 
@@ -348,7 +355,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	}
 
 	// 5. Assertions
-	err := <-errCh
+	err = <-errCh
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, context.Canceled))
 

@@ -14,7 +14,9 @@ import (
 )
 
 func TestPipeCommandsTool(t *testing.T) {
+	t.Parallel()
 	// 1. Setup Mock Server
+
 	var turns int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "generateContent") {
@@ -70,7 +72,9 @@ func TestPipeCommandsTool(t *testing.T) {
 }
 
 func TestExecuteCommandWithRedirection(t *testing.T) {
+	t.Parallel()
 	// 1. Setup Mock Server
+
 	var turns int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "generateContent") {
@@ -127,6 +131,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 }
 
 func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
+	t.Parallel()
 	homeDir := t.TempDir()
 	outFile := filepath.Join(homeDir, "piped_out.txt")
 

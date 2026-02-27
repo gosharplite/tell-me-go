@@ -22,6 +22,7 @@ import (
 type testContextKey string
 
 func TestNewSession(t *testing.T) {
+	t.Parallel()
 	id := "test-session"
 	session := NewSession(id, nil)
 
@@ -37,74 +38,88 @@ func TestNewSession(t *testing.T) {
 }
 
 func TestChatterOptions(t *testing.T) {
+	t.Parallel()
 	t.Run("WithContext", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.WithValue(context.Background(), testContextKey("test"), "value")
 		params := NewChatterParams(WithContext(ctx))
 		assert.Equal(t, ctx, params.Context)
 	})
 
 	t.Run("WithLoader", func(t *testing.T) {
+		t.Parallel()
 		var loader config.ConfigLoader
 		params := NewChatterParams(WithLoader(loader))
 		assert.Equal(t, loader, params.Loader)
 	})
 
 	t.Run("WithGateway", func(t *testing.T) {
+		t.Parallel()
 		var gateway llm.LLMGateway
 		params := NewChatterParams(WithGateway(gateway))
 		assert.Equal(t, gateway, params.Gateway)
 	})
 
 	t.Run("WithHistory", func(t *testing.T) {
+		t.Parallel()
 		var history HistoryManager
 		params := NewChatterParams(WithHistory(history))
 		assert.Equal(t, history, params.HistoryManager)
 	})
 
 	t.Run("WithToolConfig", func(t *testing.T) {
+		t.Parallel()
 		var registry tools.IToolRegistry
 		params := NewChatterParams(WithToolConfig(registry))
 		assert.Equal(t, registry, params.Registry)
 	})
 
 	t.Run("WithSecurityManager", func(t *testing.T) {
+		t.Parallel()
 		var securityManager security.ISecurityManager
 		params := NewChatterParams(WithSecurityManager(securityManager))
 		assert.Equal(t, securityManager, params.SecurityManager)
 	})
 
 	t.Run("WithStreamingDisabled", func(t *testing.T) {
+		t.Parallel()
 		params := NewChatterParams(WithStreamingDisabled(true))
 		assert.True(t, params.DisableStreaming)
 	})
 
 	t.Run("WithEventBus", func(t *testing.T) {
+		t.Parallel()
 		var bus events.EventBus
 		params := NewChatterParams(WithEventBus(bus))
 		assert.Equal(t, bus, params.EventBus)
 	})
 
 	t.Run("WithProvider", func(t *testing.T) {
+		t.Parallel()
 		params := NewChatterParams(WithProvider("test-provider"))
 		assert.Equal(t, "test-provider", params.ProviderName)
 	})
 
 	t.Run("WithModel", func(t *testing.T) {
+		t.Parallel()
 		params := NewChatterParams(WithModel("test-model"))
 		assert.Equal(t, "test-model", params.Model)
 	})
 
 	t.Run("WithMode", func(t *testing.T) {
+		t.Parallel()
 		params := NewChatterParams(WithMode("test-mode"))
 		assert.Equal(t, "test-mode", params.Mode)
 	})
 
 	t.Run("WithLogPath", func(t *testing.T) {
+		t.Parallel()
 		params := NewChatterParams(WithLogPath("/tmp/test.log"))
 		assert.Equal(t, "/tmp/test.log", params.LogPath)
 	})
 
 	t.Run("WithPricingOverrides", func(t *testing.T) {
+		t.Parallel()
 		overrides := map[string]pricing.ModelPricing{
 			"test": {Miss: 1.0, Comp: 2.0},
 		}
@@ -113,6 +128,7 @@ func TestChatterOptions(t *testing.T) {
 	})
 
 	t.Run("WithCostTracker", func(t *testing.T) {
+		t.Parallel()
 		var tracker pricing.ICostTracker
 		params := NewChatterParams(WithCostTracker(tracker))
 		assert.Equal(t, tracker, params.CostTracker)
@@ -120,6 +136,7 @@ func TestChatterOptions(t *testing.T) {
 }
 
 func TestContextMetadata_Clone(t *testing.T) {
+	t.Parallel()
 	original := &ContextMetadata{
 		OriginalTokenCount:     100,
 		FinalTokenCount:        80,

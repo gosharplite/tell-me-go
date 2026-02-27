@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -38,27 +39,69 @@ type ToolExecutor struct {
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
+	longRunningTimeout time.Duration
 	zombieTimeout      time.Duration
 	pool               *concurrency.WorkerPool
 	strategy           resultStrategy
 	failures           *failureTracker
+	observer           domaintools.ExecutionObserver
+	zombie             *domaintools.ZombieTool
+}
+
+// executorOption allows configuring the ToolExecutor.
+type executorOption func(*ToolExecutor)
+
+// WithLongRunningTimeout sets the timeout for long-running tools.
+func WithLongRunningTimeout(timeout time.Duration) executorOption {
+	return func(e *ToolExecutor) {
+		e.longRunningTimeout = timeout
+	}
+}
+
+// withZombieTimeout sets the timeout for zombie tool detection.
+func withZombieTimeout(timeout time.Duration) executorOption {
+	return func(e *ToolExecutor) {
+		e.zombieTimeout = timeout
+	}
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus) *ToolExecutor {
+func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, observer domaintools.ExecutionObserver, opts ...executorOption) (*ToolExecutor, error) {
+	if registry == nil {
+		return nil, errors.New("registry is required")
+	}
+	if observer == nil {
+		return nil, errors.New("ExecutionObserver is required")
+	}
+
 	e := &ToolExecutor{
 		registry:           registry,
 		authorizer:         newSecurityAuthorizer(sm, registry),
 		events:             bus,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
+		longRunningTimeout: 5 * time.Minute,
 		zombieTimeout:      5 * time.Minute,
 		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
+		observer:           observer,
 	}
 
-	return e
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	if e.zombie == nil {
+		var err error
+		e.zombie, err = domaintools.NewZombieTool(e.observer)
+		if err != nil {
+			e.Shutdown()
+			return nil, err
+		}
+	}
+
+	return e, nil
 }
 
 type failureTracker struct {
@@ -123,9 +166,11 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 // Shutdown shuts down the internal worker pool.
 func (e *ToolExecutor) Shutdown() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.pool != nil {
-		e.pool.Shutdown()
+	pool := e.pool
+	e.mu.Unlock()
+
+	if pool != nil {
+		pool.Shutdown()
 	}
 }
 
@@ -162,7 +207,7 @@ func (c *resultCollector) Wait(ctx context.Context) ([]domaintools.ToolResult, e
 				c.trs[res.index] = res.tr
 				isCompleted[res.index] = true
 				if c.bus != nil {
-					c.bus.Publish(events.ToolResultEvent{Name: res.name, Result: res.tr})
+					_ = c.bus.Publish(ctx, events.ToolResultEvent{Name: res.name, Result: res.tr})
 				}
 				completedCount++
 			}
@@ -179,11 +224,11 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	}
 
 	if turn >= maxToolTurns {
-		e.publishLimitError(maxToolTurns)
+		e.publishLimitError(ctx, maxToolTurns)
 		return nil, llm.ErrMaxTurnsReached
 	}
 
-	e.publishCallEvent(calls, turn, maxToolTurns)
+	e.publishCallEvent(ctx, calls, turn, maxToolTurns)
 
 	e.mu.RLock()
 	bus := e.events
@@ -194,9 +239,25 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 
 	// Orchestrate Execution
 	collector := newResultCollector(calls, bus)
+	startTime := time.Now()
 	go e.runExecutionPlan(ctx, calls, collector.ch, declinedMap)
 
 	results, err := collector.Wait(ctx)
+	duration := time.Since(startTime)
+
+	if err != nil {
+		slog.Error("Tool execution turn failed or was cancelled",
+			slog.Int("turn", turn),
+			slog.String("error", err.Error()),
+			slog.Int64("duration_ms", duration.Milliseconds()),
+		)
+	} else {
+		slog.Info("Tool execution turn completed",
+			slog.Int("turn", turn),
+			slog.Int("tool_calls", len(calls)),
+			slog.Int64("duration_ms", duration.Milliseconds()),
+		)
+	}
 
 	// Notify about circuit breaker events
 	for _, tr := range results {
@@ -205,7 +266,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 			bus := e.events
 			e.mu.RUnlock()
 			if bus != nil {
-				bus.Publish(events.SystemMessageEvent{
+				_ = bus.Publish(ctx, events.SystemMessageEvent{
 					Message: tr.Text,
 					Level:   "warn",
 				})
@@ -226,24 +287,24 @@ func (e *ToolExecutor) extractFunctionCalls(respContent *llm.Content) []*llm.Fun
 	return functionCalls
 }
 
-func (e *ToolExecutor) publishLimitError(maxToolTurns int) {
+func (e *ToolExecutor) publishLimitError(ctx context.Context, maxToolTurns int) {
 	e.mu.RLock()
 	bus := e.events
 	e.mu.RUnlock()
 	if bus != nil {
-		bus.Publish(events.SystemMessageEvent{
+		_ = bus.Publish(ctx, events.SystemMessageEvent{
 			Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
 			Level:   "error",
 		})
 	}
 }
 
-func (e *ToolExecutor) publishCallEvent(calls []*llm.FunctionCall, turn int, maxToolTurns int) {
+func (e *ToolExecutor) publishCallEvent(ctx context.Context, calls []*llm.FunctionCall, turn int, maxToolTurns int) {
 	e.mu.RLock()
 	bus := e.events
 	e.mu.RUnlock()
 	if bus != nil {
-		bus.Publish(events.ToolCallEvent{
+		_ = bus.Publish(ctx, events.ToolCallEvent{
 			Calls:    calls,
 			Turn:     turn,
 			MaxTurns: maxToolTurns,
@@ -285,18 +346,29 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 	for batchIdx, batch := range batches {
 		if err := ctx.Err(); err != nil {
+			slog.Warn("Execution plan interrupted", slog.String("reason", "context cancelled"), slog.Int("batch_idx", batchIdx))
 			e.failRemainingTasks(batches, batchIdx, -1, calls, resChan, err, "batch interrupted")
 			return
 		}
 
+		batchStart := time.Now()
 		if batch.isSerial {
 			if !e.executeSerialBatch(ctx, batch, calls, resChan) {
+				slog.Warn("Serial batch failed or interrupted, halting execution plan",
+					slog.Int("batch_idx", batchIdx),
+					slog.String("tool_name", calls[batch.tasks[0]].Name))
 				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, resChan, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
 				return // Exit the execution plan early
 			}
 		} else {
 			e.executeParallelBatch(ctx, batch, calls, resChan)
 		}
+
+		slog.Debug("Batch execution completed",
+			slog.Int("batch_idx", batchIdx),
+			slog.Bool("is_serial", batch.isSerial),
+			slog.Int("task_count", len(batch.tasks)),
+			slog.Int64("duration_ms", time.Since(batchStart).Milliseconds()))
 	}
 }
 
@@ -361,7 +433,7 @@ func (e *ToolExecutor) buildExecutionBatches(calls []*llm.FunctionCall, declined
 	e.mu.RUnlock()
 
 	var batches []taskBatch
-	var currentBatch *taskBatch
+	var currentParallelBatch []int
 
 	for i, fc := range calls {
 		if declinedMap[i] {
@@ -377,27 +449,30 @@ func (e *ToolExecutor) buildExecutionBatches(calls []*llm.FunctionCall, declined
 		}
 
 		if reg.IsSerial(fc.Name) {
-			if currentBatch != nil {
-				batches = append(batches, *currentBatch)
-				currentBatch = nil
+			// Close current parallel batch if any
+			if len(currentParallelBatch) > 0 {
+				batches = append(batches, taskBatch{
+					isSerial: false,
+					tasks:    currentParallelBatch,
+				})
+				currentParallelBatch = nil
 			}
+			// Add serial batch
 			batches = append(batches, taskBatch{
 				isSerial: true,
 				tasks:    []int{i},
 			})
 		} else {
-			if currentBatch == nil {
-				currentBatch = &taskBatch{
-					isSerial: false,
-					tasks:    []int{i},
-				}
-			} else {
-				currentBatch.tasks = append(currentBatch.tasks, i)
-			}
+			currentParallelBatch = append(currentParallelBatch, i)
 		}
 	}
-	if currentBatch != nil {
-		batches = append(batches, *currentBatch)
+
+	// Add final parallel batch if any
+	if len(currentParallelBatch) > 0 {
+		batches = append(batches, taskBatch{
+			isSerial: false,
+			tasks:    currentParallelBatch,
+		})
 	}
 
 	return batches
@@ -408,7 +483,7 @@ func (e *ToolExecutor) executeSerialTask(ctx context.Context, i int, fc *llm.Fun
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				tr = e.handlePanic(r, fc.Name)
+				tr = e.handlePanic(ctx, r, fc.Name)
 			}
 		}()
 		tr = e.executeTool(ctx, fc)
@@ -444,7 +519,7 @@ func (e *ToolExecutor) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 				resChan <- toolExecResult{
 					index: i,
 					name:  fc.Name,
-					tr:    e.handlePanic(r, fc.Name),
+					tr:    e.handlePanic(ctx, r, fc.Name),
 				}
 			}
 		}()
@@ -462,7 +537,7 @@ func (e *ToolExecutor) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 	}
 }
 
-func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.ToolResult {
+func (e *ToolExecutor) handlePanic(ctx context.Context, r interface{}, toolName string) domaintools.ToolResult {
 	stack := debug.Stack()
 
 	e.mu.RLock()
@@ -471,7 +546,7 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 
 	if bus != nil {
 		msg := fmt.Sprintf("CRITICAL: Panic in tool executor while running %q: %v\n%s", toolName, r, string(stack))
-		bus.Publish(events.SystemMessageEvent{
+		_ = bus.Publish(ctx, events.SystemMessageEvent{
 			Message: msg,
 			Level:   "error",
 		})
@@ -545,36 +620,23 @@ func classifyToolError(err error, resultErr error) (string, string) {
 
 func (e *ToolExecutor) finalizeToolExecution(callName string, result domaintools.ToolResult, err error, startTime time.Time, trace *telemetry.TurnTrace) domaintools.ToolResult {
 	status, msg := classifyToolError(err, result.Error)
+	duration := time.Since(startTime)
+
+	e.mu.RLock()
+	isSerial := e.registry.IsSerial(callName)
+	isLongRunning := e.registry.IsLongRunning(callName)
+	e.mu.RUnlock()
+
+	errStr := formatToolExecutionError(err, result.Error)
+	e.logToolExecution(callName, status, errStr, duration, isSerial, isLongRunning, err, result.Error)
 
 	if status == "user_declined" || status == "security_blocked" {
-		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  callName,
-			StartTime: startTime,
-			Duration:  time.Since(startTime),
-			Status:    status,
-		})
+		e.recordToolTrace(trace, callName, startTime, duration, status, "")
 		return domaintools.ToolResult{Text: msg, Error: nil}
 	}
 
-	var errStr string
-	if status == "error" {
-		if err != nil {
-			errStr = err.Error()
-		} else {
-			errStr = result.Error.Error()
-		}
-		e.failures.recordFailure(callName)
-	} else {
-		e.failures.recordSuccess(callName)
-	}
-
-	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-		ToolName:  callName,
-		StartTime: startTime,
-		Duration:  time.Since(startTime),
-		Status:    status,
-		Error:     errStr,
-	})
+	e.updateCircuitBreaker(callName, status)
+	e.recordToolTrace(trace, callName, startTime, duration, status, errStr)
 
 	if err != nil {
 		msg := fmt.Sprintf("Error: %v", err)
@@ -628,32 +690,33 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	e.mu.RLock()
 	reg := e.registry
 	toolTimeout := e.toolTimeout
+	longRunningTimeout := e.longRunningTimeout
 	e.mu.RUnlock()
 
 	var ctx context.Context
 	var cancel context.CancelFunc
 
+	activeTimeout := toolTimeout
 	if reg.IsLongRunning(tool.Name) {
-		ctx, cancel = context.WithCancel(parentCtx)
-	} else {
-		ctx, cancel = context.WithTimeout(parentCtx, toolTimeout)
+		activeTimeout = longRunningTimeout
 	}
+	ctx, cancel = context.WithTimeout(parentCtx, activeTimeout)
 	defer cancel()
 
 	// Buffered channel prevents goroutine leak if the tool finishes after timeout
-	outCh := make(chan toolOutput, 1)
+	outCh := make(chan domaintools.ToolOutput, 1)
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				outCh <- toolOutput{
-					result: e.handlePanic(r, tool.Name),
-					err:    nil,
+				outCh <- domaintools.ToolOutput{
+					Result: e.handlePanic(ctx, r, tool.Name),
+					Err:    nil,
 				}
 			}
 		}()
 		res, execErr := reg.Execute(ctx, tool.Name, args)
-		outCh <- toolOutput{result: res, err: execErr}
+		outCh <- domaintools.ToolOutput{Result: res, Err: execErr}
 	}()
 
 	select {
@@ -661,8 +724,10 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		// The context expired (timeout or parent cancellation) before the tool finished
 		errCtx := ctx.Err()
 		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
+		errorWrapMsg := "tool execution failed"
 		if errCtx == context.DeadlineExceeded {
-			msg = fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)
+			msg = fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout)
+			errorWrapMsg = "tool execution timed out"
 		}
 
 		// SCALABLE (GOOD): Implementing a telemetry watchdog for abandoned goroutines
@@ -670,12 +735,12 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 
 		return domaintools.ToolResult{
 			Text:  msg,
-			Error: fmt.Errorf("%w: %s", llm.ErrTransient, msg),
+			Error: fmt.Errorf("%w: %s: %w", llm.ErrTransient, errorWrapMsg, errCtx),
 		}, nil
 
 	case out := <-outCh:
 		// Tool finished successfully within the deadline
-		return out.result, out.err
+		return out.Result, out.Err
 	}
 }
 
@@ -716,28 +781,72 @@ func suggestTool(hallucinated string, validTools []string) string {
 	return closest
 }
 
-func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan toolOutput) {
+func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan domaintools.ToolOutput) {
 	e.mu.RLock()
 	zombieTimeout := e.zombieTimeout
+	zombie := e.zombie
 	e.mu.RUnlock()
 
-	timer := time.NewTimer(zombieTimeout)
-	defer timer.Stop()
+	zombie.Monitor(ctx, name, start, outCh, zombieTimeout)
+}
 
-	select {
-	case <-outCh:
-		// Tool eventually finished, log the extreme latency
-		telemetry.RecordLateCompletion(name, time.Since(start))
-	case <-timer.C:
-		// Tool is permanently deadlocked
-		telemetry.LogCritical("CRITICAL: Tool goroutine permanently leaked", name)
-	case <-ctx.Done():
-		// Application/Session shutting down; safe to abandon due to buffered outCh
-		return
+func formatToolExecutionError(err error, resultErr error) string {
+	if err != nil {
+		return err.Error()
+	} else if resultErr != nil {
+		return resultErr.Error()
+	}
+	return ""
+}
+
+func (e *ToolExecutor) logToolExecution(callName, status, errStr string, duration time.Duration, isSerial, isLongRunning bool, err, resultErr error) {
+	logAttrs := []any{
+		slog.String("tool_name", callName),
+		slog.Bool("is_serial", isSerial),
+		slog.Bool("is_long_running", isLongRunning),
+		slog.Int64("duration_ms", duration.Milliseconds()),
+		slog.String("status", status),
+	}
+	if errStr != "" {
+		logAttrs = append(logAttrs, slog.String("error_reason", errStr))
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(resultErr, context.DeadlineExceeded) {
+		slog.Warn("Tool execution timed out", logAttrs...)
+	} else if status == "error" {
+		slog.Error("Tool execution failed", logAttrs...)
+	} else {
+		slog.Info("Tool execution completed", logAttrs...)
 	}
 }
 
-type toolOutput struct {
-	result domaintools.ToolResult
-	err    error
+func (e *ToolExecutor) updateCircuitBreaker(callName, status string) {
+	if status == "error" {
+		e.failures.recordFailure(callName)
+	} else {
+		e.failures.recordSuccess(callName)
+	}
+}
+
+func (e *ToolExecutor) recordToolTrace(trace *telemetry.TurnTrace, callName string, startTime time.Time, duration time.Duration, status, errStr string) {
+	if trace == nil {
+		return
+	}
+	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+		ToolName:  callName,
+		StartTime: startTime,
+		Duration:  duration,
+		Status:    status,
+		Error:     errStr,
+	})
+}
+
+func buildFunctionResponse(callID, name, output string) *llm.Part {
+	return &llm.Part{
+		FunctionResponse: &llm.FunctionResponse{
+			ID:       callID,
+			Name:     name,
+			Response: map[string]interface{}{"result": output},
+		},
+	}
 }

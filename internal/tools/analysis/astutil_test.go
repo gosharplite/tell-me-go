@@ -15,6 +15,7 @@ import (
 )
 
 func TestExprToString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		expr ast.Expr
@@ -33,6 +34,7 @@ func TestExprToString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := exprToString(tt.expr); got != tt.want {
 				t.Errorf("exprToString() = %v, want %v", got, tt.want)
 			}
@@ -41,6 +43,7 @@ func TestExprToString(t *testing.T) {
 }
 
 func TestGetFuncSignature(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	code := `package main
 func F1() {}
@@ -78,6 +81,7 @@ func F4(a ...int) {}
 }
 
 func TestCalculateComplexity(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	code := `package main
 func C1() {}
@@ -134,6 +138,7 @@ func C4(ch chan int) {
 }
 
 func TestCompareASTs(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	baseCode := `package p
 type T int
@@ -171,6 +176,7 @@ const C = 3
 }
 
 func TestASTCache(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.go")
 	content := "package main\nfunc main() {}\n"
@@ -178,12 +184,12 @@ func TestASTCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("Get", func(t *testing.T) { testASTCacheGet(t, path) })
-	t.Run("Hit", func(t *testing.T) { testASTCacheHit(t, path) })
-	t.Run("Invalidation", func(t *testing.T) { testASTCacheInvalidation(t, path) })
-	t.Run("NonExistent", func(t *testing.T) { testASTCacheNonExistent(t) })
-	t.Run("SyntaxError", func(t *testing.T) { testASTCacheSyntaxError(t, tmpDir) })
-	t.Run("Eviction", func(t *testing.T) { testASTCacheEviction(t, tmpDir) })
+	t.Run("Get", func(t *testing.T) { t.Parallel(); testASTCacheGet(t, path) })
+	t.Run("Hit", func(t *testing.T) { t.Parallel(); testASTCacheHit(t, path) })
+	t.Run("Invalidation", func(t *testing.T) { t.Parallel(); testASTCacheInvalidation(t, path) })
+	t.Run("NonExistent", func(t *testing.T) { t.Parallel(); testASTCacheNonExistent(t) })
+	t.Run("SyntaxError", func(t *testing.T) { t.Parallel(); testASTCacheSyntaxError(t, tmpDir) })
+	t.Run("Eviction", func(t *testing.T) { t.Parallel(); testASTCacheEviction(t, tmpDir) })
 }
 
 func testASTCacheGet(t *testing.T, path string) {
@@ -278,6 +284,7 @@ func testASTCacheEviction(t *testing.T, tmpDir string) {
 }
 
 func TestFindTypeSpec(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	code := `package p
 type T1 int
@@ -297,6 +304,7 @@ type T2 struct{}
 }
 
 func TestGetFileSkeletonGo(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "skeleton.go")
 	code := `package p
@@ -327,12 +335,14 @@ func unexportedFunc() {}
 }
 
 func TestGetDeclKey_Unknown(t *testing.T) {
+	t.Parallel()
 	if got := getDeclKey(&ast.BadDecl{}); got != "unknown" {
 		t.Errorf("getDeclKey(BadDecl) = %s, want unknown", got)
 	}
 }
 
 func TestGetCachedLineCount(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "lines.go")
 	content := "package main\n\nfunc main() {\n\t// comment\n}\n"
@@ -377,6 +387,7 @@ func TestGetCachedLineCount(t *testing.T) {
 }
 
 func TestASTCache_DeterministicEviction(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	// Repeat 100 times to ensure determinism

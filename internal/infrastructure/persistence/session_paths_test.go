@@ -11,6 +11,7 @@ import (
 )
 
 func TestInitializePaths(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	mode := "test-mode"
 
@@ -30,6 +31,7 @@ func TestInitializePaths(t *testing.T) {
 }
 
 func TestRotateSession(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	homeDir := tmp
 	mode := "test-mode"
@@ -72,6 +74,7 @@ func TestRotateSession(t *testing.T) {
 }
 
 func TestCleanupOldBackups(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	mode := "test-mode"
 	paths, err := InitializePaths(tmp, mode)
@@ -110,6 +113,7 @@ func TestCleanupOldBackups(t *testing.T) {
 }
 
 func TestLoadBackupRetentionDays(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	paths := paths{
 		PersistentConfigPath: filepath.Join(tmp, "config.json"),
@@ -130,6 +134,7 @@ func TestLoadBackupRetentionDays(t *testing.T) {
 }
 
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
+	t.Parallel()
 	err := cleanupOldBackups(paths{}, 0)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with 0 retention should not error: %v", err)
@@ -137,6 +142,7 @@ func TestCleanupOldBackups_NoRetention(t *testing.T) {
 }
 
 func TestCleanupOldBackups_NoDir(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	paths := paths{ModeDir: filepath.Join(tmp, "nonexistent")}
 	err := cleanupOldBackups(paths, 30)

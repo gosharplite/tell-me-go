@@ -1884,6 +1884,9 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 }
 
 func TestAzureDevOps_HTTPIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := security.NewSecurityManager(nil)
 	ctx := context.Background()

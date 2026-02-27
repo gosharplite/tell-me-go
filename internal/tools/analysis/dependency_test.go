@@ -7,6 +7,7 @@ import (
 )
 
 func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
+	t.Parallel()
 	module := "example.com/mod"
 	graphData := module + "/pkg1 -> [" + module + "/pkg2 " + module + "/pkg3]\n" +
 		module + "/pkg2 -> []\n" +

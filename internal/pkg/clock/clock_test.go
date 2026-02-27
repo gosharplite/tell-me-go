@@ -9,6 +9,7 @@ import (
 )
 
 func TestRealClock_Now(t *testing.T) {
+	t.Parallel()
 	c := RealClock{}
 	now := c.Now()
 	if now.IsZero() {
@@ -17,6 +18,7 @@ func TestRealClock_Now(t *testing.T) {
 }
 
 func TestRealClock_Sleep(t *testing.T) {
+	t.Parallel()
 	c := RealClock{}
 	start := time.Now()
 	c.Sleep(10 * time.Millisecond)
@@ -27,6 +29,7 @@ func TestRealClock_Sleep(t *testing.T) {
 }
 
 func TestRealClock_After(t *testing.T) {
+	t.Parallel()
 	c := RealClock{}
 	start := time.Now()
 	<-c.After(10 * time.Millisecond)
@@ -37,6 +40,7 @@ func TestRealClock_After(t *testing.T) {
 }
 
 func TestRealClock_Jitter(t *testing.T) {
+	t.Parallel()
 	c := RealClock{}
 	base := 100.0
 	for i := 0; i < 100; i++ {

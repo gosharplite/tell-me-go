@@ -13,16 +13,22 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/stretchr/testify/require"
 )
 
 func TestToolExecutor_ConfigRace(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow robustness test in short mode")
+	}
 	reg := registry.New()
 	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(2 * time.Millisecond)
 		return tools.ToolResult{Text: "ok"}, nil
 	})
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -55,6 +61,10 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 }
 
 func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow robustness test in short mode")
+	}
 	reg := registry.New()
 
 	// Create a tool that blocks until told to proceed, so we can reliably cancel context mid-batch
@@ -68,7 +78,8 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 		}
 	})
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())

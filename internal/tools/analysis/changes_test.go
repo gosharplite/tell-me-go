@@ -9,6 +9,7 @@ import (
 )
 
 func TestChangeAnalyzer_SemanticDiff(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	relPath := "test.go"
 	setupSemanticDiffFile(t, tmpDir, relPath)

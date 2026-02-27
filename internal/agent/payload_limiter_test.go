@@ -11,6 +11,7 @@ import (
 )
 
 func TestTruncateOversizedResponse(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		response *llm.Content
@@ -107,6 +108,7 @@ func TestTruncateOversizedResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.NotPanics(t, func() {
 				truncateOversizedResponse(tt.response, tt.tokens, "Please use better tools.")
 			})

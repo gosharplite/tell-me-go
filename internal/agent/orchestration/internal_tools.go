@@ -83,7 +83,7 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 func RegisterInternal(r tools.IToolRegistry, cm *ContextManager) {
 	it := NewInternalTools(cm)
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "summarize_history",
 		Description: "Summarizes a specified number of older conversation turns to free up context space.",
 		Parameters: &tools.Schema{
@@ -100,7 +100,10 @@ func RegisterInternal(r tools.IToolRegistry, cm *ContextManager) {
 			},
 			Required: []string{"turns"},
 		},
-	}, it.summarizeHistory)
+	}, it.summarizeHistory, tools.ToolOptions{
+		LongRunning: true,
+		Serial:      true,
+	})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "manage_history",

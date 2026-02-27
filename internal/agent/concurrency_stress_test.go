@@ -22,9 +22,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAgent_Concurrency_ConfigRace(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow stress test in short mode")
+	}
 	// Setup
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -50,7 +55,8 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, bus, hManager, "test-provider", reg, sm)
+	a, err := New(mockClient, bus, hManager, "test-provider", reg, sm)
+	require.NoError(t, err)
 	session := &ports.Session{History: hManager, StartTime: time.Now()}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -131,10 +137,16 @@ func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content
 }
 
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow stress test in short mode")
+	}
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
-	exec := executor.NewToolExecutor(reg, sm, bus)
+	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
 
 	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(10 * time.Millisecond)
@@ -175,6 +187,10 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 }
 
 func TestContextManager_Race(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow stress test in short mode")
+	}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := &events.SimpleEventBus{}
@@ -215,13 +231,15 @@ func TestContextManager_Race(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
-			bus.Publish(events.ConfigUpdated{
+			if err := bus.Publish(ctx, events.ConfigUpdated{
 				Limits: events.Limits{
 					MaxHistoryTokens: 1000 + i,
 					MaxToolTurns:     10,
 					MaxHistoryTurns:  20,
 				},
-			})
+			}); err != nil {
+				t.Errorf("failed to publish config update: %v", err)
+			}
 			time.Sleep(5 * time.Millisecond)
 		}
 	}()
@@ -239,6 +257,10 @@ func TestContextManager_Race(t *testing.T) {
 }
 
 func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow stress test in short mode")
+	}
 	// Setup
 	reg := registry.New()
 	bus := &events.SimpleEventBus{}

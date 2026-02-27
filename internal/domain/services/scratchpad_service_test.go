@@ -49,9 +49,11 @@ func (m *mockScratchRepo) GetAll(ctx context.Context) (map[string]string, error)
 }
 
 func TestScratchpadService_Initialize(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockScratchRepo{data: map[string]string{"content": "hello"}}
 		s := NewScratchpadService(repo)
 		err := s.Initialize(ctx)
@@ -64,6 +66,7 @@ func TestScratchpadService_Initialize(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
+		t.Parallel()
 		repo := &mockScratchRepo{err: fmt.Errorf("read error")}
 		s := NewScratchpadService(repo)
 		err := s.Initialize(ctx)
@@ -74,6 +77,7 @@ func TestScratchpadService_Initialize(t *testing.T) {
 }
 
 func TestScratchpadService_ReadWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	repo := &mockScratchRepo{data: make(map[string]string)}
 	s := NewScratchpadService(repo)
@@ -102,6 +106,7 @@ func TestScratchpadService_ReadWrite(t *testing.T) {
 }
 
 func TestScratchpadService_Append(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	repo := &mockScratchRepo{data: make(map[string]string)}
 	s := NewScratchpadService(repo)
@@ -133,6 +138,7 @@ func TestScratchpadService_Append(t *testing.T) {
 }
 
 func TestScratchpadService_Clear(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	repo := &mockScratchRepo{data: map[string]string{"content": "data"}}
 	s := NewScratchpadService(repo)
@@ -156,6 +162,7 @@ func TestScratchpadService_Clear(t *testing.T) {
 }
 
 func TestScratchpadService_Concurrency(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	repo := &mockScratchRepo{data: make(map[string]string)}
 	s := NewScratchpadService(repo)

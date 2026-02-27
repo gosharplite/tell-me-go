@@ -27,7 +27,6 @@ func (m *mockFailingSummarizer) SummarizeRange(ctx context.Context, turns int, f
 }
 
 func TestGatekeeper_ErrorHandling(t *testing.T) {
-	t.Parallel()
 
 	ctx := context.Background()
 	req := &ports.ContextRequest{
@@ -165,19 +164,19 @@ func (m *mockFailingUIRenderer) LogSystemMessage(string, string)                
 func (m *mockFailingUIRenderer) LogAgentStatus(status string)                              {}
 
 func TestOrchestrator_ConfigError(t *testing.T) {
-	agentFactory := func(params ports.ChatterParams) ports.Chatter {
-		return &mockFailingChatter{err: errors.New("config failed")}
+	agentFactory := func(params ports.ChatterParams) (ports.Chatter, error) {
+		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
-	o := NewOrchestrator("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{})
+	o := newOrchestrator("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{})
 
 	cfg := &config.Config{
 		SelectedProvider: "test",
 	}
-	sc := NewSessionConfig("", false, 0, false, "test prompt", cfg)
+	sc := newSessionConfig("", false, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := NewSessionDependencies(&persistence.Paths{}, &mockHistoryManager{}, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil)
+	sd := newSessionDependencies(&persistence.Paths{}, &mockHistoryManager{}, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil)
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {

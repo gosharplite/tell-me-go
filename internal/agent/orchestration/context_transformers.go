@@ -15,7 +15,10 @@ import (
 type emptyTurnFilter struct{}
 
 func (t *emptyTurnFilter) Transform(ctx context.Context, req *ports.ContextRequest) error {
-	turns := groupTurns(req.History)
+	turns, err := groupTurns(ctx, req.History)
+	if err != nil {
+		return err
+	}
 	var filtered []*llm.Content
 	for i, turn := range turns {
 		// Always keep a trailing single message (usually the current user prompt)
@@ -44,7 +47,7 @@ type finalContextValidator struct {
 
 func (t *finalContextValidator) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	maxTokens, _, _ := t.Strategy.getLimits()
-	finalTokens := t.Strategy.EstimateTokens(req.History)
+	finalTokens := t.Strategy.estimateTokens(req.History)
 
 	req.Metadata.FinalTokenCount = finalTokens
 	req.Metadata.FinalTurnCount = len(req.History) / 2
@@ -74,14 +77,30 @@ func (t *transientMerger) Transform(ctx context.Context, req *ports.ContextReque
 
 func (t *transientMerger) Priority() int { return priorityTransientThreshold + 5 }
 
-func groupTurns(history []*llm.Content) [][]*llm.Content {
+func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, error) {
 	if len(history) == 0 {
-		return nil
+		return nil, nil
 	}
 	var turns [][]*llm.Content
 	var current []*llm.Content
 
-	for _, msg := range history {
+	for i, msg := range history {
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+		}
+
+		if msg == nil {
+			return nil, fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+		}
+
+		if msg.Role == "" {
+			return nil, fmt.Errorf("%w: empty role at index %d", errInvalidPayload, i)
+		}
+
 		if isTurnBoundary(msg, current) {
 			turns = append(turns, current)
 			current = nil
@@ -92,7 +111,7 @@ func groupTurns(history []*llm.Content) [][]*llm.Content {
 	if len(current) > 0 {
 		turns = append(turns, current)
 	}
-	return turns
+	return turns, nil
 }
 
 func isTurnBoundary(msg *llm.Content, current []*llm.Content) bool {

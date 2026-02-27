@@ -25,7 +25,7 @@ var (
 
 // EventBus defines the interface for publishing and subscribing to events.
 type EventBus interface {
-	Publish(e Event)
+	Publish(ctx context.Context, e Event) error
 	Subscribe(sub func(Event))
 	Shutdown(ctx context.Context) error
 	Flush(ctx context.Context) error
@@ -77,22 +77,34 @@ func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
 	}
 }
 
-func (b *SimpleEventBus) Publish(e Event) {
+func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
+	// 1. Immediate context check
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	if b.closed {
-		return
+		return ErrBusClosed
 	}
 
 	for _, ch := range b.subscribers {
 		select {
 		case ch <- e:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-b.closing:
+			return ErrBusClosed
 		default:
-			// Buffer full, drop newest event and record metric
+			// SCALABLE: Drop event if subscriber is too slow/stuck to prevent head-of-line blocking
 			atomic.AddUint64(&b.droppedEvents, 1)
 		}
 	}
+	return nil
 }
 
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {
@@ -103,40 +115,66 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 		return
 	}
 
-	cap := b.capacity
-	if cap <= 0 {
-		cap = defaultMaxQueueSize
-	}
-
+	cap := b.getEffectiveCapacity()
 	in := make(chan Event, cap)
 	out := make(chan Event)
 	b.subscribers = append(b.subscribers, in)
 
 	b.wg.Add(2)
-	ctx := b.ctx
-	if ctx == nil {
-		ctx = context.Background()
+	ctx := b.getSafeContext()
+
+	go b.startEventPump(ctx, in, out)
+	go b.startSubscriberLoop(ctx, out, sub)
+}
+
+func (b *SimpleEventBus) getEffectiveCapacity() int {
+	if b.capacity <= 0 {
+		return defaultMaxQueueSize
 	}
+	return b.capacity
+}
 
-	// 1. Bounded Queue Goroutine
-	go func() {
-		defer b.wg.Done()
-		defer close(out)
-		b.pumpEvents(ctx, in, out)
-	}()
+func (b *SimpleEventBus) getSafeContext() context.Context {
+	if b.ctx == nil {
+		return context.Background()
+	}
+	return b.ctx
+}
 
-	// 2. Processing Goroutine
-	go func() {
-		defer b.wg.Done()
-		for e := range out {
-			if fe, ok := e.(flushEvent); ok {
-				fe.done <- nil
-				close(fe.done)
+func (b *SimpleEventBus) startEventPump(ctx context.Context, in chan Event, out chan Event) {
+	defer b.wg.Done()
+	defer close(out)
+	b.pumpEvents(ctx, in, out)
+}
+
+func (b *SimpleEventBus) startSubscriberLoop(ctx context.Context, out chan Event, sub func(Event)) {
+	defer b.wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e, ok := <-out:
+			if !ok {
+				return
+			}
+			if b.handleInternalEvent(ctx, e) {
 				continue
 			}
 			sub(e)
 		}
-	}()
+	}
+}
+
+func (b *SimpleEventBus) handleInternalEvent(ctx context.Context, e Event) bool {
+	if fe, ok := e.(flushEvent); ok {
+		select {
+		case fe.done <- nil:
+		case <-ctx.Done():
+		}
+		close(fe.done)
+		return true
+	}
+	return false
 }
 
 func (b *SimpleEventBus) pumpEvents(ctx context.Context, in chan Event, out chan<- Event) {
@@ -165,14 +203,14 @@ func (b *SimpleEventBus) pumpEvents(ctx context.Context, in chan Event, out chan
 func (b *SimpleEventBus) processWithBuffer(ctx context.Context, in *chan Event, out chan<- Event, buffer *eventRingBuffer) bool {
 	select {
 	case <-ctx.Done():
-		b.cleanupBuffer(buffer, ctx.Err())
+		b.cleanupBuffer(ctx, buffer, ctx.Err())
 		return true
 	case e, ok := <-*in:
 		if !ok {
 			*in = nil // Stop reading from closed channel
 			return false
 		}
-		buffer.push(e)
+		buffer.push(ctx, e)
 		return false
 	case out <- buffer.front():
 		buffer.pop()
@@ -188,16 +226,19 @@ func (b *SimpleEventBus) processEmptyBuffer(ctx context.Context, in *chan Event,
 		if !ok {
 			return true
 		}
-		buffer.push(e)
+		buffer.push(ctx, e)
 		return false
 	}
 }
 
-func (b *SimpleEventBus) cleanupBuffer(buffer *eventRingBuffer, err error) {
+func (b *SimpleEventBus) cleanupBuffer(ctx context.Context, buffer *eventRingBuffer, err error) {
 	for buffer.len() > 0 {
 		e := buffer.pop()
 		if fe, ok := e.(flushEvent); ok {
-			fe.done <- err
+			select {
+			case fe.done <- err:
+			case <-ctx.Done():
+			}
 			close(fe.done)
 		}
 	}
@@ -211,7 +252,7 @@ type eventRingBuffer struct {
 	count int
 }
 
-func (r *eventRingBuffer) push(e Event) {
+func (r *eventRingBuffer) push(ctx context.Context, e Event) {
 	if r.queue == nil {
 		r.queue = make([]Event, r.max)
 	}
@@ -220,7 +261,10 @@ func (r *eventRingBuffer) push(e Event) {
 		// Buffer full: overwrite the oldest element
 		oldest := r.queue[r.tail]
 		if fe, ok := oldest.(flushEvent); ok {
-			fe.done <- ErrBufferOverflow
+			select {
+			case fe.done <- ErrBufferOverflow:
+			case <-ctx.Done():
+			}
 			close(fe.done) // Safely unblock the waiting Flush caller
 		}
 

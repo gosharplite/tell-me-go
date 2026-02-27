@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockToolRegistry struct {
@@ -40,7 +42,9 @@ func (m *mockToolRegistry) IsSerial(name string) bool      { return m.isSerial }
 func (m *mockToolRegistry) IsLongRunning(name string) bool { return false }
 
 func TestToolExecutor_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	// Setup a tool that blocks until context is cancelled
+
 	toolStarted := make(chan struct{})
 	toolFinished := make(chan struct{})
 
@@ -57,7 +61,8 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -103,6 +108,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 }
 
 func TestWorkerPool_LeakPrevention(t *testing.T) {
+	t.Parallel()
 	pool := concurrency.NewWorkerPool(1)
 	t.Cleanup(pool.Shutdown)
 
@@ -147,8 +153,10 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 }
 
 func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -173,4 +181,137 @@ func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("Expected result on resChan, but got none")
 	}
+}
+
+func TestBuildExecutionBatches_PreservesOrder(t *testing.T) {
+	t.Parallel()
+	reg := &orderMockRegistry{
+		serialTools: map[string]bool{
+			"S1": true,
+			"S2": true,
+		},
+	}
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{})
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
+
+	calls := []*llm.FunctionCall{
+		{Name: "P1"},
+		{Name: "S1"},
+		{Name: "P2"},
+		{Name: "P3"},
+		{Name: "S2"},
+	}
+
+	resChan := make(chan toolExecResult, len(calls))
+	batches := exec.buildExecutionBatches(calls, nil, resChan)
+
+	// Expected batches:
+	// 1. Parallel: [P1] (index 0)
+	// 2. Serial: [S1] (index 1)
+	// 3. Parallel: [P2, P3] (index 2, 3)
+	// 4. Serial: [S2] (index 4)
+
+	assert.Equal(t, 4, len(batches), "Should have 4 batches")
+
+	assert.False(t, batches[0].isSerial)
+	assert.Equal(t, []int{0}, batches[0].tasks)
+
+	assert.True(t, batches[1].isSerial)
+	assert.Equal(t, []int{1}, batches[1].tasks)
+
+	assert.False(t, batches[2].isSerial)
+	assert.Equal(t, []int{2, 3}, batches[2].tasks)
+
+	assert.True(t, batches[3].isSerial)
+	assert.Equal(t, []int{4}, batches[3].tasks)
+}
+
+type orderMockRegistry struct {
+	serialTools map[string]bool
+}
+
+func (m *orderMockRegistry) GetDeclarations() []*tools.ToolDeclaration           { return nil }
+func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) {}
+func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+}
+func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+func (m *orderMockRegistry) IsSerial(name string) bool      { return m.serialTools[name] }
+func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
+
+func TestToolExecutor_PoolClosed_FailsGracefully(t *testing.T) {
+	t.Parallel()
+	reg := &mockToolRegistry{}
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+	exec.Shutdown() // Deterministically close the pool
+
+	calls := []*llm.FunctionCall{
+		{ID: "1", Name: "test_tool"},
+	}
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: calls[0]},
+		},
+	}
+
+	// Submitting parallel tools must deterministically hit !pool.Submit(task)
+	// Execute returns nil error if tool results are collected even if they represent failures.
+	resultsContent, execErr := exec.Execute(context.Background(), respContent, 0, 10)
+
+	assert.NoError(t, execErr)
+	assert.NotNil(t, resultsContent)
+	assert.Len(t, resultsContent.Parts, 1)
+
+	// Verify it contains the expected failure message
+	resultStr := resultsContent.Parts[0].FunctionResponse.Response["result"].(string)
+	assert.Contains(t, resultStr, "pool closed or context cancelled")
+}
+
+func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
+	t.Parallel()
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+			return tools.ToolResult{Text: "tool success"}, nil
+		},
+	}
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
+
+	// Setup trace context
+	trace := telemetry.NewTurnTrace()
+	ctx := telemetry.ContextWithTrace(context.Background(), trace)
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		},
+	}
+
+	// Execute
+	_, execErr := exec.Execute(ctx, respContent, 0, 10)
+	assert.NoError(t, execErr)
+
+	// Verify telemetry
+	assert.Len(t, trace.ToolExecutions, 1)
+	assert.Equal(t, "test_tool", trace.ToolExecutions[0].ToolName)
+	assert.Equal(t, "success", trace.ToolExecutions[0].Status)
+}
+
+func TestNewToolExecutor_NilLogger(t *testing.T) {
+	reg := &mockToolRegistry{}
+	_, err := NewToolExecutor(reg, nil, nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, "ExecutionObserver is required", err.Error())
+
+	// Coverage for lines 95-97: error from NewZombieTool
+	sabotageOpt := func(e *ToolExecutor) {
+		e.observer = nil
+	}
+	_, err = NewToolExecutor(reg, nil, nil, &MockLogger{}, sabotageOpt)
+	require.Error(t, err)
+	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }

@@ -59,11 +59,11 @@ type ChatterParams struct {
 	CostTracker      pricing.ICostTracker
 }
 
-// ChatterOption defines a functional option for ChatterParams.
-type ChatterOption func(*ChatterParams)
+// chatterOption defines a functional option for ChatterParams.
+type chatterOption func(*ChatterParams)
 
 // NewChatterParams creates a new ChatterParams with the given options.
-func NewChatterParams(opts ...ChatterOption) ChatterParams {
+func NewChatterParams(opts ...chatterOption) ChatterParams {
 	p := ChatterParams{
 		Context:          context.Background(),
 		PricingOverrides: make(map[string]pricing.ModelPricing),
@@ -75,105 +75,105 @@ func NewChatterParams(opts ...ChatterOption) ChatterParams {
 }
 
 // WithContext sets the context for the Chatter instance.
-func WithContext(ctx context.Context) ChatterOption {
+func WithContext(ctx context.Context) chatterOption {
 	return func(p *ChatterParams) {
 		p.Context = ctx
 	}
 }
 
 // WithLoader sets the configuration loader.
-func WithLoader(l config.ConfigLoader) ChatterOption {
+func WithLoader(l config.ConfigLoader) chatterOption {
 	return func(p *ChatterParams) {
 		p.Loader = l
 	}
 }
 
 // WithGateway sets the LLM gateway.
-func WithGateway(g llm.LLMGateway) ChatterOption {
+func WithGateway(g llm.LLMGateway) chatterOption {
 	return func(p *ChatterParams) {
 		p.Gateway = g
 	}
 }
 
 // WithHistory sets the history manager.
-func WithHistory(h HistoryManager) ChatterOption {
+func WithHistory(h HistoryManager) chatterOption {
 	return func(p *ChatterParams) {
 		p.HistoryManager = h
 	}
 }
 
 // WithToolConfig sets the tool registry.
-func WithToolConfig(r tools.IToolRegistry) ChatterOption {
+func WithToolConfig(r tools.IToolRegistry) chatterOption {
 	return func(p *ChatterParams) {
 		p.Registry = r
 	}
 }
 
 // WithSecurityManager sets the security manager.
-func WithSecurityManager(s security.ISecurityManager) ChatterOption {
+func WithSecurityManager(s security.ISecurityManager) chatterOption {
 	return func(p *ChatterParams) {
 		p.SecurityManager = s
 	}
 }
 
 // WithStreamingDisabled sets whether streaming is disabled.
-func WithStreamingDisabled(disabled bool) ChatterOption {
+func WithStreamingDisabled(disabled bool) chatterOption {
 	return func(p *ChatterParams) {
 		p.DisableStreaming = disabled
 	}
 }
 
 // WithEventBus sets the event bus.
-func WithEventBus(e events.EventBus) ChatterOption {
+func WithEventBus(e events.EventBus) chatterOption {
 	return func(p *ChatterParams) {
 		p.EventBus = e
 	}
 }
 
 // WithProvider sets the LLM provider name.
-func WithProvider(provider string) ChatterOption {
+func WithProvider(provider string) chatterOption {
 	return func(p *ChatterParams) {
 		p.ProviderName = provider
 	}
 }
 
 // WithModel sets the LLM model name.
-func WithModel(model string) ChatterOption {
+func WithModel(model string) chatterOption {
 	return func(p *ChatterParams) {
 		p.Model = model
 	}
 }
 
 // WithMode sets the operation mode.
-func WithMode(mode string) ChatterOption {
+func WithMode(mode string) chatterOption {
 	return func(p *ChatterParams) {
 		p.Mode = mode
 	}
 }
 
 // WithLogPath sets the path for session logs.
-func WithLogPath(path string) ChatterOption {
+func WithLogPath(path string) chatterOption {
 	return func(p *ChatterParams) {
 		p.LogPath = path
 	}
 }
 
 // WithPricingOverrides sets the model pricing overrides.
-func WithPricingOverrides(overrides map[string]pricing.ModelPricing) ChatterOption {
+func WithPricingOverrides(overrides map[string]pricing.ModelPricing) chatterOption {
 	return func(p *ChatterParams) {
 		p.PricingOverrides = overrides
 	}
 }
 
 // WithCostTracker sets the cost tracker.
-func WithCostTracker(c pricing.ICostTracker) ChatterOption {
+func WithCostTracker(c pricing.ICostTracker) chatterOption {
 	return func(p *ChatterParams) {
 		p.CostTracker = c
 	}
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.
-type ChatterFactory func(params ChatterParams) Chatter
+type ChatterFactory func(params ChatterParams) (Chatter, error)
 
 // SessionConfig defines the configuration interface for a session.
 type SessionConfig interface {
@@ -220,7 +220,7 @@ type ContextRequest struct {
 
 // PruningPolicy defines how to mark turns for pruning.
 type PruningPolicy interface {
-	MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int
+	MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error)
 	Name() string
 }
 

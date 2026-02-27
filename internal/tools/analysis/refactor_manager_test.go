@@ -68,9 +68,11 @@ func (m *refactorMockSecurityProvider) IsPathSafe(path string) (string, error) {
 }
 
 func TestMoveDefinition(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("IsPathWritable error", func(t *testing.T) {
+		t.Parallel()
 		sp := &refactorMockSecurityProvider{
 			IsPathWritableFunc: func(path string) (string, error) {
 				return "", fmt.Errorf("error")
@@ -140,6 +142,7 @@ func TestMoveDefinition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mgr, tmpDir := setupMoveWorkspace(t, tt.files)
 			srcPath := filepath.Join(tmpDir, tt.srcPath)
 			dstPath := filepath.Join(tmpDir, tt.dstPath)
@@ -192,9 +195,11 @@ func verifyFileContent(t *testing.T, path string, expectedContains []string, exp
 }
 
 func TestRenameSymbol(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Successful Orchestration", func(t *testing.T) {
+		t.Parallel()
 		sp := &refactorMockSecurityProvider{}
 		mgr := newRefactorManager(sp)
 

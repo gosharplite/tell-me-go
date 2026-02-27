@@ -66,7 +66,6 @@ type sendChatTestCase struct {
 }
 
 func TestSendChat_Scenarios(t *testing.T) {
-	t.Parallel()
 	tests := []sendChatTestCase{
 		{
 			name: "Success",
@@ -134,7 +133,6 @@ func TestSendChat_Scenarios(t *testing.T) {
 }
 
 func runSendChatTest(t *testing.T, tt sendChatTestCase) {
-	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if tt.validateReq != nil {
 			tt.validateReq(t, r)
@@ -198,7 +196,6 @@ type streamChatTestCase struct {
 }
 
 func TestStreamChat_Scenarios(t *testing.T) {
-	t.Parallel()
 	tests := []streamChatTestCase{
 		{
 			name: "Success",
@@ -269,7 +266,6 @@ func TestStreamChat_Scenarios(t *testing.T) {
 }
 
 func runStreamChatTest(t *testing.T, tt streamChatTestCase) {
-	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if tt.validateReq != nil {
 			tt.validateReq(t, r)
@@ -459,7 +455,6 @@ func assertGenerateImagesResults(t *testing.T, tt generateImagesTestCase, images
 }
 
 func TestToSDKSchema(t *testing.T) {
-	t.Parallel()
 
 	s := &tools.Schema{
 		Type:        "object",
@@ -507,7 +502,6 @@ func TestToSDKSchema(t *testing.T) {
 }
 
 func TestClassifyError(t *testing.T) {
-	t.Parallel()
 
 	client := &Client{}
 
@@ -535,7 +529,6 @@ func TestClassifyError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got := client.classifyError(tt.err)
 			if (got == nil) != (tt.expected == nil) {
 				t.Fatalf("expected error %v, got %v", tt.expected, got)
@@ -548,7 +541,6 @@ func TestClassifyError(t *testing.T) {
 }
 
 func TestToSDKTool(t *testing.T) {
-	t.Parallel()
 
 	tests := []struct {
 		name     string
@@ -602,14 +594,14 @@ func TestToSDKTool(t *testing.T) {
 }
 
 func TestApplyThinkingBudget(t *testing.T) {
-	t.Parallel()
 
 	bus := events.NewSimpleEventBus()
 	client := &Client{eventBus: bus}
+	ctx := context.Background()
 
 	t.Run("Under Budget", func(t *testing.T) {
 		config := &genai.ThinkingConfig{}
-		client.applyThinkingBudget(config, 1000, 2000, "test-model")
+		client.applyThinkingBudget(ctx, config, 1000, 2000, "test-model")
 
 		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1000 {
 			t.Errorf("expected budget 1000, got %v", config.ThinkingBudget)
@@ -629,7 +621,7 @@ func TestApplyThinkingBudget(t *testing.T) {
 		})
 
 		config := &genai.ThinkingConfig{}
-		localClient.applyThinkingBudget(config, 3000, 1024, "test-model")
+		localClient.applyThinkingBudget(ctx, config, 3000, 1024, "test-model")
 
 		// Flush to ensure the event is processed
 		if err := localBus.Flush(context.Background()); err != nil {
@@ -660,7 +652,6 @@ func TestApplyThinkingBudget(t *testing.T) {
 }
 
 func TestHandleEmptyContent(t *testing.T) {
-	t.Parallel()
 
 	client := &Client{}
 
@@ -686,7 +677,6 @@ func TestHandleEmptyContent(t *testing.T) {
 }
 
 func TestHandleNoCandidates(t *testing.T) {
-	t.Parallel()
 
 	client := &Client{}
 
@@ -712,7 +702,6 @@ func TestHandleNoCandidates(t *testing.T) {
 }
 
 func TestHandleSafetyBlock(t *testing.T) {
-	t.Parallel()
 
 	client := &Client{}
 
@@ -738,7 +727,6 @@ func TestHandleSafetyBlock(t *testing.T) {
 }
 
 func TestFormatFinishError(t *testing.T) {
-	t.Parallel()
 
 	client := &Client{}
 

@@ -9,6 +9,7 @@ import (
 )
 
 func TestASTCache_Concurrency_Race(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	cache := newASTCache()
 	numFiles := 10

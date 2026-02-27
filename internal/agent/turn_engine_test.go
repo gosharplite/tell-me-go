@@ -22,6 +22,7 @@ import (
 )
 
 func TestTurnEngine_StateTransitions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		phase    turnPhase
@@ -39,6 +40,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			p := createProcessorForPhase(tt.phase)
 			turn := setupTransitionTurn(tt.hasTools, tt.phase)
 
@@ -51,6 +53,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 }
 
 func TestTurnEngine_Run_TurnLimit(t *testing.T) {
+	t.Parallel()
 	env := setupTurnEngineTest(t)
 	e := newTurnEngine(env.gw, &mockExecutor{}, env.cm, env.reg, env.bus, &mockTokenCounter{})
 	e.ctxManager.Strategy.SetLimits(1000, 5, 2) // Max 2 turns (0, 1, 2)
@@ -79,6 +82,7 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 }
 
 func TestTurnEngine_Run_EventSequence(t *testing.T) {
+	t.Parallel()
 	var capturedEvents []string
 	var mu sync.Mutex
 	bus := events.NewSimpleEventBus()
@@ -137,6 +141,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 }
 
 func TestTurnEngine_Run_Errors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(gw *mockGateway, hm ports.HistoryManager)
@@ -186,6 +191,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mockGw := &mockGateway{}
 			mockEx := &mockExecutor{
 				ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
@@ -214,6 +220,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 }
 
 func TestTurnEngine_Run_MultiTurn(t *testing.T) {
+	t.Parallel()
 	turnCount := 0
 	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
@@ -400,6 +407,7 @@ func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextReque
 func (m *mockTransformer) Priority() int { return 10 }
 
 func TestTurnEngine_MiddlewareOrder(t *testing.T) {
+	t.Parallel()
 	var order []string
 	m1 := func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
@@ -459,6 +467,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 }
 
 func TestTurnEngine_ClockInjection(t *testing.T) {
+	t.Parallel()
 	fixedTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	mockClock := &mockClock{CurrentTime: fixedTime}
 
@@ -509,6 +518,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 }
 
 func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		err     error
@@ -535,6 +545,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithCancel(context.Background())
 			if tt.cancel {
 				cancel()
@@ -564,6 +575,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 }
 
 func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
+	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
@@ -598,6 +610,7 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 }
 
 func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
+	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
@@ -632,6 +645,7 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 }
 
 func TestTurnEngine_withProcessor(t *testing.T) {
+	t.Parallel()
 	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
@@ -668,6 +682,7 @@ func TestTurnEngine_withProcessor(t *testing.T) {
 }
 
 func TestTurnEngine_Hooks(t *testing.T) {
+	t.Parallel()
 	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
@@ -703,6 +718,7 @@ func TestTurnEngine_Hooks(t *testing.T) {
 }
 
 func TestTurnEngine_WithRetryPolicy(t *testing.T) {
+	t.Parallel()
 	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
@@ -728,6 +744,7 @@ func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 }
 
 func TestTurnEngine_StopSignal(t *testing.T) {
+	t.Parallel()
 	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
@@ -772,6 +789,7 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 }
 
 func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
+	t.Parallel()
 	env := setupTurnEngineTest(t)
 
 	pricing := config.DefaultPricing()
@@ -823,6 +841,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 }
 
 func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
+	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
@@ -893,6 +912,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 }
 
 func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		maxToolTurns  int
@@ -997,6 +1017,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			bus := &events.SimpleEventBus{}
 			reg := &mockToolRegistry{}
 			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
@@ -1030,6 +1051,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 }
 
 func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
+	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
 	bus := &events.SimpleEventBus{}
@@ -1088,6 +1110,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 }
 
 func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
+	t.Parallel()
 	bus := &events.SimpleEventBus{}
 	tracker := &mockEngineCostTracker{}
 	reg := &mockToolRegistry{}
@@ -1098,6 +1121,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	e := newTurnEngine(&mockGateway{}, &mockExecutor{}, cm, reg, bus, strategy, withCostTracker(tracker))
 
 	t.Run("Cost tracking via middleware", func(t *testing.T) {
+		t.Parallel()
 		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100}
 		tn := &turn{
 			State: &turnState{
@@ -1128,10 +1152,12 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 }
 
 func TestDefaultRetryPolicy_Coverage(t *testing.T) {
+	t.Parallel()
 	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 10 * time.Millisecond, RateLimitBackoff: 5 * time.Second}
 	c := &mockClock{}
 
 	t.Run("Transient error", func(t *testing.T) {
+		t.Parallel()
 		err := &agentError{Category: llm.ErrTransient, Message: "retry"}
 
 		// Attempt 0: 10ms * 2^0 * 1.0 = 10ms
@@ -1153,6 +1179,7 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	})
 
 	t.Run("Rate limit error", func(t *testing.T) {
+		t.Parallel()
 		err := llm.ErrRateLimit
 		// Base overridden to 5s. 5s * 2^0 * 1.0 = 5s
 		delay, retry := policy.ShouldRetry(c, err, 0)
@@ -1162,6 +1189,7 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	})
 
 	t.Run("Fatal error", func(t *testing.T) {
+		t.Parallel()
 		err := &agentError{Category: llm.ErrTerminal, Message: "fatal"}
 		_, retry := policy.ShouldRetry(c, err, 0)
 		if retry {
@@ -1170,7 +1198,9 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	})
 
 	t.Run("Generic error", func(t *testing.T) {
+		t.Parallel()
 		// If err is nil, it returns false.
+
 		_, retry := policy.ShouldRetry(c, nil, 0)
 		if retry {
 			t.Error("expected no retry for nil error")
@@ -1226,6 +1256,7 @@ func (m *mockBlockingClock) After(d time.Duration) <-chan time.Time {
 func (m *mockBlockingClock) Jitter(base float64) float64 { return base }
 
 func TestTurnEngine_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	t.Run("GuardStep", testContextCancellation_GuardStep)
 	t.Run("ExecutionStep", testContextCancellation_ExecutionStep)
 	t.Run("RecoveryStep_DoneChannel", testContextCancellation_RecoveryStep_DoneChannel)

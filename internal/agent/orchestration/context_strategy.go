@@ -115,21 +115,14 @@ func (cs *ContextStrategy) GetTieredThreshold() int {
 	return cs.tieredThreshold
 }
 
-// EstimateTokens provides a heuristic-based token count with incremental caching.
-func (cs *ContextStrategy) EstimateTokens(contents []*llm.Content) int {
+// estimateTokens provides a heuristic-based token count with incremental caching.
+func (cs *ContextStrategy) estimateTokens(contents []*llm.Content) int {
 	return cs.counter.Count(contents)
 }
 
 // Count implements llm.TokenCounter.
 func (cs *ContextStrategy) Count(contents []*llm.Content) int {
-	return cs.EstimateTokens(contents)
-}
-
-// CountTokens implements llm.TokenCounter.
-func (cs *ContextStrategy) CountTokens(text string) int {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.counter.CountTokens(text)
+	return cs.estimateTokens(contents)
 }
 
 // getWarnings generates safety and financial warnings based on current state.

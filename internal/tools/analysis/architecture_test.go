@@ -21,13 +21,15 @@ func (m *mockpackageProvider) LoadPackages(ctx context.Context) (map[string][]st
 
 func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 	t.Parallel()
-	mockSP := &mockSecurityProvider{}
-	m := &architectureManager{
-		SP:         mockSP,
-		ModulePath: "github.com/gosharplite/tell-me-go",
-	}
 
 	t.Run("violations found", func(t *testing.T) {
+		t.Parallel()
+		mockSP := &mockSecurityProvider{}
+		m := &architectureManager{
+			SP:         mockSP,
+			ModulePath: "github.com/gosharplite/tell-me-go",
+		}
+
 		pkgs := map[string][]string{
 			"github.com/gosharplite/tell-me-go/internal/domain": {
 				"github.com/gosharplite/tell-me-go/internal/agent", // Violation
@@ -53,6 +55,13 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 	})
 
 	t.Run("no violations", func(t *testing.T) {
+		t.Parallel()
+		mockSP := &mockSecurityProvider{}
+		m := &architectureManager{
+			SP:         mockSP,
+			ModulePath: "github.com/gosharplite/tell-me-go",
+		}
+
 		pkgs := map[string][]string{
 			"github.com/gosharplite/tell-me-go/internal/domain": {},
 		}
@@ -67,6 +76,13 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 	})
 
 	t.Run("load error", func(t *testing.T) {
+		t.Parallel()
+		mockSP := &mockSecurityProvider{}
+		m := &architectureManager{
+			SP:         mockSP,
+			ModulePath: "github.com/gosharplite/tell-me-go",
+		}
+
 		m.Loader = &mockpackageProvider{err: fmt.Errorf("load error")}
 		_, err := m.VerifyArchitecture(context.Background(), nil)
 		if err == nil {
@@ -76,6 +92,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 }
 
 func TestArchitectureManager_FormatReport(t *testing.T) {
+	t.Parallel()
 	m := &architectureManager{
 		ModulePath: "github.com/gosharplite/tell-me-go",
 	}
@@ -125,6 +142,7 @@ func TestArchitectureManager_FormatReport(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := m.formatReport(tt.violations)
 			for _, want := range tt.contains {
 				if !strings.Contains(got, want) {
@@ -136,6 +154,7 @@ func TestArchitectureManager_FormatReport(t *testing.T) {
 }
 
 func TestArchitectureManager_IsLayer(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		pkg   string
 		layer string
@@ -150,6 +169,7 @@ func TestArchitectureManager_IsLayer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.pkg+"_"+tt.layer, func(t *testing.T) {
+			t.Parallel()
 			if got := isLayer(tt.pkg, tt.layer); got != tt.want {
 				t.Errorf("isLayer(%q, %q) = %v, want %v", tt.pkg, tt.layer, got, tt.want)
 			}
@@ -158,6 +178,7 @@ func TestArchitectureManager_IsLayer(t *testing.T) {
 }
 
 func TestArchitectureManager_Shorten(t *testing.T) {
+	t.Parallel()
 	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	tests := []struct {
 		pkg  string
@@ -170,6 +191,7 @@ func TestArchitectureManager_Shorten(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.pkg, func(t *testing.T) {
+			t.Parallel()
 			if got := m.shorten(tt.pkg); got != tt.want {
 				t.Errorf("shorten(%q) = %v, want %v", tt.pkg, got, tt.want)
 			}
@@ -178,6 +200,7 @@ func TestArchitectureManager_Shorten(t *testing.T) {
 }
 
 func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
+	t.Parallel()
 	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	pkgs := map[string][]string{
 		"github.com/org/repo/internal/domain": {
@@ -274,6 +297,7 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 }
 
 func TestArchitectureManager_IsTrackedPackage(t *testing.T) {
+	t.Parallel()
 	m := &architectureManager{ModulePath: "github.com/org/repo"}
 
 	tests := []struct {

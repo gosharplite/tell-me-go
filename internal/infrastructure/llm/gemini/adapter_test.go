@@ -211,7 +211,6 @@ func TestPart_ToSDK_LazyHydration_NoInlineData(t *testing.T) {
 }
 
 func TestHydrateAsset_Errors(t *testing.T) {
-	t.Parallel()
 
 	t.Run("Resolver Error", func(t *testing.T) {
 		ctx := context.Background()

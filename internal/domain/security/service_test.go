@@ -6,6 +6,7 @@ package security
 import "testing"
 
 func TestSafetyService_IsCommandSafe(t *testing.T) {
+	t.Parallel()
 	s := NewSafetyService(DefaultPolicy())
 	tests := []struct {
 		name     string
@@ -20,6 +21,7 @@ func TestSafetyService_IsCommandSafe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			gotSafe, gotMsg := s.IsCommandSafe(tt.cmd)
 			if gotSafe != tt.wantSafe {
 				t.Errorf("IsCommandSafe(%q) gotSafe = %v, want %v", tt.cmd, gotSafe, tt.wantSafe)
@@ -32,6 +34,7 @@ func TestSafetyService_IsCommandSafe(t *testing.T) {
 }
 
 func TestSafetyService_HasForbiddenOperators(t *testing.T) {
+	t.Parallel()
 	s := NewSafetyService(DefaultPolicy())
 	tests := []struct {
 		name  string
@@ -58,6 +61,7 @@ func TestSafetyService_HasForbiddenOperators(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, gotDesc := s.HasForbiddenOperators(tt.parts)
 			if got != tt.want {
 				t.Errorf("HasForbiddenOperators(%v) got = %v, want %v", tt.parts, got, tt.want)
@@ -70,6 +74,7 @@ func TestSafetyService_HasForbiddenOperators(t *testing.T) {
 }
 
 func TestSafetyService_HasUnsafeInterpolation(t *testing.T) {
+	t.Parallel()
 	s := NewSafetyService(DefaultPolicy())
 	tests := []struct {
 		name string
@@ -84,6 +89,7 @@ func TestSafetyService_HasUnsafeInterpolation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := s.HasUnsafeInterpolation(tt.part); got != tt.want {
 				t.Errorf("HasUnsafeInterpolation(%q) = %v, want %v", tt.part, got, tt.want)
 			}
@@ -92,6 +98,7 @@ func TestSafetyService_HasUnsafeInterpolation(t *testing.T) {
 }
 
 func TestSafetyService_HasForbiddenCharsInCommand(t *testing.T) {
+	t.Parallel()
 	s := NewSafetyService(DefaultPolicy())
 	tests := []struct {
 		name string
@@ -110,6 +117,7 @@ func TestSafetyService_HasForbiddenCharsInCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := s.HasForbiddenCharsInCommand(tt.cmd); got != tt.want {
 				t.Errorf("HasForbiddenCharsInCommand(%q) = %v, want %v", tt.cmd, got, tt.want)
 			}
@@ -118,6 +126,7 @@ func TestSafetyService_HasForbiddenCharsInCommand(t *testing.T) {
 }
 
 func TestSafetyService_IsSafeGitSubcommand(t *testing.T) {
+	t.Parallel()
 	s := NewSafetyService(DefaultPolicy())
 	tests := []struct {
 		name string
@@ -132,6 +141,7 @@ func TestSafetyService_IsSafeGitSubcommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := s.IsSafeGitSubcommand(tt.sub); got != tt.want {
 				t.Errorf("IsSafeGitSubcommand(%q) = %v, want %v", tt.sub, got, tt.want)
 			}
@@ -140,6 +150,7 @@ func TestSafetyService_IsSafeGitSubcommand(t *testing.T) {
 }
 
 func TestSafetyService_IsSafeGoSubcommand(t *testing.T) {
+	t.Parallel()
 	s := NewSafetyService(DefaultPolicy())
 	tests := []struct {
 		name string
@@ -154,6 +165,7 @@ func TestSafetyService_IsSafeGoSubcommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := s.IsSafeGoSubcommand(tt.sub); got != tt.want {
 				t.Errorf("IsSafeGoSubcommand(%q) = %v, want %v", tt.sub, got, tt.want)
 			}

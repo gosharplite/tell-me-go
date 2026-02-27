@@ -12,6 +12,7 @@ import (
 )
 
 func TestIsTransient(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -29,6 +30,7 @@ func TestIsTransient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := isTransient(tt.err); got != tt.want {
 				t.Errorf("isTransient() = %v, want %v", got, tt.want)
 			}
@@ -37,6 +39,7 @@ func TestIsTransient(t *testing.T) {
 }
 
 func TestIsFatal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -59,6 +62,7 @@ func TestIsFatal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := isFatal(tt.err); got != tt.want {
 				t.Errorf("isFatal() = %v, want %v", got, tt.want)
 			}

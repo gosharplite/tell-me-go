@@ -258,7 +258,7 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 		SystemInstruction: systemInstruction,
 	}
 
-	c.configureThinking(config)
+	c.configureThinking(ctx, config)
 
 	return config, c.toSDKContent(ctx, history, resolver)
 }
@@ -281,7 +281,7 @@ func (c *Client) configureTools(ctx context.Context, tools []*tools.ToolDeclarat
 	return activeTools, toSDKContent(ctx, instr, resolver)
 }
 
-func (c *Client) configureThinking(config *genai.GenerateContentConfig) {
+func (c *Client) configureThinking(ctx context.Context, config *genai.GenerateContentConfig) {
 	c.mu.RLock()
 	level := c.thinkingLevel
 	budget := c.thinkingBudget
@@ -298,17 +298,17 @@ func (c *Client) configureThinking(config *genai.GenerateContentConfig) {
 	}
 
 	if budget > 0 {
-		c.applyThinkingBudget(config.ThinkingConfig, budget, maxBudget, model)
+		c.applyThinkingBudget(ctx, config.ThinkingConfig, budget, maxBudget, model)
 	} else if level != "" {
 		config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(level)
 	}
 }
 
-func (c *Client) applyThinkingBudget(config *genai.ThinkingConfig, budget, maxBudget int, model string) {
+func (c *Client) applyThinkingBudget(ctx context.Context, config *genai.ThinkingConfig, budget, maxBudget int, model string) {
 	actualBudget := budget
 	if maxBudget > 0 && actualBudget > maxBudget {
 		if c.eventBus != nil {
-			c.eventBus.Publish(events.SystemMessageEvent{
+			_ = c.eventBus.Publish(ctx, events.SystemMessageEvent{
 				Message: fmt.Sprintf("Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.", actualBudget, model, maxBudget, maxBudget),
 				Level:   "warning",
 			})

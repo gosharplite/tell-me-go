@@ -7,11 +7,10 @@ package llm
 type TokenCounter interface {
 	// Count returns the estimated number of tokens for the given contents.
 	Count(contents []*Content) int
-	// CountTokens returns the estimated number of tokens for a plain text string.
-	CountTokens(text string) int
 }
 
 // TokenEstimator defines the interface for token counting.
 type TokenEstimator interface {
-	EstimateTokens(contents []*Content) int
+	// Count returns the estimated number of tokens for the given contents.
+	Count(contents []*Content) int
 }

@@ -38,6 +38,7 @@ func (m *mockCommandExecutor) CombinedOutput(ctx context.Context, name string, a
 }
 
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
 	cwd, _ := os.Getwd()
@@ -75,6 +76,7 @@ type releaseReadinessTestCase struct {
 }
 
 func TestVerifyReleaseReadiness_Failures(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
 	cwd, _ := os.Getwd()
@@ -140,6 +142,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			runReleaseReadinessTest(t, sm, tt.name, tt.files, tt.runFunc, tt.wantSubstr)
 		})
 	}
@@ -173,6 +176,7 @@ func runReleaseReadinessTest(t *testing.T, sm domain_security.ISecurityManager, 
 }
 
 func TestLinterChecker_Fallbacks(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
 
@@ -225,6 +229,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			fs := persistence.NewMockFileSystem()
 			fs.Files = map[string][]byte{"go.mod": []byte("module test")}
 			executor := &mockCommandExecutor{runFunc: tt.runFunc}

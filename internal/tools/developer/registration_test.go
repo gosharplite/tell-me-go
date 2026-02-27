@@ -39,6 +39,7 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 func TestRegister(t *testing.T) {
+	t.Parallel()
 	registry := &mockToolRegistry{}
 	sm := security.NewSecurityManager(nil)
 	validator := security.NewCommandValidator(sm, nil)
@@ -59,6 +60,7 @@ func TestRegister(t *testing.T) {
 
 	for _, name := range toolNames {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			assert.True(t, registry.tools[name], "tool %s should be registered", name)
 		})
 	}

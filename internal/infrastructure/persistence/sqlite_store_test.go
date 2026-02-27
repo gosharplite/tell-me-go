@@ -29,6 +29,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 }
 
 func TestSQLiteConfigStore(t *testing.T) {
+	t.Parallel()
 	t.Run("Get Non-Existent Key", testConfigStoreGetNonExistent)
 	t.Run("Set and Get Key", testConfigStoreSetAndGet)
 	t.Run("Update Existing Key", testConfigStoreUpdateExisting)
@@ -130,6 +131,7 @@ func testConfigStoreDelete(t *testing.T) {
 }
 
 func TestSQLiteScratchpadStore(t *testing.T) {
+	t.Parallel()
 	t.Run("Get Empty Scratchpad", testScratchpadGetEmpty)
 	t.Run("Get Invalid Key", testScratchpadGetInvalidKey)
 	t.Run("Set Invalid Key", testScratchpadSetInvalidKey)
@@ -274,6 +276,7 @@ func testScratchpadDelete(t *testing.T) {
 }
 
 func TestSQLiteTaskStore(t *testing.T) {
+	t.Parallel()
 	t.Run("Read Empty Store", testTaskStoreReadEmpty)
 	t.Run("Append and Read Tasks", testTaskStoreAppendAndRead)
 	t.Run("Update Task", testTaskStoreUpdate)
@@ -392,6 +395,7 @@ func testTaskStoreDeleteAll(t *testing.T) {
 }
 
 func TestStoreErrors(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	db.Close() // Close DB to force errors
 

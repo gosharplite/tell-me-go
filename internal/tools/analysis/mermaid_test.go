@@ -9,6 +9,7 @@ import (
 )
 
 func TestGenerateMermaid(t *testing.T) {
+	t.Parallel()
 	graph := map[string][]string{
 		"cmd/app":         {"internal/api", "internal/domain"},
 		"internal/api":    {"internal/domain"},
@@ -65,6 +66,7 @@ func TestGenerateMermaid(t *testing.T) {
 }
 
 func TestGenerateMermaidWithCycles(t *testing.T) {
+	t.Parallel()
 	graph := map[string][]string{
 		"pkg/a": {"pkg/b"},
 		"pkg/b": {"pkg/c"},

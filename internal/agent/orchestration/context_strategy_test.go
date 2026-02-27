@@ -12,20 +12,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-func TestContextStrategy_EstimateTokens(t *testing.T) {
+func TestContextStrategy_estimateTokens(t *testing.T) {
 	registry := &mockToolRegistry{}
 	cs := NewContextStrategy(NewHeuristicTokenCounter(registry), nil)
 
 	t.Run("Base overhead", func(t *testing.T) {
 		registry.declarations = nil
 		// base = 300
-		got := cs.EstimateTokens(nil)
+		got := cs.estimateTokens(nil)
 		if got != 300 {
 			t.Errorf("expected 300 tokens, got %d", got)
 		}
@@ -41,7 +42,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 		}
 		// charCount = base(300) + (len("my_tool") (7) + len("does something") (14)) / 4 + 50 (params)
 		// total = 300 + 5 + 50 = 355
-		got := cs.EstimateTokens(nil)
+		got := cs.estimateTokens(nil)
 		if got != 355 {
 			t.Errorf("expected 355 tokens, got %d", got)
 		}
@@ -61,8 +62,8 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 				},
 			},
 		}
-		base := cs.EstimateTokens(nil)
-		withBlob := cs.EstimateTokens(contents)
+		base := cs.estimateTokens(nil)
+		withBlob := cs.estimateTokens(contents)
 		diff := withBlob - base
 		// 160 chars / 3.2 = 50 tokens
 		if diff != 50 {
@@ -88,7 +89,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 		// charCount: (base 300) + (name "test"(4) + key "nested"(6) + slice [1,2] -> 10+10)/3.2
 		// 30 / 3.2 = 9.375 -> 9
 		// total = 300 + 9 = 309
-		got := cs.EstimateTokens(contents)
+		got := cs.estimateTokens(contents)
 		if got != 309 {
 			t.Errorf("expected 309 tokens, got %d", got)
 		}
@@ -209,6 +210,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 
 	t.Run("Pruning Counter Reset", func(t *testing.T) {
 		// Since we no longer use internal state for prunedTurns, we just check that it's passed through
+
 		warnings := cs.getWarnings(1, 10, 1, 10)
 		found := false
 		for _, w := range warnings {
@@ -305,6 +307,7 @@ func TestContextStrategy_getPriceWarningLocked(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
+
 			cs := &ContextStrategy{
 				tieredThreshold: tt.threshold,
 			}
@@ -401,6 +404,7 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
+
 			cs := &ContextStrategy{
 				maxHistoryTurns: tt.maxTurns,
 			}
@@ -439,7 +443,7 @@ func TestContextStrategy_ConfigUpdatedEvent(t *testing.T) {
 		ContextWindow:    4444,
 	}
 
-	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
 	err := bus.Flush(ctx)
 	assert.NoError(t, err)
 

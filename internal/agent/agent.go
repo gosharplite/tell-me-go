@@ -28,7 +28,7 @@ type runtimeConfig struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 }
 
-// Agent represents the chat orchestration logic (Stateless Service).
+// agent represents the chat orchestration logic (Stateless Service).
 type agent struct {
 	mu            sync.RWMutex
 	gateway       domain_llm.LLMGateway
@@ -43,15 +43,18 @@ type agent struct {
 	config runtimeConfig
 }
 
-// New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) *agent {
+// New creates a new agent with required dependencies.
+func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) (ports.Chatter, error) {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry), bus)
-	exec := executor.NewToolExecutor(registry, sm, bus)
+	exec, err := executor.NewToolExecutor(registry, sm, bus, &executor.TelemetryLogger{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tool executor: %w", err)
+	}
 
 	a := &agent{
 		gateway:       client,
@@ -100,9 +103,9 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.Histo
 	}
 
 	if err := a.applyConfig(initCtx); err != nil {
-		a.emit(events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
+		a.emit(context.Background(), events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
 	}
-	return a
+	return a, nil
 }
 
 func (a *agent) applyConfig(ctx context.Context) error {
@@ -127,7 +130,9 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	tracker := a.tracker
 	a.mu.Unlock()
 
-	a.events.Publish(events.ConfigUpdated{Limits: cfg.Limits})
+	if err := a.events.Publish(ctx, events.ConfigUpdated{Limits: cfg.Limits}); err != nil {
+		return err
+	}
 
 	if a.engine != nil {
 		a.engine.Reconfigure(cfg, tracker)
@@ -142,8 +147,10 @@ func (a *agent) Subscribe(sub func(events.Event)) {
 	a.events.Subscribe(sub)
 }
 
-func (a *agent) emit(e events.Event) {
-	a.events.Publish(e)
+func (a *agent) emit(ctx context.Context, e events.Event) {
+	if a.events != nil {
+		_ = a.events.Publish(ctx, e)
+	}
 }
 
 // SetLimits sets the operational limits for the agent.
@@ -172,7 +179,7 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 	if err := a.applyConfig(ctx); err != nil {
 		return err
 	}
-	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
+	a.emit(ctx, events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
 }
 

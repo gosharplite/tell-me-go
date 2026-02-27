@@ -14,6 +14,7 @@ func TestWorkerPool_BoundaryConditions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("ZeroWorkers", func(t *testing.T) {
+		t.Parallel()
 		p := NewWorkerPool(0)
 		defer p.Shutdown()
 
@@ -38,6 +39,7 @@ func TestWorkerPool_BoundaryConditions(t *testing.T) {
 	})
 
 	t.Run("NegativeWorkers", func(t *testing.T) {
+		t.Parallel()
 		p := NewWorkerPool(-5)
 		defer p.Shutdown()
 
@@ -66,12 +68,14 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 	t.Parallel()
 
 	t.Run("IdempotentShutdown", func(t *testing.T) {
+		t.Parallel()
 		p := NewWorkerPool(2)
 		p.Shutdown()
 		p.Shutdown() // Should not panic or hang
 	})
 
 	t.Run("SubmitAfterShutdown", func(t *testing.T) {
+		t.Parallel()
 		p := NewWorkerPool(2)
 		p.Shutdown()
 
@@ -82,6 +86,7 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 	})
 
 	t.Run("WaitTasksOnShutdown", func(t *testing.T) {
+		t.Parallel()
 		p := NewWorkerPool(1)
 		start := make(chan struct{})
 		done := make(chan struct{})
@@ -108,6 +113,7 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	t.Run("TaskRespectsPoolContext", func(t *testing.T) {
+		t.Parallel()
 		p := NewWorkerPool(1)
 		taskStarted := make(chan struct{})
 		taskDone := make(chan struct{})
@@ -130,6 +136,7 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 	})
 
 	t.Run("SubmitAfterCancel", func(t *testing.T) {
+		t.Parallel()
 		p := NewWorkerPool(1)
 		// We can't directly cancel p.ctx since it's private, but Shutdown calls cancel().
 		p.Shutdown()

@@ -83,6 +83,7 @@ func (m *mockCommand) Execute(ctx stdctx.Context, args []string) error {
 
 func TestApp_Run_ContextCanceled(t *testing.T) {
 	// Register a mock command for "chat" to test error handling
+
 	register("chat", func(ctx *context) command {
 		return &mockCommand{err: stdctx.Canceled}
 	})
@@ -106,6 +107,7 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 
 func TestApp_Run_CommandError(t *testing.T) {
 	// Register a mock command for a custom error
+
 	customErr := errors.New("custom error")
 	register("error-cmd", func(ctx *context) command {
 		return &mockCommand{err: customErr}

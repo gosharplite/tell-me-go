@@ -12,6 +12,7 @@ import (
 )
 
 func TestSecurityManager_Bypass(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	bypassFile := filepath.Join(tmpDir, "bypass")
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
@@ -48,6 +49,7 @@ func TestSecurityManager_Bypass(t *testing.T) {
 }
 
 func TestSecurityManager_IsCommandAllowed(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	tests := []struct {
 		cmd  string
@@ -62,6 +64,7 @@ func TestSecurityManager_IsCommandAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.cmd, func(t *testing.T) {
+			t.Parallel()
 			if got := sm.IsCommandAllowed(tt.cmd); got != tt.want {
 				t.Errorf("IsCommandAllowed(%q) = %v, want %v", tt.cmd, got, tt.want)
 			}
@@ -70,7 +73,9 @@ func TestSecurityManager_IsCommandAllowed(t *testing.T) {
 }
 
 func TestSecurityManager_Authorize(t *testing.T) {
+	t.Parallel()
 	// 1. Authorize when isSafe=true
+
 	sm := NewSecurityManager(nil)
 	ok, err := sm.Authorize(context.Background(), "label", "detail", "reason", true)
 	if err != nil || !ok {
@@ -101,6 +106,7 @@ func TestSecurityManager_Authorize(t *testing.T) {
 }
 
 func TestSecurityManager_PathManagement(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	sm.RegisterSafePath("/tmp/safe")
 	sm.RegisterReadOnlyPath("/tmp/readonly")
@@ -128,6 +134,7 @@ func contains(slice []string, val string) bool {
 }
 
 func TestSecurityManager_Misc(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
 
 	// getPolicy / setPolicy

@@ -6,6 +6,7 @@ package developer
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -59,6 +60,8 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 		go func(i int, c readinessCheck) {
 			defer wg.Done()
 
+			slog.Info("verify_release_readiness: enqueued check", slog.String("check", c.Name()))
+
 			// Acquire semaphore before executing heavy checks
 			if err := sem.Acquire(ctx, 1); err != nil {
 				results[i] = checkResult{
@@ -69,7 +72,15 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 			}
 			defer sem.Release(1)
 
-			results[i] = c.Run(ctx)
+			slog.Info("verify_release_readiness: running check", slog.String("check", c.Name()))
+			res := c.Run(ctx)
+			if res.OK {
+				slog.Info("verify_release_readiness: completed check", slog.String("check", c.Name()), slog.Bool("ok", true))
+			} else {
+				slog.Warn("verify_release_readiness: check failed", slog.String("check", c.Name()), slog.Bool("ok", false))
+			}
+
+			results[i] = res
 		}(i, check)
 	}
 

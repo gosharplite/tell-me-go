@@ -12,9 +12,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestToolPanicSerial(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			panic("simulated serial tool panic")
@@ -22,7 +24,8 @@ func TestToolPanicSerial(t *testing.T) {
 		isSerial: true,
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
@@ -46,6 +49,7 @@ func TestToolPanicSerial(t *testing.T) {
 }
 
 func TestToolPanicParallel(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			if name == "panic_tool" {
@@ -62,7 +66,8 @@ func TestToolPanicParallel(t *testing.T) {
 		isSerial: false,
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
@@ -99,14 +104,17 @@ func TestToolPanicParallel(t *testing.T) {
 }
 
 func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
+	t.Parallel()
 	// Mock registry where resolveTool or something else inside IdentifyConsentItems panics
+
 	reg := &mockToolRegistry{
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			panic("simulated auth panic")
 		},
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	calls := []*llm.FunctionCall{
@@ -121,6 +129,10 @@ func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
 }
 
 func TestZombieToolTimeout(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 	hangingTool := &tools.ToolDeclaration{
 		Name: "zombie_tool",
 	}
@@ -134,7 +146,8 @@ func TestZombieToolTimeout(t *testing.T) {
 		},
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	// Set very short timeouts for testing
@@ -160,12 +173,14 @@ func TestZombieToolTimeout(t *testing.T) {
 }
 
 func TestExecuteSerialTaskRecovery(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			panic("panic during serial resolve")
 		},
 	}
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
@@ -184,12 +199,14 @@ func TestExecuteSerialTaskRecovery(t *testing.T) {
 }
 
 func TestEnqueueParallelTaskRecovery(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			panic("panic during parallel resolve")
 		},
 	}
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()

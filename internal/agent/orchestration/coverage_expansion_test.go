@@ -94,8 +94,12 @@ type mockExpEventBus struct {
 	events []events.Event
 }
 
-func (m *mockExpEventBus) Publish(e events.Event) {
+func (m *mockExpEventBus) Publish(ctx context.Context, e events.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.events = append(m.events, e)
+	return nil
 }
 func (m *mockExpEventBus) Subscribe(sub func(events.Event))   {}
 func (m *mockExpEventBus) Shutdown(ctx context.Context) error { return nil }
@@ -181,7 +185,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start, count := tg.locateCandidateBlock(tt.turns, tt.target)
+			start, count := tg.locateCandidateBlock(context.Background(), tt.turns, tt.target)
 			assert.Equal(t, tt.expectedStart, start)
 			assert.Equal(t, tt.expectedCount, count)
 		})
@@ -200,7 +204,7 @@ func TestTokenGatekeeper_FindSummarizableRange_ErrorPath(t *testing.T) {
 		{Role: "user", Pinned: true},
 		{Role: "model", Pinned: true},
 	}
-	_, _, _, err := tg.findSummarizableRange(history)
+	_, _, _, err := tg.findSummarizableRange(context.Background(), history)
 	assert.Error(t, err)
 }
 

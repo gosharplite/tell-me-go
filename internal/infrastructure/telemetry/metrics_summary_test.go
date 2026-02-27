@@ -16,6 +16,7 @@ import (
 )
 
 func TestGetCostSummary_ReportFormat(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 
 	globalDir := tempDir
@@ -108,6 +109,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 }
 
 func TestGetCostSummary_GoogleBilling(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 
 	globalDir := tempDir
@@ -216,6 +218,7 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 }
 
 func TestGetCostSummary_Filters(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 	globalDir := tempDir
 	historyPath := filepath.Join(globalDir, "global_costs.json")
@@ -314,6 +317,7 @@ func TestGetCostSummary_Filters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res, err := m.getCostSummary(context.Background(), tt.args)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getCostSummary() error = %v, wantErr %v", err, tt.wantErr)
@@ -336,6 +340,7 @@ func TestGetCostSummary_Filters(t *testing.T) {
 }
 
 func TestGetCostSummary_MalformedRecords(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 	globalDir := tempDir
 	historyPath := filepath.Join(globalDir, "global_costs.json")
@@ -387,6 +392,7 @@ func TestGetCostSummary_MalformedRecords(t *testing.T) {
 }
 
 func TestGetCostSummary_GroupByModel(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 
 	globalDir := tempDir
@@ -476,6 +482,7 @@ func TestGetCostSummary_GroupByModel(t *testing.T) {
 }
 
 func TestGetCostSummary_GroupByDateModel(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 
 	globalDir := tempDir

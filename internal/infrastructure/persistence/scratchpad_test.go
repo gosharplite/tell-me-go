@@ -10,6 +10,7 @@ import (
 )
 
 func TestScratchpadRepository_Load(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()
@@ -31,6 +32,7 @@ func TestScratchpadRepository_Load(t *testing.T) {
 }
 
 func TestScratchpadRepository_LoadNonExistent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()
@@ -46,6 +48,7 @@ func TestScratchpadRepository_LoadNonExistent(t *testing.T) {
 }
 
 func TestScratchpadRepository_GetAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()

@@ -27,6 +27,7 @@ import (
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/genai"
 )
 
@@ -292,4 +293,32 @@ func TestSummarizeRange_Logging(t *testing.T) {
 			t.Errorf("found old log message %q which should have been removed", se.Message)
 		}
 	}
+}
+
+func TestSummarizeHistory_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Pre-cancel the context
+
+	historyFile := filepath.Join(t.TempDir(), "history_cancel.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile, historyFile+".archive")
+
+	// Add some history
+	for i := 0; i < 10; i++ {
+		_ = hManager.AddContent(context.Background(), &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
+		_ = hManager.AddContent(context.Background(), &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
+	}
+
+	cm := &ContextManager{
+		History:    hManager,
+		Summarizer: &mockSummarizer{},
+		Strategy:   NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil),
+	}
+	it := NewInternalTools(cm)
+
+	// Call the tool with the cancelled context
+	args := map[string]interface{}{"turns": 5.0}
+	_, err := it.summarizeHistory(ctx, args)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 }

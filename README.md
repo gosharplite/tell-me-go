@@ -191,3 +191,20 @@ alias b-install-dev='go install ./cmd/tell-me-go'
 
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).
+
+## 🛠️ Development
+
+### Setup
+Ensure you have **Go 1.25+** installed.
+
+### Standard Tasks
+Use the `Makefile` for all development tasks. This ensures consistent environments and prevents timeouts in AI-driven sessions:
+- **Tidy Dependencies:** `make tidy`
+- **Run Tests:** `make test`
+- **Race Detection:** `make test-race` (Required for PRs. This runs package-by-package to avoid session timeouts).
+- **Format Code:** `make fmt`
+- **Linter:** `golangci-lint run`
+
+### Documentation
+- **SOPs:** Standard Operating Procedures are located in `docs/sop/`.
+- **ADRs:** Architecture Decision Records are in `docs/adr/`. Refer to [ADR-002](docs/adr/0002-tool-execution-concurrency-and-timeouts.md) for details on the new Tool Execution engine.

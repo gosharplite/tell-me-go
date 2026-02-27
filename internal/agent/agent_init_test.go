@@ -13,9 +13,11 @@ import (
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAgent_InitConfigFailure_Warning(t *testing.T) {
+	t.Parallel()
 	client := &mockLLMClient{}
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
 	reg := registry.New()
@@ -39,7 +41,8 @@ func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	})
 
 	// New should not crash even if applyConfig fails
-	a := New(client, bus, h, "test-provider", reg, sm, withInitContext(ctx))
+	a, err := New(client, bus, h, "test-provider", reg, sm, withInitContext(ctx))
+	require.NoError(t, err)
 
 	if a == nil {
 		t.Fatal("New returned nil agent")

@@ -6,6 +6,7 @@ package stringsutil
 import "testing"
 
 func TestTruncateOutput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -76,6 +77,7 @@ func TestTruncateOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := TruncateOutput(tt.input, tt.maxLines)
 			if got != tt.expected {
 				t.Errorf("TruncateOutput() = %q, want %q", got, tt.expected)

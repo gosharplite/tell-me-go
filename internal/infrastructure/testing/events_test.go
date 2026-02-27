@@ -10,16 +10,19 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTestEventBus(t *testing.T) {
+	t.Parallel()
 	bus := &TestEventBus{}
+	ctx := context.Background()
 
 	type MyEvent struct{ ID int }
 	type OtherEvent struct{}
 
-	bus.Publish(MyEvent{ID: 1})
-	bus.Publish(OtherEvent{})
+	require.NoError(t, bus.Publish(ctx, MyEvent{ID: 1}))
+	require.NoError(t, bus.Publish(ctx, OtherEvent{}))
 
 	if len(bus.getEvents()) != 2 {
 		t.Errorf("Expected 2 events, got %d", len(bus.getEvents()))
@@ -45,6 +48,7 @@ func TestTestEventBus(t *testing.T) {
 }
 
 func TestTestEventBus_Subscribe(t *testing.T) {
+	t.Parallel()
 	bus := &TestEventBus{}
 	type MyEvent struct{ ID int }
 
@@ -55,11 +59,13 @@ func TestTestEventBus_Subscribe(t *testing.T) {
 		}
 	})
 
-	bus.Publish(MyEvent{ID: 42})
+	err := bus.Publish(context.Background(), MyEvent{ID: 42})
+	require.NoError(t, err)
 	assert.Equal(t, 42, receivedID, "Subscriber should have received the event with correct ID")
 }
 
 func TestTestEventBus_NoOps(t *testing.T) {
+	t.Parallel()
 	bus := &TestEventBus{}
 	ctx := context.Background()
 
@@ -68,11 +74,13 @@ func TestTestEventBus_NoOps(t *testing.T) {
 }
 
 func TestCountingEventBus(t *testing.T) {
+	t.Parallel()
 	bus := NewCountingEventBus()
 	type MyEvent struct{}
+	ctx := context.Background()
 
-	bus.Publish(MyEvent{})
-	bus.Publish(MyEvent{})
+	require.NoError(t, bus.Publish(ctx, MyEvent{}))
+	require.NoError(t, bus.Publish(ctx, MyEvent{}))
 
 	assert.Equal(t, 2, bus.GetCount())
 }

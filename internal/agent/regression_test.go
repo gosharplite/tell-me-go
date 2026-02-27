@@ -17,9 +17,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAgent_EmptyPartProtection(t *testing.T) {
+	t.Parallel()
 	// This test verifies that the orchestration pipeline prunes empty parts
 	// to prevent API errors.
 
@@ -37,10 +39,11 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	client := &mockLLMClient{}
 	sm := &mockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus()
-	a := New(client, bus, h, "test-provider", registry, sm)
+	a, err := New(client, bus, h, "test-provider", registry, sm)
+	require.NoError(t, err)
 
 	// Prepare should trigger the contentCleaner transformer
-	preparedHistory, _, err := a.ctxManager.Prepare(ctx, 1)
+	preparedHistory, _, err := a.(*agent).ctxManager.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -57,6 +60,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 }
 
 func TestAgent_InLoopPruning(t *testing.T) {
+	t.Parallel()
 	// Test that the agent prunes history when it reaches the limit
 	// via the orchestration pipeline.
 
@@ -74,11 +78,12 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	client := &mockLLMClient{}
 	sm := &mockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus()
-	a := New(client, bus, h, "test-provider", registry, sm)
+	a, err := New(client, bus, h, "test-provider", registry, sm)
+	require.NoError(t, err)
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
 	// Prepare should trigger the pruning pipeline
-	preparedHistory, _, err := a.ctxManager.Prepare(ctx, 1)
+	preparedHistory, _, err := a.(*agent).ctxManager.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -89,7 +94,9 @@ func TestAgent_InLoopPruning(t *testing.T) {
 }
 
 func TestAgent_MultiModalFlow(t *testing.T) {
+	t.Parallel()
 	// Setup
+
 	registry := internaltools.New()
 	registry.Register(&tools.ToolDeclaration{
 		Name: "get_image",
@@ -110,10 +117,11 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	mockClient := newMultiModalMockClient()
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, bus, h, "test-provider", registry, sm)
+	a, err := New(mockClient, bus, h, "test-provider", registry, sm)
+	require.NoError(t, err)
 	sess := ports.NewSession("regression-multimodal", h)
 	ctx := context.Background()
-	err := a.Chat(ctx, sess, "Show me a cat")
+	err = a.Chat(ctx, sess, "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
