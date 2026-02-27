@@ -45,8 +45,18 @@ type ToolExecutor struct {
 	failures           *failureTracker
 }
 
+// ExecutorOption allows configuring the ToolExecutor.
+type ExecutorOption func(*ToolExecutor)
+
+// WithLongRunningTimeout sets the timeout for long-running tools.
+func WithLongRunningTimeout(timeout time.Duration) ExecutorOption {
+	return func(e *ToolExecutor) {
+		e.longRunningTimeout = timeout
+	}
+}
+
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus) *ToolExecutor {
+func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, opts ...ExecutorOption) *ToolExecutor {
 	e := &ToolExecutor{
 		registry:           registry,
 		authorizer:         newSecurityAuthorizer(sm, registry),
@@ -58,6 +68,10 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
+	}
+
+	for _, opt := range opts {
+		opt(e)
 	}
 
 	return e
@@ -120,13 +134,6 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 	if oldPool != nil {
 		oldPool.Shutdown()
 	}
-}
-
-// SetLongRunningTimeout sets the timeout for long-running tools.
-func (e *ToolExecutor) SetLongRunningTimeout(timeout time.Duration) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.longRunningTimeout = timeout
 }
 
 // Shutdown shuts down the internal worker pool.

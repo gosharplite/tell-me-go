@@ -33,7 +33,7 @@ type toolBehavior struct {
 	observe func() // Callback to signal execution
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
+func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...ExecutorOption) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
 	reg := registry.New()
 	behaviors := make(map[string]*toolBehavior)
 	for name, behavior := range toolsMap {
@@ -74,7 +74,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	}
 
 	bus := &inframock.TestEventBus{}
-	exec := NewToolExecutor(reg, sm, bus)
+	exec := NewToolExecutor(reg, sm, bus, opts...)
 	exec.setStrategy(&mockStrategy{}) // Use simple strategy for easier verification
 	t.Cleanup(exec.Shutdown)
 
@@ -1034,8 +1034,7 @@ func TestToolExecutor_LongRunningTimeout(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"very_long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "too late"}, long: true},
 		}
-		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetLongRunningTimeout(10 * time.Millisecond)
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil, WithLongRunningTimeout(10*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "very_long_tool"}},
@@ -1058,8 +1057,7 @@ func TestToolExecutor_ZombieTool(t *testing.T) {
 		return tools.ToolResult{Text: "finally finished"}, nil
 	}, registry.ToolOptions{LongRunning: true})
 
-	exec := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil)
-	exec.SetLongRunningTimeout(10 * time.Millisecond)
+	exec := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, WithLongRunningTimeout(10*time.Millisecond))
 	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{Parts: []*llm.Part{
