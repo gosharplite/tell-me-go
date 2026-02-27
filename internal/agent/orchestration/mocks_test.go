@@ -61,7 +61,7 @@ func (m *mockTokenCounter) Count(contents []*llm.Content) int {
 	return m.tokens
 }
 
-func (m *mockTokenCounter) CountTokens(text string) int {
+func (m *mockTokenCounter) countTokens(text string) int {
 	return m.tokens
 }
 
@@ -69,7 +69,7 @@ type mockEstimator struct {
 	tokens int
 }
 
-func (m *mockEstimator) EstimateTokens(contents []*llm.Content) int {
+func (m *mockEstimator) estimateTokens(contents []*llm.Content) int {
 	return m.tokens
 }
 

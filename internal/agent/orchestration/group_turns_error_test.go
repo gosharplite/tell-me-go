@@ -138,3 +138,91 @@ func TestHistoryPruner_GroupTurnsEmptyRoleError(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload sentinel from groupTurns for empty role")
 }
+
+func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
+	ctx := context.Background()
+	
+	// Create a history with 10 turns
+	history := make([]*llm.Content, 20)
+	for i := 0; i < 20; i += 2 {
+		history[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "u"}}}
+		history[i+1] = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "m"}}}
+	}
+	mockHistory := &mockHistoryManager{contents: history}
+	
+	// Create a counter that sabotages the history to trigger groupTurns failure at line 251
+	mockCounter := &mockTokenCounterWithFn{
+		countFn: func(contents []*llm.Content) int {
+			if len(contents) > 0 {
+				contents[0].Role = "" // Sabotage!
+			}
+			return 10
+		},
+	}
+	
+	cm := &ContextManager{
+		History:    mockHistory,
+		Summarizer: &mockSummarizer{},
+		Strategy:   NewContextStrategy(mockCounter, nil),
+	}
+
+	subset, _, _, err := cm.prepareSummarizationMetadata(ctx, 2)
+	require.NoError(t, err)
+	require.NotNil(t, subset)
+	require.Equal(t, "", subset[0].Role, "Sabotage should have taken effect")
+
+	_, _, err = cm.SummarizeRange(ctx, 2, "")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload from sabotaged history")
+}
+
+func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
+	ctx := context.Background()
+	
+	// Create a history with 10 turns
+	history := make([]*llm.Content, 20)
+	for i := 0; i < 20; i += 2 {
+		history[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "u"}}}
+		history[i+1] = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "m"}}}
+	}
+	mockHistory := &mockHistoryManager{contents: history}
+	
+	// Mock summarizer that sabotages the subset to trigger validation failure
+	mockSumm := &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			if len(subset) > 0 {
+				subset[0].Parts[0].Text = "changed" // Sabotage!
+			}
+			return "summary", nil, nil
+		},
+	}
+	
+	cm := &ContextManager{
+		History:    mockHistory,
+		Summarizer: mockSumm,
+		Strategy:   NewContextStrategy(&mockTokenCounter{}, nil),
+	}
+
+	_, _, err := cm.SummarizeRange(ctx, 2, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "history content changed while summarizing")
+}
+
+type mockTokenCounterWithFn struct {
+	countFn       func(contents []*llm.Content) int
+	countTokensFn func(text string) int
+}
+
+func (m *mockTokenCounterWithFn) Count(contents []*llm.Content) int {
+	if m.countFn != nil {
+		return m.countFn(contents)
+	}
+	return 0
+}
+
+func (m *mockTokenCounterWithFn) countTokens(text string) int {
+	if m.countTokensFn != nil {
+		return m.countTokensFn(text)
+	}
+	return 0
+}

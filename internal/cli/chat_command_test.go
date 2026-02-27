@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -48,6 +47,28 @@ type mockContainer struct {
 	Client       domain_llm.LLMClient
 }
 
+type mockSessionDeps struct {
+	paths            *domain_persistence.Paths
+	hManager         ports.HistoryManager
+	client           domain_llm.LLMClient
+	gw               domain_llm.LLMGateway
+	reg              domaintools.IToolRegistry
+	tracker          domain_pricing.ICostTracker
+	pricingData      domain_pricing.PricingData
+	pricingOverrides map[string]domain_pricing.ModelPricing
+	bus              events.EventBus
+}
+
+func (d *mockSessionDeps) GetGateway() domain_llm.LLMGateway                            { return d.gw }
+func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
+func (d *mockSessionDeps) GetRegistry() domaintools.IToolRegistry                      { return d.reg }
+func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
+func (d *mockSessionDeps) GetPaths() *domain_persistence.Paths                         { return d.paths }
+func (d *mockSessionDeps) GetPricingOverrides() map[string]domain_pricing.ModelPricing { return d.pricingOverrides }
+func (d *mockSessionDeps) GetTracker() domain_pricing.ICostTracker                      { return d.tracker }
+func (d *mockSessionDeps) GetPricingData() domain_pricing.PricingData                  { return d.pricingData }
+func (d *mockSessionDeps) GetClient() domain_llm.LLMClient                             { return d.client }
+
 func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
 	paths := &domain_persistence.Paths{
 		LogPath: "/tmp/log",
@@ -58,7 +79,16 @@ func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain
 	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
 	tracker := &mockTracker{}
 
-	deps := orchestration.NewSessionDependencies(paths, hManager, m.Client, m.Client.(domain_llm.LLMGateway), nil, tracker, pricingData, pricingOverrides, bus)
+	deps := &mockSessionDeps{
+		paths:            paths,
+		hManager:         hManager,
+		client:           m.Client,
+		gw:               m.Client.(domain_llm.LLMGateway),
+		tracker:          tracker,
+		pricingData:      pricingData,
+		pricingOverrides: pricingOverrides,
+		bus:              bus,
+	}
 	return deps, hManager, func() {}, nil
 }
 

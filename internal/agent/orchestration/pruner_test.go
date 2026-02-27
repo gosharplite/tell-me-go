@@ -47,3 +47,31 @@ func TestPruner_MidExecutionCancel(t *testing.T) {
 	// Assert that the returned error matches context.Canceled
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestPruner_Policies_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Already canceled context
+
+	turns := [][]*llm.Content{
+		{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}},
+	}
+	keep := make([]bool, len(turns))
+
+	tests := []struct {
+		name   string
+		policy ports.PruningPolicy
+	}{
+		{"SlidingWindow", &slidingWindowPolicy{MaxTurns: 10}},
+		{"Importance", &importanceRankPolicy{}},
+		{"Pinning", &pinningPolicy{}},
+		{"Composite", &compositePruningPolicy{Policies: []ports.PruningPolicy{&slidingWindowPolicy{MaxTurns: 10}}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			count, err := tt.policy.MarkTurns(ctx, turns, keep)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Equal(t, 0, count)
+		})
+	}
+}

@@ -49,8 +49,8 @@ func (c *sessionConfig) GetLastN() int             { return c.LastN }
 func (c *sessionConfig) GetRawOutput() bool        { return c.RawOutput }
 func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
 
-// NewSessionConfig creates a new sessionConfig with required parameters.
-func NewSessionConfig(configPath string, newSession bool, lastN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
+// newSessionConfig creates a new sessionConfig with required parameters.
+func newSessionConfig(configPath string, newSession bool, lastN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
 	return &sessionConfig{
 		ConfigPath: configPath,
 		NewSession: newSession,
@@ -89,8 +89,8 @@ func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 	return d.PricingData
 }
 
-// NewSessionDependencies creates a new sessionDependencies with all required components.
-func NewSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.IToolRegistry, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
+// newSessionDependencies creates a new sessionDependencies with all required components.
+func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.IToolRegistry, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -104,8 +104,8 @@ func NewSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 	}
 }
 
-// NewOrchestrator creates a new orchestrator.
-func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer) Orchestrator {
+// newOrchestrator creates a new orchestrator.
+func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer) Orchestrator {
 	return &orchestrator{
 		HomeDir:         homeDir,
 		Version:         version,
@@ -273,4 +273,52 @@ func (b *uiBridge) relayStream(ctx context.Context, stream <-chan *domain_llm.Co
 			}
 		}
 	}
+}
+
+// RunParams contains all parameters needed to execute a chat session.
+type RunParams struct {
+	HomeDir         string
+	Version         string
+	Loader          config.ConfigLoader
+	SM              domain_security.ISecurityManager
+	Stdout          io.Writer
+	Stderr          io.Writer
+	AgentFactory    ports.ChatterFactory
+	HistoryRenderer ports.HistoryRenderer
+	UIRenderer      ports.UIRenderer
+	ConfigPath      string
+	NewSession      bool
+	LastN           int
+	RawOutput       bool
+	Prompt          string
+	Config          *config.Config
+	Deps            ports.SessionDependencies
+	Capturer        Capturer
+}
+
+// Run is the high-level entry point for running a chat session.
+// It simplifies the public API by encapsulating internal component assembly.
+func Run(ctx context.Context, params RunParams) error {
+	orch := newOrchestrator(
+		params.HomeDir,
+		params.Version,
+		params.Loader,
+		params.SM,
+		params.Stdout,
+		params.Stderr,
+		params.AgentFactory,
+		params.HistoryRenderer,
+		params.UIRenderer,
+	)
+
+	sCfg := newSessionConfig(
+		params.ConfigPath,
+		params.NewSession,
+		params.LastN,
+		params.RawOutput,
+		params.Prompt,
+		params.Config,
+	)
+
+	return orch.Run(ctx, sCfg, params.Deps, params.Capturer)
 }

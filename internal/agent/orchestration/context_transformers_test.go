@@ -298,7 +298,7 @@ type dynamicMockEstimator struct {
 	tokens int
 }
 
-func (m *dynamicMockEstimator) EstimateTokens(contents []*llm.Content) int {
+func (m *dynamicMockEstimator) estimateTokens(contents []*llm.Content) int {
 	// If it contains a summary, return less tokens
 	for _, c := range contents {
 		for _, p := range c.Parts {

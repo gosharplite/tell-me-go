@@ -122,13 +122,13 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := NewSessionConfig("", false, 0, false, "hello", &config.Config{
+	sCfg := newSessionConfig("", false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -320,13 +320,13 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := NewSessionConfig("", false, 0, false, "hello", &config.Config{
+	sCfg := newSessionConfig("", false, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -354,10 +354,10 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := NewSessionConfig("", false, 5, false, "", &config.Config{})
-	deps := NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	sCfg := newSessionConfig("", false, 5, false, "", &config.Config{})
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
@@ -371,7 +371,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 

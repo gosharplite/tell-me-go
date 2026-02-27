@@ -60,7 +60,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 	transformers = append(transformers,
 		&tokenGatekeeper{
 			MaxTokens:  limits.MaxHistoryTokens,
-			Estimator:  f.Estimator,
+			Estimator:  f.Estimator.(tokenEstimator),
 			Summarizer: f.Summarizer,
 			Events:     f.Events,
 		},

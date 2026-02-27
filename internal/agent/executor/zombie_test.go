@@ -1,13 +1,17 @@
 package executor
 
 import (
+	"bytes"
 	"context"
+	"log"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/assert"
 )
 
 type mockZombieRegistry struct {
@@ -24,10 +28,8 @@ func (m *mockZombieRegistry) Execute(ctx context.Context, name string, args map[
 	if m.executeFn != nil {
 		return m.executeFn(ctx, name, args)
 	}
-	return domaintools.ToolResult{}, nil
+	return domaintools.ToolResult{Text: "ok"}, nil
 }
-func (m *mockZombieRegistry) GetLongRunningTools() []string  { return nil }
-func (m *mockZombieRegistry) GetSerialTools() []string       { return nil }
 func (m *mockZombieRegistry) IsLongRunning(name string) bool { return false }
 func (m *mockZombieRegistry) IsSerial(name string) bool      { return false }
 
@@ -70,4 +72,38 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	if !strings.Contains(result.Error.Error(), "timed out") && !strings.Contains(result.Error.Error(), "canceled") && !strings.Contains(result.Error.Error(), llm.ErrTransient.Error()) {
 		t.Fatalf("expected timeout or transient error, got %v", result.Error)
 	}
+}
+
+func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
+	// Not parallel because it modifies global log
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	finishCh := make(chan struct{})
+	defer close(finishCh)
+
+	reg := &mockZombieRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
+			// Simulate a tool that blocks indefinitely even if context is canceled
+			// but we use a channel so we can clean it up for goleak
+			<-finishCh
+			return domaintools.ToolResult{}, nil
+		},
+	}
+
+	// Use very short zombie timeout
+	exec := NewToolExecutor(reg, nil, nil, WithZombieTimeout(1*time.Millisecond))
+	t.Cleanup(exec.Shutdown)
+	exec.toolTimeout = 1 * time.Millisecond
+
+	hangingTool := &domaintools.ToolDeclaration{Name: "hanging_tool"}
+	
+	// Should timeout
+	_, _ = exec.runWithTimeout(context.Background(), hangingTool, nil)
+
+	// Wait for monitorZombieTool to hit the timeout timer.C
+	time.Sleep(20 * time.Millisecond)
+
+	assert.Contains(t, buf.String(), "CRITICAL: Tool goroutine permanently leaked")
 }

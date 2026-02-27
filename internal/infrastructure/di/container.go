@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -19,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -26,7 +26,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
-	"github.com/gosharplite/tell-me-go/internal/tools"
+	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 )
 
 // Container defines the interface for building session dependencies and provides factories.
@@ -117,7 +117,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		}
 	}
 
-	tools.RegisterAll(tools.ToolRegistrationParams{
+	infra_tools.RegisterAll(infra_tools.ToolRegistrationParams{
 		Registry:         reg,
 		SecurityManager:  b.SM,
 		CommandExecutor:  executor,
@@ -143,10 +143,43 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	tracker := telemetry.NewSessionCostTracker(b.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
 
-	deps := orchestration.NewSessionDependencies(paths, hManager, client, gw, reg, tracker, pricingData, pricingOverrides, bus)
+	deps := &sessionDeps{
+		paths:            paths,
+		hManager:         hManager,
+		client:           client,
+		gw:               gw,
+		reg:              reg,
+		tracker:          tracker,
+		pricingData:      pricingData,
+		pricingOverrides: pricingOverrides,
+		bus:              bus,
+	}
 
 	return deps, hManager, cleanup, nil
 }
+
+type sessionDeps struct {
+	paths            *persistence.Paths
+	hManager         ports.HistoryManager
+	client           llm.LLMClient
+	gw               llm.LLMGateway
+	reg              tools.IToolRegistry
+	tracker          pricing.ICostTracker
+	pricingData      pricing.PricingData
+	pricingOverrides map[string]pricing.ModelPricing
+	bus              events.EventBus
+}
+
+func (d *sessionDeps) GetGateway() llm.LLMGateway                            { return d.gw }
+func (d *sessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
+func (d *sessionDeps) GetRegistry() tools.IToolRegistry                      { return d.reg }
+func (d *sessionDeps) GetEventBus() events.EventBus                         { return d.bus }
+func (d *sessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
+func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return d.pricingOverrides }
+func (d *sessionDeps) GetTracker() pricing.ICostTracker                      { return d.tracker }
+func (d *sessionDeps) GetPricingData() pricing.PricingData                  { return d.pricingData }
+func (d *sessionDeps) GetClient() llm.LLMClient                             { return d.client }
+
 
 // GetAgentFactory returns a factory for creating Chatter instances.
 func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {

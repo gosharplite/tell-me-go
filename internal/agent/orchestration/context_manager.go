@@ -294,7 +294,7 @@ func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numT
 		return nil, 0, 0, nil
 	}
 
-	tokens = strategy.EstimateTokens(subset)
+	tokens = strategy.estimateTokens(subset)
 
 	window := strategy.getContextWindow()
 	safetyLimit := int(float64(window) * 0.9)

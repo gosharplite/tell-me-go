@@ -14,10 +14,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
+type tokenEstimator interface {
+	estimateTokens(contents []*llm.Content) int
+}
+
 // tokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type tokenGatekeeper struct {
 	MaxTokens  int
-	Estimator  llm.TokenEstimator
+	Estimator  tokenEstimator
 	Summarizer ports.Summarizer
 	Events     events.EventBus
 }
@@ -45,7 +49,7 @@ func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextReque
 }
 
 func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.ContextRequest) (int, error) {
-	tokens := t.Estimator.EstimateTokens(req.History)
+	tokens := t.Estimator.estimateTokens(req.History)
 	req.Metadata.OriginalTokenCount = tokens
 
 	// Nuanced check for TieredThreshold
@@ -71,7 +75,7 @@ func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.
 				}
 				return tokens, err
 			}
-			tokens = t.Estimator.EstimateTokens(req.History)
+			tokens = t.Estimator.estimateTokens(req.History)
 			req.Metadata.SummarizedTurns = n
 		}
 	}
@@ -104,7 +108,7 @@ func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.C
 				}
 				return tokens, err
 			}
-			tokens = t.Estimator.EstimateTokens(req.History)
+			tokens = t.Estimator.estimateTokens(req.History)
 			req.Metadata.SummarizedTurns = n
 		}
 	}
@@ -160,7 +164,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 
 	// 2. Logging
 	if t.Events != nil {
-		subsetTokens := t.Estimator.EstimateTokens(req.History[start:end])
+		subsetTokens := t.Estimator.estimateTokens(req.History[start:end])
 		t.Events.Publish(events.SystemMessageEvent{
 			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens),
 			Level:   "info",

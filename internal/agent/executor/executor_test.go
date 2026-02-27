@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/stretchr/testify/assert"
@@ -234,3 +235,61 @@ func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[s
 }
 func (m *orderMockRegistry) IsSerial(name string) bool      { return m.serialTools[name] }
 func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
+
+func TestToolExecutor_PoolClosed_FailsGracefully(t *testing.T) {
+	t.Parallel()
+	reg := &mockToolRegistry{}
+	exec := NewToolExecutor(reg, nil, nil)
+	exec.Shutdown() // Deterministically close the pool
+
+	calls := []*llm.FunctionCall{
+		{ID: "1", Name: "test_tool"},
+	}
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: calls[0]},
+		},
+	}
+
+	// Submitting parallel tools must deterministically hit !pool.Submit(task)
+	// Execute returns nil error if tool results are collected even if they represent failures.
+	resultsContent, err := exec.Execute(context.Background(), respContent, 0, 10)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, resultsContent)
+	assert.Len(t, resultsContent.Parts, 1)
+
+	// Verify it contains the expected failure message
+	resultStr := resultsContent.Parts[0].FunctionResponse.Response["result"].(string)
+	assert.Contains(t, resultStr, "pool closed or context cancelled")
+}
+
+func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
+	t.Parallel()
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+			return tools.ToolResult{Text: "tool success"}, nil
+		},
+	}
+	exec := NewToolExecutor(reg, nil, nil)
+	t.Cleanup(exec.Shutdown)
+
+	// Setup trace context
+	trace := telemetry.NewTurnTrace()
+	ctx := telemetry.ContextWithTrace(context.Background(), trace)
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		},
+	}
+
+	// Execute
+	_, err := exec.Execute(ctx, respContent, 0, 10)
+	assert.NoError(t, err)
+
+	// Verify telemetry
+	assert.Len(t, trace.ToolExecutions, 1)
+	assert.Equal(t, "test_tool", trace.ToolExecutions[0].ToolName)
+	assert.Equal(t, "success", trace.ToolExecutions[0].Status)
+}

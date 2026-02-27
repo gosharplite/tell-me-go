@@ -53,7 +53,7 @@ type finalContextValidator struct {
 
 func (t *finalContextValidator) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	maxTokens, _, _ := t.Strategy.getLimits()
-	finalTokens := t.Strategy.EstimateTokens(req.History)
+	finalTokens := t.Strategy.estimateTokens(req.History)
 
 	req.Metadata.FinalTokenCount = finalTokens
 	req.Metadata.FinalTurnCount = len(req.History) / 2

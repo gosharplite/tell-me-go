@@ -56,6 +56,13 @@ func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	}
 }
 
+// WithZombieTimeout sets the timeout for zombie tool detection.
+func WithZombieTimeout(timeout time.Duration) executorOption {
+	return func(e *ToolExecutor) {
+		e.zombieTimeout = timeout
+	}
+}
+
 // NewToolExecutor creates a new ToolExecutor.
 func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, opts ...executorOption) *ToolExecutor {
 	e := &ToolExecutor{
