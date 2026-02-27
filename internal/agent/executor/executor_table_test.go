@@ -33,7 +33,7 @@ type toolBehavior struct {
 	observe func() // Callback to signal execution
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...ExecutorOption) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
+func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...executorOption) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
 	reg := registry.New()
 	behaviors := make(map[string]*toolBehavior)
 	for name, behavior := range toolsMap {

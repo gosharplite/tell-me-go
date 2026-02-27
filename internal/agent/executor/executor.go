@@ -46,18 +46,18 @@ type ToolExecutor struct {
 	failures           *failureTracker
 }
 
-// ExecutorOption allows configuring the ToolExecutor.
-type ExecutorOption func(*ToolExecutor)
+// executorOption allows configuring the ToolExecutor.
+type executorOption func(*ToolExecutor)
 
 // WithLongRunningTimeout sets the timeout for long-running tools.
-func WithLongRunningTimeout(timeout time.Duration) ExecutorOption {
+func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	return func(e *ToolExecutor) {
 		e.longRunningTimeout = timeout
 	}
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, opts ...ExecutorOption) *ToolExecutor {
+func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, opts ...executorOption) *ToolExecutor {
 	e := &ToolExecutor{
 		registry:           registry,
 		authorizer:         newSecurityAuthorizer(sm, registry),
