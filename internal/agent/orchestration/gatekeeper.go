@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -62,6 +63,9 @@ func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.
 			n, err := t.autoSummarize(ctx, req)
 			if err != nil {
 				// Propagate critical errors, but continue if blocked
+				if errors.Is(err, ErrInvalidPayload) {
+					return tokens, err
+				}
 				if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
 					return tokens, nil
 				}
@@ -92,6 +96,9 @@ func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.C
 			n, err := t.autoSummarize(ctx, req)
 			if err != nil {
 				// Propagate critical errors, but continue if blocked
+				if errors.Is(err, ErrInvalidPayload) {
+					return tokens, err
+				}
 				if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
 					return tokens, nil
 				}
