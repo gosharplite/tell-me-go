@@ -26,7 +26,7 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 		return tools.ToolResult{Text: "ok"}, nil
 	})
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -76,7 +76,7 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 		}
 	})
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())

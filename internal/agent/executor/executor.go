@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"runtime/debug"
 	"sort"
@@ -52,14 +51,6 @@ type ToolExecutor struct {
 // executorOption allows configuring the ToolExecutor.
 type executorOption func(*ToolExecutor)
 
-// WithLogger sets the logger for critical tool events.
-func WithLogger(logger domaintools.Logger) executorOption {
-	return func(e *ToolExecutor) {
-		e.logger = logger
-		e.zombie = domaintools.NewZombieTool(logger)
-	}
-}
-
 // WithLongRunningTimeout sets the timeout for long-running tools.
 func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	return func(e *ToolExecutor) {
@@ -75,7 +66,11 @@ func WithZombieTimeout(timeout time.Duration) executorOption {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, opts ...executorOption) *ToolExecutor {
+func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, logger domaintools.Logger, opts ...executorOption) (*ToolExecutor, error) {
+	if logger == nil {
+		return nil, errors.New("logger is required")
+	}
+
 	e := &ToolExecutor{
 		registry:           registry,
 		authorizer:         newSecurityAuthorizer(sm, registry),
@@ -87,7 +82,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
-		logger:             &defaultLogger{},
+		logger:             logger,
 	}
 
 	for _, opt := range opts {
@@ -98,21 +93,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		e.zombie = domaintools.NewZombieTool(e.logger)
 	}
 
-	return e
-}
-
-type defaultLogger struct{}
-
-func (d *defaultLogger) LogCritical(msg string) {
-	// The msg in domaintools.ZombieTool already includes the tool name prefix
-	// Original output used: telemetry.LogCritical("CRITICAL: Tool goroutine permanently leaked", name)
-	// Which produced: TELEMETRY CRITICAL: Tool goroutine permanently leaked: hanging_tool
-	// We want to match this as closely as possible for backward compatibility
-	log.Printf("TELEMETRY %s", msg)
-}
-
-func (d *defaultLogger) RecordLateCompletion(name string, dur time.Duration) {
-	telemetry.RecordLateCompletion(name, dur)
+	return e, nil
 }
 
 type failureTracker struct {

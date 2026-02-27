@@ -50,7 +50,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 	// mock the toolTimeout since NewToolExecutor sets it to default
 	exec.toolTimeout = 5 * time.Millisecond
@@ -71,18 +71,6 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	}
 }
 
-type MockLogger struct {
-	CriticalLogs chan string
-}
-
-func (m *MockLogger) LogCritical(msg string) {
-	m.CriticalLogs <- msg
-}
-
-func (m *MockLogger) RecordLateCompletion(name string, d time.Duration) {
-	// Not used in this test
-}
-
 func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 	t.Parallel()
 
@@ -100,9 +88,8 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 	}
 
 	// Use very short zombie timeout
-	exec := NewToolExecutor(reg, nil, nil, 
+	exec, _ := NewToolExecutor(reg, nil, nil, mockLog, 
 		WithZombieTimeout(1*time.Millisecond),
-		WithLogger(mockLog),
 	)
 	t.Cleanup(exec.Shutdown)
 	exec.toolTimeout = 1 * time.Millisecond

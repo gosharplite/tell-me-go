@@ -74,7 +74,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	}
 
 	bus := &inframock.TestEventBus{}
-	exec := NewToolExecutor(reg, sm, bus, opts...)
+	exec, _ := NewToolExecutor(reg, sm, bus, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	exec.setStrategy(&mockStrategy{}) // Use simple strategy for easier verification
 	t.Cleanup(exec.Shutdown)
 
@@ -466,7 +466,7 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 		reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc)
 	}
 
-	exec := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil)
+	exec, _ := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	exec.SetConcurrency(2, 0)
 	t.Cleanup(exec.Shutdown)
 
@@ -676,7 +676,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 	})
 
 	bus := &inframock.TestEventBus{}
-	exec := NewToolExecutor(reg, nil, bus)
+	exec, _ := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{
@@ -702,7 +702,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 func TestToolExecutor_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e := NewToolExecutor(reg, nil, nil)
+	e, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(e.Shutdown)
 	e.setStrategy(&markdownStrategy{})
 	e.setStrategy(&jsonStrategy{})
@@ -722,7 +722,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
-		exec := NewToolExecutor(reg, nil, bus)
+		exec, _ := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
 		t.Cleanup(exec.Shutdown)
 		exec.setStrategy(&mockStrategy{})
 
@@ -742,7 +742,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
-		exec := NewToolExecutor(reg, nil, bus)
+		exec, _ := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
 		t.Cleanup(exec.Shutdown)
 		exec.setStrategy(&mockStrategy{})
 
@@ -1069,7 +1069,7 @@ func TestToolExecutor_ZombieTool(t *testing.T) {
 		return tools.ToolResult{Text: "finally finished"}, nil
 	}, registry.ToolOptions{LongRunning: true})
 
-	exec := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, WithLongRunningTimeout(10*time.Millisecond))
+	exec, _ := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
 	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{Parts: []*llm.Part{

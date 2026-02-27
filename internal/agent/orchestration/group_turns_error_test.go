@@ -210,19 +210,11 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 
 type mockTokenCounterWithFn struct {
 	countFn       func(contents []*llm.Content) int
-	countTokensFn func(text string) int
 }
 
 func (m *mockTokenCounterWithFn) Count(contents []*llm.Content) int {
 	if m.countFn != nil {
 		return m.countFn(contents)
-	}
-	return 0
-}
-
-func (m *mockTokenCounterWithFn) countTokens(text string) int {
-	if m.countTokensFn != nil {
-		return m.countTokensFn(text)
 	}
 	return 0
 }

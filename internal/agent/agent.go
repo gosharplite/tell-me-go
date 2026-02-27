@@ -51,7 +51,11 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.Histo
 	}
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry), bus)
-	exec := executor.NewToolExecutor(registry, sm, bus)
+	exec, err := executor.NewToolExecutor(registry, sm, bus, &executor.TelemetryLogger{})
+	if err != nil {
+		// NewToolExecutor only fails if logger is nil, which it isn't here.
+		panic(fmt.Sprintf("failed to create tool executor: %v", err))
+	}
 
 	a := &agent{
 		gateway:       client,

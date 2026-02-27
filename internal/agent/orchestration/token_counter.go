@@ -58,11 +58,6 @@ func (c *HeuristicTokenCounter) Count(contents []*llm.Content) int {
 	return totalTokens
 }
 
-// countTokens provides a simple string token estimation.
-func (c *HeuristicTokenCounter) countTokens(text string) int {
-	return int(float64(len(text)) / 3.2)
-}
-
 func (c *HeuristicTokenCounter) estimatePartChars(p *llm.Part) int {
 	if p == nil {
 		return 0

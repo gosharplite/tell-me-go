@@ -23,7 +23,7 @@ func TestToolPanicSerial(t *testing.T) {
 		isSerial: true,
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
@@ -64,7 +64,7 @@ func TestToolPanicParallel(t *testing.T) {
 		isSerial: false,
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
@@ -110,7 +110,7 @@ func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
 		},
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	calls := []*llm.FunctionCall{
@@ -142,7 +142,7 @@ func TestZombieToolTimeout(t *testing.T) {
 		},
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	// Set very short timeouts for testing
@@ -174,7 +174,7 @@ func TestExecuteSerialTaskRecovery(t *testing.T) {
 			panic("panic during serial resolve")
 		},
 	}
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
@@ -199,7 +199,7 @@ func TestEnqueueParallelTaskRecovery(t *testing.T) {
 			panic("panic during parallel resolve")
 		},
 	}
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()

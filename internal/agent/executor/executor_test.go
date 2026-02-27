@@ -60,7 +60,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -153,7 +153,7 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -239,7 +239,7 @@ func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
 func TestToolExecutor_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	exec.Shutdown() // Deterministically close the pool
 
 	calls := []*llm.FunctionCall{
@@ -271,7 +271,7 @@ func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec := NewToolExecutor(reg, nil, nil)
+	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	t.Cleanup(exec.Shutdown)
 
 	// Setup trace context

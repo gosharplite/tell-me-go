@@ -142,7 +142,7 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
-	exec := executor.NewToolExecutor(reg, sm, bus)
+	exec, _ := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 
 	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(10 * time.Millisecond)

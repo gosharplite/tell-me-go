@@ -125,11 +125,6 @@ func (cs *ContextStrategy) Count(contents []*llm.Content) int {
 	return cs.estimateTokens(contents)
 }
 
-// countTokens provides a simple string token estimation.
-func (cs *ContextStrategy) countTokens(text string) int {
-	return int(float64(len(text)) / 3.2)
-}
-
 // getWarnings generates safety and financial warnings based on current state.
 func (cs *ContextStrategy) getWarnings(turn, tokens, currentTurns, prunedTurns int) []warning {
 	cs.mu.RLock()

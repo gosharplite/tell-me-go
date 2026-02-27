@@ -303,7 +303,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	gw := &integrationMockLLMGateway{}
 	// Real executor
-	exec := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus)
+	exec, _ := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 
