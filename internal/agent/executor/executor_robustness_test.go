@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/stretchr/testify/require"
 )
 
 func TestToolExecutor_ConfigRace(t *testing.T) {
@@ -26,7 +27,8 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 		return tools.ToolResult{Text: "ok"}, nil
 	})
 
-	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -76,7 +78,8 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 		}
 	})
 
-	exec, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())

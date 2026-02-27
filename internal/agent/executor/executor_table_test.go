@@ -21,6 +21,7 @@ import (
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
+	"github.com/stretchr/testify/require"
 )
 
 type toolBehavior struct {
@@ -74,7 +75,8 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	}
 
 	bus := &inframock.TestEventBus{}
-	exec, _ := NewToolExecutor(reg, sm, bus, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	exec, err := NewToolExecutor(reg, sm, bus, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	require.NoError(t, err)
 	exec.setStrategy(&mockStrategy{}) // Use simple strategy for easier verification
 	t.Cleanup(exec.Shutdown)
 
@@ -466,7 +468,8 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 		reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc)
 	}
 
-	exec, _ := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	exec.SetConcurrency(2, 0)
 	t.Cleanup(exec.Shutdown)
 
@@ -475,7 +478,7 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 		content.Parts = append(content.Parts, &llm.Part{FunctionCall: &llm.FunctionCall{Name: fmt.Sprintf("tool%d", i)}})
 	}
 
-	_, err := exec.Execute(context.Background(), content, 0, 10)
+	_, err = exec.Execute(context.Background(), content, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -600,7 +603,11 @@ func TestResultCollector(t *testing.T) {
 
 func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
-	e := &ToolExecutor{strategy: &mockStrategy{}}
+	reg := registry.New()
+	e, err := NewToolExecutor(reg, nil, nil, &MockLogger{})
+	require.NoError(t, err)
+	t.Cleanup(e.Shutdown)
+	e.setStrategy(&mockStrategy{})
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
 		t.Parallel()
@@ -676,7 +683,8 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 	})
 
 	bus := &inframock.TestEventBus{}
-	exec, _ := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{
@@ -685,7 +693,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 		},
 	}
 
-	_, err := exec.Execute(context.Background(), content, 0, 5)
+	_, err = exec.Execute(context.Background(), content, 0, 5)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -702,7 +710,8 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 func TestToolExecutor_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, _ := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
 	t.Cleanup(e.Shutdown)
 	e.setStrategy(&markdownStrategy{})
 	e.setStrategy(&jsonStrategy{})
@@ -722,7 +731,8 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
-		exec, _ := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
 		exec.setStrategy(&mockStrategy{})
 
@@ -742,7 +752,8 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
-		exec, _ := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
 		exec.setStrategy(&mockStrategy{})
 
@@ -1069,7 +1080,8 @@ func TestToolExecutor_ZombieTool(t *testing.T) {
 		return tools.ToolResult{Text: "finally finished"}, nil
 	}, registry.ToolOptions{LongRunning: true})
 
-	exec, _ := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
+	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
+	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{Parts: []*llm.Part{

@@ -93,6 +93,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		var err error
 		e.zombie, err = domaintools.NewZombieTool(e.observer)
 		if err != nil {
+			e.Shutdown()
 			return nil, err
 		}
 	}

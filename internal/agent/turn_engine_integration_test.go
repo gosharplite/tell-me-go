@@ -20,6 +20,7 @@ import (
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // integrationMockExecutor defines a mock for tool execution.
@@ -303,7 +304,9 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	gw := &integrationMockLLMGateway{}
 	// Real executor
-	exec, _ := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 
