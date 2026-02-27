@@ -325,12 +325,12 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 		t.Parallel()
 		toolsMap := map[string]toolBehavior{
 			"serial_panic": {panic: "serial kaboom", serial: true},
-			"next_tool":    {result: tools.ToolResult{Text: "should skip"}},
+			"next_serial":  {result: tools.ToolResult{Text: "should skip"}, serial: true},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "serial_panic"}},
-			{FunctionCall: &llm.FunctionCall{Name: "next_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "next_serial"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)

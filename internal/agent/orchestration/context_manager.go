@@ -277,8 +277,8 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 }
 
 func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
 
 	totalEntries := cm.History.GetTotalEntries()
 	if totalEntries == 0 {

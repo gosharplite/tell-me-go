@@ -376,8 +376,8 @@ func (e *ToolExecutor) buildExecutionBatches(calls []*llm.FunctionCall, declined
 	reg := e.registry
 	e.mu.RUnlock()
 
-	var batches []taskBatch
-	var currentBatch *taskBatch
+	var parallelTasks []int
+	var serialBatches []taskBatch
 
 	for i, fc := range calls {
 		if declinedMap[i] {
@@ -393,28 +393,23 @@ func (e *ToolExecutor) buildExecutionBatches(calls []*llm.FunctionCall, declined
 		}
 
 		if reg.IsSerial(fc.Name) {
-			if currentBatch != nil {
-				batches = append(batches, *currentBatch)
-				currentBatch = nil
-			}
-			batches = append(batches, taskBatch{
+			serialBatches = append(serialBatches, taskBatch{
 				isSerial: true,
 				tasks:    []int{i},
 			})
 		} else {
-			if currentBatch == nil {
-				currentBatch = &taskBatch{
-					isSerial: false,
-					tasks:    []int{i},
-				}
-			} else {
-				currentBatch.tasks = append(currentBatch.tasks, i)
-			}
+			parallelTasks = append(parallelTasks, i)
 		}
 	}
-	if currentBatch != nil {
-		batches = append(batches, *currentBatch)
+
+	var batches []taskBatch
+	if len(parallelTasks) > 0 {
+		batches = append(batches, taskBatch{
+			isSerial: false,
+			tasks:    parallelTasks,
+		})
 	}
+	batches = append(batches, serialBatches...)
 
 	return batches
 }
