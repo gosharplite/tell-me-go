@@ -301,7 +301,7 @@ func TestSummarizeHistory_ContextCancellation(t *testing.T) {
 
 	historyFile := filepath.Join(t.TempDir(), "history_cancel.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile, historyFile+".archive")
-	
+
 	// Add some history
 	for i := 0; i < 10; i++ {
 		_ = hManager.AddContent(context.Background(), &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})

@@ -89,7 +89,7 @@ type integrationSecurityManager struct {
 	security.ISecurityManager
 }
 
-func (s *integrationSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
+func (s *integrationSecurityManager) IsPathSafe(path string) (string, error)     { return path, nil }
 func (s *integrationSecurityManager) IsPathWritable(path string) (string, error) { return path, nil }
 func (s *integrationSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
@@ -98,16 +98,16 @@ func (s *integrationSecurityManager) Authorize(ctx context.Context, label, detai
 	return true, nil
 }
 func (s *integrationSecurityManager) LogAudit(label1, val1, label2, val2 string) {}
-func (s *integrationSecurityManager) TerminalLock()                          {}
-func (s *integrationSecurityManager) TerminalUnlock()                        {}
-func (s *integrationSecurityManager) Prompt(message string)                  {}
-func (s *integrationSecurityManager) Warn(message string)                    {}
+func (s *integrationSecurityManager) TerminalLock()                              {}
+func (s *integrationSecurityManager) TerminalUnlock()                            {}
+func (s *integrationSecurityManager) Prompt(message string)                      {}
+func (s *integrationSecurityManager) Warn(message string)                        {}
 func (s *integrationSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	return true, nil
 }
 func (s *integrationSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
 func (s *integrationSecurityManager) IsCommandAllowed(command string) bool         { return true }
-func (s *integrationSecurityManager) IsBypassActive() bool                        { return false }
+func (s *integrationSecurityManager) IsBypassActive() bool                         { return false }
 
 func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	// Setup
@@ -206,7 +206,7 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 	exitSignal = make(chan struct{})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	
+
 	_, err = exec.Execute(ctx, resp, 0, 10)
 	assert.ErrorIs(t, err, context.DeadlineExceeded, "Orchestration loop should return DeadlineExceeded when parent context expires")
 

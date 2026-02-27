@@ -17,7 +17,7 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 	// Setup tools:
 	// - parallel_tool: returns quickly
 	// - serial_tool: takes some time
-	
+
 	toolsMap := map[string]toolBehavior{
 		"parallel_tool": {
 			observe: func() {},
@@ -31,26 +31,26 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 			result:  tools.ToolResult{Text: "serial_ok"},
 		},
 	}
-	
+
 	t.Run("Parallel Before Serial", func(t *testing.T) {
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		
+
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "parallel_tool"}},
 			{FunctionCall: &llm.FunctionCall{Name: "serial_tool"}},
 		}}
-		
+
 		startTime := time.Now()
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
 		duration := time.Since(startTime)
-		
+
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(resp.Parts) != 2 {
 			t.Fatalf("expected 2 results, got %d", len(resp.Parts))
 		}
-		
+
 		// Total duration should be at least delay(parallel) + delay(serial) if they are sequential
 		// Actually, even if they are in different batches, they run sequentially.
 		// B1: parallel_tool (10ms) -> Wait
@@ -63,23 +63,23 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 
 	t.Run("Serial Before Parallel", func(t *testing.T) {
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		
+
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "serial_tool"}},
 			{FunctionCall: &llm.FunctionCall{Name: "parallel_tool"}},
 		}}
-		
+
 		startTime := time.Now()
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
 		duration := time.Since(startTime)
-		
+
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(resp.Parts) != 2 {
 			t.Fatalf("expected 2 results, got %d", len(resp.Parts))
 		}
-		
+
 		// Current implementation:
 		// B1: serial_tool (50ms)
 		// B2: parallel_tool (10ms)
@@ -88,18 +88,18 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 			t.Logf("Duration: %v (expected ~60ms)", duration)
 		}
 	})
-	
+
 	t.Run("Barrier Pattern - Parallel First", func(t *testing.T) {
-		// We want to verify that if we have [Serial, Parallel], 
+		// We want to verify that if we have [Serial, Parallel],
 		// the refactored executor runs Parallel FIRST.
-		
+
 		var serialStartedAt time.Time
 		var parallelFinishedAt time.Time
 		var mu sync.Mutex
-		
+
 		toolsMap := map[string]toolBehavior{
 			"p_tool": {
-				delay: 20 * time.Millisecond,
+				delay:  20 * time.Millisecond,
 				result: tools.ToolResult{Text: "p_ok"},
 			},
 			"s_tool": {
@@ -107,7 +107,7 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 				result: tools.ToolResult{Text: "s_ok"},
 			},
 		}
-		
+
 		exec, _, behaviors := setupTestExecutor(t, toolsMap, nil)
 		behaviors["p_tool"].observe = func() {
 			time.Sleep(20 * time.Millisecond)
@@ -120,22 +120,22 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 			serialStartedAt = time.Now()
 			mu.Unlock()
 		}
-		
+
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "s_tool"}},
 			{FunctionCall: &llm.FunctionCall{Name: "p_tool"}},
 		}}
-		
+
 		_, err := exec.Execute(context.Background(), content, 0, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		
+
 		// If Barrier Pattern (Parallel First) is implemented:
 		// p_tool runs and finishes.
 		// THEN s_tool starts.
 		// So serialStartedAt should be AFTER parallelFinishedAt.
-		
+
 		mu.Lock()
 		defer mu.Unlock()
 		if serialStartedAt.Before(parallelFinishedAt) {
@@ -145,4 +145,3 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 		}
 	})
 }
-
