@@ -927,7 +927,7 @@ func TestDeepSeekEmptyReasoningContent(t *testing.T) {
 	}
 
 	msg := messages[0]
-	
+
 	// Verify JSON marshaling explicitly includes "reasoning_content": ""
 	b, _ := json.Marshal(msg)
 	var m map[string]interface{}
