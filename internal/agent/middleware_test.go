@@ -73,14 +73,6 @@ func TestWithStreaming(t *testing.T) {
 
 func TestWithStatusReporter(t *testing.T) {
 	t.Parallel()
-	bus := &mockEventBus{}
-	e := &turnEngine{events: bus}
-	mw := e.WithStatusReporter()
-	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
-
-	cs := orchestration.NewContextStrategy(nil, nil)
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
-	cm := &orchestration.ContextManager{Strategy: cs, History: h}
 
 	tests := []struct {
 		name       string
@@ -95,7 +87,16 @@ func TestWithStatusReporter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			bus.events = nil
+			
+			bus := &mockEventBus{}
+			e := &turnEngine{events: bus}
+			mw := e.WithStatusReporter()
+			next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
+		
+			cs := orchestration.NewContextStrategy(nil, nil)
+			h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
+			cm := &orchestration.ContextManager{Strategy: cs, History: h}
+
 			turn := &turn{
 				State:      &turnState{Phase: tt.phase},
 				CtxManager: cm,

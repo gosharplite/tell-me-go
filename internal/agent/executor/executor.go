@@ -140,9 +140,11 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 // Shutdown shuts down the internal worker pool.
 func (e *ToolExecutor) Shutdown() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.pool != nil {
-		e.pool.Shutdown()
+	pool := e.pool
+	e.mu.Unlock()
+	
+	if pool != nil {
+		pool.Shutdown()
 	}
 }
 

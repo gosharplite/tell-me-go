@@ -21,14 +21,15 @@ func (m *mockpackageProvider) LoadPackages(ctx context.Context) (map[string][]st
 
 func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 	t.Parallel()
-	mockSP := &mockSecurityProvider{}
-	m := &architectureManager{
-		SP:         mockSP,
-		ModulePath: "github.com/gosharplite/tell-me-go",
-	}
 
 	t.Run("violations found", func(t *testing.T) {
 		t.Parallel()
+		mockSP := &mockSecurityProvider{}
+		m := &architectureManager{
+			SP:         mockSP,
+			ModulePath: "github.com/gosharplite/tell-me-go",
+		}
+		
 		pkgs := map[string][]string{
 			"github.com/gosharplite/tell-me-go/internal/domain": {
 				"github.com/gosharplite/tell-me-go/internal/agent", // Violation
@@ -55,6 +56,12 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 
 	t.Run("no violations", func(t *testing.T) {
 		t.Parallel()
+		mockSP := &mockSecurityProvider{}
+		m := &architectureManager{
+			SP:         mockSP,
+			ModulePath: "github.com/gosharplite/tell-me-go",
+		}
+		
 		pkgs := map[string][]string{
 			"github.com/gosharplite/tell-me-go/internal/domain": {},
 		}
@@ -70,6 +77,12 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 
 	t.Run("load error", func(t *testing.T) {
 		t.Parallel()
+		mockSP := &mockSecurityProvider{}
+		m := &architectureManager{
+			SP:         mockSP,
+			ModulePath: "github.com/gosharplite/tell-me-go",
+		}
+		
 		m.Loader = &mockpackageProvider{err: fmt.Errorf("load error")}
 		_, err := m.VerifyArchitecture(context.Background(), nil)
 		if err == nil {

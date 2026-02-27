@@ -59,6 +59,8 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 		go func(i int, c readinessCheck) {
 			defer wg.Done()
 
+			fmt.Printf("[verify_release_readiness] Enqueued check: %s\n", c.Name())
+
 			// Acquire semaphore before executing heavy checks
 			if err := sem.Acquire(ctx, 1); err != nil {
 				results[i] = checkResult{
@@ -69,7 +71,15 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 			}
 			defer sem.Release(1)
 
-			results[i] = c.Run(ctx)
+			fmt.Printf("[verify_release_readiness] Running check: %s...\n", c.Name())
+			res := c.Run(ctx)
+			if res.OK {
+				fmt.Printf("[verify_release_readiness] Completed check: %s (OK)\n", c.Name())
+			} else {
+				fmt.Printf("[verify_release_readiness] Completed check: %s (FAIL)\n", c.Name())
+			}
+			
+			results[i] = res
 		}(i, check)
 	}
 
