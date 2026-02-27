@@ -909,3 +909,34 @@ func TestOpenAI_StreamRequestFailure(t *testing.T) {
 		t.Errorf("expected request failure error, got %v", err)
 	}
 }
+
+func TestDeepSeekEmptyReasoningContent(t *testing.T) {
+	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0)
+	history := []*llm.Content{
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{Text: "Just an answer"}, // No IsThought part
+			},
+		},
+	}
+
+	messages, _ := client.toOpenAIMessages(context.Background(), history, nil)
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(messages))
+	}
+
+	msg := messages[0]
+	
+	// Verify JSON marshaling explicitly includes "reasoning_content": ""
+	b, _ := json.Marshal(msg)
+	var m map[string]interface{}
+	_ = json.Unmarshal(b, &m)
+
+	val, ok := m["reasoning_content"]
+	if !ok {
+		t.Error("expected reasoning_content field to be present in JSON for DeepSeek assistant message")
+	} else if val != "" {
+		t.Errorf("expected reasoning_content to be empty string, got %v", val)
+	}
+}
