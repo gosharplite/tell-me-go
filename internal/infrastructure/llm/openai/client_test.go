@@ -136,13 +136,14 @@ func testHistoryProcessing(t *testing.T) {
 
 func TestDeepSeekReasoning(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reasoning := "Thinking process"
 		resp := chatResponse{
 			Choices: []choice{
 				{
 					Message: message{
 						Role:             "assistant",
 						Content:          "Answer",
-						ReasoningContent: "Thinking process",
+						ReasoningContent: &reasoning,
 					},
 				},
 			},
@@ -432,8 +433,12 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 	}
 
 	msg := messages[1]
-	if msg.ReasoningContent != "Thinking..." {
-		t.Errorf("expected reasoning_content 'Thinking...', got %q", msg.ReasoningContent)
+	if msg.ReasoningContent == nil || *msg.ReasoningContent != "Thinking..." {
+		val := "<nil>"
+		if msg.ReasoningContent != nil {
+			val = *msg.ReasoningContent
+		}
+		t.Errorf("expected reasoning_content 'Thinking...', got %q", val)
 	}
 	if len(msg.ToolCalls) != 1 {
 		t.Errorf("expected 1 tool call, got %d", len(msg.ToolCalls))
