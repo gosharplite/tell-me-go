@@ -257,8 +257,8 @@ func (m *cancelIntegrationRegistry) Execute(ctx context.Context, name string, ar
 	return tools.ToolResult{}, errors.New("not found")
 }
 
-func (m *cancelIntegrationRegistry) IsSerial(name string) bool { return false }
-func (m *cancelIntegrationRegistry) IsLongRunning(name string) bool { return false }
+func (m *cancelIntegrationRegistry) IsSerial(name string) bool                 { return false }
+func (m *cancelIntegrationRegistry) IsLongRunning(name string) bool            { return false }
 func (m *cancelIntegrationRegistry) GetDeclarations() []*tools.ToolDeclaration { return m.declarations }
 
 func TestTurnEngine_CancellationIntegration(t *testing.T) {
@@ -267,7 +267,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
 	reg := &cancelIntegrationRegistry{}
-	
+
 	// Tool 1 & 2: Blocking
 	var wgStart sync.WaitGroup
 	wgStart.Add(2)
@@ -300,7 +300,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	gw := &integrationMockLLMGateway{}
 	// Real executor
 	exec := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus)
-	
+
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -328,7 +328,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	errCh := make(chan error, 1)
 	turn0 := engine.createTurn(0, time.Now())
 	turn0.State.ToolCallCount = make(map[string]int)
-	
+
 	go func() {
 		errCh <- engine.executeTurn(ctx, turn0)
 	}()
@@ -354,11 +354,11 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	// Inspect final history
 	hist, _ := h.GetWindow(context.Background(), 0, -1)
-	
+
 	// Should have: user prompt, model tool calls, synthesized tool response
 	// The emergencySave should have triggered because the error was fatal (wrapped in agentError with llm.ErrTerminal)
 	assert.Equal(t, 3, len(hist))
-	
+
 	// Check model response (the tool calls)
 	assert.Equal(t, "model", hist[1].Role)
 	assert.Equal(t, 2, len(hist[1].Parts))
@@ -369,7 +369,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	toolResp := hist[2]
 	assert.Equal(t, "user", toolResp.Role)
 	assert.Equal(t, 2, len(toolResp.Parts)) // Two function responses
-	
+
 	for _, part := range toolResp.Parts {
 		assert.NotNil(t, part.FunctionResponse)
 		assert.Equal(t, "Execution was interrupted or cancelled by the user.", part.FunctionResponse.Response["result"])
