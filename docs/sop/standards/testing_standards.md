@@ -49,7 +49,13 @@ Every test must be isolated from the host system and other tests:
   go test ./...
   ```
 - **Run with Race Detector**: (Required before merge)
+  **CAUTION:** In AI-driven environments, a global `go test -race ./...` often exceeds the 60s tool timeout. 
+  ALWAYS run race tests package-by-package to ensure stable execution:
   ```bash
+  # Recommended (Faster/Reliable):
+  go test -race ./internal/agent/executor/
+  
+  # Global (Use only if session timeout permits >2 mins):
   go test -race ./...
   ```
 - **Check Coverage**:
