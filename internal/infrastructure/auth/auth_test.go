@@ -17,7 +17,6 @@ import (
 )
 
 func TestVertexAuth(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	auth := &VertexAuth{Token: "test-token"}
 	req := &Request{
@@ -33,7 +32,6 @@ func TestVertexAuth(t *testing.T) {
 }
 
 func TestGetCachePath(t *testing.T) {
-	t.Parallel()
 	auth := &VertexAuth{}
 	path := auth.getCachePath()
 	if path == "" {
@@ -48,7 +46,6 @@ func TestGetCachePath(t *testing.T) {
 }
 
 func TestVertexAuth_Invalidate(t *testing.T) {
-	t.Parallel()
 	auth := &VertexAuth{Token: "some-token", CacheDir: t.TempDir()}
 	cachePath := auth.getCachePath()
 	_ = os.MkdirAll(filepath.Dir(cachePath), 0700)
@@ -66,9 +63,7 @@ func TestVertexAuth_Invalidate(t *testing.T) {
 }
 
 func TestVertexAuth_GetToken(t *testing.T) {
-	t.Parallel()
 	t.Run("Use cached token", func(t *testing.T) {
-		t.Parallel()
 		ctx := context.Background()
 		auth := &VertexAuth{CacheDir: t.TempDir()}
 		cachePath := auth.getCachePath()
@@ -85,7 +80,6 @@ func TestVertexAuth_GetToken(t *testing.T) {
 	})
 
 	t.Run("Fetch from gcloud", func(t *testing.T) {
-		t.Parallel()
 		ctx := context.Background()
 		auth := &VertexAuth{
 			CacheDir: t.TempDir(),
@@ -112,7 +106,6 @@ func TestVertexAuth_GetToken(t *testing.T) {
 }
 
 func TestServiceAccountAuth(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	auth := &ServiceAccountAuth{
 		token:  "cached-sa-token",
@@ -120,7 +113,6 @@ func TestServiceAccountAuth(t *testing.T) {
 	}
 
 	t.Run("Use cached token", func(t *testing.T) {
-		t.Parallel()
 		token, err := auth.getToken(ctx)
 		if err != nil {
 			t.Fatalf("getToken failed: %v", err)
@@ -131,7 +123,6 @@ func TestServiceAccountAuth(t *testing.T) {
 	})
 
 	t.Run("Invalidate", func(t *testing.T) {
-		t.Parallel()
 		auth.Invalidate()
 		if auth.token != "" {
 			t.Error("expected token to be cleared")
@@ -139,7 +130,6 @@ func TestServiceAccountAuth(t *testing.T) {
 	})
 
 	t.Run("Apply cached token", func(t *testing.T) {
-		t.Parallel()
 		auth.token = "sa-token"
 		auth.expiry = time.Now().Add(10 * time.Minute)
 		req := &Request{Headers: make(map[string]string)}
@@ -153,7 +143,6 @@ func TestServiceAccountAuth(t *testing.T) {
 }
 
 func TestVertexAuth_Concurrency(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	auth := &VertexAuth{
 		CacheDir: t.TempDir(),
@@ -186,7 +175,6 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 }
 
 func TestServiceAccountAuth_TokenExchange(t *testing.T) {
-	t.Parallel()
 
 	t.Run("Successful Exchange", testSA_SuccessfulExchange)
 	t.Run("Expiration Handling", testSA_ExpirationHandling)
@@ -355,11 +343,9 @@ func testSA_ProductionBranch_InvalidPrivateKey(t *testing.T) {
 }
 
 func TestOtherAuthenticators(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("APIKeyAuth", func(t *testing.T) {
-		t.Parallel()
 		auth := &APIKeyAuth{APIKey: "test-api-key"}
 		req := &Request{Headers: make(map[string]string)}
 		_ = auth.Apply(ctx, req)
@@ -374,7 +360,6 @@ func TestOtherAuthenticators(t *testing.T) {
 	})
 
 	t.Run("BearerAuth", func(t *testing.T) {
-		t.Parallel()
 		auth := &BearerAuth{Token: "test-bearer"}
 		req := &Request{Headers: make(map[string]string)}
 		_ = auth.Apply(ctx, req)
@@ -389,7 +374,6 @@ func TestOtherAuthenticators(t *testing.T) {
 	})
 
 	t.Run("AnthropicAuth", func(t *testing.T) {
-		t.Parallel()
 		auth := &AnthropicAuth{APIKey: "test-anthropic"}
 		req := &Request{Headers: make(map[string]string)}
 		_ = auth.Apply(ctx, req)
@@ -405,7 +389,6 @@ func TestOtherAuthenticators(t *testing.T) {
 }
 
 func TestNoOpAuth(t *testing.T) {
-	t.Parallel()
 	a := &noOpAuth{}
 
 	// Should not panic
@@ -459,7 +442,6 @@ func TestVertexAuth_GetCachePath_UnixFallback(t *testing.T) {
 }
 
 func TestVertexAuth_GetToken_GcloudError(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	auth := &VertexAuth{
 		CacheDir: t.TempDir(),
@@ -475,7 +457,6 @@ func TestVertexAuth_GetToken_GcloudError(t *testing.T) {
 }
 
 func TestVertexAuth_Apply_Error(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	auth := &VertexAuth{
 		CacheDir: t.TempDir(),
@@ -493,7 +474,6 @@ func TestVertexAuth_Apply_Error(t *testing.T) {
 }
 
 func TestServiceAccountAuth_Apply_Error(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	auth := &ServiceAccountAuth{
 		tokenSourceFunc: func() (*oauth2.Token, error) {
@@ -510,9 +490,7 @@ func TestServiceAccountAuth_Apply_Error(t *testing.T) {
 }
 
 func TestAuthInvalidate_Additional(t *testing.T) {
-	t.Parallel()
 	t.Run("APIKeyAuth_Invalidate", func(t *testing.T) {
-		t.Parallel()
 		auth := &APIKeyAuth{APIKey: "test-key"}
 		auth.Invalidate()
 		if auth.APIKey != "test-key" {
@@ -521,7 +499,6 @@ func TestAuthInvalidate_Additional(t *testing.T) {
 	})
 
 	t.Run("BearerAuth_Invalidate", func(t *testing.T) {
-		t.Parallel()
 		auth := &BearerAuth{Token: "test-token"}
 		auth.Invalidate()
 		if auth.Token != "test-token" {
@@ -530,7 +507,6 @@ func TestAuthInvalidate_Additional(t *testing.T) {
 	})
 
 	t.Run("AnthropicAuth_Invalidate", func(t *testing.T) {
-		t.Parallel()
 		auth := &AnthropicAuth{APIKey: "test-key"}
 		auth.Invalidate()
 		if auth.APIKey != "test-key" {

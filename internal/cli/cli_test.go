@@ -12,9 +12,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	t.Parallel()
 	t.Run("Default home directory", func(t *testing.T) {
-		t.Parallel()
 		os.Unsetenv("TELL_ME_HOME")
 		os.Unsetenv("AIT_HOME")
 		app := New("1.0.0", nil, nil, nil)
@@ -24,7 +22,6 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("TELL_ME_HOME environment variable", func(t *testing.T) {
-		t.Parallel()
 		expected := "/tmp/tell-me-home"
 		os.Setenv("TELL_ME_HOME", expected)
 		defer os.Unsetenv("TELL_ME_HOME")
@@ -35,7 +32,6 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("AIT_HOME environment variable", func(t *testing.T) {
-		t.Parallel()
 		os.Unsetenv("TELL_ME_HOME")
 		expected := "/tmp/ait-home"
 		os.Setenv("AIT_HOME", expected)
@@ -48,7 +44,6 @@ func TestNew(t *testing.T) {
 }
 
 func TestApp_Run_Version(t *testing.T) {
-	t.Parallel()
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	version := "1.2.3"
@@ -67,7 +62,6 @@ func TestApp_Run_Version(t *testing.T) {
 }
 
 func TestApp_Run_UnknownCommand(t *testing.T) {
-	t.Parallel()
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	app := New("1.0.0", nil, stdout, stderr)
@@ -88,7 +82,6 @@ func (m *mockCommand) Execute(ctx stdctx.Context, args []string) error {
 }
 
 func TestApp_Run_ContextCanceled(t *testing.T) {
-	t.Parallel()
 	// Register a mock command for "chat" to test error handling
 
 	register("chat", func(ctx *context) command {
@@ -113,7 +106,6 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 }
 
 func TestApp_Run_CommandError(t *testing.T) {
-	t.Parallel()
 	// Register a mock command for a custom error
 
 	customErr := errors.New("custom error")

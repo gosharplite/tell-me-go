@@ -25,11 +25,9 @@ func assertFileContent(t *testing.T, fs *mockFileSystem, ctx context.Context, pa
 }
 
 func TestMockFileSystem(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Write and Read", func(t *testing.T) {
-		t.Parallel()
 		fs := NewMockFileSystem()
 		path := "test.txt"
 		data := "hello"
@@ -38,7 +36,6 @@ func TestMockFileSystem(t *testing.T) {
 	})
 
 	t.Run("ReadDir", func(t *testing.T) {
-		t.Parallel()
 		fs := NewMockFileSystem()
 		_ = fs.WriteFile(ctx, "a/b.txt", []byte("b"), 0644)
 		_ = fs.WriteFile(ctx, "a/c/d.txt", []byte("d"), 0644)
@@ -53,7 +50,6 @@ func TestMockFileSystem(t *testing.T) {
 	})
 
 	t.Run("Stat", func(t *testing.T) {
-		t.Parallel()
 		fs := NewMockFileSystem()
 		_ = fs.WriteFile(ctx, "stat.txt", []byte("abc"), 0644)
 		info, err := fs.Stat(ctx, "stat.txt")
@@ -78,7 +74,6 @@ func TestMockFileSystem(t *testing.T) {
 	})
 
 	t.Run("remove and removeAll", func(t *testing.T) {
-		t.Parallel()
 		fs := NewMockFileSystem()
 		_ = fs.WriteFile(ctx, "rem.txt", []byte("x"), 0644)
 		_ = fs.Remove(ctx, "rem.txt")
@@ -97,22 +92,18 @@ func TestMockFileSystem(t *testing.T) {
 }
 
 func TestMockFileSystem_Walk(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	fs := setupWalkFS(t, ctx)
 
 	t.Run("Walk Basic", func(t *testing.T) {
-		t.Parallel()
 		runWalkBasicTest(t, ctx, fs)
 	})
 
 	t.Run("Walk SkipDir", func(t *testing.T) {
-		t.Parallel()
 		runWalkSkipDirTest(t, ctx, fs)
 	})
 
 	t.Run("Walk Root Dot", func(t *testing.T) {
-		t.Parallel()
 		runWalkRootDotTest(t, ctx, fs)
 	})
 }
@@ -177,7 +168,6 @@ func runWalkRootDotTest(t *testing.T, ctx context.Context, fs *mockFileSystem) {
 }
 
 func TestMockFile(t *testing.T) {
-	t.Parallel()
 	f := &mockFile{}
 	n, err := f.Write([]byte("test"))
 	if n != 0 || err == nil {
@@ -189,7 +179,6 @@ func TestMockFile(t *testing.T) {
 }
 
 func TestMockFileInfo(t *testing.T) {
-	t.Parallel()
 	info := &mockFileInfo{name: "test", size: 10, dir: true}
 	if info.Name() != "test" {
 		t.Errorf("Name() = %v, want test", info.Name())
@@ -212,7 +201,6 @@ func TestMockFileInfo(t *testing.T) {
 }
 
 func TestMockDirEntry(t *testing.T) {
-	t.Parallel()
 	entry := &mockDirEntry{name: "test", isDir: true}
 	if entry.Name() != "test" {
 		t.Errorf("Name() = %v, want test", entry.Name())
@@ -230,12 +218,10 @@ func TestMockDirEntry(t *testing.T) {
 }
 
 func TestMockFileSystem_More(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	fs := NewMockFileSystem()
 
 	t.Run("AtomicWrite", func(t *testing.T) {
-		t.Parallel()
 		err := fs.AtomicWrite(ctx, "atomic.txt", []byte("data"), 0644)
 		if err != nil {
 			t.Fatalf("AtomicWrite failed: %v", err)
@@ -244,7 +230,6 @@ func TestMockFileSystem_More(t *testing.T) {
 	})
 
 	t.Run("MkdirAll", func(t *testing.T) {
-		t.Parallel()
 		err := fs.MkdirAll(ctx, "some/dir", 0755)
 		if err != nil {
 			t.Fatalf("MkdirAll failed: %v", err)
@@ -252,7 +237,6 @@ func TestMockFileSystem_More(t *testing.T) {
 	})
 
 	t.Run("Open and OpenFile", func(t *testing.T) {
-		t.Parallel()
 		_ = fs.WriteFile(ctx, "file.txt", []byte("content"), 0644)
 
 		f1, err := fs.Open(ctx, "file.txt")
@@ -274,7 +258,6 @@ func TestMockFileSystem_More(t *testing.T) {
 	})
 
 	t.Run("Stat error", func(t *testing.T) {
-		t.Parallel()
 		_, err := fs.Stat(ctx, "missing.txt")
 		if err == nil {
 			t.Error("Stat expected error for missing file")
@@ -283,11 +266,9 @@ func TestMockFileSystem_More(t *testing.T) {
 }
 
 func TestMockFileSystem_Walk_Errors(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Walk error in callback", func(t *testing.T) {
-		t.Parallel()
 		fs := NewMockFileSystem()
 		_ = fs.WriteFile(ctx, "a.txt", []byte("a"), 0644)
 		expectedErr := fmt.Errorf("walk error")
@@ -303,7 +284,6 @@ func TestMockFileSystem_Walk_Errors(t *testing.T) {
 	})
 
 	t.Run("Walk error in notifyParents", func(t *testing.T) {
-		t.Parallel()
 		fs := NewMockFileSystem()
 		_ = fs.WriteFile(ctx, "a/b.txt", []byte("b"), 0644)
 		expectedErr := fmt.Errorf("notify error")
@@ -320,7 +300,6 @@ func TestMockFileSystem_Walk_Errors(t *testing.T) {
 }
 
 func TestMockFileSystem_TableDriven(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	fs := NewMockFileSystem()
 
@@ -366,7 +345,6 @@ func TestMockFileSystem_TableDriven(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			err := tt.op()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("%s: error = %v, wantErr %v", tt.name, err, tt.wantErr)

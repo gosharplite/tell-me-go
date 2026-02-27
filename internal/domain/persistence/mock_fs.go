@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,6 +48,7 @@ func (m *mockFileInfo) Sys() interface{}   { return nil }
 
 // mockFileSystem is a simple in-memory filesystem for testing.
 type mockFileSystem struct {
+	mu    sync.RWMutex
 	Files map[string][]byte
 }
 
@@ -57,6 +59,8 @@ func NewMockFileSystem() *mockFileSystem {
 }
 
 func (m *mockFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var entries []os.DirEntry
 	prefix := name
 	if !strings.HasSuffix(prefix, "/") {
@@ -78,6 +82,8 @@ func (m *mockFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntr
 }
 
 func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	content, ok := m.Files[name]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -86,6 +92,8 @@ func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, err
 }
 
 func (m *mockFileSystem) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.Files[name] = data
 	return nil
 }
@@ -99,6 +107,8 @@ func (m *mockFileSystem) MkdirAll(ctx context.Context, path string, perm os.File
 }
 
 func (m *mockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	content, ok := m.Files[name]
 	if ok {
 		return &mockFileInfo{name: filepath.Base(name), size: int64(len(content)), dir: false}, nil
@@ -117,6 +127,8 @@ func (m *mockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, er
 }
 
 func (m *mockFileSystem) Open(ctx context.Context, name string) (File, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	content, ok := m.Files[name]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -129,11 +141,15 @@ func (m *mockFileSystem) OpenFile(ctx context.Context, name string, flag int, pe
 }
 
 func (m *mockFileSystem) Remove(ctx context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.Files, name)
 	return nil
 }
 
 func (m *mockFileSystem) RemoveAll(ctx context.Context, path string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	path = filepath.Clean(path)
 	// Handle exact matches and children
 	for p := range m.Files {
@@ -154,14 +170,21 @@ func (m *mockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) err
 	skippedDirs := make(map[string]bool)
 
 	// Collect all paths and sort them to simulate a real walk
+	m.mu.RLock()
 	var paths []string
 	for p := range m.Files {
 		paths = append(paths, p)
 	}
+	m.mu.RUnlock()
 	sort.Strings(paths)
 
 	for _, path := range paths {
-		content := m.Files[path]
+		m.mu.RLock()
+		content, ok := m.Files[path]
+		m.mu.RUnlock()
+		if !ok {
+			continue // Might have been deleted between RUnlock and here, but Walk normally takes a snapshot or is not thread-safe anyway.
+		}
 		cleanPath := filepath.Clean(path)
 
 		if isUnderRoot(cleanPath, root) {
