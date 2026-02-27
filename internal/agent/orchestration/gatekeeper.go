@@ -25,10 +25,21 @@ type tokenEstimator interface {
 
 // tokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type tokenGatekeeper struct {
-	MaxTokens  int
-	Estimator  tokenEstimator
-	Summarizer ports.Summarizer
-	Events     events.EventBus
+	MaxTokens   int
+	Estimator   tokenEstimator
+	Summarizer  ports.Summarizer
+	Events      events.EventBus
+	Strategies  map[string]ThresholdStrategy
+	DefaultTier string
+}
+
+func (t *tokenGatekeeper) getStrategy() ThresholdStrategy {
+	if t.Strategies != nil {
+		if s, ok := t.Strategies[t.DefaultTier]; ok {
+			return s
+		}
+	}
+	return &DynamicThresholdStrategy{Estimator: t.Estimator}
 }
 
 func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -62,71 +73,50 @@ func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.
 	tokens := t.Estimator.estimateTokens(req.History)
 	req.Metadata.OriginalTokenCount = tokens
 
-	// Nuanced check for TieredThreshold
-	if cs, ok := t.Estimator.(*ContextStrategy); ok {
-		tiered := cs.GetTieredThreshold()
-		if tiered > 0 && tokens > tiered && !req.Metadata.SummarizationAttempted {
-			if t.Events != nil {
-				if err := t.Events.Publish(ctx, events.SummarizationRequired{
-					Tokens:   tokens,
-					MaxLimit: tiered,
-					Reason:   "High-tier pricing threshold reached",
-				}); err != nil {
-					return tokens, err
-				}
-			}
-			// Attempt auto-summarization to try and get back into the cheap tier
-			n, err := t.autoSummarize(ctx, req)
-			if err != nil {
-				// Propagate critical errors, but continue if blocked
-				if errors.Is(err, ErrInvalidPayload) {
-					return tokens, err
-				}
-				if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
-					return tokens, nil
-				}
-				return tokens, err
-			}
-			tokens = t.Estimator.estimateTokens(req.History)
-			req.Metadata.SummarizedTurns = n
-		}
+	strategy := t.getStrategy()
+	if strategy.Evaluate(tokens) {
+		return t.triggerSummarization(ctx, req, tokens, strategy.GetThreshold(), "High-tier pricing threshold reached")
 	}
 	return tokens, nil
 }
 
 func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.ContextRequest, tokens int) (int, error) {
-	if t.MaxTokens <= 0 {
+	if t.MaxTokens > 0 && tokens > int(float64(t.MaxTokens)*0.9) {
+		return t.triggerSummarization(ctx, req, tokens, t.MaxTokens, "Safety limit pressure (> 90%)")
+	}
+	return tokens, nil
+}
+
+func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.ContextRequest, tokens, limit int, reason string) (int, error) {
+	if t.Events != nil {
+		if err := t.Events.Publish(ctx, events.SummarizationRequired{
+			Tokens:   tokens,
+			MaxLimit: limit,
+			Reason:   reason,
+		}); err != nil {
+			return tokens, err
+		}
+	}
+
+	if req.Metadata.SummarizationAttempted {
 		return tokens, nil
 	}
 
-	if tokens > int(float64(t.MaxTokens)*0.9) {
-		if t.Events != nil {
-			if err := t.Events.Publish(ctx, events.SummarizationRequired{
-				Tokens:   tokens,
-				MaxLimit: t.MaxTokens,
-				Reason:   "Safety limit pressure (> 90%)",
-			}); err != nil {
-				return tokens, err
-			}
+	n, err := t.autoSummarize(ctx, req)
+	if err != nil {
+		// Propagate critical errors, but continue if blocked
+		if errors.Is(err, ErrInvalidPayload) {
+			return tokens, err
 		}
-
-		if !req.Metadata.SummarizationAttempted {
-			n, err := t.autoSummarize(ctx, req)
-			if err != nil {
-				// Propagate critical errors, but continue if blocked
-				if errors.Is(err, ErrInvalidPayload) {
-					return tokens, err
-				}
-				if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
-					return tokens, nil
-				}
-				return tokens, err
-			}
-			tokens = t.Estimator.estimateTokens(req.History)
-			req.Metadata.SummarizedTurns = n
+		if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
+			return tokens, nil
 		}
+		return tokens, err
 	}
-	return tokens, nil
+
+	newTokens := t.Estimator.estimateTokens(req.History)
+	req.Metadata.SummarizedTurns = n
+	return newTokens, nil
 }
 
 func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {

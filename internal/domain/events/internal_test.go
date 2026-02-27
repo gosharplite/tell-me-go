@@ -251,3 +251,64 @@ func TestPumpEvents_BlockedOnOut_ContextCancellation(t *testing.T) {
 		t.Fatal("pumpEvents goroutine leaked while blocked on out channel")
 	}
 }
+
+func TestSimpleEventBus_GetEffectiveCapacity(t *testing.T) {
+	t.Parallel()
+	bus := &SimpleEventBus{capacity: 0}
+	if cap := bus.getEffectiveCapacity(); cap != defaultMaxQueueSize {
+		t.Errorf("expected defaultMaxQueueSize for 0 capacity, got %d", cap)
+	}
+
+	bus.capacity = -5
+	if cap := bus.getEffectiveCapacity(); cap != defaultMaxQueueSize {
+		t.Errorf("expected defaultMaxQueueSize for negative capacity, got %d", cap)
+	}
+
+	bus.capacity = 42
+	if cap := bus.getEffectiveCapacity(); cap != 42 {
+		t.Errorf("expected 42 capacity, got %d", cap)
+	}
+}
+
+func TestSimpleEventBus_GetSafeContext(t *testing.T) {
+	t.Parallel()
+	bus := &SimpleEventBus{}
+	ctx := bus.getSafeContext()
+	if ctx == nil {
+		t.Fatal("expected non-nil context from getSafeContext")
+	}
+
+	expectedCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bus.ctx = expectedCtx
+	if got := bus.getSafeContext(); got != expectedCtx {
+		t.Errorf("expected provided context, got %v", got)
+	}
+}
+
+func TestSimpleEventBus_HandleInternalEvent(t *testing.T) {
+	t.Parallel()
+	bus := &SimpleEventBus{}
+	ctx := context.Background()
+
+	// 1. Not an internal event
+	if handled := bus.handleInternalEvent(ctx, "normal-event"); handled {
+		t.Errorf("expected false for normal event, got true")
+	}
+
+	// 2. Flush event
+	done := make(chan error, 1)
+	fe := flushEvent{done: done}
+	if handled := bus.handleInternalEvent(ctx, fe); !handled {
+		t.Errorf("expected true for flush event, got false")
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("expected nil error from flush event, got %v", err)
+		}
+	default:
+		t.Error("expected flush event to be completed")
+	}
+}

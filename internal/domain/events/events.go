@@ -115,51 +115,66 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 		return
 	}
 
-	cap := b.capacity
-	if cap <= 0 {
-		cap = defaultMaxQueueSize
-	}
-
+	cap := b.getEffectiveCapacity()
 	in := make(chan Event, cap)
 	out := make(chan Event)
 	b.subscribers = append(b.subscribers, in)
 
 	b.wg.Add(2)
-	ctx := b.ctx
-	if ctx == nil {
-		ctx = context.Background()
+	ctx := b.getSafeContext()
+
+	go b.startEventPump(ctx, in, out)
+	go b.startSubscriberLoop(ctx, out, sub)
+}
+
+func (b *SimpleEventBus) getEffectiveCapacity() int {
+	if b.capacity <= 0 {
+		return defaultMaxQueueSize
 	}
+	return b.capacity
+}
 
-	// 1. Bounded Queue Goroutine
-	go func() {
-		defer b.wg.Done()
-		defer close(out)
-		b.pumpEvents(ctx, in, out)
-	}()
+func (b *SimpleEventBus) getSafeContext() context.Context {
+	if b.ctx == nil {
+		return context.Background()
+	}
+	return b.ctx
+}
 
-	// 2. Processing Goroutine
-	go func() {
-		defer b.wg.Done()
-		for {
-			select {
-			case <-ctx.Done():
+func (b *SimpleEventBus) startEventPump(ctx context.Context, in chan Event, out chan Event) {
+	defer b.wg.Done()
+	defer close(out)
+	b.pumpEvents(ctx, in, out)
+}
+
+func (b *SimpleEventBus) startSubscriberLoop(ctx context.Context, out chan Event, sub func(Event)) {
+	defer b.wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e, ok := <-out:
+			if !ok {
 				return
-			case e, ok := <-out:
-				if !ok {
-					return
-				}
-				if fe, ok := e.(flushEvent); ok {
-					select {
-					case fe.done <- nil:
-					case <-ctx.Done():
-					}
-					close(fe.done)
-					continue
-				}
-				sub(e)
 			}
+			if b.handleInternalEvent(ctx, e) {
+				continue
+			}
+			sub(e)
 		}
-	}()
+	}
+}
+
+func (b *SimpleEventBus) handleInternalEvent(ctx context.Context, e Event) bool {
+	if fe, ok := e.(flushEvent); ok {
+		select {
+		case fe.done <- nil:
+		case <-ctx.Done():
+		}
+		close(fe.done)
+		return true
+	}
+	return false
 }
 
 func (b *SimpleEventBus) pumpEvents(ctx context.Context, in chan Event, out chan<- Event) {

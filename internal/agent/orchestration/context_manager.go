@@ -7,6 +7,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -248,25 +249,60 @@ func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content
 	return cm.Summarizer.Summarize(ctx, contents, focus)
 }
 
-// SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
-func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
-	// SCALABLE: Immediate context check
+func (cm *ContextManager) checkContext(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
-		return "", nil, ctx.Err()
+		return ctx.Err()
 	default:
+		return nil
 	}
+}
 
+func (cm *ContextManager) validateSummarizer() error {
 	if cm.Summarizer == nil {
-		return "", nil, fmt.Errorf("%w: summarizer not initialized", llm.ErrTerminal)
+		return fmt.Errorf("%w: summarizer not initialized", llm.ErrTerminal)
 	}
+	return nil
+}
 
-	subset, endIdx, tokens, err := cm.prepareSummarizationMetadata(ctx, numTurns)
+func (cm *ContextManager) handleSummarizationPrep(subset []*llm.Content, err error) (string, *llm.Metrics, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if subset == nil {
-		return "History is too short to summarize yet.", nil, nil
+	return "History is too short to summarize yet.", nil, nil
+}
+
+func (cm *ContextManager) wrapSummarizationError(err error) error {
+	category := llm.ErrTerminal
+	if llm.IsTransient(err) {
+		category = llm.ErrTransient
+	}
+	return fmt.Errorf("%w: summarization failed: %v", category, err)
+}
+
+func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tokens int) {
+	if cm.Events != nil {
+		if err := cm.Events.Publish(ctx, events.SystemMessageEvent{
+			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokens),
+		}); err != nil {
+			slog.Debug("failed to emit summarization event", slog.Any("error", err))
+		}
+	}
+}
+
+// SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
+func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
+	if err := cm.checkContext(ctx); err != nil {
+		return "", nil, err
+	}
+
+	if err := cm.validateSummarizer(); err != nil {
+		return "", nil, err
+	}
+
+	subset, endIdx, tokens, err := cm.prepareSummarizationMetadata(ctx, numTurns)
+	if err != nil || subset == nil {
+		return cm.handleSummarizationPrep(subset, err)
 	}
 
 	turnsForMetrics, err := groupTurns(ctx, subset)
@@ -274,22 +310,12 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "", nil, err
 	}
 	actualTurns := len(turnsForMetrics)
-	if cm.Events != nil {
-		if err := cm.Events.Publish(ctx, events.SystemMessageEvent{
-			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", actualTurns, tokens),
-		}); err != nil {
-			return "", nil, err
-		}
-	}
+	cm.emitSummarizationEvent(ctx, actualTurns, tokens)
 
 	// Slow LLM call outside the lock
 	summary, metrics, err := cm.Summarizer.Summarize(ctx, subset, focus)
 	if err != nil {
-		category := llm.ErrTerminal
-		if llm.IsTransient(err) {
-			category = llm.ErrTransient
-		}
-		return "", nil, fmt.Errorf("%w: summarization failed: %v", category, err)
+		return "", nil, cm.wrapSummarizationError(err)
 	}
 
 	if err := cm.finalizeSummarization(ctx, subset, endIdx, summary); err != nil {
@@ -310,19 +336,15 @@ func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numT
 	}
 
 	subset, endIdx, err = cm.findSummarizationBoundary(ctx, numTurns, totalEntries)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	if subset == nil {
-		return nil, 0, 0, nil
+	if err != nil || subset == nil {
+		return subset, endIdx, 0, err
 	}
 
 	tokens = strategy.estimateTokens(subset)
 
 	window := strategy.getContextWindow()
-	safetyLimit := int(float64(window) * 0.9)
-	if tokens > safetyLimit {
-		return nil, 0, 0, fmt.Errorf("%w: summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", llm.ErrContextLimitExceeded, numTurns, tokens, safetyLimit)
+	if ok, limit := isTokenCountSafe(tokens, window); !ok {
+		return nil, 0, 0, fmt.Errorf("%w: summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", llm.ErrContextLimitExceeded, numTurns, tokens, limit)
 	}
 
 	return subset, endIdx, tokens, nil
@@ -337,10 +359,8 @@ func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurn
 	}
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, 0, ctx.Err()
-		default:
+		if err := cm.checkContext(ctx); err != nil {
+			return nil, 0, err
 		}
 
 		found, subset, endIdx, err := cm.checkWindowSize(ctx, windowSize, numTurns, totalEntries)
@@ -372,18 +392,11 @@ func (cm *ContextManager) checkWindowSize(ctx context.Context, windowSize int, n
 
 	if len(turns) >= numTurns || windowSize >= totalEntries {
 		// Found enough turns or reached the end of history.
-		totalTurns := len(turns)
-		if numTurns >= totalTurns {
-			numTurns = totalTurns - 1 // Leave at least 1 turn
-		}
-		if numTurns < 1 {
+		endIdx, _ = calculateSummarizationEndIndex(turns, numTurns)
+		if endIdx == 0 {
 			return true, nil, 0, nil
 		}
 
-		endIdx = 0
-		for i := 0; i < numTurns; i++ {
-			endIdx += len(turns[i])
-		}
 		// subset is the first endIdx elements of contents.
 		// Since contents is already a deep clone from GetWindow, we can just slice it.
 		subset = contents[:endIdx]
@@ -391,6 +404,27 @@ func (cm *ContextManager) checkWindowSize(ctx context.Context, windowSize int, n
 	}
 
 	return false, nil, 0, nil
+}
+
+func isTokenCountSafe(tokens, window int) (bool, int) {
+	limit := int(float64(window) * 0.9)
+	return tokens <= limit, limit
+}
+
+func calculateSummarizationEndIndex(turns [][]*llm.Content, requestedTurns int) (int, int) {
+	totalTurns := len(turns)
+	if requestedTurns >= totalTurns {
+		requestedTurns = totalTurns - 1
+	}
+	if requestedTurns < 1 {
+		return 0, 0
+	}
+
+	endIdx := 0
+	for i := 0; i < requestedTurns; i++ {
+		endIdx += len(turns[i])
+	}
+	return endIdx, requestedTurns
 }
 
 func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*llm.Content, endIdx int, summary string) error {
