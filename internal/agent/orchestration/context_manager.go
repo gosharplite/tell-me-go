@@ -380,19 +380,10 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	if len(currentContents) < endIdx {
 		return fmt.Errorf("%w: summarization aborted: history was pruned while summarizing", llm.ErrTerminal)
 	}
+	
 	// Robust check: did the messages we summarized change?
-	for i := range subset {
-		if i%100 == 0 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-		}
-
-		if !llm.EqualContent(currentContents[i], subset[i]) {
-			return fmt.Errorf("%w: summarization aborted: history content changed while summarizing", llm.ErrTerminal)
-		}
+	if err := cm.validateSummarizationSubset(ctx, currentContents, subset); err != nil {
+		return err
 	}
 
 	// Reconstruct history using the robust helper
@@ -417,5 +408,22 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 		return fmt.Errorf("%w: failed to update history after summarization: %v", category, err)
 	}
 
+	return nil
+}
+
+func (cm *ContextManager) validateSummarizationSubset(ctx context.Context, currentContents, subset []*llm.Content) error {
+	for i, expected := range subset {
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+		}
+
+		if !llm.EqualContent(currentContents[i], expected) {
+			return fmt.Errorf("%w: summarization aborted: history content changed while summarizing", llm.ErrTerminal)
+		}
+	}
 	return nil
 }

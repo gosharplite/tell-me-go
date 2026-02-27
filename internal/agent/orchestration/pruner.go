@@ -172,25 +172,30 @@ func (p *importanceRankPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Con
 			}
 		}
 
-		important := false
-		for _, msg := range turn {
-			for _, part := range msg.Parts {
-				if part.FunctionCall != nil || part.FunctionResponse != nil || part.InlineData != nil {
-					important = true
-					break
-				}
-			}
-			if important {
-				break
-			}
-		}
-
-		if important {
+		if isTurnImportant(turn) {
 			keep[i] = true
 			count++
 		}
 	}
 	return count, nil
+}
+
+func isTurnImportant(turn []*llm.Content) bool {
+	for _, msg := range turn {
+		if hasImportantParts(msg) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasImportantParts(msg *llm.Content) bool {
+	for _, part := range msg.Parts {
+		if part.FunctionCall != nil || part.FunctionResponse != nil || part.InlineData != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *importanceRankPolicy) Name() string { return "Importance" }

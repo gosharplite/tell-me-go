@@ -588,63 +588,21 @@ func (e *ToolExecutor) finalizeToolExecution(callName string, result domaintools
 	status, msg := classifyToolError(err, result.Error)
 	duration := time.Since(startTime)
 
-	// [OPERATIONAL READINESS] Add structured logging for execution visibility
 	e.mu.RLock()
 	isSerial := e.registry.IsSerial(callName)
 	isLongRunning := e.registry.IsLongRunning(callName)
 	e.mu.RUnlock()
 
-	var errStr string
-	if err != nil {
-		errStr = err.Error()
-	} else if result.Error != nil {
-		errStr = result.Error.Error()
-	}
-
-	logAttrs := []any{
-		slog.String("tool_name", callName),
-		slog.Bool("is_serial", isSerial),
-		slog.Bool("is_long_running", isLongRunning),
-		slog.Int64("duration_ms", duration.Milliseconds()),
-		slog.String("status", status),
-	}
-	if errStr != "" {
-		logAttrs = append(logAttrs, slog.String("error_reason", errStr))
-	}
-
-	// [Metrics] TODO: tool_execution_duration_seconds tagged with tool_name and status
-
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(result.Error, context.DeadlineExceeded) {
-		slog.Warn("Tool execution timed out", logAttrs...)
-	} else if status == "error" {
-		slog.Error("Tool execution failed", logAttrs...)
-	} else {
-		slog.Info("Tool execution completed", logAttrs...)
-	}
+	errStr := formatToolExecutionError(err, result.Error)
+	e.logToolExecution(callName, status, errStr, duration, isSerial, isLongRunning, err, result.Error)
 
 	if status == "user_declined" || status == "security_blocked" {
-		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  callName,
-			StartTime: startTime,
-			Duration:  duration,
-			Status:    status,
-		})
+		e.recordToolTrace(trace, callName, startTime, duration, status, "")
 		return domaintools.ToolResult{Text: msg, Error: nil}
 	}
 
-	if status == "error" {
-		e.failures.recordFailure(callName)
-	} else {
-		e.failures.recordSuccess(callName)
-	}
-
-	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-		ToolName:  callName,
-		StartTime: startTime,
-		Duration:  duration,
-		Status:    status,
-		Error:     errStr,
-	})
+	e.updateCircuitBreaker(callName, status)
+	e.recordToolTrace(trace, callName, startTime, duration, status, errStr)
 
 	if err != nil {
 		msg := fmt.Sprintf("Error: %v", err)
@@ -813,4 +771,65 @@ func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start
 type toolOutput struct {
 	result domaintools.ToolResult
 	err    error
+}
+
+func formatToolExecutionError(err error, resultErr error) string {
+	if err != nil {
+		return err.Error()
+	} else if resultErr != nil {
+		return resultErr.Error()
+	}
+	return ""
+}
+
+func (e *ToolExecutor) logToolExecution(callName, status, errStr string, duration time.Duration, isSerial, isLongRunning bool, err, resultErr error) {
+	logAttrs := []any{
+		slog.String("tool_name", callName),
+		slog.Bool("is_serial", isSerial),
+		slog.Bool("is_long_running", isLongRunning),
+		slog.Int64("duration_ms", duration.Milliseconds()),
+		slog.String("status", status),
+	}
+	if errStr != "" {
+		logAttrs = append(logAttrs, slog.String("error_reason", errStr))
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(resultErr, context.DeadlineExceeded) {
+		slog.Warn("Tool execution timed out", logAttrs...)
+	} else if status == "error" {
+		slog.Error("Tool execution failed", logAttrs...)
+	} else {
+		slog.Info("Tool execution completed", logAttrs...)
+	}
+}
+
+func (e *ToolExecutor) updateCircuitBreaker(callName, status string) {
+	if status == "error" {
+		e.failures.recordFailure(callName)
+	} else {
+		e.failures.recordSuccess(callName)
+	}
+}
+
+func (e *ToolExecutor) recordToolTrace(trace *telemetry.TurnTrace, callName string, startTime time.Time, duration time.Duration, status, errStr string) {
+	if trace == nil {
+		return
+	}
+	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+		ToolName:  callName,
+		StartTime: startTime,
+		Duration:  duration,
+		Status:    status,
+		Error:     errStr,
+	})
+}
+
+func buildFunctionResponse(callID, name, output string) *llm.Part {
+	return &llm.Part{
+		FunctionResponse: &llm.FunctionResponse{
+			ID:       callID,
+			Name:     name,
+			Response: map[string]interface{}{"result": output},
+		},
+	}
 }
