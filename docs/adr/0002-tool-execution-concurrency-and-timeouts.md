@@ -14,15 +14,15 @@ The previous `ToolExecutor` implementation suffered from several architectural f
 We have overhauled the tool execution engine to enforce the following 4 core pillars:
 1. **Bounded Timeouts via Immutable Functional Options:** Timeouts are now strictly enforced using immutable options (e.g., `WithLongRunningTimeout`). Once an executor is configured, its timeout policies cannot be changed, ensuring predictable behavior.
 2. **Mandatory Context Propagation:** All tools must now accept a `context.Context`. **Rule:** *All long-running tools MUST actively poll `ctx.Done()` during blocking I/O or heavy computation loops to ensure prompt termination upon cancellation.*
-3. **Barrier Pattern & RWMutex Isolation:** The execution engine now uses a `sync.RWMutex` to implement a "Barrier Pattern". 
-    * `Serial: false` tools (the majority) use an `RLock`, allowing them to run in parallel.
-    * `Serial: true` tools (mutators) use a `Lock`, ensuring they run in complete isolation from all other tools, preventing state corruption and deadlocks.
+3. **Barrier Pattern via Task Batching:** The engine implements a Barrier Pattern using **Task Batching and WaitGroups** rather than an RWMutex.
+    * Consecutive parallel tools are grouped into a batch and executed concurrently, waiting on a `sync.WaitGroup`.
+    * Serial tools (mutators) force a batch break and run in complete isolation in their own sequential batch, preventing state corruption and deadlocks.
 4. **Structured Observability:** Every tool execution now emits structured logs capturing execution duration, success/failure status, and timeout events. This provides clear visibility into system performance and bottleneck identification.
 
 ## Consequences
 - **Positive:** Elimination of zombie goroutines and associated OOM/resource leak risks.
-- **Positive:** Significant reduction in deadlock potential through granular locking.
+- **Positive:** Significant reduction in deadlock potential through sequential batch isolation.
 - **Positive:** Improved system stability and predictability under high concurrency.
 - **Positive:** Better auditability of tool performance via structured logging.
 - **Negative:** Slightly more boilerplate for tool authors, who must now explicitly handle context cancellation.
-- **Negative:** Increased complexity in the `ToolExecutor` internal logic to manage the RWMutex and timeout timers.
+- **Negative:** Increased complexity in the `ToolExecutor` internal logic to manage batch orchestration and timeout timers.

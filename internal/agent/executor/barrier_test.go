@@ -95,36 +95,37 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 		}
 	})
 
-	t.Run("Barrier Pattern - Parallel First", func(t *testing.T) {
+	t.Run("Sequential Integrity - Serial First", func(t *testing.T) {
 		t.Parallel()
-	// We want to verify that if we have [Serial, Parallel],
-		// the refactored executor runs Parallel FIRST.
+		// We want to verify that if we have [Serial, Parallel],
+		// the executor preserves the original order: Serial runs and completes FIRST.
 
-		var serialStartedAt time.Time
-		var parallelFinishedAt time.Time
+		var serialFinishedAt time.Time
+		var parallelStartedAt time.Time
 		var mu sync.Mutex
 
 		toolsMap := map[string]toolBehavior{
 			"p_tool": {
-				delay:  20 * time.Millisecond,
+				delay:  10 * time.Millisecond,
 				result: tools.ToolResult{Text: "p_ok"},
 			},
 			"s_tool": {
 				serial: true,
+				delay:  20 * time.Millisecond,
 				result: tools.ToolResult{Text: "s_ok"},
 			},
 		}
 
 		exec, _, behaviors := setupTestExecutor(t, toolsMap, nil)
-		behaviors["p_tool"].observe = func() {
+		behaviors["s_tool"].observe = func() {
 			time.Sleep(20 * time.Millisecond)
 			mu.Lock()
-			parallelFinishedAt = time.Now()
+			serialFinishedAt = time.Now()
 			mu.Unlock()
 		}
-		behaviors["s_tool"].observe = func() {
+		behaviors["p_tool"].observe = func() {
 			mu.Lock()
-			serialStartedAt = time.Now()
+			parallelStartedAt = time.Now()
 			mu.Unlock()
 		}
 
@@ -138,17 +139,17 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// If Barrier Pattern (Parallel First) is implemented:
-		// p_tool runs and finishes.
-		// THEN s_tool starts.
-		// So serialStartedAt should be AFTER parallelFinishedAt.
+		// In the new implementation, order is preserved:
+		// s_tool runs and finishes.
+		// THEN p_tool starts.
+		// So serialFinishedAt should be BEFORE parallelStartedAt.
 
 		mu.Lock()
 		defer mu.Unlock()
-		if serialStartedAt.Before(parallelFinishedAt) {
-			t.Errorf("Barrier failed: serial tool started at %v, before parallel tool finished at %v", serialStartedAt, parallelFinishedAt)
+		if serialFinishedAt.After(parallelStartedAt) {
+			t.Errorf("Sequential Integrity failed: serial tool finished at %v, after parallel tool started at %v", serialFinishedAt, parallelStartedAt)
 		} else {
-			t.Logf("Barrier success: parallel finished at %v, serial started at %v", parallelFinishedAt, serialStartedAt)
+			t.Logf("Sequential Integrity success: serial finished at %v, parallel started at %v", serialFinishedAt, parallelStartedAt)
 		}
 	})
 }

@@ -178,3 +178,59 @@ func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 		t.Fatal("Expected result on resChan, but got none")
 	}
 }
+
+func TestBuildExecutionBatches_PreservesOrder(t *testing.T) {
+	t.Parallel()
+	reg := &orderMockRegistry{
+		serialTools: map[string]bool{
+			"S1": true,
+			"S2": true,
+		},
+	}
+	exec := &ToolExecutor{registry: reg}
+
+	calls := []*llm.FunctionCall{
+		{Name: "P1"},
+		{Name: "S1"},
+		{Name: "P2"},
+		{Name: "P3"},
+		{Name: "S2"},
+	}
+
+	resChan := make(chan toolExecResult, len(calls))
+	batches := exec.buildExecutionBatches(calls, nil, resChan)
+
+	// Expected batches:
+	// 1. Parallel: [P1] (index 0)
+	// 2. Serial: [S1] (index 1)
+	// 3. Parallel: [P2, P3] (index 2, 3)
+	// 4. Serial: [S2] (index 4)
+
+	assert.Equal(t, 4, len(batches), "Should have 4 batches")
+
+	assert.False(t, batches[0].isSerial)
+	assert.Equal(t, []int{0}, batches[0].tasks)
+
+	assert.True(t, batches[1].isSerial)
+	assert.Equal(t, []int{1}, batches[1].tasks)
+
+	assert.False(t, batches[2].isSerial)
+	assert.Equal(t, []int{2, 3}, batches[2].tasks)
+
+	assert.True(t, batches[3].isSerial)
+	assert.Equal(t, []int{4}, batches[3].tasks)
+}
+
+type orderMockRegistry struct {
+	serialTools map[string]bool
+}
+
+func (m *orderMockRegistry) GetDeclarations() []*tools.ToolDeclaration { return nil }
+func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) {}
+func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+}
+func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+func (m *orderMockRegistry) IsSerial(name string) bool      { return m.serialTools[name] }
+func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }

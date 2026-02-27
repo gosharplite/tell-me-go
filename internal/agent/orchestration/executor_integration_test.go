@@ -141,11 +141,11 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	// Simulate LLM response requesting both concurrently.
-	// We put serial FIRST in the list to test that the barrier pattern reorders/prioritizes correctly.
+	// We put parallel FIRST to ensure it completes before the serial tool starts.
 	resp := &llm.Content{
 		Parts: []*llm.Part{
-			{FunctionCall: &llm.FunctionCall{Name: "mock_serial"}},
 			{FunctionCall: &llm.FunctionCall{Name: "mock_parallel"}},
+			{FunctionCall: &llm.FunctionCall{Name: "mock_serial"}},
 		},
 	}
 
@@ -158,7 +158,56 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 
 	assert.NotZero(t, pEnd, "Parallel tool should have finished")
 	assert.NotZero(t, sStart, "Serial tool should have started")
-	assert.True(t, pEnd < sStart, "Barrier Pattern Failure: Parallel tool must finish BEFORE serial tool starts. Parallel ended at %v, Serial started at %v", pEnd, sStart)
+	assert.True(t, pEnd < sStart, "Sequential Integrity Failure: Parallel tool must finish BEFORE subsequent serial tool starts. Parallel ended at %v, Serial started at %v", pEnd, sStart)
+}
+
+func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
+	reg := newIntegrationToolRegistry()
+	bus := &mockEventBus{}
+	sm := &integrationSecurityManager{}
+
+	exec := executor.NewToolExecutor(reg, sm, bus, executor.WithLongRunningTimeout(50*time.Millisecond))
+	defer exec.Shutdown()
+
+	var serialFinishedAt int64
+	var parallelStartedAt int64
+
+	reg.RegisterWithOptions(&tools.ToolDeclaration{
+		Name: "mock_serial",
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		time.Sleep(10 * time.Millisecond)
+		atomic.StoreInt64(&serialFinishedAt, time.Now().UnixNano())
+		return tools.ToolResult{Text: "serial done"}, nil
+	}, tools.ToolOptions{Serial: true, LongRunning: true})
+
+	reg.RegisterWithOptions(&tools.ToolDeclaration{
+		Name: "mock_parallel",
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		atomic.StoreInt64(&parallelStartedAt, time.Now().UnixNano())
+		return tools.ToolResult{Text: "parallel done"}, nil
+	}, tools.ToolOptions{Serial: false, LongRunning: false})
+
+	// Put serial FIRST. In the new implementation, it MUST run first.
+	resp := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "mock_serial"}},
+			{FunctionCall: &llm.FunctionCall{Name: "mock_parallel"}},
+		},
+	}
+
+	_, err := exec.Execute(context.Background(), resp, 0, 10)
+	require.NoError(t, err)
+
+	sEnd := atomic.LoadInt64(&serialFinishedAt)
+	pStart := atomic.LoadInt64(&parallelStartedAt)
+
+	assert.NotZero(t, sEnd)
+	assert.NotZero(t, pStart)
+	assert.True(t, sEnd < pStart, "Sequential Integrity Failure: Serial tool must finish BEFORE subsequent parallel tool starts.")
 }
 
 func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {

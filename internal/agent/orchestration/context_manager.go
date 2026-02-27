@@ -278,9 +278,10 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 
 func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
 	cm.mu.RLock()
-	defer cm.mu.RUnlock()
-
 	totalEntries := cm.History.GetTotalEntries()
+	strategy := cm.Strategy
+	cm.mu.RUnlock()
+
 	if totalEntries == 0 {
 		return nil, 0, 0, nil
 	}
@@ -293,9 +294,9 @@ func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numT
 		return nil, 0, 0, nil
 	}
 
-	tokens = cm.Strategy.EstimateTokens(subset)
+	tokens = strategy.EstimateTokens(subset)
 
-	window := cm.Strategy.getContextWindow()
+	window := strategy.getContextWindow()
 	safetyLimit := int(float64(window) * 0.9)
 	if tokens > safetyLimit {
 		return nil, 0, 0, fmt.Errorf("%w: summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", llm.ErrContextLimitExceeded, numTurns, tokens, safetyLimit)
