@@ -241,7 +241,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pt, provider := setupPersistenceTools()
+					pt, provider := setupPersistenceTools()
 			if tt.setup != nil {
 				tt.setup(provider.listStore, provider.tasks)
 			}

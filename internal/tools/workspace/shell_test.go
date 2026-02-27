@@ -62,7 +62,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tool.maxOutput = tt.maxOutput
+					tool.maxOutput = tt.maxOutput
 			res, err := tool.ExecuteCommand(ctx, args)
 			if err != nil {
 				t.Fatalf("ExecuteCommand failed: %v", err)
@@ -167,7 +167,7 @@ func TestShellTool_ExecuteCommand_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+					_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
 				"command": tt.command,
 				"reason":  "testing validation",
 			})
@@ -185,21 +185,21 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Empty command", func(t *testing.T) {
-		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": ""})
+			_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": ""})
 		if err == nil {
 			t.Error("expected error for empty command")
 		}
 	})
 
 	t.Run("Invalid shlex", func(t *testing.T) {
-		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": "ls 'unclosed"})
+			_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": "ls 'unclosed"})
 		if err == nil {
 			t.Error("expected error for invalid shlex")
 		}
 	})
 
 	t.Run("Invalid output path", func(t *testing.T) {
-		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+			_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
 			"command":     "ls",
 			"output_file": "/root/secret.txt",
 		})
@@ -254,7 +254,7 @@ func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := tool.resolveOutputFile(tt.input)
+					got, err := tool.resolveOutputFile(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("resolveOutputFile() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -279,7 +279,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Simple pipe", func(t *testing.T) {
-		args := map[string]interface{}{
+			args := map[string]interface{}{
 			"commands": []interface{}{"echo hello world", "grep hello"},
 			"reason":   "test pipe",
 		}
@@ -293,7 +293,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 	})
 
 	t.Run("Pipe with invalid command", func(t *testing.T) {
-		args := map[string]interface{}{
+			args := map[string]interface{}{
 			"commands": []interface{}{"echo hello", "invalid-cmd-12345"},
 			"reason":   "test pipe failure",
 		}
@@ -304,7 +304,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 	})
 
 	t.Run("Pipe with shell operators (denied)", func(t *testing.T) {
-		args := map[string]interface{}{
+			args := map[string]interface{}{
 			"commands": []interface{}{"echo hello", "grep hi > out.txt"},
 			"reason":   "test pipe security",
 		}
@@ -315,14 +315,14 @@ func TestShellTool_PipeCommands(t *testing.T) {
 	})
 
 	t.Run("Empty commands list", func(t *testing.T) {
-		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": []interface{}{}})
+			_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": []interface{}{}})
 		if err == nil {
 			t.Error("expected error for empty commands list")
 		}
 	})
 
 	t.Run("Invalid commands type", func(t *testing.T) {
-		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": "not a list"})
+			_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": "not a list"})
 		if err == nil {
 			t.Error("expected error for invalid commands type")
 		}

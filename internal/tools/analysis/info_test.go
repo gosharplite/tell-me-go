@@ -10,6 +10,7 @@ import (
 )
 
 func TestInfoManager_RenderProjectSummary(t *testing.T) {
+	t.Parallel()
 	m := &infoManager{}
 
 	modInfo := "module example.com/test\ngo 1.21\n"
@@ -45,6 +46,7 @@ func TestInfoManager_RenderProjectSummary(t *testing.T) {
 }
 
 func TestInfoManager_ExtractGenericSkeleton(t *testing.T) {
+	t.Parallel()
 	fs := persistence.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
@@ -85,6 +87,7 @@ function test() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_ = fs.WriteFile(ctx, tt.path, []byte(tt.content), 0644)
 			res, err := m.extractGenericSkeleton(ctx, tt.path)
 			if err != nil {
@@ -100,6 +103,7 @@ function test() {
 }
 
 func TestInfoManager_ResolveModuleInfo(t *testing.T) {
+	t.Parallel()
 	fs := persistence.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
@@ -126,6 +130,7 @@ func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_ = fs.WriteFile(ctx, "go.mod", []byte(tt.content), 0644)
 			got := m.resolveModuleInfo(ctx)
 			if got != tt.want {
@@ -136,6 +141,7 @@ func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 }
 
 func TestInfoManager_CollectFileStats(t *testing.T) {
+	t.Parallel()
 	fs := persistence.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
@@ -175,6 +181,7 @@ func TestInfoManager_CollectFileStats(t *testing.T) {
 }
 
 func TestInfoManager_GetProjectSummary(t *testing.T) {
+	t.Parallel()
 	fs := persistence.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
@@ -196,11 +203,13 @@ func TestInfoManager_GetProjectSummary(t *testing.T) {
 }
 
 func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
+	t.Parallel()
 	fs := persistence.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
 	t.Run("empty directory", func(t *testing.T) {
+		t.Parallel()
 		fileCounts, packages, totalLOC, err := m.collectFileStats(ctx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -211,6 +220,7 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("files without extensions", func(t *testing.T) {
+		t.Parallel()
 		_ = fs.WriteFile(ctx, "LICENSE", []byte("MIT"), 0644)
 		_ = fs.WriteFile(ctx, "Makefile", []byte("all: test"), 0644)
 
@@ -221,6 +231,7 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("skip directories", func(t *testing.T) {
+		t.Parallel()
 		_ = fs.WriteFile(ctx, "vendor/pkg/v.go", []byte("package v"), 0644)
 		_ = fs.WriteFile(ctx, "node_modules/lib/n.js", []byte("const x = 1"), 0644)
 
@@ -235,6 +246,7 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 }
 
 func TestInfoManager_GoDoc(t *testing.T) {
+	t.Parallel()
 	exec := &inframock.MockExecutor{
 		OutputBytes: []byte("GoDoc output"),
 	}

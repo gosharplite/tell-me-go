@@ -13,6 +13,7 @@ import (
 )
 
 func TestTestEventBus(t *testing.T) {
+	t.Parallel()
 	bus := &TestEventBus{}
 
 	type MyEvent struct{ ID int }
@@ -45,6 +46,7 @@ func TestTestEventBus(t *testing.T) {
 }
 
 func TestTestEventBus_Subscribe(t *testing.T) {
+	t.Parallel()
 	bus := &TestEventBus{}
 	type MyEvent struct{ ID int }
 
@@ -60,6 +62,7 @@ func TestTestEventBus_Subscribe(t *testing.T) {
 }
 
 func TestTestEventBus_NoOps(t *testing.T) {
+	t.Parallel()
 	bus := &TestEventBus{}
 	ctx := context.Background()
 
@@ -68,6 +71,7 @@ func TestTestEventBus_NoOps(t *testing.T) {
 }
 
 func TestCountingEventBus(t *testing.T) {
+	t.Parallel()
 	bus := NewCountingEventBus()
 	type MyEvent struct{}
 

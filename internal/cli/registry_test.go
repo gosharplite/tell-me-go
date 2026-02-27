@@ -8,7 +8,9 @@ import (
 )
 
 func TestRegistry(t *testing.T) {
+	t.Parallel()
 	// Dummy factory
+
 	factory1 := func(ctx *context) command { return nil }
 	factory2 := func(ctx *context) command { return nil }
 

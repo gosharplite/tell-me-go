@@ -155,7 +155,7 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockJiraClient)
+					mockClient := new(mockJiraClient)
 			m := newjiraManager(nil, mockClient)
 			m.provider.baseDelay = 1 * time.Microsecond
 
@@ -283,7 +283,7 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(mockJiraClient)
+					mockClient := new(mockJiraClient)
 			m := newjiraManager(nil, mockClient)
 			m.provider.baseDelay = 1 * time.Microsecond
 
@@ -308,7 +308,7 @@ func TestJiraManager_ParseADF(t *testing.T) {
 	m := newjiraManager(nil, nil)
 
 	t.Run("Complex ADF", func(t *testing.T) {
-		adf := map[string]interface{}{
+			adf := map[string]interface{}{
 			"type": "doc",
 			"content": []interface{}{
 				map[string]interface{}{
@@ -339,11 +339,11 @@ func TestJiraManager_ParseADF(t *testing.T) {
 	})
 
 	t.Run("Empty ADF", func(t *testing.T) {
-		assert.Equal(t, "", m.parseADF(nil))
+			assert.Equal(t, "", m.parseADF(nil))
 	})
 
 	t.Run("Text followed by Paragraph", func(t *testing.T) {
-		adf := []interface{}{
+			adf := []interface{}{
 			map[string]interface{}{"type": "text", "text": "Plain"},
 			map[string]interface{}{"type": "paragraph", "content": []interface{}{
 				map[string]interface{}{"type": "text", "text": "Para"},
@@ -354,7 +354,7 @@ func TestJiraManager_ParseADF(t *testing.T) {
 	})
 
 	t.Run("Heading Newline Logic", func(t *testing.T) {
-		adf := map[string]interface{}{
+			adf := map[string]interface{}{
 			"type": "doc",
 			"content": []interface{}{
 				map[string]interface{}{"type": "heading", "content": []interface{}{map[string]interface{}{"type": "text", "text": "H1"}}},
@@ -366,7 +366,7 @@ func TestJiraManager_ParseADF(t *testing.T) {
 	})
 
 	t.Run("Deeply Nested ADF", func(t *testing.T) {
-		adf := map[string]interface{}{
+			adf := map[string]interface{}{
 			"type": "paragraph",
 			"content": []interface{}{
 				map[string]interface{}{
@@ -385,7 +385,7 @@ func TestJiraManager_ParseADF(t *testing.T) {
 	})
 
 	t.Run("Missing Fields", func(t *testing.T) {
-		adf := map[string]interface{}{
+			adf := map[string]interface{}{
 			"type": "paragraph",
 			"content": []interface{}{
 				map[string]interface{}{"type": "text"},     // missing "text"
@@ -400,7 +400,7 @@ func TestJiraManager_ParseADF(t *testing.T) {
 	})
 
 	t.Run("Invalid Content Type", func(t *testing.T) {
-		adf := map[string]interface{}{
+			adf := map[string]interface{}{
 			"type":    "paragraph",
 			"content": "not a slice",
 		}
@@ -409,7 +409,7 @@ func TestJiraManager_ParseADF(t *testing.T) {
 	})
 
 	t.Run("Non-string type or text", func(t *testing.T) {
-		adf := map[string]interface{}{
+			adf := map[string]interface{}{
 			"type": 123,
 			"content": []interface{}{
 				map[string]interface{}{"type": "text", "text": 456},
@@ -419,11 +419,11 @@ func TestJiraManager_ParseADF(t *testing.T) {
 	})
 
 	t.Run("Unsupported Node Type", func(t *testing.T) {
-		assert.Equal(t, "", m.parseADF(123))
+			assert.Equal(t, "", m.parseADF(123))
 	})
 
 	t.Run("Slice of Nodes", func(t *testing.T) {
-		adf := []interface{}{
+			adf := []interface{}{
 			map[string]interface{}{"type": "text", "text": "One "},
 			map[string]interface{}{"type": "text", "text": "Two"},
 		}
@@ -434,7 +434,7 @@ func TestJiraManager_ParseADF(t *testing.T) {
 
 func TestJiraManager_Constructor(t *testing.T) {
 	t.Run("Default Client", func(t *testing.T) {
-		m := newjiraManager(nil, nil)
+			m := newjiraManager(nil, nil)
 		assert.NotNil(t, m.client)
 	})
 }
@@ -444,13 +444,13 @@ func TestJiraManager_EdgeCases(t *testing.T) {
 	m := newjiraManager(nil, nil)
 
 	t.Run("Invalid Base URL Search", func(t *testing.T) {
-		_, err := m.jiraSearchIssues(context.Background(), map[string]interface{}{"jql": "test"})
+			_, err := m.jiraSearchIssues(context.Background(), map[string]interface{}{"jql": "test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid base url")
 	})
 
 	t.Run("Invalid Base URL Get", func(t *testing.T) {
-		_, err := m.jiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"})
+			_, err := m.jiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid base url")
 	})

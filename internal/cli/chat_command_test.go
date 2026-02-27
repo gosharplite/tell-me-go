@@ -79,6 +79,7 @@ func (m *mockTracker) GetStats(ctx stdctx.Context) (domain_pricing.UsageStats, f
 }
 
 func TestChatCommand_Execute(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "assistant.yaml")
 	if err := os.WriteFile(cfgPath, []byte("AIMODEL: test\nMODE: dev"), 0644); err != nil {

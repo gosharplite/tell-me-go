@@ -10,10 +10,12 @@ import (
 )
 
 func TestRealExecutor(t *testing.T) {
+	t.Parallel()
 	e := &RealExecutor{}
 	ctx := context.Background()
 
 	t.Run("Output", func(t *testing.T) {
+		t.Parallel()
 		out, err := e.Output(ctx, "echo", "hello")
 		if err != nil {
 			t.Fatalf("Output failed: %v", err)
@@ -24,6 +26,7 @@ func TestRealExecutor(t *testing.T) {
 	})
 
 	t.Run("CombinedOutput", func(t *testing.T) {
+		t.Parallel()
 		out, err := e.CombinedOutput(ctx, "echo", "world")
 		if err != nil {
 			t.Fatalf("CombinedOutput failed: %v", err)
@@ -34,6 +37,7 @@ func TestRealExecutor(t *testing.T) {
 	})
 
 	t.Run("Failure", func(t *testing.T) {
+		t.Parallel()
 		_, err := e.Output(ctx, "nonexistent-command-12345")
 		if err == nil {
 			t.Error("expected error for nonexistent command, got nil")

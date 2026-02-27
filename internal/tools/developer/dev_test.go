@@ -53,6 +53,7 @@ func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.Sec
 }
 
 func TestCheckVulnerabilities(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		lookPathErr  error
@@ -90,6 +91,7 @@ func TestCheckVulnerabilities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			m, executor, _ := setupDevManager(t)
 			executor.lookPathFunc = func(file string) (string, error) {
 				return "/usr/bin/" + file, tt.lookPathErr
@@ -138,6 +140,7 @@ func setupCoverageMock(t *testing.T, m *devManager, executor *mockDevExecutor, e
 }
 
 func TestGetCoverage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		executeOut string
@@ -191,6 +194,7 @@ func TestGetCoverage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			m, executor, _ := setupDevManager(t)
 			setupCoverageMock(t, m, executor, tt.executeOut, tt.executeErr, tt.summaryOut, tt.summaryErr, tt.tempErr)
 
@@ -207,6 +211,7 @@ func TestGetCoverage(t *testing.T) {
 }
 
 func TestGoTidy(t *testing.T) {
+	t.Parallel()
 	m, _, _ := setupDevManager(t)
 
 	res, err := m.goTidy(context.Background(), nil)
@@ -219,6 +224,7 @@ func TestGoTidy(t *testing.T) {
 }
 
 func TestRunBenchmark(t *testing.T) {
+	t.Parallel()
 	m, executor, _ := setupDevManager(t)
 	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("BenchmarkResult"), nil
@@ -234,6 +240,7 @@ func TestRunBenchmark(t *testing.T) {
 }
 
 func TestRunLinter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		lookPath   string
@@ -270,6 +277,7 @@ func TestRunLinter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			m, executor, _ := setupDevManager(t)
 			executor.lookPathFunc = func(file string) (string, error) {
 				if file == tt.lookPath {
@@ -297,6 +305,7 @@ func TestRunLinter(t *testing.T) {
 }
 
 func TestGoTidy_Errors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		executeErr error
@@ -316,6 +325,7 @@ func TestGoTidy_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			m, executor, _ := setupDevManager(t)
 			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				if args[0] == tt.cmdFail || (len(args) > 1 && args[1] == tt.cmdFail) {
@@ -333,6 +343,7 @@ func TestGoTidy_Errors(t *testing.T) {
 }
 
 func TestRunBenchmark_Error(t *testing.T) {
+	t.Parallel()
 	m, executor, _ := setupDevManager(t)
 	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("error output"), errors.New("benchmark failed")
@@ -345,6 +356,7 @@ func TestRunBenchmark_Error(t *testing.T) {
 }
 
 func TestRunTests(t *testing.T) {
+	t.Parallel()
 	m, executor, sm := setupDevManager(t)
 	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("PASS"), nil
@@ -372,6 +384,7 @@ func TestRunTests(t *testing.T) {
 }
 
 func TestRunTests_Violations(t *testing.T) {
+	t.Parallel()
 	m, _, _ := setupDevManager(t)
 
 	tests := []struct {
@@ -394,6 +407,7 @@ func TestRunTests_Violations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := m.runTests(context.Background(), map[string]interface{}{"command": tt.command})
 			if err == nil {
 				t.Errorf("expected error for %s, got nil", tt.name)
@@ -403,6 +417,7 @@ func TestRunTests_Violations(t *testing.T) {
 }
 
 func TestRunTests_Failure(t *testing.T) {
+	t.Parallel()
 	m, executor, _ := setupDevManager(t)
 	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("FAIL"), errors.New("exit status 1")
@@ -415,6 +430,7 @@ func TestRunTests_Failure(t *testing.T) {
 }
 
 func TestNewDevManager(t *testing.T) {
+	t.Parallel()
 	interactor := &security.MockInteractor{}
 	sm := security.NewSecurityManager(interactor)
 	validator := security.NewCommandValidator(sm, interactor)
@@ -424,6 +440,7 @@ func TestNewDevManager(t *testing.T) {
 }
 
 func TestAuthorizeAction_Error(t *testing.T) {
+	t.Parallel()
 	m, _, sm := setupDevManager(t)
 	interactor := sm.GetInteractor().(*security.MockInteractor)
 	interactor.Err = errors.New("auth failure")
@@ -439,6 +456,7 @@ func TestAuthorizeAction_Error(t *testing.T) {
 }
 
 func TestAuthorizeAction_Denied(t *testing.T) {
+	t.Parallel()
 	m, _, sm := setupDevManager(t)
 	interactor := sm.GetInteractor().(*security.MockInteractor)
 	interactor.Answer = "n"

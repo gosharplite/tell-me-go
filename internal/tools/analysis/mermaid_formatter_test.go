@@ -9,6 +9,7 @@ import (
 )
 
 func TestMermaidFormatter_Format(t *testing.T) {
+	t.Parallel()
 	formatter := newMermaidFormatter()
 
 	tests := []struct {
@@ -120,6 +121,7 @@ func TestMermaidFormatter_Format(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := formatter.Format(tt.frames)
 			for _, part := range tt.contains {
 				if !strings.Contains(result, part) {

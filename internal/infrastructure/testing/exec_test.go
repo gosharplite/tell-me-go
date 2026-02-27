@@ -12,7 +12,9 @@ import (
 )
 
 func TestMockExecutor(t *testing.T) {
+	t.Parallel()
 	t.Run("Output", func(t *testing.T) {
+		t.Parallel()
 		m := &MockExecutor{
 			OutputBytes: []byte("output"),
 			Error:       nil,
@@ -27,6 +29,7 @@ func TestMockExecutor(t *testing.T) {
 	})
 
 	t.Run("CombinedOutput", func(t *testing.T) {
+		t.Parallel()
 		m := &MockExecutor{
 			OutputBytes: []byte("combined"),
 			Error:       errors.New("failed"),

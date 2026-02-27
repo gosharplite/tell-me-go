@@ -25,9 +25,11 @@ func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Conte
 }
 
 func TestPolicyTool_SafePathManagement(t *testing.T) {
+	t.Parallel()
 	sm, p, ctx := setupPolicyTest(t)
 
 	t.Run("Register Safe Path", func(t *testing.T) {
+		t.Parallel()
 		path := "/tmp/safe"
 		_, err := p.RegisterSafePath(ctx, map[string]interface{}{
 			"path":   path,
@@ -51,6 +53,7 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 	})
 
 	t.Run("List Safe Paths", func(t *testing.T) {
+		t.Parallel()
 		res, _ := p.ListSafePaths(ctx, nil)
 		if !strings.Contains(res.Text, "authorized safe paths") {
 			t.Error("Expected safe paths in list")
@@ -58,6 +61,7 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 	})
 
 	t.Run("Remove Safe Path", func(t *testing.T) {
+		t.Parallel()
 		path := "/tmp/safe_to_remove"
 		_, _ = p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"})
 		_, _ = p.RemoveSafePath(ctx, map[string]interface{}{"path": path})
@@ -77,9 +81,11 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 }
 
 func TestPolicyTool_ReadPathManagement(t *testing.T) {
+	t.Parallel()
 	_, p, ctx := setupPolicyTest(t)
 
 	t.Run("Register and Remove Read Path", func(t *testing.T) {
+		t.Parallel()
 		path := "/tmp/ro"
 		_, _ = p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"})
 
@@ -96,6 +102,7 @@ func TestPolicyTool_ReadPathManagement(t *testing.T) {
 	})
 
 	t.Run("List Empty Read Paths", func(t *testing.T) {
+		t.Parallel()
 		res, _ := p.ListReadPaths(ctx, nil)
 		if !strings.Contains(res.Text, "No additional read-only paths") {
 			t.Error("Expected no read-only paths message")
@@ -104,6 +111,7 @@ func TestPolicyTool_ReadPathManagement(t *testing.T) {
 }
 
 func TestPolicyTool_BypassManagement(t *testing.T) {
+	t.Parallel()
 	sm, p, ctx := setupPolicyTest(t)
 
 	if sm.IsBypassActive() {
@@ -130,6 +138,7 @@ func TestPolicyTool_BypassManagement(t *testing.T) {
 }
 
 func TestPolicyTool_ValidationErrors(t *testing.T) {
+	t.Parallel()
 	_, p, ctx := setupPolicyTest(t)
 
 	tests := []struct {
@@ -145,6 +154,7 @@ func TestPolicyTool_ValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := tt.method(ctx, tt.args)
 			if err == nil {
 				t.Error("Expected error for missing path")
@@ -154,6 +164,7 @@ func TestPolicyTool_ValidationErrors(t *testing.T) {
 }
 
 func TestPolicyTool_DeniedInteractions(t *testing.T) {
+	t.Parallel()
 	sm, p, ctx := setupPolicyTest(t)
 	sm.SetInteractor(&MockInteractor{Answer: "n"})
 
@@ -168,6 +179,7 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res, err := tt.method(ctx, tt.args)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -180,6 +192,7 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 }
 
 func TestPolicyTool_BypassBehavior(t *testing.T) {
+	t.Parallel()
 	sm, p, ctx := setupPolicyTest(t)
 	sm.SetBypassActive(true)
 
@@ -199,6 +212,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			res, err := tt.method(ctx, tt.args)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -211,6 +225,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 }
 
 func TestPolicy_Register(t *testing.T) {
+	t.Parallel()
 	sm, _, _ := setupPolicyTest(t)
 	r := registry.New()
 	RegisterPolicy(r, sm)

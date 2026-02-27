@@ -25,6 +25,10 @@ import (
 )
 
 func TestAgent_Concurrency_ConfigRace(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow stress test in short mode")
+	}
 	// Setup
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -131,6 +135,10 @@ func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content
 }
 
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow stress test in short mode")
+	}
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
@@ -175,6 +183,10 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 }
 
 func TestContextManager_Race(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow stress test in short mode")
+	}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := &events.SimpleEventBus{}
@@ -239,6 +251,10 @@ func TestContextManager_Race(t *testing.T) {
 }
 
 func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow stress test in short mode")
+	}
 	// Setup
 	reg := registry.New()
 	bus := &events.SimpleEventBus{}

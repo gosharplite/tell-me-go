@@ -10,6 +10,7 @@ import (
 )
 
 func TestVersionCommand_Execute(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		version  string
@@ -29,6 +30,7 @@ func TestVersionCommand_Execute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var out bytes.Buffer
 			cmd := &versionCommand{
 				Version: tt.version,
@@ -48,6 +50,7 @@ func TestVersionCommand_Execute(t *testing.T) {
 }
 
 func TestVersionCommandFactory(t *testing.T) {
+	t.Parallel()
 	factory, err := get("version")
 	if err != nil {
 		t.Fatalf("get(\"version\") error = %v", err)

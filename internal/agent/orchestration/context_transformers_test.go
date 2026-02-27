@@ -17,7 +17,6 @@ import (
 )
 
 func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name       string
 		maxTurns   int
@@ -34,7 +33,7 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &slidingWindowPolicy{MaxTurns: tt.maxTurns}
+					p := &slidingWindowPolicy{MaxTurns: tt.maxTurns}
 			turns := make([][]*llm.Content, tt.historyLen)
 			keep := make([]bool, tt.historyLen)
 
@@ -51,7 +50,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Pruning occurred", func(t *testing.T) {
-		pruner := &historyPruner{
+			pruner := &historyPruner{
 			Policy: &slidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
 		}
 
@@ -77,7 +76,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 	})
 
 	t.Run("No pruning", func(t *testing.T) {
-		pruner := &historyPruner{
+			pruner := &historyPruner{
 			Policy: &slidingWindowPolicy{MaxTurns: 10},
 		}
 		req := &request{
@@ -90,7 +89,6 @@ func TestHistoryPruner_Transform(t *testing.T) {
 }
 
 func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
-	t.Parallel()
 	p := &importanceRankPolicy{}
 	history := [][]*llm.Content{
 		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
@@ -112,7 +110,6 @@ func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
 }
 
 func TestPinningPolicy_MarkTurns(t *testing.T) {
-	t.Parallel()
 	p := &pinningPolicy{}
 	history := [][]*llm.Content{
 		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
@@ -133,7 +130,6 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 }
 
 func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
-	t.Parallel()
 	p := &compositePruningPolicy{
 		Policies: []ports.PruningPolicy{
 			&slidingWindowPolicy{MaxTurns: 1},
@@ -161,7 +157,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Under limit", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+			tg := &tokenGatekeeper{
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 500},
 		}
@@ -172,7 +168,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	})
 
 	t.Run("Exceeds limit after summarization", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+			tg := &tokenGatekeeper{
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 1100}, // Always returns 1100
 			Summarizer: &mockSummarizer{
@@ -192,7 +188,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	})
 
 	t.Run("Summarization failure", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+			tg := &tokenGatekeeper{
 			MaxTokens: 2000,
 			Estimator: &mockEstimator{tokens: 950},
 			Summarizer: &mockSummarizer{
@@ -221,7 +217,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 	injector := &warningInjector{Strategy: strategy}
 
 	t.Run("Inject turn warning", func(t *testing.T) {
-		req := &request{
+			req := &request{
 			Turn: 8, // 2 remaining
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
@@ -299,7 +295,7 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 	injector := &warningInjector{Strategy: strategy}
 
 	t.Run("Inject clogged warning", func(t *testing.T) {
-		req := &request{
+			req := &request{
 			Turn: 1,
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
@@ -378,7 +374,7 @@ func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 	injector := &warningInjector{Strategy: strategy}
 
 	t.Run("Blocked triggers clogged warning", func(t *testing.T) {
-		req := &request{
+			req := &request{
 			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}}},
 		}
 		req.Metadata.FinalTokenCount = 900 // > 85%
@@ -419,7 +415,7 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tg := &tokenGatekeeper{
+					tg := &tokenGatekeeper{
 				MaxTokens: tt.maxTokens,
 				Estimator: &mockEstimator{tokens: tt.tokens},
 			}
@@ -471,7 +467,7 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("10 percent cap", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+			tg := &tokenGatekeeper{
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 901},
 		}
@@ -485,7 +481,7 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	})
 
 	t.Run("Capped by SystemContextBuffer", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+			tg := &tokenGatekeeper{
 			MaxTokens: 10000,
 			Estimator: &mockEstimator{tokens: 9001},
 		}
@@ -592,7 +588,7 @@ func TestEmptyTurnFilter_Transform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &request{History: tt.input}
+					req := &request{History: tt.input}
 			err := filter.Transform(ctx, req)
 			require.NoError(t, err)
 			require.Len(t, req.History, tt.expected)
@@ -623,7 +619,6 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 }
 
 func TestFinalContextValidator_Transform(t *testing.T) {
-	t.Parallel()
 	counter := &mockTokenCounter{}
 	strategy := NewContextStrategy(counter, nil)
 	validator := &finalContextValidator{Strategy: strategy}
@@ -641,7 +636,7 @@ func TestFinalContextValidator_Transform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			strategy.SetLimits(tt.maxTokens, 10, 20)
+					strategy.SetLimits(tt.maxTokens, 10, 20)
 			counter.tokens = tt.tokens
 
 			req := &request{
@@ -714,7 +709,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 	tg := &tokenGatekeeper{}
 
 	t.Run("No pins", func(t *testing.T) {
-		history := generateMessageHistory(20)
+			history := generateMessageHistory(20)
 		start, end, numTurns, err := tg.findSummarizableRange(context.Background(), history)
 		require.NoError(t, err)
 		require.Equal(t, 5, numTurns)
@@ -723,7 +718,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 	})
 
 	t.Run("Pin turn 0", func(t *testing.T) {
-		history := generateMessageHistory(20)
+			history := generateMessageHistory(20)
 		history[0].Pinned = true
 		start, _, _, err := tg.findSummarizableRange(context.Background(), history)
 		require.NoError(t, err)
@@ -731,7 +726,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 	})
 
 	t.Run("All pinned", func(t *testing.T) {
-		history := generateMessageHistory(20)
+			history := generateMessageHistory(20)
 		for i := range history {
 			history[i].Pinned = true
 		}
@@ -807,7 +802,7 @@ func TestApplySummaryToHistory_ModelMerging(t *testing.T) {
 
 func TestApplySummaryToHistory_Merging(t *testing.T) {
 	t.Run("Combined Merging", func(t *testing.T) {
-		history := []*llm.Content{
+			history := []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
 			{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
@@ -837,12 +832,12 @@ func TestApplySummaryToHistory_Merging(t *testing.T) {
 
 func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 	t.Run("Empty History", func(t *testing.T) {
-		got := applySummaryToHistory([]*llm.Content{}, 0, 0, "sum")
+			got := applySummaryToHistory([]*llm.Content{}, 0, 0, "sum")
 		require.Len(t, got, 2)
 	})
 
 	t.Run("Start=0, following is user", func(t *testing.T) {
-		history := []*llm.Content{
+			history := []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
 		}
 		got := applySummaryToHistory(history, 0, 0, "sum")
@@ -850,7 +845,7 @@ func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("End=Len, previous is model", func(t *testing.T) {
-		history := []*llm.Content{
+			history := []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
 		}
@@ -922,14 +917,14 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 	strategy.setTieredThreshold(500)
 
 	t.Run("Not enough history", func(t *testing.T) {
-		tg := &tokenGatekeeper{Estimator: strategy}
+			tg := &tokenGatekeeper{Estimator: strategy}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		_, _ = tg.handleTieredThreshold(ctx, req)
 		require.True(t, req.Metadata.MaintenanceBlocked)
 	})
 
 	t.Run("Critical error", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+			tg := &tokenGatekeeper{
 			Estimator: strategy,
 			Summarizer: &mockSummarizer{
 				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
@@ -1137,7 +1132,7 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &request{History: tt.history}
+					req := &request{History: tt.history}
 			err := repairer.Transform(ctx, req)
 			require.NoError(t, err)
 			require.Len(t, req.History, tt.wantLen)
@@ -1154,12 +1149,12 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 
 func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 	t.Run("groupTurns with nil", func(t *testing.T) {
-		turns, err := groupTurns(context.Background(), nil)
+			turns, err := groupTurns(context.Background(), nil)
 		require.NoError(t, err)
 		require.Nil(t, turns)
 	})
 	t.Run("groupTurns with empty", func(t *testing.T) {
-		turns, err := groupTurns(context.Background(), []*llm.Content{})
+			turns, err := groupTurns(context.Background(), []*llm.Content{})
 		require.NoError(t, err)
 		require.Nil(t, turns)
 	})
@@ -1174,7 +1169,7 @@ func TestContentCleaner_Transform(t *testing.T) {
 	cleaner := &contentCleaner{}
 
 	t.Run("Clean empty parts", func(t *testing.T) {
-		req := &request{
+			req := &request{
 			History: []*llm.Content{
 				{
 					Role: "user",
@@ -1192,7 +1187,7 @@ func TestContentCleaner_Transform(t *testing.T) {
 	})
 
 	t.Run("Fallback for completely empty content", func(t *testing.T) {
-		req := &request{
+			req := &request{
 			History: []*llm.Content{
 				{
 					Role: "model",
@@ -1232,6 +1227,7 @@ func TestTransientMerger_Transform(t *testing.T) {
 
 func TestCleanContent_NilSafety(t *testing.T) {
 	// This should not panic after the fix
+
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("cleanContent(nil) panicked: %v", r)

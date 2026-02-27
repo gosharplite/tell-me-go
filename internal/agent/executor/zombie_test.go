@@ -32,7 +32,12 @@ func (m *mockZombieRegistry) IsLongRunning(name string) bool { return false }
 func (m *mockZombieRegistry) IsSerial(name string) bool      { return false }
 
 func TestToolExecutor_GoroutineLeak(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 	// A simple tool that sleeps longer than the timeout
+
 	hangingTool := &domaintools.ToolDeclaration{
 		Name:        "hanging_tool",
 		Description: "I hang forever",

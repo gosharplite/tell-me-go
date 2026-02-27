@@ -69,7 +69,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := map[string]interface{}{
+					args := map[string]interface{}{
 				"action": tt.action,
 				"index":  tt.index,
 			}
@@ -164,7 +164,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("valid summarization", func(t *testing.T) {
-		args := map[string]interface{}{
+			args := map[string]interface{}{
 			"turns": 1.0,
 			"focus": "test focus",
 		}
@@ -182,7 +182,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 	})
 
 	t.Run("invalid turns", func(t *testing.T) {
-		args := map[string]interface{}{
+			args := map[string]interface{}{
 			"turns": 0.0,
 		}
 		_, err := it.summarizeHistory(ctx, args)
@@ -192,7 +192,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 	})
 
 	t.Run("missing arguments", func(t *testing.T) {
-		args := map[string]interface{}{}
+			args := map[string]interface{}{}
 		_, err := it.summarizeHistory(ctx, args)
 		if err == nil {
 			t.Fatal("expected error for missing arguments, got nil")

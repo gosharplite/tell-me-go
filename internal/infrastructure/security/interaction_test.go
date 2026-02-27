@@ -42,6 +42,7 @@ func (s *spyInteractor) Confirm(ctx context.Context, message string) (bool, erro
 }
 
 func TestInteractionHandler_ConfirmAction(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		action     string
@@ -147,6 +148,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			spy := &spyInteractor{}
 			if tt.mockSetup != nil {
@@ -175,6 +177,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 }
 
 func TestInteractionHandler_ReadMethods(t *testing.T) {
+	t.Parallel()
 	spy := &spyInteractor{}
 	spy.Answer = "hello"
 	handler := newInteractionHandler(spy, nil)
@@ -198,6 +201,7 @@ func TestInteractionHandler_ReadMethods(t *testing.T) {
 }
 
 func TestInteractionHandler_SetInteractor(t *testing.T) {
+	t.Parallel()
 	spy1 := &spyInteractor{}
 	handler := newInteractionHandler(spy1, nil)
 	if handler.interactor != spy1 {
@@ -212,6 +216,7 @@ func TestInteractionHandler_SetInteractor(t *testing.T) {
 }
 
 func TestNoOpInteractor(t *testing.T) {
+	t.Parallel()
 	ni := &noOpInteractor{}
 	ctx := context.Background()
 
@@ -234,6 +239,7 @@ func TestNoOpInteractor(t *testing.T) {
 }
 
 func TestMockInteractor_EdgeCases(t *testing.T) {
+	t.Parallel()
 	m := &MockInteractor{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -266,6 +272,7 @@ func TestMockInteractor_EdgeCases(t *testing.T) {
 }
 
 func TestInteractionHandler_TerminalLocking(t *testing.T) {
+	t.Parallel()
 	handler := newInteractionHandler(&noOpInteractor{}, nil)
 	// Just verify they don't panic and can be called
 	handler.TerminalLock()
@@ -273,6 +280,7 @@ func TestInteractionHandler_TerminalLocking(t *testing.T) {
 }
 
 func TestMockInteractor_Errors(t *testing.T) {
+	t.Parallel()
 	m := &MockInteractor{Err: fmt.Errorf("read error")}
 	ctx := context.Background()
 

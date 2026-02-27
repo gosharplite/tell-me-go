@@ -15,6 +15,7 @@ import (
 )
 
 func TestToolPanicSerial(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			panic("simulated serial tool panic")
@@ -46,6 +47,7 @@ func TestToolPanicSerial(t *testing.T) {
 }
 
 func TestToolPanicParallel(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			if name == "panic_tool" {
@@ -99,7 +101,9 @@ func TestToolPanicParallel(t *testing.T) {
 }
 
 func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
+	t.Parallel()
 	// Mock registry where resolveTool or something else inside IdentifyConsentItems panics
+
 	reg := &mockToolRegistry{
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			panic("simulated auth panic")
@@ -121,6 +125,10 @@ func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
 }
 
 func TestZombieToolTimeout(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 	hangingTool := &tools.ToolDeclaration{
 		Name: "zombie_tool",
 	}
@@ -160,6 +168,7 @@ func TestZombieToolTimeout(t *testing.T) {
 }
 
 func TestExecuteSerialTaskRecovery(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			panic("panic during serial resolve")
@@ -184,6 +193,7 @@ func TestExecuteSerialTaskRecovery(t *testing.T) {
 }
 
 func TestEnqueueParallelTaskRecovery(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			panic("panic during parallel resolve")

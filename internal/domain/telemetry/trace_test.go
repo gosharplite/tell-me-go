@@ -29,7 +29,7 @@ func TestNewTurnTrace(t *testing.T) {
 
 func TestContextPropagation(t *testing.T) {
 	t.Run("ValidTrace", func(t *testing.T) {
-		expected := NewTurnTrace()
+			expected := NewTurnTrace()
 		ctx := ContextWithTrace(context.Background(), expected)
 		actual := TraceFromContext(ctx)
 		if actual != expected {
@@ -38,14 +38,14 @@ func TestContextPropagation(t *testing.T) {
 	})
 
 	t.Run("EmptyContext", func(t *testing.T) {
-		actual := TraceFromContext(context.Background())
+			actual := TraceFromContext(context.Background())
 		if actual != nil {
 			t.Errorf("expected nil trace, got %v", actual)
 		}
 	})
 
 	t.Run("WrongValueType", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), traceKey, "not-a-trace")
+			ctx := context.WithValue(context.Background(), traceKey, "not-a-trace")
 		actual := TraceFromContext(ctx)
 		if actual != nil {
 			t.Errorf("expected nil trace for wrong type, got %v", actual)
@@ -55,13 +55,13 @@ func TestContextPropagation(t *testing.T) {
 
 func TestTurnTrace_RecordToolExecution(t *testing.T) {
 	t.Run("NilReceiver", func(t *testing.T) {
-		var tt *TurnTrace
+			var tt *TurnTrace
 		// Should not panic
 		tt.RecordToolExecution(ToolExecutionTrace{ToolName: "test"})
 	})
 
 	t.Run("SingleExecution", func(t *testing.T) {
-		tt := NewTurnTrace()
+			tt := NewTurnTrace()
 		trace := ToolExecutionTrace{
 			ToolName:  "test-tool",
 			StartTime: time.Now(),
@@ -79,7 +79,7 @@ func TestTurnTrace_RecordToolExecution(t *testing.T) {
 	})
 
 	t.Run("Concurrency", func(t *testing.T) {
-		tt := NewTurnTrace()
+			tt := NewTurnTrace()
 		const count = 100
 		var wg sync.WaitGroup
 		wg.Add(count)
@@ -135,7 +135,7 @@ func TestTurnTrace_CumulativeToolDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var trace *TurnTrace
+					var trace *TurnTrace
 			if !tt.isNilTrace {
 				trace = NewTurnTrace()
 				for _, te := range tt.traces {

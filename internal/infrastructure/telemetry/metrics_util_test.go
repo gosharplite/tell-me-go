@@ -16,6 +16,7 @@ import (
 )
 
 func TestParseUsage_Robustness(t *testing.T) {
+	t.Parallel()
 	pricingData := domain_pricing.PricingData{
 		Models: map[string]domain_pricing.ModelPricing{
 			"gpt-4": {Miss: 10.0, Comp: 30.0}, // $10 per 1M input, $30 per 1M output
@@ -91,6 +92,7 @@ func TestParseUsage_Robustness(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			path := createTempLogFile(t, tt.content)
 			stats, totalCost, model, timestamp, err := parseUsage(path, pricingData, "gpt-4")
 			if err != nil {
@@ -137,6 +139,7 @@ func assertParseResults(t *testing.T, cost, wantCost float64, stats domain_prici
 }
 
 func TestParseUsage_InvalidPath(t *testing.T) {
+	t.Parallel()
 	_, _, _, _, err := parseUsage("non-existent-file.log", domain_pricing.PricingData{}, "gpt-4")
 	if err == nil {
 		t.Error("expected error for non-existent file, got nil")
@@ -144,6 +147,7 @@ func TestParseUsage_InvalidPath(t *testing.T) {
 }
 
 func TestParseUsage_EmptyFile(t *testing.T) {
+	t.Parallel()
 	path := createTempLogFile(t, "")
 	stats, totalCost, model, timestamp, err := parseUsage(path, domain_pricing.PricingData{}, "gpt-4")
 	if err != nil {
@@ -154,7 +158,9 @@ func TestParseUsage_EmptyFile(t *testing.T) {
 }
 
 func TestParseUsage_LargeLine(t *testing.T) {
+	t.Parallel()
 	// Create a log entry larger than the default 64KB limit (e.g., 70KB)
+
 	largeField := strings.Repeat("a", 70*1024)
 	content := `{"model":"gpt-4", "prompt_tokens":100, "thinking_tokens":100, "large_data":"` + largeField + `", "cost":0.5}` + "\n"
 	path := createTempLogFile(t, content)
@@ -179,7 +185,9 @@ func TestParseUsage_LargeLine(t *testing.T) {
 }
 
 func TestParseUsage_VeryLargeLine(t *testing.T) {
+	t.Parallel()
 	// Create a log entry larger than the previous 1MB limit (e.g., 2MB)
+
 	largeField := strings.Repeat("a", 2*1024*1024)
 	content := `{"model":"gpt-4", "prompt_tokens":100, "large_data":"` + largeField + `", "cost":0.5}` + "\n"
 	path := createTempLogFile(t, content)
@@ -204,6 +212,7 @@ func TestParseUsage_VeryLargeLine(t *testing.T) {
 }
 
 func TestCalculate_ThinkingRate(t *testing.T) {
+	t.Parallel()
 	pricing := domain_pricing.PricingData{
 		Models: map[string]domain_pricing.ModelPricing{
 			"ds-reasoner": {Miss: 0.27, Comp: 1.10, Thinking: 1.10},
@@ -235,6 +244,7 @@ func TestCalculate_ThinkingRate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			p := pricing.GetModelPricing(tt.modelName)
 			calc := &domain_pricing.CostCalculator{Pricing: pricing, Model: p}
 			breakdown := calc.Calculate(tt.stats)
@@ -248,6 +258,7 @@ func TestCalculate_ThinkingRate(t *testing.T) {
 }
 
 func TestGetPricing(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	assetsDir := filepath.Join(tmpDir, "assets")
 	if err := os.MkdirAll(assetsDir, 0755); err != nil {
@@ -256,6 +267,7 @@ func TestGetPricing(t *testing.T) {
 	outputDir := filepath.Join(tmpDir, "output")
 
 	t.Run("Load from file", func(t *testing.T) {
+		t.Parallel()
 		pricingFile := filepath.Join(assetsDir, "pricing.json")
 		content := `{
 			"updated_at": "2026-02-03T12:00:00Z",
@@ -281,7 +293,9 @@ func TestGetPricing(t *testing.T) {
 	})
 
 	t.Run("Fallback on missing file", func(t *testing.T) {
-		// Use a different temp dir without assets
+		t.Parallel()
+	// Use a different temp dir without assets
+
 		anotherDir := t.TempDir()
 		pd := GetPricing(context.Background(), nil, filepath.Join(anotherDir, "output"))
 		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
@@ -290,6 +304,7 @@ func TestGetPricing(t *testing.T) {
 	})
 
 	t.Run("Fallback on invalid JSON", func(t *testing.T) {
+		t.Parallel()
 		pricingFile := filepath.Join(assetsDir, "pricing.json")
 		if err := os.WriteFile(pricingFile, []byte("invalid json"), 0644); err != nil {
 			t.Fatalf("failed to write invalid pricing file: %v", err)

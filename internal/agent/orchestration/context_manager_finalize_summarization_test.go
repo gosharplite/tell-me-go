@@ -85,7 +85,7 @@ func TestFinalizeSummarization_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runFinalizeSummarizationErrorTest(t, tt.archiveErr, tt.setContentsErr, tt.expectedErr, tt.checkSetContents)
+					runFinalizeSummarizationErrorTest(t, tt.archiveErr, tt.setContentsErr, tt.expectedErr, tt.checkSetContents)
 		})
 	}
 }

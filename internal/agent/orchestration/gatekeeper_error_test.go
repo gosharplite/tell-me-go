@@ -27,7 +27,6 @@ func (m *mockFailingSummarizer) SummarizeRange(ctx context.Context, turns int, f
 }
 
 func TestGatekeeper_ErrorHandling(t *testing.T) {
-	t.Parallel()
 
 	ctx := context.Background()
 	req := &ports.ContextRequest{

@@ -191,6 +191,7 @@ func F() {
 }
 
 func TestTypeManager_FindDefinitions(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
@@ -215,6 +216,7 @@ func MyFunc() {}
 }
 
 func TestTypeManager_ListImplementations_Error(t *testing.T) {
+	t.Parallel()
 	idx, _ := newIndexer(".")
 	m := newTypeManager(idx, nil, &mockSecurityProvider{})
 	res, err := m.ListImplementations(context.Background(), map[string]interface{}{})
@@ -227,6 +229,7 @@ func TestTypeManager_ListImplementations_Error(t *testing.T) {
 }
 
 func TestComplexityAnalyzer_Analyze_Empty(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	analyzer := newComplexityAnalyzer(newASTCache(), &mockSecurityProvider{})
 	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir})
@@ -239,6 +242,7 @@ func TestComplexityAnalyzer_Analyze_Empty(t *testing.T) {
 }
 
 func TestTypeManager_ListSymbols_ExportedOnly(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)

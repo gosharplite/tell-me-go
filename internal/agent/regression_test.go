@@ -20,6 +20,7 @@ import (
 )
 
 func TestAgent_EmptyPartProtection(t *testing.T) {
+	t.Parallel()
 	// This test verifies that the orchestration pipeline prunes empty parts
 	// to prevent API errors.
 
@@ -57,6 +58,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 }
 
 func TestAgent_InLoopPruning(t *testing.T) {
+	t.Parallel()
 	// Test that the agent prunes history when it reaches the limit
 	// via the orchestration pipeline.
 
@@ -89,7 +91,9 @@ func TestAgent_InLoopPruning(t *testing.T) {
 }
 
 func TestAgent_MultiModalFlow(t *testing.T) {
+	t.Parallel()
 	// Setup
+
 	registry := internaltools.New()
 	registry.Register(&tools.ToolDeclaration{
 		Name: "get_image",

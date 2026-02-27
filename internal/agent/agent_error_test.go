@@ -13,7 +13,9 @@ import (
 )
 
 func TestAgent_ConfigFailure(t *testing.T) {
+	t.Parallel()
 	// Create a context that we can cancel
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	hm := &mockHistoryManager{

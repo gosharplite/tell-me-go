@@ -16,6 +16,7 @@ import (
 )
 
 func TestSimpleEventBus_Race(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	t.Cleanup(func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
@@ -49,6 +50,7 @@ func TestSimpleEventBus_Race(t *testing.T) {
 }
 
 func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	count := 0
 	mu := sync.Mutex{}
@@ -77,6 +79,7 @@ func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	t.Cleanup(func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
@@ -111,6 +114,7 @@ func TestSimpleEventBus_Flush(t *testing.T) {
 }
 
 func TestSimpleEventBus_Shutdown_ContextCancelled(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	block := make(chan struct{})
 	ready := make(chan struct{})
@@ -132,6 +136,7 @@ func TestSimpleEventBus_Shutdown_ContextCancelled(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_ClosedBus(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	_ = bus.Shutdown(context.Background())
 
@@ -142,6 +147,7 @@ func TestSimpleEventBus_Flush_ClosedBus(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	block := make(chan struct{})
 	ready := make(chan struct{})
@@ -166,6 +172,7 @@ func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
@@ -194,6 +201,7 @@ func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
 }
 
 func TestSimpleEventBus_Subscribe_ClosedBus(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	_ = bus.Shutdown(context.Background())
 
@@ -205,6 +213,7 @@ func TestSimpleEventBus_Subscribe_ClosedBus(t *testing.T) {
 }
 
 func TestSimpleEventBus_Publish_ClosedBus(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	_ = bus.Shutdown(context.Background())
 
@@ -213,6 +222,7 @@ func TestSimpleEventBus_Publish_ClosedBus(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	err := bus.Flush(context.Background())
 	if err != nil {
@@ -221,6 +231,7 @@ func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
 }
 
 func TestSimpleEventBus_BufferEviction(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
@@ -270,6 +281,7 @@ func TestSimpleEventBus_BufferEviction(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
@@ -306,6 +318,7 @@ func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
 }
 
 func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 	block := make(chan struct{})
 
@@ -327,7 +340,9 @@ func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
+	t.Parallel()
 	// Initialize a bus using NewSimpleEventBusWithCapacity(1).
+
 	bus := events.NewSimpleEventBusWithCapacity(1)
 
 	// Create a subscriber that blocks intentionally (so events queue up).
@@ -377,6 +392,7 @@ func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus()
 
 	// Block processing to ensure Flush blocks.
@@ -463,6 +479,7 @@ func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
 }
 
 func TestSimpleEventBus_DroppedEventsMetric(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBusWithCapacity(1)
 
 	// Create a subscriber that blocks.

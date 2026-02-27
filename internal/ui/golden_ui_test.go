@@ -24,7 +24,7 @@ func TestUIRendererGolden(t *testing.T) {
 	fixedTime, _ := time.Parse("15:04:05", "12:00:00")
 
 	t.Run("LogTurnStatus_PreCall", func(t *testing.T) {
-		stderr.Reset()
+			stderr.Reset()
 		renderer.LogTurnStatus(events.TurnStatus{
 			Timestamp:        fixedTime,
 			CurrentTurns:     1,
@@ -37,7 +37,7 @@ func TestUIRendererGolden(t *testing.T) {
 	})
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
-		stderr.Reset()
+			stderr.Reset()
 		renderer.LogTurnStatus(events.TurnStatus{
 			Timestamp:        fixedTime,
 			CurrentTurns:     1,
@@ -66,7 +66,7 @@ func TestUIRendererGolden(t *testing.T) {
 	})
 
 	t.Run("LogTurnStatus_PostCall_Cliff", func(t *testing.T) {
-		stderr.Reset()
+			stderr.Reset()
 		renderer.LogTurnStatus(events.TurnStatus{
 			Timestamp:        fixedTime,
 			CurrentTurns:     1,
@@ -88,7 +88,7 @@ func TestUIRendererGolden(t *testing.T) {
 	})
 
 	t.Run("LogTurnStatus_PostCall_Warning", func(t *testing.T) {
-		stderr.Reset()
+			stderr.Reset()
 		renderer.LogTurnStatus(events.TurnStatus{
 			Timestamp:        fixedTime,
 			CurrentTurns:     1,
@@ -110,7 +110,7 @@ func TestUIRendererGolden(t *testing.T) {
 	})
 
 	t.Run("LogToolResult", func(t *testing.T) {
-		stderr.Reset()
+			stderr.Reset()
 		// Mock the time in the function by using a regex replacement in verifyGolden
 		renderer.LogToolResult("list_files", tools.ToolResult{Text: "file1.go\nfile2.go"}, true)
 		verifyGolden(t, "tool_result.golden", stderr.String())

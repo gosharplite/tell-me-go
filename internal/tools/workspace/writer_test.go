@@ -159,7 +159,7 @@ func TestWriteFile_Failures(t *testing.T) {
 	sm.RegisterSafePath("/mock")
 
 	t.Run("mkdir failure", func(t *testing.T) {
-		mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
+			mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
 		w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
 		_, err := w.writeFile(context.Background(), map[string]interface{}{
 			"filepath": "/mock/any/file.txt",
@@ -172,7 +172,7 @@ func TestWriteFile_Failures(t *testing.T) {
 	})
 
 	t.Run("write failure", func(t *testing.T) {
-		mfs := &mockFS{writeErr: fmt.Errorf("write error")}
+			mfs := &mockFS{writeErr: fmt.Errorf("write error")}
 		w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
 		tempDir := t.TempDir()
 		sm.RegisterSafePath(tempDir)
@@ -266,7 +266,7 @@ func TestAppendText_Failures(t *testing.T) {
 	sm.RegisterSafePath("/mock")
 
 	t.Run("open failure", func(t *testing.T) {
-		mfs := &mockFS_Append{FileSystem: infrapersistence.NewOSFileSystem(), openErr: fmt.Errorf("open error")}
+			mfs := &mockFS_Append{FileSystem: infrapersistence.NewOSFileSystem(), openErr: fmt.Errorf("open error")}
 		w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
 		_, err := w.appendText(context.Background(), map[string]interface{}{
 			"filepath": "/mock/any.txt",
@@ -296,14 +296,14 @@ func TestUndoFileChange_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("no backups", func(t *testing.T) {
-		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1})
+			_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1})
 		if err == nil || !strings.Contains(err.Error(), "no history found") {
 			t.Errorf("expected 'no history found' error, got %v", err)
 		}
 	})
 
 	t.Run("invalid n", func(t *testing.T) {
-		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 0})
+			_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 0})
 		if err == nil {
 			t.Error("expected error for n <= 0")
 		}

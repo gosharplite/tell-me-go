@@ -11,6 +11,7 @@ import (
 )
 
 func TestPathPolicy_ValidatePath(t *testing.T) {
+	t.Parallel()
 	p := newPathPolicy()
 	cwd, _ := os.Getwd()
 	tempDir := os.TempDir()
@@ -68,6 +69,7 @@ func TestPathPolicy_ValidatePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if tt.setup != nil {
 				tt.setup()
 			}
@@ -80,6 +82,7 @@ func TestPathPolicy_ValidatePath(t *testing.T) {
 }
 
 func TestPathPolicy_Persistence(t *testing.T) {
+	t.Parallel()
 	p := newPathPolicy()
 	tmpFile := filepath.Join(t.TempDir(), "paths.json")
 	p.SetConfigFile(tmpFile, true)
@@ -110,6 +113,7 @@ func TestPathPolicy_Persistence(t *testing.T) {
 }
 
 func TestPathPolicy_SymlinkBoundary(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	realDir := filepath.Join(tmp, "real")
 	linkDir := filepath.Join(tmp, "link")
@@ -154,6 +158,7 @@ func setupSymlinkTestEnv(t *testing.T) (*pathPolicy, string) {
 }
 
 func TestPathPolicy_SymlinkBypass_DirectAccess(t *testing.T) {
+	t.Parallel()
 	p, workspace := setupSymlinkTestEnv(t)
 
 	// Test symlink to a forbidden system file
@@ -176,6 +181,7 @@ func TestPathPolicy_SymlinkBypass_DirectAccess(t *testing.T) {
 }
 
 func TestPathPolicy_SymlinkBypass_ValidWorkspaceLink(t *testing.T) {
+	t.Parallel()
 	p, workspace := setupSymlinkTestEnv(t)
 
 	internalFile := filepath.Join(workspace, "internal.txt")
@@ -194,6 +200,7 @@ func TestPathPolicy_SymlinkBypass_ValidWorkspaceLink(t *testing.T) {
 }
 
 func TestPathPolicy_SymlinkBypass_NonExistentTarget(t *testing.T) {
+	t.Parallel()
 	p, workspace := setupSymlinkTestEnv(t)
 
 	// Link inside workspace to /etc (which is forbidden)
@@ -211,6 +218,7 @@ func TestPathPolicy_SymlinkBypass_NonExistentTarget(t *testing.T) {
 }
 
 func TestPathPolicy_SymlinkBypass_MultiLevelNonExistent(t *testing.T) {
+	t.Parallel()
 	p, workspace := setupSymlinkTestEnv(t)
 
 	linkToEtc := filepath.Join(workspace, "etc_link_multi")

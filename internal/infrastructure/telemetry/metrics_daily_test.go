@@ -9,6 +9,7 @@ import (
 )
 
 func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
+	t.Parallel()
 	loc := time.FixedZone("UTC-8", -8*3600)
 	now := time.Date(2026, 1, 2, 12, 0, 0, 0, loc) // Jan 2nd, 2026 Noon UTC-8
 	currentSessionID := "interactive/session1.tokens.log"
@@ -119,6 +120,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tracker := &sessionCostTracker{
 				totalCost: tt.totalCost,
 			}
@@ -131,6 +133,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 }
 
 func TestSessionIDConsistency(t *testing.T) {
+	t.Parallel()
 	mode := "interactive"
 	logFile := "/path/to/some/dir/2026-01-02-12-00-tokens.log"
 

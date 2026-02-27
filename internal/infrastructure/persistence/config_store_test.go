@@ -10,6 +10,7 @@ import (
 )
 
 func TestConfigRepository(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()
@@ -17,6 +18,7 @@ func TestConfigRepository(t *testing.T) {
 	repo := newConfigRepository(fs, file)
 
 	t.Run("Load Config", func(t *testing.T) {
+		t.Parallel()
 		content := `{"key": "val"}`
 		if err := fs.WriteFile(ctx, file, []byte(content), 0644); err != nil {
 			t.Fatal(err)
@@ -32,6 +34,7 @@ func TestConfigRepository(t *testing.T) {
 	})
 
 	t.Run("Load Non-existent File", func(t *testing.T) {
+		t.Parallel()
 		repo2 := newConfigRepository(fs, filepath.Join(tempDir, "none.json"))
 		loaded, err := repo2.GetAll(ctx)
 		if err != nil {
@@ -43,6 +46,7 @@ func TestConfigRepository(t *testing.T) {
 	})
 
 	t.Run("Get", func(t *testing.T) {
+		t.Parallel()
 		content := `{"k2": "v2"}`
 		if err := fs.WriteFile(ctx, file, []byte(content), 0644); err != nil {
 			t.Fatal(err)

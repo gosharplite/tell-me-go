@@ -15,6 +15,7 @@ import (
 )
 
 func TestSessionCostTracker(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "metrics_test")
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +65,7 @@ func TestSessionCostTracker(t *testing.T) {
 }
 
 func TestSessionCostTracker_LazyInit(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "metrics_lazy_test")
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +115,7 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 }
 
 func TestSessionCostTracker_MixedModels(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "metrics_mixed_test")
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +158,7 @@ func TestSessionCostTracker_MixedModels(t *testing.T) {
 }
 
 func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "parse_usage_test")
 	if err != nil {
 		t.Fatal(err)
@@ -205,6 +209,7 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 }
 
 func TestSessionCostTracker_ThinkingTokens(t *testing.T) {
+	t.Parallel()
 	model := domain_pricing.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
 	pricingData := domain_pricing.PricingData{
 		Models: map[string]domain_pricing.ModelPricing{

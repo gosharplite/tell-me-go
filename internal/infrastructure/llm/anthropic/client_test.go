@@ -424,7 +424,7 @@ func TestToAnthropicSchema(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := toAnthropicSchema(tt.schema)
+					got := toAnthropicSchema(tt.schema)
 
 			// Use JSON marshal/unmarshal to compare maps to avoid type issues with nested interfaces
 			gotJSON, _ := json.Marshal(got)
@@ -563,7 +563,7 @@ func TestSendChat_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.status)
 				_, _ = w.Write([]byte(tt.response))
 			}))
@@ -614,7 +614,7 @@ func TestSendChat_Timeout(t *testing.T) {
 
 func TestStreamChat_Errors(t *testing.T) {
 	t.Run("SSE Error Event", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprintf(w, "event: error\ndata: %s\n\n", `{"error": {"type": "overloaded_error", "message": "Overloaded"}}`)
 		}))
@@ -629,7 +629,7 @@ func TestStreamChat_Errors(t *testing.T) {
 	})
 
 	t.Run("HTTP Error Status", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("Service Unavailable"))
 		}))
@@ -786,7 +786,7 @@ func TestStreamPromptCaching(t *testing.T) {
 
 func TestAnthropic_InternalErrors(t *testing.T) {
 	t.Run("Authenticator Error", func(t *testing.T) {
-		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+			errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
 		c := NewClient("", "claude-3", errAuth, nil, 0, "", 0)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
@@ -795,7 +795,7 @@ func TestAnthropic_InternalErrors(t *testing.T) {
 	})
 
 	t.Run("Invalid URL", func(t *testing.T) {
-		c := NewClient(" :invalid", "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+			c := NewClient(" :invalid", "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to create request") {
 			t.Errorf("expected request creation error, got %v", err)
@@ -805,21 +805,21 @@ func TestAnthropic_InternalErrors(t *testing.T) {
 
 func TestAnthropic_EdgeCases(t *testing.T) {
 	t.Run("marshalResponse nil", func(t *testing.T) {
-		res := marshalResponse(nil)
+			res := marshalResponse(nil)
 		if res != "" {
 			t.Errorf("expected empty string, got %q", res)
 		}
 	})
 
 	t.Run("marshalResponse non-string result", func(t *testing.T) {
-		res := marshalResponse(map[string]interface{}{"result": 123})
+			res := marshalResponse(map[string]interface{}{"result": 123})
 		if res != `{"result":123}` {
 			t.Errorf("expected JSON string, got %q", res)
 		}
 	})
 
 	t.Run("partToContentBlock invalid", func(t *testing.T) {
-		c := &client{}
+			c := &client{}
 		_, ok := c.partToContentBlock(&llm.Part{}, "user")
 		if ok {
 			t.Error("expected ok=false for empty part")
@@ -827,7 +827,7 @@ func TestAnthropic_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("handleContentBlockStop invalid JSON", func(t *testing.T) {
-		c := &client{}
+			c := &client{}
 		state := &streamState{
 			toolCalls: map[int]*llm.Part{0: {FunctionCall: &llm.FunctionCall{}}},
 			toolJSONs: map[int]*strings.Builder{0: func() *strings.Builder {
@@ -844,7 +844,7 @@ func TestAnthropic_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("handleAnthropicEvent unknown type", func(t *testing.T) {
-		c := &client{}
+			c := &client{}
 		err := c.handleAnthropicEvent("unknown", "", nil, nil)
 		if err != nil {
 			t.Errorf("unexpected error for unknown event: %v", err)

@@ -63,6 +63,7 @@ func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 }
 
 func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
+	t.Parallel()
 	bus := &events.SimpleEventBus{}
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -136,6 +137,7 @@ func (m *limitMockRegistry) IsLongRunning(name string) bool {
 }
 
 func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		maxTokens         int
@@ -169,6 +171,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			counter := &mockTokenCounter{tokens: tt.toolTokens}
 			strategy := orchestration.NewContextStrategy(counter, nil)
 			strategy.SetLimits(tt.maxTokens, 10, 10)

@@ -79,7 +79,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := NewContextPipeline(tt.pipeline...)
+					p := NewContextPipeline(tt.pipeline...)
 			err := p.executeWithPersistence(context.Background(), tt.req, tt.persistFn)
 			if tt.expectedErr != nil {
 				assert.ErrorIs(t, err, tt.expectedErr)
@@ -122,7 +122,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bus.events = nil
+					bus.events = nil
 			err := tg.validateHardLimits(context.Background(), &request{}, tt.tokens)
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
@@ -181,7 +181,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start, count := tg.locateCandidateBlock(tt.turns, tt.target)
+					start, count := tg.locateCandidateBlock(tt.turns, tt.target)
 			assert.Equal(t, tt.expectedStart, start)
 			assert.Equal(t, tt.expectedCount, count)
 		})

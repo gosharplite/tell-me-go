@@ -16,6 +16,10 @@ import (
 )
 
 func TestGetDailyCost_Concurrency(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow concurrency test in short mode")
+	}
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "interactive", "session.tokens.log")
 	err := os.MkdirAll(filepath.Dir(logFile), 0755)
@@ -73,9 +77,12 @@ func TestGetDailyCost_Concurrency(t *testing.T) {
 }
 
 func TestGetDailyCost_DeadlockPrevention(t *testing.T) {
-	// This test ensures that the lock ordering (t.mu -> ledgerMu)
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow concurrency test in short mode")
+	}
+	// This test ensures that the lock ordering (t.mu -> ledgerMu
 	// doesn't conflict with other paths that might use ledgerMu.
-
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "interactive", "session.tokens.log")
 	if err := os.MkdirAll(filepath.Dir(logFile), 0755); err != nil {

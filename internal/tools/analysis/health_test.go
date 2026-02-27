@@ -260,6 +260,7 @@ func (m *coverageMockExecutor) CombinedOutput(ctx context.Context, name string, 
 }
 
 func TestHealthManager_GetDetailedCoverage(t *testing.T) {
+	t.Parallel()
 	mockExec := &coverageMockExecutor{t: t}
 	hea := &healthManager{Exec: mockExec}
 

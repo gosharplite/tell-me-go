@@ -94,7 +94,7 @@ func TestNewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.mockURL != "" {
+					if tt.mockURL != "" {
 				t.Setenv("TELL_ME_MOCK_URL", tt.mockURL)
 			}
 
@@ -177,7 +177,7 @@ func TestResilientClient_WrapError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := client.wrapError(tt.err)
+					got := client.wrapError(tt.err)
 			if tt.expected == nil {
 				if got != nil {
 					t.Errorf("wrapError() = %v, want nil", got)
@@ -308,7 +308,7 @@ func TestResilientClient_Generate_AuthRefreshFail(t *testing.T) {
 
 func TestResilientClient_RetryIdempotency(t *testing.T) {
 	t.Run("No retry if data emitted in streaming", func(t *testing.T) {
-		calls := 0
+			calls := 0
 		mock := &mockLLMClient{
 			streamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 				calls++
@@ -339,7 +339,7 @@ func TestResilientClient_RetryIdempotency(t *testing.T) {
 	})
 
 	t.Run("No retry if data emitted in non-streaming", func(t *testing.T) {
-		calls := 0
+			calls := 0
 		mock := &mockLLMClient{
 			sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 				calls++
@@ -388,28 +388,28 @@ func TestResilientClient_ErrorDelegation(t *testing.T) {
 	client := NewResilientClient(mock, false)
 
 	t.Run("SendChat Error Delegation", func(t *testing.T) {
-		_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+			_, _, err := client.SendChat(context.Background(), nil, nil, nil)
 		if !errors.Is(err, mockErr) {
 			t.Errorf("Expected %v, got %v", mockErr, err)
 		}
 	})
 
 	t.Run("StreamChat Error Delegation", func(t *testing.T) {
-		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+			_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 		if !errors.Is(err, mockErr) {
 			t.Errorf("Expected %v, got %v", mockErr, err)
 		}
 	})
 
 	t.Run("RefreshAuth Error Delegation", func(t *testing.T) {
-		err := client.RefreshAuth()
+			err := client.RefreshAuth()
 		if !errors.Is(err, mockErr) {
 			t.Errorf("Expected %v, got %v", mockErr, err)
 		}
 	})
 
 	t.Run("GenerateImages Error Delegation", func(t *testing.T) {
-		_, err := client.GenerateImages(context.Background(), "model", "prompt", "image/png")
+			_, err := client.GenerateImages(context.Background(), "model", "prompt", "image/png")
 		if !errors.Is(err, mockErr) {
 			t.Errorf("Expected %v, got %v", mockErr, err)
 		}

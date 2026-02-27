@@ -15,6 +15,7 @@ import (
 )
 
 func TestTurnEngine_RetryCap(t *testing.T) {
+	t.Parallel()
 	policy := &defaultRetryPolicy{
 		MaxRetries:       15,
 		Backoff:          1 * time.Second,
@@ -70,7 +71,9 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 }
 
 func TestTurnEngine_NilGuards_Robustness(t *testing.T) {
+	t.Parallel()
 	t.Run("injectCircuitBreakerWarning handles nil toolResponse", func(t *testing.T) {
+		t.Parallel()
 		step := &executionStep{}
 		// Assert no panic occurs
 		defer func() {
@@ -82,6 +85,7 @@ func TestTurnEngine_NilGuards_Robustness(t *testing.T) {
 	})
 
 	t.Run("hasToolCalls handles nil content", func(t *testing.T) {
+		t.Parallel()
 		step := &inferenceStep{}
 		// Assert no panic occurs
 		defer func() {
@@ -96,10 +100,12 @@ func TestTurnEngine_NilGuards_Robustness(t *testing.T) {
 }
 
 func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
+	t.Parallel()
 	policy := &defaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Second}
 	step := &recoveryStep{Policy: policy}
 
 	t.Run("Transient error triggers retry state (Refining)", func(t *testing.T) {
+		t.Parallel()
 		turn := &turn{
 			State: &turnState{
 				LastError:  llm.ErrTransient,
@@ -117,6 +123,7 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 	})
 
 	t.Run("Terminal error breaks loop immediately (Complete)", func(t *testing.T) {
+		t.Parallel()
 		turn := &turn{
 			State: &turnState{
 				LastError: llm.ErrTerminal,
@@ -134,6 +141,7 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 }
 
 func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	respCh := make(chan *llm.Content) // unbuffered
 

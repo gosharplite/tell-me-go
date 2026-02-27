@@ -11,6 +11,7 @@ import (
 )
 
 func TestAssetStore(t *testing.T) {
+	t.Parallel()
 	t.Run("SaveAndLoad", testSaveAndLoad)
 	t.Run("Metadata", testMetadata)
 	t.Run("PathSanitization", testPathSanitization)
@@ -167,6 +168,7 @@ func createTestAsset(t *testing.T, store *AssetStore, content []byte) string {
 }
 
 func TestAssetStore_WithFileSystem(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	fs := NewOSFileSystem()
 	store := NewAssetStore(tmpDir).WithFileSystem(fs)

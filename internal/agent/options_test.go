@@ -11,6 +11,7 @@ import (
 )
 
 func TestAgentOptions(t *testing.T) {
+	t.Parallel()
 	mockSummarizer := &mockSummarizer{}
 	mockLoader := &mockLoader{}
 	mockTracker := &mockTracker{}
@@ -64,6 +65,7 @@ func TestAgentOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cfg := &agentConfig{}
 			tt.option(cfg)
 			tt.validate(t, cfg)

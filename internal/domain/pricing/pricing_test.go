@@ -10,6 +10,7 @@ import (
 )
 
 func TestGetModelPricing(t *testing.T) {
+	t.Parallel()
 	p := PricingData{
 		Models: map[string]ModelPricing{
 			"default":        {Miss: 1.0},
@@ -30,6 +31,7 @@ func TestGetModelPricing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := p.GetModelPricing(tt.modelName)
 			assert.Equal(t, tt.expected, got.Miss)
 		})
@@ -37,6 +39,7 @@ func TestGetModelPricing(t *testing.T) {
 }
 
 func TestCostCalculator_Calculate(t *testing.T) {
+	t.Parallel()
 	p := PricingData{}
 	mp := ModelPricing{
 		Miss:        10.0, // $10 per 1M tokens
@@ -74,6 +77,7 @@ func TestCostCalculator_Calculate(t *testing.T) {
 }
 
 func TestCostCalculator_Calculate_NegativeInput(t *testing.T) {
+	t.Parallel()
 	calc := &CostCalculator{
 		Model: ModelPricing{Miss: 10.0},
 	}
@@ -86,6 +90,7 @@ func TestCostCalculator_Calculate_NegativeInput(t *testing.T) {
 }
 
 func TestGetModelPricing_LongestMatch(t *testing.T) {
+	t.Parallel()
 	p := PricingData{
 		Models: map[string]ModelPricing{
 			"default":        {Miss: 1.0},

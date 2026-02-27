@@ -11,6 +11,7 @@ import (
 )
 
 func TestIndexer_Refresh_ContextCancel(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)

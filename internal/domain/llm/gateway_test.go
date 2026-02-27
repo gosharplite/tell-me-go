@@ -10,6 +10,7 @@ import (
 )
 
 func TestIsTransient(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -54,6 +55,7 @@ func TestIsTransient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := IsTransient(tt.err); got != tt.want {
 				t.Errorf("IsTransient() = %v, want %v", got, tt.want)
 			}
@@ -62,6 +64,7 @@ func TestIsTransient(t *testing.T) {
 }
 
 func TestIsTerminal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -116,6 +119,7 @@ func TestIsTerminal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := IsTerminal(tt.err); got != tt.want {
 				t.Errorf("IsTerminal() = %v, want %v", got, tt.want)
 			}
@@ -124,6 +128,7 @@ func TestIsTerminal(t *testing.T) {
 }
 
 func TestIsAuth(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -163,6 +168,7 @@ func TestIsAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := IsAuth(tt.err); got != tt.want {
 				t.Errorf("IsAuth() = %v, want %v", got, tt.want)
 			}

@@ -37,10 +37,13 @@ func TestSQLiteMigrations(t *testing.T) {
 		t.Fatalf("migrateFromJSON failed: %v", err)
 	}
 
-	t.Run("Config Migration", func(t *testing.T) { testConfigMigration(t, ctx, db) })
-	t.Run("Scratchpad Migration", func(t *testing.T) { testScratchpadMigration(t, ctx, db) })
-	t.Run("Tasks Migration", func(t *testing.T) { testTasksMigration(t, ctx, db) })
-	t.Run("Idempotency", func(t *testing.T) { testMigrationIdempotency(t, ctx, db, fs, tasksFile, configFile, scratchFile) })
+	t.Run("Config Migration", func(t *testing.T) { t.Parallel(); testConfigMigration(t, ctx, db) })
+	t.Run("Scratchpad Migration", func(t *testing.T) { t.Parallel(); testScratchpadMigration(t, ctx, db) })
+	t.Run("Tasks Migration", func(t *testing.T) { t.Parallel(); testTasksMigration(t, ctx, db) })
+	t.Run("Idempotency", func(t *testing.T) {
+		t.Parallel()
+		testMigrationIdempotency(t, ctx, db, fs, tasksFile, configFile, scratchFile)
+	})
 }
 
 func testConfigMigration(t *testing.T, ctx context.Context, db *sql.DB) {
@@ -147,6 +150,7 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 }
 
 func TestSQLiteMigrations_InvalidDBPath(t *testing.T) {
+	t.Parallel()
 	_, err := initSQLiteDB(context.Background(), "/invalid/path/db.sqlite")
 	if err == nil {
 		t.Error("expected error for invalid db path")
@@ -154,6 +158,7 @@ func TestSQLiteMigrations_InvalidDBPath(t *testing.T) {
 }
 
 func TestSQLiteMigrations_InvalidJSONConfig(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()

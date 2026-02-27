@@ -486,6 +486,7 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 }
 
 func TestToolExecutor_SuggestTool(t *testing.T) {
+	t.Parallel()
 	validTools := []string{"list_files", "read_file", "write_file", "git_status", "ls", "patch"}
 
 	tests := []struct {
@@ -515,6 +516,7 @@ func TestToolExecutor_SuggestTool(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.hallucinated, func(t *testing.T) {
+			t.Parallel()
 			got := suggestTool(tt.hallucinated, validTools)
 			if got != tt.expected {
 				t.Errorf("suggestTool(%q) = %q, want %q", tt.hallucinated, got, tt.expected)
@@ -524,6 +526,7 @@ func TestToolExecutor_SuggestTool(t *testing.T) {
 }
 
 func TestLevenshteinDistance_UTF8(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		s1, s2 string
 		want   int
@@ -544,6 +547,7 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 }
 
 func TestWorkerPool_SubmitFailure(t *testing.T) {
+	t.Parallel()
 	p := concurrency.NewWorkerPool(1)
 	p.Shutdown()
 
@@ -562,6 +566,7 @@ func TestResultCollector(t *testing.T) {
 	}
 
 	t.Run("Ordering", func(t *testing.T) {
+		t.Parallel()
 		collector := newResultCollector(calls, nil)
 		collector.ch <- toolExecResult{index: 2, name: "tool2", tr: tools.ToolResult{Text: "res2"}}
 		collector.ch <- toolExecResult{index: 0, name: "tool0", tr: tools.ToolResult{Text: "res0"}}
@@ -581,6 +586,7 @@ func TestResultCollector(t *testing.T) {
 	})
 
 	t.Run("Context Cancellation", func(t *testing.T) {
+		t.Parallel()
 		ctx, cancel := context.WithCancel(context.Background())
 		collector := newResultCollector(calls, nil)
 		cancel()
@@ -597,6 +603,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	e := &ToolExecutor{strategy: &mockStrategy{}}
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
+		t.Parallel()
 		calls := []*llm.FunctionCall{{Name: "get_image"}}
 		results := []tools.ToolResult{{
 			Text:       "Here is your image",
@@ -611,6 +618,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	})
 
 	t.Run("Multiple Binary Parts", func(t *testing.T) {
+		t.Parallel()
 		calls := []*llm.FunctionCall{{Name: "get_files"}}
 		results := []tools.ToolResult{{
 			BinaryData: []tools.BinaryData{
@@ -627,6 +635,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	})
 
 	t.Run("Multi-blob Interleaving and Ordering", func(t *testing.T) {
+		t.Parallel()
 		calls := []*llm.FunctionCall{{Name: "camera_snapshot"}}
 		results := []tools.ToolResult{{
 			Text: "Captured 2 photos",
@@ -642,6 +651,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	})
 
 	t.Run("Binary Data with No Text", func(t *testing.T) {
+		t.Parallel()
 		calls := []*llm.FunctionCall{{Name: "only_binary"}}
 		results := []tools.ToolResult{{
 			Text: "",
@@ -659,6 +669,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 }
 
 func TestToolExecutor_EventPublishing(t *testing.T) {
+	t.Parallel()
 	reg := registry.New()
 	reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "success"}, nil
@@ -689,6 +700,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 }
 
 func TestToolExecutor_Strategies(t *testing.T) {
+	t.Parallel()
 	reg := registry.New()
 	e := NewToolExecutor(reg, nil, nil)
 	t.Cleanup(e.Shutdown)

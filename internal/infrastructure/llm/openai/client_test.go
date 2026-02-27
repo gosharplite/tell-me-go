@@ -492,7 +492,7 @@ func TestSendChat_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.status)
 				_, _ = w.Write([]byte(tt.response))
 			}))
@@ -523,7 +523,7 @@ func TestSendChat_Errors(t *testing.T) {
 
 func TestStreamChat_Errors(t *testing.T) {
 	t.Run("API Error in Chunk", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprintf(w, "data: %s\n\n", `{"error": {"message": "Something went wrong", "type": "api_error"}}`)
 		}))
@@ -538,7 +538,7 @@ func TestStreamChat_Errors(t *testing.T) {
 	})
 
 	t.Run("HTTP Error Status", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("Internal Server Error"))
 		}))
@@ -574,7 +574,7 @@ func TestToOpenAISchema(t *testing.T) {
 
 func TestInjectPersona(t *testing.T) {
 	t.Run("OpenAI Reasoner Persona", func(t *testing.T) {
-		c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0, 0)
+			c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0, 0)
 		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 2 || messages[0].Role != "developer" {
 			t.Errorf("expected developer role for persona in OpenAI reasoner, got %+v", messages[0])
@@ -582,7 +582,7 @@ func TestInjectPersona(t *testing.T) {
 	})
 
 	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
-		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0)
+			c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0)
 		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 2 || messages[0].Role != "system" || messages[0].Content != "Be helpful" {
 			t.Errorf("expected system role for persona in DeepSeek, got %+v", messages[0])
@@ -710,7 +710,7 @@ func TestToOpenAIMessages_MultiToolResponse(t *testing.T) {
 
 func TestCacheHitReporting(t *testing.T) {
 	t.Run("OpenAI Cache Hits", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := chatResponse{
 				Choices: []choice{{Message: message{Role: "assistant", Content: "Hello"}}},
 				Usage: usage{
@@ -738,7 +738,7 @@ func TestCacheHitReporting(t *testing.T) {
 	})
 
 	t.Run("DeepSeek Cache Hits", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// DeepSeek style response (manually crafted based on requirements)
 			resp := map[string]interface{}{
 				"choices": []interface{}{
@@ -775,7 +775,7 @@ func TestCacheHitReporting(t *testing.T) {
 
 func TestOpenAI_InternalErrors(t *testing.T) {
 	t.Run("Authenticator Error", func(t *testing.T) {
-		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+			errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
 		c := NewClient("", "gpt-4", errAuth, nil, "", 0, 0)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
@@ -784,7 +784,7 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 	})
 
 	t.Run("Invalid URL", func(t *testing.T) {
-		c := NewClient(" :invalid", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+			c := NewClient(" :invalid", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to create request") {
 			t.Errorf("expected request creation error, got %v", err)
@@ -793,6 +793,7 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 
 	t.Run("HTTP Request Failure", func(t *testing.T) {
 		// A URL that will fail on Do()
+
 		c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "request failed") {
@@ -814,7 +815,7 @@ func TestOpenAI_EdgeCase_MarshalResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := marshalResponse(tt.input)
+					got, err := marshalResponse(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
 			}
@@ -875,7 +876,7 @@ func TestOpenAI_EdgeCase_ParseResponseToolCalls(t *testing.T) {
 
 func TestOpenAI_StreamEdgeCases(t *testing.T) {
 	t.Run("processStreamChunk malformed JSON", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+			c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
 		metrics, err := c.processStreamChunk([]byte("invalid"), nil, nil)
 		if metrics != nil || err != nil {
 			t.Errorf("expected nil, nil for malformed chunk, got %v, %v", metrics, err)
@@ -883,7 +884,7 @@ func TestOpenAI_StreamEdgeCases(t *testing.T) {
 	})
 
 	t.Run("emitToolCalls unmarshal error", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+			c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
 		states := map[int]*toolCallState{
 			0: {
 				name: "test",
@@ -903,6 +904,7 @@ func TestOpenAI_StreamEdgeCases(t *testing.T) {
 
 func TestOpenAI_StreamRequestFailure(t *testing.T) {
 	// Use a non-existent URL to trigger Do() error
+
 	c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
 	_, err := c.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 	if err == nil || !strings.Contains(err.Error(), "request failed") {

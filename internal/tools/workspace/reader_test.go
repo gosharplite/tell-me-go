@@ -31,7 +31,7 @@ func TestListFiles(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("list root", func(t *testing.T) {
-		res, err := r.listFiles(ctx, map[string]interface{}{"path": tempDir})
+			res, err := r.listFiles(ctx, map[string]interface{}{"path": tempDir})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -41,7 +41,7 @@ func TestListFiles(t *testing.T) {
 	})
 
 	t.Run("non-existent path", func(t *testing.T) {
-		_, err := r.listFiles(ctx, map[string]interface{}{"path": filepath.Join(tempDir, "missing")})
+			_, err := r.listFiles(ctx, map[string]interface{}{"path": filepath.Join(tempDir, "missing")})
 		if err == nil {
 			t.Error("expected error for missing path")
 		}
@@ -83,7 +83,7 @@ func TestGetTree(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("basic tree", func(t *testing.T) {
-		res, err := r.getTree(ctx, map[string]interface{}{"path": tempDir, "max_depth": 2})
+			res, err := r.getTree(ctx, map[string]interface{}{"path": tempDir, "max_depth": 2})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func TestFindFile(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("find .go files", func(t *testing.T) {
-		res, err := r.findFile(ctx, map[string]interface{}{"path": tempDir, "pattern": "*.go"})
+			res, err := r.findFile(ctx, map[string]interface{}{"path": tempDir, "pattern": "*.go"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,7 +124,7 @@ func TestFindFile(t *testing.T) {
 	})
 
 	t.Run("no matches", func(t *testing.T) {
-		res, err := r.findFile(ctx, map[string]interface{}{"path": tempDir, "pattern": "*.md"})
+			res, err := r.findFile(ctx, map[string]interface{}{"path": tempDir, "pattern": "*.md"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,7 +150,7 @@ func TestGetFileDiff(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("diff existing files", func(t *testing.T) {
-		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": f2})
+			res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": f2})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -160,7 +160,7 @@ func TestGetFileDiff(t *testing.T) {
 	})
 
 	t.Run("identical files", func(t *testing.T) {
-		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": f1})
+			res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": f1})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -227,14 +227,14 @@ func TestGetFileDiff_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("missing file2", func(t *testing.T) {
-		_, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": "missing.txt"})
+			_, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": "missing.txt"})
 		if err == nil {
 			t.Error("expected error for missing file2")
 		}
 	})
 
 	t.Run("binary file", func(t *testing.T) {
-		fbin := filepath.Join(tempDir, "bin")
+			fbin := filepath.Join(tempDir, "bin")
 		if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
 			t.Fatal(err)
 		}

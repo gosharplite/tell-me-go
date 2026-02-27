@@ -13,6 +13,9 @@ import (
 )
 
 func TestArchiveCostPreservation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
 	binaryPath, tmpHome, configPath := setupTestEnvironment(t)
 
 	outputDir := filepath.Join(tmpHome, "output")

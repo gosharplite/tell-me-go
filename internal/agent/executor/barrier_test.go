@@ -14,6 +14,10 @@ import (
 )
 
 func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 	// Setup tools:
 	// - parallel_tool: returns quickly
 	// - serial_tool: takes some time
@@ -33,6 +37,7 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 	}
 
 	t.Run("Parallel Before Serial", func(t *testing.T) {
+		t.Parallel()
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -62,6 +67,7 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 	})
 
 	t.Run("Serial Before Parallel", func(t *testing.T) {
+		t.Parallel()
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -90,7 +96,8 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 	})
 
 	t.Run("Barrier Pattern - Parallel First", func(t *testing.T) {
-		// We want to verify that if we have [Serial, Parallel],
+		t.Parallel()
+	// We want to verify that if we have [Serial, Parallel],
 		// the refactored executor runs Parallel FIRST.
 
 		var serialStartedAt time.Time

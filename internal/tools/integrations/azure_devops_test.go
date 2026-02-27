@@ -24,7 +24,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{
+			jsonResponse := `{
 			"title": "Fix bug",
 			"status": "active",
 			"createdBy": {"displayName": "John Doe"},
@@ -67,7 +67,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 	})
 
 	t.Run("Unauthorized", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 		}))
 		defer server.Close()
@@ -88,7 +88,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -109,7 +109,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 	})
 
 	t.Run("Missing Parameters", func(t *testing.T) {
-		m := newazureDevOpsManager(sm, nil)
+			m := newazureDevOpsManager(sm, nil)
 		args := map[string]interface{}{
 			"organization": "myorg",
 		}
@@ -141,7 +141,7 @@ func TestAdoListPullRequests(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{
+			jsonResponse := `{
 			"value": [
 				{
 					"pullRequestId": 123,
@@ -188,7 +188,7 @@ func TestAdoListPullRequests(t *testing.T) {
 	})
 
 	t.Run("Empty Results", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": [], "count": 0}`))
 		}))
@@ -209,7 +209,7 @@ func TestAdoListPullRequests(t *testing.T) {
 	})
 
 	t.Run("Filters and Top", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			q := r.URL.Query()
 			assert.Equal(t, "completed", q.Get("searchCriteria.status"))
 			assert.Equal(t, "10", q.Get("$top"))
@@ -241,7 +241,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{
+			jsonResponse := `{
 			"changeEntries": [
 				{
 					"item": {"path": "/src/main.go"},
@@ -280,7 +280,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 	})
 
 	t.Run("No Changes", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"changeEntries": []}`))
 		}))
@@ -308,7 +308,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{
+			jsonResponse := `{
 			"value": [
 				{
 					"isDeleted": false,
@@ -368,7 +368,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 	})
 
 	t.Run("No Threads", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": []}`))
 		}))
@@ -396,7 +396,7 @@ func TestAdoGetFileContent(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		fileContent := "package main\n\nfunc main() {}"
+			fileContent := "package main\n\nfunc main() {}"
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			q := r.URL.Query()
@@ -428,7 +428,7 @@ func TestAdoGetFileContent(t *testing.T) {
 	})
 
 	t.Run("Default Version", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "main", r.URL.Query().Get("versionDescriptor.version"))
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("content"))
@@ -450,7 +450,7 @@ func TestAdoGetFileContent(t *testing.T) {
 	})
 
 	t.Run("File Not Found", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -477,7 +477,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{
+			jsonResponse := `{
 			"value": [
 				{"path": "/src", "isFolder": true},
 				{"path": "/src/main.go", "isFolder": false},
@@ -516,7 +516,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 	})
 
 	t.Run("Empty Results", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": []}`))
 		}))
@@ -542,7 +542,7 @@ func TestAdoListPipelineRuns(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{"value": [{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "myrepo"}}]}`
+			jsonResponse := `{"value": [{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "myrepo"}}]}`
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/_apis/build/builds")
 			assert.Equal(t, "1", r.URL.Query().Get("definitions"))
@@ -567,7 +567,7 @@ func TestAdoGetPipelineRun(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{"id": 101, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01", "url": "http://run"}`
+			jsonResponse := `{"id": 101, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01", "url": "http://run"}`
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/pipelines/1/runs/101")
 			w.WriteHeader(http.StatusOK)
@@ -590,7 +590,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("List Logs", func(t *testing.T) {
-		jsonResponse := `{"value": [{"id": 1, "lineCount": 10}]}`
+			jsonResponse := `{"value": [{"id": 1, "lineCount": 10}]}`
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/runs/101/logs")
 			assert.NotContains(t, r.URL.Path, "/logs/1")
@@ -609,7 +609,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 	})
 
 	t.Run("Fetch Log Content", func(t *testing.T) {
-		logContent := "build output"
+			logContent := "build output"
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/runs/101/logs/1")
 			w.WriteHeader(http.StatusOK)
@@ -632,7 +632,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{
+			jsonResponse := `{
 			"value": [
 				{
 					"state": "succeeded",
@@ -677,7 +677,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -726,7 +726,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 	}`
 
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/pullrequests/123") {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"repository": {"project": {"id": "proj-guid"}}}`))
@@ -758,7 +758,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 	})
 
 	t.Run("Empty", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/pullrequests/123") {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"repository": {"project": {"id": "proj-guid"}}}`))
@@ -788,7 +788,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/pullrequests/123") {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"repository": {"project": {"id": "proj-guid"}}}`))
@@ -822,7 +822,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/_apis/git/repositories/myrepo") {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"id": "repo-guid"}`))
@@ -871,7 +871,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 	})
 
 	t.Run("No Policies", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/_apis/git/repositories/myrepo") {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"id": "repo-guid"}`))
@@ -906,7 +906,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{
+			jsonResponse := `{
 			"records": [
 				{
 					"id": "1",
@@ -936,7 +936,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -956,7 +956,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		logContent := "Successfully completed task"
+			logContent := "Successfully completed task"
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "/build/builds/123/logs/10")
 			w.WriteHeader(http.StatusOK)
@@ -979,7 +979,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -1004,7 +1004,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{
+			jsonResponse := `{
 			"value": [
 				{
 					"id": "abc123",
@@ -1032,7 +1032,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -1397,7 +1397,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.setupPAT != "" {
+					if tt.setupPAT != "" {
 				t.Setenv("AZURE_PAT_ALL", tt.setupPAT)
 			} else {
 				t.Setenv("AZURE_PAT_ALL", "test-pat")
@@ -1432,7 +1432,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 	}
 
 	t.Run("adoGetPrPolicyEvaluations - Policy List Failure", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/pullrequests/123") {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"repository": {"project": {"id": "proj-guid"}}}`))
@@ -1460,7 +1460,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 	})
 
 	t.Run("adoListBranchPolicies - Policy Config Fetch Failure", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/_apis/git/repositories/myrepo") {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"id": "repo-guid"}`))
@@ -1519,7 +1519,7 @@ func TestGetStatusEmoji(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.state, func(t *testing.T) {
-			assert.Equal(t, tt.expected, getStatusEmoji(tt.state))
+					assert.Equal(t, tt.expected, getStatusEmoji(tt.state))
 		})
 	}
 }
@@ -1540,7 +1540,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("List Path - Request Failure", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		m := newazureDevOpsManager(sm, nil)
 		m.baseURL = server.URL
 		server.Close() // Force failure
@@ -1551,7 +1551,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 	})
 
 	t.Run("List Path - Non-200 Status", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer server.Close()
@@ -1565,7 +1565,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 	})
 
 	t.Run("List Path - Empty Logs", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": []}`))
 		}))
@@ -1580,7 +1580,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 	})
 
 	t.Run("Content Path - Request Failure", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		m := newazureDevOpsManager(sm, nil)
 		m.baseURL = server.URL
 		server.Close() // Force failure
@@ -1596,7 +1596,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("fetchPrStatuses - 404", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -1610,7 +1610,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 	})
 
 	t.Run("fetchPrStatuses - 500", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer server.Close()
@@ -1629,7 +1629,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("fetchRepositoryId - 404", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -1643,7 +1643,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 	})
 
 	t.Run("fetchRepositoryId - Decode Error", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{invalid}`))
 		}))
@@ -1663,7 +1663,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("401", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 		}))
 		defer server.Close()
@@ -1677,7 +1677,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 	})
 
 	t.Run("404", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -1728,7 +1728,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("404", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
 		defer server.Close()
@@ -1742,7 +1742,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 	})
 
 	t.Run("Default", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer server.Close()
@@ -1779,19 +1779,19 @@ func TestAdoTools_MissingParams(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("adoGetFileContent", func(t *testing.T) {
-		_, err := m.adoGetFileContent(ctx, map[string]interface{}{})
+			_, err := m.adoGetFileContent(ctx, map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
 
 	t.Run("adoGetBuildChanges", func(t *testing.T) {
-		_, err := m.adoGetBuildChanges(ctx, map[string]interface{}{})
+			_, err := m.adoGetBuildChanges(ctx, map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
 
 	t.Run("adoGetPrStatuses", func(t *testing.T) {
-		_, err := m.adoGetPrStatuses(ctx, map[string]interface{}{})
+			_, err := m.adoGetPrStatuses(ctx, map[string]interface{}{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -1822,7 +1822,7 @@ func TestFormatKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.expected, formatKey(tt.input))
+					assert.Equal(t, tt.expected, formatKey(tt.input))
 		})
 	}
 }
@@ -1875,7 +1875,7 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.call()
+					_, err := tt.call()
 			if assert.Error(t, err) {
 				assert.Contains(t, err.Error(), "decode")
 			}
@@ -1884,6 +1884,9 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 }
 
 func TestAzureDevOps_HTTPIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := security.NewSecurityManager(nil)
 	ctx := context.Background()
@@ -1990,7 +1993,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(tt.handler))
+					server := httptest.NewServer(http.HandlerFunc(tt.handler))
 			defer server.Close()
 
 			m := newazureDevOpsManager(sm, nil)
@@ -2013,7 +2016,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Pipeline Name Resolution", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(r.URL.Path, "/_apis/pipelines") {
 				_, _ = w.Write([]byte(`{"value": [{"id": 42, "name": "my-cool-pipeline"}]}`))
 				return
@@ -2036,7 +2039,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 	})
 
 	t.Run("Repository Filtering", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "100", r.URL.Query().Get("$top"))
 			_, _ = w.Write([]byte(`{"value": [
 				{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-a"}},
@@ -2056,7 +2059,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 	})
 
 	t.Run("Limit Truncation", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"value": [
 				{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-a"}},
 				{"id": 102, "buildNumber": "run2", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-a"}},

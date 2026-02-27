@@ -17,7 +17,6 @@ import (
 )
 
 func TestJSONLStore_LargeLine(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "large_history.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -51,7 +50,6 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 }
 
 func TestJSONLStore_AssetExternalization(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "history.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -66,22 +64,22 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	}
 
 	t.Run("Save", func(t *testing.T) {
-		if err := store.Save(ctx, []*llm.Content{content}); err != nil {
+			if err := store.Save(ctx, []*llm.Content{content}); err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
 	})
 
 	t.Run("VerifyJSONFile", func(t *testing.T) {
-		verifyJSONFile(t, filePath, "fake-image-data")
+			verifyJSONFile(t, filePath, "fake-image-data")
 	})
 
 	t.Run("VerifyAssetDirectory", func(t *testing.T) {
-		verifyAssetDir(t, tmpDir)
+			verifyAssetDir(t, tmpDir)
 	})
 
 	var loaded []*llm.Content
 	t.Run("LoadWithoutHydration", func(t *testing.T) {
-		var err error
+			var err error
 		loaded, err = store.Load(ctx)
 		if err != nil {
 			t.Fatalf("Load failed: %v", err)
@@ -90,7 +88,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	})
 
 	t.Run("ResolveAsset", func(t *testing.T) {
-		verifyResolve(t, ctx, store, loaded, "fake-image-data")
+			verifyResolve(t, ctx, store, loaded, "fake-image-data")
 	})
 }
 
@@ -148,7 +146,6 @@ func verifyResolve(t *testing.T, ctx context.Context, store *jsonlStore, loaded 
 }
 
 func TestJSONLStore_MalformedLine(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "malformed.jsonl")
 
@@ -227,7 +224,6 @@ func TestJSONLStore_Save_Cancel(t *testing.T) {
 }
 
 func TestJSONLStore_PinnedPersistence(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "pinned_history.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -283,7 +279,6 @@ func TestJSONLStore_PinnedPersistence(t *testing.T) {
 }
 
 func TestJSONLStore_NoTransientPartsLeaking(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "transient_test.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -325,7 +320,6 @@ func TestJSONLStore_NoTransientPartsLeaking(t *testing.T) {
 }
 
 func TestJSONLStore_PrepareForStorage_EmptyInput(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty_input.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -341,7 +335,6 @@ func TestJSONLStore_PrepareForStorage_EmptyInput(t *testing.T) {
 }
 
 func TestJSONLStore_PrepareForStorage_MalformedJSON(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "malformed_json.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -361,7 +354,6 @@ func TestJSONLStore_PrepareForStorage_MalformedJSON(t *testing.T) {
 }
 
 func TestJSONLStore_PrepareForStorage_PathPermissionErrors(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	// Simulate by using a path that cannot be a directory for assets
 	invalidDir := filepath.Join(tmpDir, "a-file")
@@ -414,7 +406,6 @@ func verifyPreparedContent(t *testing.T, prepared *llm.Content) {
 }
 
 func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "mixed_parts.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -450,7 +441,6 @@ func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 }
 
 func TestJSONLStore_UpdateMetadataAndTruncate_SaveAndPatch(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -485,7 +475,6 @@ func TestJSONLStore_UpdateMetadataAndTruncate_SaveAndPatch(t *testing.T) {
 }
 
 func TestJSONLStore_UpdateMetadataAndTruncate_Truncate(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches_trunc.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -517,7 +506,6 @@ func TestJSONLStore_UpdateMetadataAndTruncate_Truncate(t *testing.T) {
 }
 
 func TestJSONLStore_UpdateMetadataAndTruncate_Compact(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches_compact.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -556,7 +544,6 @@ func TestJSONLStore_UpdateMetadataAndTruncate_Compact(t *testing.T) {
 }
 
 func TestJSONLStore_Load_EmptyFile(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty.jsonl")
 
@@ -577,7 +564,6 @@ func TestJSONLStore_Load_EmptyFile(t *testing.T) {
 }
 
 func TestJSONLStore_Load_LegacyJSONArray(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "legacy.json")
 
@@ -602,7 +588,6 @@ func TestJSONLStore_Load_LegacyJSONArray(t *testing.T) {
 }
 
 func TestJSONLStore_Load_InvalidLegacyJSONArray(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "invalid_legacy.json")
 
@@ -622,7 +607,6 @@ func TestJSONLStore_Load_InvalidLegacyJSONArray(t *testing.T) {
 }
 
 func TestJSONLStore_MarshalError(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "marshal_error.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -649,7 +633,6 @@ func TestJSONLStore_MarshalError(t *testing.T) {
 }
 
 func TestJSONLStore_MkdirAllError(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 
 	// Create a file where a directory needs to be
@@ -681,7 +664,6 @@ func TestJSONLStore_MkdirAllError(t *testing.T) {
 }
 
 func TestJSONLStore_Load_ParseContentError(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "parse_error.jsonl")
 
@@ -700,7 +682,6 @@ func TestJSONLStore_Load_ParseContentError(t *testing.T) {
 }
 
 func TestJSONLStore_CompactError(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "compact_error.jsonl")
 
@@ -719,7 +700,6 @@ func TestJSONLStore_CompactError(t *testing.T) {
 }
 
 func TestJSONLStore_Load_ReadFileError(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 
 	// Create a directory where the file should be
@@ -799,7 +779,6 @@ func (f *mockFileWithErr) Write(p []byte) (n int, err error) {
 }
 
 func TestJSONLStore_IOErrors(t *testing.T) {
-	t.Parallel()
 
 	dummyContent := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}}
 
@@ -960,8 +939,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tmpDir := t.TempDir()
+					tmpDir := t.TempDir()
 			filePath := filepath.Join(tmpDir, "test.jsonl")
 
 			baseFS := infrapersistence.NewOSFileSystem()
@@ -1007,7 +985,6 @@ func TestJSONLStore_Append_Empty(t *testing.T) {
 }
 
 func TestJSONLStore_AppendParts(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "append_parts_history.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -1050,7 +1027,6 @@ func TestJSONLStore_AppendParts(t *testing.T) {
 }
 
 func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
-	t.Parallel()
 	// Create an invalid store path
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), "/invalid_dir/file.jsonl", filepath.Join(filepath.Dir("/invalid_dir/file.jsonl"), "archive.jsonl"))
 	err := store.AppendParts(context.Background(), 0, []*llm.Part{{Text: "test"}})
@@ -1060,7 +1036,6 @@ func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
 }
 
 func TestJSONLStore_Archive(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "history.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -1121,7 +1096,6 @@ func TestJSONLStore_Archive(t *testing.T) {
 }
 
 func TestJSONLStore_Migration(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, "history.json")
 	jsonlPath := filepath.Join(tmpDir, "history.jsonl")

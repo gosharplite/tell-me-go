@@ -28,6 +28,7 @@ func (m *mockGitExecutor) CombinedOutput(ctx context.Context, name string, args 
 
 func TestGitTools(t *testing.T) {
 	// SecurityManager requires a reader for InteractionHandler
+
 	sm := security.NewSecurityManager(nil)
 	// Allow all paths for testing
 	sm.SetBypassActive(true)
@@ -154,7 +155,7 @@ func TestGitTools(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			executor := &mockGitExecutor{
+					executor := &mockGitExecutor{
 				handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 					if name != "git" {
 						return nil, fmt.Errorf("expected git, got %s", name)
@@ -245,7 +246,7 @@ func TestGitDestructiveActions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var input string
+					var input string
 			if tt.approved {
 				input = "y\n"
 			} else {
@@ -301,6 +302,7 @@ func TestGitBlameSafety(t *testing.T) {
 
 func TestGitManagerInternal(t *testing.T) {
 	// Test the runGitCommand failure branch explicitly if not covered
+
 	m := &gitManager{
 		Exec: &mockGitExecutor{
 			handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {

@@ -12,6 +12,7 @@ import (
 )
 
 func TestGetPricing_Simple(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	got := GetPricing(context.Background(), sm, "")
 	assert.NotEmpty(t, got.UpdatedAt)

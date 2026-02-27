@@ -110,7 +110,10 @@ func (s *integrationSecurityManager) IsCommandAllowed(command string) bool      
 func (s *integrationSecurityManager) IsBypassActive() bool                         { return false }
 
 func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
-	// Setup
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	reg := newIntegrationToolRegistry()
 	bus := &mockEventBus{} // from mocks_test.go
 	sm := &integrationSecurityManager{}
@@ -159,7 +162,10 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 }
 
 func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
-	// Setup with short timeout
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	timeout := 50 * time.Millisecond
 	reg := newIntegrationToolRegistry()
 	bus := &mockEventBus{}

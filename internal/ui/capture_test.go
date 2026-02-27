@@ -108,6 +108,7 @@ func TestPrompt_MockEnv(t *testing.T) {
 
 func TestPrompt_EmptyPipe(t *testing.T) {
 	// Empty stdin (simulated pipe)
+
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -237,7 +238,7 @@ func TestWarn_SemanticStyling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stderr.Reset()
+					stderr.Reset()
 			capturer.Warn(tt.message)
 			if stderr.String() != tt.expected {
 				t.Errorf("expected %q, got %q", tt.expected, stderr.String())
@@ -282,7 +283,7 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stderr.Reset()
+					stderr.Reset()
 			_, err := capturer.Confirm(context.Background(), tt.message)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)

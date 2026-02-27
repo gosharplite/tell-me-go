@@ -11,6 +11,7 @@ import (
 )
 
 func TestIndexedPackageProvider_LoadPackages(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := &architectureManager{
 		ModulePath: "", // Should be populated by LoadPackages
@@ -55,6 +56,7 @@ func TestIndexedPackageProvider_LoadPackages(t *testing.T) {
 	}
 
 	t.Run("empty index", func(t *testing.T) {
+		t.Parallel()
 		provider.idx = &mockIndexer{pkgs: nil}
 		_, err := provider.LoadPackages(ctx)
 		if err == nil || err.Error() != "no packages found in index" {

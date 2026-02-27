@@ -16,6 +16,7 @@ import (
 )
 
 func TestAgent_InitConfigFailure_Warning(t *testing.T) {
+	t.Parallel()
 	client := &mockLLMClient{}
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
 	reg := registry.New()

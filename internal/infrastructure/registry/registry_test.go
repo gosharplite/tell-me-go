@@ -14,7 +14,9 @@ import (
 )
 
 func TestRegistry_Resilience(t *testing.T) {
+	t.Parallel()
 	t.Run("panic on empty tool name", func(t *testing.T) {
+		t.Parallel()
 		defer func() {
 			if r := recover(); r == nil {
 				t.Errorf("The code did not panic")
@@ -31,6 +33,7 @@ func TestRegistry_Resilience(t *testing.T) {
 	})
 
 	t.Run("error on unknown tool execution", func(t *testing.T) {
+		t.Parallel()
 		r := registry.New()
 		_, err := r.Execute(context.Background(), "unknown", nil)
 		if err == nil {
@@ -42,6 +45,7 @@ func TestRegistry_Resilience(t *testing.T) {
 	})
 
 	t.Run("wrapped error on handler failure", func(t *testing.T) {
+		t.Parallel()
 		r := registry.New()
 		targetErr := errors.New("something went wrong")
 		r.Register(&tools.ToolDeclaration{Name: "failer"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -62,6 +66,7 @@ func TestRegistry_Resilience(t *testing.T) {
 }
 
 func TestRegistry_Options(t *testing.T) {
+	t.Parallel()
 	r := registry.New()
 	r.RegisterWithOptions(&tools.ToolDeclaration{Name: "serial_tool"}, nil, registry.ToolOptions{Serial: true})
 	r.RegisterWithOptions(&tools.ToolDeclaration{Name: "long_running_tool"}, nil, registry.ToolOptions{LongRunning: true})
@@ -88,6 +93,7 @@ func TestRegistry_Options(t *testing.T) {
 }
 
 func TestRegistry_GetDeclarations(t *testing.T) {
+	t.Parallel()
 	r := registry.New()
 	r.Register(&tools.ToolDeclaration{Name: "tool1"}, nil)
 	r.Register(&tools.ToolDeclaration{Name: "tool2"}, nil)

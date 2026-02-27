@@ -30,9 +30,16 @@ In Go, tests live alongside the source code to allow access to unexported member
 #### 2. Environment Isolation
 Every test must be isolated from the host system and other tests:
 1.  **Temporary Workspace**: Always use `t.TempDir()` to create a workspace that is automatically cleaned up after the test.
-2.  **Concurrency**: Use `t.Parallel()` where possible to speed up execution.
+2.  **Concurrency**: All stateless unit tests MUST use `t.Parallel()` by default to maximize test suite performance. 
+    - **CAUTION**: Do NOT use `t.Parallel()` if the test modifies global state (e.g., `os.Setenv`, `os.Chdir`) or depends on sequential execution.
 3.  **TELL_ME_HOME**: For E2E and integration tests, explicitly set the `TELL_ME_HOME` environment variable to a temporary directory to avoid side effects on the developer's local state.
 4.  **No Side Effects**: Never modify global environment variables or local configuration files (`~/.config`) directly. Use dependency injection or environment mocking.
+5.  **Short Mode Support**: Heavy integration tests, E2E tests, or tests involving `time.Sleep` MUST respect the `testing.Short()` flag to ensure compatibility with AI-native tooling timeouts:
+    ```go
+    if testing.Short() {
+        t.Skip("skipping slow test in short mode")
+    }
+    ```
 
 #### 3. Mocking Dependencies
 - **Interfaces**: Define interfaces for external dependencies (API clients, File System, Git) to allow easy mocking in tests.
@@ -44,19 +51,23 @@ Every test must be isolated from the host system and other tests:
 - **Provider Compliance**: Mocks must enforce the schema requirements of the strictest provider (Vertex AI). For example, a mock should fail if a `thoughtSignature` is returned by the model but not preserved in subsequent history payloads sent by the system under test.
 
 #### 4. Test Execution
+- **Fast Verify (AI Tooling Friendly)**:
+  ```bash
+  go test -short ./...
+  ```
 - **Run All Tests**:
   ```bash
   go test ./...
   ```
 - **Run with Race Detector**: (Required before merge)
   **CAUTION:** In AI-driven environments, a global `go test -race ./...` often exceeds the 60s tool timeout. 
-  ALWAYS run race tests package-by-package to ensure stable execution:
+  ALWAYS run race tests package-by-package or use `-short` to ensure stable execution:
   ```bash
-  # Recommended (Faster/Reliable):
-  go test -race ./internal/agent/executor/
+  # Recommended (Fast):
+  go test -race -short ./...
   
-  # Global (Use only if session timeout permits >2 mins):
-  go test -race ./...
+  # Deep Scan (Package-by-package):
+  go test -race ./internal/agent/executor/
   ```
 - **Check Coverage**:
   ```bash

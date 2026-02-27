@@ -9,6 +9,7 @@ import (
 )
 
 func TestMoveTransform(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		symbol  string
@@ -46,6 +47,7 @@ func Hello() {}`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			fset, files, tr, err := setupMoveTransform(tt.symbol, tt.srcCode, tt.dstCode)
 			if err != nil {
 				t.Fatalf("setup failed: %v", err)

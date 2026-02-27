@@ -92,30 +92,30 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	subset := createTestSubset()
 
 	t.Run("ExecuteSummarize", func(t *testing.T) {
-		cm, capturedInput := setupSummarizationTest(t)
+			cm, capturedInput := setupSummarizationTest(t)
 		verifyExecuteSummarize(t, cm, subset, capturedInput)
 	})
 
 	t.Run("PayloadIntegrity", func(t *testing.T) {
-		cm, capturedInput := setupSummarizationTest(t)
+			cm, capturedInput := setupSummarizationTest(t)
 		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyPayloadIntegrity(t, capturedInput)
 	})
 
 	t.Run("InputTransformation", func(t *testing.T) {
-		cm, capturedInput := setupSummarizationTest(t)
+			cm, capturedInput := setupSummarizationTest(t)
 		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyInputTransformation(t, capturedInput)
 	})
 
 	t.Run("ToolCallMapping", func(t *testing.T) {
-		cm, capturedInput := setupSummarizationTest(t)
+			cm, capturedInput := setupSummarizationTest(t)
 		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyToolCallMapping(t, capturedInput)
 	})
 
 	t.Run("BinaryDataMapping", func(t *testing.T) {
-		cm, capturedInput := setupSummarizationTest(t)
+			cm, capturedInput := setupSummarizationTest(t)
 		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyBinaryDataMapping(t, capturedInput)
 	})
@@ -540,7 +540,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	simulatedErr := errors.New("simulated I/O error")
 
 	t.Run("Prepare_Error", func(t *testing.T) {
-		hMock := &mockHistoryManager{getWindowErr: simulatedErr}
+			hMock := &mockHistoryManager{getWindowErr: simulatedErr}
 		cm := NewContextManager(nil, hMock, nil, nil)
 		_, _, err := cm.Prepare(ctx, 1)
 		if !errors.Is(err, simulatedErr) {
@@ -549,7 +549,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("AddContent_Error", func(t *testing.T) {
-		hMock := &mockHistoryManager{
+			hMock := &mockHistoryManager{
 			contents: []*domain_llm.Content{
 				{Role: "user", Parts: []*domain_llm.Part{{Text: "test"}}},
 			},
@@ -563,7 +563,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("SummarizeRange_Metadata_Error", func(t *testing.T) {
-		hMock := &mockHistoryManager{
+			hMock := &mockHistoryManager{
 			contents: []*domain_llm.Content{
 				{Role: "user", Parts: []*domain_llm.Part{{Text: "msg1"}}},
 				{Role: "model", Parts: []*domain_llm.Part{{Text: "msg2"}}},
@@ -583,7 +583,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("SummarizeRange_Finalize_Error", func(t *testing.T) {
-		hMock := &mockHistoryManager{
+			hMock := &mockHistoryManager{
 			contents: []*domain_llm.Content{
 				{Role: "user", Parts: []*domain_llm.Part{{Text: "msg1"}}},
 				{Role: "model", Parts: []*domain_llm.Part{{Text: "msg2"}}},

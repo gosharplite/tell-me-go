@@ -32,7 +32,7 @@ func TestHistory_Rendering(t *testing.T) {
 	}
 
 	t.Run("HideThoughts", func(t *testing.T) {
-		var buf bytes.Buffer
+			var buf bytes.Buffer
 		renderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: true, ShowThoughts: false})
 
 		output := buf.String()
@@ -45,7 +45,7 @@ func TestHistory_Rendering(t *testing.T) {
 	})
 
 	t.Run("ShowThoughts", func(t *testing.T) {
-		var buf bytes.Buffer
+			var buf bytes.Buffer
 		renderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: true, ShowThoughts: true})
 
 		output := buf.String()
@@ -55,7 +55,7 @@ func TestHistory_Rendering(t *testing.T) {
 	})
 
 	t.Run("UseColor", func(t *testing.T) {
-		var buf bytes.Buffer
+			var buf bytes.Buffer
 		renderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: true, UseColor: true})
 
 		output := buf.String()

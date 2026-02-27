@@ -15,6 +15,7 @@ import (
 )
 
 func TestNewToolRegistry(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
 	tools.RegisterAll(tools.ToolRegistrationParams{
@@ -33,6 +34,7 @@ func TestNewToolRegistry(t *testing.T) {
 }
 
 func TestToolExecution(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
 	tools.RegisterAll(tools.ToolRegistrationParams{
@@ -54,6 +56,7 @@ func TestToolExecution(t *testing.T) {
 }
 
 func TestGenerateMermaidDiagram(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
 	tools.RegisterAll(tools.ToolRegistrationParams{

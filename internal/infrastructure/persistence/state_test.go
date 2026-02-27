@@ -18,6 +18,7 @@ func verifyStateInitialization(t *testing.T, state ports.ISessionProvider) {
 }
 
 func TestNewSessionState_FileStorage(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 	ctx := context.Background()
 

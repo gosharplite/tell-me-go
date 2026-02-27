@@ -107,7 +107,7 @@ func TestClassify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Classify(tt.input)
+					got := Classify(tt.input)
 
 			if tt.input == nil {
 				if got != nil {

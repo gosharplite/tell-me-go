@@ -9,6 +9,7 @@ import (
 )
 
 func TestTurnEngine_ExecutionStep_NoToolCalls(t *testing.T) {
+	t.Parallel()
 	step := &executionStep{}
 	tn := &turn{
 		State: &turnState{
@@ -28,6 +29,7 @@ func TestTurnEngine_ExecutionStep_NoToolCalls(t *testing.T) {
 }
 
 func TestTurnEngine_RecoveryStep_NoLastError(t *testing.T) {
+	t.Parallel()
 	step := &recoveryStep{}
 	tn := &turn{
 		State: &turnState{

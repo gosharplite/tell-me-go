@@ -9,6 +9,7 @@ import (
 )
 
 func TestCommandValidator(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	sm.RegisterReadOnlyPath("/opt/test")
 	v := NewCommandValidator(sm, nil)
@@ -36,6 +37,7 @@ func TestCommandValidator(t *testing.T) {
 }
 
 func TestCommandValidator_ValidateStructure(t *testing.T) {
+	t.Parallel()
 	v := NewCommandValidator(nil, nil)
 
 	tests := []struct {
@@ -76,6 +78,7 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 }
 
 func TestCommandValidator_Go(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm, nil)
 
@@ -103,6 +106,7 @@ func TestCommandValidator_Go(t *testing.T) {
 }
 
 func TestCommandValidator_Git(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	sm.RegisterReadOnlyPath("/tmp")
 	v := NewCommandValidator(sm, nil)
@@ -140,6 +144,7 @@ func TestCommandValidator_Git(t *testing.T) {
 }
 
 func TestCommandValidator_PathSafety(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	sm.RegisterSafePath("/safe")
 	v := NewCommandValidator(sm, nil)
@@ -166,6 +171,7 @@ func TestCommandValidator_PathSafety(t *testing.T) {
 }
 
 func TestCommandValidator_SplitError(t *testing.T) {
+	t.Parallel()
 	v := NewCommandValidator(nil, nil)
 	_, err := v.Split("ls 'unclosed quote")
 	if err == nil {
@@ -182,6 +188,7 @@ func TestCommandValidator_SplitError(t *testing.T) {
 }
 
 func TestCommandValidator_EmptyCommand(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm, nil)
 	allowed, reason := v.IsSafe("")
@@ -194,6 +201,7 @@ func TestCommandValidator_EmptyCommand(t *testing.T) {
 }
 
 func TestCommandValidator_UnsafeChars(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm, nil)
 
@@ -213,6 +221,7 @@ func TestCommandValidator_UnsafeChars(t *testing.T) {
 }
 
 func TestCommandValidator_GranularAuthorization(t *testing.T) {
+	t.Parallel()
 	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm, nil)
 
@@ -253,6 +262,7 @@ func TestCommandValidator_GranularAuthorization(t *testing.T) {
 }
 
 func TestTruncateOutput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		max      int

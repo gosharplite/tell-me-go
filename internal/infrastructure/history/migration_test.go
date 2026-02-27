@@ -27,7 +27,6 @@ func (m *failingWriteFS) WriteFile(ctx context.Context, name string, data []byte
 }
 
 func TestJSONLStore_Migration_Failure(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, "history.json")
 	jsonlPath := filepath.Join(tmpDir, "history.jsonl")

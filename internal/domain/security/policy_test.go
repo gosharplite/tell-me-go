@@ -6,6 +6,7 @@ package security
 import "testing"
 
 func TestDefaultPolicy(t *testing.T) {
+	t.Parallel()
 	p := DefaultPolicy()
 	if p == nil {
 		t.Fatal("DefaultPolicy() returned nil")
@@ -24,6 +25,7 @@ func TestDefaultPolicy(t *testing.T) {
 }
 
 func TestPolicy_IsCommandAllowed(t *testing.T) {
+	t.Parallel()
 	p := DefaultPolicy()
 	tests := []struct {
 		name string
@@ -39,6 +41,7 @@ func TestPolicy_IsCommandAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := p.IsCommandAllowed(tt.cmd); got != tt.want {
 				t.Errorf("IsCommandAllowed(%q) = %v, want %v", tt.cmd, got, tt.want)
 			}
@@ -47,6 +50,7 @@ func TestPolicy_IsCommandAllowed(t *testing.T) {
 }
 
 func TestPolicy_isAutoApprovable(t *testing.T) {
+	t.Parallel()
 	p := DefaultPolicy()
 	tests := []struct {
 		name string
@@ -62,6 +66,7 @@ func TestPolicy_isAutoApprovable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := p.isAutoApprovable(tt.cmd); got != tt.want {
 				t.Errorf("isAutoApprovable(%q) = %v, want %v", tt.cmd, got, tt.want)
 			}

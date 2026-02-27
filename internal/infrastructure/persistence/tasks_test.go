@@ -10,6 +10,7 @@ import (
 )
 
 func TestTaskRepository_LoadJSONL(t *testing.T) {
+	t.Parallel()
 	repo, ctx, tasksFile, _ := setupTaskRepo(t)
 	fs := NewOSFileSystem()
 
@@ -35,6 +36,7 @@ func TestTaskRepository_LoadJSONL(t *testing.T) {
 }
 
 func TestTaskRepository_LoadNonExistent(t *testing.T) {
+	t.Parallel()
 	_, ctx, _, tempDir := setupTaskRepo(t)
 	fs := NewOSFileSystem()
 
@@ -58,6 +60,7 @@ func setupTaskRepo(t *testing.T) (*taskRepository, context.Context, string, stri
 }
 
 func TestTaskRepository_JSONArrayCompatibility(t *testing.T) {
+	t.Parallel()
 	repo, ctx, tasksFile, _ := setupTaskRepo(t)
 	fs := NewOSFileSystem()
 

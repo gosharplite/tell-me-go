@@ -11,6 +11,7 @@ import (
 )
 
 func TestResolveThinkingBudget(t *testing.T) {
+	t.Parallel()
 	cfg := &Config{
 		Models: map[string]ModelConfig{
 			"gemini-2.0-flash": {MaxThinkingBudget: 1000},
@@ -36,6 +37,7 @@ func TestResolveThinkingBudget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
+			t.Parallel()
 			got := cfg.ResolveThinkingBudget(tt.model, pData)
 			assert.Equal(t, tt.expected, got)
 		})
@@ -43,6 +45,7 @@ func TestResolveThinkingBudget(t *testing.T) {
 }
 
 func TestResolveContextWindow(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name             string
 		model            string
@@ -87,6 +90,7 @@ func TestResolveContextWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cfg := &Config{
 				Model:            tt.model,
 				MaxHistoryTokens: tt.maxHistoryTokens,
@@ -98,6 +102,7 @@ func TestResolveContextWindow(t *testing.T) {
 }
 
 func TestResolveTieredThreshold(t *testing.T) {
+	t.Parallel()
 	pData := pricing.PricingData{
 		Models: map[string]pricing.ModelPricing{
 			"pro":   {TieredThreshold: 50000},
@@ -134,6 +139,7 @@ func TestResolveTieredThreshold(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cfg := &Config{Model: tt.model}
 			assert.Equal(t, tt.expected, cfg.ResolveTieredThreshold(pData))
 		})
@@ -141,6 +147,7 @@ func TestResolveTieredThreshold(t *testing.T) {
 }
 
 func TestFindBestMatch(t *testing.T) {
+	t.Parallel()
 	m := map[string]string{
 		"gemini":           "gemini-match",
 		"gemini-2.0":       "gemini-2.0-match",
@@ -183,6 +190,7 @@ func TestFindBestMatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, found := findBestMatch(m, tt.key, isValid)
 			assert.Equal(t, tt.found, found)
 			assert.Equal(t, tt.expected, got)
@@ -191,6 +199,7 @@ func TestFindBestMatch(t *testing.T) {
 }
 
 func TestDefaultPricing(t *testing.T) {
+	t.Parallel()
 	pData := DefaultPricing()
 	assert.NotEmpty(t, pData.Models)
 	assert.True(t, pData.Models["default"].ThinkingBudget >= 0)
@@ -198,6 +207,7 @@ func TestDefaultPricing(t *testing.T) {
 }
 
 func TestGetActiveProvider(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		config   Config
@@ -266,6 +276,7 @@ func TestGetActiveProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := tt.config.GetActiveProvider()
 			assert.Equal(t, tt.expected, got)
 		})

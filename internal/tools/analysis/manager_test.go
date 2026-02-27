@@ -80,35 +80,43 @@ func testErrorDelegation(t *testing.T, mgr *analysisManager, ctx context.Context
 }
 
 func TestAnalysisManager_Delegation(t *testing.T) {
+	t.Parallel()
 	mgr, tmpDir := setupAnalysisManager(t)
 	ctx := context.Background()
 
 	t.Run("Metrics", func(t *testing.T) {
+		t.Parallel()
 		testMetricsDelegation(t, mgr, ctx, tmpDir)
 	})
 
 	t.Run("Symbols", func(t *testing.T) {
+		t.Parallel()
 		testSymbolDelegation(t, mgr, ctx, tmpDir)
 	})
 
 	t.Run("TypeInfo", func(t *testing.T) {
+		t.Parallel()
 		testTypeInfoDelegation(t, mgr, ctx)
 	})
 
 	t.Run("Search", func(t *testing.T) {
+		t.Parallel()
 		testSearchDelegation(t, mgr, ctx, tmpDir)
 	})
 
 	t.Run("Dependency", func(t *testing.T) {
+		t.Parallel()
 		testDependencyDelegation(t, mgr, ctx)
 	})
 
 	t.Run("ErrorHandling", func(t *testing.T) {
+		t.Parallel()
 		testErrorDelegation(t, mgr, ctx)
 	})
 }
 
 func TestAnalysisManager_AnalyzeSequenceFlow(t *testing.T) {
+	t.Parallel()
 	mgr, _ := setupAnalysisManager(t)
 	ctx := context.Background()
 	_, _ = mgr.AnalyzeSequenceFlow(ctx, map[string]interface{}{"start_symbol": "F"})

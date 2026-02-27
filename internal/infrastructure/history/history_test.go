@@ -15,7 +15,6 @@ import (
 )
 
 func TestHistoryManager_Basic(t *testing.T) {
-	t.Parallel()
 
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
@@ -48,7 +47,6 @@ func TestHistoryManager_Basic(t *testing.T) {
 }
 
 func TestHistoryManager_GetWindow(t *testing.T) {
-	t.Parallel()
 
 	tmpDir := t.TempDir()
 	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -77,7 +75,7 @@ func TestHistoryManager_GetWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			window, err := m.GetWindow(ctx, tt.start, tt.end)
+					window, err := m.GetWindow(ctx, tt.start, tt.end)
 			if (err != nil) != tt.err {
 				t.Fatalf("expected error: %v, got: %v", tt.err, err)
 			}
@@ -89,7 +87,6 @@ func TestHistoryManager_GetWindow(t *testing.T) {
 }
 
 func TestHistoryManager_Load_NonExistent(t *testing.T) {
-	t.Parallel()
 	m := NewManager(infrapersistence.NewOSFileSystem(), "non-existent.json", "non-existent.archive.jsonl")
 	ctx := context.Background()
 	if err := m.Load(ctx); err != nil {
@@ -101,7 +98,6 @@ func TestHistoryManager_Load_NonExistent(t *testing.T) {
 }
 
 func TestHistoryManager_Load_Corrupted(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "corrupted.json")
 	archiveFile := filepath.Join(tmpDir, "corrupted.archive.jsonl")
@@ -117,7 +113,6 @@ func TestHistoryManager_Load_Corrupted(t *testing.T) {
 }
 
 func TestHistoryManager_Save_Error(t *testing.T) {
-	t.Parallel()
 	// Use a path that is impossible to create (e.g., child of a file)
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "afile")
@@ -135,7 +130,6 @@ func TestHistoryManager_Save_Error(t *testing.T) {
 }
 
 func TestHistoryManager_SnapshotRollback(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
@@ -230,7 +224,6 @@ func TestHistoryManager_FileCreation(t *testing.T) {
 }
 
 func TestHistoryManager_PinValidTurn(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "pin_valid.json")
 	archiveFile := filepath.Join(tmpDir, "pin_valid.archive.jsonl")
@@ -257,7 +250,6 @@ func TestHistoryManager_PinValidTurn(t *testing.T) {
 }
 
 func TestHistoryManager_UnpinTurn(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "unpin.json")
 	archiveFile := filepath.Join(tmpDir, "unpin.archive.jsonl")
@@ -330,7 +322,6 @@ func (s *mockStoreErrorMetadata) UpdateMetadata(ctx context.Context, index int, 
 }
 
 func TestHistoryManager_SetPinned_Error(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
@@ -356,7 +347,6 @@ func TestHistoryManager_SetPinned_Error(t *testing.T) {
 }
 
 func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
@@ -376,7 +366,6 @@ func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
 }
 
 func TestHistoryManager_SetContents(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
@@ -400,7 +389,6 @@ func TestHistoryManager_SetContents(t *testing.T) {
 }
 
 func TestHistoryManager_AppendParts(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
@@ -439,7 +427,6 @@ func TestHistoryManager_AppendParts(t *testing.T) {
 }
 
 func TestHistoryManager_Archive(t *testing.T) {
-	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")

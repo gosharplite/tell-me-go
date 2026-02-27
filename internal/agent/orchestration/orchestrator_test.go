@@ -236,7 +236,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.setup()
+					tt.setup()
 
 			// For ResponseStreamEvent, we need to handle the channel closing
 			if ev, ok := tt.event.(events.ResponseStreamEvent); ok {
@@ -258,7 +258,7 @@ func TestUIBridge_RelayStream(t *testing.T) {
 	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
 
 	t.Run("Relays content", func(t *testing.T) {
-		ctx := context.Background()
+			ctx := context.Background()
 		stream := make(chan *llm.Content, 2)
 		uiCh := make(chan *llm.Content, 2)
 
@@ -277,7 +277,7 @@ func TestUIBridge_RelayStream(t *testing.T) {
 	})
 
 	t.Run("Handles context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(context.Background())
 		stream := make(chan *llm.Content)
 		uiCh := make(chan *llm.Content)
 
@@ -292,7 +292,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
 
 	t.Run("Returns existing context", func(t *testing.T) {
-		type contextKey string
+			type contextKey string
 		const testKey contextKey = "key"
 		ctx := context.WithValue(context.Background(), testKey, "value")
 		result := bridge.ensureContext(ctx, "test")
@@ -300,7 +300,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	})
 
 	t.Run("Returns background context and logs warning if nil", func(t *testing.T) {
-		mRenderer.On("LogSystemMessage", "test missing context", "warn").Once()
+			mRenderer.On("LogSystemMessage", "test missing context", "warn").Once()
 		var nilCtx context.Context
 		result := bridge.ensureContext(nilCtx, "test")
 		assert.NotNil(t, result)

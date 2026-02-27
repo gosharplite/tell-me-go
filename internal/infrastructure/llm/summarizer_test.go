@@ -76,7 +76,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 	}
 
 	t.Run("Success", func(t *testing.T) {
-		gw := new(mockGateway)
+			gw := new(mockGateway)
 		bus := new(mockEventBus)
 		s := NewSummarizer(gw, bus)
 
@@ -119,7 +119,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 	})
 
 	t.Run("Empty response", func(t *testing.T) {
-		gw := new(mockGateway)
+			gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
 		respCh := make(chan *llm.Content)
@@ -135,7 +135,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 	})
 
 	t.Run("Transient error", func(t *testing.T) {
-		gw := new(mockGateway)
+			gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
 		respCh := make(chan *llm.Content)
@@ -157,7 +157,7 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Permanent error", func(t *testing.T) {
-		gw := new(mockGateway)
+			gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
 		respCh := make(chan *llm.Content)
@@ -175,7 +175,7 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("Nil response content", func(t *testing.T) {
-		gw := new(mockGateway)
+			gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
 		respCh := make(chan *llm.Content)
@@ -191,7 +191,7 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("Empty text in response", func(t *testing.T) {
-		gw := new(mockGateway)
+			gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
 		respCh := make(chan *llm.Content)

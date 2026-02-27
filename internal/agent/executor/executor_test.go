@@ -40,7 +40,9 @@ func (m *mockToolRegistry) IsSerial(name string) bool      { return m.isSerial }
 func (m *mockToolRegistry) IsLongRunning(name string) bool { return false }
 
 func TestToolExecutor_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	// Setup a tool that blocks until context is cancelled
+
 	toolStarted := make(chan struct{})
 	toolFinished := make(chan struct{})
 
@@ -103,6 +105,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 }
 
 func TestWorkerPool_LeakPrevention(t *testing.T) {
+	t.Parallel()
 	pool := concurrency.NewWorkerPool(1)
 	t.Cleanup(pool.Shutdown)
 
@@ -147,6 +150,7 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 }
 
 func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	reg := &mockToolRegistry{}
 	exec := NewToolExecutor(reg, nil, nil)
 	t.Cleanup(exec.Shutdown)

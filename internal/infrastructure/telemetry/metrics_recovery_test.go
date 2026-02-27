@@ -17,6 +17,7 @@ import (
 )
 
 func TestRecoverLedger_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	tempDir, err := os.MkdirTemp("", "metrics_test")
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +52,7 @@ func TestRecoverLedger_ContextCancellation(t *testing.T) {
 }
 
 func TestRecordCost_UsesContext(t *testing.T) {
+	t.Parallel()
 	tempDir, err := os.MkdirTemp("", "metrics_test_record")
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +88,7 @@ func TestRecordCost_UsesContext(t *testing.T) {
 }
 
 func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
+	t.Parallel()
 	tempDir, err := os.MkdirTemp("", "metrics_test_recovery_bg")
 	if err != nil {
 		t.Fatal(err)

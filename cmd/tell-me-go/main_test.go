@@ -11,7 +11,9 @@ import (
 )
 
 func TestMain_Execution(t *testing.T) {
+	t.Parallel()
 	// If we are in the subprocess, run main() and exit
+
 	if os.Getenv("TEST_MAIN_EXEC") == "1" {
 		// Override args to something safe like -v
 		os.Args = []string{"tell-me-go", "-v"}
@@ -31,7 +33,9 @@ func TestMain_Execution(t *testing.T) {
 }
 
 func TestMainBootstrap(t *testing.T) {
+	t.Parallel()
 	// Simple smoke test to ensure version is defined
+
 	if version == "" {
 		t.Error("version should not be empty")
 	}
@@ -85,7 +89,9 @@ func TestInitTracer_ExporterError(t *testing.T) {
 }
 
 func TestRun_InvalidArgs(t *testing.T) {
+	t.Parallel()
 	// Save original args
+
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 

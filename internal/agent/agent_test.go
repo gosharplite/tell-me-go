@@ -27,6 +27,7 @@ import (
 )
 
 func TestAgent_SetLimits(t *testing.T) {
+	t.Parallel()
 	client := &mockLLMClient{}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -46,6 +47,7 @@ func TestAgent_SetLimits(t *testing.T) {
 }
 
 func TestAgent_Chat(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
@@ -79,6 +81,7 @@ func TestAgent_Chat(t *testing.T) {
 }
 
 func TestAgent_ConfigWatcherIntegration(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	mainConfig := filepath.Join(tmpDir, "config.yaml")
 	sessionConfig := filepath.Join(tmpDir, "session.yaml")
@@ -108,6 +111,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 }
 
 func TestAgent_TieredThreshold(t *testing.T) {
+	t.Parallel()
 	client := &mockLLMClient{}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -125,6 +129,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 }
 
 func TestAgent_ToolFlow_Retry(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
@@ -157,7 +162,9 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 }
 
 func TestAgent_InternalTools_Registration(t *testing.T) {
+	t.Parallel()
 	t.Run("Default - No internal tools", func(t *testing.T) {
+		t.Parallel()
 		reg := registry.New()
 		sm := security_impl.NewSecurityManager(nil)
 		bus := events.NewSimpleEventBus()
@@ -174,6 +181,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 	})
 
 	t.Run("Opt-in - With internal tools", func(t *testing.T) {
+		t.Parallel()
 		reg := registry.New()
 		sm := security_impl.NewSecurityManager(nil)
 		bus := events.NewSimpleEventBus()
@@ -203,6 +211,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 }
 
 func TestAgent_ContextExhaustion_Error(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
@@ -230,6 +239,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 }
 
 func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
+	t.Parallel()
 	reg := registry.New()
 	bus := events.NewSimpleEventBus()
 	sm := security_impl.NewSecurityManager(nil)
@@ -247,14 +257,17 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 }
 
 func TestAgent_PinningFlow(t *testing.T) {
+	t.Parallel()
 	a, h, ctx := setupPinningFlowTest(t)
 	it := orchestration.NewInternalTools(a.ctxManager)
 
 	t.Run("PinTurn", func(t *testing.T) {
+		t.Parallel()
 		verifyPinAction(t, it, h, ctx, "pin", 0)
 	})
 
 	t.Run("UnpinTurn", func(t *testing.T) {
+		t.Parallel()
 		verifyPinAction(t, it, h, ctx, "unpin", 0)
 	})
 }
@@ -306,7 +319,9 @@ func setupPinningFlowTest(t *testing.T) (*agent, ports.HistoryManager, context.C
 }
 
 func TestAgent_Integration_PinningPruning(t *testing.T) {
+	t.Parallel()
 	// High level test: Ensure pinned turns survive pruning even if they are old.
+
 	a, h, ctx := setupPinningTest(t)
 
 	// 1. Add 10 turns
@@ -375,6 +390,7 @@ func verifyPinningResults(t *testing.T, meta *orchestration.Metadata, prepared [
 }
 
 func TestAgent_Reconfiguration(t *testing.T) {
+	t.Parallel()
 	client := &mockLLMClient{}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -504,6 +520,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 }
 
 func TestAgent_Chat_ConfigFailure(t *testing.T) {
+	t.Parallel()
 	client := &mockLLMClient{}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -524,7 +541,9 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 }
 
 func TestAgent_Shutdown(t *testing.T) {
+	t.Parallel()
 	// 1. Setup minimal dependencies
+
 	client := &mockLLMClient{}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
@@ -554,6 +573,7 @@ func TestAgent_Shutdown(t *testing.T) {
 }
 
 func TestAgent_Shutdown_NilDeps(t *testing.T) {
+	t.Parallel()
 	a := &agent{}
 	err := a.Shutdown(context.Background())
 	if err != nil {
@@ -562,6 +582,7 @@ func TestAgent_Shutdown_NilDeps(t *testing.T) {
 }
 
 func TestAgent_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancel
 
@@ -587,6 +608,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 }
 
 func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
+	t.Parallel()
 	client := &mockLLMClient{}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
