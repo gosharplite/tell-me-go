@@ -274,7 +274,7 @@ func TestToolExecutor_SafetyLimits(t *testing.T) {
 		}
 	})
 
-	t.Run("Long Running Tool - No Timeout", func(t *testing.T) {
+	t.Run("Long Running Tool - Extended Timeout", func(t *testing.T) {
 		t.Parallel()
 		toolsMap := map[string]toolBehavior{
 			"long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "finally finished"}, long: true},
@@ -1024,4 +1024,55 @@ func TestToolExecutor_UserDeclinedBatch(t *testing.T) {
 	if res.tr.Text != expectedText {
 		t.Errorf("expected text %q, got %q", expectedText, res.tr.Text)
 	}
+}
+
+func TestToolExecutor_LongRunningTimeout(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Long Running Tool - Timeout Exceeded", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"very_long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "too late"}, long: true},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		exec.SetLongRunningTimeout(10 * time.Millisecond)
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "very_long_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Tool execution timed out after 10ms")
+	})
+}
+
+func TestToolExecutor_ZombieTool(t *testing.T) {
+	t.Parallel()
+
+	reg := registry.New()
+	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "stubborn_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		time.Sleep(100 * time.Millisecond) // Ignores context!
+		return tools.ToolResult{Text: "finally finished"}, nil
+	}, registry.ToolOptions{LongRunning: true})
+
+	exec := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil)
+	exec.SetLongRunningTimeout(10 * time.Millisecond)
+	t.Cleanup(exec.Shutdown)
+
+	content := &llm.Content{Parts: []*llm.Part{
+		{FunctionCall: &llm.FunctionCall{Name: "stubborn_tool"}},
+	}}
+
+	resp, err := exec.Execute(context.Background(), content, 0, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	verifyErrorResponse(t, resp, "Tool execution timed out after 10ms")
+
+	// The stubborn tool is still running in the background...
+	// We can't easily wait for it without some signaling mechanism in the tool,
+	// but the fact that Execute returned proves that the agent is not hanging.
 }

@@ -38,6 +38,7 @@ type ToolExecutor struct {
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
+	longRunningTimeout time.Duration
 	zombieTimeout      time.Duration
 	pool               *concurrency.WorkerPool
 	strategy           resultStrategy
@@ -52,6 +53,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		events:             bus,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
+		longRunningTimeout: 5 * time.Minute,
 		zombieTimeout:      5 * time.Minute,
 		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &markdownStrategy{},
@@ -118,6 +120,13 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 	if oldPool != nil {
 		oldPool.Shutdown()
 	}
+}
+
+// SetLongRunningTimeout sets the timeout for long-running tools.
+func (e *ToolExecutor) SetLongRunningTimeout(timeout time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.longRunningTimeout = timeout
 }
 
 // Shutdown shuts down the internal worker pool.
@@ -628,16 +637,17 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	e.mu.RLock()
 	reg := e.registry
 	toolTimeout := e.toolTimeout
+	longRunningTimeout := e.longRunningTimeout
 	e.mu.RUnlock()
 
 	var ctx context.Context
 	var cancel context.CancelFunc
 
+	activeTimeout := toolTimeout
 	if reg.IsLongRunning(tool.Name) {
-		ctx, cancel = context.WithCancel(parentCtx)
-	} else {
-		ctx, cancel = context.WithTimeout(parentCtx, toolTimeout)
+		activeTimeout = longRunningTimeout
 	}
+	ctx, cancel = context.WithTimeout(parentCtx, activeTimeout)
 	defer cancel()
 
 	// Buffered channel prevents goroutine leak if the tool finishes after timeout
@@ -662,7 +672,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		errCtx := ctx.Err()
 		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
 		if errCtx == context.DeadlineExceeded {
-			msg = fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)
+			msg = fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout)
 		}
 
 		// SCALABLE (GOOD): Implementing a telemetry watchdog for abandoned goroutines
