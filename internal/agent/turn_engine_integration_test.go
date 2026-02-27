@@ -355,7 +355,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	}
 
 	// 5. Assertions
-	err := <-errCh
+	err = <-errCh
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, context.Canceled))
 

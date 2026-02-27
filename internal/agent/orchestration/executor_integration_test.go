@@ -150,7 +150,7 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 		},
 	}
 
-	_, err := exec.Execute(context.Background(), resp, 0, 10)
+	_, err = exec.Execute(context.Background(), resp, 0, 10)
 	require.NoError(t, err)
 
 	// Assertions
@@ -201,7 +201,7 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 		},
 	}
 
-	_, err := exec.Execute(context.Background(), resp, 0, 10)
+	_, err = exec.Execute(context.Background(), resp, 0, 10)
 	require.NoError(t, err)
 
 	sEnd := atomic.LoadInt64(&serialFinishedAt)
