@@ -205,3 +205,22 @@ func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextReque
 func (m *mockTransformer) Priority() int {
 	return m.priority
 }
+
+type mockPruningPolicy struct {
+	markTurnsFn func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error)
+	nameFn      func() string
+}
+
+func (m *mockPruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+	if m.markTurnsFn != nil {
+		return m.markTurnsFn(ctx, turns, keep)
+	}
+	return 0, nil
+}
+
+func (m *mockPruningPolicy) Name() string {
+	if m.nameFn != nil {
+		return m.nameFn()
+	}
+	return "MockPolicy"
+}
