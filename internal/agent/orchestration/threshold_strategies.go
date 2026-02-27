@@ -9,36 +9,6 @@ type ThresholdStrategy interface {
 	GetThreshold() int
 }
 
-// freeTierStrategy implements a threshold strategy for the free tier.
-type freeTierStrategy struct {
-	Threshold int
-}
-
-// Evaluate checks if tokens exceed the free tier threshold.
-func (s *freeTierStrategy) Evaluate(tokens int) bool {
-	return s.Threshold > 0 && tokens > s.Threshold
-}
-
-// GetThreshold returns the free tier threshold.
-func (s *freeTierStrategy) GetThreshold() int {
-	return s.Threshold
-}
-
-// proTierStrategy implements a threshold strategy for the pro tier.
-type proTierStrategy struct {
-	Threshold int
-}
-
-// Evaluate checks if tokens exceed the pro tier threshold.
-func (s *proTierStrategy) Evaluate(tokens int) bool {
-	return s.Threshold > 0 && tokens > s.Threshold
-}
-
-// GetThreshold returns the pro tier threshold.
-func (s *proTierStrategy) GetThreshold() int {
-	return s.Threshold
-}
-
 // dynamicThresholdStrategy implements a threshold strategy that delegates to the estimator.
 type dynamicThresholdStrategy struct {
 	Estimator tokenEstimator
