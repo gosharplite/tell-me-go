@@ -7,6 +7,7 @@ help:
 	@echo "tell-me-go development tasks:"
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
+	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
 
@@ -28,3 +29,10 @@ tidy:
 
 fmt:
 	go fmt ./...
+
+# Generate coverage report excluding mocks and generated files
+.PHONY: test-coverage
+test-coverage:
+	go test -coverprofile=coverage.raw ./...
+	grep -v -E "mock\.go|generated" coverage.raw > coverage.out
+	go tool cover -func=coverage.out
