@@ -704,3 +704,42 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamResponse_IgnoresThoughtsInFinalOutput(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	locker := &mockLocker{}
+	r := NewRenderer(locker, &stdout, &stderr)
+	r.(*stdUIRenderer).SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// [SCENARIO]: User interrupts or completes a stream where thoughts were present.
+	// [EXPECTED]: The final Markdown redraw (finalizeOutput) must NOT include thoughts.
+
+	// showThoughts = false, rawOutput = false (Markdown path)
+	ch, finalize := r.StreamResponse(ctx, false, false)
+
+	// Send a payload with both thought and regular text
+	ch <- &llm.Content{
+		Parts: []*llm.Part{
+			{Text: "I am a hidden thought", IsThought: true},
+			{Text: "I am the actual answer", IsThought: false},
+		},
+	}
+
+	// Finalize the stream (triggers finalizeOutput)
+	_ = finalize()
+
+	output := stdout.String()
+
+	// The output should contain the actual answer (processed via Glamour/Markdown)
+	if !strings.Contains(output, "I am the actual answer") {
+		t.Errorf("expected stdout to contain 'I am the actual answer', got %q", output)
+	}
+
+	// The output should NOT contain the hidden thought
+	if strings.Contains(output, "I am a hidden thought") {
+		t.Errorf("expected stdout NOT to contain 'I am a hidden thought', got %q", output)
+	}
+}

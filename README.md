@@ -192,6 +192,10 @@ alias b-install-dev='go install ./cmd/tell-me-go'
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).
 
+## 🧩 Attributions
+This project includes adapted content from the following open-source resources:
+*   **[everything-claude-code](https://github.com/affaanmustafa/everything-claude-code)**: Skill definitions in `docs/skills/` (see `docs/skills/NOTICE.md` for details).
+
 ## 🛠️ Development
 
 ### Setup

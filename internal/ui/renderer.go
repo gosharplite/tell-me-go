@@ -526,7 +526,16 @@ func (r *stdUIRenderer) safePrintStderr(msg string, ui uiState) {
 
 func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
 	if !state.rawOutput {
-		fullText := state.totalText.String()
+		// [BUGFIX]: Rebuild final text explicitly ignoring thoughts to prevent
+		// thought-leakage after a Ctrl+C interruption corrupts the transient totalText stream.
+		var cleanText strings.Builder
+		for _, p := range state.aggregated.Parts {
+			if !p.IsThought && p.Text != "" {
+				cleanText.WriteString(p.Text)
+			}
+		}
+
+		fullText := cleanText.String()
 		if fullText != "" {
 			sanitized := sanitizeForTerminal(fullText)
 
