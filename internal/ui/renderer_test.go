@@ -716,7 +716,7 @@ func TestStreamResponse_IgnoresThoughtsInFinalOutput(t *testing.T) {
 
 	// [SCENARIO]: User interrupts or completes a stream where thoughts were present.
 	// [EXPECTED]: The final Markdown redraw (finalizeOutput) must NOT include thoughts.
-	
+
 	// showThoughts = false, rawOutput = false (Markdown path)
 	ch, finalize := r.StreamResponse(ctx, false, false)
 
@@ -732,7 +732,7 @@ func TestStreamResponse_IgnoresThoughtsInFinalOutput(t *testing.T) {
 	_ = finalize()
 
 	output := stdout.String()
-	
+
 	// The output should contain the actual answer (processed via Glamour/Markdown)
 	if !strings.Contains(output, "I am the actual answer") {
 		t.Errorf("expected stdout to contain 'I am the actual answer', got %q", output)
