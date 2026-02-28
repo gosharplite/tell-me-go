@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestArchiveCostPreservation(t *testing.T) {
@@ -110,7 +111,7 @@ func seedPreviousSession(t *testing.T, outputDir, sessionName string, cost float
 	ledgerPath := filepath.Join(outputDir, "global_costs.json")
 	initialLedger := []map[string]interface{}{
 		{
-			"date":       "2026-01-28",
+			"date":       time.Now().Format("2006-01-02"),
 			"session":    sessionName,
 			"model":      "gemini-test-flash",
 			"total_cost": cost,
