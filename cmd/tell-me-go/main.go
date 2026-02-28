@@ -19,7 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/cli"
 )
 
-const version = "4.1.6-dev"
+const version = "4.1.6"
 
 func initTracer(ctx context.Context) func(context.Context) error {
 	endpoint := os.Getenv("TELL_ME_TRACE_ENDPOINT")
