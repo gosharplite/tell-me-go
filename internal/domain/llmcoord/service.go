@@ -13,35 +13,35 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-var _ orchestration.LLMCoordinator = (*Service)(nil)
+var _ orchestration.LLMCoordinator = (*service)(nil)
 
-// Service coordinates interactions with the LLM gateway.
-type Service struct {
+// service coordinates interactions with the LLM gateway.
+type service struct {
 	mu            sync.RWMutex
 	gateway       llm.LLMGateway
 	streamHandler func(context.Context, <-chan *llm.Content)
 }
 
-// Option defines a functional option for initializing the Service.
-type Option func(*Service)
+// Option defines a functional option for initializing the service.
+type Option func(*service)
 
 // WithGateway sets the LLM gateway for the service.
 func WithGateway(g llm.LLMGateway) Option {
-	return func(s *Service) {
+	return func(s *service) {
 		s.gateway = g
 	}
 }
 
 // WithStreamHandler sets the stream handler for the service.
 func WithStreamHandler(handler func(context.Context, <-chan *llm.Content)) Option {
-	return func(s *Service) {
+	return func(s *service) {
 		s.streamHandler = handler
 	}
 }
 
 // NewService creates a new LLMCoordinator service with functional options.
-func NewService(opts ...Option) *Service {
-	s := &Service{}
+func NewService(opts ...Option) orchestration.LLMCoordinator {
+	s := &service{}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -49,7 +49,7 @@ func NewService(opts ...Option) *Service {
 }
 
 // Generate coordinates the LLM generation process.
-func (s *Service) Generate(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	if s.gateway == nil {
 		return nil, nil, fmt.Errorf("llm gateway not initialized")
 	}

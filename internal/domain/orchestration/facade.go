@@ -78,95 +78,108 @@ func NewChatterFacade(opts ...FacadeOption) ports.Chatter {
 
 // Chat runs the multi-turn orchestration loop.
 func (f *chatterFacade) Chat(ctx context.Context, s *ports.Session, prompt string) error {
-	// 1. Initialize context with user prompt
-	err := f.contextPrep.AddContent(ctx, &llm.Content{
+	// Initialize context with user prompt
+	if err := f.contextPrep.AddContent(ctx, &llm.Content{
 		Role:  "user",
 		Parts: []*llm.Part{{Text: prompt}},
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to add user prompt: %w", err)
 	}
 
 	f.emit(ctx, events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 
-	// 2. Main Turn Loop
+	// Main Turn Loop
 	for turn := 0; turn <= f.maxToolTurns; turn++ {
-		// A. Guard check for context cancellation
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		// B. Signal turn start
-		f.emit(ctx, events.TurnStarted{Turn: turn, MaxTurns: f.maxToolTurns})
-
-		// C. Prepare Context
-		history, err := f.contextPrep.Prepare(ctx, turn)
+		stop, retry, err := f.executeTurn(ctx, turn)
 		if err != nil {
-			f.monitor.RecordError(ctx, err)
 			return err
 		}
-
-		// D. Invoke LLM (Inference)
-		response, metrics, err := f.llmCoord.Generate(ctx, history, f.registry.GetDeclarations(), f.history.GetResolver())
-		if err != nil {
-			// Basic retry logic for transient errors
-			if llm.IsTransient(err) {
-				f.emit(ctx, events.SystemMessageEvent{Message: fmt.Sprintf("Transient error: %v. Retrying...", err), Level: "warn"})
-				turn-- // Re-run this turn
-				continue
-			}
-			f.monitor.RecordError(ctx, err)
-			return err
+		if retry {
+			turn--
+			continue
 		}
-
-		// E. Track Usage
-		if err := f.monitor.TrackUsage(ctx, metrics); err != nil {
-			f.emit(ctx, events.SystemMessageEvent{Message: fmt.Sprintf("tracking failed: %v", err), Level: "warn"})
-		}
-
-		// F. Persist LLM Response
-		if err := f.contextPrep.AddContent(ctx, response); err != nil {
-			return fmt.Errorf("failed to persist response: %w", err)
-		}
-
-		// G. Check for Tool Calls
-		hasToolCalls := false
-		if response != nil {
-			for _, p := range response.Parts {
-				if p.FunctionCall != nil {
-					hasToolCalls = true
-					break
-				}
-			}
-		}
-
-		if !hasToolCalls {
-			break // No tools to execute, turn complete
-		}
-
-		// H. Execute Tools
-		toolResults, err := f.execution.Execute(ctx, response, turn, f.maxToolTurns)
-		if err != nil {
-			if llm.IsTransient(err) {
-				f.emit(ctx, events.SystemMessageEvent{Message: fmt.Sprintf("Transient tool error: %v. Retrying...", err), Level: "warn"})
-				// Note: In a robust engine we might want to checkpoint here, but for facade simplicity we'll just retry the turn
-				continue
-			}
-			f.monitor.RecordError(ctx, err)
-			return err
-		}
-
-		// I. Persist Tool Results
-		if toolResults != nil {
-			if err := f.contextPrep.AddContent(ctx, toolResults); err != nil {
-				return fmt.Errorf("failed to persist tool results: %w", err)
-			}
+		if stop {
+			break
 		}
 	}
 
 	return nil
+}
+
+func (f *chatterFacade) executeTurn(ctx context.Context, turn int) (stop bool, retry bool, err error) {
+	// Guard check for context cancellation
+	select {
+	case <-ctx.Done():
+		return false, false, ctx.Err()
+	default:
+	}
+
+	// Signal turn start
+	f.emit(ctx, events.TurnStarted{Turn: turn, MaxTurns: f.maxToolTurns})
+
+	// Prepare Context
+	history, err := f.contextPrep.Prepare(ctx, turn)
+	if err != nil {
+		f.monitor.RecordError(ctx, err)
+		return false, false, err
+	}
+
+	// Invoke LLM (Inference)
+	response, metrics, err := f.llmCoord.Generate(ctx, history, f.registry.GetDeclarations(), f.history.GetResolver())
+	if err != nil {
+		if llm.IsTransient(err) {
+			f.emit(ctx, events.SystemMessageEvent{Message: fmt.Sprintf("Transient error: %v. Retrying...", err), Level: "warn"})
+			return false, true, nil
+		}
+		f.monitor.RecordError(ctx, err)
+		return false, false, err
+	}
+
+	// Track Usage and persist response
+	_ = f.monitor.TrackUsage(ctx, metrics)
+	if err := f.contextPrep.AddContent(ctx, response); err != nil {
+		return false, false, fmt.Errorf("failed to persist response: %w", err)
+	}
+
+	// Check for tool calls
+	if !f.hasToolCalls(response) {
+		return true, false, nil
+	}
+
+	// Execute Tools
+	return f.runTools(ctx, response, turn)
+}
+
+func (f *chatterFacade) hasToolCalls(content *llm.Content) bool {
+	if content == nil {
+		return false
+	}
+	for _, p := range content.Parts {
+		if p.FunctionCall != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *chatterFacade) runTools(ctx context.Context, response *llm.Content, turn int) (stop bool, retry bool, err error) {
+	toolResults, err := f.execution.Execute(ctx, response, turn, f.maxToolTurns)
+	if err != nil {
+		if llm.IsTransient(err) {
+			f.emit(ctx, events.SystemMessageEvent{Message: fmt.Sprintf("Transient tool error: %v. Retrying...", err), Level: "warn"})
+			return false, true, nil
+		}
+		f.monitor.RecordError(ctx, err)
+		return false, false, err
+	}
+
+	// Persist Tool Results
+	if toolResults != nil {
+		if err := f.contextPrep.AddContent(ctx, toolResults); err != nil {
+			return false, false, fmt.Errorf("failed to persist tool results: %w", err)
+		}
+	}
+	return false, false, nil
 }
 
 func (f *chatterFacade) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {

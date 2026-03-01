@@ -12,7 +12,7 @@ import (
 )
 
 func TestService_NilExecutor(t *testing.T) {
-	s := &Service{}
+	s := &service{}
 	
 	_, err := s.Execute(context.Background(), &llm.Content{}, 1, 10)
 	assert.Error(t, err)

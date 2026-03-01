@@ -12,7 +12,7 @@ import (
 )
 
 func TestService_NilCM(t *testing.T) {
-	s := &Service{}
+	s := &service{}
 	
 	_, err := s.Prepare(context.Background(), 1)
 	assert.Error(t, err)

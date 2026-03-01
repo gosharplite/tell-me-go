@@ -14,35 +14,35 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
-var _ orchestration.MonitoringTracker = (*Service)(nil)
+var _ orchestration.MonitoringTracker = (*service)(nil)
 
-// Service handles business telemetry, cost tracking, and event emission.
-type Service struct {
+// service handles business telemetry, cost tracking, and event emission.
+type service struct {
 	mu      sync.RWMutex
 	tracker pricing.ICostTracker
 	bus     events.EventBus
 }
 
-// Option defines a functional option for initializing the Service.
-type Option func(*Service)
+// Option defines a functional option for initializing the service.
+type Option func(*service)
 
 // WithTracker sets the cost tracker for the service.
 func WithTracker(t pricing.ICostTracker) Option {
-	return func(s *Service) {
+	return func(s *service) {
 		s.tracker = t
 	}
 }
 
 // WithEventBus sets the event bus for the service.
 func WithEventBus(bus events.EventBus) Option {
-	return func(s *Service) {
+	return func(s *service) {
 		s.bus = bus
 	}
 }
 
 // NewService creates a new MonitoringTracker service with functional options.
-func NewService(opts ...Option) *Service {
-	s := &Service{}
+func NewService(opts ...Option) orchestration.MonitoringTracker {
+	s := &service{}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -50,7 +50,7 @@ func NewService(opts ...Option) *Service {
 }
 
 // TrackUsage records the metrics for a single LLM turn and emits corresponding events.
-func (s *Service) TrackUsage(ctx context.Context, metrics *llm.Metrics) error {
+func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) error {
 	if metrics == nil {
 		return nil
 	}
@@ -75,7 +75,7 @@ func (s *Service) TrackUsage(ctx context.Context, metrics *llm.Metrics) error {
 }
 
 // RecordError logs and potentially emits events for errors that occur during orchestration.
-func (s *Service) RecordError(ctx context.Context, err error) {
+func (s *service) RecordError(ctx context.Context, err error) {
 	if err == nil || s.bus == nil {
 		return
 	}
