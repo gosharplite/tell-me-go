@@ -13,7 +13,7 @@ import (
 // ContextPreparationService defines the interface for preparing LLM context.
 type ContextPreparationService interface {
 	// Prepare gathers and optimizes history for the next LLM turn.
-	Prepare(ctx context.Context, turn int) ([]*llm.Content, error)
+	Prepare(ctx context.Context, turn int) ([]*llm.Content, int, error)
 	// AddContent appends new content to the current session history.
 	AddContent(ctx context.Context, content *llm.Content) error
 	// GetMetadata returns diagnostics and auxiliary data from the last preparation.
@@ -38,7 +38,8 @@ type LLMCoordinator interface {
 // MonitoringTracker handles business telemetry, cost tracking, and event emission.
 type MonitoringTracker interface {
 	// TrackUsage records the metrics for a single LLM turn and emits corresponding events.
-	TrackUsage(ctx context.Context, metrics *llm.Metrics) error
+	TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64, error)
 	// RecordError logs and potentially emits events for errors that occur during orchestration.
 	RecordError(ctx context.Context, err error)
+	GetStatusData(ctx context.Context) (cost, dailyCost float64, totalM, totalH, totalO int64)
 }

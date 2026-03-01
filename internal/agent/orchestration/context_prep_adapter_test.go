@@ -25,7 +25,7 @@ func TestContextPrepAdapter_Prepare(t *testing.T) {
 
 	t.Run("successful prepare", func(t *testing.T) {
 		ctx := context.Background()
-		prepared, err := adapter.Prepare(ctx, 1)
+		prepared, _, err := adapter.Prepare(ctx, 1)
 		assert.NoError(t, err)
 		assert.Len(t, prepared, 1)
 		assert.Equal(t, "hello", prepared[0].Parts[0].Text)
@@ -34,7 +34,7 @@ func TestContextPrepAdapter_Prepare(t *testing.T) {
 	t.Run("prepare error", func(t *testing.T) {
 		history.getWindowErr = errors.New("get window failed")
 		ctx := context.Background()
-		_, err := adapter.Prepare(ctx, 1)
+		_, _, err := adapter.Prepare(ctx, 1)
 		assert.Error(t, err)
 		assert.Equal(t, "get window failed", err.Error())
 		history.getWindowErr = nil

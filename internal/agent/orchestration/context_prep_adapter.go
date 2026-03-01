@@ -21,9 +21,13 @@ func NewContextPrepAdapter(cm *ContextManager) domain_orchestration.ContextPrepa
 }
 
 // Prepare delegates to the wrapped ContextManager and drops the metadata return to satisfy the domain interface.
-func (a *contextPrepAdapter) Prepare(ctx context.Context, turn int) ([]*llm.Content, error) {
-	history, _, err := a.cm.Prepare(ctx, turn)
-	return history, err
+func (a *contextPrepAdapter) Prepare(ctx context.Context, turn int) ([]*llm.Content, int, error) {
+	history, metadata, err := a.cm.Prepare(ctx, turn)
+	tokens := 0
+	if metadata != nil {
+		tokens = metadata.FinalTokenCount
+	}
+	return history, tokens, err
 }
 
 // AddContent appends new content to the current session history by delegating to the ContextManager.

@@ -20,11 +20,12 @@ type mockContextPrep struct {
 	addContentFunc func(ctx context.Context, content *llm.Content) error
 }
 
-func (m *mockContextPrep) Prepare(ctx context.Context, turn int) ([]*llm.Content, error) {
+func (m *mockContextPrep) Prepare(ctx context.Context, turn int) ([]*llm.Content, int, error) {
 	if m.prepareFunc != nil {
-		return m.prepareFunc(ctx, turn)
+		h, err := m.prepareFunc(ctx, turn)
+		return h, 100, err
 	}
-	return nil, nil
+	return nil, 0, nil
 }
 
 func (m *mockContextPrep) AddContent(ctx context.Context, content *llm.Content) error {
@@ -61,13 +62,14 @@ type mockMonitor struct {
 	recordErrorFunc func(ctx context.Context, err error)
 }
 
-func (m *mockMonitor) TrackUsage(ctx context.Context, metrics *llm.Metrics) error {
+func (m *mockMonitor) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64, error) {
 	if m.trackUsageFunc != nil {
-		return m.trackUsageFunc(ctx, metrics)
+		return 0, m.trackUsageFunc(ctx, metrics)
 	}
-	return nil
+	return 0, nil
 }
 
+func (m *mockMonitor) GetStatusData(ctx context.Context) (cost, dailyCost float64, totalM, totalH, totalO int64) { return }
 func (m *mockMonitor) RecordError(ctx context.Context, err error) {
 	if m.recordErrorFunc != nil {
 		m.recordErrorFunc(ctx, err)

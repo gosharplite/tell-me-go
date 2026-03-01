@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -31,6 +32,10 @@ type chatterFacade struct {
 
 	// Internal state/config
 	maxToolTurns int
+	maxHistoryTokens int
+	maxHistoryTurns int
+	tieredThreshold int
+	taskCost float64
 }
 
 // facadeOption defines a functional option for initializing the chatterFacade.
@@ -130,11 +135,13 @@ func (f *chatterFacade) executeTurn(ctx context.Context, turn int) (stop bool, r
 	f.emit(ctx, events.TurnStarted{Turn: turn, MaxTurns: f.getMaxToolTurns()})
 
 	// Prepare Context
-	history, err := f.contextPrep.Prepare(ctx, turn)
+	history, tokens, err := f.contextPrep.Prepare(ctx, turn)
 	if err != nil {
 		f.monitor.RecordError(ctx, err)
 		return false, false, err
 	}
+
+	f.emitTurnStatus(ctx, turn, tokens, nil, false)
 
 	// Invoke LLM (Inference)
 	response, metrics, err := f.llmCoord.Generate(ctx, history, f.registry.GetDeclarations(), f.history.GetResolver())
@@ -148,7 +155,16 @@ func (f *chatterFacade) executeTurn(ctx context.Context, turn int) (stop bool, r
 	}
 
 	// Track Usage and persist response
-	_ = f.monitor.TrackUsage(ctx, metrics)
+	turnCost, _ := f.monitor.TrackUsage(ctx, metrics)
+	f.mu.Lock()
+	f.taskCost += turnCost
+	f.mu.Unlock()
+	if metrics != nil {
+		metrics.Cost = turnCost
+	}
+
+	f.emitTurnStatus(ctx, turn, tokens, metrics, true)
+
 	if err := f.contextPrep.AddContent(ctx, response); err != nil {
 		return false, false, fmt.Errorf("failed to persist response: %w", err)
 	}
@@ -204,10 +220,15 @@ func (f *chatterFacade) SetLimits(ctx context.Context, toolTurns, historyTokens,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.maxToolTurns = toolTurns
+	f.maxHistoryTokens = historyTokens
+	f.maxHistoryTurns = historyTurns
 	return nil
 }
 
 func (f *chatterFacade) SetTieredThreshold(ctx context.Context, threshold int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tieredThreshold = threshold
 	return nil
 }
 
@@ -228,4 +249,44 @@ func (f *chatterFacade) emit(ctx context.Context, e events.Event) {
 	if f.bus != nil {
 		_ = f.bus.Publish(ctx, e)
 	}
+}
+
+func (f *chatterFacade) emitTurnStatus(ctx context.Context, turn int, tokens int, metrics *llm.Metrics, isPostCall bool) {
+	f.mu.RLock()
+	maxHistTokens := f.maxHistoryTokens
+	maxHistTurns := f.maxHistoryTurns
+	threshold := f.tieredThreshold
+	taskCost := f.taskCost
+	f.mu.RUnlock()
+
+	sessionTurns := 0
+	if f.history != nil {
+		sessionTurns = f.history.GetTotalEntries() / 2
+	}
+
+	var cost, dailyCost float64
+	var totalM, totalH, totalO int64
+	if f.monitor != nil {
+		cost, dailyCost, totalM, totalH, totalO = f.monitor.GetStatusData(ctx)
+	}
+
+	f.emit(ctx, events.TurnStatusEvent{
+		Status: events.TurnStatus{
+			Timestamp:        time.Now(),
+			CurrentTurns:     turn,
+			SessionTurns:     sessionTurns,
+			MaxHistoryTurns:  maxHistTurns,
+			Tokens:           tokens,
+			MaxHistoryTokens: maxHistTokens,
+			TieredThreshold:  threshold,
+			Metrics:          metrics,
+			IsPostCall:       isPostCall,
+			SessionCost:      cost,
+			DailyCost:        dailyCost,
+			TaskCost:         taskCost,
+			TotalM:           totalM,
+			TotalH:           totalH,
+			TotalO:           totalO,
+		},
+	})
 }

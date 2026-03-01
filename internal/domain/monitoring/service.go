@@ -48,16 +48,18 @@ func NewService(opts ...option) orchestration.MonitoringTracker {
 }
 
 // TrackUsage records the metrics for a single LLM turn and emits corresponding events.
-func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) error {
+func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64, error) {
 	if metrics == nil {
-		return nil
+		return 0, nil
 	}
 
 	// Create a shallow copy to avoid mutating the caller's pointer
 	metricsCopy := *metrics
 
+	var turnCost float64
 	if s.tracker != nil {
-		metricsCopy.Cost = s.tracker.AccumulateAndReturn(metricsCopy)
+		turnCost = s.tracker.AccumulateAndReturn(metricsCopy)
+		metricsCopy.Cost = turnCost
 	}
 
 	if s.bus != nil {
@@ -66,11 +68,23 @@ func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) error {
 			Metrics: &metricsCopy,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to publish metrics event: %w", err)
+			return turnCost, fmt.Errorf("failed to publish metrics event: %w", err)
 		}
 	}
 
-	return nil
+	return turnCost, nil
+}
+
+func (s *service) GetStatusData(ctx context.Context) (cost, dailyCost float64, totalM, totalH, totalO int64) {
+	if s.tracker != nil {
+		cost = s.tracker.GetTotalCost(ctx)
+		dailyCost = s.tracker.GetDailyCost(ctx)
+		stats, _ := s.tracker.GetStats(ctx)
+		totalM = stats.PromptTokens - stats.CachedTokens
+		totalH = stats.CachedTokens
+		totalO = stats.ResponseTokens + stats.ThinkingTokens
+	}
+	return
 }
 
 // RecordError logs and potentially emits events for errors that occur during orchestration.

@@ -17,6 +17,9 @@ import (
 
 // mockCostTracker is a mock for pricing.ICostTracker.
 type mockCostTracker struct {
+	totalCost float64
+	dailyCost float64
+	stats pricing.UsageStats
 	mock.Mock
 }
 
@@ -106,7 +109,7 @@ func TestTrackUsage(t *testing.T) {
 			tt.setupMock(mt, eb)
 			service := NewService(WithTracker(mt), WithEventBus(eb))
 
-			err := service.TrackUsage(context.Background(), tt.metrics)
+			_, err := service.TrackUsage(context.Background(), tt.metrics)
 
 			if tt.expectedError != "" {
 				assert.Error(t, err)
