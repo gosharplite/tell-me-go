@@ -16,3 +16,10 @@ type ContextPreparationService interface {
 	// AddContent appends new content to the current session history.
 	AddContent(ctx context.Context, content *llm.Content) error
 }
+
+// ExecutionOrchestrator defines the interface for executing tools and managing turn state.
+type ExecutionOrchestrator interface {
+	// Execute takes the model response, identifies tool calls, executes them,
+	// and returns the combined tool results as a new Content object.
+	Execute(ctx context.Context, content *llm.Content, turn int, maxTurns int) (*llm.Content, error)
+}
