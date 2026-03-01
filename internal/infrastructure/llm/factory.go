@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/anthropic"
@@ -20,7 +21,7 @@ import (
 )
 
 // NewClient is the central factory for creating LLM providers.
-func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
+func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
 	p := cfg.GetActiveProvider()
 
 	authenticator, err := createAuthenticator(&p)
@@ -35,9 +36,9 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 
 	switch p.Type {
 	case "openai", "deepseek":
-		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout, maxBudget)
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout, maxBudget, logger)
 	case "anthropic":
-		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout)
+		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout, logger)
 	case "google", "gemini", "": // Default to Gemini for now
 		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout)
 	default:

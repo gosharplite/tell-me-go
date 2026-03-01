@@ -21,7 +21,7 @@ import (
 
 func setupMockOpenAIServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *client) {
 	server := httptest.NewServer(handler)
-	c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0)
+	c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0, nil)
 	return server, c
 }
 
@@ -157,7 +157,7 @@ func TestDeepSeekReasoning(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+	client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	var thought, text string
@@ -201,7 +201,7 @@ func TestOpenAIReasoningTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "o1-mini", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+	client := NewClient(server.URL, "o1-mini", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 	_, metrics, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	if metrics.ThinkingTokens != 15 {
@@ -262,7 +262,7 @@ func TestToolCalling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 
 	// 1. Initial call
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Weather?"}}}}
@@ -319,7 +319,7 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+	client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	if len(resp.Parts) != 2 {
@@ -350,7 +350,7 @@ func TestStreamChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 
 	var receivedText, receivedThought string
 	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
@@ -379,7 +379,7 @@ func TestStreamChat(t *testing.T) {
 }
 
 func TestToOpenAIMessages_EmptyContent(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
 	history := []*llm.Content{
 		{
 			Role:  "user",
@@ -412,7 +412,7 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 }
 
 func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
-	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0)
+	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0, nil)
 	history := []*llm.Content{
 		{
 			Role:  "user",
@@ -498,7 +498,7 @@ func TestSendChat_Errors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+			client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 			_, _, err := client.SendChat(context.Background(), nil, nil, nil)
 
 			if err == nil {
@@ -529,7 +529,7 @@ func TestStreamChat_Errors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 
 		if err == nil || !strings.Contains(err.Error(), "Something went wrong") {
@@ -544,7 +544,7 @@ func TestStreamChat_Errors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 
 		var apiErr *llmerr.APIError
@@ -574,7 +574,7 @@ func TestToOpenAISchema(t *testing.T) {
 
 func TestInjectPersona(t *testing.T) {
 	t.Run("OpenAI Reasoner Persona", func(t *testing.T) {
-		c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0, 0)
+		c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0, 0, nil)
 		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 2 || messages[0].Role != "developer" {
 			t.Errorf("expected developer role for persona in OpenAI reasoner, got %+v", messages[0])
@@ -582,7 +582,7 @@ func TestInjectPersona(t *testing.T) {
 	})
 
 	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
-		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0)
+		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0, nil)
 		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 2 || messages[0].Role != "system" || messages[0].Content != "Be helpful" {
 			t.Errorf("expected system role for persona in DeepSeek, got %+v", messages[0])
@@ -606,7 +606,7 @@ func TestStreamChat_ToolCalls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 	var toolCalls []*llm.FunctionCall
 	_, _ = client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
 		for _, p := range c.Parts {
@@ -622,7 +622,7 @@ func TestStreamChat_ToolCalls(t *testing.T) {
 }
 
 func TestGenerateImages_NotImplemented(t *testing.T) {
-	client := NewClient("", "", nil, nil, "", 0, 0)
+	client := NewClient("", "", nil, nil, "", 0, 0, nil)
 	_, err := client.GenerateImages(context.Background(), "", "", "")
 	if err == nil {
 		t.Error("expected error for GenerateImages")
@@ -631,13 +631,13 @@ func TestGenerateImages_NotImplemented(t *testing.T) {
 
 func TestRefreshAuth(t *testing.T) {
 	auth := &auth.BearerAuth{Token: "old"}
-	client := NewClient("", "", auth, nil, "", 0, 0)
+	client := NewClient("", "", auth, nil, "", 0, 0, nil)
 	_ = client.RefreshAuth()
 	// No easy way to check if invalidated without internal knowledge, but call it for coverage
 }
 
 func TestSendChat_MarshallingError(t *testing.T) {
-	client := NewClient("http://localhost", "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0)
+	client := NewClient("http://localhost", "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0, nil)
 	history := []*llm.Content{
 		{
 			Role: "model",
@@ -666,7 +666,7 @@ func TestSendChat_MarshallingError(t *testing.T) {
 }
 
 func TestToOpenAIMessages_MultiToolResponse(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
 	history := []*llm.Content{
 		{
 			Role: "user",
@@ -726,7 +726,7 @@ func TestCacheHitReporting(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 		_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -761,7 +761,7 @@ func TestCacheHitReporting(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 		_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -776,7 +776,7 @@ func TestCacheHitReporting(t *testing.T) {
 func TestOpenAI_InternalErrors(t *testing.T) {
 	t.Run("Authenticator Error", func(t *testing.T) {
 		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
-		c := NewClient("", "gpt-4", errAuth, nil, "", 0, 0)
+		c := NewClient("", "gpt-4", errAuth, nil, "", 0, 0, nil)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
 			t.Errorf("expected auth error, got %v", err)
@@ -784,7 +784,7 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 	})
 
 	t.Run("Invalid URL", func(t *testing.T) {
-		c := NewClient(" :invalid", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		c := NewClient(" :invalid", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to create request") {
 			t.Errorf("expected request creation error, got %v", err)
@@ -794,7 +794,7 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 	t.Run("HTTP Request Failure", func(t *testing.T) {
 		// A URL that will fail on Do()
 
-		c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "request failed") {
 			t.Errorf("expected request failure error, got %v", err)
@@ -827,7 +827,7 @@ func TestOpenAI_EdgeCase_MarshalResponse(t *testing.T) {
 }
 
 func TestOpenAI_EdgeCase_ToOpenAITools(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
 	decls := []*tools.ToolDeclaration{
 		{
 			Name:        "test",
@@ -847,7 +847,7 @@ func TestOpenAI_EdgeCase_ToOpenAITools(t *testing.T) {
 }
 
 func TestOpenAI_EdgeCase_ParseResponseContent(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
 	content := &llm.Content{}
 	c.parseResponseContent([]interface{}{
 		map[string]interface{}{"type": "text", "text": ""},
@@ -860,7 +860,7 @@ func TestOpenAI_EdgeCase_ParseResponseContent(t *testing.T) {
 }
 
 func TestOpenAI_EdgeCase_ParseResponseToolCalls(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
 	content := &llm.Content{}
 	err := c.parseResponseToolCalls([]toolCall{
 		{
@@ -876,7 +876,7 @@ func TestOpenAI_EdgeCase_ParseResponseToolCalls(t *testing.T) {
 
 func TestOpenAI_StreamEdgeCases(t *testing.T) {
 	t.Run("processStreamChunk malformed JSON", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+		c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
 		metrics, err := c.processStreamChunk([]byte("invalid"), nil, nil)
 		if metrics != nil || err != nil {
 			t.Errorf("expected nil, nil for malformed chunk, got %v, %v", metrics, err)
@@ -884,7 +884,7 @@ func TestOpenAI_StreamEdgeCases(t *testing.T) {
 	})
 
 	t.Run("emitToolCalls unmarshal error", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+		c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
 		states := map[int]*toolCallState{
 			0: {
 				name: "test",
@@ -905,7 +905,7 @@ func TestOpenAI_StreamEdgeCases(t *testing.T) {
 func TestOpenAI_StreamRequestFailure(t *testing.T) {
 	// Use a non-existent URL to trigger Do() error
 
-	c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+	c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
 	_, err := c.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 	if err == nil || !strings.Contains(err.Error(), "request failed") {
 		t.Errorf("expected request failure error, got %v", err)
@@ -913,7 +913,7 @@ func TestOpenAI_StreamRequestFailure(t *testing.T) {
 }
 
 func TestDeepSeekEmptyReasoningContent(t *testing.T) {
-	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0)
+	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0, nil)
 	history := []*llm.Content{
 		{
 			Role: "model",

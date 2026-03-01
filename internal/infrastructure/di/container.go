@@ -43,11 +43,11 @@ type bootstrapper struct {
 	Version       string
 	Stdout        io.Writer
 	Stderr        io.Writer
-	ClientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error)
+	ClientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error)
 }
 
 // NewBootstrapper creates a new Container instance.
-func NewBootstrapper(homeDir string, sm security.ISecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error)) Container {
+func NewBootstrapper(homeDir string, sm security.ISecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error)) Container {
 	if clientFactory == nil {
 		clientFactory = infra_llm.NewClient
 	}
@@ -83,7 +83,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	pricingData := telemetry.GetPricing(ctx, b.SM, filepath.Join(b.HomeDir, "output"))
 
-	client, err := b.ClientFactory(cfg, pricingData, bus)
+	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}

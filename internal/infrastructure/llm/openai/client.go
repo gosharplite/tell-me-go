@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
@@ -29,10 +30,14 @@ type client struct {
 	headers        map[string]string
 	persona        string
 	thinkingBudget int
+	logger         ports.Logger
 }
 
 // NewClient creates a new OpenAI-compatible client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, persona string, timeout time.Duration, thinkingBudget int) *client {
+func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, persona string, timeout time.Duration, thinkingBudget int, logger ports.Logger) *client {
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -44,6 +49,7 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 		headers:        headers,
 		persona:        persona,
 		thinkingBudget: thinkingBudget,
+		logger:         logger,
 	}
 }
 
@@ -327,13 +333,10 @@ func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherPart
 
 func (c *client) appendToolResponseMessages(messages *[]message, toolResponseParts []*llm.Part) error {
 	for _, p := range toolResponseParts {
-		// Skip tool responses with empty IDs - they can't be sent to OpenAI API
-		// as tool_call_id is required for tool role messages
+		// Fail fast if tool response has an empty ID - it violates protocol and indicates state corruption
 		if p.FunctionResponse.ID == "" {
-			// Log warning for debugging
-			// Note: We don't have a logger in this struct, so we can't log easily
-			// But at least we skip it to prevent API error
-			continue
+			c.logger.Error("Encountered tool response with empty ID during serialization", "tool_name", p.FunctionResponse.Name)
+			return fmt.Errorf("invalid tool payload: missing ID for tool response '%s'", p.FunctionResponse.Name)
 		}
 		res, err := marshalResponse(p.FunctionResponse.Response)
 		if err != nil {
@@ -363,9 +366,10 @@ func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string,
 	var reasoningParts []string
 	for _, p := range parts {
 		if p.FunctionCall != nil {
-			// Skip tool calls with empty IDs - they're invalid for API
+			// Fail fast if tool call has an empty ID - it violates protocol and indicates state corruption
 			if p.FunctionCall.ID == "" {
-				continue
+				c.logger.Error("Encountered tool call with empty ID during serialization", "tool_name", p.FunctionCall.Name)
+				return "", "", nil, fmt.Errorf("invalid tool payload: missing ID for tool call '%s'", p.FunctionCall.Name)
 			}
 			args, err := marshalArgs(p.FunctionCall.Args)
 			if err != nil {

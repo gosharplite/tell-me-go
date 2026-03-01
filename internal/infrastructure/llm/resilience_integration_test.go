@@ -24,7 +24,7 @@ func TestResilientClient_OpenAI_Classification(t *testing.T) {
 	}))
 	defer server.Close()
 
-	innerClient := openai.NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 5*time.Minute, 0)
+	innerClient := openai.NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 5*time.Minute, 0, nil)
 	// NewResilientClient is in the same package (llm)
 	client := NewResilientClient(innerClient, true) // disableStreaming=true makes it use SendChat internally
 

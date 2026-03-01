@@ -148,7 +148,7 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 	pData := pricing.PricingData{}
 
 	// This should hit the default: case in the switch statement
-	client, err := NewClient(cfg, pData, bus)
+	client, err := NewClient(cfg, pData, bus, nil)
 	if err != nil {
 		t.Fatalf("NewClient() unexpected error: %v", err)
 	}
