@@ -10,6 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -215,14 +216,10 @@ func TestRecordError(t *testing.T) {
 
 func TestService_GetStatusData(t *testing.T) {
 	tests := []struct {
-		name           string
-		withTracker    bool
-		setupMock      func(mt *mockCostTracker)
-		expectedCost   float64
-		expectedDaily  float64
-		expectedTotalM int64
-		expectedTotalH int64
-		expectedTotalO int64
+		name         string
+		withTracker  bool
+		setupMock    func(mt *mockCostTracker)
+		expectedData orchestration.StatusData
 	}{
 		{
 			name:        "Tracker available",
@@ -237,21 +234,19 @@ func TestService_GetStatusData(t *testing.T) {
 					ThinkingTokens: 50,
 				}, 150.0)
 			},
-			expectedCost:   150.0,
-			expectedDaily:  10.0,
-			expectedTotalM: 800, // 1000 - 200
-			expectedTotalH: 200, // 200
-			expectedTotalO: 350, // 300 + 50
+			expectedData: orchestration.StatusData{
+				Cost:         150.0,
+				DailyCost:    10.0,
+				TotalModel:   800, // 1000 - 200
+				TotalHistory: 200, // 200
+				TotalOutput:  350, // 300 + 50
+			},
 		},
 		{
-			name:           "Tracker nil",
-			withTracker:    false,
-			setupMock:      func(mt *mockCostTracker) {},
-			expectedCost:   0,
-			expectedDaily:  0,
-			expectedTotalM: 0,
-			expectedTotalH: 0,
-			expectedTotalO: 0,
+			name:         "Tracker nil",
+			withTracker:  false,
+			setupMock:    func(mt *mockCostTracker) {},
+			expectedData: orchestration.StatusData{},
 		},
 	}
 
@@ -266,13 +261,9 @@ func TestService_GetStatusData(t *testing.T) {
 			}
 			service := NewService(opts...)
 
-			cost, dailyCost, totalM, totalH, totalO := service.GetStatusData(context.Background())
+			data := service.GetStatusData(context.Background())
 
-			assert.Equal(t, tt.expectedCost, cost)
-			assert.Equal(t, tt.expectedDaily, dailyCost)
-			assert.Equal(t, tt.expectedTotalM, totalM)
-			assert.Equal(t, tt.expectedTotalH, totalH)
-			assert.Equal(t, tt.expectedTotalO, totalO)
+			assert.Equal(t, tt.expectedData, data)
 
 			if tt.withTracker {
 				mt.AssertExpectations(t)

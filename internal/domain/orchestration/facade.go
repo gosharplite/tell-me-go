@@ -351,10 +351,9 @@ func (f *chatterFacade) emitTurnStatus(ctx context.Context, turn int, tokens int
 		sessionTurns = f.history.GetTotalEntries() / 2
 	}
 
-	var cost, dailyCost float64
-	var totalM, totalH, totalO int64
+	var data StatusData
 	if f.monitor != nil {
-		cost, dailyCost, totalM, totalH, totalO = f.monitor.GetStatusData(ctx)
+		data = f.monitor.GetStatusData(ctx)
 	}
 
 	f.emit(ctx, events.TurnStatusEvent{
@@ -369,12 +368,12 @@ func (f *chatterFacade) emitTurnStatus(ctx context.Context, turn int, tokens int
 			TieredThreshold:  threshold,
 			Metrics:          metrics,
 			IsPostCall:       isPostCall,
-			SessionCost:      cost,
-			DailyCost:        dailyCost,
+			SessionCost:      data.Cost,
+			DailyCost:        data.DailyCost,
 			TaskCost:         taskCost,
-			TotalM:           totalM,
-			TotalH:           totalH,
-			TotalO:           totalO,
+			TotalM:           data.TotalModel,
+			TotalH:           data.TotalHistory,
+			TotalO:           data.TotalOutput,
 		},
 	})
 }

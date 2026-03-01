@@ -69,8 +69,8 @@ func (m *mockMonitor) TrackUsage(ctx context.Context, metrics *llm.Metrics) (flo
 	return 0, nil
 }
 
-func (m *mockMonitor) GetStatusData(ctx context.Context) (cost, dailyCost float64, totalM, totalH, totalO int64) {
-	return
+func (m *mockMonitor) GetStatusData(ctx context.Context) StatusData {
+	return StatusData{}
 }
 func (m *mockMonitor) RecordError(ctx context.Context, err error) {
 	if m.recordErrorFunc != nil {

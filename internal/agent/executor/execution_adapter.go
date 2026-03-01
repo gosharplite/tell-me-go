@@ -5,7 +5,7 @@ package executor
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_orchestration "github.com/gosharplite/tell-me-go/internal/domain/orchestration"
@@ -24,7 +24,7 @@ func NewExecutionAdapter(ex *ToolExecutor) domain_orchestration.ExecutionOrchest
 // Execute identifies and executes tool calls using the wrapped ToolExecutor.
 func (a *executionAdapter) Execute(ctx context.Context, content *llm.Content, turn int, maxTurns int) (*llm.Content, error) {
 	if a.ex == nil {
-		return nil, fmt.Errorf("executor not initialized")
+		return nil, errors.New("executor not initialized")
 	}
 	return a.ex.Execute(ctx, content, turn, maxTurns)
 }

@@ -41,5 +41,14 @@ type MonitoringTracker interface {
 	TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64, error)
 	// RecordError logs and potentially emits events for errors that occur during orchestration.
 	RecordError(ctx context.Context, err error)
-	GetStatusData(ctx context.Context) (cost, dailyCost float64, totalM, totalH, totalO int64)
+	GetStatusData(ctx context.Context) StatusData
+}
+
+// StatusData represents a snapshot of monitoring and cost data.
+type StatusData struct {
+	Cost         float64
+	DailyCost    float64
+	TotalModel   int64
+	TotalHistory int64
+	TotalOutput  int64
 }

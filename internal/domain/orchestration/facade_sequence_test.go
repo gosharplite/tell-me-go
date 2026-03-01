@@ -66,7 +66,7 @@ func (m *seqMockLLMCoord) Generate(ctx context.Context, history []*llm.Content, 
 type seqMockMonitor struct {
 	trackUsageFunc    func(ctx context.Context, metrics *llm.Metrics) (float64, error)
 	recordErrorFunc   func(ctx context.Context, err error)
-	getStatusDataFunc func(ctx context.Context) (float64, float64, int64, int64, int64)
+	getStatusDataFunc func(ctx context.Context) StatusData
 }
 
 func (m *seqMockMonitor) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64, error) {
@@ -82,11 +82,11 @@ func (m *seqMockMonitor) RecordError(ctx context.Context, err error) {
 	}
 }
 
-func (m *seqMockMonitor) GetStatusData(ctx context.Context) (float64, float64, int64, int64, int64) {
+func (m *seqMockMonitor) GetStatusData(ctx context.Context) StatusData {
 	if m.getStatusDataFunc != nil {
 		return m.getStatusDataFunc(ctx)
 	}
-	return 0, 0, 0, 0, 0
+	return StatusData{}
 }
 
 type seqMockExecution struct {
@@ -140,8 +140,14 @@ func TestChatterFacade_StrictEventSequence(t *testing.T) {
 		trackUsageFunc: func(ctx context.Context, metrics *llm.Metrics) (float64, error) {
 			return 0.01, nil
 		},
-		getStatusDataFunc: func(ctx context.Context) (float64, float64, int64, int64, int64) {
-			return 0.1, 1.0, 10, 5, 2
+		getStatusDataFunc: func(ctx context.Context) StatusData {
+			return StatusData{
+				Cost:         0.1,
+				DailyCost:    1.0,
+				TotalModel:   10,
+				TotalHistory: 5,
+				TotalOutput:  2,
+			}
 		},
 	}
 
