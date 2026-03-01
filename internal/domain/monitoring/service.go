@@ -75,7 +75,9 @@ func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64
 	return turnCost, nil
 }
 
-func (s *service) GetStatusData(ctx context.Context) (cost, dailyCost float64, totalM, totalH, totalO int64) {
+func (s *service) GetStatusData(ctx context.Context) (float64, float64, int64, int64, int64) {
+	var cost, dailyCost float64
+	var totalM, totalH, totalO int64
 	if s.tracker != nil {
 		cost = s.tracker.GetTotalCost(ctx)
 		dailyCost = s.tracker.GetDailyCost(ctx)
@@ -84,7 +86,7 @@ func (s *service) GetStatusData(ctx context.Context) (cost, dailyCost float64, t
 		totalH = stats.CachedTokens
 		totalO = stats.ResponseTokens + stats.ThinkingTokens
 	}
-	return
+	return cost, dailyCost, totalM, totalH, totalO
 }
 
 // RecordError logs and potentially emits events for errors that occur during orchestration.

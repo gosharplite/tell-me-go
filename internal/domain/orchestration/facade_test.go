@@ -69,7 +69,9 @@ func (m *mockMonitor) TrackUsage(ctx context.Context, metrics *llm.Metrics) (flo
 	return 0, nil
 }
 
-func (m *mockMonitor) GetStatusData(ctx context.Context) (cost, dailyCost float64, totalM, totalH, totalO int64) { return }
+func (m *mockMonitor) GetStatusData(ctx context.Context) (cost, dailyCost float64, totalM, totalH, totalO int64) {
+	return
+}
 func (m *mockMonitor) RecordError(ctx context.Context, err error) {
 	if m.recordErrorFunc != nil {
 		m.recordErrorFunc(ctx, err)
@@ -101,8 +103,9 @@ type mockRegistry struct {
 	getDeclarationsFunc func() []*tools.ToolDeclaration
 }
 
-func (m *mockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc)                             {}
-func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {}
+func (m *mockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {}
+func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+}
 func (m *mockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
@@ -122,7 +125,7 @@ type mockHistory struct {
 func (m *mockHistory) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 	return nil, nil
 }
-func (m *mockHistory) GetTotalEntries() int                                     { return 0 }
+func (m *mockHistory) GetTotalEntries() int                                           { return 0 }
 func (m *mockHistory) SetContents(ctx context.Context, contents []*llm.Content) error { return nil }
 func (m *mockHistory) Archive(ctx context.Context, contents []*llm.Content) error     { return nil }
 func (m *mockHistory) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
@@ -136,7 +139,7 @@ func (m *mockHistory) GetResolver() llm.AssetResolver {
 	return nil
 }
 func (m *mockHistory) SetPinned(ctx context.Context, turnIndex int, pinned bool) error { return nil }
-func (m *mockHistory) Save(ctx context.Context) error                                { return nil }
+func (m *mockHistory) Save(ctx context.Context) error                                  { return nil }
 
 func TestChatterFacade_Chat(t *testing.T) {
 	tests := []struct {

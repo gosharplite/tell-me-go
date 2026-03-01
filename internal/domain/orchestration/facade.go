@@ -32,13 +32,13 @@ type chatterFacade struct {
 	history  ports.HistoryManager
 
 	// Internal state/config
-	maxToolTurns int
+	maxToolTurns     int
 	maxHistoryTokens int
-	maxHistoryTurns int
-	tieredThreshold int
-	taskCost float64
-	providerName string
-	model string
+	maxHistoryTurns  int
+	tieredThreshold  int
+	taskCost         float64
+	providerName     string
+	model            string
 }
 
 // facadeOption defines a functional option for initializing the chatterFacade.
@@ -225,7 +225,7 @@ func (f *chatterFacade) finalizeTurn(ctx context.Context, turn int, tokens int, 
 	f.mu.Lock()
 	f.taskCost += turnCost
 	f.mu.Unlock()
-	
+
 	if metrics != nil {
 		metrics.Cost = turnCost
 	}
@@ -291,10 +291,10 @@ func (f *chatterFacade) SetLimits(ctx context.Context, toolTurns, historyTokens,
 	f.maxHistoryTokens = historyTokens
 	f.maxHistoryTurns = historyTurns
 	limits := events.Limits{
-		MaxToolTurns: toolTurns,
+		MaxToolTurns:     toolTurns,
 		MaxHistoryTokens: historyTokens,
-		MaxHistoryTurns: historyTurns,
-		TieredThreshold: f.tieredThreshold,
+		MaxHistoryTurns:  historyTurns,
+		TieredThreshold:  f.tieredThreshold,
 	}
 	f.mu.Unlock()
 	f.emit(ctx, events.ConfigUpdated{Limits: limits})
@@ -305,10 +305,10 @@ func (f *chatterFacade) SetTieredThreshold(ctx context.Context, threshold int) e
 	f.mu.Lock()
 	f.tieredThreshold = threshold
 	limits := events.Limits{
-		MaxToolTurns: f.maxToolTurns,
+		MaxToolTurns:     f.maxToolTurns,
 		MaxHistoryTokens: f.maxHistoryTokens,
-		MaxHistoryTurns: f.maxHistoryTurns,
-		TieredThreshold: threshold,
+		MaxHistoryTurns:  f.maxHistoryTurns,
+		TieredThreshold:  threshold,
 	}
 	f.mu.Unlock()
 	f.emit(ctx, events.ConfigUpdated{Limits: limits})

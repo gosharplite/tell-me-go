@@ -215,14 +215,14 @@ func TestRecordError(t *testing.T) {
 
 func TestService_GetStatusData(t *testing.T) {
 	tests := []struct {
-		name            string
-		withTracker     bool
-		setupMock       func(mt *mockCostTracker)
-		expectedCost    float64
-		expectedDaily   float64
-		expectedTotalM  int64
-		expectedTotalH  int64
-		expectedTotalO  int64
+		name           string
+		withTracker    bool
+		setupMock      func(mt *mockCostTracker)
+		expectedCost   float64
+		expectedDaily  float64
+		expectedTotalM int64
+		expectedTotalH int64
+		expectedTotalO int64
 	}{
 		{
 			name:        "Tracker available",
@@ -231,10 +231,10 @@ func TestService_GetStatusData(t *testing.T) {
 				mt.On("GetTotalCost", mock.Anything).Return(150.0)
 				mt.On("GetDailyCost", mock.Anything).Return(10.0)
 				mt.On("GetStats", mock.Anything).Return(pricing.UsageStats{
-					PromptTokens:    1000,
-					CachedTokens:    200,
-					ResponseTokens:  300,
-					ThinkingTokens:  50,
+					PromptTokens:   1000,
+					CachedTokens:   200,
+					ResponseTokens: 300,
+					ThinkingTokens: 50,
 				}, 150.0)
 			},
 			expectedCost:   150.0,

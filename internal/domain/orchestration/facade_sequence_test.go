@@ -27,9 +27,9 @@ func (s *spyEventBus) Publish(ctx context.Context, e events.Event) error {
 	return nil
 }
 
-func (s *spyEventBus) Subscribe(sub func(events.Event)) {}
+func (s *spyEventBus) Subscribe(sub func(events.Event))   {}
 func (s *spyEventBus) Shutdown(ctx context.Context) error { return nil }
-func (s *spyEventBus) Flush(ctx context.Context) error { return nil }
+func (s *spyEventBus) Flush(ctx context.Context) error    { return nil }
 
 // Mock implementations for the facade's domain dependencies.
 
@@ -110,7 +110,7 @@ type seqMockHistory struct {
 	ports.HistoryManager
 }
 
-func (m *seqMockHistory) GetTotalEntries() int { return 0 }
+func (m *seqMockHistory) GetTotalEntries() int           { return 0 }
 func (m *seqMockHistory) GetResolver() llm.AssetResolver { return nil }
 
 func TestChatterFacade_StrictEventSequence(t *testing.T) {

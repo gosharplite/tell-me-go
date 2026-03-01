@@ -56,17 +56,17 @@ func TestUIRendererGolden(t *testing.T) {
 		stdout.Reset()
 
 		status := events.TurnStatus{
-			Timestamp:        frozenTime,
-			SessionTurns:     2,
-			MaxHistoryTurns:  10,
-			IsPostCall:       true,
-			StartTime:        frozenTime.Add(-10 * time.Second),
-			SessionCost:      1.2345,
-			DailyCost:        5.6789,
-			TaskCost:         0.0123,
-			TotalM:           1000,
-			TotalH:           2000,
-			TotalO:           500,
+			Timestamp:       frozenTime,
+			SessionTurns:    2,
+			MaxHistoryTurns: 10,
+			IsPostCall:      true,
+			StartTime:       frozenTime.Add(-10 * time.Second),
+			SessionCost:     1.2345,
+			DailyCost:       5.6789,
+			TaskCost:        0.0123,
+			TotalM:          1000,
+			TotalH:          2000,
+			TotalO:          500,
 			Metrics: &llm.Metrics{
 				Provider:               "deepseek",
 				PromptTokens:           1200,
