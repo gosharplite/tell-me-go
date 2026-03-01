@@ -20,7 +20,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Workspace**: FileSystem (read/write/search/diff), Git (status/log/commit/branch), and AST-powered Go Analysis (usages, definitions, symbols, refactoring).
     *   **Enterprise**: Deep integration with **Jira**, **Confluence**, **Azure DevOps** (PRs, Pipelines, Repos), and **Teams**.
     *   **System & Dev**: Shell execution, interactive prompts, testing, linting, and vulnerability scanning.
-    *   **State & Finance**: Scratchpad, task tracking, and real-time USD cost auditing.
+    *   **State & Finance**: Scratchpad, task tracking, real-time USD cost auditing, and security policy management (`register_safepath`, `bypass_confirmation`, etc.).
     *   **Media**: Imagen 3 image generation and Vision analysis.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
@@ -83,7 +83,7 @@ Before every request, the tool shows your current resource usage relative to con
 ```text
 ────────────────────────────────────────────────────────────────────────────────
 ╭─⠿ Session: 3/20 turns
-[14:19:43] Payload: ~4549/120000 tokens
+[14:19:43] Payload: ~4549/180000 tokens
 ```
 *   **Session**: Current turn count / Max history turns.
 *   **Payload**: Estimated payload size (pre-inference) / Max history tokens.
@@ -91,7 +91,7 @@ Before every request, the tool shows your current resource usage relative to con
 **Post-turn Usage Metrics:**
 After the model responds, a detailed breakdown is provided:
 ```text
-[08:21:09] Payload: 33488/120000 tokens
+[08:21:09] Payload: 33488/180000 tokens
 [08:21:09] [google] M: 31882 H: 1204 C: 402 Th: 0 ($0.0123) [3.20s (ΣT: 0.15s) / 4.50s]
 ╰─⠿ Ready ($0.0123 $0.0123 $1.4745 $2.1050 M: 31882 H: 1204 3.6% O: 402)
 ```
@@ -160,7 +160,7 @@ TOOL_TIMEOUT: 300
 # --- Safety & History ---
 MAX_TURNS: 200
 MAX_HISTORY_TURNS: 500
-MAX_HISTORY_TOKENS: 120000
+MAX_HISTORY_TOKENS: 180000
 ```
 
 ## ⌨️ Shell Integration (Recommended)
