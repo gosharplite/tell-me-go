@@ -97,6 +97,7 @@ func (h *interactionHandler) ReadLine(ctx context.Context) (string, error) {
 
 // MockInteractor is a test helper that implements UserInteractor.
 type MockInteractor struct {
+	mu     sync.Mutex
 	Answer string
 	Err    error
 	Warns  []string
@@ -118,11 +119,15 @@ func (m *MockInteractor) Confirm(ctx context.Context, message string) (bool, err
 
 // Warn captures the warning message.
 func (m *MockInteractor) Warn(message string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.Warns = append(m.Warns, message)
 }
 
 // Prompt captures the prompt message as a warning.
 func (m *MockInteractor) Prompt(message string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.Warns = append(m.Warns, message)
 }
 

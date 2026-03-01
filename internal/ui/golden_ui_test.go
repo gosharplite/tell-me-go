@@ -68,6 +68,7 @@ func TestUIRendererGolden(t *testing.T) {
 			TotalH:           2000,
 			TotalO:           500,
 			Metrics: &llm.Metrics{
+				Provider:               "deepseek",
 				PromptTokens:           1200,
 				CachedTokens:           800,
 				ResponseTokens:         300,

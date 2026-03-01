@@ -37,6 +37,8 @@ type chatterFacade struct {
 	maxHistoryTurns int
 	tieredThreshold int
 	taskCost float64
+	providerName string
+	model string
 }
 
 // facadeOption defines a functional option for initializing the chatterFacade.
@@ -102,9 +104,14 @@ func (f *chatterFacade) Chat(ctx context.Context, s *ports.Session, prompt strin
 
 	transientRetries := 0
 
+	startTime := time.Now()
+	if s != nil && !s.StartTime.IsZero() {
+		startTime = s.StartTime
+	}
+
 	// Main Turn Loop
 	for turn := 0; turn <= f.getMaxToolTurns(); turn++ {
-		stop, retry, err := f.executeTurn(ctx, turn)
+		stop, retry, err := f.executeTurn(ctx, turn, startTime)
 		if err != nil {
 			return err
 		}
@@ -124,7 +131,7 @@ func (f *chatterFacade) Chat(ctx context.Context, s *ports.Session, prompt strin
 	return nil
 }
 
-func (f *chatterFacade) executeTurn(parentCtx context.Context, turn int) (stop bool, retry bool, err error) {
+func (f *chatterFacade) executeTurn(parentCtx context.Context, turn int, startTime time.Time) (stop bool, retry bool, err error) {
 	// Guard check for context cancellation
 	select {
 	case <-parentCtx.Done():
@@ -141,57 +148,84 @@ func (f *chatterFacade) executeTurn(parentCtx context.Context, turn int) (stop b
 	// Prepare Context
 	history, tokens, err := f.contextPrep.Prepare(ctx, turn)
 	if err != nil {
-		f.monitor.RecordError(ctx, err)
-		trace.FinalStatus = "error"
-		f.emit(ctx, events.TraceEvent{Trace: trace})
-		return false, false, err
+		return f.handleError(ctx, trace, err, false)
 	}
 
-	f.emitTurnStatus(ctx, turn, tokens, nil, false)
+	f.emitTurnStatus(ctx, turn, tokens, nil, false, startTime)
 
 	// Invoke LLM (Inference)
+	response, metrics, isTransient, err := f.invokeLLM(ctx, history, trace)
+	if err != nil {
+		return f.handleError(ctx, trace, err, isTransient)
+	}
+
+	if err := f.contextPrep.AddContent(ctx, response); err != nil {
+		return f.handleError(ctx, trace, fmt.Errorf("failed to persist response: %w", err), false)
+	}
+
+	// Tool Execution
+	stop, retry, err = f.handleTools(ctx, response, turn, trace, metrics)
+
+	// Metrics & Finalization
+	f.finalizeTurn(ctx, turn, tokens, metrics, trace, err, retry, startTime)
+
+	return stop, retry, err
+}
+
+func (f *chatterFacade) invokeLLM(ctx context.Context, history []*llm.Content, trace *telemetry.TurnTrace) (*llm.Content, *llm.Metrics, bool, error) {
 	startInference := time.Now()
 	response, metrics, err := f.llmCoord.Generate(ctx, history, f.registry.GetDeclarations(), f.history.GetResolver())
 	trace.InferenceDuration = time.Since(startInference)
 
+	if metrics != nil {
+		f.mu.RLock()
+		metrics.Provider = f.providerName
+		metrics.Model = f.model
+		f.mu.RUnlock()
+	}
+
 	if err != nil {
-		if llm.IsTransient(err) {
-			f.emit(ctx, events.SystemMessageEvent{Message: fmt.Sprintf("Transient error: %v. Retrying...", err), Level: "warn"})
-			trace.FinalStatus = "transient_error"
-			f.emit(ctx, events.TraceEvent{Trace: trace})
-			return false, true, nil
-		}
-		f.monitor.RecordError(ctx, err)
-		trace.FinalStatus = "error"
+		return nil, nil, llm.IsTransient(err), err
+	}
+	return response, metrics, false, nil
+}
+
+func (f *chatterFacade) handleError(ctx context.Context, trace *telemetry.TurnTrace, err error, isTransient bool) (bool, bool, error) {
+	if isTransient {
+		f.emit(ctx, events.SystemMessageEvent{Message: fmt.Sprintf("Transient error: %v. Retrying...", err), Level: "warn"})
+		trace.FinalStatus = "transient_error"
 		f.emit(ctx, events.TraceEvent{Trace: trace})
-		return false, false, err
+		return false, true, nil
+	}
+	f.monitor.RecordError(ctx, err)
+	trace.FinalStatus = "error"
+	f.emit(ctx, events.TraceEvent{Trace: trace})
+	return false, false, err
+}
+
+func (f *chatterFacade) handleTools(ctx context.Context, response *llm.Content, turn int, trace *telemetry.TurnTrace, metrics *llm.Metrics) (bool, bool, error) {
+	if !f.hasToolCalls(response) {
+		return true, false, nil
 	}
 
-	if err := f.contextPrep.AddContent(ctx, response); err != nil {
-		trace.FinalStatus = "error"
-		f.emit(ctx, events.TraceEvent{Trace: trace})
-		return false, false, fmt.Errorf("failed to persist response: %w", err)
+	startTools := time.Now()
+	stop, retry, err := f.runTools(ctx, response, turn)
+
+	if metrics != nil {
+		metrics.ToolDuration = time.Since(startTools).Seconds()
+		metrics.CumulativeToolDuration = trace.CumulativeToolDuration().Seconds()
 	}
 
-	// Check for tool calls and execute tools
-	if f.hasToolCalls(response) {
-		startTools := time.Now()
-		stop, retry, err = f.runTools(ctx, response, turn)
+	return stop, retry, err
+}
 
-		toolDur := time.Since(startTools)
-		if metrics != nil {
-			metrics.ToolDuration = toolDur.Seconds()
-			metrics.CumulativeToolDuration = trace.CumulativeToolDuration().Seconds()
-		}
-	} else {
-		stop = true // Default behavior when no tools are called
-	}
-
+func (f *chatterFacade) finalizeTurn(ctx context.Context, turn int, tokens int, metrics *llm.Metrics, trace *telemetry.TurnTrace, err error, retry bool, startTime time.Time) {
 	// Track Usage AFTER tools
 	turnCost, _ := f.monitor.TrackUsage(ctx, metrics)
 	f.mu.Lock()
 	f.taskCost += turnCost
 	f.mu.Unlock()
+	
 	if metrics != nil {
 		metrics.Cost = turnCost
 	}
@@ -200,7 +234,7 @@ func (f *chatterFacade) executeTurn(parentCtx context.Context, turn int) (stop b
 	if metrics != nil && metrics.PromptTokens > 0 {
 		postTokens = int(metrics.PromptTokens)
 	}
-	f.emitTurnStatus(ctx, turn, postTokens, metrics, true)
+	f.emitTurnStatus(ctx, turn, postTokens, metrics, true, startTime)
 
 	trace.EndTime = time.Now()
 	if err != nil {
@@ -211,8 +245,6 @@ func (f *chatterFacade) executeTurn(parentCtx context.Context, turn int) (stop b
 		trace.FinalStatus = "success"
 	}
 	f.emit(ctx, events.TraceEvent{Trace: trace})
-
-	return stop, retry, err
 }
 
 func (f *chatterFacade) hasToolCalls(content *llm.Content) bool {
@@ -302,7 +334,7 @@ func (f *chatterFacade) emit(ctx context.Context, e events.Event) {
 	}
 }
 
-func (f *chatterFacade) emitTurnStatus(ctx context.Context, turn int, tokens int, metrics *llm.Metrics, isPostCall bool) {
+func (f *chatterFacade) emitTurnStatus(ctx context.Context, turn int, tokens int, metrics *llm.Metrics, isPostCall bool, startTime time.Time) {
 	f.mu.RLock()
 	maxHistTokens := f.maxHistoryTokens
 	maxHistTurns := f.maxHistoryTurns
@@ -324,6 +356,7 @@ func (f *chatterFacade) emitTurnStatus(ctx context.Context, turn int, tokens int
 	f.emit(ctx, events.TurnStatusEvent{
 		Status: events.TurnStatus{
 			Timestamp:        time.Now(),
+			StartTime:        startTime,
 			CurrentTurns:     turn,
 			SessionTurns:     sessionTurns,
 			MaxHistoryTurns:  maxHistTurns,
@@ -340,4 +373,14 @@ func (f *chatterFacade) emitTurnStatus(ctx context.Context, turn int, tokens int
 			TotalO:           totalO,
 		},
 	})
+}
+
+// WithProvider sets the provider name for metrics injection.
+func WithProvider(provider string) facadeOption {
+	return func(f *chatterFacade) { f.providerName = provider }
+}
+
+// WithModel sets the model name for metrics injection.
+func WithModel(model string) facadeOption {
+	return func(f *chatterFacade) { f.model = model }
 }

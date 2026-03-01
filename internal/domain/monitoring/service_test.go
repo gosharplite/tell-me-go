@@ -17,9 +17,6 @@ import (
 
 // mockCostTracker is a mock for pricing.ICostTracker.
 type mockCostTracker struct {
-	totalCost float64
-	dailyCost float64
-	stats pricing.UsageStats
 	mock.Mock
 }
 

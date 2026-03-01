@@ -237,6 +237,8 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 			domain_orchestration.WithEventBus(params.EventBus),
 			domain_orchestration.WithRegistry(params.Registry),
 			domain_orchestration.WithHistory(params.HistoryManager),
+			domain_orchestration.WithProvider(params.ProviderName),
+			domain_orchestration.WithModel(params.Model),
 		), nil
 	}
 }

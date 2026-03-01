@@ -41,8 +41,11 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 		Factory:  factory,
 	}
 
-	if factory != nil && factory.Summarizer != nil {
-		cm.Summarizer = factory.Summarizer
+	if factory != nil {
+		if factory.Summarizer != nil {
+			cm.Summarizer = factory.Summarizer
+		}
+		cm.Pipeline = factory.BuildStandardPipeline(cm.GetLimits())
 	}
 
 	if bus != nil {
