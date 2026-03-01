@@ -15,10 +15,10 @@ import (
 var _ orchestration.LLMCoordinator = (*service)(nil)
 
 var (
-	// ErrGatewayNotInitialized signals that the service was created without a gateway.
-	ErrGatewayNotInitialized = errors.New("llm gateway not initialized")
-	// ErrNilContentReturned signals that the gateway returned an empty or nil response content.
-	ErrNilContentReturned = errors.New("api returned nil content")
+	// errGatewayNotInitialized signals that the service was created without a gateway.
+	errGatewayNotInitialized = errors.New("llm gateway not initialized")
+	// errNilContentReturned signals that the gateway returned an empty or nil response content.
+	errNilContentReturned = errors.New("api returned nil content")
 )
 
 // service coordinates interactions with the LLM gateway.
@@ -56,7 +56,7 @@ func NewService(opts ...option) orchestration.LLMCoordinator {
 // Generate coordinates the LLM generation process.
 func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	if s.gateway == nil {
-		return nil, nil, ErrGatewayNotInitialized
+		return nil, nil, errGatewayNotInitialized
 	}
 
 	respCh, finalize := s.gateway.Generate(ctx, history, toolDecls, resolver)
@@ -79,7 +79,7 @@ func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecl
 	}
 
 	if respContent == nil {
-		return nil, nil, ErrNilContentReturned
+		return nil, nil, errNilContentReturned
 	}
 
 	return respContent, metrics, nil
