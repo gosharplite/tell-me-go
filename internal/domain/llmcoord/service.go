@@ -59,17 +59,10 @@ func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecl
 	if handler != nil {
 		handler(ctx, respCh)
 	} else {
-		// Drain the channel if no handler is provided
-	drainLoop:
-		for {
-			select {
-			case <-ctx.Done():
-				break drainLoop
-			case _, ok := <-respCh:
-				if !ok {
-					break drainLoop
-				}
-			}
+		// Drain the channel if no handler is provided.
+		// When ctx is canceled, the gateway is responsible for closing respCh.
+		for range respCh {
+			// Discard tokens to prevent blocking the sender
 		}
 	}
 
