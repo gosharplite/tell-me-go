@@ -255,13 +255,24 @@ func (t *contentCleaner) Priority() int { return 5 }
 type toolResponseCleaner struct{}
 
 func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	var cleanHistory []*llm.Content
 	modified := false
+
 	for _, content := range req.History {
 		if cleanToolParts(content) {
 			modified = true
 		}
+		// Only keep the content if it still has valid parts after cleaning
+		if len(content.Parts) > 0 {
+			cleanHistory = append(cleanHistory, content)
+		} else {
+			// If it has 0 parts now, we are dropping it entirely
+			modified = true
+		}
 	}
+
 	if modified {
+		req.History = cleanHistory
 		req.PersistHistory = true
 	}
 	return nil

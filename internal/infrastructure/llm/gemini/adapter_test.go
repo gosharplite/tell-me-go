@@ -33,7 +33,7 @@ func TestPart_Conversion(t *testing.T) {
 		},
 	}
 
-	internalPart := fromSDKPart(sdkPart)
+	internalPart := fromSDKPart(sdkPart, 0)
 
 	if internalPart.Text != sdkPart.Text {
 		t.Errorf("expected text %s, got %s", sdkPart.Text, internalPart.Text)
@@ -129,7 +129,7 @@ func TestPart_FunctionConversion(t *testing.T) {
 		},
 	}
 
-	internalPart := fromSDKPart(sdkPart)
+	internalPart := fromSDKPart(sdkPart, 0)
 	if internalPart.FunctionCall.Name != "test_tool" {
 		t.Errorf("expected test_tool, got %s", internalPart.FunctionCall.Name)
 	}
@@ -145,7 +145,7 @@ func TestPart_FunctionConversion(t *testing.T) {
 			Response: map[string]interface{}{"result": "ok"},
 		},
 	}
-	internalPartResp := fromSDKPart(sdkPartResp)
+	internalPartResp := fromSDKPart(sdkPartResp, 0)
 	if internalPartResp.FunctionResponse.Name != "test_tool" {
 		t.Errorf("expected test_tool, got %s", internalPartResp.FunctionResponse.Name)
 	}
@@ -166,7 +166,7 @@ func TestContent_Conversion_Nil(t *testing.T) {
 	if toSDKPart(context.Background(), nil, nil) != nil {
 		t.Error("ToSDKPart(nil) should be nil")
 	}
-	if fromSDKPart(nil) != nil {
+	if fromSDKPart(nil, 0) != nil {
 		t.Error("FromSDKPart(nil) should be nil")
 	}
 }

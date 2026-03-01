@@ -49,13 +49,8 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	}
 
 	// Verify history was cleaned for the context window
-	if len(preparedHistory) == 0 {
-		t.Fatal("History is empty")
-	}
-	if len(preparedHistory[0].Parts) == 0 {
-		t.Error("Pipeline failed to inject placeholder for empty parts")
-	} else if preparedHistory[0].Parts[0].Text != "[empty response]" {
-		t.Errorf("Expected placeholder text, got: %s", preparedHistory[0].Parts[0].Text)
+	if len(preparedHistory) != 0 {
+		t.Errorf("Expected empty history after pruning empty message, got %d messages", len(preparedHistory))
 	}
 }
 
@@ -183,7 +178,7 @@ func newMultiModalMockClient() *mockLLMClient {
 				return &domain_llm.Content{
 					Role: "model",
 					Parts: []*domain_llm.Part{
-						{FunctionCall: &domain_llm.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
+						{FunctionCall: &domain_llm.FunctionCall{ID: "call_123", Name: "get_image", Args: map[string]interface{}{}}},
 					},
 				}, &domain_llm.Metrics{}, nil
 			}

@@ -746,7 +746,7 @@ func createToolCallResponse(provider string, name string, args map[string]interf
 
 	switch provider {
 	case "google":
-		return fmt.Sprintf(`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":%q,"args":%s}}]}}]}`, name, string(argsBytes))
+		return fmt.Sprintf(`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"id":"call_123","name":%q,"args":%s}}]}}]}`, name, string(argsBytes))
 	case "openai":
 		resp := map[string]interface{}{
 			"choices": []interface{}{
