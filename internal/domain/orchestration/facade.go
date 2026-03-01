@@ -93,7 +93,7 @@ func (f *chatterFacade) Chat(ctx context.Context, s *ports.Session, prompt strin
 	f.emit(ctx, events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 
 	// Main Turn Loop
-	for turn := 0; turn <= f.maxToolTurns; turn++ {
+	for turn := 0; turn <= f.getMaxToolTurns(); turn++ {
 		stop, retry, err := f.executeTurn(ctx, turn)
 		if err != nil {
 			return err
@@ -119,7 +119,7 @@ func (f *chatterFacade) executeTurn(ctx context.Context, turn int) (stop bool, r
 	}
 
 	// Signal turn start
-	f.emit(ctx, events.TurnStarted{Turn: turn, MaxTurns: f.maxToolTurns})
+	f.emit(ctx, events.TurnStarted{Turn: turn, MaxTurns: f.getMaxToolTurns()})
 
 	// Prepare Context
 	history, err := f.contextPrep.Prepare(ctx, turn)
@@ -167,7 +167,7 @@ func (f *chatterFacade) hasToolCalls(content *llm.Content) bool {
 }
 
 func (f *chatterFacade) runTools(ctx context.Context, response *llm.Content, turn int) (stop bool, retry bool, err error) {
-	toolResults, err := f.execution.Execute(ctx, response, turn, f.maxToolTurns)
+	toolResults, err := f.execution.Execute(ctx, response, turn, f.getMaxToolTurns())
 	if err != nil {
 		if llm.IsTransient(err) {
 			f.emit(ctx, events.SystemMessageEvent{Message: fmt.Sprintf("Transient tool error: %v. Retrying...", err), Level: "warn"})
@@ -184,6 +184,12 @@ func (f *chatterFacade) runTools(ctx context.Context, response *llm.Content, tur
 		}
 	}
 	return false, false, nil
+}
+
+func (f *chatterFacade) getMaxToolTurns() int {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.maxToolTurns
 }
 
 func (f *chatterFacade) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
