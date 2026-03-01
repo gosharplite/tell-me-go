@@ -327,6 +327,14 @@ func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherPart
 
 func (c *client) appendToolResponseMessages(messages *[]message, toolResponseParts []*llm.Part) error {
 	for _, p := range toolResponseParts {
+		// Skip tool responses with empty IDs - they can't be sent to OpenAI API
+		// as tool_call_id is required for tool role messages
+		if p.FunctionResponse.ID == "" {
+			// Log warning for debugging
+			// Note: We don't have a logger in this struct, so we can't log easily
+			// But at least we skip it to prevent API error
+			continue
+		}
 		res, err := marshalResponse(p.FunctionResponse.Response)
 		if err != nil {
 			return fmt.Errorf("failed to marshal tool response: %w", err)
@@ -355,6 +363,10 @@ func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string,
 	var reasoningParts []string
 	for _, p := range parts {
 		if p.FunctionCall != nil {
+			// Skip tool calls with empty IDs - they're invalid for API
+			if p.FunctionCall.ID == "" {
+				continue
+			}
 			args, err := marshalArgs(p.FunctionCall.Args)
 			if err != nil {
 				return "", "", nil, fmt.Errorf("failed to marshal tool arguments: %w", err)

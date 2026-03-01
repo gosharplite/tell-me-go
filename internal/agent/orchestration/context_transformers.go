@@ -175,6 +175,7 @@ func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextReque
 		if p.FunctionCall != nil {
 			responses = append(responses, &llm.Part{
 				FunctionResponse: &llm.FunctionResponse{
+					ID:       p.FunctionCall.ID, // Copy ID from the function call
 					Name:     p.FunctionCall.Name,
 					Response: map[string]interface{}{"result": "Error: System rebooted or session interrupted during tool execution. Results lost."},
 				},
@@ -248,3 +249,50 @@ func cleanContent(content *llm.Content) bool {
 }
 
 func (t *contentCleaner) Priority() int { return 5 }
+
+
+// toolResponseCleaner removes tool responses with empty IDs, which are invalid for APIs.
+type toolResponseCleaner struct{}
+
+func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	modified := false
+	for _, content := range req.History {
+		if cleanToolParts(content) {
+			modified = true
+		}
+	}
+	if modified {
+		req.PersistHistory = true
+	}
+	return nil
+}
+
+func cleanToolParts(content *llm.Content) bool {
+	if content == nil {
+		return false
+	}
+	
+	var cleanParts []*llm.Part
+	changed := false
+	
+	for _, p := range content.Parts {
+		// Skip tool calls with empty IDs - they cause API errors
+		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
+			changed = true
+			continue
+		}
+		// Skip tool responses with empty IDs - they cause API errors
+		if p.FunctionResponse != nil && p.FunctionResponse.ID == "" {
+			changed = true
+			continue
+		}
+		cleanParts = append(cleanParts, p)
+	}
+	
+	if changed {
+		content.Parts = cleanParts
+	}
+	return changed
+}
+
+func (t *toolResponseCleaner) Priority() int { return 3 } // Run after historyRepairer (0) but before contentCleaner (5)

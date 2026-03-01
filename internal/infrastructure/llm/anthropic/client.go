@@ -193,6 +193,10 @@ func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBloc
 
 func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, bool) {
 	if p.FunctionCall != nil {
+		// Skip tool calls with empty IDs - Anthropic requires ID for tool_use
+		if p.FunctionCall.ID == "" {
+			return contentBlock{}, false
+		}
 		args := p.FunctionCall.Args
 		if args == nil {
 			args = make(map[string]interface{})
@@ -206,6 +210,10 @@ func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, boo
 		}, true
 	}
 	if p.FunctionResponse != nil {
+		// Skip tool responses with empty IDs - Anthropic requires tool_use_id
+		if p.FunctionResponse.ID == "" {
+			return contentBlock{}, false
+		}
 		return contentBlock{
 			Type:      "tool_result",
 			ToolUseID: p.FunctionResponse.ID,
