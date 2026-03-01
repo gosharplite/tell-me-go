@@ -1273,7 +1273,6 @@ func TestCleanContent_NilSafety(t *testing.T) {
 	require.False(t, result)
 }
 
-
 func TestToolResponseCleaner_Transform_NilSafety(t *testing.T) {
 	ctx := context.Background()
 	cleaner := &toolResponseCleaner{}
@@ -1301,7 +1300,6 @@ func TestToolResponseCleaner_Transform_NilSafety(t *testing.T) {
 	})
 }
 
-
 func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 	ctx := context.Background()
 	pruner := &emptyMessagePruner{}
@@ -1310,7 +1308,7 @@ func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 		req := &ports.ContextRequest{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-				nil, // Should be dropped
+				nil,                                   // Should be dropped
 				{Role: "model", Parts: []*llm.Part{}}, // Should be dropped
 				{Role: "user", Parts: []*llm.Part{{Text: "world"}}},
 			},

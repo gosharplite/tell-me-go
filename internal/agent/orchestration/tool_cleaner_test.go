@@ -99,7 +99,7 @@ func TestToolResponseCleaner_Transform(t *testing.T) {
 		req := &ports.ContextRequest{
 			History: []*llm.Content{
 				{
-					Role: "user",
+					Role:  "user",
 					Parts: []*llm.Part{},
 				},
 			},

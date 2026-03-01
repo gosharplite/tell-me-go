@@ -250,7 +250,6 @@ func cleanContent(content *llm.Content) bool {
 
 func (t *contentCleaner) Priority() int { return 5 }
 
-
 // toolResponseCleaner removes tool responses with empty IDs, which are invalid for APIs.
 type toolResponseCleaner struct{}
 
