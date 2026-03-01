@@ -259,6 +259,10 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 	modified := false
 
 	for _, content := range req.History {
+		if content == nil {
+			modified = true
+			continue
+		}
 		partsBefore := len(content.Parts)
 
 		if cleanToolParts(content) {
@@ -320,7 +324,7 @@ func (t *emptyMessagePruner) Transform(ctx context.Context, req *ports.ContextRe
 	modified := false
 
 	for _, content := range req.History {
-		if content != nil && len(content.Parts) == 0 {
+		if content == nil || len(content.Parts) == 0 {
 			modified = true
 		} else {
 			cleanHistory = append(cleanHistory, content)

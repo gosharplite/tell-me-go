@@ -1272,3 +1272,62 @@ func TestCleanContent_NilSafety(t *testing.T) {
 	result := cleanContent(nil)
 	require.False(t, result)
 }
+
+
+func TestToolResponseCleaner_Transform_NilSafety(t *testing.T) {
+	ctx := context.Background()
+	cleaner := &toolResponseCleaner{}
+
+	t.Run("Verify Fix: Nil content in history handled gracefully", func(t *testing.T) {
+		req := &ports.ContextRequest{
+			History: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+				nil, // This should now be skipped/dropped
+				{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
+			},
+		}
+
+		// Verify it no longer panics
+		require.NotPanics(t, func() {
+			err := cleaner.Transform(ctx, req)
+			require.NoError(t, err)
+		}, "Transform should no longer panic on nil content in history")
+
+		// Verify that it was indeed "modified" (true because it dropped nil element)
+		require.True(t, req.PersistHistory, "PersistHistory should be true after dropping nil element")
+		require.Len(t, req.History, 2, "History should have 2 elements after dropping nil")
+		require.NotNil(t, req.History[0])
+		require.NotNil(t, req.History[1])
+	})
+}
+
+
+func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
+	ctx := context.Background()
+	pruner := &emptyMessagePruner{}
+
+	t.Run("Prune nil and empty messages", func(t *testing.T) {
+		req := &ports.ContextRequest{
+			History: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+				nil, // Should be dropped
+				{Role: "model", Parts: []*llm.Part{}}, // Should be dropped
+				{Role: "user", Parts: []*llm.Part{{Text: "world"}}},
+			},
+		}
+
+		err := pruner.Transform(ctx, req)
+		require.NoError(t, err)
+
+		// Verification:
+		require.True(t, req.PersistHistory, "PersistHistory should be true after dropping elements")
+		require.Len(t, req.History, 2, "History should have only 2 valid elements left")
+		require.Equal(t, "hello", req.History[0].Parts[0].Text)
+		require.Equal(t, "world", req.History[1].Parts[0].Text)
+
+		// Ensure NO nil pointers remain
+		for _, msg := range req.History {
+			require.NotNil(t, msg)
+		}
+	})
+}
