@@ -1,0 +1,90 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package llmcoord
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+)
+
+var _ orchestration.LLMCoordinator = (*Service)(nil)
+
+// Service coordinates interactions with the LLM gateway.
+type Service struct {
+	mu            sync.RWMutex
+	gateway       llm.LLMGateway
+	streamHandler func(context.Context, <-chan *llm.Content)
+}
+
+// Option defines a functional option for initializing the Service.
+type Option func(*Service)
+
+// WithGateway sets the LLM gateway for the service.
+func WithGateway(g llm.LLMGateway) Option {
+	return func(s *Service) {
+		s.gateway = g
+	}
+}
+
+// WithStreamHandler sets the stream handler for the service.
+func WithStreamHandler(handler func(context.Context, <-chan *llm.Content)) Option {
+	return func(s *Service) {
+		s.streamHandler = handler
+	}
+}
+
+// NewService creates a new LLMCoordinator service with functional options.
+func NewService(opts ...Option) *Service {
+	s := &Service{}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// Generate coordinates the LLM generation process.
+func (s *Service) Generate(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	if s.gateway == nil {
+		return nil, nil, fmt.Errorf("llm gateway not initialized")
+	}
+
+	respCh, finalize := s.gateway.Generate(ctx, history, toolDecls, resolver)
+
+	s.mu.RLock()
+	handler := s.streamHandler
+	s.mu.RUnlock()
+
+	if handler != nil {
+		handler(ctx, respCh)
+	} else {
+		// Drain the channel if no handler is provided
+	drainLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				break drainLoop
+			case _, ok := <-respCh:
+				if !ok {
+					break drainLoop
+				}
+			}
+		}
+	}
+
+	respContent, metrics, err := finalize()
+	if err != nil {
+		return respContent, metrics, err
+	}
+
+	if respContent == nil {
+		return nil, nil, fmt.Errorf("api returned nil content")
+	}
+
+	return respContent, metrics, nil
+}
