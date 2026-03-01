@@ -232,7 +232,7 @@ func cleanContent(content *llm.Content) bool {
 	}
 
 	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
-	var cleanParts []*llm.Part
+	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	for _, p := range content.Parts {
 		if !p.IsEmpty() {
 			cleanParts = append(cleanParts, p)
@@ -259,16 +259,19 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 	modified := false
 
 	for _, content := range req.History {
+		partsBefore := len(content.Parts)
+		
 		if cleanToolParts(content) {
 			modified = true
 		}
-		// Only keep the content if it still has valid parts after cleaning
-		if len(content.Parts) > 0 {
+		
+		// Preserve the content if it still has parts, OR if it natively arrived empty
+		// (avoiding implicit truncation and deferring to contentCleaner).
+		if len(content.Parts) > 0 || partsBefore == 0 {
 			cleanHistory = append(cleanHistory, content)
-		} else {
-			// If it has 0 parts now, we are dropping it entirely
-			modified = true
 		}
+		// If partsBefore > 0 but len(content.Parts) == 0, we intentionally drop it.
+		// (modified is already true from cleanToolParts)
 	}
 
 	if modified {
@@ -282,10 +285,10 @@ func cleanToolParts(content *llm.Content) bool {
 	if content == nil {
 		return false
 	}
-	
-	var cleanParts []*llm.Part
+
+	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	changed := false
-	
+
 	for _, p := range content.Parts {
 		// Skip tool calls with empty IDs - they cause API errors
 		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
@@ -299,7 +302,7 @@ func cleanToolParts(content *llm.Content) bool {
 		}
 		cleanParts = append(cleanParts, p)
 	}
-	
+
 	if changed {
 		content.Parts = cleanParts
 	}
