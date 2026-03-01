@@ -77,7 +77,6 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	bus := &inframock.TestEventBus{}
 	exec, err := NewToolExecutor(reg, sm, bus, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
-	exec.setStrategy(&mockStrategy{}) // Use simple strategy for easier verification
 	t.Cleanup(exec.Shutdown)
 
 	return exec, bus, behaviors
@@ -607,7 +606,6 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	e, err := NewToolExecutor(reg, nil, nil, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(e.Shutdown)
-	e.setStrategy(&mockStrategy{})
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
 		t.Parallel()
@@ -713,14 +711,12 @@ func TestToolExecutor_Strategies(t *testing.T) {
 	e, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(e.Shutdown)
-	e.setStrategy(&markdownStrategy{})
-	e.setStrategy(&jsonStrategy{})
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
 	results := []tools.ToolResult{{Text: "res"}}
 	content := e.assembleResponse(calls, results)
 	if len(content.Parts) == 0 {
-		t.Error("jsonStrategy produced no parts")
+		t.Error("markdownStrategy produced no parts")
 	}
 }
 
@@ -734,7 +730,6 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
-		exec.setStrategy(&mockStrategy{})
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "any"}},
@@ -755,7 +750,6 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
-		exec.setStrategy(&mockStrategy{})
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "any"}},

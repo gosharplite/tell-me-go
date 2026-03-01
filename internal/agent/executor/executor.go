@@ -135,13 +135,6 @@ func (f *failureTracker) isOpen(toolName string) bool {
 	return f.failures[toolName] >= f.threshold
 }
 
-// setStrategy sets the result formatting strategy.
-func (e *ToolExecutor) setStrategy(s resultStrategy) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.strategy = s
-}
-
 func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) {
 	var oldPool *concurrency.WorkerPool
 	e.mu.Lock()

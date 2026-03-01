@@ -277,9 +277,10 @@ func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 	factory := &PipelineFactory{Estimator: strategy, Events: bus}
 	cm := NewContextManager(strategy, &mockHistoryManager{}, bus, factory)
 
-	// Initially nil because NewContextManager doesn't build it until an event or Reconfigure
+	// Initially not nil because NewContextManager builds it with default limits immediately.
 	cm.mu.Lock()
-	assert.Nil(t, cm.Pipeline)
+	p0 := cm.Pipeline
+	assert.NotNil(t, p0)
 	cm.mu.Unlock()
 
 	newLimits := events.Limits{
