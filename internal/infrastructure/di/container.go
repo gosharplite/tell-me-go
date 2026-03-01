@@ -10,10 +10,16 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	agent_orchestration "github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/contextprep"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/execution"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/llmcoord"
+	"github.com/gosharplite/tell-me-go/internal/domain/monitoring"
+	domain_orchestration "github.com/gosharplite/tell-me-go/internal/domain/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -189,13 +195,51 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 
 		summarizer := infra_llm.NewSummarizer(params.Gateway, params.EventBus)
 
-		return agent.New(params.Gateway, params.EventBus, params.HistoryManager, params.ProviderName, params.Registry, params.SecurityManager,
-			agent.WithSummarizer(summarizer),
-			agent.WithPricing(params.Model, params.Mode, params.PricingOverrides),
-			agent.WithSessionCostTracker(params.CostTracker),
-			agent.WithInternalTools(),
-			agent.WithLoader(params.Loader),
+		// 1. Prepare specialized domain service dependencies.
+		strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(params.Registry), params.EventBus)
+		factory := &agent_orchestration.PipelineFactory{
+			Registry:   params.Registry,
+			History:    params.HistoryManager,
+			Summarizer: summarizer,
+			Estimator:  strategy,
+			Events:     params.EventBus,
+		}
+		ctxManager := agent_orchestration.NewContextManager(strategy, params.HistoryManager, params.EventBus, factory)
+
+		toolExec, err := executor.NewToolExecutor(params.Registry, params.SecurityManager, params.EventBus, &executor.TelemetryLogger{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create tool executor: %w", err)
+		}
+
+		// 2. Instantiate the four new domain services wrapping robust implementations.
+		ctxPrep := contextprep.NewService(ctxManager)
+		execService := execution.NewService(toolExec)
+
+		llmCoord := llmcoord.NewService(
+			llmcoord.WithGateway(params.Gateway),
+			llmcoord.WithStreamHandler(func(ctx stdctx.Context, stream <-chan *llm.Content) {
+				_ = params.EventBus.Publish(ctx, events.ResponseStreamEvent{Context: ctx, Stream: stream})
+			}),
 		)
+
+		monitor := monitoring.NewService(
+			monitoring.WithTracker(params.CostTracker),
+			monitoring.WithEventBus(params.EventBus),
+		)
+
+		// 3. Register internal tools (e.g., summarize_history)
+		agent_orchestration.RegisterInternal(params.Registry, ctxManager)
+
+		// 4. Return the new ChatterFacade injected with the domain services.
+		return domain_orchestration.NewChatterFacade(
+			domain_orchestration.WithContextPrep(ctxPrep),
+			domain_orchestration.WithExecution(execService),
+			domain_orchestration.WithLLMCoord(llmCoord),
+			domain_orchestration.WithMonitor(monitor),
+			domain_orchestration.WithEventBus(params.EventBus),
+			domain_orchestration.WithRegistry(params.Registry),
+			domain_orchestration.WithHistory(params.HistoryManager),
+		), nil
 	}
 }
 

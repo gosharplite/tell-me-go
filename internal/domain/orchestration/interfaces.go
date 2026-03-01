@@ -16,6 +16,9 @@ type ContextPreparationService interface {
 	Prepare(ctx context.Context, turn int) ([]*llm.Content, error)
 	// AddContent appends new content to the current session history.
 	AddContent(ctx context.Context, content *llm.Content) error
+	// GetMetadata returns diagnostics and auxiliary data from the last preparation.
+	// This is optional but useful for the MonitoringTracker.
+	// For now, we'll keep the interface simple and add a wrapper if needed.
 }
 
 // ExecutionOrchestrator defines the interface for executing tools and managing turn state.
