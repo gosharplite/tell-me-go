@@ -456,6 +456,10 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	return c.buildHTTPRequest(ctx, body, stream)
+}
+
+func (c *client) buildHTTPRequest(ctx context.Context, body []byte, stream bool) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/messages", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
