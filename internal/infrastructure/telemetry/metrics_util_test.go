@@ -259,15 +259,15 @@ func TestCalculate_ThinkingRate(t *testing.T) {
 
 func TestGetPricing(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	assetsDir := filepath.Join(tmpDir, "assets")
-	if err := os.MkdirAll(assetsDir, 0755); err != nil {
-		t.Fatalf("failed to create assets dir: %v", err)
-	}
-	outputDir := filepath.Join(tmpDir, "output")
 
 	t.Run("Load from file", func(t *testing.T) {
 		t.Parallel()
+		tmpDir := t.TempDir()
+		assetsDir := filepath.Join(tmpDir, "assets")
+		if err := os.MkdirAll(assetsDir, 0755); err != nil {
+			t.Fatalf("failed to create assets dir: %v", err)
+		}
+		outputDir := filepath.Join(tmpDir, "output")
 		pricingFile := filepath.Join(assetsDir, "pricing.json")
 		content := `{
 			"updated_at": "2026-02-03T12:00:00Z",
@@ -294,8 +294,6 @@ func TestGetPricing(t *testing.T) {
 
 	t.Run("Fallback on missing file", func(t *testing.T) {
 		t.Parallel()
-		// Use a different temp dir without assets
-
 		anotherDir := t.TempDir()
 		pd := GetPricing(context.Background(), nil, filepath.Join(anotherDir, "output"))
 		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
@@ -305,6 +303,12 @@ func TestGetPricing(t *testing.T) {
 
 	t.Run("Fallback on invalid JSON", func(t *testing.T) {
 		t.Parallel()
+		tmpDir := t.TempDir()
+		assetsDir := filepath.Join(tmpDir, "assets")
+		if err := os.MkdirAll(assetsDir, 0755); err != nil {
+			t.Fatalf("failed to create assets dir: %v", err)
+		}
+		outputDir := filepath.Join(tmpDir, "output")
 		pricingFile := filepath.Join(assetsDir, "pricing.json")
 		if err := os.WriteFile(pricingFile, []byte("invalid json"), 0644); err != nil {
 			t.Fatalf("failed to write invalid pricing file: %v", err)
