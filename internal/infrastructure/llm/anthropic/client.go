@@ -147,7 +147,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message, error) {
 	system := c.persona
-	var messages []message
+	messages := make([]message, 0, len(history))
 
 	for _, h := range history {
 		if h.Role == "system" {
@@ -170,7 +170,7 @@ func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message,
 }
 
 func (c *client) appendSystemContent(currentSystem string, h *llm.Content) string {
-	var parts []string
+	parts := make([]string, 0, len(h.Parts))
 	for _, p := range h.Parts {
 		if p.Text != "" {
 			parts = append(parts, p.Text)
@@ -191,7 +191,7 @@ func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBloc
 		role = "user"
 	}
 
-	var blocks []contentBlock
+	blocks := make([]contentBlock, 0, len(h.Parts))
 	for _, p := range h.Parts {
 		block, ok, err := c.partToContentBlock(p, role)
 		if err != nil {
@@ -266,7 +266,7 @@ func (c *client) toAnthropicTools(decls []*tools.ToolDeclaration) []tool {
 	if len(decls) == 0 {
 		return nil
 	}
-	var res []tool
+	res := make([]tool, 0, len(decls))
 	for _, d := range decls {
 		schema := toAnthropicSchema(d.Parameters)
 		if schema == nil {
