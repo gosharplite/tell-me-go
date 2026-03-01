@@ -27,13 +27,6 @@ func TestStrategies(t *testing.T) {
 			wantText: "file.txt",
 		},
 		{
-			name:     "JSON - Basic Text",
-			strategy: &jsonStrategy{},
-			toolName: "ls",
-			result:   tools.ToolResult{Text: "file.txt"},
-			wantText: "file.txt",
-		},
-		{
 			name:     "Empty Result",
 			strategy: &markdownStrategy{},
 			toolName: "cmd",

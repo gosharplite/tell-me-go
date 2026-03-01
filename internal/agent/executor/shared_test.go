@@ -6,7 +6,6 @@ package executor
 import (
 	"context"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -34,22 +33,6 @@ func (m *mockConsentSecurityManager) TerminalLock()        {}
 func (m *mockConsentSecurityManager) TerminalUnlock()      {}
 func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {
 	return m.confirmResult, nil
-}
-
-type mockStrategy struct{}
-
-func (s *mockStrategy) Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part {
-	name := ""
-	if call != nil {
-		name = call.Name
-	}
-	return &llm.Part{
-		FunctionResponse: &llm.FunctionResponse{
-			ID:       call.ID,
-			Name:     name,
-			Response: map[string]interface{}{"result": result.Text},
-		},
-	}
 }
 
 type panicRegistry struct {
