@@ -31,39 +31,46 @@ type chatterFacade struct {
 	maxToolTurns int
 }
 
-// FacadeOption defines a functional option for initializing the chatterFacade.
-type FacadeOption func(*chatterFacade)
+// facadeOption defines a functional option for initializing the chatterFacade.
+type facadeOption func(*chatterFacade)
 
-func WithContextPrep(s ContextPreparationService) FacadeOption {
+// WithContextPrep sets the context preparation service for the facade.
+func WithContextPrep(s ContextPreparationService) facadeOption {
 	return func(f *chatterFacade) { f.contextPrep = s }
 }
 
-func WithExecution(s ExecutionOrchestrator) FacadeOption {
+// WithExecution sets the execution orchestrator for the facade.
+func WithExecution(s ExecutionOrchestrator) facadeOption {
 	return func(f *chatterFacade) { f.execution = s }
 }
 
-func WithLLMCoord(s LLMCoordinator) FacadeOption {
+// WithLLMCoord sets the LLM coordinator for the facade.
+func WithLLMCoord(s LLMCoordinator) facadeOption {
 	return func(f *chatterFacade) { f.llmCoord = s }
 }
 
-func WithMonitor(s MonitoringTracker) FacadeOption {
+// WithMonitor sets the monitoring tracker for the facade.
+func WithMonitor(s MonitoringTracker) facadeOption {
 	return func(f *chatterFacade) { f.monitor = s }
 }
 
-func WithEventBus(bus events.EventBus) FacadeOption {
+// WithEventBus sets the event bus for the facade.
+func WithEventBus(bus events.EventBus) facadeOption {
 	return func(f *chatterFacade) { f.bus = bus }
 }
 
-func WithRegistry(reg tools.IToolRegistry) FacadeOption {
+// WithRegistry sets the tool registry for the facade.
+func WithRegistry(reg tools.IToolRegistry) facadeOption {
 	return func(f *chatterFacade) { f.registry = reg }
 }
 
-func WithHistory(h ports.HistoryManager) FacadeOption {
+// WithHistory sets the history manager for the facade.
+func WithHistory(h ports.HistoryManager) facadeOption {
 	return func(f *chatterFacade) { f.history = h }
 }
 
 // NewChatterFacade creates a new Chatter implementation using the facade pattern.
-func NewChatterFacade(opts ...FacadeOption) ports.Chatter {
+func NewChatterFacade(opts ...facadeOption) ports.Chatter {
 	f := &chatterFacade{
 		maxToolTurns: 10, // Defaults
 	}

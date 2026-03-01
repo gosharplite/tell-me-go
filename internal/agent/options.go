@@ -33,22 +33,22 @@ func withInitContext(ctx context.Context) option {
 	}
 }
 
-// WithSummarizer sets the summarizer service for the agent.
-func WithSummarizer(s ports.Summarizer) option {
+// withSummarizer sets the summarizer service for the agent.
+func withSummarizer(s ports.Summarizer) option {
 	return func(c *agentConfig) {
 		c.summarizer = s
 	}
 }
 
-// WithInternalTools enables the registration of internal agent tools.
-func WithInternalTools() option {
+// withInternalTools enables the registration of internal agent tools.
+func withInternalTools() option {
 	return func(c *agentConfig) {
 		c.registerInternal = true
 	}
 }
 
-// WithPricing sets the pricing configuration for cost estimation.
-func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) option {
+// withPricing sets the pricing configuration for cost estimation.
+func withPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) option {
 	return func(c *agentConfig) {
 		c.model = model
 		c.mode = mode
@@ -56,15 +56,15 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// WithLoader sets the configuration loader for the agent.
-func WithLoader(loader domain_config.ConfigLoader) option {
+// withLoader sets the configuration loader for the agent.
+func withLoader(loader domain_config.ConfigLoader) option {
 	return func(c *agentConfig) {
 		c.loader = loader
 	}
 }
 
-// WithSessionCostTracker sets the cost tracker for the agent.
-func WithSessionCostTracker(tracker domain_pricing.ICostTracker) option {
+// withSessionCostTracker sets the cost tracker for the agent.
+func withSessionCostTracker(tracker domain_pricing.ICostTracker) option {
 	return func(c *agentConfig) {
 		c.tracker = tracker
 	}

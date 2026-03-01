@@ -26,21 +26,21 @@ func TestAgentOptions(t *testing.T) {
 	}{
 		{
 			name:   "WithSummarizer",
-			option: WithSummarizer(mockSummarizer),
+			option: withSummarizer(mockSummarizer),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockSummarizer, cfg.summarizer)
 			},
 		},
 		{
 			name:   "WithInternalTools",
-			option: WithInternalTools(),
+			option: withInternalTools(),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.True(t, cfg.registerInternal)
 			},
 		},
 		{
 			name:   "WithPricing",
-			option: WithPricing("model-a", "mode-b", overrides),
+			option: withPricing("model-a", "mode-b", overrides),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, "model-a", cfg.model)
 				require.Equal(t, "mode-b", cfg.mode)
@@ -49,14 +49,14 @@ func TestAgentOptions(t *testing.T) {
 		},
 		{
 			name:   "WithLoader",
-			option: WithLoader(mockLoader),
+			option: withLoader(mockLoader),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockLoader, cfg.loader)
 			},
 		},
 		{
 			name:   "WithSessionCostTracker",
-			option: WithSessionCostTracker(mockTracker),
+			option: withSessionCostTracker(mockTracker),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockTracker, cfg.tracker)
 			},

@@ -21,25 +21,25 @@ type service struct {
 	bus     events.EventBus
 }
 
-// Option defines a functional option for initializing the service.
-type Option func(*service)
+// option defines a functional option for initializing the service.
+type option func(*service)
 
 // WithTracker sets the cost tracker for the service.
-func WithTracker(t pricing.ICostTracker) Option {
+func WithTracker(t pricing.ICostTracker) option {
 	return func(s *service) {
 		s.tracker = t
 	}
 }
 
 // WithEventBus sets the event bus for the service.
-func WithEventBus(bus events.EventBus) Option {
+func WithEventBus(bus events.EventBus) option {
 	return func(s *service) {
 		s.bus = bus
 	}
 }
 
 // NewService creates a new MonitoringTracker service with functional options.
-func NewService(opts ...Option) orchestration.MonitoringTracker {
+func NewService(opts ...option) orchestration.MonitoringTracker {
 	s := &service{}
 	for _, opt := range opts {
 		opt(s)

@@ -20,25 +20,25 @@ type service struct {
 	streamHandler func(context.Context, <-chan *llm.Content)
 }
 
-// Option defines a functional option for initializing the service.
-type Option func(*service)
+// option defines a functional option for initializing the service.
+type option func(*service)
 
 // WithGateway sets the LLM gateway for the service.
-func WithGateway(g llm.LLMGateway) Option {
+func WithGateway(g llm.LLMGateway) option {
 	return func(s *service) {
 		s.gateway = g
 	}
 }
 
 // WithStreamHandler sets the stream handler for the service.
-func WithStreamHandler(handler func(context.Context, <-chan *llm.Content)) Option {
+func WithStreamHandler(handler func(context.Context, <-chan *llm.Content)) option {
 	return func(s *service) {
 		s.streamHandler = handler
 	}
 }
 
 // NewService creates a new LLMCoordinator service with functional options.
-func NewService(opts ...Option) orchestration.LLMCoordinator {
+func NewService(opts ...option) orchestration.LLMCoordinator {
 	s := &service{}
 	for _, opt := range opts {
 		opt(s)
