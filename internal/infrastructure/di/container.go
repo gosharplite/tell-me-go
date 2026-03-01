@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	agent_orchestration "github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/contextprep"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/execution"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -212,7 +211,7 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 		}
 
 		// 2. Instantiate the four new domain services wrapping robust implementations.
-		ctxPrep := contextprep.NewService(ctxManager)
+		ctxPrep := agent_orchestration.NewContextPrepAdapter(ctxManager)
 		execService := execution.NewService(toolExec)
 
 		llmCoord := llmcoord.NewService(
