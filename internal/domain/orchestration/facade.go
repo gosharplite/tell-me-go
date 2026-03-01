@@ -221,7 +221,11 @@ func (f *chatterFacade) handleTools(ctx context.Context, response *llm.Content, 
 
 func (f *chatterFacade) finalizeTurn(ctx context.Context, turn int, tokens int, metrics *llm.Metrics, trace *telemetry.TurnTrace, err error, retry bool, startTime time.Time) {
 	// Track Usage AFTER tools
-	turnCost, _ := f.monitor.TrackUsage(ctx, metrics)
+	turnCost, tErr := f.monitor.TrackUsage(ctx, metrics)
+	if tErr != nil {
+		f.monitor.RecordError(ctx, fmt.Errorf("telemetry failure: %w", tErr))
+	}
+
 	f.mu.Lock()
 	f.taskCost += turnCost
 	f.mu.Unlock()

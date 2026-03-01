@@ -65,6 +65,12 @@ func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecl
 
 	if handler != nil {
 		handler(ctx, respCh)
+		// Ensure channel is fully drained even if handler exits early
+		go func() {
+			for range respCh {
+				// Drain remaining tokens
+			}
+		}()
 	} else {
 		// Drain the channel if no handler is provided.
 		// When ctx is canceled, the gateway is responsible for closing respCh.
