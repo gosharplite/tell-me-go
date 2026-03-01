@@ -14,6 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+const maxTransientRetries = 3
+
 // chatterFacade implements the ports.Chatter interface by coordinating specialized domain services.
 type chatterFacade struct {
 	mu sync.RWMutex
@@ -92,6 +94,8 @@ func (f *chatterFacade) Chat(ctx context.Context, s *ports.Session, prompt strin
 
 	f.emit(ctx, events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 
+	transientRetries := 0
+
 	// Main Turn Loop
 	for turn := 0; turn <= f.getMaxToolTurns(); turn++ {
 		stop, retry, err := f.executeTurn(ctx, turn)
@@ -99,6 +103,10 @@ func (f *chatterFacade) Chat(ctx context.Context, s *ports.Session, prompt strin
 			return err
 		}
 		if retry {
+			transientRetries++
+			if transientRetries > maxTransientRetries {
+				return fmt.Errorf("exceeded max retries (%d) for transient errors", maxTransientRetries)
+			}
 			turn--
 			continue
 		}

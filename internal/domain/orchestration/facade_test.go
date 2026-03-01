@@ -308,6 +308,16 @@ func TestChatterFacade_Chat(t *testing.T) {
 			prompt:  "fail",
 			wantErr: true,
 		},
+		{
+			name: "exceeded max transient retries",
+			setupMocks: func(cp *mockContextPrep, ex *mockExecution, lc *mockLLMCoord, mt *mockMonitor) {
+				lc.generateFunc = func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+					return nil, nil, llm.ErrTransient
+				}
+			},
+			prompt:  "retry me",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
