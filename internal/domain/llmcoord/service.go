@@ -5,7 +5,7 @@ package llmcoord
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/orchestration"
@@ -13,6 +13,13 @@ import (
 )
 
 var _ orchestration.LLMCoordinator = (*service)(nil)
+
+var (
+	// ErrGatewayNotInitialized signals that the service was created without a gateway.
+	ErrGatewayNotInitialized = errors.New("llm gateway not initialized")
+	// ErrNilContentReturned signals that the gateway returned an empty or nil response content.
+	ErrNilContentReturned = errors.New("api returned nil content")
+)
 
 // service coordinates interactions with the LLM gateway.
 type service struct {
@@ -49,7 +56,7 @@ func NewService(opts ...option) orchestration.LLMCoordinator {
 // Generate coordinates the LLM generation process.
 func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	if s.gateway == nil {
-		return nil, nil, fmt.Errorf("llm gateway not initialized")
+		return nil, nil, ErrGatewayNotInitialized
 	}
 
 	respCh, finalize := s.gateway.Generate(ctx, history, toolDecls, resolver)
@@ -72,7 +79,7 @@ func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecl
 	}
 
 	if respContent == nil {
-		return nil, nil, fmt.Errorf("api returned nil content")
+		return nil, nil, ErrNilContentReturned
 	}
 
 	return respContent, metrics, nil
