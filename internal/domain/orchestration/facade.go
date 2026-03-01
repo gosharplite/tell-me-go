@@ -230,10 +230,6 @@ func (f *chatterFacade) finalizeTurn(ctx context.Context, turn int, tokens int, 
 	f.taskCost += turnCost
 	f.mu.Unlock()
 
-	if metrics != nil {
-		metrics.Cost = turnCost
-	}
-
 	postTokens := tokens
 	if metrics != nil && metrics.PromptTokens > 0 {
 		postTokens = int(metrics.PromptTokens)

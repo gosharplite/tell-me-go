@@ -53,19 +53,16 @@ func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64
 		return 0, nil
 	}
 
-	// Create a shallow copy to avoid mutating the caller's pointer
-	metricsCopy := *metrics
-
 	var turnCost float64
 	if s.tracker != nil {
-		turnCost = s.tracker.AccumulateAndReturn(metricsCopy)
-		metricsCopy.Cost = turnCost
+		turnCost = s.tracker.AccumulateAndReturn(*metrics)
+		metrics.Cost = turnCost
 	}
 
 	if s.bus != nil {
 		err := s.bus.Publish(ctx, events.UsageMetricsEvent{
 			Context: ctx,
-			Metrics: &metricsCopy,
+			Metrics: metrics,
 		})
 		if err != nil {
 			return turnCost, fmt.Errorf("failed to publish metrics event: %w", err)

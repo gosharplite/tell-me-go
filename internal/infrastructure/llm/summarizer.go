@@ -134,15 +134,18 @@ func (s *summarizer) validateSummarizationResponse(respContent *llm.Content) (st
 
 // summarizationPrompt is the system instruction for history compression.
 const summarizationPrompt = `You are a conversation compressor. Summarize the provided history into a concise but comprehensive state summary.
-Preserve:
-1. Current architecture decisions and project structure.
-2. Modified files and their high-level changes.
-3. Successfully executed commands and their critical results.
-4. Unresolved issues or pending tasks from the scratchpad/task list.
-Discard:
-1. Large file contents or boilerplate code output.
-2. Redundant tool call logs.
-3. "Trial and error" failures that don't affect the final state.
 
-The output must be a single summary that will replace these turns in the history.
+Preserve the following critical context:
+1. **Architecture & Modularity**: Current decisions, project structure, package responsibilities, key dependencies, and modularity constraints.
+2. **Bug Contexts & Fixes**: Specifics of bugs encountered (e.g., memory optimizations in monitoring, deadlocks in llmcoord) and how they were resolved.
+3. **Key Resolution Steps**: Significant file modifications and the logical rationale (e.g., "mutating the original pointer" strategy).
+4. **Verification Results**: Outcomes of tests (unit, E2E), benchmarks, and health checks.
+5. **Session State**: Successfully executed commands, pending tasks (from scratchpad), and unresolved issues.
+
+Discard:
+1. Verbatim file contents, boilerplate code, or redundant tool logs.
+2. Interim "trial and error" failures that do not impact the final resolution.
+3. Repetitive tool metadata and verbose output.
+
+Output a structured Markdown summary using headers for clarity. This summary will replace the summarized turns in the conversation history to provide a clean slate for the next phase while maintaining full architectural awareness.
 `
