@@ -19,7 +19,7 @@ func (t *emptyTurnFilter) Transform(ctx context.Context, req *ports.ContextReque
 	if err != nil {
 		return err
 	}
-	var filtered []*llm.Content
+	filtered := make([]*llm.Content, 0, len(req.History))
 	for i, turn := range turns {
 		// Always keep a trailing single message (usually the current user prompt)
 		if len(turn) == 1 && i == len(turns)-1 {
@@ -170,7 +170,7 @@ func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextReque
 		return nil
 	}
 
-	var responses []*llm.Part
+	responses := make([]*llm.Part, 0, len(last.Parts))
 	for _, p := range last.Parts {
 		if p.FunctionCall != nil {
 			responses = append(responses, &llm.Part{
@@ -255,16 +255,16 @@ func (t *contentCleaner) Priority() int { return 5 }
 type toolResponseCleaner struct{}
 
 func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextRequest) error {
-	var cleanHistory []*llm.Content
+	cleanHistory := make([]*llm.Content, 0, len(req.History))
 	modified := false
 
 	for _, content := range req.History {
 		partsBefore := len(content.Parts)
-		
+
 		if cleanToolParts(content) {
 			modified = true
 		}
-		
+
 		// Preserve the content if it still has parts, OR if it natively arrived empty
 		// (avoiding implicit truncation and deferring to contentCleaner).
 		if len(content.Parts) > 0 || partsBefore == 0 {
@@ -310,3 +310,28 @@ func cleanToolParts(content *llm.Content) bool {
 }
 
 func (t *toolResponseCleaner) Priority() int { return 3 } // Run after historyRepairer (0) but before contentCleaner (5)
+// emptyMessagePruner explicitly drops messages that have 0 parts.
+// This runs before contentCleaner (which adds [empty response] fallbacks for messages with empty parts)
+// so that genuinely empty messages are fully removed from the history.
+type emptyMessagePruner struct{}
+
+func (t *emptyMessagePruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	cleanHistory := make([]*llm.Content, 0, len(req.History))
+	modified := false
+
+	for _, content := range req.History {
+		if content != nil && len(content.Parts) == 0 {
+			modified = true
+		} else {
+			cleanHistory = append(cleanHistory, content)
+		}
+	}
+
+	if modified {
+		req.History = cleanHistory
+		req.PersistHistory = true
+	}
+	return nil
+}
+
+func (t *emptyMessagePruner) Priority() int { return 4 } // Run after toolResponseCleaner (3) but before contentCleaner (5)

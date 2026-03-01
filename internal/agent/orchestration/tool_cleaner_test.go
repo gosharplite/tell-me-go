@@ -94,4 +94,20 @@ func TestToolResponseCleaner_Transform(t *testing.T) {
 		require.False(t, req.PersistHistory)
 		require.Len(t, req.History, 1)
 	})
+
+	t.Run("Preserves natively empty content", func(t *testing.T) {
+		req := &ports.ContextRequest{
+			History: []*llm.Content{
+				{
+					Role: "user",
+					Parts: []*llm.Part{},
+				},
+			},
+		}
+
+		err := cleaner.Transform(ctx, req)
+		require.NoError(t, err)
+		require.False(t, req.PersistHistory)
+		require.Len(t, req.History, 1)
+	})
 }
