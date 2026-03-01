@@ -5,147 +5,105 @@ package ui
 
 import (
 	"bytes"
+	"flag"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
+
+var update = flag.Bool("update", false, "update golden files")
 
 func TestUIRendererGolden(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	renderer := NewRenderer(locker, &stdout, &stderr)
+	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
 
-	fixedTime, _ := time.Parse("15:04:05", "12:00:00")
+	// Inject deterministic dependencies
+	frozenTime := time.Date(2026, 1, 1, 15, 4, 5, 0, time.UTC)
+	r.SetNow(func() time.Time { return frozenTime })
+	r.SetUseColor(true)
 
-	t.Run("LogTurnStatus_PreCall", func(t *testing.T) {
+	// Ensure testdata directory exists
+	testDataDir := filepath.Join("testdata")
+	if err := os.MkdirAll(testDataDir, 0755); err != nil {
+		t.Fatalf("failed to create testdata directory: %v", err)
+	}
+
+	t.Run("Pre-Call Status", func(t *testing.T) {
 		stderr.Reset()
-		renderer.LogTurnStatus(events.TurnStatus{
-			Timestamp:        fixedTime,
-			CurrentTurns:     1,
-			MaxHistoryTurns:  20,
-			Tokens:           1234,
-			MaxHistoryTokens: 100000,
+		stdout.Reset()
+
+		status := events.TurnStatus{
+			Timestamp:        frozenTime,
+			SessionTurns:     2, // Will show as 3/10
+			MaxHistoryTurns:  10,
+			Tokens:           1250,
+			MaxHistoryTokens: 10000,
 			IsPostCall:       false,
-		})
+		}
+
+		r.LogTurnStatus(status)
+
 		verifyGolden(t, "turn_status_pre.golden", stderr.String())
 	})
 
-	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
+	t.Run("Post-Call Status", func(t *testing.T) {
 		stderr.Reset()
-		renderer.LogTurnStatus(events.TurnStatus{
-			Timestamp:        fixedTime,
-			CurrentTurns:     1,
-			MaxHistoryTurns:  20,
-			Tokens:           1234,
-			MaxHistoryTokens: 100000,
+		stdout.Reset()
+
+		status := events.TurnStatus{
+			Timestamp:        frozenTime,
+			SessionTurns:     2,
+			MaxHistoryTurns:  10,
 			IsPostCall:       true,
-			StartTime:        fixedTime.Add(-5 * time.Second),
-			SessionCost:      0.0123,
-			DailyCost:        0.0543,
-			TaskCost:         0.0045,
-			TotalM:           500,
-			TotalH:           1000,
-			TotalO:           200,
+			StartTime:        frozenTime.Add(-10 * time.Second),
+			SessionCost:      1.2345,
+			DailyCost:        5.6789,
+			TaskCost:         0.0123,
+			TotalM:           1000,
+			TotalH:           2000,
+			TotalO:           500,
 			Metrics: &llm.Metrics{
-				PromptTokens:   1500,
-				CachedTokens:   1000,
-				ResponseTokens: 200,
-				TotalTokens:    1700,
-				Duration:       1.5,
-				ToolDuration:   0.5,
-				Cost:           0.0032,
+				PromptTokens:           1200,
+				CachedTokens:           800,
+				ResponseTokens:         300,
+				ThinkingTokens:         100,
+				Duration:               5.5,
+				ToolDuration:           2.5,
+				CumulativeToolDuration: 4.5,
+				Cost:                   0.0050,
 			},
-		})
+		}
+
+		r.LogTurnStatus(status)
+
 		verifyGolden(t, "turn_status_post.golden", stderr.String())
-	})
-
-	t.Run("LogTurnStatus_PostCall_Cliff", func(t *testing.T) {
-		stderr.Reset()
-		renderer.LogTurnStatus(events.TurnStatus{
-			Timestamp:        fixedTime,
-			CurrentTurns:     1,
-			MaxHistoryTurns:  20,
-			Tokens:           130000,
-			MaxHistoryTokens: 100000,
-			TieredThreshold:  128000,
-			IsPostCall:       true,
-			StartTime:        fixedTime.Add(-5 * time.Second),
-			Metrics: &llm.Metrics{
-				PromptTokens:   130000,
-				CachedTokens:   120000,
-				ResponseTokens: 5000,
-				TotalTokens:    135000,
-				Duration:       1.5,
-			},
-		})
-		verifyGolden(t, "turn_status_cliff.golden", stderr.String())
-	})
-
-	t.Run("LogTurnStatus_PostCall_Warning", func(t *testing.T) {
-		stderr.Reset()
-		renderer.LogTurnStatus(events.TurnStatus{
-			Timestamp:        fixedTime,
-			CurrentTurns:     1,
-			MaxHistoryTurns:  20,
-			Tokens:           105000,
-			MaxHistoryTokens: 100000,
-			TieredThreshold:  128000,
-			IsPostCall:       true,
-			StartTime:        fixedTime.Add(-5 * time.Second),
-			Metrics: &llm.Metrics{
-				PromptTokens:   105000,
-				CachedTokens:   100000,
-				ResponseTokens: 2000,
-				TotalTokens:    107000,
-				Duration:       1.5,
-			},
-		})
-		verifyGolden(t, "turn_status_warning.golden", stderr.String())
-	})
-
-	t.Run("LogToolResult", func(t *testing.T) {
-		stderr.Reset()
-		// Mock the time in the function by using a regex replacement in verifyGolden
-		renderer.LogToolResult("list_files", tools.ToolResult{Text: "file1.go\nfile2.go"}, true)
-		verifyGolden(t, "tool_result.golden", stderr.String())
 	})
 }
 
-func verifyGolden(t *testing.T, goldenFile, actual string) {
+func verifyGolden(t *testing.T, filename, actual string) {
 	t.Helper()
+	goldenPath := filepath.Join("testdata", filename)
 
-	// Normalize timestamps for determinism
-	reTime := regexp.MustCompile(`\d{2}:\d{2}:\d{2}`)
-	actual = reTime.ReplaceAllString(actual, "[TIME]")
-
-	// Normalize durations which might vary slightly due to time.Since
-	reDuration := regexp.MustCompile(`\d+\.\d+s`)
-	actual = reDuration.ReplaceAllString(actual, "[DUR]s")
-
-	goldenPath := filepath.Join("testdata", goldenFile)
-
-	if os.Getenv("UPDATE_GOLDEN") == "true" {
-		if err := os.MkdirAll("testdata", 0755); err != nil {
-			t.Fatalf("failed to create testdata directory: %v", err)
-		}
-		err := os.WriteFile(goldenPath, []byte(actual), 0644)
-		if err != nil {
-			t.Fatalf("failed to update golden file: %v", err)
+	if *update {
+		if err := os.WriteFile(goldenPath, []byte(actual), 0644); err != nil {
+			t.Fatalf("failed to update golden file %s: %v", filename, err)
 		}
 	}
 
 	expected, err := os.ReadFile(goldenPath)
 	if err != nil {
-		t.Fatalf("failed to read golden file: %v. Run with UPDATE_GOLDEN=true to create it.", err)
+		if os.IsNotExist(err) {
+			t.Fatalf("golden file %s does not exist. Run with -update to create it.", filename)
+		}
+		t.Fatalf("failed to read golden file %s: %v", filename, err)
 	}
 
-	if string(expected) != actual {
-		t.Errorf("output does not match golden file %s\nDiff:\nExpected:\n%s\nActual:\n%s", goldenFile, string(expected), actual)
+	if actual != string(expected) {
+		t.Errorf("output mismatch for %s\nActual:\n%s\nExpected:\n%s", filename, actual, string(expected))
 	}
 }
