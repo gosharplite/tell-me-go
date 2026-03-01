@@ -10,7 +10,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_orchestration "github.com/gosharplite/tell-me-go/internal/domain/orchestration"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 var _ domain_orchestration.ContextPreparationService = (*service)(nil)
