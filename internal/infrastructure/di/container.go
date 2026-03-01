@@ -10,11 +10,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	agent_executor "github.com/gosharplite/tell-me-go/internal/agent/executor"
 	agent_orchestration "github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/execution"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/llmcoord"
 	"github.com/gosharplite/tell-me-go/internal/domain/monitoring"
@@ -205,14 +204,14 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 		}
 		ctxManager := agent_orchestration.NewContextManager(strategy, params.HistoryManager, params.EventBus, factory)
 
-		toolExec, err := executor.NewToolExecutor(params.Registry, params.SecurityManager, params.EventBus, &executor.TelemetryLogger{})
+		toolExec, err := agent_executor.NewToolExecutor(params.Registry, params.SecurityManager, params.EventBus, &agent_executor.TelemetryLogger{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tool executor: %w", err)
 		}
 
 		// 2. Instantiate the four new domain services wrapping robust implementations.
 		ctxPrep := agent_orchestration.NewContextPrepAdapter(ctxManager)
-		execService := execution.NewService(toolExec)
+		execService := agent_executor.NewExecutionAdapter(toolExec)
 
 		llmCoord := llmcoord.NewService(
 			llmcoord.WithGateway(params.Gateway),
