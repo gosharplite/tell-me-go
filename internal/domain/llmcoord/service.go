@@ -65,6 +65,12 @@ func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecl
 
 	if handler != nil {
 		handler(ctx, respCh)
+	} else {
+		// 2. Synchronously drain if there is no handler at all
+		// (Gateway closes respCh when it is done)
+		for range respCh {
+			// discard
+		}
 	}
 
 	respContent, metrics, err := finalize()
