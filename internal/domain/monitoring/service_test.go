@@ -76,9 +76,11 @@ func TestTrackUsage(t *testing.T) {
 		metrics       *llm.Metrics
 		setupMock     func(mt *mockCostTracker, eb *mockEventBus)
 		expectedError string
+		withTracker   bool
+		withBus       bool
 	}{
 		{
-			name: "Happy path - Successful cost tracking and event emission",
+			name:    "Happy path - Successful cost tracking and event emission",
 			metrics: &llm.Metrics{Model: "gpt-4"},
 			setupMock: func(mt *mockCostTracker, eb *mockEventBus) {
 				mt.On("AccumulateAndReturn", mock.Anything).Return(1.0)
@@ -87,15 +89,39 @@ func TestTrackUsage(t *testing.T) {
 				})).Return(nil)
 			},
 			expectedError: "",
+			withTracker:   true,
+			withBus:       true,
 		},
 		{
-			name: "EventBus error",
+			name:    "EventBus error",
 			metrics: &llm.Metrics{Model: "gpt-4"},
 			setupMock: func(mt *mockCostTracker, eb *mockEventBus) {
 				mt.On("AccumulateAndReturn", mock.Anything).Return(1.0)
 				eb.On("Publish", mock.Anything, mock.Anything).Return(errors.New("event error"))
 			},
 			expectedError: "event error",
+			withTracker:   true,
+			withBus:       true,
+		},
+		{
+			name:    "Nil metrics",
+			metrics: nil,
+			setupMock: func(mt *mockCostTracker, eb *mockEventBus) {
+				// No mocks needed
+			},
+			expectedError: "",
+			withTracker:   true,
+			withBus:       true,
+		},
+		{
+			name:    "Nil tracker and nil bus",
+			metrics: &llm.Metrics{Model: "gpt-4"},
+			setupMock: func(mt *mockCostTracker, eb *mockEventBus) {
+				// No mocks needed
+			},
+			expectedError: "",
+			withTracker:   false,
+			withBus:       false,
 		},
 	}
 
@@ -104,7 +130,15 @@ func TestTrackUsage(t *testing.T) {
 			mt := &mockCostTracker{}
 			eb := &mockEventBus{}
 			tt.setupMock(mt, eb)
-			service := NewService(WithTracker(mt), WithEventBus(eb))
+
+			var opts []option
+			if tt.withTracker {
+				opts = append(opts, WithTracker(mt))
+			}
+			if tt.withBus {
+				opts = append(opts, WithEventBus(eb))
+			}
+			service := NewService(opts...)
 
 			_, err := service.TrackUsage(context.Background(), tt.metrics)
 
@@ -114,20 +148,135 @@ func TestTrackUsage(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
-			mt.AssertExpectations(t)
-			eb.AssertExpectations(t)
+			if tt.withTracker {
+				mt.AssertExpectations(t)
+			}
+			if tt.withBus {
+				eb.AssertExpectations(t)
+			}
 		})
 	}
 }
 
 func TestRecordError(t *testing.T) {
-	eb := &mockEventBus{}
-	eb.On("Publish", mock.Anything, mock.MatchedBy(func(e events.SystemMessageEvent) bool {
-		return e.Message == "some error" && e.Level == "error"
-	})).Return(nil)
+	tests := []struct {
+		name      string
+		err       error
+		withBus   bool
+		setupMock func(eb *mockEventBus)
+	}{
+		{
+			name:    "Normal error with bus",
+			err:     errors.New("some error"),
+			withBus: true,
+			setupMock: func(eb *mockEventBus) {
+				eb.On("Publish", mock.Anything, mock.MatchedBy(func(e events.SystemMessageEvent) bool {
+					return e.Message == "some error" && e.Level == "error"
+				})).Return(nil)
+			},
+		},
+		{
+			name:    "Nil error",
+			err:     nil,
+			withBus: true,
+			setupMock: func(eb *mockEventBus) {
+				// No publish expected
+			},
+		},
+		{
+			name:    "Error without bus",
+			err:     errors.New("some error"),
+			withBus: false,
+			setupMock: func(eb *mockEventBus) {
+				// No publish expected
+			},
+		},
+	}
 
-	service := NewService(WithEventBus(eb))
-	service.RecordError(context.Background(), errors.New("some error"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eb := &mockEventBus{}
+			tt.setupMock(eb)
 
-	eb.AssertExpectations(t)
+			var opts []option
+			if tt.withBus {
+				opts = append(opts, WithEventBus(eb))
+			}
+			service := NewService(opts...)
+
+			service.RecordError(context.Background(), tt.err)
+
+			if tt.withBus {
+				eb.AssertExpectations(t)
+			}
+		})
+	}
+}
+
+func TestService_GetStatusData(t *testing.T) {
+	tests := []struct {
+		name            string
+		withTracker     bool
+		setupMock       func(mt *mockCostTracker)
+		expectedCost    float64
+		expectedDaily   float64
+		expectedTotalM  int64
+		expectedTotalH  int64
+		expectedTotalO  int64
+	}{
+		{
+			name:        "Tracker available",
+			withTracker: true,
+			setupMock: func(mt *mockCostTracker) {
+				mt.On("GetTotalCost", mock.Anything).Return(150.0)
+				mt.On("GetDailyCost", mock.Anything).Return(10.0)
+				mt.On("GetStats", mock.Anything).Return(pricing.UsageStats{
+					PromptTokens:    1000,
+					CachedTokens:    200,
+					ResponseTokens:  300,
+					ThinkingTokens:  50,
+				}, 150.0)
+			},
+			expectedCost:   150.0,
+			expectedDaily:  10.0,
+			expectedTotalM: 800, // 1000 - 200
+			expectedTotalH: 200, // 200
+			expectedTotalO: 350, // 300 + 50
+		},
+		{
+			name:           "Tracker nil",
+			withTracker:    false,
+			setupMock:      func(mt *mockCostTracker) {},
+			expectedCost:   0,
+			expectedDaily:  0,
+			expectedTotalM: 0,
+			expectedTotalH: 0,
+			expectedTotalO: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := &mockCostTracker{}
+			tt.setupMock(mt)
+
+			var opts []option
+			if tt.withTracker {
+				opts = append(opts, WithTracker(mt))
+			}
+			service := NewService(opts...)
+
+			cost, dailyCost, totalM, totalH, totalO := service.GetStatusData(context.Background())
+
+			assert.Equal(t, tt.expectedCost, cost)
+			assert.Equal(t, tt.expectedDaily, dailyCost)
+			assert.Equal(t, tt.expectedTotalM, totalM)
+			assert.Equal(t, tt.expectedTotalH, totalH)
+			assert.Equal(t, tt.expectedTotalO, totalO)
+
+			if tt.withTracker {
+				mt.AssertExpectations(t)
+			}
+		})
+	}
 }
