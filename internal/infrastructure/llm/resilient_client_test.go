@@ -113,7 +113,7 @@ func TestNewClient(t *testing.T) {
 			pData := pricing.PricingData{}
 			bus := events.NewSimpleEventBus()
 
-			client, err := NewClient(cfg, pData, bus)
+			client, err := NewClient(cfg, pData, bus, nil)
 
 			if tt.expectErr {
 				require.Error(t, err)

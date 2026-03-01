@@ -19,7 +19,7 @@ func (t *emptyTurnFilter) Transform(ctx context.Context, req *ports.ContextReque
 	if err != nil {
 		return err
 	}
-	var filtered []*llm.Content
+	filtered := make([]*llm.Content, 0, len(req.History))
 	for i, turn := range turns {
 		// Always keep a trailing single message (usually the current user prompt)
 		if len(turn) == 1 && i == len(turns)-1 {
@@ -170,11 +170,12 @@ func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextReque
 		return nil
 	}
 
-	var responses []*llm.Part
+	responses := make([]*llm.Part, 0, len(last.Parts))
 	for _, p := range last.Parts {
 		if p.FunctionCall != nil {
 			responses = append(responses, &llm.Part{
 				FunctionResponse: &llm.FunctionResponse{
+					ID:       p.FunctionCall.ID, // Copy ID from the function call
 					Name:     p.FunctionCall.Name,
 					Response: map[string]interface{}{"result": "Error: System rebooted or session interrupted during tool execution. Results lost."},
 				},
@@ -231,7 +232,7 @@ func cleanContent(content *llm.Content) bool {
 	}
 
 	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
-	var cleanParts []*llm.Part
+	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	for _, p := range content.Parts {
 		if !p.IsEmpty() {
 			cleanParts = append(cleanParts, p)
@@ -248,3 +249,92 @@ func cleanContent(content *llm.Content) bool {
 }
 
 func (t *contentCleaner) Priority() int { return 5 }
+
+// toolResponseCleaner removes tool responses with empty IDs, which are invalid for APIs.
+type toolResponseCleaner struct{}
+
+func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	cleanHistory := make([]*llm.Content, 0, len(req.History))
+	modified := false
+
+	for _, content := range req.History {
+		if content == nil {
+			modified = true
+			continue
+		}
+		partsBefore := len(content.Parts)
+
+		if cleanToolParts(content) {
+			modified = true
+		}
+
+		// Preserve the content if it still has parts, OR if it natively arrived empty
+		// (avoiding implicit truncation and deferring to contentCleaner).
+		if len(content.Parts) > 0 || partsBefore == 0 {
+			cleanHistory = append(cleanHistory, content)
+		}
+		// If partsBefore > 0 but len(content.Parts) == 0, we intentionally drop it.
+		// (modified is already true from cleanToolParts)
+	}
+
+	if modified {
+		req.History = cleanHistory
+		req.PersistHistory = true
+	}
+	return nil
+}
+
+func cleanToolParts(content *llm.Content) bool {
+	if content == nil {
+		return false
+	}
+
+	cleanParts := make([]*llm.Part, 0, len(content.Parts))
+	changed := false
+
+	for _, p := range content.Parts {
+		// Skip tool calls with empty IDs - they cause API errors
+		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
+			changed = true
+			continue
+		}
+		// Skip tool responses with empty IDs - they cause API errors
+		if p.FunctionResponse != nil && p.FunctionResponse.ID == "" {
+			changed = true
+			continue
+		}
+		cleanParts = append(cleanParts, p)
+	}
+
+	if changed {
+		content.Parts = cleanParts
+	}
+	return changed
+}
+
+func (t *toolResponseCleaner) Priority() int { return 3 } // Run after historyRepairer (0) but before contentCleaner (5)
+// emptyMessagePruner explicitly drops messages that have 0 parts.
+// This runs before contentCleaner (which adds [empty response] fallbacks for messages with empty parts)
+// so that genuinely empty messages are fully removed from the history.
+type emptyMessagePruner struct{}
+
+func (t *emptyMessagePruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	cleanHistory := make([]*llm.Content, 0, len(req.History))
+	modified := false
+
+	for _, content := range req.History {
+		if content == nil || len(content.Parts) == 0 {
+			modified = true
+		} else {
+			cleanHistory = append(cleanHistory, content)
+		}
+	}
+
+	if modified {
+		req.History = cleanHistory
+		req.PersistHistory = true
+	}
+	return nil
+}
+
+func (t *emptyMessagePruner) Priority() int { return 4 } // Run after toolResponseCleaner (3) but before contentCleaner (5)

@@ -5,6 +5,7 @@ package gemini
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"google.golang.org/genai"
@@ -108,14 +109,14 @@ func fromSDKContent(c *genai.Content) *llm.Content {
 	res := &llm.Content{
 		Role: c.Role,
 	}
-	for _, p := range c.Parts {
-		res.Parts = append(res.Parts, fromSDKPart(p))
+	for i, p := range c.Parts {
+		res.Parts = append(res.Parts, fromSDKPart(p, i))
 	}
 	return res
 }
 
 // fromSDKPart converts genai.Part to internal Part.
-func fromSDKPart(p *genai.Part) *llm.Part {
+func fromSDKPart(p *genai.Part, index int) *llm.Part {
 	if p == nil {
 		return nil
 	}
@@ -125,8 +126,8 @@ func fromSDKPart(p *genai.Part) *llm.Part {
 		IsThought:        p.Thought,
 		ThoughtSignature: p.ThoughtSignature,
 		InlineData:       fromSDKBlob(p.InlineData),
-		FunctionCall:     fromSDKFunctionCall(p.FunctionCall),
-		FunctionResponse: fromSDKFunctionResponse(p.FunctionResponse),
+		FunctionCall:     fromSDKFunctionCall(p.FunctionCall, index),
+		FunctionResponse: fromSDKFunctionResponse(p.FunctionResponse, index),
 	}
 }
 
@@ -140,21 +141,28 @@ func fromSDKBlob(b *genai.Blob) *llm.Blob {
 	}
 }
 
-func fromSDKFunctionCall(f *genai.FunctionCall) *llm.FunctionCall {
+func fromSDKFunctionCall(f *genai.FunctionCall, index int) *llm.FunctionCall {
 	if f == nil {
 		return nil
 	}
+	// Gemini SDK currently lacks ID field in FunctionCall.
+	// We generate a deterministic ID to satisfy orchestration requirements.
+	id := fmt.Sprintf("gemini-call-%d-%s", index, f.Name)
 	return &llm.FunctionCall{
+		ID:   id,
 		Name: f.Name,
 		Args: f.Args,
 	}
 }
 
-func fromSDKFunctionResponse(f *genai.FunctionResponse) *llm.FunctionResponse {
+func fromSDKFunctionResponse(f *genai.FunctionResponse, index int) *llm.FunctionResponse {
 	if f == nil {
 		return nil
 	}
+	// Deterministic ID matching the one in fromSDKFunctionCall
+	id := fmt.Sprintf("gemini-call-%d-%s", index, f.Name)
 	return &llm.FunctionResponse{
+		ID:       id,
 		Name:     f.Name,
 		Response: f.Response,
 	}

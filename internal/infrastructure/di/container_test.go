@@ -82,7 +82,7 @@ func TestBuildSessionDependencies(t *testing.T) {
 	sm := internal_security.NewSecurityManager(nil)
 	client := new(mockLLMClient)
 
-	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
 		return client, nil
 	})
 
@@ -131,7 +131,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 	tests := []struct {
 		name          string
 		setup         func(t *testing.T) string // Returns homeDir for this test case
-		clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error)
+		clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error)
 		wantErr       string
 	}{
 		{
@@ -163,7 +163,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			setup: func(t *testing.T) string {
 				return filepath.Join(tempDir, "factory-err-home")
 			},
-			clientFactory: func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
+			clientFactory: func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
 				return nil, errors.New("simulated factory failure")
 			},
 			wantErr: "simulated factory failure",
@@ -173,7 +173,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			setup: func(t *testing.T) string {
 				return filepath.Join(tempDir, "gateway-err-home")
 			},
-			clientFactory: func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
+			clientFactory: func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
 				return &mockOnlyClient{}, nil
 			},
 			wantErr: "client does not implement LLMGateway",
@@ -204,7 +204,7 @@ func TestFinalizeSession(t *testing.T) {
 	}
 
 	client := new(mockLLMClient)
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
+	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
 		return client, nil
 	})
 
@@ -259,7 +259,7 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	sm := internal_security.NewSecurityManager(nil)
 	client := new(mockLLMClient)
 
-	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
 		return client, nil
 	})
 

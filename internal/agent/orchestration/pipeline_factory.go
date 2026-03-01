@@ -43,6 +43,8 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 
 	transformers := []ports.ContextTransformer{
 		&historyRepairer{},
+		&toolResponseCleaner{}, // Remove tool responses with empty IDs
+		&emptyMessagePruner{},  // Explicitly drop messages with 0 parts
 		&contentCleaner{},
 		&historyPruner{
 			Policy: &compositePruningPolicy{

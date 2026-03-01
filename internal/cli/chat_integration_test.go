@@ -48,7 +48,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 
 	mClient := &mockClient{}
 	// We use the real bootstrapper but wrap it to return our mock chatter
-	bootstrapper := di.NewBootstrapper(tmpDir, sm, "1.0.0", &stdout, &stderr, func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
+	bootstrapper := di.NewBootstrapper(tmpDir, sm, "1.0.0", &stdout, &stderr, func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus, logger ports.Logger) (domain_llm.LLMClient, error) {
 		return mClient, nil
 	})
 

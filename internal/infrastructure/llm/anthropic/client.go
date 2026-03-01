@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
@@ -29,10 +30,14 @@ type client struct {
 	headers        map[string]string
 	thinkingBudget int
 	persona        string
+	logger         ports.Logger
 }
 
 // NewClient creates a new Anthropic client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int, persona string, timeout time.Duration) *client {
+func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int, persona string, timeout time.Duration, logger ports.Logger) *client {
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com/v1"
 	}
@@ -44,6 +49,7 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 		headers:        headers,
 		thinkingBudget: thinkingBudget,
 		persona:        persona,
+		logger:         logger,
 	}
 }
 
@@ -139,9 +145,9 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	return c.fromAnthropicResponse(&msgResp, duration)
 }
 
-func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message) {
+func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message, error) {
 	system := c.persona
-	var messages []message
+	messages := make([]message, 0, len(history))
 
 	for _, h := range history {
 		if h.Role == "system" {
@@ -149,7 +155,10 @@ func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message)
 			continue
 		}
 
-		role, blocks := c.convertToAnthropicBlocks(h)
+		role, blocks, err := c.convertToAnthropicBlocks(h)
+		if err != nil {
+			return "", nil, err
+		}
 		if len(blocks) == 0 {
 			continue
 		}
@@ -157,11 +166,11 @@ func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message)
 		messages = c.appendOrMergeMessage(messages, role, blocks)
 	}
 
-	return system, messages
+	return system, messages, nil
 }
 
 func (c *client) appendSystemContent(currentSystem string, h *llm.Content) string {
-	var parts []string
+	parts := make([]string, 0, len(h.Parts))
 	for _, p := range h.Parts {
 		if p.Text != "" {
 			parts = append(parts, p.Text)
@@ -174,7 +183,7 @@ func (c *client) appendSystemContent(currentSystem string, h *llm.Content) strin
 	return newContent
 }
 
-func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBlock) {
+func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBlock, error) {
 	role := h.Role
 	if role == "model" {
 		role = "assistant"
@@ -182,17 +191,26 @@ func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBloc
 		role = "user"
 	}
 
-	var blocks []contentBlock
+	blocks := make([]contentBlock, 0, len(h.Parts))
 	for _, p := range h.Parts {
-		if block, ok := c.partToContentBlock(p, role); ok {
+		block, ok, err := c.partToContentBlock(p, role)
+		if err != nil {
+			return "", nil, err
+		}
+		if ok {
 			blocks = append(blocks, block)
 		}
 	}
-	return role, blocks
+	return role, blocks, nil
 }
 
-func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, bool) {
+func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, bool, error) {
 	if p.FunctionCall != nil {
+		// Fail fast if tool call has an empty ID - Anthropic requires ID for tool_use
+		if p.FunctionCall.ID == "" {
+			c.logger.Error("Encountered tool call with empty ID during serialization", "tool_name", p.FunctionCall.Name)
+			return contentBlock{}, false, fmt.Errorf("invalid tool payload: missing ID for tool call '%s'", p.FunctionCall.Name)
+		}
 		args := p.FunctionCall.Args
 		if args == nil {
 			args = make(map[string]interface{})
@@ -203,29 +221,34 @@ func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, boo
 			ID:    p.FunctionCall.ID,
 			Name:  p.FunctionCall.Name,
 			Input: json.RawMessage(argsJSON),
-		}, true
+		}, true, nil
 	}
 	if p.FunctionResponse != nil {
+		// Fail fast if tool response has an empty ID - Anthropic requires tool_use_id
+		if p.FunctionResponse.ID == "" {
+			c.logger.Error("Encountered tool response with empty ID during serialization", "tool_name", p.FunctionResponse.Name)
+			return contentBlock{}, false, fmt.Errorf("invalid tool payload: missing ID for tool response '%s'", p.FunctionResponse.Name)
+		}
 		return contentBlock{
 			Type:      "tool_result",
 			ToolUseID: p.FunctionResponse.ID,
 			Content:   marshalResponse(p.FunctionResponse.Response),
-		}, true
+		}, true, nil
 	}
 	if p.IsThought && role == "assistant" {
 		return contentBlock{
 			Type:      "thinking",
 			Thinking:  p.Text,
 			Signature: string(p.ThoughtSignature),
-		}, true
+		}, true, nil
 	}
 	if p.Text != "" {
 		return contentBlock{
 			Type: "text",
 			Text: p.Text,
-		}, true
+		}, true, nil
 	}
-	return contentBlock{}, false
+	return contentBlock{}, false, nil
 }
 
 func (c *client) appendOrMergeMessage(messages []message, role string, blocks []contentBlock) []message {
@@ -243,7 +266,7 @@ func (c *client) toAnthropicTools(decls []*tools.ToolDeclaration) []tool {
 	if len(decls) == 0 {
 		return nil
 	}
-	var res []tool
+	res := make([]tool, 0, len(decls))
 	for _, d := range decls {
 		schema := toAnthropicSchema(d.Parameters)
 		if schema == nil {
@@ -392,7 +415,10 @@ type streamState struct {
 }
 
 func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, stream bool) (*http.Request, error) {
-	systemStr, messages := c.toAnthropicMessages(history)
+	systemStr, messages, err := c.toAnthropicMessages(history)
+	if err != nil {
+		return nil, err
+	}
 
 	reqPayload := messagesRequest{
 		Model:     c.model,
@@ -430,6 +456,10 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	return c.buildHTTPRequest(ctx, body, stream)
+}
+
+func (c *client) buildHTTPRequest(ctx context.Context, body []byte, stream bool) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/messages", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
