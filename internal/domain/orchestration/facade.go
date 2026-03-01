@@ -28,10 +28,7 @@ type chatterFacade struct {
 	history  ports.HistoryManager
 
 	// Internal state/config
-	maxToolTurns   int
-	historyTokens  int
-	historyTurns   int
-	tieredThreshold int
+	maxToolTurns int
 }
 
 // FacadeOption defines a functional option for initializing the chatterFacade.
@@ -186,15 +183,10 @@ func (f *chatterFacade) SetLimits(ctx context.Context, toolTurns, historyTokens,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.maxToolTurns = toolTurns
-	f.historyTokens = historyTokens
-	f.historyTurns = historyTurns
 	return nil
 }
 
 func (f *chatterFacade) SetTieredThreshold(ctx context.Context, threshold int) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.tieredThreshold = threshold
 	return nil
 }
 

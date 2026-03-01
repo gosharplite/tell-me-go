@@ -6,7 +6,6 @@ package llmcoord
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/orchestration"
@@ -17,7 +16,6 @@ var _ orchestration.LLMCoordinator = (*service)(nil)
 
 // service coordinates interactions with the LLM gateway.
 type service struct {
-	mu            sync.RWMutex
 	gateway       llm.LLMGateway
 	streamHandler func(context.Context, <-chan *llm.Content)
 }
@@ -56,9 +54,7 @@ func (s *service) Generate(ctx context.Context, history []*llm.Content, toolDecl
 
 	respCh, finalize := s.gateway.Generate(ctx, history, toolDecls, resolver)
 
-	s.mu.RLock()
 	handler := s.streamHandler
-	s.mu.RUnlock()
 
 	if handler != nil {
 		handler(ctx, respCh)

@@ -6,7 +6,6 @@ package contextprep
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -18,7 +17,6 @@ var _ domain_orchestration.ContextPreparationService = (*service)(nil)
 
 // service provides context preparation logic by wrapping the robust ContextManager.
 type service struct {
-	mu sync.RWMutex
 	cm *orchestration.ContextManager
 }
 
@@ -42,19 +40,4 @@ func (s *service) AddContent(ctx context.Context, content *llm.Content) error {
 		return fmt.Errorf("context manager not initialized")
 	}
 	return s.cm.AddContent(ctx, content)
-}
-
-// SummarizeRange delegates to the wrapped ContextManager.
-func (s *service) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
-	if s.cm == nil {
-		return "", nil, fmt.Errorf("context manager not initialized")
-	}
-	return s.cm.SummarizeRange(ctx, numTurns, focus)
-}
-
-// Reconfigure delegates to the wrapped ContextManager.
-func (s *service) Reconfigure(limits ports.ContextMetadata) {
-	// Note: Existing Reconfigure takes events.Limits. 
-	// For now we'll handle reconfiguration through the event bus subscription 
-	// already present in ContextManager.
 }

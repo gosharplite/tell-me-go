@@ -6,7 +6,6 @@ package monitoring
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -18,7 +17,6 @@ var _ orchestration.MonitoringTracker = (*service)(nil)
 
 // service handles business telemetry, cost tracking, and event emission.
 type service struct {
-	mu      sync.RWMutex
 	tracker pricing.ICostTracker
 	bus     events.EventBus
 }

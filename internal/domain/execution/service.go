@@ -6,7 +6,6 @@ package execution
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -17,7 +16,6 @@ var _ orchestration.ExecutionOrchestrator = (*service)(nil)
 
 // service handles tool execution by wrapping the robust ToolExecutor.
 type service struct {
-	mu       sync.RWMutex
 	executor *executor.ToolExecutor
 }
 
@@ -32,11 +30,4 @@ func (s *service) Execute(ctx context.Context, content *llm.Content, turn int, m
 		return nil, fmt.Errorf("executor not initialized")
 	}
 	return s.executor.Execute(ctx, content, turn, maxTurns)
-}
-
-// Shutdown shuts down the wrapped executor.
-func (s *service) Shutdown() {
-	if s.executor != nil {
-		s.executor.Shutdown()
-	}
 }
