@@ -202,6 +202,13 @@ func TestChatterFacade_StrictEventSequence(t *testing.T) {
 				return ok && ts.Status.IsPostCall
 			},
 		},
+		{
+			name: "events.TraceEvent",
+			validate: func(e events.Event) bool {
+				_, ok := e.(events.TraceEvent)
+				return ok
+			},
+		},
 	}
 
 	// Fail if extra or missing events
