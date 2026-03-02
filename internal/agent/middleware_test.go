@@ -116,10 +116,6 @@ func TestWithStatusReporter(t *testing.T) {
 
 func TestWithMetrics(t *testing.T) {
 	t.Parallel()
-	bus := &mockEventBus{}
-	e := &turnEngine{events: bus}
-	mw := e.WithMetrics()
-	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
 
 	tests := []struct {
 		name       string
@@ -135,7 +131,11 @@ func TestWithMetrics(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			bus.events = nil
+			bus := &mockEventBus{}
+			e := &turnEngine{events: bus}
+			mw := e.WithMetrics()
+			next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
+
 			state := &turnState{Phase: tt.phase}
 			if tt.hasMetrics {
 				state.Metrics = &llm.Metrics{}

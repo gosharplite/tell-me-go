@@ -14,8 +14,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -233,22 +235,64 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
 
-	params := ports.NewChatterParams(
-		ports.WithGateway(client),
-		ports.WithHistory(hManager),
-		ports.WithToolConfig(reg),
-		ports.WithSecurityManager(sm),
-		ports.WithStreamingDisabled(false),
-		ports.WithEventBus(bus),
-		ports.WithProvider("test-provider"),
-		ports.WithModel("test-model"),
-		ports.WithMode("assistant"),
-		ports.WithLogPath("tokens.log"),
-	)
-	agent, err := factory(params)
+	mockDeps := &mockSessionDeps{
+		gw:       client,
+		hManager: hManager,
+		reg:      reg,
+		sm:       sm,
+		bus:      bus,
+	}
+
+	cfg := ports.ChatterConfig{
+		ProviderName:     "test-provider",
+		Model:            "test-model",
+		Mode:             "assistant",
+		LogPath:          "tokens.log",
+		DisableStreaming: false,
+	}
+	agent, err := factory(context.Background(), mockDeps, cfg)
 	assert.NoError(t, err)
 	assert.NotNil(t, agent)
 }
+
+type mockSessionDeps struct {
+	ports.SessionDependencies
+	gw       llm.LLMGateway
+	hManager ports.HistoryManager
+	reg      tools.IToolRegistry
+	sm       security.ISecurityManager
+	bus      events.EventBus
+	tracker  pricing.ICostTracker
+	paths    *persistence.Paths
+}
+
+func (m *mockSessionDeps) GetPaths() *persistence.Paths {
+	if m.paths == nil {
+		return &persistence.Paths{}
+	}
+	return m.paths
+}
+func (m *mockSessionDeps) GetPricingData() pricing.PricingData     { return pricing.PricingData{} }
+func (m *mockSessionDeps) GetGateway() llm.LLMGateway              { return m.gw }
+func (m *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return m.hManager }
+func (m *mockSessionDeps) GetRegistry() tools.IToolRegistry        { return m.reg }
+func (m *mockSessionDeps) GetSecurityManager() security.ISecurityManager {
+	return m.sm
+}
+func (m *mockSessionDeps) GetEventBus() events.EventBus { return m.bus }
+func (m *mockSessionDeps) GetTracker() pricing.ICostTracker {
+	if m.tracker == nil {
+		return &mockTracker{}
+	}
+	return m.tracker
+}
+func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
+
+type mockTracker struct {
+	pricing.ICostTracker
+}
+
+func (m *mockTracker) Warmup() {}
 
 func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	ctx := context.Background()

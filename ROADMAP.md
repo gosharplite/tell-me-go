@@ -9,7 +9,7 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 ## Phase 1: Foundation & Governance (Completed)
 - [x] Documentation & ADR Initialization
 - [x] ADR-001: Hybrid Infrastructure Strategy
-- [x] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string`.
+- [x] Refactor Domain `llm.Part`: Standardize `Thought` architecture as a unified boolean-based thinking model.
 - [x] Implement **Registry-based Configuration**:
     - [x] Define `LLMProvider` struct in domain.
     - [x] Update `Config` to support `Providers` map and `SelectedProvider` key.
@@ -44,11 +44,20 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 ## Phase 5: Advanced Capability (Completed)
 - [x] Silent Observability: Implement conditional OpenTelemetry exporter integration in `main.go` using `TELL_ME_TRACE_ENDPOINT`.
 
-## Phase 6: Domain Decomposition & Scalability (New)
-- **Goal:** Address Single Responsibility Principle (SRP) violations and decompose God Objects.
-- **Task:** Investigate the `Chatter` domain service. It currently accepts a massive `ChatterParams` struct with 13 dependencies. 
-- **Task:** Evaluate splitting `Chatter` into distinct pipeline stages (e.g., `ContextBuilder`, `ExecutionEngine`, `ResponseProcessor`) or applying the Facade Pattern.
-- **Task:** Continuous dependency injection audit to ensure the composition root (`container.go`) remains clean.
+## Phase 6: Domain Decomposition & Scalability (Completed)
+- **Goal:** Address Single Responsibility Principle (SRP) violations, decompose God Objects, and standardize tool execution.
+- **Task:** Implement **High-Performance Tool Execution Engine** with concurrency and standardized timeouts. (COMPLETED - See [ADR-0002](./docs/adr/0002-tool-execution-concurrency-and-timeouts.md))
+- **Task:** Implement **Domain Decomposition Strategy** to separate core logic from infrastructure and UI. (COMPLETED - See [ADR-0003](./docs/adr/0003-domain-decomposition-strategy.md))
+- **Task:** Investigate the `Chatter` domain service. It currently accepts a massive `ChatterParams` struct with 13 dependencies. (COMPLETED - See [ADR-0004](./docs/adr/0004-chatterparams-elimination.md))
+- **Task:** Evaluate splitting `Chatter` into distinct pipeline stages (e.g., `ContextBuilder`, `ExecutionEngine`, `ResponseProcessor`) or applying the Facade Pattern. (COMPLETED)
+- **Task:** Continuous dependency injection audit to ensure the composition root (`container.go`) remains clean. (COMPLETED - Extracted to `internal/infrastructure/factory/chatter.go`)
+
+## Phase 7: Dynamic Knowledge & Skills (Completed)
+- **Goal:** Optimize context usage by dynamically injecting Go-specific development patterns.
+- **Task:** Implement **Skill Injection Architecture** (ADR-0005):
+    - [x] Create in-memory `SkillRepository` with file-system caching.
+    - [x] Implement token-aware `SkillSelector` for dynamic relevance-based injection.
+    - [x] Integrate `SkillSelector` into the `ContextPipeline` to provide contextual Go patterns without context bloat.
 
 ---
 *Note: This roadmap is subject to change based on the evolution of LLM APIs and project requirements.*

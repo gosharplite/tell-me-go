@@ -10,20 +10,16 @@ import (
 	"path/filepath"
 	"time"
 
-	agent_executor "github.com/gosharplite/tell-me-go/internal/agent/executor"
-	agent_orchestration "github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/llmcoord"
-	"github.com/gosharplite/tell-me-go/internal/domain/monitoring"
-	domain_orchestration "github.com/gosharplite/tell-me-go/internal/domain/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -153,6 +149,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		client:           client,
 		gw:               gw,
 		reg:              reg,
+		sm:               b.SM,
 		tracker:          tracker,
 		pricingData:      pricingData,
 		pricingOverrides: pricingOverrides,
@@ -168,17 +165,19 @@ type sessionDeps struct {
 	client           llm.LLMClient
 	gw               llm.LLMGateway
 	reg              tools.IToolRegistry
+	sm               security.ISecurityManager
 	tracker          pricing.ICostTracker
 	pricingData      pricing.PricingData
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
 }
 
-func (d *sessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
-func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
-func (d *sessionDeps) GetRegistry() tools.IToolRegistry        { return d.reg }
-func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
-func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
+func (d *sessionDeps) GetGateway() llm.LLMGateway                    { return d.gw }
+func (d *sessionDeps) GetHistoryManager() ports.HistoryManager       { return d.hManager }
+func (d *sessionDeps) GetRegistry() tools.IToolRegistry              { return d.reg }
+func (d *sessionDeps) GetSecurityManager() security.ISecurityManager { return d.sm }
+func (d *sessionDeps) GetEventBus() events.EventBus                  { return d.bus }
+func (d *sessionDeps) GetPaths() *persistence.Paths                  { return d.paths }
 func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides
 }
@@ -188,59 +187,7 @@ func (d *sessionDeps) GetClient() llm.LLMClient            { return d.client }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
 func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
-	return func(params ports.ChatterParams) (ports.Chatter, error) {
-		telemetry.RegisterTraceSubscriber(params.EventBus, params.LogPath)
-
-		summarizer := infra_llm.NewSummarizer(params.Gateway, params.EventBus)
-
-		// 1. Prepare specialized domain service dependencies.
-		strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(params.Registry), params.EventBus)
-		factory := &agent_orchestration.PipelineFactory{
-			Registry:   params.Registry,
-			History:    params.HistoryManager,
-			Summarizer: summarizer,
-			Estimator:  strategy,
-			Events:     params.EventBus,
-		}
-		ctxManager := agent_orchestration.NewContextManager(strategy, params.HistoryManager, params.EventBus, factory)
-
-		toolExec, err := agent_executor.NewToolExecutor(params.Registry, params.SecurityManager, params.EventBus, &agent_executor.TelemetryLogger{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create tool executor: %w", err)
-		}
-
-		// 2. Instantiate the four new domain services wrapping robust implementations.
-		ctxPrep := agent_orchestration.NewContextPrepAdapter(ctxManager)
-		execService := agent_executor.NewExecutionAdapter(toolExec)
-
-		llmCoord := llmcoord.NewService(
-			llmcoord.WithGateway(params.Gateway),
-			llmcoord.WithStreamHandler(func(ctx stdctx.Context, stream <-chan *llm.Content) {
-				_ = params.EventBus.Publish(ctx, events.ResponseStreamEvent{Context: ctx, Stream: stream})
-			}),
-		)
-
-		monitor := monitoring.NewService(
-			monitoring.WithTracker(params.CostTracker),
-			monitoring.WithEventBus(params.EventBus),
-		)
-
-		// 3. Register internal tools (e.g., summarize_history)
-		agent_orchestration.RegisterInternal(params.Registry, ctxManager)
-
-		// 4. Return the new ChatterFacade injected with the domain services.
-		return domain_orchestration.NewChatterFacade(
-			domain_orchestration.WithContextPrep(ctxPrep),
-			domain_orchestration.WithExecution(execService),
-			domain_orchestration.WithLLMCoord(llmCoord),
-			domain_orchestration.WithMonitor(monitor),
-			domain_orchestration.WithEventBus(params.EventBus),
-			domain_orchestration.WithRegistry(params.Registry),
-			domain_orchestration.WithHistory(params.HistoryManager),
-			domain_orchestration.WithProvider(params.ProviderName),
-			domain_orchestration.WithModel(params.Model),
-		), nil
-	}
+	return factory.NewChatter
 }
 
 // FinalizeSession saves history and records session cost.

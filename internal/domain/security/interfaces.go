@@ -25,6 +25,7 @@ type TerminalController interface {
 	Prompt(message string)
 	Warn(message string)
 	Confirm(ctx context.Context, message string) (bool, error)
+	// ReadLine reads a line of input from the terminal. Note: This is utilized across package boundaries (e.g., by workspace tools) and is not dead code.
 	ReadLine(ctx context.Context) (string, error)
 }
 
@@ -47,6 +48,7 @@ type UserInteractor interface {
 	Warn(message string)
 	Prompt(message string)
 	ReadSingleKey(ctx context.Context) (string, error)
+	// ReadLine reads a line of input from the terminal. Note: This is utilized across package boundaries (e.g., by workspace tools) and is not dead code.
 	ReadLine(ctx context.Context) (string, error)
 }
 

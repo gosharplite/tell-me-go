@@ -116,7 +116,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params ports.ChatterParams) (ports.Chatter, error) {
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
 	}
 
@@ -128,7 +128,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -314,7 +314,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params ports.ChatterParams) (ports.Chatter, error) {
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
 	}
 
@@ -326,7 +326,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -348,7 +348,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params ports.ChatterParams) (ports.Chatter, error) {
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return nil, nil
 	}
 
@@ -357,7 +357,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := newSessionConfig("", false, 5, false, "", &config.Config{})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
@@ -533,7 +533,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params ports.ChatterParams) (ports.Chatter, error) {
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		tracker.record("AgentFactory")
 		return mChatter, nil
 	}
@@ -555,7 +555,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 			Mode:             "mode",
 			SelectedProvider: "provider",
 		},
-		Deps:     newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+		Deps:     newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
 		Capturer: mCapturer,
 	}
 

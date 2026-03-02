@@ -41,139 +41,17 @@ type Chatter interface {
 	Shutdown(ctx context.Context) error
 }
 
-// ChatterParams encapsulates all dependencies and configuration required to create a Chatter instance.
-type ChatterParams struct {
-	Context          context.Context
-	Loader           config.ConfigLoader
-	Gateway          llm.LLMGateway
-	HistoryManager   HistoryManager
-	Registry         tools.IToolRegistry
-	SecurityManager  security.ISecurityManager
-	DisableStreaming bool
-	EventBus         events.EventBus
+// ChatterConfig encapsulates the primitive configuration for a Chatter instance.
+type ChatterConfig struct {
 	ProviderName     string
 	Model            string
 	Mode             string
 	LogPath          string
-	PricingOverrides map[string]pricing.ModelPricing
-	CostTracker      pricing.ICostTracker
-}
-
-// chatterOption defines a functional option for ChatterParams.
-type chatterOption func(*ChatterParams)
-
-// NewChatterParams creates a new ChatterParams with the given options.
-func NewChatterParams(opts ...chatterOption) ChatterParams {
-	p := ChatterParams{
-		Context:          context.Background(),
-		PricingOverrides: make(map[string]pricing.ModelPricing),
-	}
-	for _, opt := range opts {
-		opt(&p)
-	}
-	return p
-}
-
-// WithContext sets the context for the Chatter instance.
-func WithContext(ctx context.Context) chatterOption {
-	return func(p *ChatterParams) {
-		p.Context = ctx
-	}
-}
-
-// WithLoader sets the configuration loader.
-func WithLoader(l config.ConfigLoader) chatterOption {
-	return func(p *ChatterParams) {
-		p.Loader = l
-	}
-}
-
-// WithGateway sets the LLM gateway.
-func WithGateway(g llm.LLMGateway) chatterOption {
-	return func(p *ChatterParams) {
-		p.Gateway = g
-	}
-}
-
-// WithHistory sets the history manager.
-func WithHistory(h HistoryManager) chatterOption {
-	return func(p *ChatterParams) {
-		p.HistoryManager = h
-	}
-}
-
-// WithToolConfig sets the tool registry.
-func WithToolConfig(r tools.IToolRegistry) chatterOption {
-	return func(p *ChatterParams) {
-		p.Registry = r
-	}
-}
-
-// WithSecurityManager sets the security manager.
-func WithSecurityManager(s security.ISecurityManager) chatterOption {
-	return func(p *ChatterParams) {
-		p.SecurityManager = s
-	}
-}
-
-// WithStreamingDisabled sets whether streaming is disabled.
-func WithStreamingDisabled(disabled bool) chatterOption {
-	return func(p *ChatterParams) {
-		p.DisableStreaming = disabled
-	}
-}
-
-// WithEventBus sets the event bus.
-func WithEventBus(e events.EventBus) chatterOption {
-	return func(p *ChatterParams) {
-		p.EventBus = e
-	}
-}
-
-// WithProvider sets the LLM provider name.
-func WithProvider(provider string) chatterOption {
-	return func(p *ChatterParams) {
-		p.ProviderName = provider
-	}
-}
-
-// WithModel sets the LLM model name.
-func WithModel(model string) chatterOption {
-	return func(p *ChatterParams) {
-		p.Model = model
-	}
-}
-
-// WithMode sets the operation mode.
-func WithMode(mode string) chatterOption {
-	return func(p *ChatterParams) {
-		p.Mode = mode
-	}
-}
-
-// WithLogPath sets the path for session logs.
-func WithLogPath(path string) chatterOption {
-	return func(p *ChatterParams) {
-		p.LogPath = path
-	}
-}
-
-// WithPricingOverrides sets the model pricing overrides.
-func WithPricingOverrides(overrides map[string]pricing.ModelPricing) chatterOption {
-	return func(p *ChatterParams) {
-		p.PricingOverrides = overrides
-	}
-}
-
-// WithCostTracker sets the cost tracker.
-func WithCostTracker(c pricing.ICostTracker) chatterOption {
-	return func(p *ChatterParams) {
-		p.CostTracker = c
-	}
+	DisableStreaming bool
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.
-type ChatterFactory func(params ChatterParams) (Chatter, error)
+type ChatterFactory func(ctx context.Context, deps SessionDependencies, cfg ChatterConfig) (Chatter, error)
 
 // SessionConfig defines the configuration interface for a session.
 type SessionConfig interface {
@@ -188,6 +66,7 @@ type SessionDependencies interface {
 	GetGateway() llm.LLMGateway
 	GetHistoryManager() HistoryManager
 	GetRegistry() tools.IToolRegistry
+	GetSecurityManager() security.ISecurityManager
 	GetEventBus() events.EventBus
 	GetPaths() *persistence.Paths
 	GetPricingOverrides() map[string]pricing.ModelPricing
