@@ -6,6 +6,7 @@ package factory
 import (
 	stdctx "context"
 	"fmt"
+	"path/filepath"
 
 	agent_executor "github.com/gosharplite/tell-me-go/internal/agent/executor"
 	agent_orchestration "github.com/gosharplite/tell-me-go/internal/agent/orchestration"
@@ -15,7 +16,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/monitoring"
 	domain_orchestration "github.com/gosharplite/tell-me-go/internal/domain/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	infra_skills "github.com/gosharplite/tell-me-go/internal/infrastructure/skills"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
@@ -26,13 +29,22 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus())
 
 	// 1. Prepare specialized domain service dependencies.
+	homeDir := filepath.Dir(filepath.Dir(deps.GetPaths().ModeDir))
+	skillsDir := filepath.Join(homeDir, "docs/skills")
+	skillRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
+	}
+	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 2000) // 2k token budget for skills
+
 	strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(deps.GetRegistry()), deps.GetEventBus())
 	factory := &agent_orchestration.PipelineFactory{
-		Registry:   deps.GetRegistry(),
-		History:    deps.GetHistoryManager(),
-		Summarizer: summarizer,
-		Estimator:  strategy,
-		Events:     deps.GetEventBus(),
+		Registry:      deps.GetRegistry(),
+		History:       deps.GetHistoryManager(),
+		Summarizer:    summarizer,
+		Estimator:     strategy,
+		SkillSelector: skillSelector,
+		Events:        deps.GetEventBus(),
 	}
 	ctxManager := agent_orchestration.NewContextManager(strategy, deps.GetHistoryManager(), deps.GetEventBus(), factory)
 

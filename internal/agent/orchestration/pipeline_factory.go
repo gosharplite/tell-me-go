@@ -7,6 +7,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -20,12 +21,13 @@ const (
 
 // PipelineFactory encapsulates the logic for creating context processing pipelines.
 type PipelineFactory struct {
-	Registry   tools.IToolRegistry
-	History    ports.HistoryManager
-	Summarizer ports.Summarizer
-	Estimator  llm.TokenEstimator
-	Events     events.EventBus
-	Profile    optimizationProfile
+	Registry      tools.IToolRegistry
+	History       ports.HistoryManager
+	Summarizer    ports.Summarizer
+	Estimator     llm.TokenEstimator
+	SkillSelector skills.SkillSelector
+	Events        events.EventBus
+	Profile       optimizationProfile
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.
@@ -43,6 +45,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 
 	transformers := []ports.ContextTransformer{
 		&historyRepairer{},
+		&skillInjector{Selector: f.SkillSelector},
 		&toolResponseCleaner{}, // Remove tool responses with empty IDs
 		&emptyMessagePruner{},  // Explicitly drop messages with 0 parts
 		&contentCleaner{},

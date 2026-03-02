@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -262,9 +263,17 @@ type mockSessionDeps struct {
 	sm       security.ISecurityManager
 	bus      events.EventBus
 	tracker  pricing.ICostTracker
+	paths    *persistence.Paths
 }
 
-func (m *mockSessionDeps) GetGateway() llm.LLMGateway              { return m.gw }
+func (m *mockSessionDeps) GetPaths() *persistence.Paths {
+	if m.paths == nil {
+		return &persistence.Paths{}
+	}
+	return m.paths
+}
+func (m *mockSessionDeps) GetPricingData() pricing.PricingData { return pricing.PricingData{} }
+func (m *mockSessionDeps) GetGateway() llm.LLMGateway          { return m.gw }
 func (m *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return m.hManager }
 func (m *mockSessionDeps) GetRegistry() tools.IToolRegistry        { return m.reg }
 func (m *mockSessionDeps) GetSecurityManager() security.ISecurityManager {
