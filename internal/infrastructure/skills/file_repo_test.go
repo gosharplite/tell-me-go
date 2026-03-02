@@ -15,11 +15,11 @@ import (
 
 func TestNewFileSkillRepository(t *testing.T) {
 	tests := []struct {
-		name          string
-		files         map[string]string
-		wantSkills    []domain.Skill
-		wantErr       bool
-		missingDir    bool
+		name       string
+		files      map[string]string
+		wantSkills []domain.Skill
+		wantErr    bool
+		missingDir bool
 	}{
 		{
 			name: "valid skills",
@@ -50,20 +50,20 @@ func TestNewFileSkillRepository(t *testing.T) {
 		{
 			name: "ignored files",
 			files: map[string]string{
-				"NOTICE.md":   "---\nname: Ignore Me\ndescription: Ignore Me\n---\nIgnore",
-				"readme.txt":  "not markdown",
-				"nested/dir":  "should be ignored",
-				"other.md":    "missing frontmatter",
+				"NOTICE.md":  "---\nname: Ignore Me\ndescription: Ignore Me\n---\nIgnore",
+				"readme.txt": "not markdown",
+				"nested/dir": "should be ignored",
+				"other.md":   "missing frontmatter",
 			},
 			wantSkills: nil,
 		},
 		{
 			name: "malformed skills",
 			files: map[string]string{
-				"no_sep.md":   "name: No Separator\ndescription: No Separator\nContent",
-				"no_name.md":  "---\ndescription: No Name\n---\nContent",
-				"no_desc.md":  "---\nname: No Desc\n---\nContent",
-				"partial.md":  "---\nname: Partial\n",
+				"no_sep.md":  "name: No Separator\ndescription: No Separator\nContent",
+				"no_name.md": "---\ndescription: No Name\n---\nContent",
+				"no_desc.md": "---\nname: No Desc\n---\nContent",
+				"partial.md": "---\nname: Partial\n",
 			},
 			wantSkills: nil,
 		},

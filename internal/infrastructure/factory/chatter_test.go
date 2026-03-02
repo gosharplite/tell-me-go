@@ -28,15 +28,15 @@ type mockSessionDeps struct {
 	tracker  pricing.ICostTracker
 }
 
-func (d *mockSessionDeps) GetGateway() llm.LLMGateway                          { return d.gw }
-func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager            { return d.hManager }
+func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
+func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
 func (d *mockSessionDeps) GetRegistry() tools.IToolRegistry                     { return d.reg }
-func (d *mockSessionDeps) GetSecurityManager() security.ISecurityManager       { return d.sm }
-func (d *mockSessionDeps) GetEventBus() events.EventBus                       { return d.bus }
-func (d *mockSessionDeps) GetPaths() *persistence.Paths                       { return d.paths }
+func (d *mockSessionDeps) GetSecurityManager() security.ISecurityManager        { return d.sm }
+func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
+func (d *mockSessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
 func (d *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
-func (d *mockSessionDeps) GetTracker() pricing.ICostTracker                   { return d.tracker }
-func (d *mockSessionDeps) GetPricingData() pricing.PricingData                { return pricing.PricingData{} }
+func (d *mockSessionDeps) GetTracker() pricing.ICostTracker                     { return d.tracker }
+func (d *mockSessionDeps) GetPricingData() pricing.PricingData                  { return pricing.PricingData{} }
 
 type mockGateway struct {
 	llm.LLMGateway
