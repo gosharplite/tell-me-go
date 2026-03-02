@@ -18,9 +18,7 @@ func (m *mockSkillRepository) GetAll(ctx context.Context) ([]Skill, error) {
 	return m.skills, m.err
 }
 
-func TestDefaultSkillSelector_SelectSkills(t *testing.T) {
-	ctx := context.Background()
-
+func setupMockRepo() *mockSkillRepository {
 	testSkills := []Skill{
 		{
 			Name:        "golang-testing",
@@ -41,67 +39,78 @@ func TestDefaultSkillSelector_SelectSkills(t *testing.T) {
 			TokenCount:  50,
 		},
 	}
+	return &mockSkillRepository{skills: testSkills}
+}
 
-	repo := &mockSkillRepository{skills: testSkills}
+func TestDefaultSkillSelector_TokenBudgetConstraint(t *testing.T) {
+	ctx := context.Background()
+	repo := setupMockRepo()
 
-	t.Run("TokenBudgetConstraint", func(t *testing.T) {
-		// Only first skill should fit within the budget of 149
-		selector := NewDefaultSkillSelector(repo, 149)
-		selected, err := selector.SelectSkills(ctx, "testing stuff")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	// Only first skill should fit within the budget of 149
+	selector := NewDefaultSkillSelector(repo, 149)
+	selected, err := selector.SelectSkills(ctx, "testing stuff")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-		if len(selected) != 1 {
-			t.Errorf("expected 1 skill, got %d", len(selected))
-		}
-		if selected[0].Name != "golang-testing" {
-			t.Errorf("expected golang-testing, got %s", selected[0].Name)
-		}
-	})
+	if len(selected) != 1 {
+		t.Errorf("expected 1 skill, got %d", len(selected))
+	}
+	if selected[0].Name != "golang-testing" {
+		t.Errorf("expected golang-testing, got %s", selected[0].Name)
+	}
+}
 
-	t.Run("KeywordMatchingPrioritization", func(t *testing.T) {
-		// Both testing and pattern would fit within a budget of 400
-		selector := NewDefaultSkillSelector(repo, 400)
-		selected, err := selector.SelectSkills(ctx, "refactoring patterns and code")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+func TestDefaultSkillSelector_KeywordMatchingPrioritization(t *testing.T) {
+	ctx := context.Background()
+	repo := setupMockRepo()
 
-		// golang-patterns should be first due to "pattern" match
-		if len(selected) < 1 || selected[0].Name != "golang-patterns" {
-			t.Errorf("expected golang-patterns to be prioritized, got %v", selected)
-		}
-	})
+	// Both testing and pattern would fit within a budget of 400
+	selector := NewDefaultSkillSelector(repo, 400)
+	selected, err := selector.SelectSkills(ctx, "refactoring patterns and code")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	t.Run("ExceedingTokenBudget", func(t *testing.T) {
-		// Even if all match, the budget should limit them
-		selector := NewDefaultSkillSelector(repo, 50)
-		selected, err := selector.SelectSkills(ctx, "testing patterns")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	// golang-patterns should be first due to "pattern" match
+	if len(selected) < 1 || selected[0].Name != "golang-patterns" {
+		t.Errorf("expected golang-patterns to be prioritized, got %v", selected)
+	}
+}
 
-		// Only the "unrelated-skill" would fit if it were first, but let's check
-		// that the 100-token testing and 200-token patterns are skipped.
-		for _, s := range selected {
-			if s.TokenCount > 50 {
-				t.Errorf("skill %s exceeds budget with token count %d", s.Name, s.TokenCount)
-			}
-		}
-	})
+func TestDefaultSkillSelector_ExceedingTokenBudget(t *testing.T) {
+	ctx := context.Background()
+	repo := setupMockRepo()
 
-	t.Run("RelevanceRanking", func(t *testing.T) {
-		selector := NewDefaultSkillSelector(repo, 1000)
-		selected, err := selector.SelectSkills(ctx, "tdd is great")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	// Even if all match, the budget should limit them
+	selector := NewDefaultSkillSelector(repo, 50)
+	selected, err := selector.SelectSkills(ctx, "testing patterns")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-		if len(selected) == 0 || selected[0].Name != "golang-testing" {
-			t.Errorf("expected golang-testing to be ranked first for 'tdd', got %v", selected)
+	// Only the "unrelated-skill" would fit if it were first, but let's check
+	// that the 100-token testing and 200-token patterns are skipped.
+	for _, s := range selected {
+		if s.TokenCount > 50 {
+			t.Errorf("skill %s exceeds budget with token count %d", s.Name, s.TokenCount)
 		}
-	})
+	}
+}
+
+func TestDefaultSkillSelector_RelevanceRanking(t *testing.T) {
+	ctx := context.Background()
+	repo := setupMockRepo()
+
+	selector := NewDefaultSkillSelector(repo, 1000)
+	selected, err := selector.SelectSkills(ctx, "tdd is great")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(selected) == 0 || selected[0].Name != "golang-testing" {
+		t.Errorf("expected golang-testing to be ranked first for 'tdd', got %v", selected)
+	}
 }
 
 func TestDefaultSkillSelector_OrderConsistency(t *testing.T) {
