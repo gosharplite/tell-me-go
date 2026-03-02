@@ -52,17 +52,23 @@ func validateSkillInjection(t *testing.T, interceptedRequest, skillName, skillCo
 	}
 
 	// Verify the request contains the skill injection block
-	if !strings.Contains(interceptedRequest, "## Relevant Go Development Skills") {
-		t.Errorf("Expected intercepted request to contain '## Relevant Go Development Skills', but it didn't.\nRequest: %s", interceptedRequest)
-	}
-	if !strings.Contains(interceptedRequest, skillName) {
-		t.Errorf("Expected intercepted request to contain skill name '%s', but it didn't.\nRequest: %s", skillName, interceptedRequest)
-	}
-	if !strings.Contains(interceptedRequest, skillContentSnippet) {
-		t.Errorf("Expected intercepted request to contain skill content snippet '%s', but it didn't.\nRequest: %s", skillContentSnippet, interceptedRequest)
-	}
+	assertContains(t, interceptedRequest, "## Relevant Go Development Skills")
+	assertContains(t, interceptedRequest, skillName)
+	assertContains(t, interceptedRequest, skillContentSnippet)
 
 	// Also verify it's in a system or developer message
+	assertSkillInSystemMessage(t, interceptedRequest)
+}
+
+func assertContains(t *testing.T, interceptedRequest, expected string) {
+	t.Helper()
+	if !strings.Contains(interceptedRequest, expected) {
+		t.Errorf("Expected intercepted request to contain '%s', but it didn't.\nRequest: %s", expected, interceptedRequest)
+	}
+}
+
+func assertSkillInSystemMessage(t *testing.T, interceptedRequest string) {
+	t.Helper()
 	var req struct {
 		Messages []struct {
 			Role    string `json:"role"`
