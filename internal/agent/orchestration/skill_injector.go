@@ -23,12 +23,36 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 		return nil
 	}
 
-	// 1. Identify the core task/prompt for selection.
-	// We use the last user message as the primary hint for skill selection.
+	taskDescription := t.extractTaskDescription(req.History)
+
+	selected, err := t.Selector.SelectSkills(ctx, strings.TrimSpace(taskDescription))
+	if err != nil {
+		return nil
+	}
+
+	if len(selected) == 0 {
+		return nil
+	}
+
+	injection := t.buildInjectionBlock(selected)
+
+	if req.History[0].Role == "system" {
+		if t.isAlreadyInjected(req.History[0]) {
+			return nil
+		}
+		t.injectToExistingSystem(req, req.History[0], injection)
+		return nil
+	}
+
+	t.prependNewSystemMessage(req, injection)
+	return nil
+}
+
+func (t *skillInjector) extractTaskDescription(history []*llm.Content) string {
 	var taskDescription string
-	for i := len(req.History) - 1; i >= 0; i-- {
-		if req.History[i].Role == "user" {
-			for _, p := range req.History[i].Parts {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			for _, p := range history[i].Parts {
 				if p.Text != "" {
 					taskDescription += p.Text + " "
 				}
@@ -38,19 +62,10 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 			}
 		}
 	}
+	return taskDescription
+}
 
-	// 2. Select relevant skills based on the description.
-	selected, err := t.Selector.SelectSkills(ctx, strings.TrimSpace(taskDescription))
-	if err != nil {
-		// Non-terminal: log and continue without skills
-		return nil
-	}
-
-	if len(selected) == 0 {
-		return nil
-	}
-
-	// 3. Construct the injection block.
+func (t *skillInjector) buildInjectionBlock(selected []skills.Skill) string {
 	var sb strings.Builder
 	sb.WriteString("\n\n## Relevant Go Development Skills\n")
 	sb.WriteString("Use the following idiomatic patterns and best practices for this task:\n\n")
@@ -59,29 +74,25 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 		sb.WriteString(fmt.Sprintf("### %s\n%s\n\n---\n\n", s.Name, s.Content))
 	}
 
-	injection := sb.String()
+	return sb.String()
+}
 
-	// 4. Inject into the SYSTEM prompt if it exists, otherwise prepend a new system message.
-	// This ensures prefix caching compatibility (stable system block) and persistence.
-	first := req.History[0]
-
-	// Check for idempotency: iterate through the parts of the system message to ensure
-	// "## Relevant Go Development Skills" is not already present.
-	if first.Role == "system" {
-		for _, p := range first.Parts {
-			if strings.Contains(p.Text, "## Relevant Go Development Skills") {
-				return nil
-			}
+func (t *skillInjector) isAlreadyInjected(content *llm.Content) bool {
+	for _, p := range content.Parts {
+		if strings.Contains(p.Text, "## Relevant Go Development Skills") {
+			return true
 		}
-
-		// Inject into existing system message
-		first.Parts = append(first.Parts, &llm.Part{Text: injection})
-		first.Pinned = true
-		req.PersistHistory = true
-		return nil
 	}
+	return false
+}
 
-	// First message is not a system message, prepend one.
+func (t *skillInjector) injectToExistingSystem(req *ports.ContextRequest, first *llm.Content, injection string) {
+	first.Parts = append(first.Parts, &llm.Part{Text: injection})
+	first.Pinned = true
+	req.PersistHistory = true
+}
+
+func (t *skillInjector) prependNewSystemMessage(req *ports.ContextRequest, injection string) {
 	newSystem := &llm.Content{
 		Role:   "system",
 		Pinned: true,
@@ -89,8 +100,6 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 	}
 	req.History = append([]*llm.Content{newSystem}, req.History...)
 	req.PersistHistory = true
-
-	return nil
 }
 
 func (t *skillInjector) Priority() int {

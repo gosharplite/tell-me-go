@@ -14,21 +14,21 @@ import (
 	domain "github.com/gosharplite/tell-me-go/internal/domain/skills"
 )
 
-// FileSkillRepository implements the domain.SkillRepository interface
+// fileSkillRepository implements the domain.SkillRepository interface
 // by loading skill definitions from Markdown files on disk.
-type FileSkillRepository struct {
+type fileSkillRepository struct {
 	cache []domain.Skill
 }
 
-// NewFileSkillRepository creates a new FileSkillRepository and immediately
+// NewFileSkillRepository creates a new fileSkillRepository and immediately
 // populates its cache by walking the provided directory.
-func NewFileSkillRepository(docsDir string) (*FileSkillRepository, error) {
+func NewFileSkillRepository(docsDir string) (domain.SkillRepository, error) {
 	var cache []domain.Skill
 
 	// Check if directory exists; if not, return empty repository instead of failing.
 	// This is important for test environments and first-time setups.
 	if _, err := os.Stat(docsDir); os.IsNotExist(err) {
-		return &FileSkillRepository{cache: cache}, nil
+		return &fileSkillRepository{cache: cache}, nil
 	}
 
 	err := filepath.Walk(docsDir, func(path string, info os.FileInfo, err error) error {
@@ -66,11 +66,11 @@ func NewFileSkillRepository(docsDir string) (*FileSkillRepository, error) {
 		return nil, fmt.Errorf("load skills from %s: %w", docsDir, err)
 	}
 
-	return &FileSkillRepository{cache: cache}, nil
+	return &fileSkillRepository{cache: cache}, nil
 }
 
 // GetAll returns all cached skill definitions.
-func (r *FileSkillRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
+func (r *fileSkillRepository) GetAll(ctx context.Context) ([]domain.Skill, error) {
 	return r.cache, nil
 }
 

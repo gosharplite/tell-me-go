@@ -272,8 +272,8 @@ func (m *mockSessionDeps) GetPaths() *persistence.Paths {
 	}
 	return m.paths
 }
-func (m *mockSessionDeps) GetPricingData() pricing.PricingData { return pricing.PricingData{} }
-func (m *mockSessionDeps) GetGateway() llm.LLMGateway          { return m.gw }
+func (m *mockSessionDeps) GetPricingData() pricing.PricingData     { return pricing.PricingData{} }
+func (m *mockSessionDeps) GetGateway() llm.LLMGateway              { return m.gw }
 func (m *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return m.hManager }
 func (m *mockSessionDeps) GetRegistry() tools.IToolRegistry        { return m.reg }
 func (m *mockSessionDeps) GetSecurityManager() security.ISecurityManager {
