@@ -251,7 +251,34 @@ func (c *Client) handleNoCandidates(resp *genai.GenerateContentResponse) error {
 }
 
 func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
+	var filteredHistory []*llm.Content
+	var dynamicSystemParts []*llm.Part
+
+	// 1. Separate system instructions from the standard conversation history
+	for _, h := range history {
+		if h.Role == "system" {
+			dynamicSystemParts = append(dynamicSystemParts, h.Parts...)
+			continue
+		}
+		filteredHistory = append(filteredHistory, h)
+	}
+
+	// 2. Get baseline tools and the static configured system instruction
 	activeTools, systemInstruction := c.configureTools(ctx, tools, resolver)
+
+	// 3. Merge any dynamically injected system prompts (e.g., Skills)
+	if len(dynamicSystemParts) > 0 {
+		if systemInstruction == nil {
+			systemInstruction = &genai.Content{Role: "system"}
+		}
+
+		// Convert dynamic parts to SDK format using the package-level adapter function
+		dynamicContent := &llm.Content{Role: "system", Parts: dynamicSystemParts}
+		sdkDynamic := toSDKContent(ctx, dynamicContent, resolver)
+		if sdkDynamic != nil {
+			systemInstruction.Parts = append(systemInstruction.Parts, sdkDynamic.Parts...)
+		}
+	}
 
 	config := &genai.GenerateContentConfig{
 		Tools:             activeTools,
@@ -260,7 +287,8 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 
 	c.configureThinking(ctx, config)
 
-	return config, c.toSDKContent(ctx, history, resolver)
+	// 4. Return the config and the filtered history containing ONLY user/model roles
+	return config, c.toSDKContent(ctx, filteredHistory, resolver)
 }
 
 func (c *Client) configureTools(ctx context.Context, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) ([]*genai.Tool, *genai.Content) {
