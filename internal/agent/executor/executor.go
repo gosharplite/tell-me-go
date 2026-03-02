@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 )
 
 type toolExecResult struct {
@@ -233,15 +234,25 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	// Orchestrate Execution
 	collector := newResultCollector(calls, bus)
 	startTime := time.Now()
-	go e.runExecutionPlan(ctx, calls, collector.ch, declinedMap)
 
-	results, err := collector.Wait(ctx)
+	// [SCALABILITY FIX] Bounding the execution plan goroutine to prevent leaks on context cancellation.
+	// This ensures that all goroutines started by the plan are properly joined.
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return e.runExecutionPlan(gCtx, calls, collector.ch, declinedMap)
+	})
+
+	results, waitErr := collector.Wait(gCtx)
+	if err := g.Wait(); err != nil && waitErr == nil {
+		waitErr = err
+	}
+
 	duration := time.Since(startTime)
 
-	if err != nil {
+	if waitErr != nil {
 		slog.Error("Tool execution turn failed or was cancelled",
 			slog.Int("turn", turn),
-			slog.String("error", err.Error()),
+			slog.String("error", waitErr.Error()),
 			slog.Int64("duration_ms", duration.Milliseconds()),
 		)
 	} else {
@@ -267,7 +278,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 		}
 	}
 
-	return e.assembleResponse(calls, results), err
+	return e.assembleResponse(calls, results), waitErr
 }
 
 func (e *ToolExecutor) extractFunctionCalls(respContent *llm.Content) []*llm.FunctionCall {
@@ -334,14 +345,14 @@ type taskBatch struct {
 	tasks    []int // Contains indices into the 'calls' slice
 }
 
-func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) {
+func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
 	batches := e.buildExecutionBatches(calls, declinedMap, resChan)
 
 	for batchIdx, batch := range batches {
 		if err := ctx.Err(); err != nil {
 			slog.Warn("Execution plan interrupted", slog.String("reason", "context cancelled"), slog.Int("batch_idx", batchIdx))
 			e.failRemainingTasks(batches, batchIdx, -1, calls, resChan, err, "batch interrupted")
-			return
+			return err
 		}
 
 		batchStart := time.Now()
@@ -351,7 +362,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 					slog.Int("batch_idx", batchIdx),
 					slog.String("tool_name", calls[batch.tasks[0]].Name))
 				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, resChan, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
-				return // Exit the execution plan early
+				return nil // Exit the execution plan early
 			}
 		} else {
 			e.executeParallelBatch(ctx, batch, calls, resChan)
@@ -363,6 +374,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			slog.Int("task_count", len(batch.tasks)),
 			slog.Int64("duration_ms", time.Since(batchStart).Milliseconds()))
 	}
+	return nil
 }
 
 func (e *ToolExecutor) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, calls []*llm.FunctionCall, resChan chan<- toolExecResult, err error, reason string) {
