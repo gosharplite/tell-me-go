@@ -96,22 +96,15 @@ func TestNewFileSkillRepository(t *testing.T) {
 func setupTestFiles(t *testing.T, dir string, files map[string]string) {
 	t.Helper()
 	for name, content := range files {
-		path := filepath.Join(dir, name)
-		if filepath.Ext(name) == "" && !os.IsPathSeparator(name[len(name)-1]) {
-			// Create a directory if it looks like one
-			err := os.MkdirAll(path, 0755)
-			if err != nil {
-				t.Fatalf("failed to create directory: %v", err)
-			}
-			continue
+		fullPath := filepath.Join(dir, name)
+
+		// Robust: Let path/filepath handle the OS-specific extraction
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("failed to create directory for %s: %v", fullPath, err)
 		}
-		err := os.MkdirAll(filepath.Dir(path), 0755)
-		if err != nil {
-			t.Fatalf("failed to create directory: %v", err)
-		}
-		err = os.WriteFile(path, []byte(content), 0644)
-		if err != nil {
-			t.Fatalf("failed to write file: %v", err)
+
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file %s: %v", fullPath, err)
 		}
 	}
 }
