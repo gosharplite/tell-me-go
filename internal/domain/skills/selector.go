@@ -58,9 +58,18 @@ func (s *DefaultSkillSelector) SelectSkills(ctx context.Context, taskDescription
 			}
 		}
 
-		// Basic description matching
-		if strings.Contains(strings.ToLower(skill.Description), taskLower) {
+		// Basic name matching
+		skillNameLower := strings.ToLower(skill.Name)
+		if strings.Contains(taskLower, skillNameLower) {
 			score += 5
+		}
+
+		// Check for individual keywords in skill name (e.g., "testing" in "golang-testing")
+		keywords := strings.Split(skillNameLower, "-")
+		for _, kw := range keywords {
+			if len(kw) > 3 && strings.Contains(taskLower, kw) {
+				score += 2
+			}
 		}
 
 		scored = append(scored, scoredSkill{skill: skill, score: score})

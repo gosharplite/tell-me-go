@@ -35,7 +35,7 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize skill repository: %w", err)
 	}
-	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 2000) // 2k token budget for skills
+	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills
 
 	strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(deps.GetRegistry()), deps.GetEventBus())
 	factory := &agent_orchestration.PipelineFactory{

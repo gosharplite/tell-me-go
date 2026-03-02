@@ -47,11 +47,19 @@ func TestSkillInjector_Transform(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(req.History[0].TransientParts) == 0 {
-			t.Fatal("expected skills to be injected into transient parts")
+		if len(req.History) != 2 {
+			t.Fatalf("expected 2 history entries, got %d", len(req.History))
 		}
 
-		injectedText := req.History[0].TransientParts[0].Text
+		if req.History[0].Role != "system" {
+			t.Errorf("expected first message to be system, got %q", req.History[0].Role)
+		}
+
+		if !req.History[0].Pinned {
+			t.Error("expected injected system message to be pinned")
+		}
+
+		injectedText := req.History[0].Parts[0].Text
 		if !strings.Contains(injectedText, "test-skill") {
 			t.Errorf("expected injected text to contain skill name, got %q", injectedText)
 		}
@@ -60,7 +68,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 		}
 	})
 
-	t.Run("Idempotency", func(t *testing.T) {
+	t.Run("IdempotencyExistingSystem", func(t *testing.T) {
 		selector := &mockSkillSelector{
 			selected: []skills.Skill{
 				{Name: "test-skill", Content: "Use testing."},
@@ -71,9 +79,8 @@ func TestSkillInjector_Transform(t *testing.T) {
 		req := &ports.ContextRequest{
 			History: []*llm.Content{
 				{
-					Role: "user",
+					Role: "system",
 					Parts: []*llm.Part{
-						{Text: "how do I test in Go?"},
 						{Text: "## Relevant Go Development Skills"}, // Already injected
 					},
 				},
@@ -85,7 +92,7 @@ func TestSkillInjector_Transform(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(req.History[0].TransientParts) != 0 {
+		if len(req.History[0].Parts) != 1 {
 			t.Error("expected no second injection due to idempotency check")
 		}
 	})

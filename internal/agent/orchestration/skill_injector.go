@@ -61,26 +61,34 @@ func (t *skillInjector) Transform(ctx context.Context, req *ports.ContextRequest
 
 	injection := sb.String()
 
-	// 4. Inject into the SYSTEM prompt if it exists, otherwise the first message.
-	// In this system, we assume the first message is either SYSTEM or the starting USER message.
+	// 4. Inject into the SYSTEM prompt if it exists, otherwise prepend a new system message.
+	// This ensures prefix caching compatibility (stable system block) and persistence.
 	first := req.History[0]
 
-	// Check if already injected to maintain idempotency within a session view
-	for _, p := range first.Parts {
-		if strings.Contains(p.Text, "## Relevant Go Development Skills") {
-			return nil
+	// Check for idempotency: iterate through the parts of the system message to ensure
+	// "## Relevant Go Development Skills" is not already present.
+	if first.Role == "system" {
+		for _, p := range first.Parts {
+			if strings.Contains(p.Text, "## Relevant Go Development Skills") {
+				return nil
+			}
 		}
-	}
-	for _, p := range first.TransientParts {
-		if strings.Contains(p.Text, "## Relevant Go Development Skills") {
-			return nil
-		}
+
+		// Inject into existing system message
+		first.Parts = append(first.Parts, &llm.Part{Text: injection})
+		first.Pinned = true
+		req.PersistHistory = true
+		return nil
 	}
 
-	// Append to TransientParts so it doesn't persist to disk history (as per ADR-0005 decision)
-	first.TransientParts = append(first.TransientParts, &llm.Part{
-		Text: injection,
-	})
+	// First message is not a system message, prepend one.
+	newSystem := &llm.Content{
+		Role:   "system",
+		Pinned: true,
+		Parts:  []*llm.Part{{Text: injection}},
+	}
+	req.History = append([]*llm.Content{newSystem}, req.History...)
+	req.PersistHistory = true
 
 	return nil
 }
