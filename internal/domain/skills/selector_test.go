@@ -42,6 +42,18 @@ func setupMockRepo() *mockSkillRepository {
 	return &mockSkillRepository{skills: testSkills}
 }
 
+func assertExpectedSkills(t *testing.T, got []Skill, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("got %d skills, want %d: %+v", len(got), len(want), got)
+	}
+	for i, name := range want {
+		if got[i].Name != name {
+			t.Errorf("at index %d: got %s, want %s", i, got[i].Name, name)
+		}
+	}
+}
+
 func TestDefaultSkillSelector(t *testing.T) {
 	t.Parallel()
 	defaultRepo := setupMockRepo()
@@ -126,14 +138,7 @@ func TestDefaultSkillSelector(t *testing.T) {
 			}
 
 			if tt.expectedSkills != nil {
-				if len(selected) != len(tt.expectedSkills) {
-					t.Errorf("got %d skills, want %d: %v", len(selected), len(tt.expectedSkills), selected)
-				}
-				for i, name := range tt.expectedSkills {
-					if i < len(selected) && selected[i].Name != name {
-						t.Errorf("at index %d: got %s, want %s", i, selected[i].Name, name)
-					}
-				}
+				assertExpectedSkills(t, selected, tt.expectedSkills)
 			}
 
 			if tt.validate != nil {

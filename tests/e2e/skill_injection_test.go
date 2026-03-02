@@ -29,23 +29,26 @@ func setupSkill(t *testing.T, homeDir, skillName, skillContent string) {
 	}
 }
 
-func setupMockLLMServer(t *testing.T, interceptedRequest *string) string {
+func setupMockLLMServer(t *testing.T) (*httptest.Server, <-chan string) {
 	t.Helper()
+	reqChan := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
-		*interceptedRequest = string(body)
+
+		select {
+		case reqChan <- string(body):
+		default:
+		}
 
 		// Return a dummy response to keep the agent happy
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"choices": [{"message": {"role": "assistant", "content": "I will write a Go function."}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}`)
 	}))
-	t.Cleanup(func() {
-		server.Close()
-	})
-	return server.URL
+	t.Cleanup(server.Close)
+	return server, reqChan
 }
 
 func validateSkillInjection(t *testing.T, interceptedRequest, skillName, skillContentSnippet string) {
@@ -113,8 +116,8 @@ Use idiomatic Go.`, skillName, skillContentSnippet)
 	setupSkill(t, homeDir, skillName, skillContent)
 
 	// 2. Setup mock server to intercept LLM request
-	var interceptedRequest string
-	serverURL := setupMockLLMServer(t, &interceptedRequest)
+	server, reqChan := setupMockLLMServer(t)
+	serverURL := server.URL
 
 	// 3. Create config pointing to mock server
 	configPath := createTempConfig(t, "openai", serverURL)
@@ -132,5 +135,6 @@ Use idiomatic Go.`, skillName, skillContentSnippet)
 	}
 
 	// 5. Assert skill injection
+	interceptedRequest := <-reqChan
 	validateSkillInjection(t, interceptedRequest, skillName, skillContentSnippet)
 }

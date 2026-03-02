@@ -122,3 +122,16 @@ func TestSkillInjector_Transform(t *testing.T) {
 		})
 	}
 }
+
+func TestSkillInjector_PriorityContract(t *testing.T) {
+	t.Parallel()
+	injector := &skillInjector{}
+
+	// CRITICAL: Must execute after HistoryRepair (0) and before Gatekeeper (100)
+	got := injector.Priority()
+	want := 10
+
+	if got != want {
+		t.Errorf("SkillInjector.Priority() = %d; want %d. This value is part of a critical orchestration sequence contract.", got, want)
+	}
+}
