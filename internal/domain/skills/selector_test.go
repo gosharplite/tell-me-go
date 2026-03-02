@@ -43,6 +43,7 @@ func setupMockRepo() *mockSkillRepository {
 }
 
 func TestDefaultSkillSelector(t *testing.T) {
+	t.Parallel()
 	defaultRepo := setupMockRepo()
 
 	tests := []struct {
@@ -108,7 +109,9 @@ func TestDefaultSkillSelector(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			repo := tt.repo
 			if repo == nil {

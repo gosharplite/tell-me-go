@@ -23,6 +23,7 @@ func (m *mockSkillSelector) SelectSkills(ctx context.Context, taskDescription st
 }
 
 func TestSkillInjector_Transform(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -109,7 +110,9 @@ func TestSkillInjector_Transform(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			injector := &skillInjector{Selector: tt.selector}
 			err := injector.Transform(ctx, tt.req)
 			if err != nil {

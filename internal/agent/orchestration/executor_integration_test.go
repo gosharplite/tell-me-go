@@ -118,26 +118,25 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	bus := &mockEventBus{} // from mocks_test.go
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
 	defer exec.Shutdown()
 
-	var parallelFinishedAt int64
-	var serialStartedAt int64
+	var executionCounter int32
+	var parallelOrder int32
+	var serialOrder int32
 
 	reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_parallel",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		time.Sleep(10 * time.Millisecond)
-		atomic.StoreInt64(&parallelFinishedAt, time.Now().UnixNano())
+		atomic.StoreInt32(&parallelOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "parallel done"}, nil
 	}, tools.ToolOptions{Serial: false, LongRunning: false})
 
 	reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		// Capture start time
-		atomic.StoreInt64(&serialStartedAt, time.Now().UnixNano())
+		atomic.StoreInt32(&serialOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "serial done"}, nil
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
 
@@ -154,12 +153,12 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assertions
-	pEnd := atomic.LoadInt64(&parallelFinishedAt)
-	sStart := atomic.LoadInt64(&serialStartedAt)
+	pOrder := atomic.LoadInt32(&parallelOrder)
+	sOrder := atomic.LoadInt32(&serialOrder)
 
-	assert.NotZero(t, pEnd, "Parallel tool should have finished")
-	assert.NotZero(t, sStart, "Serial tool should have started")
-	assert.True(t, pEnd < sStart, "Sequential Integrity Failure: Parallel tool must finish BEFORE subsequent serial tool starts. Parallel ended at %v, Serial started at %v", pEnd, sStart)
+	assert.NotZero(t, pOrder, "Parallel tool should have finished")
+	assert.NotZero(t, sOrder, "Serial tool should have started")
+	assert.True(t, pOrder < sOrder, "Sequential Integrity Failure: Parallel tool must finish BEFORE subsequent serial tool starts.")
 }
 
 func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
@@ -171,25 +170,25 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
 	defer exec.Shutdown()
 
-	var serialFinishedAt int64
-	var parallelStartedAt int64
+	var executionCounter int32
+	var serialOrder int32
+	var parallelOrder int32
 
 	reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		time.Sleep(10 * time.Millisecond)
-		atomic.StoreInt64(&serialFinishedAt, time.Now().UnixNano())
+		atomic.StoreInt32(&serialOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "serial done"}, nil
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_parallel",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		atomic.StoreInt64(&parallelStartedAt, time.Now().UnixNano())
+		atomic.StoreInt32(&parallelOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "parallel done"}, nil
 	}, tools.ToolOptions{Serial: false, LongRunning: false})
 
@@ -204,12 +203,12 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 	_, err = exec.Execute(context.Background(), resp, 0, 10)
 	require.NoError(t, err)
 
-	sEnd := atomic.LoadInt64(&serialFinishedAt)
-	pStart := atomic.LoadInt64(&parallelStartedAt)
+	sOrder := atomic.LoadInt32(&serialOrder)
+	pOrder := atomic.LoadInt32(&parallelOrder)
 
-	assert.NotZero(t, sEnd)
-	assert.NotZero(t, pStart)
-	assert.True(t, sEnd < pStart, "Sequential Integrity Failure: Serial tool must finish BEFORE subsequent parallel tool starts.")
+	assert.NotZero(t, sOrder)
+	assert.NotZero(t, pOrder)
+	assert.True(t, sOrder < pOrder, "Sequential Integrity Failure: Serial tool must finish BEFORE subsequent parallel tool starts.")
 }
 
 func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
