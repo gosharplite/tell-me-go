@@ -76,25 +76,7 @@ func TestNewFileSkillRepository(t *testing.T) {
 			if tt.missingDir {
 				docsDir = filepath.Join(tmpDir, "non-existent")
 			} else {
-				for name, content := range tt.files {
-					path := filepath.Join(tmpDir, name)
-					if filepath.Ext(name) == "" && !os.IsPathSeparator(name[len(name)-1]) {
-						// Create a directory if it looks like one
-						err := os.MkdirAll(path, 0755)
-						if err != nil {
-							t.Fatalf("failed to create directory: %v", err)
-						}
-						continue
-					}
-					err := os.MkdirAll(filepath.Dir(path), 0755)
-					if err != nil {
-						t.Fatalf("failed to create directory: %v", err)
-					}
-					err = os.WriteFile(path, []byte(content), 0644)
-					if err != nil {
-						t.Fatalf("failed to write file: %v", err)
-					}
-				}
+				setupTestFiles(t, tmpDir, tt.files)
 			}
 
 			repo, err := NewFileSkillRepository(docsDir)
@@ -105,25 +87,51 @@ func TestNewFileSkillRepository(t *testing.T) {
 
 			if err == nil {
 				gotSkills, _ := repo.GetAll(context.Background())
-				if len(gotSkills) != len(tt.wantSkills) {
-					t.Errorf("got %d skills, want %d", len(gotSkills), len(tt.wantSkills))
-				}
-				// We need to be careful with order because filepath.Walk order might vary, 
-				// though usually it's lexical.
-				for _, want := range tt.wantSkills {
-					found := false
-					for _, got := range gotSkills {
-						if reflect.DeepEqual(got, want) {
-							found = true
-							break
-						}
-					}
-					if !found {
-						t.Errorf("did not find expected skill: %+v", want)
-					}
-				}
+				assertSkillsMatch(t, gotSkills, tt.wantSkills)
 			}
 		})
+	}
+}
+
+func setupTestFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if filepath.Ext(name) == "" && !os.IsPathSeparator(name[len(name)-1]) {
+			// Create a directory if it looks like one
+			err := os.MkdirAll(path, 0755)
+			if err != nil {
+				t.Fatalf("failed to create directory: %v", err)
+			}
+			continue
+		}
+		err := os.MkdirAll(filepath.Dir(path), 0755)
+		if err != nil {
+			t.Fatalf("failed to create directory: %v", err)
+		}
+		err = os.WriteFile(path, []byte(content), 0644)
+		if err != nil {
+			t.Fatalf("failed to write file: %v", err)
+		}
+	}
+}
+
+func assertSkillsMatch(t *testing.T, got []domain.Skill, want []domain.Skill) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("got %d skills, want %d", len(got), len(want))
+	}
+	for _, w := range want {
+		found := false
+		for _, g := range got {
+			if reflect.DeepEqual(g, w) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("did not find expected skill: %+v", w)
+		}
 	}
 }
 
