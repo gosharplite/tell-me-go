@@ -164,7 +164,7 @@ func (m *mockFailingUIRenderer) LogSystemMessage(string, string)                
 func (m *mockFailingUIRenderer) LogAgentStatus(status string)                              {}
 
 func TestOrchestrator_ConfigError(t *testing.T) {
-	agentFactory := func(params ports.ChatterParams) (ports.Chatter, error) {
+	agentFactory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
@@ -176,7 +176,7 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 	sc := newSessionConfig("", false, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := newSessionDependencies(&persistence.Paths{}, &mockHistoryManager{}, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil)
+	sd := newSessionDependencies(&persistence.Paths{}, &mockHistoryManager{}, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil)
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {

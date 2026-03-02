@@ -53,6 +53,7 @@ type mockSessionDeps struct {
 	client           domain_llm.LLMClient
 	gw               domain_llm.LLMGateway
 	reg              domaintools.IToolRegistry
+	sm               domain_security.ISecurityManager
 	tracker          domain_pricing.ICostTracker
 	pricingData      domain_pricing.PricingData
 	pricingOverrides map[string]domain_pricing.ModelPricing
@@ -62,8 +63,11 @@ type mockSessionDeps struct {
 func (d *mockSessionDeps) GetGateway() domain_llm.LLMGateway       { return d.gw }
 func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
 func (d *mockSessionDeps) GetRegistry() domaintools.IToolRegistry  { return d.reg }
-func (d *mockSessionDeps) GetEventBus() events.EventBus            { return d.bus }
-func (d *mockSessionDeps) GetPaths() *domain_persistence.Paths     { return d.paths }
+func (d *mockSessionDeps) GetSecurityManager() domain_security.ISecurityManager {
+	return d.sm
+}
+func (d *mockSessionDeps) GetEventBus() events.EventBus        { return d.bus }
+func (d *mockSessionDeps) GetPaths() *domain_persistence.Paths { return d.paths }
 func (d *mockSessionDeps) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
 	return d.pricingOverrides
 }
@@ -80,12 +84,14 @@ func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain
 	pricingData := domain_pricing.PricingData{}
 	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
 	tracker := &mockTracker{}
+	sm := internal_security.NewSecurityManager(nil)
 
 	deps := &mockSessionDeps{
 		paths:            paths,
 		hManager:         hManager,
 		client:           m.Client,
 		gw:               m.Client.(domain_llm.LLMGateway),
+		sm:               sm,
 		tracker:          tracker,
 		pricingData:      pricingData,
 		pricingOverrides: pricingOverrides,
@@ -123,7 +129,7 @@ func TestChatCommand_Execute(t *testing.T) {
 	mChatter := &mockChatter{}
 	mClient := &mockClient{}
 	mContainer := &mockContainer{
-		AgentFactory: func(params ports.ChatterParams) (ports.Chatter, error) {
+		AgentFactory: func(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 			return mChatter, nil
 		},
 		Client: mClient,

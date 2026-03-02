@@ -68,6 +68,7 @@ type sessionDependencies struct {
 	Client           domain_llm.LLMClient
 	Gateway          domain_llm.LLMGateway
 	Registry         domaintools.IToolRegistry
+	SecurityManager  domain_security.ISecurityManager
 	Tracker          domain_pricing.ICostTracker
 	PricingData      domain_pricing.PricingData
 	PricingOverrides map[string]domain_pricing.ModelPricing
@@ -79,8 +80,11 @@ func (d *sessionDependencies) GetHistoryManager() ports.HistoryManager {
 	return d.HistoryManager
 }
 func (d *sessionDependencies) GetRegistry() domaintools.IToolRegistry { return d.Registry }
-func (d *sessionDependencies) GetEventBus() events.EventBus           { return d.EventBus }
-func (d *sessionDependencies) GetPaths() *persistence.Paths           { return d.Paths }
+func (d *sessionDependencies) GetSecurityManager() domain_security.ISecurityManager {
+	return d.SecurityManager
+}
+func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
+func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
 func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
 	return d.PricingOverrides
 }
@@ -90,13 +94,14 @@ func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 }
 
 // newSessionDependencies creates a new sessionDependencies with all required components.
-func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.IToolRegistry, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
+func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
 		Client:           client,
 		Gateway:          gw,
 		Registry:         reg,
+		SecurityManager:  sm,
 		Tracker:          tracker,
 		PricingData:      pData,
 		PricingOverrides: overrides,
@@ -131,23 +136,14 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
-	params := ports.NewChatterParams(
-		ports.WithContext(ctx),
-		ports.WithLoader(o.Loader),
-		ports.WithGateway(sd.GetGateway()),
-		ports.WithHistory(sd.GetHistoryManager()),
-		ports.WithToolConfig(sd.GetRegistry()),
-		ports.WithSecurityManager(o.SM),
-		ports.WithStreamingDisabled(cfg.DisableStreaming),
-		ports.WithEventBus(sd.GetEventBus()),
-		ports.WithProvider(cfg.SelectedProvider),
-		ports.WithModel(activeModel),
-		ports.WithMode(cfg.Mode),
-		ports.WithLogPath(paths.LogPath),
-		ports.WithPricingOverrides(sd.GetPricingOverrides()),
-		ports.WithCostTracker(sd.GetTracker()),
-	)
-	chatAgent, err := o.AgentFactory(params)
+	chatterCfg := ports.ChatterConfig{
+		ProviderName:     cfg.SelectedProvider,
+		Model:            activeModel,
+		Mode:             cfg.Mode,
+		LogPath:          paths.LogPath,
+		DisableStreaming: cfg.DisableStreaming,
+	}
+	chatAgent, err := o.AgentFactory(ctx, sd, chatterCfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize agent: %w", err)
 	}

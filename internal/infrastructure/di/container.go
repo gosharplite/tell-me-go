@@ -153,6 +153,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		client:           client,
 		gw:               gw,
 		reg:              reg,
+		sm:               b.SM,
 		tracker:          tracker,
 		pricingData:      pricingData,
 		pricingOverrides: pricingOverrides,
@@ -168,17 +169,19 @@ type sessionDeps struct {
 	client           llm.LLMClient
 	gw               llm.LLMGateway
 	reg              tools.IToolRegistry
+	sm               security.ISecurityManager
 	tracker          pricing.ICostTracker
 	pricingData      pricing.PricingData
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
 }
 
-func (d *sessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
-func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
-func (d *sessionDeps) GetRegistry() tools.IToolRegistry        { return d.reg }
-func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
-func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
+func (d *sessionDeps) GetGateway() llm.LLMGateway                    { return d.gw }
+func (d *sessionDeps) GetHistoryManager() ports.HistoryManager       { return d.hManager }
+func (d *sessionDeps) GetRegistry() tools.IToolRegistry              { return d.reg }
+func (d *sessionDeps) GetSecurityManager() security.ISecurityManager { return d.sm }
+func (d *sessionDeps) GetEventBus() events.EventBus                  { return d.bus }
+func (d *sessionDeps) GetPaths() *persistence.Paths                  { return d.paths }
 func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides
 }
@@ -188,23 +191,23 @@ func (d *sessionDeps) GetClient() llm.LLMClient            { return d.client }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
 func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
-	return func(params ports.ChatterParams) (ports.Chatter, error) {
-		telemetry.RegisterTraceSubscriber(params.EventBus, params.LogPath)
+	return func(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		telemetry.RegisterTraceSubscriber(deps.GetEventBus(), cfg.LogPath)
 
-		summarizer := infra_llm.NewSummarizer(params.Gateway, params.EventBus)
+		summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus())
 
 		// 1. Prepare specialized domain service dependencies.
-		strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(params.Registry), params.EventBus)
+		strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(deps.GetRegistry()), deps.GetEventBus())
 		factory := &agent_orchestration.PipelineFactory{
-			Registry:   params.Registry,
-			History:    params.HistoryManager,
+			Registry:   deps.GetRegistry(),
+			History:    deps.GetHistoryManager(),
 			Summarizer: summarizer,
 			Estimator:  strategy,
-			Events:     params.EventBus,
+			Events:     deps.GetEventBus(),
 		}
-		ctxManager := agent_orchestration.NewContextManager(strategy, params.HistoryManager, params.EventBus, factory)
+		ctxManager := agent_orchestration.NewContextManager(strategy, deps.GetHistoryManager(), deps.GetEventBus(), factory)
 
-		toolExec, err := agent_executor.NewToolExecutor(params.Registry, params.SecurityManager, params.EventBus, &agent_executor.TelemetryLogger{})
+		toolExec, err := agent_executor.NewToolExecutor(deps.GetRegistry(), deps.GetSecurityManager(), deps.GetEventBus(), &agent_executor.TelemetryLogger{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tool executor: %w", err)
 		}
@@ -214,19 +217,19 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 		execService := agent_executor.NewExecutionAdapter(toolExec)
 
 		llmCoord := llmcoord.NewService(
-			llmcoord.WithGateway(params.Gateway),
+			llmcoord.WithGateway(deps.GetGateway()),
 			llmcoord.WithStreamHandler(func(ctx stdctx.Context, stream <-chan *llm.Content) {
-				_ = params.EventBus.Publish(ctx, events.ResponseStreamEvent{Context: ctx, Stream: stream})
+				_ = deps.GetEventBus().Publish(ctx, events.ResponseStreamEvent{Context: ctx, Stream: stream})
 			}),
 		)
 
 		monitor := monitoring.NewService(
-			monitoring.WithTracker(params.CostTracker),
-			monitoring.WithEventBus(params.EventBus),
+			monitoring.WithTracker(deps.GetTracker()),
+			monitoring.WithEventBus(deps.GetEventBus()),
 		)
 
 		// 3. Register internal tools (e.g., summarize_history)
-		agent_orchestration.RegisterInternal(params.Registry, ctxManager)
+		agent_orchestration.RegisterInternal(deps.GetRegistry(), ctxManager)
 
 		// 4. Return the new ChatterFacade injected with the domain services.
 		return domain_orchestration.NewChatterFacade(
@@ -234,11 +237,11 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 			domain_orchestration.WithExecution(execService),
 			domain_orchestration.WithLLMCoord(llmCoord),
 			domain_orchestration.WithMonitor(monitor),
-			domain_orchestration.WithEventBus(params.EventBus),
-			domain_orchestration.WithRegistry(params.Registry),
-			domain_orchestration.WithHistory(params.HistoryManager),
-			domain_orchestration.WithProvider(params.ProviderName),
-			domain_orchestration.WithModel(params.Model),
+			domain_orchestration.WithEventBus(deps.GetEventBus()),
+			domain_orchestration.WithRegistry(deps.GetRegistry()),
+			domain_orchestration.WithHistory(deps.GetHistoryManager()),
+			domain_orchestration.WithProvider(cfg.ProviderName),
+			domain_orchestration.WithModel(cfg.Model),
 		), nil
 	}
 }
