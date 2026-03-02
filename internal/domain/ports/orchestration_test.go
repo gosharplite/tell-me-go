@@ -13,8 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
-type testContextKey string
-
 func TestNewSession(t *testing.T) {
 	t.Parallel()
 	id := "test-session"
