@@ -804,7 +804,7 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 				},
 				"branch": {
 					Type:        "STRING",
-					Description: "The branch to build from (e.g., 'main').",
+					Description: "The branch or tag to build from (e.g., 'main', 'v1.2.0'). Full refs like 'refs/tags/v1.0' are also supported.",
 				},
 				"template_parameters": {
 					Type:        "OBJECT",

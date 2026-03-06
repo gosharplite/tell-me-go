@@ -18,12 +18,15 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+type securityConfirmer interface {
+	Confirm(ctx context.Context, message string) (bool, error)
+}
+
 type azureDevOpsManager struct {
-	sm                 security.ISecurityManager
+	sc                 securityConfirmer
 	client             tools.HTTPClient
 	authHeader         string
 	authErr            error
@@ -42,12 +45,12 @@ func (m *azureDevOpsManager) getBaseURL() string {
 }
 
 // newazureDevOpsManager creates a new instance of azureDevOpsManager.
-func newazureDevOpsManager(sm security.ISecurityManager, client tools.HTTPClient) *azureDevOpsManager {
+func newazureDevOpsManager(sc securityConfirmer, client tools.HTTPClient) *azureDevOpsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &azureDevOpsManager{
-		sm:     sm,
+		sc:     sc,
 		client: client,
 	}
 }
