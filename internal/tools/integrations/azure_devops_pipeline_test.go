@@ -119,3 +119,27 @@ func TestAdoListPipelines(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatBranchRef(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"Empty defaults to main", "", "refs/heads/main"},
+		{"Already formatted ref", "refs/pull/1/merge", "refs/pull/1/merge"},
+		{"Version tag", "v2.0.1", "refs/tags/v2.0.1"},
+		{"Standard branch", "feature-x", "refs/heads/feature-x"},
+		{"Short tag (no digits)", "v", "refs/heads/v"},
+		{"Not a version tag", "v-beta", "refs/heads/v-beta"},
+		{"Another standard branch", "main", "refs/heads/main"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatBranchRef(tt.input); got != tt.want {
+				t.Errorf("formatBranchRef(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
