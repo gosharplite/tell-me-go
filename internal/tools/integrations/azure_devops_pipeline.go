@@ -89,7 +89,46 @@ type adoRunPipelineParams struct {
 
 	// Computed
 	RefName         string
-	MappedVariables map[string]interface{}
+	MappedVariables map[string]adoVariable
+}
+
+type adoVariable struct {
+	Value    string `json:"value"`
+	IsSecret bool   `json:"isSecret"`
+}
+
+type adoCreatePipelineRequest struct {
+	Name          string                   `json:"name"`
+	Configuration adoPipelineConfiguration `json:"configuration"`
+}
+
+type adoPipelineConfiguration struct {
+	Type       string                `json:"type"`
+	Path       string                `json:"path"`
+	Repository adoPipelineRepository `json:"repository"`
+}
+
+type adoPipelineRepository struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+type adoRunPipelineRequest struct {
+	Resources          adoRunPipelineResources `json:"resources"`
+	TemplateParameters map[string]string       `json:"templateParameters,omitempty"`
+	Variables          map[string]adoVariable  `json:"variables,omitempty"`
+}
+
+type adoRunPipelineResources struct {
+	Repositories adoRunPipelineRepositories `json:"repositories"`
+}
+
+type adoRunPipelineRepositories struct {
+	Self adoRunPipelineSelfRepo `json:"self"`
+}
+
+type adoRunPipelineSelfRepo struct {
+	RefName string `json:"refName"`
 }
 
 func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, error) {
@@ -125,12 +164,12 @@ func formatBranchRef(branch string) string {
 	return "refs/heads/" + branch
 }
 
-func mapADOVariables(vars map[string]string) map[string]interface{} {
-	mapped := make(map[string]interface{}, len(vars))
+func mapADOVariables(vars map[string]string) map[string]adoVariable {
+	mapped := make(map[string]adoVariable, len(vars))
 	for k, v := range vars {
-		mapped[k] = map[string]interface{}{
-			"value":    v,
-			"isSecret": false,
+		mapped[k] = adoVariable{
+			Value:    v,
+			IsSecret: false,
 		}
 	}
 	return mapped
@@ -921,14 +960,14 @@ func (m *azureDevOpsManager) adoRunPipeline(ctx context.Context, args map[string
 }
 
 func (m *azureDevOpsManager) executeCreatePipeline(ctx context.Context, org, project, name, repoID, yamlPath string) (int, error) {
-	payload := map[string]interface{}{
-		"name": name,
-		"configuration": map[string]interface{}{
-			"type": "yaml",
-			"path": yamlPath,
-			"repository": map[string]interface{}{
-				"id":   repoID,
-				"type": "azureReposGit",
+	payload := adoCreatePipelineRequest{
+		Name: name,
+		Configuration: adoPipelineConfiguration{
+			Type: "yaml",
+			Path: yamlPath,
+			Repository: adoPipelineRepository{
+				ID:   repoID,
+				Type: "azureReposGit",
 			},
 		},
 	}
@@ -957,21 +996,17 @@ func (m *azureDevOpsManager) executeCreatePipeline(ctx context.Context, org, pro
 	return newPipeline.Id, nil
 }
 
-func (m *azureDevOpsManager) executeRunPipeline(ctx context.Context, org, project string, pipelineID int, refName string, templateParams map[string]string, variables map[string]interface{}) (int, string, error) {
-	payload := map[string]interface{}{
-		"resources": map[string]interface{}{
-			"repositories": map[string]interface{}{
-				"self": map[string]interface{}{
-					"refName": refName,
+func (m *azureDevOpsManager) executeRunPipeline(ctx context.Context, org, project string, pipelineID int, refName string, templateParams map[string]string, variables map[string]adoVariable) (int, string, error) {
+	payload := adoRunPipelineRequest{
+		Resources: adoRunPipelineResources{
+			Repositories: adoRunPipelineRepositories{
+				Self: adoRunPipelineSelfRepo{
+					RefName: refName,
 				},
 			},
 		},
-	}
-	if len(templateParams) > 0 {
-		payload["templateParameters"] = templateParams
-	}
-	if len(variables) > 0 {
-		payload["variables"] = variables
+		TemplateParameters: templateParams,
+		Variables:          variables,
 	}
 
 	body, err := json.Marshal(payload)
