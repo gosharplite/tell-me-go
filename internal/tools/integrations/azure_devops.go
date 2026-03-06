@@ -23,7 +23,7 @@ import (
 )
 
 type azureDevOpsManager struct {
-	sm                 security.PathValidator
+	sm                 security.ISecurityManager
 	client             tools.HTTPClient
 	authHeader         string
 	authErr            error
@@ -42,7 +42,7 @@ func (m *azureDevOpsManager) getBaseURL() string {
 }
 
 // newazureDevOpsManager creates a new instance of azureDevOpsManager.
-func newazureDevOpsManager(sm security.PathValidator, client tools.HTTPClient) *azureDevOpsManager {
+func newazureDevOpsManager(sm security.ISecurityManager, client tools.HTTPClient) *azureDevOpsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -104,7 +104,7 @@ func (m *azureDevOpsManager) executeRequest(ctx context.Context, method, request
 }
 
 func (m *azureDevOpsManager) checkResponseError(resp *http.Response, requestURL string) error {
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
 

@@ -752,4 +752,35 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			Required: []string{"organization", "project", "build_id"},
 		},
 	}, m.adoGetBuildChanges)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_create_pipeline",
+		Description: "Creates a new Azure DevOps YAML build pipeline. Idempotent: returns existing ID if the name already exists. Triggers security confirmation.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"name": {
+					Type:        "STRING",
+					Description: "The desired name of the new pipeline.",
+				},
+				"repository_id": {
+					Type:        "STRING",
+					Description: "The UUID of the Git repository containing the YAML.",
+				},
+				"yaml_path": {
+					Type:        "STRING",
+					Description: "The exact path to the YAML file in the repository (e.g., '/dev-3/caddy/cicd/main.yaml').",
+				},
+			},
+			Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
+		},
+	}, m.adoCreatePipeline)
 }

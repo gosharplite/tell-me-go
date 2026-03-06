@@ -775,3 +775,84 @@ func filterAndLimitRuns(runs []adoPipelineRun, repoFilter string, limit int) []a
 	}
 	return result
 }
+
+func (m *azureDevOpsManager) adoCreatePipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+		Name         string `json:"name"`
+		RepositoryId string `json:"repository_id"`
+		YamlPath     string `json:"yaml_path"`
+	}
+
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.Name == "" || params.RepositoryId == "" || params.YamlPath == "" {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, name, repository_id, and yaml_path are required")
+	}
+
+	// 1. Idempotency Check
+	pipelines, err := m.fetchPipelines(ctx, params.Organization, params.Project)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to check existing pipelines: %w", err)
+	}
+
+	for _, p := range pipelines {
+		if strings.EqualFold(p.Name, params.Name) {
+			return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", params.Name, p.Id)}, nil
+		}
+	}
+
+	// 2. Security Confirmation
+	prompt := fmt.Sprintf("Are you sure you want to create the ADO pipeline '%s' in project '%s' mapped to '%s'?", params.Name, params.Project, params.YamlPath)
+	approved, err := m.sm.Confirm(ctx, prompt)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
+	}
+
+	// 3. Create Pipeline
+	payload := map[string]interface{}{
+		"name": params.Name,
+		"configuration": map[string]interface{}{
+			"type": "yaml",
+			"path": params.YamlPath,
+			"repository": map[string]interface{}{
+				"id":   params.RepositoryId,
+				"type": "azureReposGit",
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1-preview.1",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project))
+
+	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)), map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	defer resp.Body.Close()
+
+	var newPipeline struct {
+		Id int `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&newPipeline); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Invalidate cache for this project since we created a new pipeline
+	m.pipelineCacheMu.Lock()
+	delete(m.pipelineCache, params.Organization+"/"+params.Project)
+	m.pipelineCacheMu.Unlock()
+
+	return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", params.Name, newPipeline.Id)}, nil
+}
