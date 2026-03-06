@@ -6,6 +6,7 @@ package integrations
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -2079,3 +2080,105 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		assert.NotContains(t, result.Text, "Run ID: 103")
 	})
 }
+
+func TestAdoRunPipeline(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+
+	t.Run("Success", func(t *testing.T) {
+		jsonResponse := `{
+			"id": 101,
+			"_links": {
+				"web": {
+					"href": "https://dev.azure.com/myorg/myproj/_build/results?buildId=101"
+				}
+			}
+		}`
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodPost, r.Method)
+			assert.Contains(t, r.URL.Path, "/_apis/pipelines/1/runs")
+			assert.Equal(t, "7.1-preview.1", r.URL.Query().Get("api-version"))
+
+			var payload map[string]interface{}
+			err := json.NewDecoder(r.Body).Decode(&payload)
+			assert.NoError(t, err)
+
+			resources := payload["resources"].(map[string]interface{})
+			repos := resources["repositories"].(map[string]interface{})
+			self := repos["self"].(map[string]interface{})
+			assert.Equal(t, "refs/heads/feature", self["refName"])
+
+			variables := payload["variables"].(map[string]interface{})
+			var1 := variables["var1"].(map[string]interface{})
+			assert.Equal(t, "val1", var1["value"])
+			assert.Equal(t, false, var1["isSecret"])
+
+			params := payload["templateParameters"].(map[string]interface{})
+			assert.Equal(t, "paramVal", params["param1"])
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		sm := &mockSecurityManager{approved: true}
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"pipeline_id":  1,
+			"branch":       "feature",
+			"variables":    map[string]string{"var1": "val1"},
+			"template_parameters": map[string]string{"param1": "paramVal"},
+		}
+
+		result, err := m.adoRunPipeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Successfully triggered pipeline run ID: 101")
+		assert.Contains(t, result.Text, "Web URL: https://dev.azure.com/myorg/myproj/_build/results?buildId=101")
+	})
+
+	t.Run("Cancelled", func(t *testing.T) {
+		sm := &mockSecurityManager{approved: false}
+		m := newazureDevOpsManager(sm, nil)
+
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"pipeline_id":  1,
+		}
+
+		result, err := m.adoRunPipeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Equal(t, "Pipeline run cancelled by user.", result.Text)
+	})
+}
+
+type mockSecurityManager struct {
+	approved bool
+	err      error
+}
+
+func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
+func (m *mockSecurityManager) IsPathWritable(path string) (string, error) {
+	return path, nil
+}
+func (m *mockSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+	return m.approved, m.err
+}
+func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return m.approved, m.err
+}
+func (m *mockSecurityManager) LogAudit(label1, val1, label2, val2 string) {}
+func (m *mockSecurityManager) TerminalLock()                              {}
+func (m *mockSecurityManager) TerminalUnlock()                            {}
+func (m *mockSecurityManager) Prompt(message string)                      {}
+func (m *mockSecurityManager) Warn(message string)                        {}
+func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+	return m.approved, m.err
+}
+func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
+func (m *mockSecurityManager) IsCommandAllowed(command string) bool         { return true }
+func (m *mockSecurityManager) IsBypassActive() bool                        { return false }

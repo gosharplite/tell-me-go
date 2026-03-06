@@ -856,3 +856,95 @@ func (m *azureDevOpsManager) adoCreatePipeline(ctx context.Context, args map[str
 
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", params.Name, newPipeline.Id)}, nil
 }
+
+func (m *azureDevOpsManager) adoRunPipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization       string            `json:"organization"`
+		Project            string            `json:"project"`
+		PipelineId         int               `json:"pipeline_id"`
+		Branch             string            `json:"branch"`
+		TemplateParameters map[string]string `json:"template_parameters"`
+		Variables          map[string]string `json:"variables"`
+	}
+
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, and pipeline_id are required")
+	}
+
+	if params.Branch == "" {
+		params.Branch = "main"
+	}
+	refName := params.Branch
+	if !strings.HasPrefix(refName, "refs/") {
+		refName = "refs/heads/" + refName
+	}
+
+	variables := make(map[string]interface{})
+	for k, v := range params.Variables {
+		variables[k] = map[string]interface{}{
+			"value":    v,
+			"isSecret": false,
+		}
+	}
+
+	prompt := fmt.Sprintf("Are you sure you want to run ADO pipeline ID '%d' on branch '%s' with variables: %v and template parameters: %v?",
+		params.PipelineId, params.Branch, params.Variables, params.TemplateParameters)
+	approved, err := m.sm.Confirm(ctx, prompt)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
+	}
+
+	payload := map[string]interface{}{
+		"resources": map[string]interface{}{
+			"repositories": map[string]interface{}{
+				"self": map[string]interface{}{
+					"refName": refName,
+				},
+			},
+		},
+	}
+	if len(params.TemplateParameters) > 0 {
+		payload["templateParameters"] = params.TemplateParameters
+	}
+	if len(variables) > 0 {
+		payload["variables"] = variables
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs?api-version=7.1-preview.1",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId)
+
+	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)), map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	defer resp.Body.Close()
+
+	var runResponse struct {
+		Id    int `json:"id"`
+		Links struct {
+			Web struct {
+				Href string `json:"href"`
+			} `json:"web"`
+		} `json:"_links"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&runResponse); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return tools.ToolResult{
+		Text: fmt.Sprintf("Successfully triggered pipeline run ID: %d\nWeb URL: %s", runResponse.Id, runResponse.Links.Web.Href),
+	}, nil
+}

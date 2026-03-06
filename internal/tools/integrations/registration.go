@@ -783,4 +783,39 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
 		},
 	}, m.adoCreatePipeline)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_run_pipeline",
+		Description: "Triggers a manual run of an existing Azure DevOps YAML pipeline. Returns the Run ID for tracking. Triggers security confirmation.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"pipeline_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pipeline to run.",
+				},
+				"branch": {
+					Type:        "STRING",
+					Description: "The branch to build from (e.g., 'main').",
+				},
+				"template_parameters": {
+					Type:        "OBJECT",
+					Description: "Key-value string pairs for YAML parameters.",
+				},
+				"variables": {
+					Type:        "OBJECT",
+					Description: "Key-value string pairs for pipeline variables.",
+				},
+			},
+			Required: []string{"organization", "project", "pipeline_id"},
+		},
+	}, m.adoRunPipeline)
 }
