@@ -4,6 +4,8 @@
 package integrations
 
 import (
+	"os"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -258,6 +260,9 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 	var opts []ADOOption
 	if client != nil {
 		opts = append(opts, WithHTTPClient(client))
+	}
+	if token := os.Getenv("AZURE_PAT_ALL"); token != "" {
+		opts = append(opts, WithToken(token))
 	}
 	m := NewADOManager(sm, opts...)
 

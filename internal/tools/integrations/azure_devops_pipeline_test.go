@@ -103,6 +103,7 @@ func TestAdoListPipelines(t *testing.T) {
 			if server != nil {
 				opts = append(opts, WithBaseURL(server.URL))
 			}
+			opts = append(opts, WithToken("test-pat"))
 			m := NewADOManager(sm, opts...)
 
 			ctx := context.Background()

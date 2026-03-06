@@ -48,7 +48,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -72,7 +72,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -92,7 +92,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -118,7 +118,6 @@ func TestAdoGetPullRequest(t *testing.T) {
 	})
 
 	t.Run("Missing PAT", func(t *testing.T) {
-		t.Setenv("AZURE_PAT_ALL", "")
 		m := NewADOManager(sm)
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -129,7 +128,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 
 		_, err := m.adoGetPullRequest(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "missing AZURE_PAT_ALL")
+		assert.Contains(t, err.Error(), "AZURE_PAT_ALL token is required but not provided")
 	})
 }
 
@@ -168,7 +167,7 @@ func TestAdoListPullRequests(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -191,7 +190,7 @@ func TestAdoListPullRequests(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -215,7 +214,7 @@ func TestAdoListPullRequests(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -256,7 +255,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -280,7 +279,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -341,7 +340,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -366,7 +365,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -401,7 +400,7 @@ func TestAdoGetFileContent(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -425,7 +424,7 @@ func TestAdoGetFileContent(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -444,7 +443,7 @@ func TestAdoGetFileContent(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -485,7 +484,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -509,7 +508,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -537,7 +536,7 @@ func TestAdoListPipelineRuns(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
 		result, err := m.adoListPipelineRuns(context.Background(), args)
@@ -560,7 +559,7 @@ func TestAdoGetPipelineRun(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
 		result, err := m.adoGetPipelineRun(context.Background(), args)
@@ -583,7 +582,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
 		result, err := m.adoGetPipelineLogs(context.Background(), args)
@@ -600,7 +599,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
 		result, err := m.adoGetPipelineLogs(context.Background(), args)
@@ -640,7 +639,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -663,7 +662,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -721,7 +720,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -751,7 +750,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -779,7 +778,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -829,7 +828,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -861,7 +860,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -899,7 +898,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
 		result, err := m.adoGetBuildTimeline(context.Background(), args)
@@ -915,7 +914,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
 		_, err := m.adoGetBuildTimeline(context.Background(), args)
@@ -937,7 +936,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "o",
@@ -956,7 +955,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "o",
@@ -992,7 +991,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123, "top": 10}
 		result, err := m.adoGetBuildChanges(context.Background(), args)
@@ -1007,7 +1006,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
 		_, err := m.adoGetBuildChanges(context.Background(), args)
@@ -1423,12 +1422,11 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+		for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.setupPAT != "" {
-				t.Setenv("AZURE_PAT_ALL", tt.setupPAT)
-			} else {
-				t.Setenv("AZURE_PAT_ALL", "test-pat")
+			pat := tt.setupPAT
+			if pat == "" {
+				pat = "test-pat"
 			}
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1443,7 +1441,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			m := NewADOManager(sm, WithBaseURL(server.URL))
+			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken(pat))
 
 			if tt.doErr != nil {
 				// To simulate transport error, we can close the server immediately
@@ -1471,7 +1469,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -1498,7 +1496,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -1514,7 +1512,6 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 }
 
 func TestAdoTools_AuthError(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "")
 	sm := security.NewSecurityManager(nil)
 	m := NewADOManager(sm)
 	ctx := context.Background()
@@ -1526,7 +1523,7 @@ func TestAdoTools_AuthError(t *testing.T) {
 
 	_, err := m.adoListPullRequests(ctx, args)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "missing AZURE_PAT_ALL")
+	assert.Contains(t, err.Error(), "AZURE_PAT_ALL token is required but not provided")
 }
 
 func TestGetStatusEmoji(t *testing.T) {
@@ -1566,7 +1563,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 	t.Run("List Path - Request Failure", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 		server.Close() // Force failure
 
 		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
@@ -1580,7 +1577,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.Error(t, err)
@@ -1594,7 +1591,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		result, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.NoError(t, err)
@@ -1603,7 +1600,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 	t.Run("Content Path - Request Failure", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 		server.Close() // Force failure
 
 		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1, "log_id": 1})
@@ -1622,7 +1619,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1})
 		assert.Error(t, err)
@@ -1635,7 +1632,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1})
 		assert.Error(t, err)
@@ -1653,7 +1650,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"})
 		assert.Error(t, err)
@@ -1667,7 +1664,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"})
 		assert.Error(t, err)
@@ -1685,7 +1682,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.performPolicyEvaluationRequest(context.Background(), server.URL)
 		assert.Error(t, err)
@@ -1698,7 +1695,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.performPolicyEvaluationRequest(context.Background(), server.URL)
 		assert.Error(t, err)
@@ -1714,7 +1711,7 @@ func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL))
+	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL), WithToken("test-pat"))
 
 	_, err := m.adoGetFileContent(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"})
 	assert.Error(t, err)
@@ -1729,7 +1726,7 @@ func TestAdoListPipelineRuns_Empty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL))
+	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL), WithToken("test-pat"))
 
 	result, err := m.adoListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})
 	assert.NoError(t, err)
@@ -1746,7 +1743,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
@@ -1759,7 +1756,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
@@ -1775,7 +1772,7 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL))
+	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL), WithToken("test-pat"))
 
 	result, err := m.adoGetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 	assert.NoError(t, err)
@@ -1847,7 +1844,7 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m := NewADOManager(sm, WithBaseURL(server.URL))
+	m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 	ctx := context.Background()
 
 	// Define standard args that satisfy validation for most endpoints
@@ -2005,7 +2002,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(tt.handler))
 			defer server.Close()
 
-			m := NewADOManager(sm, WithBaseURL(server.URL))
+			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 			result, err := tt.call(m)
 			if tt.expectedErr != "" {
@@ -2037,7 +2034,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_name": "cool"}
 		result, err := m.adoListPipelineRuns(context.Background(), args)
@@ -2055,7 +2052,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "repository": "repo-b"}
 		result, err := m.adoListPipelineRuns(context.Background(), args)
@@ -2074,7 +2071,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 		}))
 		defer server.Close()
 
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 2}
 		result, err := m.adoListPipelineRuns(context.Background(), args)
@@ -2152,7 +2149,7 @@ func TestAdoCreatePipeline(t *testing.T) {
 			defer server.Close()
 
 			sm := &mockSecurityManager{approved: tt.approved}
-			m := NewADOManager(sm, WithBaseURL(server.URL))
+			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 			// Pre-populate cache to test invalidation
 			cacheKey := "myorg/myproj"
@@ -2221,7 +2218,7 @@ func TestAdoRunPipeline(t *testing.T) {
 		defer server.Close()
 
 		sm := &mockSecurityManager{approved: true}
-		m := NewADOManager(sm, WithBaseURL(server.URL))
+		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
 		args := map[string]interface{}{
 			"organization":        "myorg",

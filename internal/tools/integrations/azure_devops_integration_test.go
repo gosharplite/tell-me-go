@@ -22,7 +22,7 @@ func TestADOManager_LiveNetwork_Integration(t *testing.T) {
 
 	// 2. Initialize with defaults (hits real dev.azure.com by default)
 	sm := security.NewSecurityManager(nil)
-	m := NewADOManager(sm)
+	m := NewADOManager(sm, WithToken(pat))
 
 	// 3. Execute real network call (Example: listing PRs in a public or accessible repo)
 	// Note: We use a placeholder organization/project/repo that would likely exist or fail gracefully.

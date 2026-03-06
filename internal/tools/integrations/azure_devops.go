@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -28,9 +27,8 @@ type securityConfirmer interface {
 type ADOManager struct {
 	sc                 securityConfirmer
 	httpClient         tools.HTTPClient
+	token              string
 	authHeader         string
-	authErr            error
-	authOnce           sync.Once
 	baseURL            string // For testing
 	pipelineCache      sync.Map
 	pipelineFetchGroup singleflight.Group
@@ -53,6 +51,13 @@ func WithHTTPClient(client tools.HTTPClient) ADOOption {
 	}
 }
 
+// WithToken sets the Azure DevOps Personal Access Token (PAT).
+func WithToken(token string) ADOOption {
+	return func(m *ADOManager) {
+		m.token = token
+	}
+}
+
 // NewADOManager creates a new instance of ADOManager.
 func NewADOManager(sc securityConfirmer, opts ...ADOOption) *ADOManager {
 	m := &ADOManager{
@@ -69,17 +74,15 @@ func NewADOManager(sc securityConfirmer, opts ...ADOOption) *ADOManager {
 }
 
 func (m *ADOManager) getAuthHeader() (string, error) {
-	m.authOnce.Do(func() {
-		pat := os.Getenv("AZURE_PAT_ALL")
-		if pat == "" {
-			m.authErr = fmt.Errorf("missing AZURE_PAT_ALL environment variable")
-			return
-		}
-		auth := fmt.Sprintf(":%s", pat)
-		encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
-		m.authHeader = fmt.Sprintf("Basic %s", encodedAuth)
-	})
-	return m.authHeader, m.authErr
+	if m.authHeader != "" {
+		return m.authHeader, nil
+	}
+	if m.token == "" {
+		return "", fmt.Errorf("AZURE_PAT_ALL token is required but not provided")
+	}
+	auth := ":" + m.token
+	m.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+	return m.authHeader, nil
 }
 
 func (m *ADOManager) executeRequest(ctx context.Context, method, requestURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
