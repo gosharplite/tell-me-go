@@ -99,10 +99,11 @@ func TestAdoListPipelines(t *testing.T) {
 				defer server.Close()
 			}
 
-			m := newazureDevOpsManager(sm, nil)
+			var opts []ADOOption
 			if server != nil {
-				m.baseURL = server.URL
+				opts = append(opts, WithBaseURL(server.URL))
 			}
+			m := NewADOManager(sm, opts...)
 
 			ctx := context.Background()
 			result, err := m.adoListPipelines(ctx, tt.args)

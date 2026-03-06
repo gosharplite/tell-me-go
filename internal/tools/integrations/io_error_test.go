@@ -35,7 +35,7 @@ func (m *mockHttpClient) Do(req *http.Request) (*http.Response, error) {
 func TestAzureDevOps_IOError(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockHttpClient)
-	m := newazureDevOpsManager(nil, mockClient)
+	m := NewADOManager(nil, WithHTTPClient(mockClient))
 
 	mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool { return true })).Return(&http.Response{
 		StatusCode: http.StatusInternalServerError,

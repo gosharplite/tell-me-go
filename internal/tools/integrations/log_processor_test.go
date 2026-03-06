@@ -12,7 +12,7 @@ import (
 )
 
 func TestProcessLogContent(t *testing.T) {
-	m := &azureDevOpsManager{}
+	m := &ADOManager{}
 	content := "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10"
 
 	t.Run("TailLines", func(t *testing.T) {
@@ -102,7 +102,7 @@ func TestProcessLogContent(t *testing.T) {
 }
 
 func TestOOMSafety(t *testing.T) {
-	m := &azureDevOpsManager{}
+	m := &ADOManager{}
 
 	t.Run("ClampTailLines", func(t *testing.T) {
 		content := "line 1\nline 2"
@@ -126,7 +126,7 @@ func (e *logErrorReader) Read(p []byte) (n int, err error) {
 }
 
 func TestLogIOError(t *testing.T) {
-	m := &azureDevOpsManager{}
+	m := &ADOManager{}
 	errReader := &logErrorReader{}
 
 	t.Run("streamTail", func(t *testing.T) {
@@ -159,7 +159,7 @@ func TestLogIOError(t *testing.T) {
 }
 
 func TestProcessLogContent_BufferTooLong(t *testing.T) {
-	m := &azureDevOpsManager{}
+	m := &ADOManager{}
 
 	// Create a single line of text that exceeds the 1MB bufio.Scanner maxCapacity limit
 	massiveLine := strings.Repeat("A", (1*1024*1024)+100)

@@ -255,7 +255,11 @@ func registerJira(r tools.IToolRegistry, sm domain_security.ISecurityManager, cl
 }
 
 func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
-	m := newazureDevOpsManager(sm, client)
+	var opts []ADOOption
+	if client != nil {
+		opts = append(opts, WithHTTPClient(client))
+	}
+	m := NewADOManager(sm, opts...)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pull_request",
