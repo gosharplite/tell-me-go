@@ -40,7 +40,7 @@ func (m *ADOManager) adoGetPrStatuses(ctx context.Context, args map[string]inter
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pr statuses args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.PullRequestId == 0 {
@@ -49,7 +49,7 @@ func (m *ADOManager) adoGetPrStatuses(ctx context.Context, args map[string]inter
 
 	statusData, err := m.fetchPrStatuses(ctx, params.Organization, params.Project, params.Repository, params.PullRequestId)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("fetching pr statuses: %w", err)
 	}
 
 	return tools.ToolResult{Text: m.formatPrStatuses(params.PullRequestId, statusData)}, nil
@@ -68,7 +68,7 @@ func (m *ADOManager) fetchPrStatuses(ctx context.Context, org, project, repo str
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
-		return adoStatusResponse{}, err
+		return adoStatusResponse{}, fmt.Errorf("executing fetch pr statuses request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -151,7 +151,7 @@ func (m *ADOManager) adoGetPrPolicyEvaluations(ctx context.Context, args map[str
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pr policy evaluations args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.PullRequestId == 0 {
@@ -160,14 +160,14 @@ func (m *ADOManager) adoGetPrPolicyEvaluations(ctx context.Context, args map[str
 
 	projectID, err := m.fetchPrProjectID(ctx, params.Organization, params.Project, params.Repository, params.PullRequestId)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("fetching pr project ID: %w", err)
 	}
 
 	targetId := fmt.Sprintf("vstfs:///CodeReview/CodeReviewId/%s/%d", projectID, params.PullRequestId)
 
 	policyData, err := m.fetchPolicyEvaluations(ctx, params.Organization, params.Project, targetId)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("fetching policy evaluations: %w", err)
 	}
 
 	return m.formatPolicyEvaluations(params.PullRequestId, policyData)
@@ -179,7 +179,7 @@ func (m *ADOManager) fetchPrProjectID(ctx context.Context, org, project, repo st
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, prRequestURL, nil, nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("executing fetch pr project ID request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -221,7 +221,7 @@ func (m *ADOManager) fetchPolicyEvaluations(ctx context.Context, org, project, a
 func (m *ADOManager) performPolicyEvaluationRequest(ctx context.Context, requestURL string) (adoPolicyResponse, error) {
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return adoPolicyResponse{}, err
+		return adoPolicyResponse{}, fmt.Errorf("performing policy evaluation request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -278,7 +278,7 @@ func (m *ADOManager) adoListBranchPolicies(ctx context.Context, args map[string]
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing list branch policies args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.BranchName == "" {
@@ -287,12 +287,12 @@ func (m *ADOManager) adoListBranchPolicies(ctx context.Context, args map[string]
 
 	targetRepoId, err := m.fetchRepositoryId(ctx, params.Organization, params.Project, params.Repository)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("fetching repository ID: %w", err)
 	}
 
 	policyConfigs, err := m.fetchPolicyConfigurations(ctx, params.Organization, params.Project)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("fetching policy configurations: %w", err)
 	}
 
 	return tools.ToolResult{Text: m.formatBranchPolicies(params.BranchName, params.Repository, policyConfigs, targetRepoId)}, nil

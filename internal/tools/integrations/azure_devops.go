@@ -154,7 +154,7 @@ func (m *ADOManager) adoGetFileContent(ctx context.Context, args map[string]inte
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get file content args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.Path == "" {
@@ -180,7 +180,7 @@ func (m *ADOManager) adoGetFileContent(ctx context.Context, args map[string]inte
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get file content request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -211,7 +211,7 @@ func (m *ADOManager) adoListRepositoryItems(ctx context.Context, args map[string
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing list repository items args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" {
@@ -220,12 +220,12 @@ func (m *ADOManager) adoListRepositoryItems(ctx context.Context, args map[string
 
 	requestURL, err := m.buildListRepositoryItemsURL(params.Organization, params.Project, params.Repository, params.ScopePath, params.Version, params.RecursionLevel)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("building list repository items URL: %w", err)
 	}
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing list repository items request: %w", err)
 	}
 	defer resp.Body.Close()
 

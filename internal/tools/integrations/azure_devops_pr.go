@@ -27,7 +27,7 @@ func (m *ADOManager) adoGetPullRequest(ctx context.Context, args map[string]inte
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pull request args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.PullRequestId == 0 {
@@ -39,7 +39,7 @@ func (m *ADOManager) adoGetPullRequest(ctx context.Context, args map[string]inte
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get pull request request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -92,7 +92,7 @@ func (m *ADOManager) adoListPullRequests(ctx context.Context, args map[string]in
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing list pull requests args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" {
@@ -101,12 +101,12 @@ func (m *ADOManager) adoListPullRequests(ctx context.Context, args map[string]in
 
 	requestURL, err := m.buildListPullRequestsURL(params.Organization, params.Project, params.Repository, params.Status, params.Top)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("building list pull requests URL: %w", err)
 	}
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing list pull requests request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -178,7 +178,7 @@ func (m *ADOManager) adoGetPrDiff(ctx context.Context, args map[string]interface
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pr diff args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.PullRequestId == 0 {
@@ -190,7 +190,7 @@ func (m *ADOManager) adoGetPrDiff(ctx context.Context, args map[string]interface
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get pr diff request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -246,7 +246,7 @@ func (m *ADOManager) adoGetPrThreads(ctx context.Context, args map[string]interf
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pr threads args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.PullRequestId == 0 {
@@ -258,7 +258,7 @@ func (m *ADOManager) adoGetPrThreads(ctx context.Context, args map[string]interf
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get pr threads request: %w", err)
 	}
 	defer resp.Body.Close()
 

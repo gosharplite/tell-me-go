@@ -34,7 +34,7 @@ type adoListPipelineRunsParams struct {
 func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRunsParams, error) {
 	var params adoListPipelineRunsParams
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return params, err
+		return params, fmt.Errorf("parsing list pipeline runs args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" {
@@ -69,7 +69,7 @@ type adoCreatePipelineParams struct {
 func parseCreatePipelineArgs(args map[string]interface{}) (adoCreatePipelineParams, error) {
 	var params adoCreatePipelineParams
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return params, err
+		return params, fmt.Errorf("parsing create pipeline args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Name == "" || params.RepositoryId == "" || params.YamlPath == "" {
@@ -134,7 +134,7 @@ type adoRunPipelineSelfRepo struct {
 func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, error) {
 	var params adoRunPipelineParams
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return params, err
+		return params, fmt.Errorf("parsing run pipeline args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
@@ -178,25 +178,25 @@ func mapADOVariables(vars map[string]string) map[string]adoVariable {
 func (m *ADOManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	params, err := parseListPipelineRunsArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing list pipeline runs args: %w", err)
 	}
 
 	if params.PipelineId == 0 && params.PipelineName != "" {
 		var err error
 		params.PipelineId, err = m.resolvePipelineID(ctx, params.Organization, params.Project, params.PipelineName)
 		if err != nil {
-			return tools.ToolResult{}, err
+			return tools.ToolResult{}, fmt.Errorf("resolving pipeline ID: %w", err)
 		}
 	}
 
 	requestURL, err := m.buildListPipelineRunsURL(params.Organization, params.Project, params.PipelineId, params.FetchTop)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("building list pipeline runs URL: %w", err)
 	}
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing list pipeline runs request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -269,7 +269,7 @@ func (m *ADOManager) adoGetPipelineRun(ctx context.Context, args map[string]inte
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline run args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 {
@@ -281,7 +281,7 @@ func (m *ADOManager) adoGetPipelineRun(ctx context.Context, args map[string]inte
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get pipeline run request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -325,7 +325,7 @@ func (m *ADOManager) adoGetPipelineLogs(ctx context.Context, args map[string]int
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline logs args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 {
@@ -345,7 +345,7 @@ func (m *ADOManager) listPipelineLogs(ctx context.Context, org, project string, 
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing list pipeline logs request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -379,7 +379,7 @@ func (m *ADOManager) fetchPipelineLogContent(ctx context.Context, org, project s
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing fetch pipeline log content request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -398,7 +398,7 @@ func (m *ADOManager) adoGetBuildTimeline(ctx context.Context, args map[string]in
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get build timeline args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 {
@@ -410,7 +410,7 @@ func (m *ADOManager) adoGetBuildTimeline(ctx context.Context, args map[string]in
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get build timeline request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -445,7 +445,7 @@ func (m *ADOManager) adoGetTaskLog(ctx context.Context, args map[string]interfac
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get task log args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 || params.LogId == 0 {
@@ -457,7 +457,7 @@ func (m *ADOManager) adoGetTaskLog(ctx context.Context, args map[string]interfac
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get task log request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -721,7 +721,7 @@ func (m *ADOManager) adoGetBuildChanges(ctx context.Context, args map[string]int
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get build changes args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 {
@@ -745,7 +745,7 @@ func (m *ADOManager) adoGetBuildChanges(ctx context.Context, args map[string]int
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get build changes request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -790,7 +790,7 @@ func (m *ADOManager) fetchPipelines(ctx context.Context, org, project string) ([
 
 		resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("executing fetch pipelines request: %w", err)
 		}
 		defer resp.Body.Close()
 
@@ -822,7 +822,7 @@ func (m *ADOManager) adoListPipelines(ctx context.Context, args map[string]inter
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing list pipelines args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" {
@@ -831,7 +831,7 @@ func (m *ADOManager) adoListPipelines(ctx context.Context, args map[string]inter
 
 	pipelines, err := m.fetchPipelines(ctx, params.Organization, params.Project)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("fetching pipelines: %w", err)
 	}
 
 	if len(pipelines) == 0 {
@@ -885,13 +885,13 @@ func filterAndLimitRuns(runs []adoPipelineRun, repoFilter string, limit int) []a
 func (m *ADOManager) adoCreatePipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	params, err := parseCreatePipelineArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing create pipeline args: %w", err)
 	}
 
 	// 1. Idempotency Check
 	existingID, err := m.checkPipelineExists(ctx, params.Organization, params.Project, params.Name)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("checking pipeline existence: %w", err)
 	}
 	if existingID != 0 {
 		return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", params.Name, existingID)}, nil
@@ -910,7 +910,7 @@ func (m *ADOManager) adoCreatePipeline(ctx context.Context, args map[string]inte
 	// 3. Create Pipeline
 	pipelineID, err := m.executeCreatePipeline(ctx, params.Organization, params.Project, params.Name, params.RepositoryId, params.YamlPath)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing create pipeline: %w", err)
 	}
 
 	// Invalidate cache for this project since we created a new pipeline
@@ -936,7 +936,7 @@ func (m *ADOManager) checkPipelineExists(ctx context.Context, org, project, name
 func (m *ADOManager) adoRunPipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	params, err := parseRunPipelineArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
 	}
 
 	prompt := fmt.Sprintf("Are you sure you want to run ADO pipeline ID '%d' on ref '%s' with variables: %v and template parameters: %v?",
@@ -951,7 +951,7 @@ func (m *ADOManager) adoRunPipeline(ctx context.Context, args map[string]interfa
 
 	runID, webURL, err := m.executeRunPipeline(ctx, params.Organization, params.Project, params.PipelineId, params.RefName, params.TemplateParameters, params.MappedVariables)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing run pipeline: %w", err)
 	}
 
 	return tools.ToolResult{
@@ -982,7 +982,7 @@ func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, na
 
 	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("executing create pipeline request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -1019,7 +1019,7 @@ func (m *ADOManager) executeRunPipeline(ctx context.Context, org, project string
 
 	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
-		return 0, "", err
+		return 0, "", fmt.Errorf("executing run pipeline request: %w", err)
 	}
 	defer resp.Body.Close()
 
