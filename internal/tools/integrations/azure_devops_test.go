@@ -1050,7 +1050,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 
 func TestAdoTools_DetailedErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &mockSecurityManager{approved: true}
 
 	commonArgs := map[string]interface{}{
 		"organization": "myorg",
@@ -1393,6 +1393,65 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusNotFound,
 			expectedErrMsg: "resource not found",
+		},
+		{
+			name: "adoCreatePipeline - Missing Params",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoCreatePipeline(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "name": "n", "repository_id": "r"}, // Missing yaml_path
+			expectedErrMsg: "required",
+		},
+		{
+			name: "adoCreatePipeline - 500 Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				// Approved by default in setup
+				return m.adoCreatePipeline(ctx, args)
+			},
+			args: map[string]interface{}{
+				"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
+			},
+			httpStatus:     http.StatusInternalServerError,
+			expectedErrMsg: "returned status: 500",
+		},
+		{
+			name: "adoCreatePipeline - Malformed JSON",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoCreatePipeline(ctx, args)
+			},
+			args: map[string]interface{}{
+				"organization": "o", "project": "p", "name": "n", "repository_id": "r", "yaml_path": "y",
+			},
+			httpStatus:     http.StatusOK,
+			respBody:       `{bad_json}`,
+			expectedErrMsg: "failed to decode response",
+		},
+		{
+			name: "adoRunPipeline - Missing Params",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoRunPipeline(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p"}, // Missing pipeline_id
+			expectedErrMsg: "required",
+		},
+		{
+			name: "adoRunPipeline - 500 Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoRunPipeline(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
+			httpStatus:     http.StatusInternalServerError,
+			expectedErrMsg: "returned status: 500",
+		},
+		{
+			name: "adoRunPipeline - Malformed JSON",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoRunPipeline(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
+			httpStatus:     http.StatusOK,
+			respBody:       `{bad_json}`,
+			expectedErrMsg: "failed to decode response",
 		},
 	}
 
@@ -2081,6 +2140,108 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 	})
 }
 
+func TestAdoCreatePipeline(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+
+	tests := []struct {
+		name              string
+		approved          bool
+		existingPipelines []adoPipeline
+		createResponse    string
+		expectedText      string
+		expectPost        bool
+		expectConfirm     bool
+	}{
+		{
+			name:     "Success",
+			approved: true,
+			existingPipelines: []adoPipeline{
+				{Id: 1, Name: "Other"},
+			},
+			createResponse: `{"id": 123}`,
+			expectedText:   "Successfully created pipeline 'NewPipeline' with ID: 123",
+			expectPost:     true,
+			expectConfirm:  true,
+		},
+		{
+			name:     "Idempotency",
+			approved: false,
+			existingPipelines: []adoPipeline{
+				{Id: 1, Name: "NewPipeline"},
+			},
+			expectedText:  "Pipeline 'NewPipeline' already exists with ID: 1",
+			expectPost:    false,
+			expectConfirm: false,
+		},
+		{
+			name:     "Cancellation",
+			approved: false,
+			existingPipelines: []adoPipeline{
+				{Id: 1, Name: "Other"},
+			},
+			expectedText:  "Pipeline creation cancelled by user.",
+			expectPost:    false,
+			expectConfirm: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			postCalled := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/_apis/pipelines") {
+					w.WriteHeader(http.StatusOK)
+					resp := struct {
+						Value []adoPipeline `json:"value"`
+					}{Value: tt.existingPipelines}
+					_ = json.NewEncoder(w).Encode(resp)
+					return
+				}
+				if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/_apis/pipelines") {
+					postCalled = true
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(tt.createResponse))
+					return
+				}
+			}))
+			defer server.Close()
+
+			sm := &mockSecurityManager{approved: tt.approved}
+			m := newazureDevOpsManager(sm, nil)
+			m.baseURL = server.URL
+
+			// Pre-populate cache to test invalidation
+			cacheKey := "myorg/myproj"
+			m.pipelineCacheMu.Lock()
+			m.pipelineCache = map[string][]adoPipeline{
+				cacheKey: tt.existingPipelines,
+			}
+			m.pipelineCacheMu.Unlock()
+
+			args := map[string]interface{}{
+				"organization":  "myorg",
+				"project":       "myproj",
+				"name":          "NewPipeline",
+				"repository_id": "repo-id",
+				"yaml_path":     "/azure-pipelines.yaml",
+			}
+
+			result, err := m.adoCreatePipeline(context.Background(), args)
+			assert.NoError(t, err)
+			assert.Contains(t, result.Text, tt.expectedText)
+			assert.Equal(t, tt.expectPost, postCalled, "POST call mismatch")
+			assert.Equal(t, tt.expectConfirm, sm.confirmCalled, "Confirm call mismatch")
+
+			if tt.name == "Success" {
+				m.pipelineCacheMu.RLock()
+				_, exists := m.pipelineCache[cacheKey]
+				m.pipelineCacheMu.RUnlock()
+				assert.False(t, exists, "Cache should be invalidated on success")
+			}
+		})
+	}
+}
+
 func TestAdoRunPipeline(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
@@ -2157,8 +2318,9 @@ func TestAdoRunPipeline(t *testing.T) {
 }
 
 type mockSecurityManager struct {
-	approved bool
-	err      error
+	approved      bool
+	err           error
+	confirmCalled bool
 }
 
 func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
@@ -2177,6 +2339,7 @@ func (m *mockSecurityManager) TerminalUnlock()                            {}
 func (m *mockSecurityManager) Prompt(message string)                      {}
 func (m *mockSecurityManager) Warn(message string)                        {}
 func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+	m.confirmCalled = true
 	return m.approved, m.err
 }
 func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
