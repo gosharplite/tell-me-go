@@ -5,6 +5,7 @@ package integrations
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -980,7 +981,7 @@ func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, na
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1-preview.1",
 		m.baseURL, url.PathEscape(org), url.PathEscape(project))
 
-	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)), map[string]string{"Content-Type": "application/json"})
+	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return 0, fmt.Errorf("executing create pipeline request: %w", err)
 	}
@@ -1017,7 +1018,7 @@ func (m *ADOManager) executeRunPipeline(ctx context.Context, org, project string
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs?api-version=7.1-preview.1",
 		m.baseURL, url.PathEscape(org), url.PathEscape(project), pipelineID)
 
-	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)), map[string]string{"Content-Type": "application/json"})
+	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return 0, "", fmt.Errorf("executing run pipeline request: %w", err)
 	}

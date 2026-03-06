@@ -55,6 +55,10 @@ func WithHTTPClient(client tools.HTTPClient) ADOOption {
 func WithToken(token string) ADOOption {
 	return func(m *ADOManager) {
 		m.token = token
+		if token != "" {
+			auth := ":" + token
+			m.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+		}
 	}
 }
 
@@ -74,14 +78,9 @@ func NewADOManager(sc securityConfirmer, opts ...ADOOption) *ADOManager {
 }
 
 func (m *ADOManager) getAuthHeader() (string, error) {
-	if m.authHeader != "" {
-		return m.authHeader, nil
-	}
-	if m.token == "" {
+	if m.authHeader == "" {
 		return "", fmt.Errorf("AZURE_PAT_ALL token is required but not provided")
 	}
-	auth := ":" + m.token
-	m.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 	return m.authHeader, nil
 }
 
