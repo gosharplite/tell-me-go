@@ -102,29 +102,38 @@ func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, er
 		return params, fmt.Errorf("organization, project, and pipeline_id are required")
 	}
 
-	if params.Branch == "" {
-		params.Branch = "main"
+	params.RefName = formatBranchRef(params.Branch)
+	params.MappedVariables = mapADOVariables(params.Variables)
+
+	return params, nil
+}
+
+func formatBranchRef(branch string) string {
+	if branch == "" {
+		branch = "main"
 	}
 
-	params.RefName = params.Branch
-	if !strings.HasPrefix(params.RefName, "refs/") {
-		// Heuristic: if it looks like a version tag (vX.Y.Z), assume refs/tags/
-		if strings.HasPrefix(params.RefName, "v") && len(params.RefName) > 1 && params.RefName[1] >= '0' && params.RefName[1] <= '9' {
-			params.RefName = "refs/tags/" + params.RefName
-		} else {
-			params.RefName = "refs/heads/" + params.RefName
-		}
+	if strings.HasPrefix(branch, "refs/") {
+		return branch
 	}
 
-	params.MappedVariables = make(map[string]interface{})
-	for k, v := range params.Variables {
-		params.MappedVariables[k] = map[string]interface{}{
+	// Heuristic: if it looks like a version tag (vX.Y.Z), assume refs/tags/
+	if strings.HasPrefix(branch, "v") && len(branch) > 1 && branch[1] >= '0' && branch[1] <= '9' {
+		return "refs/tags/" + branch
+	}
+
+	return "refs/heads/" + branch
+}
+
+func mapADOVariables(vars map[string]string) map[string]interface{} {
+	mapped := make(map[string]interface{}, len(vars))
+	for k, v := range vars {
+		mapped[k] = map[string]interface{}{
 			"value":    v,
 			"isSecret": false,
 		}
 	}
-
-	return params, nil
+	return mapped
 }
 
 func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
