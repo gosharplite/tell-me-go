@@ -32,8 +32,7 @@ type azureDevOpsManager struct {
 	authErr            error
 	authOnce           sync.Once
 	baseURL            string // For testing
-	pipelineCache      map[string][]adoPipeline
-	pipelineCacheMu    sync.RWMutex
+	pipelineCache      sync.Map
 	pipelineFetchGroup singleflight.Group
 }
 

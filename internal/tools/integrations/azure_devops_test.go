@@ -2212,11 +2212,7 @@ func TestAdoCreatePipeline(t *testing.T) {
 
 			// Pre-populate cache to test invalidation
 			cacheKey := "myorg/myproj"
-			m.pipelineCacheMu.Lock()
-			m.pipelineCache = map[string][]adoPipeline{
-				cacheKey: tt.existingPipelines,
-			}
-			m.pipelineCacheMu.Unlock()
+			m.pipelineCache.Store(cacheKey, tt.existingPipelines)
 
 			args := map[string]interface{}{
 				"organization":  "myorg",
@@ -2233,9 +2229,7 @@ func TestAdoCreatePipeline(t *testing.T) {
 			assert.Equal(t, tt.expectConfirm, sm.confirmCalled, "Confirm call mismatch")
 
 			if tt.name == "Success" {
-				m.pipelineCacheMu.RLock()
-				_, exists := m.pipelineCache[cacheKey]
-				m.pipelineCacheMu.RUnlock()
+				_, exists := m.pipelineCache.Load(cacheKey)
 				assert.False(t, exists, "Cache should be invalidated on success")
 			}
 		})

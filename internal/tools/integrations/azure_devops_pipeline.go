@@ -734,23 +734,17 @@ type adoPipeline struct {
 func (m *azureDevOpsManager) fetchPipelines(ctx context.Context, org, project string) ([]adoPipeline, error) {
 	cacheKey := org + "/" + project
 
-	// 1. Check Read Lock (Fast Path)
-	m.pipelineCacheMu.RLock()
-	if cached, exists := m.pipelineCache[cacheKey]; exists {
-		m.pipelineCacheMu.RUnlock()
-		return cached, nil
+	// 1. Check Cache (Fast Path)
+	if val, ok := m.pipelineCache.Load(cacheKey); ok {
+		return val.([]adoPipeline), nil
 	}
-	m.pipelineCacheMu.RUnlock()
 
 	// 2. Use Singleflight to prevent stampede
 	val, err, _ := m.pipelineFetchGroup.Do(cacheKey, func() (interface{}, error) {
 		// Re-check cache in case another request finished while we were waiting for singleflight
-		m.pipelineCacheMu.RLock()
-		if cached, exists := m.pipelineCache[cacheKey]; exists {
-			m.pipelineCacheMu.RUnlock()
-			return cached, nil
+		if val, ok := m.pipelineCache.Load(cacheKey); ok {
+			return val, nil
 		}
-		m.pipelineCacheMu.RUnlock()
 
 		requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1",
 			m.getBaseURL(), url.PathEscape(org), url.PathEscape(project))
@@ -770,12 +764,7 @@ func (m *azureDevOpsManager) fetchPipelines(ctx context.Context, org, project st
 		}
 
 		// 3. Write to Cache
-		m.pipelineCacheMu.Lock()
-		if m.pipelineCache == nil {
-			m.pipelineCache = make(map[string][]adoPipeline)
-		}
-		m.pipelineCache[cacheKey] = responseData.Value
-		m.pipelineCacheMu.Unlock()
+		m.pipelineCache.Store(cacheKey, responseData.Value)
 
 		return responseData.Value, nil
 	})
@@ -886,9 +875,7 @@ func (m *azureDevOpsManager) adoCreatePipeline(ctx context.Context, args map[str
 	}
 
 	// Invalidate cache for this project since we created a new pipeline
-	m.pipelineCacheMu.Lock()
-	delete(m.pipelineCache, params.Organization+"/"+params.Project)
-	m.pipelineCacheMu.Unlock()
+	m.pipelineCache.Delete(params.Organization + "/" + params.Project)
 
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", params.Name, pipelineID)}, nil
 }
