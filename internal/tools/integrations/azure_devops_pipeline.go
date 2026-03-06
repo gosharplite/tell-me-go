@@ -58,6 +58,75 @@ func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRuns
 	return params, nil
 }
 
+type adoCreatePipelineParams struct {
+	Organization string `json:"organization"`
+	Project      string `json:"project"`
+	Name         string `json:"name"`
+	RepositoryId string `json:"repository_id"`
+	YamlPath     string `json:"yaml_path"`
+}
+
+func parseCreatePipelineArgs(args map[string]interface{}) (adoCreatePipelineParams, error) {
+	var params adoCreatePipelineParams
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return params, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.Name == "" || params.RepositoryId == "" || params.YamlPath == "" {
+		return params, fmt.Errorf("organization, project, name, repository_id, and yaml_path are required")
+	}
+
+	return params, nil
+}
+
+type adoRunPipelineParams struct {
+	Organization       string            `json:"organization"`
+	Project            string            `json:"project"`
+	PipelineId         int               `json:"pipeline_id"`
+	Branch             string            `json:"branch"`
+	TemplateParameters map[string]string `json:"template_parameters"`
+	Variables          map[string]string `json:"variables"`
+
+	// Computed
+	RefName         string
+	MappedVariables map[string]interface{}
+}
+
+func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, error) {
+	var params adoRunPipelineParams
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return params, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
+		return params, fmt.Errorf("organization, project, and pipeline_id are required")
+	}
+
+	if params.Branch == "" {
+		params.Branch = "main"
+	}
+
+	params.RefName = params.Branch
+	if !strings.HasPrefix(params.RefName, "refs/") {
+		// Heuristic: if it looks like a version tag (vX.Y.Z), assume refs/tags/
+		if strings.HasPrefix(params.RefName, "v") && len(params.RefName) > 1 && params.RefName[1] >= '0' && params.RefName[1] <= '9' {
+			params.RefName = "refs/tags/" + params.RefName
+		} else {
+			params.RefName = "refs/heads/" + params.RefName
+		}
+	}
+
+	params.MappedVariables = make(map[string]interface{})
+	for k, v := range params.Variables {
+		params.MappedVariables[k] = map[string]interface{}{
+			"value":    v,
+			"isSecret": false,
+		}
+	}
+
+	return params, nil
+}
+
 func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	params, err := parseListPipelineRunsArgs(args)
 	if err != nil {
@@ -777,32 +846,18 @@ func filterAndLimitRuns(runs []adoPipelineRun, repoFilter string, limit int) []a
 }
 
 func (m *azureDevOpsManager) adoCreatePipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		Organization string `json:"organization"`
-		Project      string `json:"project"`
-		Name         string `json:"name"`
-		RepositoryId string `json:"repository_id"`
-		YamlPath     string `json:"yaml_path"`
-	}
-
-	if err := tools.UnmarshalArgs(args, &params); err != nil {
+	params, err := parseCreatePipelineArgs(args)
+	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	if params.Organization == "" || params.Project == "" || params.Name == "" || params.RepositoryId == "" || params.YamlPath == "" {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, name, repository_id, and yaml_path are required")
-	}
-
 	// 1. Idempotency Check
-	pipelines, err := m.fetchPipelines(ctx, params.Organization, params.Project)
+	existingID, err := m.checkPipelineExists(ctx, params.Organization, params.Project, params.Name)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to check existing pipelines: %w", err)
+		return tools.ToolResult{}, err
 	}
-
-	for _, p := range pipelines {
-		if strings.EqualFold(p.Name, params.Name) {
-			return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", params.Name, p.Id)}, nil
-		}
+	if existingID != 0 {
+		return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", params.Name, existingID)}, nil
 	}
 
 	// 2. Security Confirmation
@@ -829,47 +884,28 @@ func (m *azureDevOpsManager) adoCreatePipeline(ctx context.Context, args map[str
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", params.Name, pipelineID)}, nil
 }
 
-func (m *azureDevOpsManager) adoRunPipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		Organization       string            `json:"organization"`
-		Project            string            `json:"project"`
-		PipelineId         int               `json:"pipeline_id"`
-		Branch             string            `json:"branch"`
-		TemplateParameters map[string]string `json:"template_parameters"`
-		Variables          map[string]string `json:"variables"`
+func (m *azureDevOpsManager) checkPipelineExists(ctx context.Context, org, project, name string) (int, error) {
+	pipelines, err := m.fetchPipelines(ctx, org, project)
+	if err != nil {
+		return 0, fmt.Errorf("failed to check existing pipelines: %w", err)
 	}
 
-	if err := tools.UnmarshalArgs(args, &params); err != nil {
+	for _, p := range pipelines {
+		if strings.EqualFold(p.Name, name) {
+			return p.Id, nil
+		}
+	}
+	return 0, nil
+}
+
+func (m *azureDevOpsManager) adoRunPipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	params, err := parseRunPipelineArgs(args)
+	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, and pipeline_id are required")
-	}
-
-	if params.Branch == "" {
-		params.Branch = "main"
-	}
-	refName := params.Branch
-	if !strings.HasPrefix(refName, "refs/") {
-		// Heuristic: if it looks like a version tag (vX.Y.Z), assume refs/tags/
-		if strings.HasPrefix(refName, "v") && len(refName) > 1 && refName[1] >= '0' && refName[1] <= '9' {
-			refName = "refs/tags/" + refName
-		} else {
-			refName = "refs/heads/" + refName
-		}
-	}
-
-	variables := make(map[string]interface{})
-	for k, v := range params.Variables {
-		variables[k] = map[string]interface{}{
-			"value":    v,
-			"isSecret": false,
-		}
-	}
-
 	prompt := fmt.Sprintf("Are you sure you want to run ADO pipeline ID '%d' on ref '%s' with variables: %v and template parameters: %v?",
-		params.PipelineId, refName, params.Variables, params.TemplateParameters)
+		params.PipelineId, params.RefName, params.Variables, params.TemplateParameters)
 	approved, err := m.sc.Confirm(ctx, prompt)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
@@ -878,7 +914,7 @@ func (m *azureDevOpsManager) adoRunPipeline(ctx context.Context, args map[string
 		return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
 	}
 
-	runID, webURL, err := m.executeRunPipeline(ctx, params.Organization, params.Project, params.PipelineId, refName, params.TemplateParameters, variables)
+	runID, webURL, err := m.executeRunPipeline(ctx, params.Organization, params.Project, params.PipelineId, params.RefName, params.TemplateParameters, params.MappedVariables)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
