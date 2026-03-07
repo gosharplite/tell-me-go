@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestADOManager_ExecuteCreatePipeline_Errors(t *testing.T) {
+func TestAdoManager_ExecuteCreatePipeline_Errors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &mockSecurityManager{approved: true}
 
@@ -78,7 +78,7 @@ func TestADOManager_ExecuteCreatePipeline_Errors(t *testing.T) {
 	}
 }
 
-func TestADOManager_ExecuteRequest_NetworkError(t *testing.T) {
+func TestAdoManager_ExecuteRequest_NetworkError(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &mockSecurityManager{approved: true}
 
@@ -95,7 +95,7 @@ func TestADOManager_ExecuteRequest_NetworkError(t *testing.T) {
 	assert.Contains(t, err.Error(), "request failed")
 }
 
-func TestADOManager_ExecuteRequest_AuthMissing(t *testing.T) {
+func TestAdoManager_ExecuteRequest_AuthMissing(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	m := newADOManager(sm)
@@ -107,7 +107,7 @@ func TestADOManager_ExecuteRequest_AuthMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "AZURE_PAT_ALL token is required but not provided")
 }
 
-func TestADOManager_AdoGetPipelineRun_Errors(t *testing.T) {
+func TestAdoManager_AdoGetPipelineRun_Errors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := &mockSecurityManager{approved: true}
 
@@ -161,7 +161,7 @@ func TestADOManager_AdoGetPipelineRun_Errors(t *testing.T) {
 	}
 }
 
-func TestADOManager_ResolvePipelineID_Errors(t *testing.T) {
+func TestAdoManager_ResolvePipelineID_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Fetch Pipelines Failure", func(t *testing.T) {
@@ -190,7 +190,7 @@ func TestADOManager_ResolvePipelineID_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_ExecuteRunPipeline_Errors(t *testing.T) {
+func TestAdoManager_ExecuteRunPipeline_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Malformed JSON Response", func(t *testing.T) {
@@ -219,7 +219,7 @@ func TestADOManager_ExecuteRunPipeline_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_AdoListRepositoryItems_Errors(t *testing.T) {
+func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
@@ -257,7 +257,7 @@ func TestADOManager_AdoListRepositoryItems_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_AdoListPipelineRuns_Errors(t *testing.T) {
+func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
@@ -295,7 +295,7 @@ func TestADOManager_AdoListPipelineRuns_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_AdoGetPipelineLogs_Errors(t *testing.T) {
+func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
@@ -346,7 +346,7 @@ func TestADOManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_AdoListBranchPolicies_Errors(t *testing.T) {
+func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
@@ -407,7 +407,7 @@ func TestADOManager_AdoListBranchPolicies_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_AdoListPullRequests_Errors(t *testing.T) {
+func TestAdoManager_AdoListPullRequests_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
@@ -445,7 +445,7 @@ func TestADOManager_AdoListPullRequests_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
+func TestAdoManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
@@ -487,7 +487,7 @@ func TestADOManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
+func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {
@@ -525,7 +525,7 @@ func TestADOManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 	})
 }
 
-func TestADOManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
+func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 	sm := &mockSecurityManager{approved: true}
 
 	t.Run("Missing Parameters", func(t *testing.T) {

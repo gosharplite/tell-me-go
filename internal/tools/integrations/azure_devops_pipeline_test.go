@@ -260,7 +260,7 @@ func setupMockPipelineServer(t *testing.T, postHandler func(w http.ResponseWrite
 	}))
 }
 
-func setupADOManager(t *testing.T, baseURL string, approved bool) (*ADOManager, context.Context) {
+func setupADOManager(t *testing.T, baseURL string, approved bool) (*adoManager, context.Context) {
 	t.Helper()
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mc := &mockConfirmer{approved: approved}
