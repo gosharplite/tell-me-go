@@ -315,3 +315,13 @@ func TestNewToolExecutor_NilLogger(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
+
+func TestNewToolExecutor_NilRegistry(t *testing.T) {
+	// Call with nil registry
+	executor, err := NewToolExecutor(nil, nil, nil, nil)
+	
+	// Should return an error and a nil executor
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "registry is required")
+	require.Nil(t, executor)
+}

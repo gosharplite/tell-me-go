@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/stretchr/testify/require"
 )
 
 type mockPriorityTransformer struct {
@@ -44,4 +45,15 @@ func getNames(transformers []ports.ContextTransformer) []string {
 		names[i] = t.(*mockPriorityTransformer).name
 	}
 	return names
+}
+
+func TestContextPipeline_ExecuteWithPersistence_ContextCancellation(t *testing.T) {
+	// Add a transformer to ensure the loop runs and checks ctx.Done()
+	pipeline := NewContextPipeline(&mockPriorityTransformer{priority: 10})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Should fail during execution when checking ctx.Done()
+	err := pipeline.executeWithPersistence(ctx, &ports.ContextRequest{}, nil)
+	require.ErrorIs(t, err, context.Canceled)
 }
