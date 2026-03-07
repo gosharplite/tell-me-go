@@ -170,14 +170,20 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 				return
 			}
 
-			// Verify variables
-			if len(req.Variables) != 1 || req.Variables["x-api-key"].Value != "secret-key" || !req.Variables["x-api-key"].IsSecret {
+			// Verify variables are inside configuration
+			if len(req.Configuration.Variables) != 1 || req.Configuration.Variables["x-api-key"].Value != "secret-key" || !req.Configuration.Variables["x-api-key"].IsSecret {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
-			// Verify variable groups
-			if len(req.VariableGroups) != 1 || req.VariableGroups[0].ID != 456 {
+			// Verify allowOverride is true
+			if !req.Configuration.Variables["x-api-key"].AllowOverride {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Verify variable groups are inside configuration
+			if len(req.Configuration.VariableGroups) != 1 || req.Configuration.VariableGroups[0].ID != 456 {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}

@@ -96,8 +96,9 @@ type adoRunPipelineParams struct {
 }
 
 type adoVariable struct {
-	Value    string `json:"value"`
-	IsSecret bool   `json:"isSecret"`
+	Value         string `json:"value"`
+	IsSecret      bool   `json:"isSecret"`
+	AllowOverride bool   `json:"allowOverride"`
 }
 
 type adoVariableGroup struct {
@@ -105,16 +106,16 @@ type adoVariableGroup struct {
 }
 
 type adoCreatePipelineRequest struct {
-	Name           string                   `json:"name"`
-	Configuration  adoPipelineConfiguration `json:"configuration"`
-	Variables      map[string]adoVariable   `json:"variables,omitempty"`
-	VariableGroups []adoVariableGroup       `json:"variableGroups,omitempty"`
+	Name          string                   `json:"name"`
+	Configuration adoPipelineConfiguration `json:"configuration"`
 }
 
 type adoPipelineConfiguration struct {
-	Type       string                `json:"type"`
-	Path       string                `json:"path"`
-	Repository adoPipelineRepository `json:"repository"`
+	Type           string                 `json:"type"`
+	Path           string                 `json:"path"`
+	Repository     adoPipelineRepository  `json:"repository"`
+	Variables      map[string]adoVariable `json:"variables,omitempty"`
+	VariableGroups []adoVariableGroup     `json:"variableGroups,omitempty"`
 }
 
 type adoPipelineRepository struct {
@@ -954,6 +955,12 @@ func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, na
 		groups = append(groups, adoVariableGroup{ID: id})
 	}
 
+	// Ensure all variables allow override at queue time
+	for k, v := range variables {
+		v.AllowOverride = true
+		variables[k] = v
+	}
+
 	payload := adoCreatePipelineRequest{
 		Name: name,
 		Configuration: adoPipelineConfiguration{
@@ -963,9 +970,9 @@ func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, na
 				ID:   repoID,
 				Type: "azureReposGit",
 			},
+			Variables:      variables,
+			VariableGroups: groups,
 		},
-		Variables:      variables,
-		VariableGroups: groups,
 	}
 
 	body, err := json.Marshal(payload)
