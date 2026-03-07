@@ -296,3 +296,58 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, result.Text, "Successfully created pipeline 'locked-pipeline' with ID: 888")
 }
+
+func TestAdoGetPipelineDefinition(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Contains(t, r.URL.Path, "/_apis/pipelines/123")
+		assert.Equal(t, "7.1-preview.1", r.URL.Query().Get("api-version"))
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": 123,
+			"name": "test-pipeline",
+			"configuration": {
+				"type": "yaml",
+				"path": "/azure-pipeline.yaml",
+				"variables": {
+					"secret-var": {
+						"value": null,
+						"isSecret": true,
+						"isSettableAtQueueTime": false
+					}
+				}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"organization": "myorg",
+		"project":      "myproj",
+		"pipeline_id":  123,
+	}
+
+	result, err := m.adoGetPipelineDefinition(ctx, args)
+	require.NoError(t, err)
+
+	var def map[string]interface{}
+	err = json.Unmarshal([]byte(result.Text), &def)
+	require.NoError(t, err)
+
+	assert.Equal(t, float64(123), def["id"])
+	assert.Equal(t, "test-pipeline", def["name"])
+	
+	config := def["configuration"].(map[string]interface{})
+	vars := config["variables"].(map[string]interface{})
+	secretVar := vars["secret-var"].(map[string]interface{})
+	
+	assert.True(t, secretVar["isSecret"].(bool))
+	assert.False(t, secretVar["isSettableAtQueueTime"].(bool))
+}

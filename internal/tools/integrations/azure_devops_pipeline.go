@@ -1065,3 +1065,40 @@ func (m *ADOManager) executeRunPipeline(ctx context.Context, org, project string
 
 	return runResponse.Id, runResponse.Links.Web.Href, nil
 }
+
+func (m *ADOManager) adoGetPipelineDefinition(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+		PipelineId   int    `json:"pipeline_id"`
+	}
+
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline definition args: %w", err)
+	}
+
+	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, and pipeline_id are required")
+	}
+
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d?api-version=7.1-preview.1",
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId)
+
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("executing get pipeline definition request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var definition interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&definition); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	output, err := json.MarshalIndent(definition, "", "  ")
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to marshal definition: %w", err)
+	}
+
+	return tools.ToolResult{Text: string(output)}, nil
+}

@@ -526,6 +526,29 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 	}, m.adoGetPipelineRun)
 
 	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pipeline_definition",
+		Description: "Retrieves the full configuration metadata of an existing Azure DevOps pipeline, including variables and security settings.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"pipeline_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pipeline to inspect.",
+				},
+			},
+			Required: []string{"organization", "project", "pipeline_id"},
+		},
+	}, m.adoGetPipelineDefinition)
+
+	r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pipeline_logs",
 		Description: "Fetches the console output/logs of a failed pipeline run for diagnosis.",
 		Parameters: &tools.Schema{
