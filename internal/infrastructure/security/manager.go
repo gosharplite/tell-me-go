@@ -5,6 +5,7 @@ package security
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -97,6 +98,12 @@ func (sm *SecurityManager) Prompt(message string) {
 
 // Confirm prompts the user for confirmation.
 func (sm *SecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+	if sm.IsBypassActive() {
+		sm.interaction.TerminalLock()
+		defer sm.interaction.TerminalUnlock()
+		sm.interaction.interactor.Warn(fmt.Sprintf("[Auto-Approved] %s", message))
+		return true, nil
+	}
 	return sm.interaction.interactor.Confirm(ctx, message)
 }
 

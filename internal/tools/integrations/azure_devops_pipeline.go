@@ -5,6 +5,7 @@ package integrations
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,7 +35,7 @@ type adoListPipelineRunsParams struct {
 func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRunsParams, error) {
 	var params adoListPipelineRunsParams
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return params, err
+		return params, fmt.Errorf("parsing list pipeline runs args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" {
@@ -48,6 +49,8 @@ func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRuns
 	params.OriginalTop = params.Top
 	if params.OriginalTop <= 0 {
 		params.OriginalTop = 10
+	} else if params.OriginalTop > 1000 {
+		params.OriginalTop = 1000 // Defensive upper bound
 	}
 
 	params.FetchTop = params.OriginalTop
@@ -58,28 +61,155 @@ func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRuns
 	return params, nil
 }
 
-func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+type adoCreatePipelineParams struct {
+	Organization   string                 `json:"organization"`
+	Project        string                 `json:"project"`
+	Name           string                 `json:"name"`
+	RepositoryId   string                 `json:"repository_id"`
+	YamlPath       string                 `json:"yaml_path"`
+	VariableGroups []int                  `json:"variable_groups"`
+	Variables      map[string]adoVariable `json:"variables"`
+}
+
+func parseCreatePipelineArgs(args map[string]interface{}) (adoCreatePipelineParams, error) {
+	var params adoCreatePipelineParams
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return params, fmt.Errorf("parsing create pipeline args: %w", err)
+	}
+
+	if params.Organization == "" || params.Project == "" || params.Name == "" || params.RepositoryId == "" || params.YamlPath == "" {
+		return params, fmt.Errorf("organization, project, name, repository_id, and yaml_path are required")
+	}
+
+	return params, nil
+}
+
+type adoRunPipelineParams struct {
+	Organization       string            `json:"organization"`
+	Project            string            `json:"project"`
+	PipelineId         int               `json:"pipeline_id"`
+	Branch             string            `json:"branch"`
+	TemplateParameters map[string]string `json:"template_parameters"`
+	Variables          map[string]string `json:"variables"`
+
+	// Computed
+	RefName         string
+	MappedVariables map[string]adoVariable
+}
+
+type adoVariable struct {
+	Value                 string `json:"value"`
+	IsSecret              bool   `json:"isSecret"`
+	AllowOverride         *bool  `json:"allowOverride,omitempty"`
+	IsSettableAtQueueTime *bool  `json:"isSettableAtQueueTime,omitempty"`
+}
+
+type adoVariableGroup struct {
+	ID int `json:"id"`
+}
+
+type adoCreatePipelineRequest struct {
+	Name          string                   `json:"name"`
+	Configuration adoPipelineConfiguration `json:"configuration"`
+}
+
+type adoPipelineConfiguration struct {
+	Type           string                 `json:"type"`
+	Path           string                 `json:"path"`
+	Repository     adoPipelineRepository  `json:"repository"`
+	Variables      map[string]adoVariable `json:"variables,omitempty"`
+	VariableGroups []adoVariableGroup     `json:"variableGroups,omitempty"`
+}
+
+type adoPipelineRepository struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+type adoRunPipelineRequest struct {
+	Resources          adoRunPipelineResources `json:"resources"`
+	TemplateParameters map[string]string       `json:"templateParameters,omitempty"`
+	Variables          map[string]adoVariable  `json:"variables,omitempty"`
+}
+
+type adoRunPipelineResources struct {
+	Repositories adoRunPipelineRepositories `json:"repositories"`
+}
+
+type adoRunPipelineRepositories struct {
+	Self adoRunPipelineSelfRepo `json:"self"`
+}
+
+type adoRunPipelineSelfRepo struct {
+	RefName string `json:"refName"`
+}
+
+func parseRunPipelineArgs(args map[string]interface{}) (adoRunPipelineParams, error) {
+	var params adoRunPipelineParams
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return params, fmt.Errorf("parsing run pipeline args: %w", err)
+	}
+
+	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
+		return params, fmt.Errorf("organization, project, and pipeline_id are required")
+	}
+
+	params.RefName = formatBranchRef(params.Branch)
+	params.MappedVariables = mapADOVariables(params.Variables)
+
+	return params, nil
+}
+
+func formatBranchRef(branch string) string {
+	if branch == "" {
+		branch = "main"
+	}
+
+	if strings.HasPrefix(branch, "refs/") {
+		return branch
+	}
+
+	// Heuristic: if it looks like a version tag (vX.Y.Z), assume refs/tags/
+	if strings.HasPrefix(branch, "v") && len(branch) > 1 && branch[1] >= '0' && branch[1] <= '9' {
+		return "refs/tags/" + branch
+	}
+
+	return "refs/heads/" + branch
+}
+
+func mapADOVariables(vars map[string]string) map[string]adoVariable {
+	mapped := make(map[string]adoVariable, len(vars))
+	for k, v := range vars {
+		mapped[k] = adoVariable{
+			Value:    v,
+			IsSecret: false,
+		}
+	}
+	return mapped
+}
+
+func (m *ADOManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	params, err := parseListPipelineRunsArgs(args)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing list pipeline runs args: %w", err)
 	}
 
 	if params.PipelineId == 0 && params.PipelineName != "" {
 		var err error
 		params.PipelineId, err = m.resolvePipelineID(ctx, params.Organization, params.Project, params.PipelineName)
 		if err != nil {
-			return tools.ToolResult{}, err
+			return tools.ToolResult{}, fmt.Errorf("resolving pipeline ID: %w", err)
 		}
 	}
 
 	requestURL, err := m.buildListPipelineRunsURL(params.Organization, params.Project, params.PipelineId, params.FetchTop)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("building list pipeline runs URL: %w", err)
 	}
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing list pipeline runs request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -108,13 +238,15 @@ type adoPipelineRun struct {
 	} `json:"repository"`
 }
 
-func (m *azureDevOpsManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
+func (m *ADOManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
 	if top <= 0 {
 		top = 10
+	} else if top > 1000 {
+		top = 1000 // Defensive upper bound
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds",
-		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project)))
+		m.baseURL, url.PathEscape(org), url.PathEscape(project)))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -128,7 +260,7 @@ func (m *azureDevOpsManager) buildListPipelineRunsURL(org, project string, pipel
 	return u.String(), nil
 }
 
-func (m *azureDevOpsManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRun) string {
+func (m *ADOManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRun) string {
 	if len(runs) == 0 {
 		return "No pipeline runs found."
 	}
@@ -143,7 +275,7 @@ func (m *azureDevOpsManager) formatPipelineRunsList(pipelineId int, runs []adoPi
 	return resultText.String()
 }
 
-func (m *azureDevOpsManager) adoGetPipelineRun(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *ADOManager) adoGetPipelineRun(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -152,7 +284,7 @@ func (m *azureDevOpsManager) adoGetPipelineRun(ctx context.Context, args map[str
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline run args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 {
@@ -160,11 +292,11 @@ func (m *azureDevOpsManager) adoGetPipelineRun(ctx context.Context, args map[str
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d?api-version=7.1",
-		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get pipeline run request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -192,7 +324,7 @@ func (m *azureDevOpsManager) adoGetPipelineRun(ctx context.Context, args map[str
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *ADOManager) adoGetPipelineLogs(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -208,7 +340,7 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline logs args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 || params.RunId == 0 {
@@ -222,13 +354,13 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
 }
 
-func (m *azureDevOpsManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
+func (m *ADOManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
 	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
-		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
+		m.baseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing list pipeline logs request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -256,13 +388,13 @@ func (m *azureDevOpsManager) listPipelineLogs(ctx context.Context, org, project 
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int) (tools.ToolResult, error) {
+func (m *ADOManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int) (tools.ToolResult, error) {
 	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
-		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
+		m.baseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing fetch pipeline log content request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -273,7 +405,7 @@ func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, p
 	return tools.ToolResult{Text: processedContent}, nil
 }
 
-func (m *azureDevOpsManager) adoGetBuildTimeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *ADOManager) adoGetBuildTimeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -281,7 +413,7 @@ func (m *azureDevOpsManager) adoGetBuildTimeline(ctx context.Context, args map[s
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get build timeline args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 {
@@ -289,11 +421,11 @@ func (m *azureDevOpsManager) adoGetBuildTimeline(ctx context.Context, args map[s
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/timeline?api-version=7.0",
-		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId)
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get build timeline request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -313,7 +445,7 @@ func (m *azureDevOpsManager) adoGetBuildTimeline(ctx context.Context, args map[s
 	return tools.ToolResult{Text: string(output)}, nil
 }
 
-func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *ADOManager) adoGetTaskLog(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -328,7 +460,7 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get task log args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 || params.LogId == 0 {
@@ -336,11 +468,11 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 	}
 
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/logs/%d?api-version=7.0",
-		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId, params.LogId)
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId, params.LogId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get task log request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -351,7 +483,7 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 	return tools.ToolResult{Text: processedContent}, nil
 }
 
-func (m *azureDevOpsManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) (string, error) {
+func (m *ADOManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) (string, error) {
 	if filterQuery != "" {
 		return m.streamRegexFilter(reader, filterQuery, contextLines)
 	}
@@ -370,7 +502,7 @@ func (m *azureDevOpsManager) processLogContent(reader io.Reader, tailLines, head
 	return m.streamTail(reader, tailLines)
 }
 
-func (m *azureDevOpsManager) streamRegexFilter(reader io.Reader, query string, contextLines int) (string, error) {
+func (m *ADOManager) streamRegexFilter(reader io.Reader, query string, contextLines int) (string, error) {
 	re, err := regexp.Compile(query)
 	if err != nil {
 		return "", fmt.Errorf("invalid filter_query regex: %w", err)
@@ -486,7 +618,7 @@ func (s *logFilterState) printLine(line string, lineNum int) {
 	s.lastPrintedLineNum = lineNum
 }
 
-func (m *azureDevOpsManager) streamPagination(reader io.Reader, startLine, maxLines int) (string, error) {
+func (m *ADOManager) streamPagination(reader io.Reader, startLine, maxLines int) (string, error) {
 	if startLine <= 0 {
 		startLine = 1
 	}
@@ -524,7 +656,7 @@ func (m *azureDevOpsManager) streamPagination(reader io.Reader, startLine, maxLi
 	return result.String(), nil
 }
 
-func (m *azureDevOpsManager) streamHead(reader io.Reader, n int) (string, error) {
+func (m *ADOManager) streamHead(reader io.Reader, n int) (string, error) {
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
 	buf := make([]byte, 64*1024)
@@ -547,7 +679,7 @@ func (m *azureDevOpsManager) streamHead(reader io.Reader, n int) (string, error)
 	return result.String(), nil
 }
 
-func (m *azureDevOpsManager) streamTail(reader io.Reader, n int) (string, error) {
+func (m *ADOManager) streamTail(reader io.Reader, n int) (string, error) {
 	if n <= 0 {
 		return "", nil
 	}
@@ -595,7 +727,7 @@ func (m *azureDevOpsManager) streamTail(reader io.Reader, n int) (string, error)
 	return result.String(), nil
 }
 
-func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *ADOManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -604,7 +736,7 @@ func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[st
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get build changes args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 {
@@ -613,10 +745,12 @@ func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[st
 
 	if params.Top <= 0 {
 		params.Top = 50
+	} else if params.Top > 1000 {
+		params.Top = 1000 // Defensive upper bound
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/changes",
-		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -628,7 +762,7 @@ func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[st
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get build changes request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -653,33 +787,27 @@ type adoPipeline struct {
 	Name string `json:"name"`
 }
 
-func (m *azureDevOpsManager) fetchPipelines(ctx context.Context, org, project string) ([]adoPipeline, error) {
+func (m *ADOManager) fetchPipelines(ctx context.Context, org, project string) ([]adoPipeline, error) {
 	cacheKey := org + "/" + project
 
-	// 1. Check Read Lock (Fast Path)
-	m.pipelineCacheMu.RLock()
-	if cached, exists := m.pipelineCache[cacheKey]; exists {
-		m.pipelineCacheMu.RUnlock()
-		return cached, nil
+	// 1. Check Cache (Fast Path)
+	if val, ok := m.pipelineCache.Load(cacheKey); ok {
+		return val.([]adoPipeline), nil
 	}
-	m.pipelineCacheMu.RUnlock()
 
 	// 2. Use Singleflight to prevent stampede
 	val, err, _ := m.pipelineFetchGroup.Do(cacheKey, func() (interface{}, error) {
 		// Re-check cache in case another request finished while we were waiting for singleflight
-		m.pipelineCacheMu.RLock()
-		if cached, exists := m.pipelineCache[cacheKey]; exists {
-			m.pipelineCacheMu.RUnlock()
-			return cached, nil
+		if val, ok := m.pipelineCache.Load(cacheKey); ok {
+			return val, nil
 		}
-		m.pipelineCacheMu.RUnlock()
 
 		requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1",
-			m.getBaseURL(), url.PathEscape(org), url.PathEscape(project))
+			m.baseURL, url.PathEscape(org), url.PathEscape(project))
 
 		resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("executing fetch pipelines request: %w", err)
 		}
 		defer resp.Body.Close()
 
@@ -692,12 +820,7 @@ func (m *azureDevOpsManager) fetchPipelines(ctx context.Context, org, project st
 		}
 
 		// 3. Write to Cache
-		m.pipelineCacheMu.Lock()
-		if m.pipelineCache == nil {
-			m.pipelineCache = make(map[string][]adoPipeline)
-		}
-		m.pipelineCache[cacheKey] = responseData.Value
-		m.pipelineCacheMu.Unlock()
+		m.pipelineCache.Store(cacheKey, responseData.Value)
 
 		return responseData.Value, nil
 	})
@@ -709,14 +832,14 @@ func (m *azureDevOpsManager) fetchPipelines(ctx context.Context, org, project st
 	return val.([]adoPipeline), nil
 }
 
-func (m *azureDevOpsManager) adoListPipelines(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *ADOManager) adoListPipelines(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing list pipelines args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" {
@@ -725,7 +848,7 @@ func (m *azureDevOpsManager) adoListPipelines(ctx context.Context, args map[stri
 
 	pipelines, err := m.fetchPipelines(ctx, params.Organization, params.Project)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("fetching pipelines: %w", err)
 	}
 
 	if len(pipelines) == 0 {
@@ -741,7 +864,7 @@ func (m *azureDevOpsManager) adoListPipelines(ctx context.Context, args map[stri
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *azureDevOpsManager) resolvePipelineID(ctx context.Context, org, project, pipelineName string) (int, error) {
+func (m *ADOManager) resolvePipelineID(ctx context.Context, org, project, pipelineName string) (int, error) {
 	pipelines, err := m.fetchPipelines(ctx, org, project)
 	if err != nil {
 		return 0, fmt.Errorf("failed to fetch pipelines for name resolution: %w", err)
@@ -774,4 +897,301 @@ func filterAndLimitRuns(runs []adoPipelineRun, repoFilter string, limit int) []a
 		result = result[:limit]
 	}
 	return result
+}
+
+func (m *ADOManager) adoCreatePipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	params, err := parseCreatePipelineArgs(args)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("parsing create pipeline args: %w", err)
+	}
+
+	// 1. Idempotency Check
+	existingID, err := m.checkPipelineExists(ctx, params.Organization, params.Project, params.Name)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("checking pipeline existence: %w", err)
+	}
+	if existingID != 0 {
+		return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", params.Name, existingID)}, nil
+	}
+
+	// 2. Confirm Action
+	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Create pipeline '%s' in %s/%s?", params.Name, params.Organization, params.Project))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
+	}
+
+	// 3. Create Pipeline
+	pipelineID, err := m.executeCreatePipeline(ctx, params.Organization, params.Project, params.Name, params.RepositoryId, params.YamlPath, params.Variables, params.VariableGroups)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("executing create pipeline: %w", err)
+	}
+
+	// Invalidate cache for this project since we created a new pipeline
+	m.pipelineCache.Delete(params.Organization + "/" + params.Project)
+
+	return tools.ToolResult{Text: fmt.Sprintf("Successfully created pipeline '%s' with ID: %d", params.Name, pipelineID)}, nil
+}
+
+func (m *ADOManager) checkPipelineExists(ctx context.Context, org, project, name string) (int, error) {
+	pipelines, err := m.fetchPipelines(ctx, org, project)
+	if err != nil {
+		return 0, fmt.Errorf("failed to check existing pipelines: %w", err)
+	}
+
+	for _, p := range pipelines {
+		if strings.EqualFold(p.Name, name) {
+			return p.Id, nil
+		}
+	}
+	return 0, nil
+}
+
+func (m *ADOManager) adoRunPipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	params, err := parseRunPipelineArgs(args)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
+	}
+
+	// Confirm Action
+	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Trigger run for pipeline %d (branch: %s) in %s/%s?", params.PipelineId, params.Branch, params.Organization, params.Project))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
+	}
+
+	runID, webURL, err := m.executeRunPipeline(ctx, params.Organization, params.Project, params.PipelineId, params.RefName, params.TemplateParameters, params.MappedVariables)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("executing run pipeline: %w", err)
+	}
+
+	return tools.ToolResult{
+		Text: fmt.Sprintf("Successfully triggered pipeline run ID: %d\nWeb URL: %s", runID, webURL),
+	}, nil
+}
+
+func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, name, repoID, yamlPath string, variables map[string]adoVariable, variableGroups []int) (int, error) {
+	var groups []adoVariableGroup
+	for _, id := range variableGroups {
+		groups = append(groups, adoVariableGroup{ID: id})
+	}
+
+	// Default variables to allow override at queue time if not specified
+	for k, v := range variables {
+		if v.AllowOverride == nil {
+			trueVal := true
+			v.AllowOverride = &trueVal
+		}
+		// Sync IsSettableAtQueueTime with AllowOverride for compatibility across ADO APIs
+		v.IsSettableAtQueueTime = v.AllowOverride
+		variables[k] = v
+	}
+
+	payload := adoCreatePipelineRequest{
+		Name: name,
+		Configuration: adoPipelineConfiguration{
+			Type: "yaml",
+			Path: yamlPath,
+			Repository: adoPipelineRepository{
+				ID:   repoID,
+				Type: "azureReposGit",
+			},
+			Variables:      variables,
+			VariableGroups: groups,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1-preview.1",
+		m.baseURL, url.PathEscape(org), url.PathEscape(project))
+
+	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		return 0, fmt.Errorf("executing create pipeline request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var newPipeline struct {
+		Id int `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&newPipeline); err != nil {
+		return 0, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return newPipeline.Id, nil
+}
+
+func (m *ADOManager) executeRunPipeline(ctx context.Context, org, project string, pipelineID int, refName string, templateParams map[string]string, variables map[string]adoVariable) (int, string, error) {
+	payload := adoRunPipelineRequest{
+		Resources: adoRunPipelineResources{
+			Repositories: adoRunPipelineRepositories{
+				Self: adoRunPipelineSelfRepo{
+					RefName: refName,
+				},
+			},
+		},
+		TemplateParameters: templateParams,
+		Variables:          variables,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs?api-version=7.1-preview.1",
+		m.baseURL, url.PathEscape(org), url.PathEscape(project), pipelineID)
+
+	resp, err := m.executeRequest(ctx, http.MethodPost, requestURL, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		return 0, "", fmt.Errorf("executing run pipeline request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var runResponse struct {
+		Id    int `json:"id"`
+		Links struct {
+			Web struct {
+				Href string `json:"href"`
+			} `json:"web"`
+		} `json:"_links"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&runResponse); err != nil {
+		return 0, "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return runResponse.Id, runResponse.Links.Web.Href, nil
+}
+
+func (m *ADOManager) adoGetPipelineDefinition(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+		PipelineId   int    `json:"pipeline_id"`
+	}
+
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("parsing get pipeline definition args: %w", err)
+	}
+
+	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, and pipeline_id are required")
+	}
+
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d?api-version=7.1-preview.1",
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId)
+
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("executing get pipeline definition request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var definition interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&definition); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	output, err := json.MarshalIndent(definition, "", "  ")
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to marshal definition: %w", err)
+	}
+
+	return tools.ToolResult{Text: string(output)}, nil
+}
+
+type adoUpdateBuildDefParams struct {
+	Organization string                 `json:"organization"`
+	Project      string                 `json:"project"`
+	DefinitionId int                    `json:"definition_id"`
+	Variables    map[string]adoVariable `json:"variables"`
+}
+
+func parseUpdateBuildDefArgs(args map[string]interface{}) (adoUpdateBuildDefParams, error) {
+	var params adoUpdateBuildDefParams
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return params, fmt.Errorf("parsing update build definition variables args: %w", err)
+	}
+
+	if params.Organization == "" || params.Project == "" || params.DefinitionId == 0 || len(params.Variables) == 0 {
+		return params, fmt.Errorf("organization, project, definition_id, and non-empty variables are required")
+	}
+
+	return params, nil
+}
+
+func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars map[string]adoVariable) ([]byte, error) {
+	vars, ok := existingDef["variables"].(map[string]interface{})
+	if !ok {
+		vars = make(map[string]interface{})
+		existingDef["variables"] = vars
+	}
+
+	for k, v := range inputVars {
+		varObj := map[string]interface{}{
+			"value":    v.Value,
+			"isSecret": v.IsSecret,
+		}
+		if v.AllowOverride != nil {
+			varObj["allowOverride"] = *v.AllowOverride
+		}
+		vars[k] = varObj
+	}
+
+	return json.Marshal(existingDef)
+}
+
+func (m *ADOManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	params, err := parseUpdateBuildDefArgs(args)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	// 1. GET current definition
+	u := fmt.Sprintf("%s/%s/%s/_apis/build/definitions/%d?api-version=7.1",
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.DefinitionId)
+
+	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("fetching build definition: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var definition map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&definition); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode definition: %w", err)
+	}
+
+	// 2. BUILD updated payload
+	body, err := buildVariablesUpdatePayload(definition, params.Variables)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to build updated payload: %w", err)
+	}
+
+	// 3. Confirm Action
+	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Update variables for build definition %d in %s/%s?", params.DefinitionId, params.Organization, params.Project))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Update cancelled by user."}, nil
+	}
+
+	// 4. PUT updated definition
+	putResp, err := m.executeRequest(ctx, http.MethodPut, u, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("executing update build definition variables request: %w", err)
+	}
+	defer putResp.Body.Close()
+
+	return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", params.DefinitionId)}, nil
 }

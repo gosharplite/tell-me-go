@@ -2,14 +2,12 @@ Do not do it yourself, instead clearly tell Coder what to do with details.
 One task at a time, since Coder will start a new session for each of your task.
 Coder don't have previous memory, be as clear as possible.
 
-We need to restart session. Are docs detail enough for the AI model to continue?
-
 Is dev branch good enough to be merged into main branch?
+
+What is the next step to improve this project?
 
 Is README.md still up-to-date?
 Are SOPs still up-to-date?
-
-What is the next step to improve this project?
 
 Do docs/sop/lifecycle/public_release.md
 

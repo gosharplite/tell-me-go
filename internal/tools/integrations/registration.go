@@ -4,6 +4,8 @@
 package integrations
 
 import (
+	"os"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -255,7 +257,14 @@ func registerJira(r tools.IToolRegistry, sm domain_security.ISecurityManager, cl
 }
 
 func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
-	m := newazureDevOpsManager(sm, client)
+	var opts []ADOOption
+	if client != nil {
+		opts = append(opts, WithHTTPClient(client))
+	}
+	if token := os.Getenv("AZURE_PAT_ALL"); token != "" {
+		opts = append(opts, WithToken(token))
+	}
+	m := NewADOManager(sm, opts...)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pull_request",
@@ -517,6 +526,29 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 	}, m.adoGetPipelineRun)
 
 	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pipeline_definition",
+		Description: "Retrieves the full configuration metadata of an existing Azure DevOps pipeline, including variables and security settings.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"pipeline_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pipeline to inspect.",
+				},
+			},
+			Required: []string{"organization", "project", "pipeline_id"},
+		},
+	}, m.adoGetPipelineDefinition)
+
+	r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pipeline_logs",
 		Description: "Fetches the console output/logs of a failed pipeline run for diagnosis.",
 		Parameters: &tools.Schema{
@@ -752,4 +784,108 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			Required: []string{"organization", "project", "build_id"},
 		},
 	}, m.adoGetBuildChanges)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_update_build_definition_variables",
+		Description: "Modifies variables for an existing pipeline (build) definition using a Read-Modify-Write cycle. Useful for locking down variable overrides.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"definition_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the build definition to update.",
+				},
+				"variables": {
+					Type:        "OBJECT",
+					Description: "A map of variable names to objects with 'value', 'isSecret', and 'allowOverride' (CRITICAL for lockdown).",
+				},
+			},
+			Required: []string{"organization", "project", "definition_id", "variables"},
+		},
+	}, m.adoUpdateBuildDefinitionVariables)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_create_pipeline",
+		Description: "Creates a new Azure DevOps YAML build pipeline. Idempotent: returns existing ID if the name already exists. Triggers security confirmation.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"name": {
+					Type:        "STRING",
+					Description: "The desired name of the new pipeline.",
+				},
+				"repository_id": {
+					Type:        "STRING",
+					Description: "The UUID of the Git repository containing the YAML.",
+				},
+				"yaml_path": {
+					Type:        "STRING",
+					Description: "The exact path to the YAML file in the repository (e.g., '/dev-3/caddy/cicd/main.yaml').",
+				},
+				"variable_groups": {
+					Type:        "ARRAY",
+					Description: "A list of numeric IDs for existing Variable Groups (e.g., 'WebSC-Common-Vars') to be linked to the new pipeline.",
+					Items: &tools.Schema{
+						Type: "INTEGER",
+					},
+				},
+				"variables": {
+					Type:        "OBJECT",
+					Description: "A collection of key-value pairs (name -> {value, isSecret, allowOverride}) to be stored directly in the pipeline's 'Variables' configuration. 'allowOverride' defaults to true, letting users change the value during a run.",
+				},
+			},
+			Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
+		},
+	}, m.adoCreatePipeline)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_run_pipeline",
+		Description: "Triggers a manual run of an existing Azure DevOps YAML pipeline. Returns the Run ID for tracking. Triggers security confirmation.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"pipeline_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pipeline to run.",
+				},
+				"branch": {
+					Type:        "STRING",
+					Description: "The branch or tag to build from (e.g., 'main', 'v1.2.0'). Full refs like 'refs/tags/v1.0' are also supported.",
+				},
+				"template_parameters": {
+					Type:        "OBJECT",
+					Description: "Key-value string pairs for YAML parameters.",
+				},
+				"variables": {
+					Type:        "OBJECT",
+					Description: "Key-value string pairs for pipeline variables.",
+				},
+			},
+			Required: []string{"organization", "project", "pipeline_id"},
+		},
+	}, m.adoRunPipeline)
 }

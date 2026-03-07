@@ -11,62 +11,80 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type azureDevOpsManager struct {
-	sm                 security.PathValidator
-	client             tools.HTTPClient
+type securityConfirmer interface {
+	Confirm(ctx context.Context, message string) (bool, error)
+}
+
+type ADOManager struct {
+	sc                 securityConfirmer
+	httpClient         tools.HTTPClient
+	token              string
 	authHeader         string
-	authErr            error
-	authOnce           sync.Once
 	baseURL            string // For testing
-	pipelineCache      map[string][]adoPipeline
-	pipelineCacheMu    sync.RWMutex
+	pipelineCache      sync.Map
 	pipelineFetchGroup singleflight.Group
 }
 
-func (m *azureDevOpsManager) getBaseURL() string {
-	if m.baseURL != "" {
-		return m.baseURL
-	}
-	return "https://dev.azure.com"
-}
+// ADOOption is a functional option for configuring the ADOManager.
+type ADOOption func(*ADOManager)
 
-// newazureDevOpsManager creates a new instance of azureDevOpsManager.
-func newazureDevOpsManager(sm security.PathValidator, client tools.HTTPClient) *azureDevOpsManager {
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-	return &azureDevOpsManager{
-		sm:     sm,
-		client: client,
+// WithBaseURL sets the base URL for Azure DevOps API requests.
+func WithBaseURL(url string) ADOOption {
+	return func(m *ADOManager) {
+		m.baseURL = url
 	}
 }
 
-func (m *azureDevOpsManager) getAuthHeader() (string, error) {
-	m.authOnce.Do(func() {
-		pat := os.Getenv("AZURE_PAT_ALL")
-		if pat == "" {
-			m.authErr = fmt.Errorf("missing AZURE_PAT_ALL environment variable")
-			return
+// WithHTTPClient sets the HTTP client for Azure DevOps API requests.
+func WithHTTPClient(client tools.HTTPClient) ADOOption {
+	return func(m *ADOManager) {
+		m.httpClient = client
+	}
+}
+
+// WithToken sets the Azure DevOps Personal Access Token (PAT).
+func WithToken(token string) ADOOption {
+	return func(m *ADOManager) {
+		m.token = token
+		if token != "" {
+			auth := ":" + token
+			m.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 		}
-		auth := fmt.Sprintf(":%s", pat)
-		encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
-		m.authHeader = fmt.Sprintf("Basic %s", encodedAuth)
-	})
-	return m.authHeader, m.authErr
+	}
 }
 
-func (m *azureDevOpsManager) executeRequest(ctx context.Context, method, requestURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
+// NewADOManager creates a new instance of ADOManager.
+func NewADOManager(sc securityConfirmer, opts ...ADOOption) *ADOManager {
+	m := &ADOManager{
+		sc:         sc,
+		baseURL:    "https://dev.azure.com",
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
+
+	for _, opt := range opts {
+		opt(m)
+	}
+
+	return m
+}
+
+func (m *ADOManager) getAuthHeader() (string, error) {
+	if m.authHeader == "" {
+		return "", fmt.Errorf("AZURE_PAT_ALL token is required but not provided")
+	}
+	return m.authHeader, nil
+}
+
+func (m *ADOManager) executeRequest(ctx context.Context, method, requestURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	authHeader, err := m.getAuthHeader()
 	if err != nil {
 		return nil, err
@@ -91,7 +109,7 @@ func (m *azureDevOpsManager) executeRequest(ctx context.Context, method, request
 		req.Header.Set("Accept", "application/json")
 	}
 
-	resp, err := m.client.Do(req)
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -103,8 +121,8 @@ func (m *azureDevOpsManager) executeRequest(ctx context.Context, method, request
 	return resp, nil
 }
 
-func (m *azureDevOpsManager) checkResponseError(resp *http.Response, requestURL string) error {
-	if resp.StatusCode == http.StatusOK {
+func (m *ADOManager) checkResponseError(resp *http.Response, requestURL string) error {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
 
@@ -125,7 +143,7 @@ func (m *azureDevOpsManager) checkResponseError(resp *http.Response, requestURL 
 	}
 }
 
-func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *ADOManager) adoGetFileContent(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -135,7 +153,7 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing get file content args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.Path == "" {
@@ -147,7 +165,7 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/items",
-		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -161,7 +179,7 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing get file content request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -181,7 +199,7 @@ type adoRepositoryItemsResponse struct {
 	Count int `json:"count"`
 }
 
-func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *ADOManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization   string `json:"organization"`
 		Project        string `json:"project"`
@@ -192,7 +210,7 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("parsing list repository items args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.Repository == "" {
@@ -201,12 +219,12 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 
 	requestURL, err := m.buildListRepositoryItemsURL(params.Organization, params.Project, params.Repository, params.ScopePath, params.Version, params.RecursionLevel)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("building list repository items URL: %w", err)
 	}
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("executing list repository items request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -218,7 +236,7 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 	return m.formatRepositoryItems(params.ScopePath, params.Version, responseData), nil
 }
 
-func (m *azureDevOpsManager) buildListRepositoryItemsURL(org, project, repo, scopePath, version, recursionLevel string) (string, error) {
+func (m *ADOManager) buildListRepositoryItemsURL(org, project, repo, scopePath, version, recursionLevel string) (string, error) {
 	if scopePath == "" {
 		scopePath = "/"
 	}
@@ -230,7 +248,7 @@ func (m *azureDevOpsManager) buildListRepositoryItemsURL(org, project, repo, sco
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/items",
-		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
+		m.baseURL, url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -245,7 +263,7 @@ func (m *azureDevOpsManager) buildListRepositoryItemsURL(org, project, repo, sco
 	return u.String(), nil
 }
 
-func (m *azureDevOpsManager) formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
+func (m *ADOManager) formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
 	if len(responseData.Value) == 0 {
 		return tools.ToolResult{Text: "No items found."}
 	}
