@@ -99,9 +99,6 @@ func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
 			return ctx.Err()
 		case <-b.closing:
 			return ErrBusClosed
-		default:
-			// SCALABLE: Drop event if subscriber is too slow/stuck to prevent head-of-line blocking
-			atomic.AddUint64(&b.droppedEvents, 1)
 		}
 	}
 	return nil

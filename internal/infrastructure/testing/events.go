@@ -12,17 +12,25 @@ import (
 )
 
 // TestEventBus is a thread-safe event bus designed for unit tests.
-// It records all published events for assertion.
+// It records all published events for assertion and allows simulating errors.
 type TestEventBus struct {
-	mu     sync.RWMutex
-	events []events.Event
-	subs   []func(events.Event)
+	mu         sync.RWMutex
+	events     []events.Event
+	subs       []func(events.Event)
+	PublishErr error
 }
 
-// Publish records the event and notifies subscribers.
+// Publish records the event and notifies subscribers. Returns PublishErr if set.
 func (b *TestEventBus) Publish(ctx context.Context, e events.Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+
+	b.mu.RLock()
+	pubErr := b.PublishErr
+	b.mu.RUnlock()
+	if pubErr != nil {
+		return pubErr
 	}
 
 	b.mu.Lock()

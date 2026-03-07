@@ -24,6 +24,7 @@ import (
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -695,5 +696,23 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error, got: %v", err)
+	}
+}
+
+func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
+	// Mock the event bus to return an error on Publish
+	mockBus := &inframock.TestEventBus{
+		PublishErr: context.Canceled,
+	}
+	
+	a := &agent{
+		events:        mockBus,
+		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
+	}
+	
+	err := a.applyConfig(context.Background())
+	
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled error from applyConfig, got: %v", err)
 	}
 }
