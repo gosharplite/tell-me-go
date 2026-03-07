@@ -146,6 +146,7 @@ func DefaultPolicy() *Policy {
 			"ado_get_build_timeline":        true,
 			"ado_get_task_log":              true,
 			"ado_get_build_changes":         true,
+			"ado_get_pipeline_definition":   true,
 			"ado_create_pipeline":           true,
 			"ado_run_pipeline":              true,
 
