@@ -51,8 +51,8 @@ func WithHTTPClient(client tools.HTTPClient) ADOOption {
 	}
 }
 
-// WithToken sets the Azure DevOps Personal Access Token (PAT).
-func WithToken(token string) ADOOption {
+// withToken sets the Azure DevOps Personal Access Token (PAT).
+func withToken(token string) ADOOption {
 	return func(m *ADOManager) {
 		m.token = token
 		if token != "" {

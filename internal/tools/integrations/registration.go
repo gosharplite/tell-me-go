@@ -262,7 +262,7 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 		opts = append(opts, WithHTTPClient(client))
 	}
 	if token := os.Getenv("AZURE_PAT_ALL"); token != "" {
-		opts = append(opts, WithToken(token))
+		opts = append(opts, withToken(token))
 	}
 	m := newADOManager(sm, opts...)
 
