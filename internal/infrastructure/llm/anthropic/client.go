@@ -651,6 +651,10 @@ func (c *client) handleErrorEvent(data string) error {
 
 func (c *client) checkResponse(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {
+		// Function-scoped defer: executes when this function returns,
+		// safely protecting against panics inside io.ReadAll.
+		defer resp.Body.Close()
+
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
