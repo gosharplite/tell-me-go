@@ -98,7 +98,6 @@ func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
 		}
 	}
 	return err
-	return nil
 }
 
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {
