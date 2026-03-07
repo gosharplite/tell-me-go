@@ -651,7 +651,10 @@ func (c *client) handleErrorEvent(data string) error {
 
 func (c *client) checkResponse(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
+		}
 		return &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
 	return nil

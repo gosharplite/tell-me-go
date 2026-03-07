@@ -231,7 +231,10 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
+		}
 		return nil, nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
 
@@ -690,8 +693,11 @@ func (c *client) executeStreamRequest(ctx context.Context, history []*llm.Conten
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
+		}
 		return nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
 	return resp, nil
