@@ -18,7 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func (m *ADOManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -68,7 +68,7 @@ type adoPullRequestDetail struct {
 	} `json:"repository"`
 }
 
-func (m *ADOManager) formatPullRequestDetail(pullRequestId int, prData adoPullRequestDetail) string {
+func (m *adoManager) formatPullRequestDetail(pullRequestId int, prData adoPullRequestDetail) string {
 	var resultText strings.Builder
 	resultText.WriteString(fmt.Sprintf("Pull Request #%d: %s\n", pullRequestId, prData.Title))
 	resultText.WriteString(fmt.Sprintf("Status: %s\n", prData.Status))
@@ -82,7 +82,7 @@ func (m *ADOManager) formatPullRequestDetail(pullRequestId int, prData adoPullRe
 	return resultText.String()
 }
 
-func (m *ADOManager) adoListPullRequests(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoListPullRequests(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -131,7 +131,7 @@ type adoPullRequestShort struct {
 	CreationDate string `json:"creationDate"`
 }
 
-func (m *ADOManager) buildListPullRequestsURL(org, project, repo, status string, top int) (string, error) {
+func (m *adoManager) buildListPullRequestsURL(org, project, repo, status string, top int) (string, error) {
 	if status == "" {
 		status = "active"
 	}
@@ -156,7 +156,7 @@ func (m *ADOManager) buildListPullRequestsURL(org, project, repo, status string,
 	return u.String(), nil
 }
 
-func (m *ADOManager) formatPullRequestsList(prs []adoPullRequestShort) string {
+func (m *adoManager) formatPullRequestsList(prs []adoPullRequestShort) string {
 	if len(prs) == 0 {
 		return "No pull requests found."
 	}
@@ -171,7 +171,7 @@ func (m *ADOManager) formatPullRequestsList(prs []adoPullRequestShort) string {
 	return resultText.String()
 }
 
-func (m *ADOManager) adoGetPrDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPrDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -239,7 +239,7 @@ type adoThreadResponse struct {
 	} `json:"value"`
 }
 
-func (m *ADOManager) adoGetPrThreads(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPrThreads(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -272,7 +272,7 @@ func (m *ADOManager) adoGetPrThreads(ctx context.Context, args map[string]interf
 	return tools.ToolResult{Text: m.formatPrThreads(params.PullRequestId, threadData)}, nil
 }
 
-func (m *ADOManager) formatPrThreads(pullRequestId int, threadData adoThreadResponse) string {
+func (m *adoManager) formatPrThreads(pullRequestId int, threadData adoThreadResponse) string {
 	var resultText strings.Builder
 	resultText.WriteString(fmt.Sprintf("Pull Request #%d Discussion Threads:\n\n", pullRequestId))
 

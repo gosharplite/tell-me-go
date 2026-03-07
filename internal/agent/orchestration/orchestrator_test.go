@@ -592,3 +592,45 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mUIRenderer.AssertExpectations(t)
 	mHistoryRenderer.AssertExpectations(t)
 }
+
+func TestSessionDependencies_Accessors(t *testing.T) {
+	paths := &persistence.Paths{}
+	deps := &sessionDependencies{
+		Paths: paths,
+	}
+
+	require.Equal(t, paths, deps.GetPaths())
+	require.Nil(t, deps.GetPricingOverrides())
+	require.Nil(t, deps.GetGateway())
+	require.Nil(t, deps.GetRegistry())
+	require.Nil(t, deps.GetSecurityManager())
+	require.Nil(t, deps.GetEventBus())
+	require.Nil(t, deps.GetTracker())
+	require.Equal(t, domain_pricing.PricingData{}, deps.GetPricingData())
+	require.Nil(t, deps.GetHistoryManager())
+}
+
+func TestOrchestrator_AgentFactory_Error(t *testing.T) {
+	// Create an orchestrator with a failing factory
+	o := &orchestrator{
+		AgentFactory: func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+			return nil, fmt.Errorf("factory failed")
+		},
+		Stderr: io.Discard, // Prevent spam
+		Stdout: io.Discard,
+	}
+
+	deps := &sessionDependencies{
+		Paths:          &persistence.Paths{},
+		HistoryManager: new(mockHistoryManager),
+	}
+	sc := &sessionConfig{Config: &config.Config{}}
+
+	mCapturer := new(mockCapturer)
+	mCapturer.On("IsTTY", mock.Anything).Return(true)
+
+	err := o.Run(context.Background(), sc, deps, mCapturer)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "factory failed")
+}

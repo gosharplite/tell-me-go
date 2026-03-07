@@ -24,6 +24,7 @@ import (
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -677,5 +678,40 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	// Verify summarizer is bound to ContextManager
 	if a.(*agent).ctxManager.Summarizer != mockSumm {
 		t.Error("summarizer not bound to ContextManager")
+	}
+}
+
+func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
+	// Create an agent with mock dependencies
+	a := &agent{
+		events:        events.NewSimpleEventBus(),
+		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Applying config with a canceled context should fail when trying to publish
+	err := a.applyConfig(ctx)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled error, got: %v", err)
+	}
+}
+
+func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
+	// Mock the event bus to return an error on Publish
+	mockBus := &inframock.TestEventBus{}
+	mockBus.SetPublishErr(context.Canceled)
+
+	a := &agent{
+		events:        mockBus,
+		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
+	}
+
+	err := a.applyConfig(context.Background())
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled error from applyConfig, got: %v", err)
 	}
 }

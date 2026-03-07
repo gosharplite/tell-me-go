@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestTurnEngine_StateTransitions(t *testing.T) {
@@ -1333,5 +1334,54 @@ func testContextCancellation_RecoveryStep_DoneChannel(t *testing.T) {
 	}
 	if res.NextPhase != "" {
 		t.Errorf("expected empty processResult, got %v", res)
+	}
+}
+
+func TestTurnEngine_ExecuteTurn_ContextCancellation(t *testing.T) {
+	env := setupTurnEngineTest(t)
+	engine := newTurnEngine(env.gw, nil, env.cm, env.reg, env.bus, env.cm.Strategy)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	tr := &turn{
+		Events:     env.bus,
+		Index:      1,
+		CtxManager: env.cm,
+		State: &turnState{
+			Phase: phaseGuard,
+		},
+	}
+
+	// This should fail immediately because the context is canceled when
+	// it tries to publish the TurnStarted event.
+	err := engine.executeTurn(ctx, tr)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled error, got: %v", err)
+	}
+}
+
+func TestTurnEngine_ExecuteTurn_Publish_Error(t *testing.T) {
+	env := setupTurnEngineTest(t)
+	engine := newTurnEngine(env.gw, nil, env.cm, env.reg, env.bus, env.cm.Strategy)
+
+	// Mock the event bus to return an error on Publish
+	mockBus := &inframock.TestEventBus{}
+	mockBus.SetPublishErr(context.Canceled)
+
+	tr := &turn{
+		Events:     mockBus,
+		Index:      1,
+		CtxManager: env.cm,
+		State: &turnState{
+			Phase: phaseGuard,
+		},
+	}
+
+	err := engine.executeTurn(context.Background(), tr)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled error from executeTurn, got: %v", err)
 	}
 }

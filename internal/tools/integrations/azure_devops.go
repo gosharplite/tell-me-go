@@ -24,7 +24,7 @@ type securityConfirmer interface {
 	Confirm(ctx context.Context, message string) (bool, error)
 }
 
-type ADOManager struct {
+type adoManager struct {
 	sc                 securityConfirmer
 	httpClient         tools.HTTPClient
 	token              string
@@ -34,26 +34,26 @@ type ADOManager struct {
 	pipelineFetchGroup singleflight.Group
 }
 
-// ADOOption is a functional option for configuring the ADOManager.
-type ADOOption func(*ADOManager)
+// adoOption is a functional option for configuring the adoManager.
+type adoOption func(*adoManager)
 
-// WithBaseURL sets the base URL for Azure DevOps API requests.
-func WithBaseURL(url string) ADOOption {
-	return func(m *ADOManager) {
+// withBaseURL sets the base URL for Azure DevOps API requests.
+func withBaseURL(url string) adoOption {
+	return func(m *adoManager) {
 		m.baseURL = url
 	}
 }
 
-// WithHTTPClient sets the HTTP client for Azure DevOps API requests.
-func WithHTTPClient(client tools.HTTPClient) ADOOption {
-	return func(m *ADOManager) {
+// withHTTPClient sets the HTTP client for Azure DevOps API requests.
+func withHTTPClient(client tools.HTTPClient) adoOption {
+	return func(m *adoManager) {
 		m.httpClient = client
 	}
 }
 
-// WithToken sets the Azure DevOps Personal Access Token (PAT).
-func WithToken(token string) ADOOption {
-	return func(m *ADOManager) {
+// withToken sets the Azure DevOps Personal Access Token (PAT).
+func withToken(token string) adoOption {
+	return func(m *adoManager) {
 		m.token = token
 		if token != "" {
 			auth := ":" + token
@@ -62,9 +62,9 @@ func WithToken(token string) ADOOption {
 	}
 }
 
-// NewADOManager creates a new instance of ADOManager.
-func NewADOManager(sc securityConfirmer, opts ...ADOOption) *ADOManager {
-	m := &ADOManager{
+// newADOManager creates a new instance of adoManager.
+func newADOManager(sc securityConfirmer, opts ...adoOption) *adoManager {
+	m := &adoManager{
 		sc:         sc,
 		baseURL:    "https://dev.azure.com",
 		httpClient: &http.Client{Timeout: 30 * time.Second},
@@ -77,14 +77,14 @@ func NewADOManager(sc securityConfirmer, opts ...ADOOption) *ADOManager {
 	return m
 }
 
-func (m *ADOManager) getAuthHeader() (string, error) {
+func (m *adoManager) getAuthHeader() (string, error) {
 	if m.authHeader == "" {
 		return "", fmt.Errorf("AZURE_PAT_ALL token is required but not provided")
 	}
 	return m.authHeader, nil
 }
 
-func (m *ADOManager) executeRequest(ctx context.Context, method, requestURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
+func (m *adoManager) executeRequest(ctx context.Context, method, requestURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	authHeader, err := m.getAuthHeader()
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func (m *ADOManager) executeRequest(ctx context.Context, method, requestURL stri
 	return resp, nil
 }
 
-func (m *ADOManager) checkResponseError(resp *http.Response, requestURL string) error {
+func (m *adoManager) checkResponseError(resp *http.Response, requestURL string) error {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
@@ -143,7 +143,7 @@ func (m *ADOManager) checkResponseError(resp *http.Response, requestURL string) 
 	}
 }
 
-func (m *ADOManager) adoGetFileContent(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetFileContent(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -199,7 +199,7 @@ type adoRepositoryItemsResponse struct {
 	Count int `json:"count"`
 }
 
-func (m *ADOManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization   string `json:"organization"`
 		Project        string `json:"project"`
@@ -236,7 +236,7 @@ func (m *ADOManager) adoListRepositoryItems(ctx context.Context, args map[string
 	return m.formatRepositoryItems(params.ScopePath, params.Version, responseData), nil
 }
 
-func (m *ADOManager) buildListRepositoryItemsURL(org, project, repo, scopePath, version, recursionLevel string) (string, error) {
+func (m *adoManager) buildListRepositoryItemsURL(org, project, repo, scopePath, version, recursionLevel string) (string, error) {
 	if scopePath == "" {
 		scopePath = "/"
 	}
@@ -263,7 +263,7 @@ func (m *ADOManager) buildListRepositoryItemsURL(org, project, repo, scopePath, 
 	return u.String(), nil
 }
 
-func (m *ADOManager) formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
+func (m *adoManager) formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
 	if len(responseData.Value) == 0 {
 		return tools.ToolResult{Text: "No items found."}
 	}

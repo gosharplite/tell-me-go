@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -44,14 +43,8 @@ type SimpleEventBus struct {
 	capacity        int
 	closing         chan struct{}
 	activeProducers sync.WaitGroup // Tracks lockless senders like Flush
-	droppedEvents   uint64         // Tracks events dropped at the channel level
 	ctx             context.Context
 	cancel          context.CancelFunc
-}
-
-// DroppedEvents returns the number of events dropped due to buffer capacity.
-func (b *SimpleEventBus) DroppedEvents() uint64 {
-	return atomic.LoadUint64(&b.droppedEvents)
 }
 
 type flushEvent struct {
@@ -92,6 +85,7 @@ func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
 		return ErrBusClosed
 	}
 
+	var err error
 	for _, ch := range b.subscribers {
 		select {
 		case ch <- e:
@@ -100,11 +94,10 @@ func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
 		case <-b.closing:
 			return ErrBusClosed
 		default:
-			// SCALABLE: Drop event if subscriber is too slow/stuck to prevent head-of-line blocking
-			atomic.AddUint64(&b.droppedEvents, 1)
+			err = ErrBufferOverflow
 		}
 	}
-	return nil
+	return err
 }
 
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {
@@ -483,4 +476,15 @@ type SummarizationRequired struct {
 // TraceEvent carries the TurnTrace for a completed turn.
 type TraceEvent struct {
 	Trace *telemetry.TurnTrace
+}
+
+// SafePublish attempts to publish an event with a forced timeout.
+// It returns an error if the context is cancelled or the publication fails (e.g., buffer overflow).
+func SafePublish(ctx context.Context, bus EventBus, e Event, timeout time.Duration) error {
+	if bus == nil {
+		return nil
+	}
+	pubCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return bus.Publish(pubCtx, e)
 }

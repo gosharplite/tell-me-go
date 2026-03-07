@@ -360,6 +360,26 @@ func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 	assert.Equal(t, 3, history.GetTotalEntries())
 }
 
+func TestContextManager_AddContent_ContextCancellation(t *testing.T) {
+	cm := NewContextManager(nil, nil, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Should fail immediately at checkContext
+	err := cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestContextManager_SummarizeRange_ContextCancellation(t *testing.T) {
+	cm := NewContextManager(nil, nil, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Should fail immediately at checkContext
+	_, _, err := cm.SummarizeRange(ctx, 5, "focus")
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
 	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
@@ -375,33 +395,11 @@ func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 	}
 }
 
-func TestContextManager_AddContent_ContextCancellation_PreventsLeak(t *testing.T) {
-	t.Parallel()
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
-	history := &mockHistoryManager{}
-	cm := NewContextManager(strategy, history, nil, nil)
-
+func TestContextManager_CheckContext_Cancellation(t *testing.T) {
+	cm := NewContextManager(nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cancel() // Cancel immediately
 
-	err := cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "test"}}})
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("Expected context.Canceled, got %v", err)
-	}
-}
-
-func TestContextManager_SummarizeRange_ContextCancellation_PreventsLeak(t *testing.T) {
-	t.Parallel()
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
-	history := &mockHistoryManager{}
-	cm := NewContextManager(strategy, history, nil, nil)
-	cm.Summarizer = &mockSummarizer{}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	_, _, err := cm.SummarizeRange(ctx, 1, "")
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("Expected context.Canceled, got %v", err)
-	}
+	err := cm.checkContext(ctx)
+	require.ErrorIs(t, err, context.Canceled)
 }

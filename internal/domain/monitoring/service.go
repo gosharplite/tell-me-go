@@ -5,7 +5,9 @@ package monitoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -60,11 +62,11 @@ func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64
 	}
 
 	if s.bus != nil {
-		err := s.bus.Publish(ctx, events.UsageMetricsEvent{
+		err := events.SafePublish(ctx, s.bus, events.UsageMetricsEvent{
 			Context: ctx,
 			Metrics: metrics,
-		})
-		if err != nil {
+		}, 2*time.Second)
+		if err != nil && !errors.Is(err, events.ErrBufferOverflow) {
 			return turnCost, fmt.Errorf("failed to publish metrics event: %w", err)
 		}
 	}
@@ -93,8 +95,8 @@ func (s *service) RecordError(ctx context.Context, err error) {
 
 	level := "error"
 	// Simplified logic for now, could be more sophisticated
-	_ = s.bus.Publish(ctx, events.SystemMessageEvent{
+	_ = events.SafePublish(ctx, s.bus, events.SystemMessageEvent{
 		Message: err.Error(),
 		Level:   level,
-	})
+	}, 2*time.Second)
 }

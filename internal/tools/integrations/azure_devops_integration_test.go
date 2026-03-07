@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestADOManager_LiveNetwork_Integration performs a real network call to Azure DevOps.
+// TestAdoManager_LiveNetwork_Integration performs a real network call to Azure DevOps.
 // This test is isolated by the 'integration' build tag and requires a valid AZURE_PAT_ALL.
-func TestADOManager_LiveNetwork_Integration(t *testing.T) {
+func TestAdoManager_LiveNetwork_Integration(t *testing.T) {
 	// 1. Skip if credentials are not provided (defense in depth)
 	pat := os.Getenv("AZURE_PAT_ALL")
 	if pat == "" {
@@ -22,7 +22,7 @@ func TestADOManager_LiveNetwork_Integration(t *testing.T) {
 
 	// 2. Initialize with defaults (hits real dev.azure.com by default)
 	sm := security.NewSecurityManager(nil)
-	m := NewADOManager(sm, WithToken(pat))
+	m := newADOManager(sm, withToken(pat))
 
 	// 3. Execute real network call (Example: listing PRs in a public or accessible repo)
 	// Note: We use a placeholder organization/project/repo that would likely exist or fail gracefully.

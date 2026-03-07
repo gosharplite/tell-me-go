@@ -14,6 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/stretchr/testify/require"
 )
 
 type mockFailingSummarizer struct{}
@@ -182,4 +184,61 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
 		t.Errorf("Expected config failed error, got: %v", err)
 	}
+}
+
+func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
+	// Create a mock event bus that always returns an error
+	mockBus := &inframock.TestEventBus{}
+	mockBus.SetPublishErr(context.Canceled)
+
+	// Create a strategy that will trigger warnings to force event publishing
+	counter := &mockTokenCounter{tokens: 200}
+	strategy := NewContextStrategy(counter, nil)
+	strategy.setTieredThreshold(100) // Trigger tiered threshold
+
+	gatekeeper := &tokenGatekeeper{
+		MaxTokens: 1000,
+		Estimator: strategy,
+		Events:    mockBus,
+	}
+
+	// We need a large payload to trigger the token limit warning (if tiered threshold wasn't enough)
+	largeText := ""
+	for i := 0; i < 200; i++ {
+		largeText += "token "
+	}
+
+	req := &ports.ContextRequest{
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: largeText}}},
+		},
+		Metadata: ports.ContextMetadata{},
+	}
+
+	// 1. Test Transform (Should fail when emitting warning)
+	err := gatekeeper.Transform(context.Background(), req)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+
+	gatekeeper := &tokenGatekeeper{
+		MaxTokens: 10,
+		Estimator: strategy,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Provide enough history to trigger a summarization check
+	history := []*llm.Content{
+		{Role: "system", Parts: []*llm.Part{{Text: "System prompt"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "Message 1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "Response 1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "Message 2"}}},
+	}
+
+	_, _, _, err := gatekeeper.findSummarizableRange(ctx, history)
+	require.ErrorIs(t, err, context.Canceled)
 }
