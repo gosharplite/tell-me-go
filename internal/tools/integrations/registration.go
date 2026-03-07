@@ -788,6 +788,17 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 					Type:        "STRING",
 					Description: "The exact path to the YAML file in the repository (e.g., '/dev-3/caddy/cicd/main.yaml').",
 				},
+				"variable_groups": {
+					Type:        "ARRAY",
+					Description: "A list of numeric IDs for existing Variable Groups (e.g., 'WebSC-Common-Vars') to be linked to the new pipeline.",
+					Items: &tools.Schema{
+						Type: "INTEGER",
+					},
+				},
+				"variables": {
+					Type:        "OBJECT",
+					Description: "A collection of key-value pairs (name -> {value, isSecret}) to be stored directly in the pipeline's 'Variables' configuration.",
+				},
 			},
 			Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
 		},

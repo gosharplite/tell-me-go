@@ -64,7 +64,7 @@ func TestADOManager_ExecuteCreatePipeline_Errors(t *testing.T) {
 			)
 
 			ctx := context.Background()
-			_, err := m.executeCreatePipeline(ctx, "org", "proj", "name", "repo", "path")
+			_, err := m.executeCreatePipeline(ctx, "org", "proj", "name", "repo", "path", nil, nil)
 
 			if err == nil {
 				t.Fatal("expected an error, got nil")

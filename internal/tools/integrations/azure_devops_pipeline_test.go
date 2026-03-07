@@ -5,12 +5,15 @@ package integrations
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAdoListPipelines(t *testing.T) {
@@ -144,4 +147,77 @@ func TestFormatBranchRef(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAdoCreatePipeline_WithVariables(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mc := &mockConfirmer{approved: true}
+
+	// Mock server to catch the POST request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
+			// Idempotency check
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"count": 0, "value": []}`))
+			return
+		}
+
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
+			var req adoCreatePipelineRequest
+			err := json.NewDecoder(r.Body).Decode(&req)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Verify variables
+			if len(req.Variables) != 1 || req.Variables["x-api-key"].Value != "secret-key" || !req.Variables["x-api-key"].IsSecret {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Verify variable groups
+			if len(req.VariableGroups) != 1 || req.VariableGroups[0].ID != 456 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id": 789}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	m := NewADOManager(mc, WithBaseURL(server.URL), WithToken("test-pat"))
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"organization":    "myorg",
+		"project":         "myproj",
+		"name":            "new-pipeline",
+		"repository_id":   "repo-uuid",
+		"yaml_path":       "/dev-3/main.yaml",
+		"variable_groups": []int{456},
+		"variables": map[string]interface{}{
+			"x-api-key": map[string]interface{}{
+				"value":    "secret-key",
+				"isSecret": true,
+			},
+		},
+	}
+
+	result, err := m.adoCreatePipeline(ctx, args)
+	require.NoError(t, err)
+	assert.Contains(t, result.Text, "Successfully created pipeline 'new-pipeline' with ID: 789")
+}
+
+type mockConfirmer struct {
+	approved bool
+}
+
+func (m *mockConfirmer) Confirm(ctx context.Context, message string) (bool, error) {
+	return m.approved, nil
 }

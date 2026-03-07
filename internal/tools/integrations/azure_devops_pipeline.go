@@ -60,11 +60,13 @@ func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRuns
 }
 
 type adoCreatePipelineParams struct {
-	Organization string `json:"organization"`
-	Project      string `json:"project"`
-	Name         string `json:"name"`
-	RepositoryId string `json:"repository_id"`
-	YamlPath     string `json:"yaml_path"`
+	Organization   string                 `json:"organization"`
+	Project        string                 `json:"project"`
+	Name           string                 `json:"name"`
+	RepositoryId   string                 `json:"repository_id"`
+	YamlPath       string                 `json:"yaml_path"`
+	VariableGroups []int                  `json:"variable_groups"`
+	Variables      map[string]adoVariable `json:"variables"`
 }
 
 func parseCreatePipelineArgs(args map[string]interface{}) (adoCreatePipelineParams, error) {
@@ -98,9 +100,15 @@ type adoVariable struct {
 	IsSecret bool   `json:"isSecret"`
 }
 
+type adoVariableGroup struct {
+	ID int `json:"id"`
+}
+
 type adoCreatePipelineRequest struct {
-	Name          string                   `json:"name"`
-	Configuration adoPipelineConfiguration `json:"configuration"`
+	Name           string                   `json:"name"`
+	Configuration  adoPipelineConfiguration `json:"configuration"`
+	Variables      map[string]adoVariable   `json:"variables,omitempty"`
+	VariableGroups []adoVariableGroup       `json:"variableGroups,omitempty"`
 }
 
 type adoPipelineConfiguration struct {
@@ -898,18 +906,8 @@ func (m *ADOManager) adoCreatePipeline(ctx context.Context, args map[string]inte
 		return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", params.Name, existingID)}, nil
 	}
 
-	// 2. Security Confirmation
-	prompt := fmt.Sprintf("Are you sure you want to create the ADO pipeline '%s' in project '%s' mapped to '%s'?", params.Name, params.Project, params.YamlPath)
-	approved, err := m.sc.Confirm(ctx, prompt)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
-	}
-
-	// 3. Create Pipeline
-	pipelineID, err := m.executeCreatePipeline(ctx, params.Organization, params.Project, params.Name, params.RepositoryId, params.YamlPath)
+	// 2. Create Pipeline
+	pipelineID, err := m.executeCreatePipeline(ctx, params.Organization, params.Project, params.Name, params.RepositoryId, params.YamlPath, params.Variables, params.VariableGroups)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing create pipeline: %w", err)
 	}
@@ -940,16 +938,6 @@ func (m *ADOManager) adoRunPipeline(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
 	}
 
-	prompt := fmt.Sprintf("Are you sure you want to run ADO pipeline ID '%d' on ref '%s' with variables: %v and template parameters: %v?",
-		params.PipelineId, params.RefName, params.Variables, params.TemplateParameters)
-	approved, err := m.sc.Confirm(ctx, prompt)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
-	}
-
 	runID, webURL, err := m.executeRunPipeline(ctx, params.Organization, params.Project, params.PipelineId, params.RefName, params.TemplateParameters, params.MappedVariables)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing run pipeline: %w", err)
@@ -960,7 +948,12 @@ func (m *ADOManager) adoRunPipeline(ctx context.Context, args map[string]interfa
 	}, nil
 }
 
-func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, name, repoID, yamlPath string) (int, error) {
+func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, name, repoID, yamlPath string, variables map[string]adoVariable, variableGroups []int) (int, error) {
+	var groups []adoVariableGroup
+	for _, id := range variableGroups {
+		groups = append(groups, adoVariableGroup{ID: id})
+	}
+
 	payload := adoCreatePipelineRequest{
 		Name: name,
 		Configuration: adoPipelineConfiguration{
@@ -971,6 +964,8 @@ func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, na
 				Type: "azureReposGit",
 			},
 		},
+		Variables:      variables,
+		VariableGroups: groups,
 	}
 
 	body, err := json.Marshal(payload)

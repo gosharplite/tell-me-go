@@ -146,6 +146,8 @@ func DefaultPolicy() *Policy {
 			"ado_get_build_timeline":        true,
 			"ado_get_task_log":              true,
 			"ado_get_build_changes":         true,
+			"ado_create_pipeline":           true,
+			"ado_run_pipeline":              true,
 
 			// Session & Management Tools
 			"get_session_info":         true,
@@ -173,6 +175,7 @@ func DefaultPolicy() *Policy {
 			"confluence_search": true, "confluence_read": true,
 			"ado_list_branch_policies": true, "ado_get_build_timeline": true,
 			"ado_get_task_log": true, "ado_get_build_changes": true,
+			"ado_create_pipeline": true, "ado_run_pipeline": true,
 			"run_benchmark": true,
 		},
 		ForbiddenPatterns: []string{
