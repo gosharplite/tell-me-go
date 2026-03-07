@@ -1103,20 +1103,51 @@ func (m *ADOManager) adoGetPipelineDefinition(ctx context.Context, args map[stri
 	return tools.ToolResult{Text: string(output)}, nil
 }
 
-func (m *ADOManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		Organization string                 `json:"organization"`
-		Project      string                 `json:"project"`
-		DefinitionId int                    `json:"definition_id"`
-		Variables    map[string]adoVariable `json:"variables"`
-	}
+type adoUpdateBuildDefParams struct {
+	Organization string                 `json:"organization"`
+	Project      string                 `json:"project"`
+	DefinitionId int                    `json:"definition_id"`
+	Variables    map[string]adoVariable `json:"variables"`
+}
 
+func parseUpdateBuildDefArgs(args map[string]interface{}) (adoUpdateBuildDefParams, error) {
+	var params adoUpdateBuildDefParams
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing update build definition variables args: %w", err)
+		return params, fmt.Errorf("parsing update build definition variables args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.DefinitionId == 0 || len(params.Variables) == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, definition_id, and non-empty variables are required")
+		return params, fmt.Errorf("organization, project, definition_id, and non-empty variables are required")
+	}
+
+	return params, nil
+}
+
+func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars map[string]adoVariable) ([]byte, error) {
+	vars, ok := existingDef["variables"].(map[string]interface{})
+	if !ok {
+		vars = make(map[string]interface{})
+		existingDef["variables"] = vars
+	}
+
+	for k, v := range inputVars {
+		varObj := map[string]interface{}{
+			"value":    v.Value,
+			"isSecret": v.IsSecret,
+		}
+		if v.AllowOverride != nil {
+			varObj["allowOverride"] = *v.AllowOverride
+		}
+		vars[k] = varObj
+	}
+
+	return json.Marshal(existingDef)
+}
+
+func (m *ADOManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	params, err := parseUpdateBuildDefArgs(args)
+	if err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	// 1. GET current definition
@@ -1134,31 +1165,13 @@ func (m *ADOManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args
 		return tools.ToolResult{}, fmt.Errorf("failed to decode definition: %w", err)
 	}
 
-	// 2. MODIFY variables
-	vars, ok := definition["variables"].(map[string]interface{})
-	if !ok {
-		vars = make(map[string]interface{})
-		definition["variables"] = vars
-	}
-
-	for k, v := range params.Variables {
-		varObj := map[string]interface{}{
-			"value":    v.Value,
-			"isSecret": v.IsSecret,
-		}
-		if v.AllowOverride != nil {
-			varObj["allowOverride"] = *v.AllowOverride
-		}
-		vars[k] = varObj
-	}
-
-	// 3. PUT updated definition
-	body, err := json.Marshal(definition)
+	// 2. BUILD updated payload
+	body, err := buildVariablesUpdatePayload(definition, params.Variables)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to marshal updated definition: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to build updated payload: %w", err)
 	}
 
-	// Confirm Action
+	// 3. Confirm Action
 	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Update variables for build definition %d in %s/%s?", params.DefinitionId, params.Organization, params.Project))
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
@@ -1167,6 +1180,7 @@ func (m *ADOManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args
 		return tools.ToolResult{Text: "Update cancelled by user."}, nil
 	}
 
+	// 4. PUT updated definition
 	putResp, err := m.executeRequest(ctx, http.MethodPut, u, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing update build definition variables request: %w", err)

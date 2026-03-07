@@ -150,56 +150,27 @@ func TestFormatBranchRef(t *testing.T) {
 }
 
 func TestAdoCreatePipeline_WithVariables(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mc := &mockConfirmer{approved: true}
-
-	// Mock server to catch the POST request
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
-			// Idempotency check
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"count": 0, "value": []}`))
+	server := setupMockPipelineServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req adoCreatePipelineRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
-			var req adoCreatePipelineRequest
-			err := json.NewDecoder(r.Body).Decode(&req)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
+		assertVariable(t, req.Configuration.Variables, "x-api-key", "secret-key", true, true)
 
-			// Verify variables are inside configuration
-			if len(req.Configuration.Variables) != 1 || req.Configuration.Variables["x-api-key"].Value != "secret-key" || !req.Configuration.Variables["x-api-key"].IsSecret {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			// Verify allowOverride is true
-			if req.Configuration.Variables["x-api-key"].AllowOverride == nil || !*req.Configuration.Variables["x-api-key"].AllowOverride {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			// Verify variable groups are inside configuration
-			if len(req.Configuration.VariableGroups) != 1 || req.Configuration.VariableGroups[0].ID != 456 {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"id": 789}`))
+		// Verify variable groups are inside configuration
+		if len(req.Configuration.VariableGroups) != 1 || req.Configuration.VariableGroups[0].ID != 456 {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		w.WriteHeader(http.StatusNotFound)
-	}))
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id": 789}`))
+	})
 	defer server.Close()
 
-	m := NewADOManager(mc, WithBaseURL(server.URL), WithToken("test-pat"))
-
-	ctx := context.Background()
+	m, ctx := setupADOManager(t, server.URL, true)
 	args := map[string]interface{}{
 		"organization":    "myorg",
 		"project":         "myproj",
@@ -229,50 +200,22 @@ func (m *mockConfirmer) Confirm(ctx context.Context, message string) (bool, erro
 }
 
 func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
-	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mc := &mockConfirmer{approved: true}
-
-	// Mock server to catch the POST request
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
-			// Idempotency check
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"count": 0, "value": []}`))
+	server := setupMockPipelineServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req adoCreatePipelineRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
-			var req adoCreatePipelineRequest
-			err := json.NewDecoder(r.Body).Decode(&req)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
+		assertVariable(t, req.Configuration.Variables, "x-api-key", "secret-key", true, false)
+		assertVariable(t, req.Configuration.Variables, "debug-mode", "true", false, true)
 
-			// Verify allowOverride is false
-			if v, ok := req.Configuration.Variables["x-api-key"]; !ok || *v.AllowOverride || (v.IsSettableAtQueueTime != nil && *v.IsSettableAtQueueTime) {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			// Verify debug-mode has allowOverride: true (defaulted)
-			if v, ok := req.Configuration.Variables["debug-mode"]; !ok || !*v.AllowOverride || (v.IsSettableAtQueueTime != nil && !*v.IsSettableAtQueueTime) {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"id": 888}`))
-			return
-		}
-
-		w.WriteHeader(http.StatusNotFound)
-	}))
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id": 888}`))
+	})
 	defer server.Close()
 
-	m := NewADOManager(mc, WithBaseURL(server.URL), WithToken("test-pat"))
-
-	ctx := context.Background()
+	m, ctx := setupADOManager(t, server.URL, true)
 	args := map[string]interface{}{
 		"organization":  "myorg",
 		"project":       "myproj",
@@ -295,6 +238,43 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 	result, err := m.adoCreatePipeline(ctx, args)
 	require.NoError(t, err)
 	assert.Contains(t, result.Text, "Successfully created pipeline 'locked-pipeline' with ID: 888")
+}
+
+func setupMockPipelineServer(t *testing.T, postHandler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"count": 0, "value": []}`))
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
+			postHandler(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+}
+
+func setupADOManager(t *testing.T, baseURL string, approved bool) (*ADOManager, context.Context) {
+	t.Helper()
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mc := &mockConfirmer{approved: approved}
+	m := NewADOManager(mc, WithBaseURL(baseURL), WithToken("test-pat"))
+	return m, context.Background()
+}
+
+func assertVariable(t *testing.T, vars map[string]adoVariable, name string, value string, isSecret bool, allowOverride bool) {
+	t.Helper()
+	v, ok := vars[name]
+	require.True(t, ok, "variable %s missing", name)
+	assert.Equal(t, value, v.Value)
+	assert.Equal(t, isSecret, v.IsSecret)
+	require.NotNil(t, v.AllowOverride)
+	assert.Equal(t, allowOverride, *v.AllowOverride)
+	if v.IsSettableAtQueueTime != nil {
+		assert.Equal(t, allowOverride, *v.IsSettableAtQueueTime)
+	}
 }
 
 func TestAdoGetPipelineDefinition(t *testing.T) {
