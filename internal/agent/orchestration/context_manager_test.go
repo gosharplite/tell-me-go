@@ -394,3 +394,12 @@ func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 		t.Errorf("Expected context.Canceled, got %v", err)
 	}
 }
+
+func TestContextManager_CheckContext_Cancellation(t *testing.T) {
+	cm := NewContextManager(nil, nil, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := cm.checkContext(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+}

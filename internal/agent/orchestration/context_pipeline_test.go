@@ -57,3 +57,14 @@ func TestContextPipeline_ExecuteWithPersistence_ContextCancellation(t *testing.T
 	err := pipeline.executeWithPersistence(ctx, &ports.ContextRequest{}, nil)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestContextPipeline_ExecuteWithPersistence_Transformer_Cancellation(t *testing.T) {
+	// Using priority 150 to hit the transient loop for extra coverage
+	pipeline := NewContextPipeline(&mockPriorityTransformer{priority: 150})
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := pipeline.executeWithPersistence(ctx, &ports.ContextRequest{}, nil)
+	require.ErrorIs(t, err, context.Canceled)
+}
