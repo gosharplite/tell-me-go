@@ -351,3 +351,79 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 	assert.True(t, secretVar["isSecret"].(bool))
 	assert.False(t, secretVar["isSettableAtQueueTime"].(bool))
 }
+
+func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mc := &mockConfirmer{approved: true}
+
+	var getCalled, putCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.Path, "/_apis/build/definitions/123")
+		assert.Equal(t, "7.1", r.URL.Query().Get("api-version"))
+
+		if r.Method == http.MethodGet {
+			getCalled = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"id": 123,
+				"name": "test-build",
+				"variables": {
+					"old-var": { "value": "old", "isSecret": false, "allowOverride": true }
+				}
+			}`))
+			return
+		}
+
+		if r.Method == http.MethodPut {
+			putCalled = true
+			var body map[string]interface{}
+			err := json.NewDecoder(r.Body).Decode(&body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Verify modified variables
+			vars := body["variables"].(map[string]interface{})
+			if len(vars) != 2 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			
+			newVar := vars["new-var"].(map[string]interface{})
+			if newVar["value"] != "new" || newVar["allowOverride"] != false {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	m := NewADOManager(mc, WithBaseURL(server.URL), WithToken("test-pat"))
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"organization":  "myorg",
+		"project":       "myproj",
+		"definition_id": 123,
+		"variables": map[string]interface{}{
+			"new-var": map[string]interface{}{
+				"value":         "new",
+				"isSecret":      false,
+				"allowOverride": false,
+			},
+		},
+	}
+
+	result, err := m.adoUpdateBuildDefinitionVariables(ctx, args)
+	require.NoError(t, err)
+	assert.Contains(t, result.Text, "Successfully updated variables for build definition 123")
+	assert.True(t, getCalled)
+	assert.True(t, putCalled)
+}

@@ -1102,3 +1102,76 @@ func (m *ADOManager) adoGetPipelineDefinition(ctx context.Context, args map[stri
 
 	return tools.ToolResult{Text: string(output)}, nil
 }
+
+func (m *ADOManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string                 `json:"organization"`
+		Project      string                 `json:"project"`
+		DefinitionId int                    `json:"definition_id"`
+		Variables    map[string]adoVariable `json:"variables"`
+	}
+
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("parsing update build definition variables args: %w", err)
+	}
+
+	if params.Organization == "" || params.Project == "" || params.DefinitionId == 0 || len(params.Variables) == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, definition_id, and non-empty variables are required")
+	}
+
+	// 1. GET current definition
+	u := fmt.Sprintf("%s/%s/%s/_apis/build/definitions/%d?api-version=7.1",
+		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.DefinitionId)
+
+	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("fetching build definition: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var definition map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&definition); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode definition: %w", err)
+	}
+
+	// 2. MODIFY variables
+	vars, ok := definition["variables"].(map[string]interface{})
+	if !ok {
+		vars = make(map[string]interface{})
+		definition["variables"] = vars
+	}
+
+	for k, v := range params.Variables {
+		varObj := map[string]interface{}{
+			"value":    v.Value,
+			"isSecret": v.IsSecret,
+		}
+		if v.AllowOverride != nil {
+			varObj["allowOverride"] = *v.AllowOverride
+		}
+		vars[k] = varObj
+	}
+
+	// 3. PUT updated definition
+	body, err := json.Marshal(definition)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to marshal updated definition: %w", err)
+	}
+
+	// Confirm Action
+	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Update variables for build definition %d in %s/%s?", params.DefinitionId, params.Organization, params.Project))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Update cancelled by user."}, nil
+	}
+
+	putResp, err := m.executeRequest(ctx, http.MethodPut, u, bytes.NewReader(body), map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("executing update build definition variables request: %w", err)
+	}
+	defer putResp.Body.Close()
+
+	return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", params.DefinitionId)}, nil
+}

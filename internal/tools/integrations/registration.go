@@ -786,6 +786,33 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 	}, m.adoGetBuildChanges)
 
 	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_update_build_definition_variables",
+		Description: "Modifies variables for an existing pipeline (build) definition using a Read-Modify-Write cycle. Useful for locking down variable overrides.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"definition_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the build definition to update.",
+				},
+				"variables": {
+					Type:        "OBJECT",
+					Description: "A map of variable names to objects with 'value', 'isSecret', and 'allowOverride' (CRITICAL for lockdown).",
+				},
+			},
+			Required: []string{"organization", "project", "definition_id", "variables"},
+		},
+	}, m.adoUpdateBuildDefinitionVariables)
+
+	r.Register(&tools.ToolDeclaration{
 		Name:        "ado_create_pipeline",
 		Description: "Creates a new Azure DevOps YAML build pipeline. Idempotent: returns existing ID if the name already exists. Triggers security confirmation.",
 		Parameters: &tools.Schema{
