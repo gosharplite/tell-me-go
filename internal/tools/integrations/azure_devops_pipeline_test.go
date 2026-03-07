@@ -177,7 +177,7 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 			}
 
 			// Verify allowOverride is true
-			if !req.Configuration.Variables["x-api-key"].AllowOverride {
+			if req.Configuration.Variables["x-api-key"].AllowOverride == nil || !*req.Configuration.Variables["x-api-key"].AllowOverride {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -226,4 +226,73 @@ type mockConfirmer struct {
 
 func (m *mockConfirmer) Confirm(ctx context.Context, message string) (bool, error) {
 	return m.approved, nil
+}
+
+func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mc := &mockConfirmer{approved: true}
+
+	// Mock server to catch the POST request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
+			// Idempotency check
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"count": 0, "value": []}`))
+			return
+		}
+
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/_apis/pipelines") {
+			var req adoCreatePipelineRequest
+			err := json.NewDecoder(r.Body).Decode(&req)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Verify x-api-key has allowOverride: false
+			if v, ok := req.Configuration.Variables["x-api-key"]; !ok || *v.AllowOverride {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			// Verify debug-mode has allowOverride: true (defaulted)
+			if v, ok := req.Configuration.Variables["debug-mode"]; !ok || !*v.AllowOverride {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id": 888}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	m := NewADOManager(mc, WithBaseURL(server.URL), WithToken("test-pat"))
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"organization":  "myorg",
+		"project":       "myproj",
+		"name":          "locked-pipeline",
+		"repository_id": "repo-uuid",
+		"yaml_path":     "/dev-3/main.yaml",
+		"variables": map[string]interface{}{
+			"x-api-key": map[string]interface{}{
+				"value":         "secret-key",
+				"isSecret":      true,
+				"allowOverride": false,
+			},
+			"debug-mode": map[string]interface{}{
+				"value":    "true",
+				"isSecret": false,
+			},
+		},
+	}
+
+	result, err := m.adoCreatePipeline(ctx, args)
+	require.NoError(t, err)
+	assert.Contains(t, result.Text, "Successfully created pipeline 'locked-pipeline' with ID: 888")
 }

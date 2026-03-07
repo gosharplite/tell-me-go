@@ -98,7 +98,7 @@ type adoRunPipelineParams struct {
 type adoVariable struct {
 	Value         string `json:"value"`
 	IsSecret      bool   `json:"isSecret"`
-	AllowOverride bool   `json:"allowOverride"`
+	AllowOverride *bool  `json:"allowOverride,omitempty"`
 }
 
 type adoVariableGroup struct {
@@ -907,7 +907,16 @@ func (m *ADOManager) adoCreatePipeline(ctx context.Context, args map[string]inte
 		return tools.ToolResult{Text: fmt.Sprintf("Pipeline '%s' already exists with ID: %d", params.Name, existingID)}, nil
 	}
 
-	// 2. Create Pipeline
+	// 2. Confirm Action
+	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Create pipeline '%s' in %s/%s?", params.Name, params.Organization, params.Project))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Pipeline creation cancelled by user."}, nil
+	}
+
+	// 3. Create Pipeline
 	pipelineID, err := m.executeCreatePipeline(ctx, params.Organization, params.Project, params.Name, params.RepositoryId, params.YamlPath, params.Variables, params.VariableGroups)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing create pipeline: %w", err)
@@ -939,6 +948,15 @@ func (m *ADOManager) adoRunPipeline(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
 	}
 
+	// Confirm Action
+	approved, err := m.sc.Confirm(ctx, fmt.Sprintf("Trigger run for pipeline %d (branch: %s) in %s/%s?", params.PipelineId, params.Branch, params.Organization, params.Project))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("confirmation error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Pipeline run cancelled by user."}, nil
+	}
+
 	runID, webURL, err := m.executeRunPipeline(ctx, params.Organization, params.Project, params.PipelineId, params.RefName, params.TemplateParameters, params.MappedVariables)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing run pipeline: %w", err)
@@ -955,9 +973,12 @@ func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, na
 		groups = append(groups, adoVariableGroup{ID: id})
 	}
 
-	// Ensure all variables allow override at queue time
+	// Default variables to allow override at queue time if not specified
 	for k, v := range variables {
-		v.AllowOverride = true
+		if v.AllowOverride == nil {
+			trueVal := true
+			v.AllowOverride = &trueVal
+		}
 		variables[k] = v
 	}
 

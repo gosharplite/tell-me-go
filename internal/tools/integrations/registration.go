@@ -797,7 +797,7 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 				},
 				"variables": {
 					Type:        "OBJECT",
-					Description: "A collection of key-value pairs (name -> {value, isSecret}) to be stored directly in the pipeline's 'Variables' configuration.",
+					Description: "A collection of key-value pairs (name -> {value, isSecret, allowOverride}) to be stored directly in the pipeline's 'Variables' configuration. 'allowOverride' defaults to true, letting users change the value during a run.",
 				},
 			},
 			Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
