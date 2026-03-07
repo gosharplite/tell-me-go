@@ -186,3 +186,26 @@ func TestSecurityManager_Misc(t *testing.T) {
 	_, _ = sm.readSingleKey(context.Background())
 	_, _ = sm.ReadLine(context.Background())
 }
+
+func TestSecurityManager_Confirm_Bypass(t *testing.T) {
+	t.Parallel()
+	// Default behavior (no bypass) - user says No
+	interactor := &MockInteractor{Answer: "n"}
+	sm := NewSecurityManager(interactor)
+	ok, err := sm.Confirm(context.Background(), "Should I?")
+	if err != nil || ok {
+		t.Errorf("Confirm(user=n, bypass=false) = %v, %v; want false, nil", ok, err)
+	}
+
+	// Bypass active - should be auto-approved even if interactor would say No
+	sm.SetBypassActive(true)
+	ok, err = sm.Confirm(context.Background(), "Should I?")
+	if err != nil || !ok {
+		t.Errorf("Confirm(user=n, bypass=true) = %v, %v; want true, nil", ok, err)
+	}
+	
+	// Verify that a warning was captured
+	if len(interactor.Warns) == 0 || !strings.Contains(interactor.Warns[0], "[Auto-Approved]") {
+		t.Errorf("Expected auto-approval warning, got: %v", interactor.Warns)
+	}
+}
