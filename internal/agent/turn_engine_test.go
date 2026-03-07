@@ -1367,9 +1367,8 @@ func TestTurnEngine_ExecuteTurn_Publish_Error(t *testing.T) {
 	engine := newTurnEngine(env.gw, nil, env.cm, env.reg, env.bus, env.cm.Strategy)
 
 	// Mock the event bus to return an error on Publish
-	mockBus := &inframock.TestEventBus{
-		PublishErr: context.Canceled,
-	}
+	mockBus := &inframock.TestEventBus{}
+	mockBus.SetPublishErr(context.Canceled)
 
 	tr := &turn{
 		Events:     mockBus,

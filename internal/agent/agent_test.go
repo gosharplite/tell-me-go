@@ -701,9 +701,8 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 
 func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 	// Mock the event bus to return an error on Publish
-	mockBus := &inframock.TestEventBus{
-		PublishErr: context.Canceled,
-	}
+	mockBus := &inframock.TestEventBus{}
+	mockBus.SetPublishErr(context.Canceled)
 
 	a := &agent{
 		events:        mockBus,

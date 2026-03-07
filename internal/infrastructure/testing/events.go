@@ -17,17 +17,24 @@ type TestEventBus struct {
 	mu         sync.RWMutex
 	events     []events.Event
 	subs       []func(events.Event)
-	PublishErr error
+	publishErr error
 }
 
-// Publish records the event and notifies subscribers. Returns PublishErr if set.
+// SetPublishErr sets the error to be returned by Publish.
+func (b *TestEventBus) SetPublishErr(err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.publishErr = err
+}
+
+// Publish records the event and notifies subscribers. Returns publishErr if set.
 func (b *TestEventBus) Publish(ctx context.Context, e events.Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
 	b.mu.RLock()
-	pubErr := b.PublishErr
+	pubErr := b.publishErr
 	b.mu.RUnlock()
 	if pubErr != nil {
 		return pubErr

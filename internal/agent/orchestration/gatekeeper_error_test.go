@@ -188,9 +188,8 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 
 func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	// Create a mock event bus that always returns an error
-	mockBus := &inframock.TestEventBus{
-		PublishErr: context.Canceled,
-	}
+	mockBus := &inframock.TestEventBus{}
+	mockBus.SetPublishErr(context.Canceled)
 
 	// Create a strategy that will trigger warnings to force event publishing
 	counter := &mockTokenCounter{tokens: 200}
