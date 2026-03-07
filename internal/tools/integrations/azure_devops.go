@@ -34,25 +34,25 @@ type adoManager struct {
 	pipelineFetchGroup singleflight.Group
 }
 
-// ADOOption is a functional option for configuring the adoManager.
-type ADOOption func(*adoManager)
+// adoOption is a functional option for configuring the adoManager.
+type adoOption func(*adoManager)
 
-// WithBaseURL sets the base URL for Azure DevOps API requests.
-func WithBaseURL(url string) ADOOption {
+// withBaseURL sets the base URL for Azure DevOps API requests.
+func withBaseURL(url string) adoOption {
 	return func(m *adoManager) {
 		m.baseURL = url
 	}
 }
 
-// WithHTTPClient sets the HTTP client for Azure DevOps API requests.
-func WithHTTPClient(client tools.HTTPClient) ADOOption {
+// withHTTPClient sets the HTTP client for Azure DevOps API requests.
+func withHTTPClient(client tools.HTTPClient) adoOption {
 	return func(m *adoManager) {
 		m.httpClient = client
 	}
 }
 
 // withToken sets the Azure DevOps Personal Access Token (PAT).
-func withToken(token string) ADOOption {
+func withToken(token string) adoOption {
 	return func(m *adoManager) {
 		m.token = token
 		if token != "" {
@@ -63,7 +63,7 @@ func withToken(token string) ADOOption {
 }
 
 // newADOManager creates a new instance of adoManager.
-func newADOManager(sc securityConfirmer, opts ...ADOOption) *adoManager {
+func newADOManager(sc securityConfirmer, opts ...adoOption) *adoManager {
 	m := &adoManager{
 		sc:         sc,
 		baseURL:    "https://dev.azure.com",
