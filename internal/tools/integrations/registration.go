@@ -264,7 +264,7 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 	if token := os.Getenv("AZURE_PAT_ALL"); token != "" {
 		opts = append(opts, WithToken(token))
 	}
-	m := NewADOManager(sm, opts...)
+	m := newADOManager(sm, opts...)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pull_request",

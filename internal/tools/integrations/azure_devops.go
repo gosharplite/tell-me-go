@@ -62,8 +62,8 @@ func WithToken(token string) ADOOption {
 	}
 }
 
-// NewADOManager creates a new instance of ADOManager.
-func NewADOManager(sc securityConfirmer, opts ...ADOOption) *ADOManager {
+// newADOManager creates a new instance of ADOManager.
+func newADOManager(sc securityConfirmer, opts ...ADOOption) *ADOManager {
 	m := &ADOManager{
 		sc:         sc,
 		baseURL:    "https://dev.azure.com",
