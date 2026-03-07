@@ -49,6 +49,8 @@ func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRuns
 	params.OriginalTop = params.Top
 	if params.OriginalTop <= 0 {
 		params.OriginalTop = 10
+	} else if params.OriginalTop > 1000 {
+		params.OriginalTop = 1000 // Defensive upper bound
 	}
 
 	params.FetchTop = params.OriginalTop
@@ -239,6 +241,8 @@ type adoPipelineRun struct {
 func (m *ADOManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
 	if top <= 0 {
 		top = 10
+	} else if top > 1000 {
+		top = 1000 // Defensive upper bound
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds",
@@ -741,6 +745,8 @@ func (m *ADOManager) adoGetBuildChanges(ctx context.Context, args map[string]int
 
 	if params.Top <= 0 {
 		params.Top = 50
+	} else if params.Top > 1000 {
+		params.Top = 1000 // Defensive upper bound
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/changes",

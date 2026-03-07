@@ -92,14 +92,16 @@ func TestAdoListPipelines(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var server *httptest.Server
 			if tt.mockStatus != 0 {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(tt.mockStatus)
 					_, _ = w.Write([]byte(tt.mockBody))
 				}))
-				defer server.Close()
+				t.Cleanup(server.Close)
 			}
 
 			var opts []ADOOption
@@ -141,7 +143,9 @@ func TestFormatBranchRef(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := formatBranchRef(tt.input); got != tt.want {
 				t.Errorf("formatBranchRef(%q) = %q, want %q", tt.input, got, tt.want)
 			}
@@ -168,7 +172,7 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id": 789}`))
 	})
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	m, ctx := setupADOManager(t, server.URL, true)
 	args := map[string]interface{}{
@@ -213,7 +217,7 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id": 888}`))
 	})
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	m, ctx := setupADOManager(t, server.URL, true)
 	args := map[string]interface{}{
@@ -303,7 +307,7 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 			}
 		}`))
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -383,7 +387,7 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	m := NewADOManager(mc, WithBaseURL(server.URL), WithToken("test-pat"))
 

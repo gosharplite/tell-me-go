@@ -46,7 +46,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -70,7 +70,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -90,7 +90,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -165,7 +165,7 @@ func TestAdoListPullRequests(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -188,7 +188,7 @@ func TestAdoListPullRequests(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": [], "count": 0}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -212,7 +212,7 @@ func TestAdoListPullRequests(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": []}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -253,7 +253,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -277,7 +277,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"changeEntries": []}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -338,7 +338,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -363,7 +363,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": []}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -398,7 +398,7 @@ func TestAdoGetFileContent(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(fileContent))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -422,7 +422,7 @@ func TestAdoGetFileContent(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("content"))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -441,7 +441,7 @@ func TestAdoGetFileContent(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -482,7 +482,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -506,7 +506,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": []}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -534,7 +534,7 @@ func TestAdoListPipelineRuns(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -557,7 +557,7 @@ func TestAdoGetPipelineRun(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -580,7 +580,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -597,7 +597,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(logContent))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -637,7 +637,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -660,7 +660,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -718,7 +718,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 				return
 			}
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -748,7 +748,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 				return
 			}
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -776,7 +776,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 				return
 			}
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -826,7 +826,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 				return
 			}
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -858,7 +858,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 				return
 			}
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -896,7 +896,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -912,7 +912,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -934,7 +934,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(logContent))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -953,7 +953,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -989,7 +989,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1004,7 +1004,7 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1439,7 +1439,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 					_, _ = w.Write([]byte(tt.respBody))
 				}
 			}))
-			defer server.Close()
+			t.Cleanup(server.Close)
 
 			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken(pat))
 
@@ -1467,7 +1467,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("internal error"))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1494,7 +1494,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("internal error"))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1575,7 +1575,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1589,7 +1589,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": []}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1617,7 +1617,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1630,7 +1630,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1648,7 +1648,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1662,7 +1662,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{invalid}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1680,7 +1680,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1693,7 +1693,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1709,7 +1709,7 @@ func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 		w.WriteHeader(http.StatusTeapot)
 		_, _ = w.Write([]byte("teapot"))
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1724,7 +1724,7 @@ func TestAdoListPipelineRuns_Empty(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"value": []}`))
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1741,7 +1741,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1754,7 +1754,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1770,7 +1770,7 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"value": []}`))
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	m := NewADOManager(security.NewSecurityManager(nil), WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -1842,7 +1842,7 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("{ invalid json"))
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 	ctx := context.Background()
@@ -2000,7 +2000,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(tt.handler))
-			defer server.Close()
+			t.Cleanup(server.Close)
 
 			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -2032,7 +2032,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 				return
 			}
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -2050,7 +2050,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 				{"id": 102, "buildNumber": "run2", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-b"}}
 			]}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -2069,7 +2069,7 @@ func TestAdoListPipelineRuns_Features(t *testing.T) {
 				{"id": 103, "buildNumber": "run3", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-a"}}
 			]}`))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
 
@@ -2146,7 +2146,7 @@ func TestAdoCreatePipeline(t *testing.T) {
 					return
 				}
 			}))
-			defer server.Close()
+			t.Cleanup(server.Close)
 
 			sm := &mockSecurityManager{approved: tt.approved}
 			m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))
@@ -2215,7 +2215,7 @@ func TestAdoRunPipeline(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		sm := &mockSecurityManager{approved: true}
 		m := NewADOManager(sm, WithBaseURL(server.URL), WithToken("test-pat"))

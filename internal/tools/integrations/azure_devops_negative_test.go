@@ -50,7 +50,9 @@ func TestADOManager_ExecuteCreatePipeline_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.mockStatusCode)
 				_, _ = w.Write([]byte(tt.mockResponse))
@@ -130,7 +132,9 @@ func TestADOManager_AdoGetPipelineRun_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.mockStatusCode)
 				_, _ = w.Write([]byte(tt.mockResponse))
@@ -164,7 +168,7 @@ func TestADOManager_ResolvePipelineID_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		_, err := m.resolvePipelineID(context.Background(), "org", "proj", "name")
@@ -177,7 +181,7 @@ func TestADOManager_ResolvePipelineID_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": [{"id": 1, "name": "other"}]}`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		_, err := m.resolvePipelineID(context.Background(), "org", "proj", "missing")
@@ -194,7 +198,7 @@ func TestADOManager_ExecuteRunPipeline_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{ "id": "not-an-int" }`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		_, _, err := m.executeRunPipeline(context.Background(), "org", "proj", 1, "ref", nil, nil)
@@ -206,7 +210,7 @@ func TestADOManager_ExecuteRunPipeline_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusGatewayTimeout)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		_, _, err := m.executeRunPipeline(context.Background(), "org", "proj", 1, "ref", nil, nil)
@@ -229,7 +233,7 @@ func TestADOManager_AdoListRepositoryItems_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
@@ -243,7 +247,7 @@ func TestADOManager_AdoListRepositoryItems_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": ["invalid", "schema"]}`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
@@ -267,7 +271,7 @@ func TestADOManager_AdoListPipelineRuns_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
@@ -281,7 +285,7 @@ func TestADOManager_AdoListPipelineRuns_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": [{"id": "not-an-int"}]}`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
@@ -305,7 +309,7 @@ func TestADOManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
@@ -319,7 +323,7 @@ func TestADOManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": [{"id": "not-an-int"}]}`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
@@ -332,7 +336,7 @@ func TestADOManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
@@ -356,7 +360,7 @@ func TestADOManager_AdoListBranchPolicies_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
@@ -374,7 +378,7 @@ func TestADOManager_AdoListBranchPolicies_Errors(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
@@ -393,7 +397,7 @@ func TestADOManager_AdoListBranchPolicies_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": [{"isEnabled": "not-a-bool"}]}`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
@@ -417,7 +421,7 @@ func TestADOManager_AdoListPullRequests_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadGateway)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
@@ -431,7 +435,7 @@ func TestADOManager_AdoListPullRequests_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"value": "not-a-slice"}`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
@@ -455,7 +459,7 @@ func TestADOManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123}
@@ -473,7 +477,7 @@ func TestADOManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusUnauthorized)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123}
@@ -497,7 +501,7 @@ func TestADOManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
@@ -511,7 +515,7 @@ func TestADOManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{ bad json }`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
@@ -535,7 +539,7 @@ func TestADOManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{
@@ -556,7 +560,7 @@ func TestADOManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{ invalid json }`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{
@@ -581,7 +585,7 @@ func TestADOManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusBadRequest)
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
 		args := map[string]interface{}{
@@ -602,7 +606,7 @@ func TestADOManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id": 1, "variables": {}}`))
 		}))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		deniedSM := &mockSecurityManager{approved: false}
 		m := NewADOManager(deniedSM, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))

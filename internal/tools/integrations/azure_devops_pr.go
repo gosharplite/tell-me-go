@@ -137,6 +137,8 @@ func (m *ADOManager) buildListPullRequestsURL(org, project, repo, status string,
 	}
 	if top <= 0 {
 		top = 50
+	} else if top > 1000 {
+		top = 1000 // Defensive upper bound
 	}
 
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests",
