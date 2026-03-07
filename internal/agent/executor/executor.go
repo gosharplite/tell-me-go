@@ -296,7 +296,9 @@ func (e *ToolExecutor) publishLimitError(ctx context.Context, maxToolTurns int) 
 	bus := e.events
 	e.mu.RUnlock()
 	if bus != nil {
-		_ = bus.Publish(ctx, events.SystemMessageEvent{
+		pubCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		_ = bus.Publish(pubCtx, events.SystemMessageEvent{
 			Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
 			Level:   "error",
 		})
@@ -308,11 +310,11 @@ func (e *ToolExecutor) publishCallEvent(ctx context.Context, calls []*llm.Functi
 	bus := e.events
 	e.mu.RUnlock()
 	if bus != nil {
-		_ = bus.Publish(ctx, events.ToolCallEvent{
+		_ = events.SafePublish(ctx, bus, events.ToolCallEvent{
 			Calls:    calls,
 			Turn:     turn,
 			MaxTurns: maxToolTurns,
-		})
+		}, 2*time.Second)
 	}
 }
 

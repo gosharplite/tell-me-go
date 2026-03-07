@@ -373,7 +373,7 @@ func (e *turnEngine) executeTurn(parentCtx context.Context, turn *turn) error {
 
 	e.finalizeTurnTrace(trace, err)
 	if e.events != nil {
-		_ = e.events.Publish(ctx, events.TraceEvent{Trace: trace})
+		_ = events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace}, 2*time.Second)
 	}
 
 	e.notifyAfterTurn(turn, err)

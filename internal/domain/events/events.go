@@ -85,6 +85,7 @@ func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
 		return ErrBusClosed
 	}
 
+	var err error
 	for _, ch := range b.subscribers {
 		select {
 		case ch <- e:
@@ -92,8 +93,11 @@ func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
 			return ctx.Err()
 		case <-b.closing:
 			return ErrBusClosed
+		default:
+			err = ErrBufferOverflow
 		}
 	}
+	return err
 	return nil
 }
 
@@ -473,4 +477,15 @@ type SummarizationRequired struct {
 // TraceEvent carries the TurnTrace for a completed turn.
 type TraceEvent struct {
 	Trace *telemetry.TurnTrace
+}
+
+// SafePublish attempts to publish an event with a forced timeout.
+// It returns an error if the context is cancelled or the publication fails (e.g., buffer overflow).
+func SafePublish(ctx context.Context, bus EventBus, e Event, timeout time.Duration) error {
+	if bus == nil {
+		return nil
+	}
+	pubCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return bus.Publish(pubCtx, e)
 }
