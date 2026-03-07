@@ -594,3 +594,19 @@ func TestEventBus_Subscribe_ContextCancellation_PreventsLeak(t *testing.T) {
 
 	// Subscriber goroutine should have exited.
 }
+
+func TestEventBus_Publish_ContextCancellation(t *testing.T) {
+	bus := events.NewSimpleEventBus()
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	// Cancel the context immediately BEFORE calling Publish
+	cancel()
+	
+	// Because the context is already canceled, Publish should immediately
+	// trigger the `case <-ctx.Done():` block and return context.Canceled.
+	err := bus.Publish(ctx, "test-event")
+	
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled error, got: %v", err)
+	}
+}

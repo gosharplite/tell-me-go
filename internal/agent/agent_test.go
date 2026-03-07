@@ -679,3 +679,21 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 		t.Error("summarizer not bound to ContextManager")
 	}
 }
+
+func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
+	// Create an agent with mock dependencies
+	a := &agent{
+		events:        events.NewSimpleEventBus(),
+		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
+	}
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Applying config with a canceled context should fail when trying to publish
+	err := a.applyConfig(ctx)
+	
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled error, got: %v", err)
+	}
+}
