@@ -482,3 +482,140 @@ func TestADOManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 		assert.Contains(t, err.Error(), "unauthorized")
 	})
 }
+
+func TestADOManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
+	sm := &mockSecurityManager{approved: true}
+
+	t.Run("Missing Parameters", func(t *testing.T) {
+		m := NewADOManager(sm)
+		_, err := m.adoGetPipelineDefinition(context.Background(), map[string]interface{}{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "required")
+	})
+
+	t.Run("HTTP Error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer ts.Close()
+
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
+		_, err := m.adoGetPipelineDefinition(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "returned status: 500")
+	})
+
+	t.Run("JSON Decode Error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{ bad json }`))
+		}))
+		defer ts.Close()
+
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
+		_, err := m.adoGetPipelineDefinition(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
+	})
+}
+
+func TestADOManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
+	sm := &mockSecurityManager{approved: true}
+
+	t.Run("Missing Parameters", func(t *testing.T) {
+		m := NewADOManager(sm)
+		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), map[string]interface{}{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "required")
+	})
+
+	t.Run("GET Build Definition - HTTP Error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer ts.Close()
+
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		args := map[string]interface{}{
+			"organization":  "o",
+			"project":       "p",
+			"definition_id": 1,
+			"variables": map[string]interface{}{
+				"TEST": map[string]interface{}{"value": "val"},
+			},
+		}
+		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "resource not found")
+	})
+
+	t.Run("GET Build Definition - JSON Decode Error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{ invalid json }`))
+		}))
+		defer ts.Close()
+
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		args := map[string]interface{}{
+			"organization":  "o",
+			"project":       "p",
+			"definition_id": 1,
+			"variables": map[string]interface{}{
+				"TEST": map[string]interface{}{"value": "val"},
+			},
+		}
+		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode definition")
+	})
+
+	t.Run("PUT Build Definition - HTTP Error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"id": 1, "variables": {}}`))
+				return
+			}
+			w.WriteHeader(http.StatusBadRequest)
+		}))
+		defer ts.Close()
+
+		m := NewADOManager(sm, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		args := map[string]interface{}{
+			"organization":  "o",
+			"project":       "p",
+			"definition_id": 1,
+			"variables": map[string]interface{}{
+				"TEST": map[string]interface{}{"value": "val"},
+			},
+		}
+		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "returned status: 400")
+	})
+
+	t.Run("Confirmation Denied", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": 1, "variables": {}}`))
+		}))
+		defer ts.Close()
+
+		deniedSM := &mockSecurityManager{approved: false}
+		m := NewADOManager(deniedSM, WithBaseURL(ts.URL), WithHTTPClient(ts.Client()), WithToken("test-pat"))
+		args := map[string]interface{}{
+			"organization":  "o",
+			"project":       "p",
+			"definition_id": 1,
+			"variables": map[string]interface{}{
+				"TEST": map[string]interface{}{"value": "val"},
+			},
+		}
+		res, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, res.Text, "cancelled by user")
+	})
+}
