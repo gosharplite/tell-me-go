@@ -249,14 +249,14 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 				return
 			}
 
-			// Verify x-api-key has allowOverride: false
-			if v, ok := req.Configuration.Variables["x-api-key"]; !ok || *v.AllowOverride {
+			// Verify allowOverride is false
+			if v, ok := req.Configuration.Variables["x-api-key"]; !ok || *v.AllowOverride || (v.IsSettableAtQueueTime != nil && *v.IsSettableAtQueueTime) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
 			// Verify debug-mode has allowOverride: true (defaulted)
-			if v, ok := req.Configuration.Variables["debug-mode"]; !ok || !*v.AllowOverride {
+			if v, ok := req.Configuration.Variables["debug-mode"]; !ok || !*v.AllowOverride || (v.IsSettableAtQueueTime != nil && !*v.IsSettableAtQueueTime) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}

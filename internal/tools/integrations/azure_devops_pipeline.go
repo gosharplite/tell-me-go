@@ -96,9 +96,10 @@ type adoRunPipelineParams struct {
 }
 
 type adoVariable struct {
-	Value         string `json:"value"`
-	IsSecret      bool   `json:"isSecret"`
-	AllowOverride *bool  `json:"allowOverride,omitempty"`
+	Value                 string `json:"value"`
+	IsSecret              bool   `json:"isSecret"`
+	AllowOverride         *bool  `json:"allowOverride,omitempty"`
+	IsSettableAtQueueTime *bool  `json:"isSettableAtQueueTime,omitempty"`
 }
 
 type adoVariableGroup struct {
@@ -979,6 +980,8 @@ func (m *ADOManager) executeCreatePipeline(ctx context.Context, org, project, na
 			trueVal := true
 			v.AllowOverride = &trueVal
 		}
+		// Sync IsSettableAtQueueTime with AllowOverride for compatibility across ADO APIs
+		v.IsSettableAtQueueTime = v.AllowOverride
 		variables[k] = v
 	}
 
