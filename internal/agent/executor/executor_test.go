@@ -319,7 +319,7 @@ func TestNewToolExecutor_NilLogger(t *testing.T) {
 func TestNewToolExecutor_NilRegistry(t *testing.T) {
 	// Call with nil registry
 	executor, err := NewToolExecutor(nil, nil, nil, nil)
-	
+
 	// Should return an error and a nil executor
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "registry is required")

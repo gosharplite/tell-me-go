@@ -186,7 +186,6 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 	}
 }
 
-
 func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	// Create a mock event bus that always returns an error
 	mockBus := &inframock.TestEventBus{
@@ -197,7 +196,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	counter := &mockTokenCounter{tokens: 200}
 	strategy := NewContextStrategy(counter, nil)
 	strategy.setTieredThreshold(100) // Trigger tiered threshold
-	
+
 	gatekeeper := &tokenGatekeeper{
 		MaxTokens: 1000,
 		Estimator: strategy,
@@ -209,7 +208,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		largeText += "token "
 	}
-	
+
 	req := &ports.ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: largeText}}},
@@ -224,12 +223,12 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 
 func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
 	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
-	
+
 	gatekeeper := &tokenGatekeeper{
 		MaxTokens: 10,
 		Estimator: strategy,
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 

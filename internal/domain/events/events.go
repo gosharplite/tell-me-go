@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -44,14 +43,8 @@ type SimpleEventBus struct {
 	capacity        int
 	closing         chan struct{}
 	activeProducers sync.WaitGroup // Tracks lockless senders like Flush
-	droppedEvents   uint64         // Tracks events dropped at the channel level
 	ctx             context.Context
 	cancel          context.CancelFunc
-}
-
-// DroppedEvents returns the number of events dropped due to buffer capacity.
-func (b *SimpleEventBus) DroppedEvents() uint64 {
-	return atomic.LoadUint64(&b.droppedEvents)
 }
 
 type flushEvent struct {

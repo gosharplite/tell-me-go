@@ -1340,10 +1340,10 @@ func testContextCancellation_RecoveryStep_DoneChannel(t *testing.T) {
 func TestTurnEngine_ExecuteTurn_ContextCancellation(t *testing.T) {
 	env := setupTurnEngineTest(t)
 	engine := newTurnEngine(env.gw, nil, env.cm, env.reg, env.bus, env.cm.Strategy)
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
-	
+
 	tr := &turn{
 		Events:     env.bus,
 		Index:      1,
@@ -1353,10 +1353,10 @@ func TestTurnEngine_ExecuteTurn_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	// This should fail immediately because the context is canceled when 
+	// This should fail immediately because the context is canceled when
 	// it tries to publish the TurnStarted event.
 	err := engine.executeTurn(ctx, tr)
-	
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error, got: %v", err)
 	}
@@ -1365,12 +1365,12 @@ func TestTurnEngine_ExecuteTurn_ContextCancellation(t *testing.T) {
 func TestTurnEngine_ExecuteTurn_Publish_Error(t *testing.T) {
 	env := setupTurnEngineTest(t)
 	engine := newTurnEngine(env.gw, nil, env.cm, env.reg, env.bus, env.cm.Strategy)
-	
+
 	// Mock the event bus to return an error on Publish
 	mockBus := &inframock.TestEventBus{
 		PublishErr: context.Canceled,
 	}
-	
+
 	tr := &turn{
 		Events:     mockBus,
 		Index:      1,
@@ -1381,7 +1381,7 @@ func TestTurnEngine_ExecuteTurn_Publish_Error(t *testing.T) {
 	}
 
 	err := engine.executeTurn(context.Background(), tr)
-	
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error from executeTurn, got: %v", err)
 	}

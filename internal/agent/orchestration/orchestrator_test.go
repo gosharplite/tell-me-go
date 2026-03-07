@@ -598,7 +598,7 @@ func TestSessionDependencies_Accessors(t *testing.T) {
 	deps := &sessionDependencies{
 		Paths: paths,
 	}
-	
+
 	require.Equal(t, paths, deps.GetPaths())
 	require.Nil(t, deps.GetPricingOverrides())
 	require.Nil(t, deps.GetGateway())
@@ -625,12 +625,12 @@ func TestOrchestrator_AgentFactory_Error(t *testing.T) {
 		HistoryManager: new(mockHistoryManager),
 	}
 	sc := &sessionConfig{Config: &config.Config{}}
-	
+
 	mCapturer := new(mockCapturer)
 	mCapturer.On("IsTTY", mock.Anything).Return(true)
 
 	err := o.Run(context.Background(), sc, deps, mCapturer)
-	
+
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "factory failed")
 }

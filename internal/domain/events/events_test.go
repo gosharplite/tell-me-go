@@ -507,45 +507,6 @@ func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
 	close(block)
 }
 
-/*
-func TestSimpleEventBus_DroppedEventsMetric(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBusWithCapacity(1)
-
-	// Create a subscriber that blocks.
-	block := make(chan struct{})
-	bus.Subscribe(func(e events.Event) {
-		<-block
-	})
-
-	// 1. Publish first event to occupy the subscriber.
-	if err := bus.Publish(context.Background(), "first"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-
-	// Wait a bit to ensure subscriber has picked up "first"
-	// and is now blocked on the subscriber callback.
-	time.Sleep(20 * time.Millisecond)
-
-	// 2. Publish many events to saturate both the ring buffer and the 'in' channel.
-	for i := 0; i < 50; i++ {
-		_ = bus.Publish(context.Background(), fmt.Sprintf("event-%d", i))
-	}
-
-	// Give pumpEvents a moment to pick up as many as possible and then block on 'out'.
-	time.Sleep(20 * time.Millisecond)
-
-	// 3. This event should definitely be dropped at the channel level.
-	_ = bus.Publish(context.Background(), "dropped-1")
-
-	if bus.DroppedEvents() == 0 {
-		t.Errorf("expected dropped events at channel level, got 0")
-	}
-
-	close(block)
-}
-*/
-
 func TestEventBus_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
 	bus := events.NewSimpleEventBus()
@@ -599,14 +560,14 @@ func TestEventBus_Subscribe_ContextCancellation_PreventsLeak(t *testing.T) {
 func TestEventBus_Publish_ContextCancellation(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Cancel the context immediately BEFORE calling Publish
 	cancel()
-	
+
 	// Because the context is already canceled, Publish should immediately
 	// trigger the `case <-ctx.Done():` block and return context.Canceled.
 	err := bus.Publish(ctx, "test-event")
-	
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error, got: %v", err)
 	}
@@ -618,7 +579,7 @@ func TestSimpleEventBus_Publish_ContextCancellation_Internal(t *testing.T) {
 	defer func() { _ = bus.Shutdown(context.Background()) }()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Create a subscriber
 	bus.Subscribe(func(e events.Event) {})
 
@@ -627,7 +588,7 @@ func TestSimpleEventBus_Publish_ContextCancellation_Internal(t *testing.T) {
 
 	// This should return context.Canceled from the top check
 	err := bus.Publish(ctx, "event")
-	
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error, got: %v", err)
 	}

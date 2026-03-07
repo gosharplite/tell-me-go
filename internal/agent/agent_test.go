@@ -687,13 +687,13 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 		events:        events.NewSimpleEventBus(),
 		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
 	// Applying config with a canceled context should fail when trying to publish
 	err := a.applyConfig(ctx)
-	
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error, got: %v", err)
 	}
@@ -704,14 +704,14 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 	mockBus := &inframock.TestEventBus{
 		PublishErr: context.Canceled,
 	}
-	
+
 	a := &agent{
 		events:        mockBus,
 		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
 	}
-	
+
 	err := a.applyConfig(context.Background())
-	
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error from applyConfig, got: %v", err)
 	}
