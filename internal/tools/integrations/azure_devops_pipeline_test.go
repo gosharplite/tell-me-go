@@ -327,11 +327,11 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 
 	assert.Equal(t, float64(123), def["id"])
 	assert.Equal(t, "test-pipeline", def["name"])
-	
+
 	config := def["configuration"].(map[string]interface{})
 	vars := config["variables"].(map[string]interface{})
 	secretVar := vars["secret-var"].(map[string]interface{})
-	
+
 	assert.True(t, secretVar["isSecret"].(bool))
 	assert.False(t, secretVar["isSettableAtQueueTime"].(bool))
 }
@@ -373,7 +373,7 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			
+
 			newVar := vars["new-var"].(map[string]interface{})
 			if newVar["value"] != "new" || newVar["allowOverride"] != false {
 				w.WriteHeader(http.StatusBadRequest)

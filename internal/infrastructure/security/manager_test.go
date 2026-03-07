@@ -203,7 +203,7 @@ func TestSecurityManager_Confirm_Bypass(t *testing.T) {
 	if err != nil || !ok {
 		t.Errorf("Confirm(user=n, bypass=true) = %v, %v; want true, nil", ok, err)
 	}
-	
+
 	// Verify that a warning was captured
 	if len(interactor.Warns) == 0 || !strings.Contains(interactor.Warns[0], "[Auto-Approved]") {
 		t.Errorf("Expected auto-approval warning, got: %v", interactor.Warns)

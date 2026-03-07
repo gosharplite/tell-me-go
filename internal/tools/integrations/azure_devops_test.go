@@ -1422,7 +1422,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 		},
 	}
 
-		for _, tt := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pat := tt.setupPAT
 			if pat == "" {
