@@ -727,20 +727,21 @@ func (m *ADOManager) streamTail(reader io.Reader, n int) (string, error) {
 	return result.String(), nil
 }
 
-func (m *ADOManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		Organization string `json:"organization"`
-		Project      string `json:"project"`
-		BuildId      int    `json:"build_id"`
-		Top          int    `json:"top"`
-	}
+type adoGetBuildChangesParams struct {
+	Organization string `json:"organization"`
+	Project      string `json:"project"`
+	BuildId      int    `json:"build_id"`
+	Top          int    `json:"top"`
+}
 
+func parseGetBuildChangesArgs(args map[string]interface{}) (adoGetBuildChangesParams, error) {
+	var params adoGetBuildChangesParams
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("parsing get build changes args: %w", err)
+		return params, fmt.Errorf("parsing get build changes args: %w", err)
 	}
 
 	if params.Organization == "" || params.Project == "" || params.BuildId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, and build_id are required")
+		return params, fmt.Errorf("organization, project, and build_id are required")
 	}
 
 	if params.Top <= 0 {
@@ -749,10 +750,14 @@ func (m *ADOManager) adoGetBuildChanges(ctx context.Context, args map[string]int
 		params.Top = 1000 // Defensive upper bound
 	}
 
+	return params, nil
+}
+
+func (m *ADOManager) buildGetBuildChangesURL(params adoGetBuildChangesParams) (string, error) {
 	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/changes",
 		m.baseURL, url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
+		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
 
 	q := u.Query()
@@ -760,26 +765,49 @@ func (m *ADOManager) adoGetBuildChanges(ctx context.Context, args map[string]int
 	q.Set("api-version", "7.0")
 	u.RawQuery = q.Encode()
 
-	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
+	return u.String(), nil
+}
+
+func (m *ADOManager) parseBuildChangesResponse(body io.Reader) (string, error) {
+	var responseData struct {
+		Value []interface{} `json:"value"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&responseData); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	output, err := json.MarshalIndent(responseData.Value, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal build changes: %w", err)
+	}
+
+	return string(output), nil
+}
+
+func (m *ADOManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	params, err := parseGetBuildChangesArgs(args)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	u, err := m.buildGetBuildChangesURL(params)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get build changes request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var responseData struct {
-		Value []interface{} `json:"value"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	output, err := json.MarshalIndent(responseData.Value, "", "  ")
+	result, err := m.parseBuildChangesResponse(resp.Body)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to marshal build changes: %w", err)
+		return tools.ToolResult{}, err
 	}
 
-	return tools.ToolResult{Text: string(output)}, nil
+	return tools.ToolResult{Text: result}, nil
 }
 
 type adoPipeline struct {
