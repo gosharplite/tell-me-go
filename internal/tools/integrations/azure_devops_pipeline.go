@@ -514,10 +514,19 @@ func (m *adoManager) streamRegexFilter(reader io.Reader, query string, contextLi
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, maxCapacity)
 
+	// HARD CAP: Protect the LLM context window from greedy regexes
+	const maxMatchedLines = 1000
+	matchCount := 0
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if re.MatchString(line) {
+			if matchCount >= maxMatchedLines {
+				state.result.WriteString(fmt.Sprintf("\n... [WARNING: filter_query matched >%d lines. Output truncated to protect context limits. Please use a more specific regex.]\n", maxMatchedLines))
+				break
+			}
 			state.addMatch(line)
+			matchCount++
 		} else {
 			state.addNonMatch(line)
 		}

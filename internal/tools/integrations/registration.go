@@ -584,7 +584,7 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 				},
 				"filter_query": {
 					Type:        "STRING",
-					Description: "Regex to filter log lines (e.g. 'error|failed').",
+					Description: "Regex to filter log lines (e.g. 'error|failed'). WARNING: This parameter OVERRIDES tail/head/pagination. It scans the ENTIRE file. Do NOT use greedy wildcards like '.*' as it will return massive payloads and crash the context.",
 				},
 				"context_lines": {
 					Type:        "INTEGER",
@@ -739,7 +739,7 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 				},
 				"filter_query": {
 					Type:        "STRING",
-					Description: "Regex to filter log lines (e.g. 'error|failed').",
+					Description: "Regex to filter log lines (e.g. 'error|failed'). WARNING: This parameter OVERRIDES tail/head/pagination. It scans the ENTIRE file. Do NOT use greedy wildcards like '.*' as it will return massive payloads and crash the context.",
 				},
 				"context_lines": {
 					Type:        "INTEGER",
