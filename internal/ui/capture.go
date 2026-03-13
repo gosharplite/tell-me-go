@@ -116,55 +116,66 @@ func (c *capturer) finalizePrompt(prompt string, options *orchestration.CaptureO
 	return prompt, nil
 }
 
-func (c *capturer) captureFromPipe(ctx context.Context, initialPrompt string) (string, error) {
-	type result struct {
-		data []byte
+func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, error) {
+	type readResult struct {
+		data string
 		err  error
 	}
-	readChan := make(chan result, 1)
+
+	// Size 1 buffer is REQUIRED to prevent goroutine leaks on context cancellation
+	ch := make(chan readResult, 1)
+
 	go func() {
-		b, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
-		readChan <- result{b, err}
+		bytes, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
+		if err != nil {
+			ch <- readResult{err: fmt.Errorf("failed to read from pipe: %w", err)}
+			return
+		}
+
+		combined := prompt
+		if len(bytes) > 0 {
+			combined = prompt + "\n" + string(bytes)
+		}
+		ch <- readResult{data: combined, err: nil}
 	}()
 
 	select {
 	case <-ctx.Done():
+		// Context canceled (e.g., Timeout, OS Signal)
 		return "", ctx.Err()
-	case res := <-readChan:
-		if res.err != nil {
-			return "", fmt.Errorf("failed to read from pipe: %w", res.err)
-		}
-		if len(res.data) == 0 {
-			return initialPrompt, nil
-		}
-		if initialPrompt != "" {
-			return initialPrompt + "\n" + string(res.data), nil
-		}
-		return string(res.data), nil
+	case res := <-ch:
+		// Read completed successfully or with an I/O error
+		return res.data, res.err
 	}
 }
 
 func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
 	c.printFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
 
-	type result struct {
-		data []byte
+	type readResult struct {
+		data string
 		err  error
 	}
-	readChan := make(chan result, 1)
+
+	// Size 1 buffer is REQUIRED to prevent goroutine leaks on context cancellation
+	ch := make(chan readResult, 1)
+
 	go func() {
-		b, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
-		readChan <- result{b, err}
+		bytes, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
+		if err != nil {
+			ch <- readResult{err: fmt.Errorf("failed to read from TTY: %w", err)}
+			return
+		}
+		ch <- readResult{data: string(bytes), err: nil}
 	}()
 
 	select {
 	case <-ctx.Done():
+		// Context canceled (e.g., Timeout, OS Signal)
 		return "", ctx.Err()
-	case res := <-readChan:
-		if res.err != nil {
-			return "", fmt.Errorf("failed to read from TTY: %w", res.err)
-		}
-		return string(res.data), nil
+	case res := <-ch:
+		// Read completed successfully or with an I/O error
+		return res.data, res.err
 	}
 }
 
