@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -24,7 +25,6 @@ type store interface {
 	Archive(ctx context.Context, contents []*llm.Content) error
 	AppendParts(ctx context.Context, index int, parts []*llm.Part) error
 	UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error
-	Truncate(ctx context.Context, length int) error
 	Compact(ctx context.Context) error
 }
 
@@ -33,7 +33,6 @@ type historyPatch struct {
 	IsPatch     bool                   `json:"_patch"`
 	Index       int                    `json:"index"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	Truncate    *int                   `json:"truncate,omitempty"`
 	AppendParts []*llm.Part            `json:"append_parts,omitempty"`
 }
 
@@ -78,12 +77,16 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 				}
 			}
 		}
-		return []*llm.Content{}, nil
+		// Return ErrHistoryNotFound to allow domain layers to make decisions (like starting fresh)
+		return nil, fmt.Errorf("stat history file %s: %w", s.filePath, ports.ErrHistoryNotFound)
 	}
 
 	data, err := s.fs.ReadFile(ctx, s.filePath)
 	if err != nil {
-		return nil, err
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("loading history from %s: %w", s.filePath, ports.ErrHistoryNotFound)
+		}
+		return nil, fmt.Errorf("reading history file %s: %w", s.filePath, err)
 	}
 
 	if len(data) == 0 {
@@ -165,11 +168,7 @@ func (s *jsonlStore) loadJSONL(ctx context.Context, data []byte) ([]*llm.Content
 }
 
 func (s *jsonlStore) applyPatch(patch historyPatch, contents []*llm.Content) []*llm.Content {
-	if patch.Truncate != nil {
-		if *patch.Truncate >= 0 && *patch.Truncate <= len(contents) {
-			contents = contents[:*patch.Truncate]
-		}
-	} else if patch.Index >= 0 && patch.Index < len(contents) {
+	if patch.Index >= 0 && patch.Index < len(contents) {
 		if len(patch.AppendParts) > 0 {
 			contents[patch.Index].Parts = append(contents[patch.Index].Parts, patch.AppendParts...)
 		}
@@ -204,7 +203,7 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 		}
 	}
 
-	var data []byte
+	var buf bytes.Buffer
 	for _, c := range contents {
 		prepared, err := s.prepareForStorage(ctx, c)
 		if err != nil {
@@ -214,11 +213,11 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal content: %w", err)
 		}
-		data = append(data, line...)
-		data = append(data, '\n')
+		buf.Write(line)
+		buf.WriteByte('\n')
 	}
 
-	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
+	return s.fs.WriteFile(ctx, s.filePath, buf.Bytes(), 0644)
 }
 
 // Append appends multiple content entries to the history file.
@@ -356,41 +355,6 @@ func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map
 		IsPatch:  true,
 		Index:    index,
 		Metadata: metadata,
-	}
-	line, merr := json.Marshal(patch)
-	if merr != nil {
-		return merr
-	}
-	line = append(line, '\n')
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	_, err = f.Write(line)
-	return err
-}
-
-// Truncate appends a patch to rollback history to a specific length.
-func (s *jsonlStore) Truncate(ctx context.Context, length int) (err error) {
-	if err := s.ensureDirectory(ctx); err != nil {
-		return err
-	}
-	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if oerr != nil {
-		return oerr
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	patch := historyPatch{
-		IsPatch:  true,
-		Truncate: &length,
 	}
 	line, merr := json.Marshal(patch)
 	if merr != nil {

@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -22,10 +23,11 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 		t.Skip("skipping slow robustness test in short mode")
 	}
 	reg := registry.New()
-	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		time.Sleep(2 * time.Millisecond)
+	err := reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		runtime.Gosched()
 		return tools.ToolResult{Text: "ok"}, nil
 	})
+	require.NoError(t, err)
 
 	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
@@ -53,7 +55,7 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
 			exec.SetConcurrency(1+(i%10), time.Duration(10+i)*time.Millisecond)
-			time.Sleep(1 * time.Millisecond)
+			runtime.Gosched()
 		}
 	}()
 
@@ -69,7 +71,12 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 
 	// Create a tool that blocks until told to proceed, so we can reliably cancel context mid-batch
 	blockCh := make(chan struct{})
-	reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	toolStarted := make(chan struct{}, 1)
+	regErr := reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		select {
+		case toolStarted <- struct{}{}:
+		default:
+		}
 		select {
 		case <-blockCh:
 			return tools.ToolResult{Text: "ok"}, nil
@@ -77,6 +84,7 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 			return tools.ToolResult{Text: "canceled", Error: ctx.Err()}, nil
 		}
 	})
+	require.NoError(t, regErr)
 
 	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
@@ -101,8 +109,8 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 		_, execErr = exec.Execute(ctx, content, 0, 10)
 	}()
 
-	// Wait a moment for the executor to enqueue the tools and block
-	time.Sleep(50 * time.Millisecond)
+	// Wait for the executor to start running the tool
+	<-toolStarted
 
 	// Cancel the context mid-batch
 	cancel()

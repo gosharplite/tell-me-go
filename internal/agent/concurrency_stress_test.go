@@ -7,6 +7,7 @@ import (
 	"context"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -37,12 +38,18 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	// Register a slow tool to keep the agent busy
-	reg.Register(&tools.ToolDeclaration{
+	toolProceed := make(chan struct{})
+	defer close(toolProceed) // Ensure it's closed to prevent deadlock
+	err := reg.Register(&tools.ToolDeclaration{
 		Name: "slow_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-toolProceed:
+		case <-ctx.Done():
+		}
 		return tools.ToolResult{Text: "done"}, nil
 	})
+	require.NoError(t, err)
 
 	mockClient := &stressmockLLMClient{
 		sendChatFn: func(ctx context.Context, history []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -76,7 +83,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
 			_ = a.SetLimits(ctx, 10, 1000+i, 20)
-			time.Sleep(10 * time.Millisecond)
+			runtime.Gosched()
 		}
 	}()
 
@@ -148,10 +155,17 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
-	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		time.Sleep(10 * time.Millisecond)
+	toolProceedTask := make(chan struct{})
+	defer close(toolProceedTask)
+
+	err = reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		select {
+		case <-toolProceedTask:
+		case <-ctx.Done():
+		}
 		return tools.ToolResult{Text: "ok"}, nil
 	})
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -213,7 +227,7 @@ func TestContextManager_Race(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
 			_, _, _ = cm.Prepare(ctx, i)
-			time.Sleep(2 * time.Millisecond)
+			runtime.Gosched()
 		}
 	}()
 
@@ -223,7 +237,7 @@ func TestContextManager_Race(t *testing.T) {
 		for i := 0; i < 50; i++ {
 			_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "ping"}}})
 			_ = cm.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "pong"}}})
-			time.Sleep(3 * time.Millisecond)
+			runtime.Gosched()
 		}
 	}()
 
@@ -240,7 +254,7 @@ func TestContextManager_Race(t *testing.T) {
 			}); err != nil {
 				t.Errorf("failed to publish config update: %v", err)
 			}
-			time.Sleep(5 * time.Millisecond)
+			runtime.Gosched()
 		}
 	}()
 
@@ -249,7 +263,7 @@ func TestContextManager_Race(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 10; i++ {
 			_, _, _ = cm.SummarizeRange(ctx, 2, "focus")
-			time.Sleep(10 * time.Millisecond)
+			runtime.Gosched()
 		}
 	}()
 

@@ -17,7 +17,8 @@ func toSDKContent(ctx context.Context, c *llm.Content, resolver llm.AssetResolve
 		return nil
 	}
 	res := &genai.Content{
-		Role: c.Role,
+		Role:  c.Role,
+		Parts: make([]*genai.Part, 0, len(c.Parts)+len(c.TransientParts)),
 	}
 	for _, p := range c.Parts {
 		res.Parts = append(res.Parts, toSDKPart(ctx, p, resolver))
@@ -107,7 +108,8 @@ func fromSDKContent(c *genai.Content) *llm.Content {
 		return nil
 	}
 	res := &llm.Content{
-		Role: c.Role,
+		Role:  c.Role,
+		Parts: make([]*llm.Part, 0, len(c.Parts)),
 	}
 	for i, p := range c.Parts {
 		res.Parts = append(res.Parts, fromSDKPart(p, i))

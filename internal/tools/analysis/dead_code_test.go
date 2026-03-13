@@ -54,9 +54,6 @@ func (m *deadCodeSecurityProvider) LogAudit(label1, val1, label2, val2 string) {
 func (m *deadCodeSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
-func (m *deadCodeSecurityProvider) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	return true, nil
-}
 
 func getFindOrphanedSymbolsTestCases() []struct {
 	name     string

@@ -15,12 +15,14 @@ func TestRegistrySmoke(t *testing.T) {
 	t.Parallel()
 	r := registry.New()
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "test_tool",
 		Description: "A test tool",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "OK"}, nil
-	})
+	}); err != nil {
+		t.Fatalf("failed to register tool: %v", err)
+	}
 
 	res, err := r.Execute(context.Background(), "test_tool", nil)
 	if err != nil {

@@ -76,7 +76,7 @@ func (s *ConfigService) Get(key string) (string, error) {
 	if v, ok := s.config[key]; ok {
 		return v, nil
 	}
-	return "", fmt.Errorf("key not found: %s", key)
+	return "", fmt.Errorf("lookup '%s': %w", key, ports.ErrConfigKeyNotFound)
 }
 
 // Delete removes a configuration key.

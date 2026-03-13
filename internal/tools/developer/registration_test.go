@@ -17,15 +17,16 @@ type mockToolRegistry struct {
 	tools map[string]bool
 }
 
-func (m *mockToolRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {
+func (m *mockToolRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
 	if m.tools == nil {
 		m.tools = make(map[string]bool)
 	}
 	m.tools[def.Name] = true
+	return nil
 }
 
-func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
-	m.Register(def, handler)
+func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.Register(def, handler)
 }
 
 func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
@@ -46,7 +47,9 @@ func TestRegister(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
 	exec := &mockCommandExecutor{}
 
-	Register(registry, sm, exec, validator, fs)
+	if err := Register(registry, sm, exec, validator, fs); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	toolNames := []string{
 		"run_tests",

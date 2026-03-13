@@ -93,7 +93,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	// Setup
 
 	registry := internaltools.New()
-	registry.Register(&tools.ToolDeclaration{
+	regErr := registry.Register(&tools.ToolDeclaration{
 		Name: "get_image",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{
@@ -103,6 +103,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 			},
 		}, nil
 	})
+	require.NoError(t, regErr)
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")

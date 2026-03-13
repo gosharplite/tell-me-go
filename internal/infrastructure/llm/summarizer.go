@@ -69,12 +69,13 @@ func (s *summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 
 // prepareSummarizerInput transforms history to text-only to avoid INVALID_ARGUMENT and appends the summarization prompt.
 func (s *summarizer) prepareSummarizerInput(subset []*llm.Content, focus string) []*llm.Content {
-	input := make([]*llm.Content, len(subset))
-	for i, c := range subset {
-		input[i] = &llm.Content{Role: c.Role}
+	input := make([]*llm.Content, 0, len(subset)+1)
+	for _, c := range subset {
+		content := &llm.Content{Role: c.Role, Parts: make([]*llm.Part, 0, len(c.Parts))}
 		for _, p := range c.Parts {
-			s.transformPartToText(input[i], p)
+			s.transformPartToText(content, p)
 		}
+		input = append(input, content)
 	}
 
 	prompt := summarizationPrompt

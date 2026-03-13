@@ -6,6 +6,7 @@ package history
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,35 +128,6 @@ func TestHistoryManager_Save_Error(t *testing.T) {
 	if err := m.Save(ctx); err == nil {
 		t.Error("expected error when directory creation fails, got nil")
 	}
-}
-
-func TestHistoryManager_SnapshotRollback(t *testing.T) {
-	tmpDir := t.TempDir()
-	historyFile := filepath.Join(tmpDir, "history.json")
-	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
-	ctx := context.Background()
-
-	_ = m.addEntry(ctx, "user", "Initial")
-	m.snapshot()
-
-	_ = m.addEntry(ctx, "model", "Response")
-	if m.GetTotalEntries() != 2 {
-		t.Errorf("expected 2 entries, got %d", m.GetTotalEntries())
-	}
-
-	m.rollback(ctx)
-	if m.GetTotalEntries() != 1 {
-		t.Errorf("expected 1 entry after rollback, got %d", m.GetTotalEntries())
-	}
-	contents, _ := m.GetWindow(ctx, 0, 1)
-	if contents[0].Parts[0].Text != "Initial" {
-		t.Errorf("expected 'Initial', got '%s'", contents[0].Parts[0].Text)
-	}
-
-	// rollback with no snapshot should do nothing (or at least not crash)
-	m3 := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "m3.json"), filepath.Join(tmpDir, "m3.archive.jsonl"))
-	m3.rollback(ctx)
 }
 
 func TestHistoryManager_Interfaces(t *testing.T) {
@@ -305,8 +277,7 @@ func TestHistoryManager_ClonePersistent(t *testing.T) {
 func (s *mockStore) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error {
 	return nil
 }
-func (s *mockStore) Truncate(ctx context.Context, length int) error { return nil }
-func (s *mockStore) Compact(ctx context.Context) error              { return nil }
+func (s *mockStore) Compact(ctx context.Context) error { return nil }
 
 type mockStoreErrorMetadata struct {
 	mockStore
@@ -445,4 +416,165 @@ func TestHistoryManager_Archive(t *testing.T) {
 	if _, err := os.Stat(archiveFile); os.IsNotExist(err) {
 		t.Error("archive file was not created")
 	}
+}
+
+type rollbackTestCase struct {
+	name          string
+	initialState  []*llm.Content
+	turnsToRemove int
+	setupStore    func(m *Manager) // Optional hook to override internal state
+	wantRemoved   int
+	wantRemaining int
+	wantMsgs      int
+	wantErr       bool
+}
+
+func TestManager_RollbackTurns(t *testing.T) {
+	ctx := context.Background()
+	fs := infrapersistence.NewOSFileSystem()
+
+	// Setup initial states
+	threeTurns := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u3"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m3"}}},
+	}
+	twoTurns := threeTurns[:4]
+	var emptyState []*llm.Content
+
+	tests := []rollbackTestCase{
+		{"Normal Rollback (1 turn)", threeTurns, 1, nil, 1, 2, 4, false},
+		{"Out-of-Bounds Rollback", twoTurns, 10, nil, 2, 0, 0, false},
+		{"Empty Rollback", emptyState, 1, nil, 0, 0, 0, false},
+		{"Negative Rollback (Should be No-Op)", threeTurns, -1, nil, 0, 3, 6, false},
+		{"Zero Rollback (Should be No-Op)", threeTurns, 0, nil, 0, 3, 6, false},
+		{
+			name:          "Save Error",
+			initialState:  threeTurns,
+			turnsToRemove: 1,
+			setupStore: func(mgr *Manager) {
+				mgr.setStore(&mockFailingStore{err: errors.New("disk full")})
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, "history.jsonl")
+			mgr := NewManager(fs, filePath, "")
+
+			if len(tt.initialState) > 0 {
+				if err := mgr.SetContents(ctx, tt.initialState); err != nil {
+					t.Fatalf("failed to setup initial state: %v", err)
+				}
+			}
+
+			if tt.setupStore != nil {
+				tt.setupStore(mgr)
+			}
+
+			actual, remaining, msgs, err := mgr.RollbackTurns(ctx, tt.turnsToRemove)
+			assertRollbackState(t, mgr, tt, actual, remaining, msgs, err)
+		})
+	}
+}
+
+func assertRollbackState(t *testing.T, mgr *Manager, tt rollbackTestCase, actual, remaining, msgs int, err error) {
+	t.Helper()
+	if (err != nil) != tt.wantErr {
+		t.Fatalf("RollbackTurns() error = %v, wantErr %v", err, tt.wantErr)
+	}
+
+	if tt.wantErr {
+		if len(mgr.Contents) != len(tt.initialState) {
+			t.Errorf("expected Contents to be restored to length %d, got %d", len(tt.initialState), len(mgr.Contents))
+		}
+		return
+	}
+
+	if actual != tt.wantRemoved {
+		t.Errorf("actualRemoved = %d; want %d", actual, tt.wantRemoved)
+	}
+	if remaining != tt.wantRemaining {
+		t.Errorf("remainingTurns = %d; want %d", remaining, tt.wantRemaining)
+	}
+	if msgs != tt.wantMsgs {
+		t.Errorf("remainingMsgs = %d; want %d", msgs, tt.wantMsgs)
+	}
+	if len(mgr.Contents) != tt.wantMsgs {
+		t.Errorf("len(mgr.Contents) = %d; want %d", len(mgr.Contents), tt.wantMsgs)
+	}
+}
+
+type mockFailingStore struct {
+	mockStore
+	err error
+}
+
+func (m *mockFailingStore) Save(ctx context.Context, contents []*llm.Content) error {
+	return m.err
+}
+
+func FuzzManager_RollbackTurns(f *testing.F) {
+	// 1. Seed Corpus
+	f.Add(-1)
+	f.Add(0)
+	f.Add(1)
+	f.Add(5)
+	f.Add(100)
+	f.Add(math.MaxInt32)
+	f.Add(math.MinInt32)
+	f.Add(math.MaxInt)
+	f.Add(math.MinInt)
+
+	// 2. Fuzz Target
+	f.Fuzz(func(t *testing.T, turns int) {
+		// Setup dummy state: 10 messages (5 turns)
+		m := &Manager{
+			Contents: make([]*llm.Content, 10),
+			store:    &mockStore{},
+		}
+		for i := range m.Contents {
+			m.Contents[i] = &llm.Content{}
+		}
+		initialLen := len(m.Contents)
+		ctx := context.Background()
+
+		// Execute
+		actualRemoved, remainingTurns, remainingMsgs, err := m.RollbackTurns(ctx, turns)
+
+		// Assert Invariants
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		finalLen := len(m.Contents)
+
+		if finalLen < 0 {
+			t.Errorf("invariant violation: final length %d is negative (input turns: %d)", finalLen, turns)
+		}
+
+		if finalLen > initialLen {
+			t.Errorf("invariant violation: final length %d exceeds initial length %d (input turns: %d)", finalLen, initialLen, turns)
+		}
+
+		if actualRemoved < 0 {
+			t.Errorf("invariant violation: actualRemoved %d is negative (input turns: %d)", actualRemoved, turns)
+		}
+
+		// Ensure calculated remaining aligns with actual slice length
+		if remainingMsgs != finalLen {
+			t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
+		}
+
+		expectedRemainingTurns := finalLen / 2
+		if remainingTurns != expectedRemainingTurns {
+			t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)
+		}
+	})
 }

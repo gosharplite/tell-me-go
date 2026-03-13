@@ -58,11 +58,27 @@ type ToolOptions struct {
 	LongRunning bool // If true, the tool is exempt from default timeouts (e.g., interactive or heavy task).
 }
 
-type IToolRegistry interface {
-	Register(def *ToolDeclaration, handler ToolFunc)
-	RegisterWithOptions(def *ToolDeclaration, handler ToolFunc, opts ToolOptions)
+// ToolRegistrar defines the interface for adding tools to the registry.
+type ToolRegistrar interface {
+	Register(def *ToolDeclaration, handler ToolFunc) error
+	RegisterWithOptions(def *ToolDeclaration, handler ToolFunc, opts ToolOptions) error
+}
+
+// ToolExecutor defines the interface for executing tools and checking their behavior.
+type ToolExecutor interface {
 	Execute(ctx context.Context, name string, args map[string]interface{}) (ToolResult, error)
 	IsSerial(name string) bool
 	IsLongRunning(name string) bool
+}
+
+// ToolMetadataProvider defines the interface for listing available tools.
+type ToolMetadataProvider interface {
 	GetDeclarations() []*ToolDeclaration
+}
+
+// IToolRegistry defines the interface for the tool registry.
+type IToolRegistry interface {
+	ToolRegistrar
+	ToolExecutor
+	ToolMetadataProvider
 }

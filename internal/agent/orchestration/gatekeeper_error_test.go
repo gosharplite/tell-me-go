@@ -148,7 +148,7 @@ func (m *mockFailingChatter) GetName() string                                   
 type mockFailingCapturer struct{}
 
 func (m *mockFailingCapturer) IsTTY(any) bool { return false }
-func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, int, bool) (string, error) {
+func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, ...CaptureOption) (string, error) {
 	return "", nil
 }
 
@@ -175,7 +175,7 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 	cfg := &config.Config{
 		SelectedProvider: "test",
 	}
-	sc := newSessionConfig("", false, 0, false, "test prompt", cfg)
+	sc := newSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
 	sd := newSessionDependencies(&persistence.Paths{}, &mockHistoryManager{}, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil)

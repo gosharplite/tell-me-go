@@ -90,7 +90,7 @@ type mockHistoryRenderer struct {
 	mock.Mock
 }
 
-func (m *mockHistoryRenderer) Render(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
+func (m *mockHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
 	m.Called(w, h, n, options)
 }
 
@@ -103,8 +103,8 @@ func (m *mockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
-	args := m.Called(ctx, fs, lastN, raw)
+func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error) {
+	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
 }
 
@@ -124,7 +124,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mUIRenderer := new(mockUIRenderer)
 	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := newSessionConfig("", false, 0, false, "hello", &config.Config{
+	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -322,7 +322,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mUIRenderer := new(mockUIRenderer)
 	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := newSessionConfig("", false, 0, false, "hello", &config.Config{
+	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
@@ -354,18 +354,32 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := newSessionConfig("", false, 5, false, "", &config.Config{})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	params := RunParams{
+		HomeDir:         "home",
+		Version:         "1.0.0",
+		Loader:          nil,
+		SM:              nil,
+		Stdout:          io.Discard,
+		Stderr:          io.Discard,
+		AgentFactory:    factory,
+		HistoryRenderer: mHistoryRenderer,
+		UIRenderer:      mUIRenderer,
+		Prompt:          "",
+		LastN:           5,
+		Config:          &config.Config{},
+		Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+		Capturer:        mCapturer,
+	}
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
 
-	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	err := Run(context.Background(), params)
 	require.NoError(t, err)
 
 	mCapturer.AssertExpectations(t)
+	mHistoryRenderer.AssertExpectations(t)
 }
 
 func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
@@ -460,7 +474,7 @@ type behaviorMockHistoryRenderer struct {
 	tracker *behaviorTracker
 }
 
-func (m *behaviorMockHistoryRenderer) Render(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
+func (m *behaviorMockHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
 	m.tracker.record("HistoryRenderer.Render")
 	m.Called(w, h, n, options)
 }
@@ -517,9 +531,9 @@ func (m *behaviorMockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
+func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error) {
 	m.tracker.record("Capturer.CapturePrompt")
-	args := m.Called(ctx, fs, lastN, raw)
+	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
 }
 
@@ -633,4 +647,150 @@ func TestOrchestrator_AgentFactory_Error(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "factory failed")
+}
+
+func TestOrchestrator_Rollback(t *testing.T) {
+	mHistory := &mockHistoryManager{
+		contents: make([]*llm.Content, 4), // 2 turns
+	}
+	mHistoryRenderer := new(mockHistoryRenderer)
+	mUIRenderer := new(mockUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
+
+	tests := []struct {
+		name          string
+		backN         int
+		rollbackErr   error
+		expectedCalls int
+		wantErr       bool
+	}{
+		{
+			name:          "rollback 1 turn",
+			backN:         1,
+			expectedCalls: 1,
+			wantErr:       false,
+		},
+		{
+			name:          "rollback 0 turns",
+			backN:         0,
+			expectedCalls: 0,
+			wantErr:       false,
+		},
+		{
+			name:          "rollback error propagation",
+			backN:         1,
+			rollbackErr:   fmt.Errorf("disk failure"),
+			expectedCalls: 1,
+			wantErr:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mHistory.rollbackErr = tt.rollbackErr
+			sCfg := &sessionConfig{BackN: tt.backN}
+			deps := &sessionDependencies{HistoryManager: mHistory}
+			err := orch.Rollback(context.Background(), sCfg, deps)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.rollbackErr != nil {
+					assert.Contains(t, err.Error(), tt.rollbackErr.Error())
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestRun_Routing(t *testing.T) {
+	mHistoryRenderer := new(mockHistoryRenderer)
+	mUIRenderer := new(mockUIRenderer)
+	mCapturer := new(mockCapturer)
+	mEventBus := events.NewSimpleEventBus()
+
+	factory := func(mChatter ports.Chatter) func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+			return mChatter, nil
+		}
+	}
+
+	setupParams := func(mHistory ports.HistoryManager, mChatter ports.Chatter) RunParams {
+		return RunParams{
+			HomeDir:         "home",
+			Version:         "1.0.0",
+			Stdout:          io.Discard,
+			Stderr:          io.Discard,
+			AgentFactory:    factory(mChatter),
+			HistoryRenderer: mHistoryRenderer,
+			UIRenderer:      mUIRenderer,
+			Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+			Capturer:        mCapturer,
+			Config: &config.Config{
+				Model: "model",
+				Mode:  "mode",
+			},
+		}
+	}
+
+	t.Run("Rollback only (no prompt)", func(t *testing.T) {
+		mHistory := &mockHistoryManager{
+			contents: make([]*llm.Content, 4), // 2 turns
+		}
+		mChatter := new(mockChatter)
+		p := setupParams(mHistory, mChatter)
+		p.BackN = 1
+		p.Prompt = ""
+
+		mCapturer.On("IsTTY", io.Discard).Return(true).Once()
+
+		err := Run(context.Background(), p)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(mHistory.contents)) // 1 turn removed (2 messages)
+		mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("Rollback and Chat", func(t *testing.T) {
+		mHistory := &mockHistoryManager{
+			contents: make([]*llm.Content, 4), // 2 turns
+		}
+		mChatter := new(mockChatter)
+		p := setupParams(mHistory, mChatter)
+		p.BackN = 1
+		p.Prompt = "hello"
+
+		mCapturer.ExpectedCalls = nil
+		mCapturer.On("IsTTY", io.Discard).Return(true)
+		mUIRenderer.On("SetUseColor", true).Return()
+		mChatter.On("Subscribe", mock.Anything).Return()
+		mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+		mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+		mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+		mChatter.On("Shutdown", mock.Anything).Return(nil)
+
+		err := Run(context.Background(), p)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Rollback aborts on error", func(t *testing.T) {
+		mHistory := &mockHistoryManager{
+			contents:    make([]*llm.Content, 4), // 2 turns
+			rollbackErr: fmt.Errorf("rollback failed"),
+		}
+		mChatter := new(mockChatter)
+		p := setupParams(mHistory, mChatter)
+		p.BackN = 1
+		p.Prompt = "hello"
+
+		mCapturer.ExpectedCalls = nil
+		mCapturer.On("IsTTY", io.Discard).Return(true)
+
+		err := Run(context.Background(), p)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "rollback failed")
+
+		// Verify that Chatter.Chat was NOT called
+		mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
+	})
 }

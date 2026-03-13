@@ -22,7 +22,7 @@ type paths = persistence.Paths
 func InitializePaths(homeDir string, mode string) (*persistence.Paths, error) {
 	modeDir := filepath.Join(homeDir, "output", mode)
 	if err := os.MkdirAll(modeDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create session directory [%s]: %v", modeDir, err)
+		return nil, fmt.Errorf("failed to create session directory [%s]: %w", modeDir, err)
 	}
 
 	return &persistence.Paths{

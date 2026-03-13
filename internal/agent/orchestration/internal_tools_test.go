@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
@@ -93,49 +94,58 @@ func TestAgent_ManageHistory(t *testing.T) {
 func TestRegisterInternal(t *testing.T) {
 	registry := &mockToolRegistry{}
 	cm := &ContextManager{}
-	RegisterInternal(registry, cm)
+	if err := RegisterInternal(registry, cm); err != nil {
+		t.Fatalf("RegisterInternal failed: %v", err)
+	}
 
 	decls := registry.GetDeclarations()
-	if len(decls) != 2 {
-		t.Fatalf("expected 2 tools registered, got %d", len(decls))
-	}
-
-	// Create an expectation map: tool name -> required parameters
-	expectedTools := map[string][]string{
-		"summarize_history": {"turns", "focus"},
-		"manage_history":    {"action", "index"},
-	}
-
+	declsMap := make(map[string]*tools.ToolDeclaration)
 	for _, d := range decls {
-		params, ok := expectedTools[d.Name]
-		if !ok {
-			t.Errorf("Unexpected tool registered: %s", d.Name)
-			continue
-		}
-
-		// Generic structural tests for all valid tools
-		if d.Description == "" {
-			t.Errorf("Tool %s missing description", d.Name)
-		}
-		if d.Parameters == nil || d.Parameters.Type != "OBJECT" {
-			t.Errorf("Tool %s missing or invalid parameters", d.Name)
-			continue
-		}
-
-		// Check for specific parameters
-		for _, p := range params {
-			if _, ok := d.Parameters.Properties[p]; !ok {
-				t.Errorf("Tool %s missing '%s' parameter", d.Name, p)
-			}
-		}
-
-		// Mark as found
-		delete(expectedTools, d.Name)
+		declsMap[d.Name] = d
 	}
 
-	// Assert no missing tools
-	if len(expectedTools) > 0 {
-		t.Errorf("Failed to register expected tools: %v", expectedTools)
+	tests := []struct {
+		name           string
+		expectedParams []string
+	}{
+		{
+			name:           "summarize_history",
+			expectedParams: []string{"turns", "focus"},
+		},
+		{
+			name:           "manage_history",
+			expectedParams: []string{"action", "index"},
+		},
+	}
+
+	if len(decls) != len(tests) {
+		t.Fatalf("expected %d tools registered, got %d", len(tests), len(decls))
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validateTool(t, declsMap[tt.name], tt.expectedParams)
+		})
+	}
+}
+
+func validateTool(t *testing.T, found *tools.ToolDeclaration, expectedParams []string) {
+	if found == nil {
+		t.Fatalf("Tool not registered")
+	}
+
+	if found.Description == "" {
+		t.Errorf("Tool missing description")
+	}
+	if found.Parameters == nil || found.Parameters.Type != "OBJECT" {
+		t.Errorf("Tool missing or invalid parameters")
+		return
+	}
+
+	for _, p := range expectedParams {
+		if _, ok := found.Parameters.Properties[p]; !ok {
+			t.Errorf("Tool missing '%s' parameter", p)
+		}
 	}
 }
 

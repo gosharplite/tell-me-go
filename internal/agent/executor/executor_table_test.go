@@ -22,6 +22,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 type toolBehavior struct {
@@ -44,7 +45,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 			Serial:      b.serial,
 			LongRunning: b.long,
 		}
-		reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		if err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 			if b.observe != nil {
 				b.observe()
 			}
@@ -59,7 +60,9 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 				}
 			}
 			return b.result, b.err
-		}, opts)
+		}, opts); err != nil {
+			t.Fatalf("failed to register tool %s: %v", name, err)
+		}
 	}
 
 	var sm *mockSecurityManager
@@ -447,24 +450,14 @@ func TestToolExecutor_ExecutionControl(t *testing.T) {
 func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	var activeCount int32
-	var maxActive int32
+	var activeCount, maxActive int32
+	blockCh := make(chan struct{})
+	startedCh := make(chan struct{}, 5)
 
-	toolFunc := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		current := atomic.AddInt32(&activeCount, 1)
-		for {
-			old := atomic.LoadInt32(&maxActive)
-			if current <= old || atomic.CompareAndSwapInt32(&maxActive, old, current) {
-				break
-			}
-		}
-		defer atomic.AddInt32(&activeCount, -1)
-		time.Sleep(20 * time.Millisecond)
-		return tools.ToolResult{Text: "ok"}, nil
-	}
+	toolFunc := createTestToolFunc(&activeCount, &maxActive, startedCh, blockCh)
 
 	for i := 0; i < 5; i++ {
-		reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc)
+		require.NoError(t, reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc))
 	}
 
 	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
@@ -472,18 +465,77 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 	exec.SetConcurrency(2, 0)
 	t.Cleanup(exec.Shutdown)
 
+	content := createTestToolContent(5)
+
+	g := executeConcurrentWorkers(t, exec, content, startedCh, 2)
+	assertConcurrencyLimit(t, &activeCount, &maxActive, 2, g, blockCh)
+}
+
+func createTestToolFunc(activeCount, maxActive *int32, startedCh chan struct{}, blockCh <-chan struct{}) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		current := atomic.AddInt32(activeCount, 1)
+		for {
+			old := atomic.LoadInt32(maxActive)
+			if current <= old || atomic.CompareAndSwapInt32(maxActive, old, current) {
+				break
+			}
+		}
+		defer atomic.AddInt32(activeCount, -1)
+
+		select {
+		case startedCh <- struct{}{}:
+		default:
+		}
+
+		select {
+		case <-blockCh:
+		case <-ctx.Done():
+		}
+		return tools.ToolResult{Text: "ok"}, nil
+	}
+}
+
+func createTestToolContent(count int) *llm.Content {
 	content := &llm.Content{}
-	for i := 0; i < 5; i++ {
-		content.Parts = append(content.Parts, &llm.Part{FunctionCall: &llm.FunctionCall{Name: fmt.Sprintf("tool%d", i)}})
+	for i := 0; i < count; i++ {
+		content.Parts = append(content.Parts, &llm.Part{
+			FunctionCall: &llm.FunctionCall{Name: fmt.Sprintf("tool%d", i)},
+		})
+	}
+	return content
+}
+
+func executeConcurrentWorkers(t *testing.T, exec *ToolExecutor, content *llm.Content, startedCh <-chan struct{}, waitCount int) *errgroup.Group {
+	t.Helper()
+	g, _ := errgroup.WithContext(context.Background())
+	g.Go(func() error {
+		_, err := exec.Execute(context.Background(), content, 0, 10)
+		return err
+	})
+
+	for i := 0; i < waitCount; i++ {
+		select {
+		case <-startedCh:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for tools to start")
+		}
+	}
+	return g
+}
+
+func assertConcurrencyLimit(t *testing.T, activeCount, maxActive *int32, expected int32, g *errgroup.Group, blockCh chan struct{}) {
+	t.Helper()
+	if current := atomic.LoadInt32(activeCount); current != expected {
+		t.Errorf("expected %d active tools, got %d", expected, current)
 	}
 
-	_, err = exec.Execute(context.Background(), content, 0, 10)
-	if err != nil {
-		t.Fatal(err)
+	close(blockCh)
+	if err := g.Wait(); err != nil {
+		t.Fatalf("execution failed: %v", err)
 	}
 
-	if atomic.LoadInt32(&maxActive) > 2 {
-		t.Errorf("expected max 2 concurrent tools, got %d", maxActive)
+	if max := atomic.LoadInt32(maxActive); max > expected {
+		t.Errorf("expected max %d concurrent tools, got %d", expected, max)
 	}
 }
 
@@ -676,9 +728,10 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 func TestToolExecutor_EventPublishing(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err := reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "success"}, nil
 	})
+	require.NoError(t, err)
 
 	bus := &inframock.TestEventBus{}
 	exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
@@ -1069,14 +1122,19 @@ func TestToolExecutor_ZombieTool(t *testing.T) {
 	t.Parallel()
 
 	reg := registry.New()
-	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "stubborn_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		time.Sleep(100 * time.Millisecond) // Ignores context!
+	zombieProceed := make(chan struct{})
+	err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "stubborn_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		<-zombieProceed // Ignores context!
 		return tools.ToolResult{Text: "finally finished"}, nil
 	}, registry.ToolOptions{LongRunning: true})
+	require.NoError(t, err)
 
 	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
+	t.Cleanup(func() {
+		close(zombieProceed)
+		exec.Shutdown()
+	})
 
 	content := &llm.Content{Parts: []*llm.Part{
 		{FunctionCall: &llm.FunctionCall{Name: "stubborn_tool"}},

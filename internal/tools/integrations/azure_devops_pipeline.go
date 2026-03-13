@@ -188,6 +188,19 @@ func mapADOVariables(vars map[string]string) map[string]adoVariable {
 	return mapped
 }
 
+// logFilterOptions configures log filtering behavior.
+type logFilterOptions struct {
+	MaxLines     int
+	ContextLines int
+}
+
+// filterResult contains the processed log content and metadata.
+type filterResult struct {
+	Content    string
+	Truncated  bool
+	TotalLines int
+}
+
 func (m *adoManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	params, err := parseListPipelineRunsArgs(args)
 	if err != nil {
@@ -398,11 +411,17 @@ func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project s
 	}
 	defer resp.Body.Close()
 
-	processedContent, err := m.processLogContent(resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
+	res, err := m.processLogContent(resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
 	}
-	return tools.ToolResult{Text: processedContent}, nil
+
+	text := res.Content
+	if res.Truncated {
+		text += fmt.Sprintf("\n\n[NOTE to LLM: Log content was truncated after %d lines for safety. Suggest using a more specific filter_query or pagination if the relevant data is missing.]", res.TotalLines)
+	}
+
+	return tools.ToolResult{Text: text}, nil
 }
 
 func (m *adoManager) adoGetBuildTimeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -476,16 +495,22 @@ func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interfac
 	}
 	defer resp.Body.Close()
 
-	processedContent, err := m.processLogContent(resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
+	res, err := m.processLogContent(resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
 	}
-	return tools.ToolResult{Text: processedContent}, nil
+
+	text := res.Content
+	if res.Truncated {
+		text += fmt.Sprintf("\n\n[NOTE to LLM: Log content was truncated after %d lines for safety. Suggest using a more specific filter_query or pagination if the relevant data is missing.]", res.TotalLines)
+	}
+
+	return tools.ToolResult{Text: text}, nil
 }
 
-func (m *adoManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) (string, error) {
+func (m *adoManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) (filterResult, error) {
 	if filterQuery != "" {
-		return m.streamRegexFilter(reader, filterQuery, contextLines)
+		return m.streamRegexFilter(reader, filterQuery, logFilterOptions{MaxLines: maxLines, ContextLines: contextLines})
 	}
 
 	if startLine > 0 || maxLines > 0 {
@@ -502,22 +527,34 @@ func (m *adoManager) processLogContent(reader io.Reader, tailLines, headLines in
 	return m.streamTail(reader, tailLines)
 }
 
-func (m *adoManager) streamRegexFilter(reader io.Reader, query string, contextLines int) (string, error) {
+func (m *adoManager) streamRegexFilter(reader io.Reader, query string, opts logFilterOptions) (filterResult, error) {
 	re, err := regexp.Compile(query)
 	if err != nil {
-		return "", fmt.Errorf("invalid filter_query regex: %w", err)
+		return filterResult{}, fmt.Errorf("invalid filter_query regex: %w", err)
 	}
 
-	state := newLogFilterState(contextLines)
+	state := newLogFilterState(opts.ContextLines)
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, maxCapacity)
 
+	maxMatchedLines := opts.MaxLines
+	if maxMatchedLines <= 0 {
+		maxMatchedLines = 1000
+	}
+	matchCount := 0
+	truncated := false
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if re.MatchString(line) {
+			if matchCount >= maxMatchedLines {
+				truncated = true
+				break
+			}
 			state.addMatch(line)
+			matchCount++
 		} else {
 			state.addNonMatch(line)
 		}
@@ -525,14 +562,19 @@ func (m *adoManager) streamRegexFilter(reader io.Reader, query string, contextLi
 	}
 
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("log stream interrupted: %w", err)
+		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
 	}
 
+	content := state.result.String()
 	if state.result.Len() == 0 {
-		return "No matches found for filter_query.", nil
+		content = "No matches found for filter_query."
 	}
 
-	return state.result.String(), nil
+	return filterResult{
+		Content:    content,
+		Truncated:  truncated,
+		TotalLines: matchCount,
+	}, nil
 }
 
 type logFilterState struct {
@@ -618,7 +660,7 @@ func (s *logFilterState) printLine(line string, lineNum int) {
 	s.lastPrintedLineNum = lineNum
 }
 
-func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int) (string, error) {
+func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int) (filterResult, error) {
 	if startLine <= 0 {
 		startLine = 1
 	}
@@ -630,12 +672,14 @@ func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int)
 	var result strings.Builder
 	count := 0
 	printed := 0
+	truncated := false
 	for scanner.Scan() {
 		count++
 		if count < startLine {
 			continue
 		}
 		if maxLines > 0 && printed >= maxLines {
+			truncated = true
 			break
 		}
 		if printed > 0 {
@@ -646,17 +690,22 @@ func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("log stream interrupted: %w", err)
+		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
 	}
 
+	content := result.String()
 	if count < startLine && count > 0 {
-		return fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, count), nil
+		content = fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, count)
 	}
 
-	return result.String(), nil
+	return filterResult{
+		Content:    content,
+		Truncated:  truncated,
+		TotalLines: printed,
+	}, nil
 }
 
-func (m *adoManager) streamHead(reader io.Reader, n int) (string, error) {
+func (m *adoManager) streamHead(reader io.Reader, n int) (filterResult, error) {
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
 	buf := make([]byte, 64*1024)
@@ -664,6 +713,7 @@ func (m *adoManager) streamHead(reader io.Reader, n int) (string, error) {
 
 	var result strings.Builder
 	count := 0
+	truncated := false
 	for scanner.Scan() && count < n {
 		if count > 0 {
 			result.WriteString("\n")
@@ -671,17 +721,24 @@ func (m *adoManager) streamHead(reader io.Reader, n int) (string, error) {
 		result.WriteString(scanner.Text())
 		count++
 	}
-
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("log stream interrupted: %w", err)
+	if scanner.Scan() {
+		truncated = true
 	}
 
-	return result.String(), nil
+	if err := scanner.Err(); err != nil {
+		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+	}
+
+	return filterResult{
+		Content:    result.String(),
+		Truncated:  truncated,
+		TotalLines: count,
+	}, nil
 }
 
-func (m *adoManager) streamTail(reader io.Reader, n int) (string, error) {
+func (m *adoManager) streamTail(reader io.Reader, n int) (filterResult, error) {
 	if n <= 0 {
-		return "", nil
+		return filterResult{}, nil
 	}
 	if n > 10000 {
 		n = 10000
@@ -699,11 +756,11 @@ func (m *adoManager) streamTail(reader io.Reader, n int) (string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("log stream interrupted: %w", err)
+		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
 	}
 
 	if count == 0 {
-		return "", nil
+		return filterResult{}, nil
 	}
 
 	var result strings.Builder
@@ -724,7 +781,11 @@ func (m *adoManager) streamTail(reader io.Reader, n int) (string, error) {
 		result.WriteString(ring[(start+i)%n])
 	}
 
-	return result.String(), nil
+	return filterResult{
+		Content:    result.String(),
+		Truncated:  count > n,
+		TotalLines: limit,
+	}, nil
 }
 
 type adoGetBuildChangesParams struct {

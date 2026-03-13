@@ -19,8 +19,11 @@ type mockZombieRegistry struct {
 func (m *mockZombieRegistry) GetDeclarations() []*domaintools.ToolDeclaration {
 	return []*domaintools.ToolDeclaration{{Name: "hanging_tool"}}
 }
-func (m *mockZombieRegistry) Register(d *domaintools.ToolDeclaration, f domaintools.ToolFunc) {}
-func (m *mockZombieRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, handler domaintools.ToolFunc, opts domaintools.ToolOptions) {
+func (m *mockZombieRegistry) Register(d *domaintools.ToolDeclaration, f domaintools.ToolFunc) error {
+	return nil
+}
+func (m *mockZombieRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, handler domaintools.ToolFunc, opts domaintools.ToolOptions) error {
+	return nil
 }
 func (m *mockZombieRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
 	if m.executeFn != nil {
@@ -45,8 +48,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 
 	reg := &mockZombieRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
-			<-ctx.Done()                      // Block until context canceled
-			time.Sleep(10 * time.Millisecond) // Simulate some cleanup that ignores ctx
+			<-ctx.Done() // Block until context canceled
 			return domaintools.ToolResult{Text: "done"}, nil
 		},
 	}

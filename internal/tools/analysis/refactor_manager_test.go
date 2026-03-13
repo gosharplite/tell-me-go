@@ -18,9 +18,8 @@ import (
 
 type refactorMockSecurityProvider struct {
 	domain.ISecurityManager
-	IsPathWritableFunc           func(path string) (string, error)
-	ConfirmDestructiveActionFunc func(ctx context.Context, action, target, detail string) (bool, error)
-	IsPathSafeFunc               func(path string) (string, error)
+	IsPathWritableFunc func(path string) (string, error)
+	IsPathSafeFunc     func(path string) (string, error)
 }
 
 func (m *refactorMockSecurityProvider) TerminalLock()   {}
@@ -51,13 +50,6 @@ func (m *refactorMockSecurityProvider) IsPathWritable(path string) (string, erro
 		return m.IsPathWritableFunc(path)
 	}
 	return path, nil
-}
-
-func (m *refactorMockSecurityProvider) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	if m.ConfirmDestructiveActionFunc != nil {
-		return m.ConfirmDestructiveActionFunc(ctx, action, target, detail)
-	}
-	return true, nil
 }
 
 func (m *refactorMockSecurityProvider) IsPathSafe(path string) (string, error) {

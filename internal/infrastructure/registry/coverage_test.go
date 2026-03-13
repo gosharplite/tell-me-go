@@ -17,23 +17,27 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
-		actions  func(r tools.IToolRegistry)
+		actions  func(t *testing.T, r tools.IToolRegistry)
 		validate func(t *testing.T, r tools.IToolRegistry)
 	}{
 		{
 			name: "update existing tool",
-			actions: func(r tools.IToolRegistry) {
+			actions: func(t *testing.T, r tools.IToolRegistry) {
 				def1 := &tools.ToolDeclaration{Name: "tool1", Description: "desc1"}
 				h1 := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 					return tools.ToolResult{Text: "v1"}, nil
 				}
-				r.Register(def1, h1)
+				if err := r.Register(def1, h1); err != nil {
+					t.Fatalf("failed to register tool: %v", err)
+				}
 
 				def2 := &tools.ToolDeclaration{Name: "tool1", Description: "desc2"}
 				h2 := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 					return tools.ToolResult{Text: "v2"}, nil
 				}
-				r.RegisterWithOptions(def2, h2, registry.ToolOptions{Serial: true})
+				if err := r.RegisterWithOptions(def2, h2, registry.ToolOptions{Serial: true}); err != nil {
+					t.Fatalf("failed to register tool with options: %v", err)
+				}
 			},
 			validate: func(t *testing.T, r tools.IToolRegistry) {
 				decls := r.GetDeclarations()
@@ -58,7 +62,7 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := registry.New()
-			tt.actions(r)
+			tt.actions(t, r)
 			tt.validate(t, r)
 		})
 	}
@@ -90,7 +94,10 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 						return tools.ToolResult{Text: fmt.Sprintf("res-%d", id)}, nil
 					}
 
-					reg.Register(def, handler)
+					if err := reg.Register(def, handler); err != nil {
+						t.Errorf("failed to register tool in concurrent routine: %v", err)
+						return
+					}
 
 					// Also try to update some existing ones
 					if id > 0 {

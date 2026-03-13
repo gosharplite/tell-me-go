@@ -6,6 +6,7 @@ package ui
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,8 +15,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"golang.org/x/term"
+)
+
+var (
+	// ErrNoInput is returned when no input is provided and SkipTTYWait is true.
+	ErrNoInput = errors.New("no input")
 )
 
 const (
@@ -25,24 +32,28 @@ const (
 
 // capturer handles capturing user input from TTY or pipes.
 type capturer struct {
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Stderr   io.Writer
-	SM       domain_security.ISecurityManager
-	reader   *bufio.Reader
-	readerMu sync.Mutex
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	SM         domain_security.ISecurityManager
+	reader     *bufio.Reader
+	readerMu   sync.Mutex
+	mockPrompt string
+	mockAnswer string
 
 	isTTYOverride *bool // For testing color logic
 }
 
 // NewCapturer creates a new capturer.
-func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager) domain_security.UserInteractor {
+func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager, mockPrompt, mockAnswer string) domain_security.UserInteractor {
 	return &capturer{
-		Stdin:  stdin,
-		Stdout: stdout,
-		Stderr: stderr,
-		SM:     sm,
-		reader: bufio.NewReader(stdin),
+		Stdin:      stdin,
+		Stdout:     stdout,
+		Stderr:     stderr,
+		SM:         sm,
+		reader:     bufio.NewReader(stdin),
+		mockPrompt: mockPrompt,
+		mockAnswer: mockAnswer,
 	}
 }
 
@@ -58,11 +69,19 @@ func (c *capturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
-func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
-	prompt := strings.Join(fs.Args(), " ")
+func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...orchestration.CaptureOption) (string, error) {
+	options := &orchestration.CaptureOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
 
-	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
-		return val, nil
+	prompt := strings.Join(fs.Args(), " ")
+	if c.mockPrompt != "" {
+		prompt = c.mockPrompt
+	}
+
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 
 	if c.SM != nil {
@@ -73,83 +92,94 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN in
 	var err error
 	if !c.IsTTY(c.Stdin) {
 		prompt, err = c.captureFromPipe(ctx, prompt)
-	} else if prompt == "" && lastN == 0 {
-		prompt, err = c.captureFromTTY(ctx, !raw)
+	} else if prompt == "" && !options.SkipTTYWait() {
+		prompt, err = c.captureFromTTY(ctx, !options.Raw())
 	}
 
 	if err != nil {
 		return "", err
 	}
 
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
+	return c.finalizePrompt(prompt, options)
+}
 
+func (c *capturer) finalizePrompt(prompt string, options *orchestration.CaptureOptions) (string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		if lastN > 0 {
-			return "", nil
+		if options.SkipTTYWait() {
+			return "", ErrNoInput
 		}
 		fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")
-		fs.PrintDefaults()
+		fmt.Fprintln(c.Stderr, "Or use interactive mode: tell-me-go")
 		return "", fmt.Errorf("empty prompt")
 	}
 
-	c.printFeedback(c.Stderr, !raw, colorGreen,
+	c.printFeedback(c.Stderr, !options.Raw(), colorGreen,
 		fmt.Sprintf("[%s] Input captured. Processing...", time.Now().Format("15:04:05")))
 
 	return prompt, nil
 }
 
-func (c *capturer) captureFromPipe(ctx context.Context, initialPrompt string) (string, error) {
-	type result struct {
-		data []byte
+func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, error) {
+	type readResult struct {
+		data string
 		err  error
 	}
-	readChan := make(chan result, 1)
+
+	// Size 1 buffer is REQUIRED to prevent goroutine leaks on context cancellation
+	ch := make(chan readResult, 1)
+
 	go func() {
-		b, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
-		readChan <- result{b, err}
+		bytes, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
+		if err != nil {
+			ch <- readResult{err: fmt.Errorf("failed to read from pipe: %w", err)}
+			return
+		}
+
+		combined := prompt
+		if len(bytes) > 0 {
+			combined = prompt + "\n" + string(bytes)
+		}
+		ch <- readResult{data: combined, err: nil}
 	}()
 
 	select {
 	case <-ctx.Done():
+		// Context canceled (e.g., Timeout, OS Signal)
 		return "", ctx.Err()
-	case res := <-readChan:
-		if res.err != nil {
-			return "", fmt.Errorf("failed to read from pipe: %w", res.err)
-		}
-		if len(res.data) == 0 {
-			return initialPrompt, nil
-		}
-		if initialPrompt != "" {
-			return initialPrompt + "\n" + string(res.data), nil
-		}
-		return string(res.data), nil
+	case res := <-ch:
+		// Read completed successfully or with an I/O error
+		return res.data, res.err
 	}
 }
 
 func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
 	c.printFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
 
-	type result struct {
-		data []byte
+	type readResult struct {
+		data string
 		err  error
 	}
-	readChan := make(chan result, 1)
+
+	// Size 1 buffer is REQUIRED to prevent goroutine leaks on context cancellation
+	ch := make(chan readResult, 1)
+
 	go func() {
-		b, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
-		readChan <- result{b, err}
+		bytes, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
+		if err != nil {
+			ch <- readResult{err: fmt.Errorf("failed to read from TTY: %w", err)}
+			return
+		}
+		ch <- readResult{data: string(bytes), err: nil}
 	}()
 
 	select {
 	case <-ctx.Done():
+		// Context canceled (e.g., Timeout, OS Signal)
 		return "", ctx.Err()
-	case res := <-readChan:
-		if res.err != nil {
-			return "", fmt.Errorf("failed to read from TTY: %w", res.err)
-		}
-		return string(res.data), nil
+	case res := <-ch:
+		// Read completed successfully or with an I/O error
+		return res.data, res.err
 	}
 }
 
@@ -204,8 +234,8 @@ func (c *capturer) Prompt(message string) {
 
 // ReadSingleKey waits for a single key press from Stdin.
 func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
-	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
-		return strings.ToLower(val[:1]), nil
+	if c.mockAnswer != "" {
+		return strings.ToLower(c.mockAnswer[:1]), nil
 	}
 
 	var fd int

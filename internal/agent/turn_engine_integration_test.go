@@ -242,16 +242,17 @@ type cancelIntegrationRegistry struct {
 	handlers     map[string]tools.ToolFunc
 }
 
-func (m *cancelIntegrationRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {
+func (m *cancelIntegrationRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
 	m.declarations = append(m.declarations, def)
 	if m.handlers == nil {
 		m.handlers = make(map[string]tools.ToolFunc)
 	}
 	m.handlers[def.Name] = handler
+	return nil
 }
 
-func (m *cancelIntegrationRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
-	m.Register(def, handler)
+func (m *cancelIntegrationRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.Register(def, handler)
 }
 
 func (m *cancelIntegrationRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
@@ -276,17 +277,19 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	// Tool 1 & 2: Blocking
 	var wgStart sync.WaitGroup
 	wgStart.Add(2)
-	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool1"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
+	regErr := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool1"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
 		wgStart.Done()
 		<-ctx.Done()
 		return tools.ToolResult{}, ctx.Err()
 	}, tools.ToolOptions{})
+	require.NoError(t, regErr)
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool2"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
+	regErr = reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool2"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
 		wgStart.Done()
 		<-ctx.Done()
 		return tools.ToolResult{}, ctx.Err()
 	}, tools.ToolOptions{})
+	require.NoError(t, regErr)
 
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)

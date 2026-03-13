@@ -46,14 +46,20 @@ type mockHistoryManager struct {
 	ports.HistoryManager
 }
 
+func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	return 0, 0, 0, nil
+}
+
 type mockRegistry struct {
 	tools.IToolRegistry
 }
 
-func (m *mockRegistry) Register(tool *tools.ToolDeclaration, handler tools.ToolFunc) {
+func (m *mockRegistry) Register(tool *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return nil
 }
 
-func (m *mockRegistry) RegisterWithOptions(tool *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+func (m *mockRegistry) RegisterWithOptions(tool *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return nil
 }
 
 func (m *mockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {

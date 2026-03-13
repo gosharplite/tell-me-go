@@ -279,7 +279,8 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	a.(*agent).ctxManager.SetPipeline(a.(*agent).ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	orchestration.RegisterInternal(reg, a.(*agent).ctxManager)
+	err = orchestration.RegisterInternal(reg, a.(*agent).ctxManager)
+	require.NoError(t, err)
 
 	// Verify that at least one transformer has the registry
 }

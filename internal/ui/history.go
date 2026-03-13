@@ -18,12 +18,12 @@ import (
 type StdHistoryRenderer struct{}
 
 // Render implements ports.HistoryRenderer.
-func (r *StdHistoryRenderer) Render(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
+func (r *StdHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
 	renderHistory(w, h, n, options)
 }
 
 // renderHistory renders the chat history to the provided writer.
-func renderHistory(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
+func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
 	total := h.GetTotalEntries()
 	if total == 0 {
 		fmt.Fprintln(w, "No history found.")

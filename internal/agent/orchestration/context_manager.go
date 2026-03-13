@@ -280,7 +280,7 @@ func (cm *ContextManager) wrapSummarizationError(err error) error {
 	if llm.IsTransient(err) {
 		category = llm.ErrTransient
 	}
-	return fmt.Errorf("%w: summarization failed: %v", category, err)
+	return fmt.Errorf("%w: summarization failed: %w", category, err)
 }
 
 func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tokens int) {
@@ -458,7 +458,7 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 		if llm.IsTransient(err) {
 			category = llm.ErrTransient
 		}
-		return fmt.Errorf("%w: failed to archive history before summarization: %v", category, err)
+		return fmt.Errorf("%w: failed to archive history before summarization: %w", category, err)
 	}
 
 	if err := cm.History.SetContents(ctx, newHistory); err != nil {
@@ -466,7 +466,7 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 		if llm.IsTransient(err) {
 			category = llm.ErrTransient
 		}
-		return fmt.Errorf("%w: failed to update history after summarization: %v", category, err)
+		return fmt.Errorf("%w: failed to update history after summarization: %w", category, err)
 	}
 
 	return nil

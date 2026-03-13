@@ -166,7 +166,12 @@ func TestZombieToolTimeout(t *testing.T) {
 	assert.True(t, duration >= 10*time.Millisecond)
 
 	// Wait for zombie monitor to fire
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case msg := <-exec.observer.(*MockLogger).CriticalLogs:
+		assert.Contains(t, msg, "CRITICAL: Tool goroutine permanently leaked: zombie_tool")
+	case <-time.After(1 * time.Second): // time.After is okay ONLY as a fail-safe test timeout
+		t.Fatal("Timeout waiting for zombie monitor to fire")
+	}
 
 	// Clean up the zombie goroutine so goleak doesn't complain
 	close(stopCh)

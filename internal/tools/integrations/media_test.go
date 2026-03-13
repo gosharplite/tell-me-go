@@ -37,7 +37,9 @@ func TestMediaTools(t *testing.T) {
 		},
 	}
 
-	RegisterAll(r, sm, client, t.TempDir())
+	if err := RegisterAll(r, sm, client, t.TempDir()); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
 
 	// Test create_image
 	res, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"})
@@ -66,7 +68,9 @@ func TestMediaTools_NoClient(t *testing.T) {
 	r := registry.New()
 	sm := security.NewSecurityManager(nil)
 
-	RegisterAll(r, sm, nil, "")
+	if err := RegisterAll(r, sm, nil, ""); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
 
 	// Test create_image
 	_, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"})

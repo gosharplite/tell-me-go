@@ -6,6 +6,7 @@ package persistence
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -37,7 +38,7 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]ports.Task, err
 
 	data, err := r.fs.ReadFile(ctx, r.filePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading tasks file %s: %w", r.filePath, err)
 	}
 
 	// Handle empty file
@@ -59,7 +60,7 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]ports.Task, err
 	for decoder.More() {
 		var t ports.Task
 		if err := decoder.Decode(&t); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("decoding task: %w", err)
 		}
 		loaded = append(loaded, t)
 	}

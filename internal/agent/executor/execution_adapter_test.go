@@ -14,9 +14,11 @@ import (
 
 func TestExecutionAdapter_Execute(t *testing.T) {
 	reg := registry.New()
-	reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	if err := reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "success"}, nil
-	})
+	}); err != nil {
+		t.Fatalf("failed to register tool: %v", err)
+	}
 
 	// Use existing mockSecurityManager from shared_test.go
 	ex, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})

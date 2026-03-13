@@ -6,9 +6,10 @@ package ui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -23,7 +24,7 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 	cancel()
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := capturer.CapturePrompt(ctx, fs, 0, false)
+	_, err := capturer.CapturePrompt(ctx, fs)
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
@@ -39,7 +40,7 @@ func TestPrompt_Pipe(t *testing.T) {
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestPrompt_Args(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,16 +80,13 @@ func TestPrompt_Empty(t *testing.T) {
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	_, err := capturer.CapturePrompt(context.Background(), fs)
 	if err == nil {
 		t.Error("expected error for empty prompt, got nil")
 	}
 }
 
-func TestPrompt_MockEnv(t *testing.T) {
-	os.Setenv("TELL_ME_MOCK_PROMPT", "mocked prompt")
-	defer os.Unsetenv("TELL_ME_MOCK_PROMPT")
-
+func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -96,7 +94,26 @@ func TestPrompt_MockEnv(t *testing.T) {
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, orchestration.WithSkipTTYWait(true))
+
+	if !errors.Is(err, ErrNoInput) {
+		t.Errorf("expected ErrNoInput, got %v", err)
+	}
+	if prompt != "" {
+		t.Errorf("expected empty prompt, got %q", prompt)
+	}
+}
+
+func TestPrompt_MockEnv(t *testing.T) {
+	capturer := &capturer{
+		Stdin:      strings.NewReader(""),
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
+		mockPrompt: "mocked prompt",
+	}
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -120,7 +137,7 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -160,7 +177,7 @@ func TestPrompt_Combined(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,15 +265,13 @@ func TestWarn_SemanticStyling(t *testing.T) {
 }
 
 func TestConfirm_SemanticStyling(t *testing.T) {
-	os.Setenv("TELL_ME_MOCK_ANSWER", "y")
-	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
-
 	var stderr bytes.Buffer
 	isTTY := true
 	capturer := &capturer{
 		Stdin:         strings.NewReader(""),
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
+		mockAnswer:    "y",
 	}
 
 	tests := []struct {

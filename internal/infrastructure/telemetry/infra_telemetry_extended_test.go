@@ -38,18 +38,20 @@ type mockRegistry struct {
 	handlers map[string]tools.ToolFunc
 }
 
-func (m *mockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {
+func (m *mockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
 	if m.handlers == nil {
 		m.handlers = make(map[string]tools.ToolFunc)
 	}
 	m.handlers[def.Name] = handler
+	return nil
 }
 
-func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	if m.handlers == nil {
 		m.handlers = make(map[string]tools.ToolFunc)
 	}
 	m.handlers[def.Name] = handler
+	return nil
 }
 
 func TestSessionCostTracker_Extended(t *testing.T) {
@@ -67,7 +69,6 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 	tracker := NewSessionCostTracker(sm, logFile, "test-mode", "test-model", pricing.Models["test-model"], pricing)
 
 	t.Run("Warmup", func(t *testing.T) {
-		t.Parallel()
 		content := `{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500, "cached_tokens": 100}` + "\n"
 		err := os.WriteFile(logFile, []byte(content), 0644)
 		if err != nil {
@@ -85,7 +86,6 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 	})
 
 	t.Run("AccumulateAndReturn", func(t *testing.T) {
-		t.Parallel()
 		mt := llm.Metrics{
 			PromptTokens:   1000,
 			ResponseTokens: 500,
@@ -113,7 +113,9 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	_ = os.Mkdir(outputDir, 0755)
 	logFile := filepath.Join(outputDir, "test.log")
 
-	RegisterMetrics(reg, sm, logFile, "test-model", "test-mode", nil)
+	if err := RegisterMetrics(reg, sm, logFile, "test-model", "test-mode", nil); err != nil {
+		t.Fatalf("RegisterMetrics failed: %v", err)
+	}
 
 	if _, ok := reg.handlers["estimate_cost"]; !ok {
 		t.Error("estimate_cost tool not registered")

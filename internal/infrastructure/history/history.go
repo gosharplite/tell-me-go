@@ -6,12 +6,13 @@ package history
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // Manager handles loading, saving, and append-only log compaction of conversation history,
@@ -21,7 +22,6 @@ type Manager struct {
 	store    store
 	FilePath string
 	Contents []*llm.Content
-	backup   []*llm.Content // Keep a copy of the state before the current user prompt
 }
 
 // NewManager creates a new history manager for the given file path.
@@ -57,6 +57,10 @@ func (m *Manager) Load(ctx context.Context) error {
 
 	contents, err := m.store.Load(ctx)
 	if err != nil {
+		if errors.Is(err, ports.ErrHistoryNotFound) {
+			m.Contents = []*llm.Content{}
+			return nil
+		}
 		return err
 	}
 	m.Contents = contents
@@ -189,28 +193,6 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	return nil
 }
 
-// snapshot takes a backup of the current state for potential rollback.
-func (m *Manager) snapshot() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.backup = make([]*llm.Content, len(m.Contents))
-	for i, c := range m.Contents {
-		m.backup[i] = llm.CloneContent(c)
-	}
-}
-
-// rollback restores the history to the state before Snapshot was called.
-func (m *Manager) rollback(ctx context.Context) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.backup != nil {
-		m.Contents = m.backup
-		if err := m.store.Truncate(ctx, len(m.backup)); err != nil {
-			log.Printf("Warning: failed to persist history rollback truncation: %v", err)
-		}
-	}
-}
-
 // addEntry appends a new text message to the history.
 func (m *Manager) addEntry(ctx context.Context, role, text string) error {
 	return m.AddContent(ctx, &llm.Content{
@@ -236,4 +218,45 @@ func (m *Manager) AppendParts(ctx context.Context, index int, parts []*llm.Part)
 
 	m.Contents[index].Parts = append(m.Contents[index].Parts, clonedParts...)
 	return m.store.AppendParts(ctx, index, clonedParts)
+}
+
+// RollbackTurns removes the last N turns (1 turn = 2 messages) from the history.
+// It returns the actual number of turns removed, the remaining turns, the remaining total messages, and any error.
+func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved int, remainingTurns int, remainingMsgs int, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	originalLen := len(m.Contents)
+	if originalLen == 0 || turns <= 0 {
+		return 0, originalLen / 2, originalLen, nil
+	}
+
+	originalContents := m.Contents
+
+	// Prevent overflow and handle out-of-bounds turns
+	if turns > originalLen/2 {
+		actualRemoved = originalLen / 2
+		m.Contents = nil
+	} else {
+		actualRemoved = turns
+		newLen := originalLen - (turns * 2)
+
+		// Nil out the truncated pointers to prevent memory leaks
+		for i := newLen; i < originalLen; i++ {
+			m.Contents[i] = nil
+		}
+
+		m.Contents = m.Contents[:newLen]
+	}
+
+	if err := m.store.Save(ctx, m.Contents); err != nil {
+		// Rollback in-memory state on I/O failure to maintain atomicity
+		m.Contents = originalContents
+		return 0, 0, 0, fmt.Errorf("failed to persist rollback: %w", err)
+	}
+
+	remainingMsgs = len(m.Contents)
+	remainingTurns = remainingMsgs / 2
+
+	return actualRemoved, remainingTurns, remainingMsgs, nil
 }

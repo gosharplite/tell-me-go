@@ -47,19 +47,20 @@ func (m *integrationToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return decls
 }
 
-func (m *integrationToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) {
+func (m *integrationToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.declarations[declaration.Name] = declaration
 	m.handlers[declaration.Name] = implementation
+	return nil
 }
 
-func (m *integrationToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+func (m *integrationToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	m.mu.Lock()
 	m.serial[def.Name] = opts.Serial
 	m.longRunning[def.Name] = opts.LongRunning
 	m.mu.Unlock()
-	m.Register(def, handler)
+	return m.Register(def, handler)
 }
 
 func (m *integrationToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
@@ -91,9 +92,6 @@ type integrationSecurityManager struct {
 
 func (s *integrationSecurityManager) IsPathSafe(path string) (string, error)     { return path, nil }
 func (s *integrationSecurityManager) IsPathWritable(path string) (string, error) { return path, nil }
-func (s *integrationSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	return true, nil
-}
 func (s *integrationSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
@@ -126,19 +124,21 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	var parallelOrder int32
 	var serialOrder int32
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_parallel",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&parallelOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "parallel done"}, nil
 	}, tools.ToolOptions{Serial: false, LongRunning: false})
+	require.NoError(t, err)
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&serialOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "serial done"}, nil
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
+	require.NoError(t, err)
 
 	// Simulate LLM response requesting both concurrently.
 	// We put parallel FIRST to ensure it completes before the serial tool starts.
@@ -178,19 +178,21 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 	var serialOrder int32
 	var parallelOrder int32
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&serialOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "serial done"}, nil
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
+	require.NoError(t, err)
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_parallel",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&parallelOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "parallel done"}, nil
 	}, tools.ToolOptions{Serial: false, LongRunning: false})
+	require.NoError(t, err)
 
 	// Put serial FIRST. In the new implementation, it MUST run first.
 	resp := &llm.Content{
@@ -227,7 +229,7 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 
 	exitSignal := make(chan struct{})
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	regErr := reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		select {
@@ -238,6 +240,7 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 			return tools.ToolResult{}, ctx.Err()
 		}
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
+	require.NoError(t, regErr)
 
 	resp := &llm.Content{
 		Parts: []*llm.Part{

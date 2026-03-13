@@ -40,7 +40,7 @@ The assistant must never perform destructive or high-risk actions without explic
 *   **System Tools**: `execute_command`, `pipe_commands`, `git_commit`, `git_create_branch`.
     *   **Auto-Approval Whitelist**: Side-effect-free commands (e.g., `ls`, `grep`, `git status`) are strictly whitelisted and may bypass confirmation.
     *   **Strict Blocking**: All other commands (especially those with shell operators `|`, `;`, `>`) trigger the confirmation gate.
-*   **Mechanism**: Use `tools.ConfirmDestructiveAction(action, target, detail)`.
+*   **Mechanism**: Use the injected security manager via `ISecurityManager.Authorize(action, target, detail)`.
     - **UI Standard**: The prompt and details must be printed to `os.Stderr` using high-visibility colors (Yellow/Red).
     - **Bypass for Tests**: Use the `TELL_ME_MOCK_ANSWER` environment variable to automate confirmations in E2E tests.
 

@@ -156,3 +156,31 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 		t.Fatal("expected client, got nil")
 	}
 }
+
+func TestResolveTimeout(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *config.Config
+		expected int
+	}{
+		{
+			name:     "Default to 60s when zero",
+			cfg:      &config.Config{HTTPTimeoutSeconds: 0},
+			expected: 60,
+		},
+		{
+			name:     "Custom timeout used when non-zero",
+			cfg:      &config.Config{HTTPTimeoutSeconds: 120},
+			expected: 120,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveTimeout(tt.cfg)
+			if int(got.Seconds()) != tt.expected {
+				t.Errorf("resolveTimeout() = %v, want %ds", got, tt.expected)
+			}
+		})
+	}
+}

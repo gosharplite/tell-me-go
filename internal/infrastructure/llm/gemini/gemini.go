@@ -40,6 +40,11 @@ type Client struct {
 
 // NewClient returns a new Gemini API client.
 func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration) (*Client, error) {
+	// Baseline defense against hung connections
+	if timeout == 0 {
+		timeout = 60 * time.Second
+	}
+
 	c := &Client{
 		authenticator:     authenticator,
 		apiURL:            apiURL,
@@ -177,8 +182,8 @@ func (c *Client) RefreshAuth() error {
 	authenticator := c.authenticator
 	c.mu.RUnlock()
 	authenticator.Invalidate()
-	// Using a default 5m timeout for RefreshAuth if not stored
-	return c.initSDK(5 * time.Minute)
+	// Using a default 1m timeout for RefreshAuth to prevent hangs
+	return c.initSDK(1 * time.Minute)
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
@@ -251,8 +256,8 @@ func (c *Client) handleNoCandidates(resp *genai.GenerateContentResponse) error {
 }
 
 func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
-	var filteredHistory []*llm.Content
-	var dynamicSystemParts []*llm.Part
+	filteredHistory := make([]*llm.Content, 0, len(history))
+	dynamicSystemParts := make([]*llm.Part, 0, len(history)) // Upper bound
 
 	// 1. Separate system instructions from the standard conversation history
 	for _, h := range history {
@@ -347,7 +352,7 @@ func (c *Client) applyThinkingBudget(ctx context.Context, config *genai.Thinking
 }
 
 func (c *Client) toSDKContent(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []*genai.Content {
-	var sdkHistory []*genai.Content
+	sdkHistory := make([]*genai.Content, 0, len(history))
 	for _, h := range history {
 		sdkContent := toSDKContent(ctx, h, resolver)
 		if sdkContent == nil {
@@ -489,7 +494,7 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 		return nil, err
 	}
 
-	var results [][]byte
+	results := make([][]byte, 0, len(resp.GeneratedImages))
 	for _, img := range resp.GeneratedImages {
 		if img.Image != nil && len(img.Image.ImageBytes) > 0 {
 			results = append(results, img.Image.ImageBytes)

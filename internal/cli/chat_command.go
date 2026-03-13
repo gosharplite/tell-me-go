@@ -5,17 +5,15 @@ package cli
 
 import (
 	stdctx "context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"strconv"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
-	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	orchestration_app "github.com/gosharplite/tell-me-go/internal/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
@@ -27,14 +25,14 @@ func init() {
 
 // chatCommand implements the main chat command.
 type chatCommand struct {
-	Version   string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
-	HomeDir   string
-	SM        domain_security.ISecurityManager
-	Loader    domain_config.ConfigLoader
-	Container di.Container
+	Version     string
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	SM          domain_security.ISecurityManager
+	ChatService orchestration_app.ChatService
+	MockPrompt  string
+	MockAnswer  string
 }
 
 type cliOptions struct {
@@ -42,27 +40,28 @@ type cliOptions struct {
 	newSession  bool
 	showVersion bool
 	lastN       int
+	backN       int
 	rawOutput   bool
 }
 
 // newChatCommand creates a new Chat Command with default factories.
 func newChatCommand(ctx *context) *chatCommand {
-	container := di.NewBootstrapper(ctx.HomeDir, ctx.SM, ctx.Version, ctx.Stdout, ctx.Stderr, nil)
 	return &chatCommand{
-		Version:   ctx.Version,
-		Stdin:     ctx.Stdin,
-		Stdout:    ctx.Stdout,
-		Stderr:    ctx.Stderr,
-		HomeDir:   ctx.HomeDir,
-		SM:        ctx.SM,
-		Loader:    &config.YAMLConfigLoader{},
-		Container: container,
+		Version:     ctx.Version,
+		Stdin:       ctx.Stdin,
+		Stdout:      ctx.Stdout,
+		Stderr:      ctx.Stderr,
+		SM:          ctx.SM,
+		ChatService: ctx.ChatService,
+		MockPrompt:  ctx.MockPrompt,
+		MockAnswer:  ctx.MockAnswer,
 	}
 }
 
 // Execute runs the chat command logic.
 func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
-	capturer, opts, fs, cfg, err := c.initializeCLI(args)
+	// 1. Parsing command-line flags and arguments
+	opts, fs, err := c.parseConfiguration(args)
 	if err != nil {
 		return err
 	}
@@ -71,89 +70,49 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return nil
 	}
 
-	prompt, err := capturer.CapturePrompt(ctx, fs, opts.lastN, opts.rawOutput)
-	if err != nil {
-		return err
-	}
-
-	deps, hManager, cleanup, err := c.Container.BuildSessionDependencies(ctx, cfg, opts.configPath, opts.newSession, capturer.(domain_security.UserInteractor))
-	if err != nil {
-		return err
-	}
-
-	defer cleanup()
-
-	defer func() {
-		if shutdownErr := deps.GetEventBus().Shutdown(ctx); shutdownErr != nil {
-			fmt.Fprintf(c.Stderr, "Warning: Event bus shutdown failed: %v\n", shutdownErr)
-		}
-	}()
-
-	err = c.performChat(ctx, capturer, opts, prompt, cfg, deps)
-
-	c.Container.FinalizeSession(ctx, hManager, deps, cfg)
-
-	return err
-}
-
-func (c *chatCommand) initializeCLI(args []string) (orchestration.Capturer, *cliOptions, *flag.FlagSet, *domain_config.Config, error) {
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
+	// 2. Invoking a Use Case / Service interface
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
-		sm.SetInteractor(capturer)
+		sm.SetInteractor(capturer.(domain_security.UserInteractor))
 	}
 
-	opts, fs, cfg, err := c.initializeConfiguration(args)
-	return capturer.(orchestration.Capturer), opts, fs, cfg, err
+	var captureOpts []orchestration.CaptureOption
+	if opts.lastN > 0 || opts.backN > 0 {
+		captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
+	}
+	if opts.rawOutput {
+		captureOpts = append(captureOpts, orchestration.WithRaw(true))
+	}
+
+	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
+	if err != nil {
+		if !errors.Is(err, ui.ErrNoInput) {
+			return err
+		}
+		// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
+		prompt = ""
+	}
+
+	// Delegate all business logic and orchestration to the ChatService
+	return c.ChatService.ProcessMessage(ctx, orchestration_app.ChatOptions{
+		ConfigPath: opts.configPath,
+		NewSession: opts.newSession,
+		LastN:      opts.lastN,
+		BackN:      opts.backN,
+		RawOutput:  opts.rawOutput,
+		Prompt:     prompt,
+	}, capturer)
 }
 
-func (c *chatCommand) performChat(ctx stdctx.Context, capturer orchestration.Capturer, opts *cliOptions, prompt string, cfg *domain_config.Config, deps ports.SessionDependencies) error {
-	uiRenderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
-	historyRenderer := &ui.StdHistoryRenderer{}
-
-	return orchestration.Run(ctx, orchestration.RunParams{
-		HomeDir:         c.HomeDir,
-		Version:         c.Version,
-		Loader:          c.Loader,
-		SM:              c.SM,
-		Stdout:          c.Stdout,
-		Stderr:          c.Stderr,
-		AgentFactory:    c.Container.GetAgentFactory(),
-		HistoryRenderer: historyRenderer,
-		UIRenderer:      uiRenderer,
-		ConfigPath:      opts.configPath,
-		NewSession:      opts.newSession,
-		LastN:           opts.lastN,
-		RawOutput:       opts.rawOutput,
-		Prompt:          prompt,
-		Config:          cfg,
-		Deps:            deps,
-		Capturer:        capturer,
-	})
-}
-
-func (c *chatCommand) initializeConfiguration(args []string) (*cliOptions, *flag.FlagSet, *domain_config.Config, error) {
+func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.FlagSet, error) {
 	args = c.sanitizeArgs(args)
 	var flagArgs []string
 	if len(args) > 0 {
 		flagArgs = args[1:]
 	}
-	opts, fs, err := c.parseFlags(flagArgs)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if opts.showVersion {
-		return opts, fs, nil, nil
-	}
-	cfg, err := config.Load(opts.configPath)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
-	}
-	return opts, fs, cfg, nil
-}
 
-func (c *chatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {
 	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	opts := &cliOptions{}
@@ -161,8 +120,10 @@ func (c *chatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, err
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
 	fs.BoolVar(&opts.showVersion, "v", false, "Show version information")
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
+	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
 	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
-	if err := fs.Parse(args); err != nil {
+
+	if err := fs.Parse(flagArgs); err != nil {
 		return nil, nil, err
 	}
 	return opts, fs, nil
@@ -174,7 +135,7 @@ func (c *chatCommand) sanitizeArgs(args []string) []string {
 	}
 	processed := args[1:]
 	for i, arg := range processed {
-		if arg == "-l" {
+		if arg == "-l" || arg == "-b" {
 			isNextNum := false
 			if i+1 < len(processed) {
 				if _, err := strconv.Atoi(processed[i+1]); err == nil {

@@ -80,7 +80,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id float64, content, statu
 
 	t, ok := s.tasks[id]
 	if !ok {
-		return ports.Task{}, fmt.Errorf("task not found: %.0f", id)
+		return ports.Task{}, fmt.Errorf("id %.0f: %w", id, ports.ErrTaskNotFound)
 	}
 
 	if content != "" {
@@ -104,7 +104,7 @@ func (s *TaskService) DeleteTask(ctx context.Context, id float64) error {
 	defer s.mu.Unlock()
 
 	if _, ok := s.tasks[id]; !ok {
-		return fmt.Errorf("task not found: %.0f", id)
+		return fmt.Errorf("id %.0f: %w", id, ports.ErrTaskNotFound)
 	}
 
 	if err := s.store.Delete(ctx, id); err != nil {

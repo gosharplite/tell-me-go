@@ -363,7 +363,9 @@ func TestPersistenceTools_ManageConfig(t *testing.T) {
 func TestPersistenceTools_Register(t *testing.T) {
 	pt, _ := setupPersistenceTools()
 	reg := registry.New()
-	pt.Register(reg)
+	if err := pt.Register(reg); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	decls := reg.GetDeclarations()
 	found := make(map[string]bool)
@@ -382,7 +384,9 @@ func TestPersistenceTools_Register(t *testing.T) {
 func TestRegisterPersistence(t *testing.T) {
 	reg := registry.New()
 	_, provider := setupPersistenceTools()
-	RegisterPersistence(reg, provider)
+	if err := RegisterPersistence(reg, provider); err != nil {
+		t.Fatalf("RegisterPersistence failed: %v", err)
+	}
 
 	decls := reg.GetDeclarations()
 	if len(decls) == 0 {
@@ -397,7 +401,9 @@ func TestNewPersistenceTools_Nil(t *testing.T) {
 	}
 
 	reg := registry.New()
-	pt.Register(reg) // Should not panic
+	if err := pt.Register(reg); err != nil {
+		t.Errorf("Register should not fail for nil state: %v", err)
+	}
 	if len(reg.GetDeclarations()) != 0 {
 		t.Error("Expected no tools registered for nil state")
 	}

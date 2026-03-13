@@ -65,8 +65,8 @@ func (sm *SecurityManager) IsPathWritable(path string) (string, error) {
 	return sm.policy.ValidatePath(path, true)
 }
 
-// ConfirmDestructiveAction prompts the user for confirmation.
-func (sm *SecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+// confirmDestructiveAction prompts the user for confirmation.
+func (sm *SecurityManager) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return sm.interaction.ConfirmAction(ctx, action, target, detail, sm.IsBypassActive())
 }
 

@@ -147,10 +147,10 @@ func TestSecurityManager_Misc(t *testing.T) {
 	// IsPathWritable
 	_, _ = sm.IsPathWritable("/tmp/test")
 
-	// ConfirmDestructiveAction
-	ok, err := sm.ConfirmDestructiveAction(context.Background(), "delete", "file", "detail")
+	// confirmDestructiveAction
+	ok, err := sm.confirmDestructiveAction(context.Background(), "delete", "file", "detail")
 	if err != nil || !ok {
-		t.Errorf("ConfirmDestructiveAction failed: %v, %v", err, ok)
+		t.Errorf("confirmDestructiveAction failed: %v, %v", err, ok)
 	}
 
 	// LogAudit / SetCommandsLogFile

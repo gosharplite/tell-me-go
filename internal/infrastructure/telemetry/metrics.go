@@ -143,15 +143,7 @@ func (t *sessionCostTracker) GetStats(ctx context.Context) (domain_pricing.Usage
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// If not initiated, we do a synchronous warmup as a fallback,
-	// but normally this should be triggered by Warmup() early.
-	if !t.initiated && t.logFile != "" {
-		if usage, totalCost, _, _, err := parseUsage(t.logFile, t.pricing, t.modelName); err == nil {
-			t.stats = usage
-			t.totalCost = totalCost
-		}
-		t.initiated = true
-	}
+	t.ensureInitialized()
 
 	return t.stats, t.totalCost
 }
@@ -160,6 +152,10 @@ func (t *sessionCostTracker) GetStats(ctx context.Context) (domain_pricing.Usage
 func (t *sessionCostTracker) Warmup() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.ensureInitialized()
+}
+
+func (t *sessionCostTracker) ensureInitialized() {
 	if !t.initiated && t.logFile != "" {
 		if usage, totalCost, _, _, err := parseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
@@ -173,6 +169,8 @@ func (t *sessionCostTracker) Warmup() {
 func (t *sessionCostTracker) Accumulate(mt llm.Metrics) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	t.ensureInitialized()
 
 	mtModel := mt.Model
 	if mtModel == "" {
@@ -190,6 +188,8 @@ func (t *sessionCostTracker) Accumulate(mt llm.Metrics) {
 func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	t.ensureInitialized()
 
 	mtModel := mt.Model
 	if mtModel == "" {
@@ -229,7 +229,7 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) {
+func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -239,7 +239,7 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 		ledger:           newLedgerStore(sm, model, pricingOverrides),
 	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -249,9 +249,11 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 		}
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
 		return tools.ToolResult{Text: res}, err
-	}, tools.ToolOptions{Serial: true})
+	}, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
 		Parameters: &tools.Schema{
@@ -291,7 +293,10 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 		}
 		res, err := m.getCostSummary(ctx, sArgs)
 		return tools.ToolResult{Text: res}, err
-	}, tools.ToolOptions{Serial: true})
+	}, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.
@@ -761,7 +766,7 @@ func (m *metricsManager) aggregateCosts(history []sessionCostRecord, args costSu
 	intervalTotals, intervalUsage := m.aggregateHistory(history, start, end, location, format, args.GroupBy)
 
 	// Sort keys descending
-	var keys []string
+	keys := make([]string, 0, len(intervalTotals))
 	for k := range intervalTotals {
 		keys = append(keys, k)
 	}

@@ -15,21 +15,16 @@ import (
 
 func TestRegistry_Resilience(t *testing.T) {
 	t.Parallel()
-	t.Run("panic on empty tool name", func(t *testing.T) {
+	t.Run("error on empty tool name", func(t *testing.T) {
 		t.Parallel()
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("The code did not panic")
-			} else {
-				errMsg := r.(string)
-				if errMsg != "cannot register tool with empty name" {
-					t.Errorf("Unexpected panic message: %s", errMsg)
-				}
-			}
-		}()
-
 		r := registry.New()
-		r.Register(&tools.ToolDeclaration{Name: ""}, nil)
+		err := r.Register(&tools.ToolDeclaration{Name: ""}, nil)
+		if err == nil {
+			t.Errorf("expected error for empty tool name, got nil")
+		}
+		if !strings.Contains(err.Error(), "cannot register tool with empty name") {
+			t.Errorf("expected 'cannot register tool with empty name' error, got: %v", err)
+		}
 	})
 
 	t.Run("error on unknown tool execution", func(t *testing.T) {
@@ -48,9 +43,11 @@ func TestRegistry_Resilience(t *testing.T) {
 		t.Parallel()
 		r := registry.New()
 		targetErr := errors.New("something went wrong")
-		r.Register(&tools.ToolDeclaration{Name: "failer"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		if err := r.Register(&tools.ToolDeclaration{Name: "failer"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 			return tools.ToolResult{}, targetErr
-		})
+		}); err != nil {
+			t.Fatalf("failed to register tool: %v", err)
+		}
 
 		_, err := r.Execute(context.Background(), "failer", nil)
 		if err == nil {
@@ -68,8 +65,12 @@ func TestRegistry_Resilience(t *testing.T) {
 func TestRegistry_Options(t *testing.T) {
 	t.Parallel()
 	r := registry.New()
-	r.RegisterWithOptions(&tools.ToolDeclaration{Name: "serial_tool"}, nil, registry.ToolOptions{Serial: true})
-	r.RegisterWithOptions(&tools.ToolDeclaration{Name: "long_running_tool"}, nil, registry.ToolOptions{LongRunning: true})
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "serial_tool"}, nil, registry.ToolOptions{Serial: true}); err != nil {
+		t.Fatalf("failed to register tool serial_tool: %v", err)
+	}
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "long_running_tool"}, nil, registry.ToolOptions{LongRunning: true}); err != nil {
+		t.Fatalf("failed to register tool long_running_tool: %v", err)
+	}
 
 	if !r.IsSerial("serial_tool") {
 		t.Error("expected serial_tool to be serial")
@@ -95,8 +96,12 @@ func TestRegistry_Options(t *testing.T) {
 func TestRegistry_GetDeclarations(t *testing.T) {
 	t.Parallel()
 	r := registry.New()
-	r.Register(&tools.ToolDeclaration{Name: "tool1"}, nil)
-	r.Register(&tools.ToolDeclaration{Name: "tool2"}, nil)
+	if err := r.Register(&tools.ToolDeclaration{Name: "tool1"}, nil); err != nil {
+		t.Fatalf("failed to register tool1: %v", err)
+	}
+	if err := r.Register(&tools.ToolDeclaration{Name: "tool2"}, nil); err != nil {
+		t.Fatalf("failed to register tool2: %v", err)
+	}
 
 	decls := r.GetDeclarations()
 	if len(decls) != 2 {

@@ -70,7 +70,9 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	)
 
 	// 3. Register internal tools (e.g., summarize_history)
-	agent_orchestration.RegisterInternal(deps.GetRegistry(), ctxManager)
+	if err := agent_orchestration.RegisterInternal(deps.GetRegistry(), ctxManager); err != nil {
+		return nil, fmt.Errorf("failed to register internal tools: %w", err)
+	}
 
 	// 4. Return the new ChatterFacade injected with the domain services.
 	return domain_orchestration.NewChatterFacade(
