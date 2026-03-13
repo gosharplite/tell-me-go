@@ -41,11 +41,11 @@ func (r *resilientClient) wrapError(err error) error {
 	if s, ok := status.FromError(err); ok {
 		switch s.Code() {
 		case codes.Unauthenticated:
-			return fmt.Errorf("%w: %v", llm.ErrAuth, err)
+			return fmt.Errorf("%w: %w", llm.ErrAuth, err)
 		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
-			return fmt.Errorf("%w: %v", llm.ErrTransient, err)
+			return fmt.Errorf("%w: %w", llm.ErrTransient, err)
 		case codes.PermissionDenied, codes.InvalidArgument:
-			return fmt.Errorf("%w: %v", llm.ErrTerminal, err)
+			return fmt.Errorf("%w: %w", llm.ErrTerminal, err)
 		}
 	}
 

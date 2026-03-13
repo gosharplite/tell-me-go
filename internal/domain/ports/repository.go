@@ -5,7 +5,14 @@ package ports
 
 import (
 	"context"
+	"errors"
 	"time"
+)
+
+// Sentinel errors for repositories.
+var (
+	ErrConfigKeyNotFound = errors.New("config key not found")
+	ErrTaskNotFound      = errors.New("task not found")
 )
 
 // KVStore defines a generic key-value storage interface.

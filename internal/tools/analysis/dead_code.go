@@ -142,7 +142,7 @@ func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, err
 				return "", fmt.Errorf("no go.mod found")
 			}
 			if !strings.Contains(err.Msg, "no Go files") {
-				return "", fmt.Errorf("package load error in %s: %v", pkg.PkgPath, err)
+				return "", fmt.Errorf("package load error in %s: %w", pkg.PkgPath, err)
 			}
 		}
 	}

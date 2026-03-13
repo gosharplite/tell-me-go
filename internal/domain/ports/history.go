@@ -5,8 +5,14 @@ package ports
 
 import (
 	"context"
+	"errors"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+)
+
+// Sentinel errors for history operations.
+var (
+	ErrHistoryNotFound = errors.New("history not found")
 )
 
 // HistoryManager defines the interface for interacting with history.

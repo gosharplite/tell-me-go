@@ -5,6 +5,7 @@ package di
 
 import (
 	stdctx "context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -76,7 +77,10 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
 	if err := hManager.Load(ctx); err != nil {
-		return nil, nil, nil, fmt.Errorf("error loading history: %w", err)
+		if !errors.Is(err, ports.ErrHistoryNotFound) {
+			return nil, nil, nil, fmt.Errorf("error loading history: %w", err)
+		}
+		// If history doesn't exist, we just start with an empty session.
 	}
 
 	bus := events.NewSimpleEventBus()

@@ -6,11 +6,13 @@ package history
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // Manager handles loading, saving, and append-only log compaction of conversation history,
@@ -55,6 +57,10 @@ func (m *Manager) Load(ctx context.Context) error {
 
 	contents, err := m.store.Load(ctx)
 	if err != nil {
+		if errors.Is(err, ports.ErrHistoryNotFound) {
+			m.Contents = []*llm.Content{}
+			return nil
+		}
 		return err
 	}
 	m.Contents = contents

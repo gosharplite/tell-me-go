@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -76,12 +77,16 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 				}
 			}
 		}
-		return []*llm.Content{}, nil
+		// Return ErrHistoryNotFound to allow domain layers to make decisions (like starting fresh)
+		return nil, fmt.Errorf("stat history file %s: %w", s.filePath, ports.ErrHistoryNotFound)
 	}
 
 	data, err := s.fs.ReadFile(ctx, s.filePath)
 	if err != nil {
-		return nil, err
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("loading history from %s: %w", s.filePath, ports.ErrHistoryNotFound)
+		}
+		return nil, fmt.Errorf("reading history file %s: %w", s.filePath, err)
 	}
 
 	if len(data) == 0 {

@@ -55,7 +55,7 @@ func createTables(ctx context.Context, db *sql.DB) error {
 
 	for _, query := range queries {
 		if _, err := db.ExecContext(ctx, query); err != nil {
-			return err
+			return fmt.Errorf("executing schema query: %w", err)
 		}
 	}
 	return nil
@@ -65,7 +65,7 @@ func createTables(ctx context.Context, db *sql.DB) error {
 func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath, configPath, scratchPath string) error {
 	var count int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM config").Scan(&count); err != nil {
-		return err
+		return fmt.Errorf("checking config table: %w", err)
 	}
 	if count > 0 {
 		return nil // Already migrated or populated
@@ -92,23 +92,29 @@ func migrateConfig(ctx context.Context, db *sql.DB, fs persistence.FileSystem, c
 	}
 	oldConfig := newConfigRepository(fs, configPath)
 	configs, err := oldConfig.GetAll(ctx)
-	if err != nil || len(configs) == 0 {
-		return err
+	if err != nil {
+		return fmt.Errorf("reading legacy config: %w", err)
+	}
+	if len(configs) == 0 {
+		return nil
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("starting config migration transaction: %w", err)
 	}
 
 	for k, v := range configs {
 		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", k, v); err != nil {
 			_ = tx.Rollback()
-			return err
+			return fmt.Errorf("inserting legacy config key %s: %w", k, err)
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing config migration: %w", err)
+	}
+	return nil
 }
 
 func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string) error {
@@ -117,24 +123,30 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 	}
 	oldTasks := newTaskRepository(fs, tasksPath)
 	tasks, err := oldTasks.ReadAll(ctx)
-	if err != nil || len(tasks) == 0 {
-		return err
+	if err != nil {
+		return fmt.Errorf("reading legacy tasks: %w", err)
+	}
+	if len(tasks) == 0 {
+		return nil
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("starting tasks migration transaction: %w", err)
 	}
 
 	for _, t := range tasks {
 		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES (?, ?, ?, ?)",
 			int64(t.ID), t.Content, t.Status, t.CreatedAt.Format(time.RFC3339Nano)); err != nil {
 			_ = tx.Rollback()
-			return err
+			return fmt.Errorf("inserting legacy task %d: %w", int(t.ID), err)
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing tasks migration: %w", err)
+	}
+	return nil
 }
 
 func migrateScratchpad(ctx context.Context, db *sql.DB, fs persistence.FileSystem, scratchPath string) error {
@@ -143,10 +155,16 @@ func migrateScratchpad(ctx context.Context, db *sql.DB, fs persistence.FileSyste
 	}
 	oldScratch := newScratchpadRepository(fs, scratchPath)
 	scratch, err := oldScratch.Get(ctx, "content")
-	if err != nil || scratch == "" {
-		return err
+	if err != nil {
+		return fmt.Errorf("reading legacy scratchpad: %w", err)
+	}
+	if scratch == "" {
+		return nil
 	}
 
 	_, err = db.ExecContext(ctx, "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)", scratch)
-	return err
+	if err != nil {
+		return fmt.Errorf("inserting legacy scratchpad: %w", err)
+	}
+	return nil
 }
