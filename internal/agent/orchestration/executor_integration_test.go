@@ -92,7 +92,7 @@ type integrationSecurityManager struct {
 
 func (s *integrationSecurityManager) IsPathSafe(path string) (string, error)     { return path, nil }
 func (s *integrationSecurityManager) IsPathWritable(path string) (string, error) { return path, nil }
-func (s *integrationSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+func (s *integrationSecurityManager) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
 func (s *integrationSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {

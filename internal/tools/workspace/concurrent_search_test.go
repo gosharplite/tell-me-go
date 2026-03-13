@@ -90,7 +90,7 @@ func (s *mockSP) IsPathSafe(path string) (string, error) { return path, nil }
 func (s *mockSP) IsPathWritable(path string) (string, error) {
 	return path, nil
 }
-func (s *mockSP) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+func (s *mockSP) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
 func (s *mockSP) IsCommandAllowed(command string) bool { return true }

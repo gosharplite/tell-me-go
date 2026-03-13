@@ -25,9 +25,9 @@ AIURL: "http://test.url"
 			t.Fatalf("failed to write test config: %v", err)
 		}
 
-		cfg, err := Load(configPath)
+		cfg, err := load(configPath)
 		if err != nil {
-			t.Fatalf("Load() failed: %v", err)
+			t.Fatalf("load() failed: %v", err)
 		}
 
 		if cfg.Mode != "test-mode" {
@@ -43,7 +43,7 @@ AIURL: "http://test.url"
 	})
 
 	t.Run("NonExistentFile", func(t *testing.T) {
-		_, err := Load("non-existent.yaml")
+		_, err := load("non-existent.yaml")
 		if err == nil {
 			t.Error("expected error for non-existent file, got nil")
 		}
@@ -56,7 +56,7 @@ AIURL: "http://test.url"
 			t.Fatal(err)
 		}
 
-		_, err := Load(configPath)
+		_, err := load(configPath)
 		if err == nil {
 			t.Error("expected error for invalid YAML, got nil")
 		}
@@ -71,9 +71,9 @@ func TestLoad_EnvOverride(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "test_env.yaml")
 	_ = os.WriteFile(configPath, []byte("MODE: yaml-mode"), 0644)
 
-	cfg, err := Load(configPath)
+	cfg, err := load(configPath)
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("load() failed: %v", err)
 	}
 
 	if cfg.Mode != "env-mode" {
@@ -97,9 +97,9 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "test_env_more.yaml")
 	_ = os.WriteFile(configPath, []byte("PERSON: yaml-person"), 0644)
 
-	cfg, err := Load(configPath)
+	cfg, err := load(configPath)
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("load() failed: %v", err)
 	}
 
 	if cfg.Person != "env-person" {
@@ -135,9 +135,9 @@ PROVIDERS:
 		t.Fatalf("failed to write test config: %v", err)
 	}
 
-	cfg, err := Load(configPath)
+	cfg, err := load(configPath)
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("load() failed: %v", err)
 	}
 
 	provider := cfg.Providers["work-openai"]
@@ -164,9 +164,9 @@ PROVIDERS:
 		t.Fatalf("failed to write test config: %v", err)
 	}
 
-	cfg, err := Load(configPath)
+	cfg, err := load(configPath)
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("load() failed: %v", err)
 	}
 
 	if cfg.Model != "gemini-3-flash" {

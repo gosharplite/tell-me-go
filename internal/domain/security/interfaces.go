@@ -11,7 +11,6 @@ type PathValidator interface {
 }
 
 type ActionConfirmer interface {
-	ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error)
 	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
 }
 

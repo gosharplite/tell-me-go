@@ -2261,7 +2261,7 @@ func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return p
 func (m *mockSecurityManager) IsPathWritable(path string) (string, error) {
 	return path, nil
 }
-func (m *mockSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+func (m *mockSecurityManager) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return m.approved, m.err
 }
 func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {

@@ -33,7 +33,7 @@ func (m *mockLocker) TerminalUnlock() {
 	m.mu.Unlock()
 }
 
-func (m *mockLocker) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+func (m *mockLocker) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
 func (m *mockLocker) IsPathSafe(path string) (string, error)     { return path, nil }

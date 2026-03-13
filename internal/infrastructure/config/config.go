@@ -17,11 +17,11 @@ type YAMLConfigLoader struct{}
 
 // Load satisfies the domain_config.ConfigLoader interface.
 func (l *YAMLConfigLoader) Load(path string) (*domain_config.Config, error) {
-	return Load(path)
+	return load(path)
 }
 
-// Load reads and parses the configuration file.
-func Load(path string) (*domain_config.Config, error) {
+// load reads and parses the configuration file.
+func load(path string) (*domain_config.Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

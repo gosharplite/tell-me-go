@@ -41,7 +41,7 @@ func (m *benchmarkSecurityManager) LogAudit(label1, val1, label2, val2 string) {
 func (m *benchmarkSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
-func (m *benchmarkSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+func (m *benchmarkSecurityManager) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
 
