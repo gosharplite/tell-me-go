@@ -49,7 +49,6 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	reg := &mockZombieRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
 			<-ctx.Done()                      // Block until context canceled
-			time.Sleep(10 * time.Millisecond) // Simulate some cleanup that ignores ctx
 			return domaintools.ToolResult{Text: "done"}, nil
 		},
 	}

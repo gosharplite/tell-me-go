@@ -89,15 +89,20 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 		t.Parallel()
 		p := NewWorkerPool(1)
 		start := make(chan struct{})
+		block := make(chan struct{})
 		done := make(chan struct{})
 
 		p.Submit(func(ctx context.Context) {
 			close(start)
-			time.Sleep(100 * time.Millisecond)
+			select {
+			case <-block:
+			case <-ctx.Done():
+			}
 			close(done)
 		})
 
 		<-start
+		close(block)
 		p.Shutdown()
 
 		select {
@@ -182,9 +187,16 @@ func TestWorkerPool_SubmitFailFast(t *testing.T) {
 
 	// Ensure the first task starts running and blocks
 	startCh := make(chan struct{})
+	blockCh := make(chan struct{}) // 1. Create the blocking channel
+
 	p.Submit(func(ctx context.Context) {
 		close(startCh)
-		time.Sleep(300 * time.Millisecond)
+
+		// 2. Safely block until test finishes or context cancels
+		select {
+		case <-blockCh:
+		case <-ctx.Done():
+		}
 	})
 	<-startCh
 
@@ -202,5 +214,7 @@ func TestWorkerPool_SubmitFailFast(t *testing.T) {
 		t.Error("Expected task 4 to fail fast and return false")
 	}
 
+	// 3. Unblock the worker at the very end of the test so it can exit cleanly
+	close(blockCh)
 	p.Shutdown()
 }
