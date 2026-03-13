@@ -24,7 +24,6 @@ type store interface {
 	Archive(ctx context.Context, contents []*llm.Content) error
 	AppendParts(ctx context.Context, index int, parts []*llm.Part) error
 	UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error
-	Truncate(ctx context.Context, length int) error
 	Compact(ctx context.Context) error
 }
 
@@ -33,7 +32,6 @@ type historyPatch struct {
 	IsPatch     bool                   `json:"_patch"`
 	Index       int                    `json:"index"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
-	Truncate    *int                   `json:"truncate,omitempty"`
 	AppendParts []*llm.Part            `json:"append_parts,omitempty"`
 }
 
@@ -165,11 +163,7 @@ func (s *jsonlStore) loadJSONL(ctx context.Context, data []byte) ([]*llm.Content
 }
 
 func (s *jsonlStore) applyPatch(patch historyPatch, contents []*llm.Content) []*llm.Content {
-	if patch.Truncate != nil {
-		if *patch.Truncate >= 0 && *patch.Truncate <= len(contents) {
-			contents = contents[:*patch.Truncate]
-		}
-	} else if patch.Index >= 0 && patch.Index < len(contents) {
+	if patch.Index >= 0 && patch.Index < len(contents) {
 		if len(patch.AppendParts) > 0 {
 			contents[patch.Index].Parts = append(contents[patch.Index].Parts, patch.AppendParts...)
 		}
@@ -356,41 +350,6 @@ func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map
 		IsPatch:  true,
 		Index:    index,
 		Metadata: metadata,
-	}
-	line, merr := json.Marshal(patch)
-	if merr != nil {
-		return merr
-	}
-	line = append(line, '\n')
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	_, err = f.Write(line)
-	return err
-}
-
-// Truncate appends a patch to rollback history to a specific length.
-func (s *jsonlStore) Truncate(ctx context.Context, length int) (err error) {
-	if err := s.ensureDirectory(ctx); err != nil {
-		return err
-	}
-	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if oerr != nil {
-		return oerr
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	patch := historyPatch{
-		IsPatch:  true,
-		Truncate: &length,
 	}
 	line, merr := json.Marshal(patch)
 	if merr != nil {

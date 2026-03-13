@@ -440,7 +440,7 @@ func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 	verifyPreparedContent(t, prepared)
 }
 
-func TestJSONLStore_UpdateMetadataAndTruncate_SaveAndPatch(t *testing.T) {
+func TestJSONLStore_UpdateMetadata_SaveAndPatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -474,38 +474,7 @@ func TestJSONLStore_UpdateMetadataAndTruncate_SaveAndPatch(t *testing.T) {
 	}
 }
 
-func TestJSONLStore_UpdateMetadataAndTruncate_Truncate(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "patches_trunc.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
-	ctx := context.Background()
-
-	contents := []*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "Msg 1"}}, Pinned: true},
-		{Role: "model", Parts: []*llm.Part{{Text: "Msg 2"}}},
-		{Role: "user", Parts: []*llm.Part{{Text: "Msg 3"}}},
-	}
-	if err := store.Save(ctx, contents); err != nil {
-		t.Fatalf("Save failed: %v", err)
-	}
-
-	if err := store.Truncate(ctx, 2); err != nil {
-		t.Fatalf("Truncate failed: %v", err)
-	}
-
-	loaded, err := store.Load(ctx)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-	if len(loaded) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(loaded))
-	}
-	if !loaded[0].Pinned {
-		t.Error("expected first entry to still be pinned")
-	}
-}
-
-func TestJSONLStore_UpdateMetadataAndTruncate_Compact(t *testing.T) {
+func TestJSONLStore_UpdateMetadata_Compact(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches_compact.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
@@ -654,12 +623,6 @@ func TestJSONLStore_MkdirAllError(t *testing.T) {
 	err = store.UpdateMetadata(ctx, 0, map[string]interface{}{"pinned": true})
 	if err == nil {
 		t.Error("expected error during UpdateMetadata due to MkdirAll failure")
-	}
-
-	// Truncate requires directory
-	err = store.Truncate(ctx, 1)
-	if err == nil {
-		t.Error("expected error during Truncate due to MkdirAll failure")
 	}
 }
 
@@ -819,16 +782,6 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			wantErr: "mkdir failed",
 		},
 		{
-			name: "MkdirAll Failure on Truncate",
-			setupMock: func(m *mockFS) {
-				m.mkdirErrFunc = func(path string) error { return errors.New("mkdir failed") }
-			},
-			action: func(ctx context.Context, s *jsonlStore) error {
-				return s.Truncate(ctx, 1)
-			},
-			wantErr: "mkdir failed",
-		},
-		{
 			name:      "OpenFile Failure on Append",
 			setupMock: func(m *mockFS) { m.openErr = errors.New("open failed") },
 			action: func(ctx context.Context, s *jsonlStore) error {
@@ -861,14 +814,6 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			wantErr: "write failed",
 		},
 		{
-			name:      "Write Failure on Truncate",
-			setupMock: func(m *mockFS) { m.writeErr = errors.New("write failed") },
-			action: func(ctx context.Context, s *jsonlStore) error {
-				return s.Truncate(ctx, 1)
-			},
-			wantErr: "write failed",
-		},
-		{
 			name:      "Context Canceled on Append",
 			setupMock: func(m *mockFS) {},
 			action: func(ctx context.Context, s *jsonlStore) error {
@@ -885,16 +830,6 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 				ctxCanceled, cancel := context.WithCancel(ctx)
 				cancel()
 				return s.UpdateMetadata(ctxCanceled, 0, map[string]interface{}{"pinned": true})
-			},
-			wantErr: "context canceled",
-		},
-		{
-			name:      "Context Canceled on Truncate",
-			setupMock: func(m *mockFS) {},
-			action: func(ctx context.Context, s *jsonlStore) error {
-				ctxCanceled, cancel := context.WithCancel(ctx)
-				cancel()
-				return s.Truncate(ctxCanceled, 1)
 			},
 			wantErr: "context canceled",
 		},

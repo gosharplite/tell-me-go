@@ -129,35 +129,6 @@ func TestHistoryManager_Save_Error(t *testing.T) {
 	}
 }
 
-func TestHistoryManager_SnapshotRollback(t *testing.T) {
-	tmpDir := t.TempDir()
-	historyFile := filepath.Join(tmpDir, "history.json")
-	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
-	ctx := context.Background()
-
-	_ = m.addEntry(ctx, "user", "Initial")
-	m.snapshot()
-
-	_ = m.addEntry(ctx, "model", "Response")
-	if m.GetTotalEntries() != 2 {
-		t.Errorf("expected 2 entries, got %d", m.GetTotalEntries())
-	}
-
-	m.rollback(ctx)
-	if m.GetTotalEntries() != 1 {
-		t.Errorf("expected 1 entry after rollback, got %d", m.GetTotalEntries())
-	}
-	contents, _ := m.GetWindow(ctx, 0, 1)
-	if contents[0].Parts[0].Text != "Initial" {
-		t.Errorf("expected 'Initial', got '%s'", contents[0].Parts[0].Text)
-	}
-
-	// rollback with no snapshot should do nothing (or at least not crash)
-	m3 := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "m3.json"), filepath.Join(tmpDir, "m3.archive.jsonl"))
-	m3.rollback(ctx)
-}
-
 func TestHistoryManager_Interfaces(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "interfaces.json")
@@ -305,8 +276,7 @@ func TestHistoryManager_ClonePersistent(t *testing.T) {
 func (s *mockStore) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error {
 	return nil
 }
-func (s *mockStore) Truncate(ctx context.Context, length int) error { return nil }
-func (s *mockStore) Compact(ctx context.Context) error              { return nil }
+func (s *mockStore) Compact(ctx context.Context) error { return nil }
 
 type mockStoreErrorMetadata struct {
 	mockStore

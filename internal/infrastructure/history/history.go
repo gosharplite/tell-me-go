@@ -7,7 +7,6 @@ package history
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -21,7 +20,6 @@ type Manager struct {
 	store    store
 	FilePath string
 	Contents []*llm.Content
-	backup   []*llm.Content // Keep a copy of the state before the current user prompt
 }
 
 // NewManager creates a new history manager for the given file path.
@@ -187,28 +185,6 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	m.Contents[startIdx+1].Pinned = pinned
 
 	return nil
-}
-
-// snapshot takes a backup of the current state for potential rollback.
-func (m *Manager) snapshot() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.backup = make([]*llm.Content, len(m.Contents))
-	for i, c := range m.Contents {
-		m.backup[i] = llm.CloneContent(c)
-	}
-}
-
-// rollback restores the history to the state before Snapshot was called.
-func (m *Manager) rollback(ctx context.Context) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.backup != nil {
-		m.Contents = m.backup
-		if err := m.store.Truncate(ctx, len(m.backup)); err != nil {
-			log.Printf("Warning: failed to persist history rollback truncation: %v", err)
-		}
-	}
 }
 
 // addEntry appends a new text message to the history.
