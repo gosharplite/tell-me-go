@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -103,35 +104,34 @@ func (idx *indexer) Refresh(ctx context.Context) error {
 		return err
 	}
 
-	// Parallel AST harvesting
-	type pkgResult struct {
-		symbols map[string][]symbolLocation
-		usages  map[string][]location
+	symbolsByPath, usagesByName, err := idx.harvestPackages(ctx, fset, pkgs)
+	if err != nil {
+		return err
 	}
 
+	idx.updateState(pkgs, symbolsByPath, usagesByName, fset)
+	return nil
+}
+
+// pkgResult holds the results of harvesting symbols and usages from a package.
+type pkgResult struct {
+	symbols map[string][]symbolLocation
+	usages  map[string][]location
+}
+
+func (idx *indexer) harvestPackages(ctx context.Context, fset *token.FileSet, pkgs []*packages.Package) (map[string][]symbolLocation, map[string][]location, error) {
 	results := make(chan pkgResult, len(pkgs))
 	g, gCtx := errgroup.WithContext(ctx)
 
 	for _, pkg := range pkgs {
 		p := pkg // Captured for closure
 		g.Go(func() error {
-			h := newHarvester(fset)
-			h.info = p.TypesInfo
-
-			for _, file := range p.Syntax {
-				if gCtx.Err() != nil {
-					return gCtx.Err()
-				}
-				filename := fset.File(file.Pos()).Name()
-				h.currentPath, _ = filepath.Abs(filename)
-				ast.Inspect(file, h.visit)
+			res, err := idx.processPackage(gCtx, fset, p)
+			if err != nil {
+				return err
 			}
-
 			select {
-			case results <- pkgResult{
-				symbols: h.symbolsByPath,
-				usages:  h.usagesByName,
-			}:
+			case results <- res:
 			case <-gCtx.Done():
 				return gCtx.Err()
 			}
@@ -146,10 +146,63 @@ func (idx *indexer) Refresh(ctx context.Context) error {
 	}()
 
 	if err := g.Wait(); err != nil {
+		return nil, nil, err
+	}
+
+	return idx.mergeResults(results)
+}
+
+func (idx *indexer) processPackage(ctx context.Context, fset *token.FileSet, pkg *packages.Package) (pkgResult, error) {
+	h := newHarvester(fset)
+	h.info = pkg.TypesInfo
+
+	for _, file := range pkg.Syntax {
+		if ctx.Err() != nil {
+			return pkgResult{}, ctx.Err()
+		}
+		if err := idx.processFile(fset, file, h); err != nil {
+			return pkgResult{}, err
+		}
+	}
+
+	return pkgResult{
+		symbols: h.symbolsByPath,
+		usages:  h.usagesByName,
+	}, nil
+}
+
+func (idx *indexer) processFile(fset *token.FileSet, file *ast.File, h *harvester) error {
+	filename := fset.File(file.Pos()).Name()
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
 		return err
 	}
 
-	// Merge results (Reduce phase)
+	// Although the file is already parsed into memory, we may want to skip it based on metadata
+	// or perform validation.
+	info, err := os.Stat(absPath)
+	if err != nil {
+		// In some environments, files might be deleted between Load and Refresh
+		return nil
+	}
+
+	if !idx.shouldIndexFile(absPath, info) {
+		return nil
+	}
+
+	h.currentPath = absPath
+	ast.Inspect(file, h.visit)
+	return nil
+}
+
+func (idx *indexer) shouldIndexFile(path string, info os.FileInfo) bool {
+	if info.IsDir() {
+		return false
+	}
+	return strings.HasSuffix(path, ".go")
+}
+
+func (idx *indexer) mergeResults(results <-chan pkgResult) (map[string][]symbolLocation, map[string][]location, error) {
 	symbolsByPath := make(map[string][]symbolLocation)
 	usagesByName := make(map[string][]location)
 
@@ -161,9 +214,7 @@ func (idx *indexer) Refresh(ctx context.Context) error {
 			usagesByName[name] = append(usagesByName[name], locations...)
 		}
 	}
-
-	idx.updateState(pkgs, symbolsByPath, usagesByName, fset)
-	return nil
+	return symbolsByPath, usagesByName, nil
 }
 
 func (idx *indexer) toLocation(pos token.Pos) location {
