@@ -411,3 +411,57 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 	assert.True(t, getCalled)
 	assert.True(t, putCalled)
 }
+
+func TestStreamRegexFilter_Truncation(t *testing.T) {
+	m := &adoManager{}
+
+	tests := []struct {
+		name          string
+		inputLines    int
+		maxLines      int
+		wantTruncated bool
+		wantMatchCount int
+	}{
+		{
+			name:           "Happy Path: No truncation",
+			inputLines:     10,
+			maxLines:       20,
+			wantTruncated:  false,
+			wantMatchCount: 10,
+		},
+		{
+			name:           "Edge Case: Exact limit",
+			inputLines:     10,
+			maxLines:       10,
+			wantTruncated:  false,
+			wantMatchCount: 10,
+		},
+		{
+			name:           "Truncation: Over limit",
+			inputLines:     15,
+			maxLines:       10,
+			wantTruncated:  true,
+			wantMatchCount: 10,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			var input strings.Builder
+			for i := 0; i < tt.inputLines; i++ {
+				input.WriteString("match line\n")
+			}
+
+			res, err := m.streamRegexFilter(strings.NewReader(input.String()), "match", LogFilterOptions{MaxLines: tt.maxLines})
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantTruncated, res.Truncated)
+			assert.Equal(t, tt.wantMatchCount, res.TotalLines)
+
+			// Count matching lines in output
+			matches := strings.Count(res.Content, "match line")
+			assert.Equal(t, tt.wantMatchCount, matches)
+		})
+	}
+}
