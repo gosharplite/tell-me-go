@@ -188,14 +188,14 @@ func mapADOVariables(vars map[string]string) map[string]adoVariable {
 	return mapped
 }
 
-// LogFilterOptions configures log filtering behavior.
-type LogFilterOptions struct {
+// logFilterOptions configures log filtering behavior.
+type logFilterOptions struct {
 	MaxLines     int
 	ContextLines int
 }
 
-// FilterResult contains the processed log content and metadata.
-type FilterResult struct {
+// filterResult contains the processed log content and metadata.
+type filterResult struct {
 	Content    string
 	Truncated  bool
 	TotalLines int
@@ -508,9 +508,9 @@ func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: text}, nil
 }
 
-func (m *adoManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) (FilterResult, error) {
+func (m *adoManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) (filterResult, error) {
 	if filterQuery != "" {
-		return m.streamRegexFilter(reader, filterQuery, LogFilterOptions{MaxLines: maxLines, ContextLines: contextLines})
+		return m.streamRegexFilter(reader, filterQuery, logFilterOptions{MaxLines: maxLines, ContextLines: contextLines})
 	}
 
 	if startLine > 0 || maxLines > 0 {
@@ -527,10 +527,10 @@ func (m *adoManager) processLogContent(reader io.Reader, tailLines, headLines in
 	return m.streamTail(reader, tailLines)
 }
 
-func (m *adoManager) streamRegexFilter(reader io.Reader, query string, opts LogFilterOptions) (FilterResult, error) {
+func (m *adoManager) streamRegexFilter(reader io.Reader, query string, opts logFilterOptions) (filterResult, error) {
 	re, err := regexp.Compile(query)
 	if err != nil {
-		return FilterResult{}, fmt.Errorf("invalid filter_query regex: %w", err)
+		return filterResult{}, fmt.Errorf("invalid filter_query regex: %w", err)
 	}
 
 	state := newLogFilterState(opts.ContextLines)
@@ -562,7 +562,7 @@ func (m *adoManager) streamRegexFilter(reader io.Reader, query string, opts LogF
 	}
 
 	if err := scanner.Err(); err != nil {
-		return FilterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
 	}
 
 	content := state.result.String()
@@ -570,7 +570,7 @@ func (m *adoManager) streamRegexFilter(reader io.Reader, query string, opts LogF
 		content = "No matches found for filter_query."
 	}
 
-	return FilterResult{
+	return filterResult{
 		Content:    content,
 		Truncated:  truncated,
 		TotalLines: matchCount,
@@ -660,7 +660,7 @@ func (s *logFilterState) printLine(line string, lineNum int) {
 	s.lastPrintedLineNum = lineNum
 }
 
-func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int) (FilterResult, error) {
+func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int) (filterResult, error) {
 	if startLine <= 0 {
 		startLine = 1
 	}
@@ -690,7 +690,7 @@ func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return FilterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
 	}
 
 	content := result.String()
@@ -698,14 +698,14 @@ func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int)
 		content = fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, count)
 	}
 
-	return FilterResult{
+	return filterResult{
 		Content:    content,
 		Truncated:  truncated,
 		TotalLines: printed,
 	}, nil
 }
 
-func (m *adoManager) streamHead(reader io.Reader, n int) (FilterResult, error) {
+func (m *adoManager) streamHead(reader io.Reader, n int) (filterResult, error) {
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
 	buf := make([]byte, 64*1024)
@@ -726,19 +726,19 @@ func (m *adoManager) streamHead(reader io.Reader, n int) (FilterResult, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return FilterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
 	}
 
-	return FilterResult{
+	return filterResult{
 		Content:    result.String(),
 		Truncated:  truncated,
 		TotalLines: count,
 	}, nil
 }
 
-func (m *adoManager) streamTail(reader io.Reader, n int) (FilterResult, error) {
+func (m *adoManager) streamTail(reader io.Reader, n int) (filterResult, error) {
 	if n <= 0 {
-		return FilterResult{}, nil
+		return filterResult{}, nil
 	}
 	if n > 10000 {
 		n = 10000
@@ -756,11 +756,11 @@ func (m *adoManager) streamTail(reader io.Reader, n int) (FilterResult, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return FilterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
 	}
 
 	if count == 0 {
-		return FilterResult{}, nil
+		return filterResult{}, nil
 	}
 
 	var result strings.Builder
@@ -781,7 +781,7 @@ func (m *adoManager) streamTail(reader io.Reader, n int) (FilterResult, error) {
 		result.WriteString(ring[(start+i)%n])
 	}
 
-	return FilterResult{
+	return filterResult{
 		Content:    result.String(),
 		Truncated:  count > n,
 		TotalLines: limit,

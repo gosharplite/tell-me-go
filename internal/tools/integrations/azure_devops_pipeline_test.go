@@ -453,7 +453,7 @@ func TestStreamRegexFilter_Truncation(t *testing.T) {
 				input.WriteString("match line\n")
 			}
 
-			res, err := m.streamRegexFilter(strings.NewReader(input.String()), "match", LogFilterOptions{MaxLines: tt.maxLines})
+			res, err := m.streamRegexFilter(strings.NewReader(input.String()), "match", logFilterOptions{MaxLines: tt.maxLines})
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantTruncated, res.Truncated)

@@ -463,7 +463,7 @@ func TestManager_RollbackTurns(t *testing.T) {
 	twoTurns := threeTurns[:4]
 	var emptyState []*llm.Content
 
-	tests := []struct {
+	type testCase struct {
 		name          string
 		initialState  []*llm.Content
 		turnsToRemove int
@@ -472,7 +472,9 @@ func TestManager_RollbackTurns(t *testing.T) {
 		wantRemaining int
 		wantMsgs      int
 		wantErr       bool
-	}{
+	}
+
+	tests := []testCase{
 		{"Normal Rollback (1 turn)", threeTurns, 1, nil, 1, 2, 4, false},
 		{"Out-of-Bounds Rollback", twoTurns, 10, nil, 2, 0, 0, false},
 		{"Empty Rollback", emptyState, 1, nil, 0, 0, 0, false},
@@ -504,31 +506,44 @@ func TestManager_RollbackTurns(t *testing.T) {
 			}
 
 			actual, remaining, msgs, err := mgr.RollbackTurns(ctx, tt.turnsToRemove)
-
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("RollbackTurns() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if tt.wantErr {
-				if len(mgr.Contents) != len(tt.initialState) {
-					t.Errorf("expected Contents to be restored to length %d, got %d", len(tt.initialState), len(mgr.Contents))
-				}
-				return
-			}
-
-			if actual != tt.wantRemoved {
-				t.Errorf("actualRemoved = %d; want %d", actual, tt.wantRemoved)
-			}
-			if remaining != tt.wantRemaining {
-				t.Errorf("remainingTurns = %d; want %d", remaining, tt.wantRemaining)
-			}
-			if msgs != tt.wantMsgs {
-				t.Errorf("remainingMsgs = %d; want %d", msgs, tt.wantMsgs)
-			}
-			if len(mgr.Contents) != tt.wantMsgs {
-				t.Errorf("len(mgr.Contents) = %d; want %d", len(mgr.Contents), tt.wantMsgs)
-			}
+			assertRollbackState(t, mgr, tt, actual, remaining, msgs, err)
 		})
+	}
+}
+
+func assertRollbackState(t *testing.T, mgr *Manager, tt struct {
+	name          string
+	initialState  []*llm.Content
+	turnsToRemove int
+	setupStore    func(m *Manager)
+	wantRemoved   int
+	wantRemaining int
+	wantMsgs      int
+	wantErr       bool
+}, actual, remaining, msgs int, err error) {
+	t.Helper()
+	if (err != nil) != tt.wantErr {
+		t.Fatalf("RollbackTurns() error = %v, wantErr %v", err, tt.wantErr)
+	}
+
+	if tt.wantErr {
+		if len(mgr.Contents) != len(tt.initialState) {
+			t.Errorf("expected Contents to be restored to length %d, got %d", len(tt.initialState), len(mgr.Contents))
+		}
+		return
+	}
+
+	if actual != tt.wantRemoved {
+		t.Errorf("actualRemoved = %d; want %d", actual, tt.wantRemoved)
+	}
+	if remaining != tt.wantRemaining {
+		t.Errorf("remainingTurns = %d; want %d", remaining, tt.wantRemaining)
+	}
+	if msgs != tt.wantMsgs {
+		t.Errorf("remainingMsgs = %d; want %d", msgs, tt.wantMsgs)
+	}
+	if len(mgr.Contents) != tt.wantMsgs {
+		t.Errorf("len(mgr.Contents) = %d; want %d", len(mgr.Contents), tt.wantMsgs)
 	}
 }
 

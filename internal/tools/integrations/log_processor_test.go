@@ -117,7 +117,7 @@ func TestOOMSafety(t *testing.T) {
 
 	t.Run("ClampFilterContextLines", func(t *testing.T) {
 		content := "match"
-		result, err := m.streamRegexFilter(strings.NewReader(content), "match", LogFilterOptions{ContextLines: 1000000})
+		result, err := m.streamRegexFilter(strings.NewReader(content), "match", logFilterOptions{ContextLines: 1000000})
 		assert.NoError(t, err)
 		assert.Equal(t, "match", result.Content)
 	})
@@ -155,7 +155,7 @@ func TestLogIOError(t *testing.T) {
 	})
 
 	t.Run("streamRegexFilter", func(t *testing.T) {
-		result, err := m.streamRegexFilter(errReader, "match", LogFilterOptions{ContextLines: 5})
+		result, err := m.streamRegexFilter(errReader, "match", logFilterOptions{ContextLines: 5})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "log stream interrupted")
 		assert.Empty(t, result.Content)
