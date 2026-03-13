@@ -115,6 +115,31 @@ func (m *mockHistoryManager) Save(ctx context.Context) error {
 	return nil
 }
 
+func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	originalLen := len(m.Contents)
+	if originalLen == 0 {
+		return 0, 0, 0, nil
+	}
+
+	removeMsgs := turns * 2
+	var actualRemoved int
+	if removeMsgs >= originalLen {
+		actualRemoved = originalLen / 2
+		m.Contents = nil
+	} else {
+		actualRemoved = turns
+		m.Contents = m.Contents[:originalLen-removeMsgs]
+	}
+
+	remainingMsgs := len(m.Contents)
+	remainingTurns := remainingMsgs / 2
+
+	return actualRemoved, remainingTurns, remainingMsgs, nil
+}
+
 // mockClock for deterministic tests
 type mockClock struct {
 	CurrentTime time.Time

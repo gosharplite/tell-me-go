@@ -133,29 +133,12 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 	o.renderHistory(sd.GetHistoryManager(), sc, isTTY)
 
 	if sc.GetBackN() > 0 {
-		contents, err := sd.GetHistoryManager().GetWindow(ctx, 0, -1)
-		if err == nil && len(contents) > 0 {
-			removeMsgs := sc.GetBackN() * 2
-			var actualRemoved int
-
-			if removeMsgs >= len(contents) {
-				actualRemoved = len(contents) / 2
-				contents = nil // Clear all history
-			} else {
-				actualRemoved = sc.GetBackN()
-				contents = contents[:len(contents)-removeMsgs]
-			}
-
-			if err := sd.GetHistoryManager().SetContents(ctx, contents); err != nil {
-				return fmt.Errorf("failed to rollback history: %w", err)
-			}
-
-			remainingMsgs := sd.GetHistoryManager().GetTotalEntries()
-			remainingTurns := remainingMsgs / 2
-
-			fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns. History now contains %d turns (%d messages).\n",
-				actualRemoved, remainingTurns, remainingMsgs)
+		actualRemoved, remainingTurns, remainingMsgs, err := sd.GetHistoryManager().RollbackTurns(ctx, sc.GetBackN())
+		if err != nil {
+			return fmt.Errorf("failed to rollback history: %w", err)
 		}
+		fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns. History now contains %d turns (%d messages).\n",
+			actualRemoved, remainingTurns, remainingMsgs)
 
 		// If no prompt was provided alongside -b, exit gracefully
 		if sc.GetPrompt() == "" {

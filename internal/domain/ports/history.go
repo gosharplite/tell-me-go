@@ -25,4 +25,8 @@ type HistoryManager interface {
 	GetResolver() llm.AssetResolver
 	SetPinned(ctx context.Context, turnIndex int, pinned bool) error
 	Save(ctx context.Context) error
+
+	// RollbackTurns removes the last N turns (1 turn = 2 messages) from the history.
+	// It returns the actual number of turns removed, the remaining turns, the remaining total messages, and any error.
+	RollbackTurns(ctx context.Context, turns int) (actualRemoved int, remainingTurns int, remainingMsgs int, err error)
 }

@@ -446,3 +446,80 @@ func TestHistoryManager_Archive(t *testing.T) {
 		t.Error("archive file was not created")
 	}
 }
+
+func TestManager_RollbackTurns(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "history.jsonl")
+	fs := infrapersistence.NewOSFileSystem()
+	mgr := NewManager(fs, filePath, "")
+
+	ctx := context.Background()
+
+	// Setup: 3 turns = 6 messages
+	messages := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u3"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m3"}}},
+	}
+	_ = mgr.SetContents(ctx, messages)
+
+	t.Run("Normal Rollback (1 turn)", func(t *testing.T) {
+		actualRemoved, remainingTurns, remainingMsgs, err := mgr.RollbackTurns(ctx, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if actualRemoved != 1 {
+			t.Errorf("got actualRemoved %d; want 1", actualRemoved)
+		}
+		if remainingTurns != 2 {
+			t.Errorf("got remainingTurns %d; want 2", remainingTurns)
+		}
+		if remainingMsgs != 4 {
+			t.Errorf("got remainingMsgs %d; want 4", remainingMsgs)
+		}
+		if len(mgr.Contents) != 4 {
+			t.Errorf("got slice length %d; want 4", len(mgr.Contents))
+		}
+		if mgr.Contents[3].Parts[0].Text != "m2" {
+			t.Errorf("got last msg text %q; want 'm2'", mgr.Contents[3].Parts[0].Text)
+		}
+	})
+
+	t.Run("Out-of-Bounds Rollback (10 turns from 2 turns left)", func(t *testing.T) {
+		actualRemoved, remainingTurns, remainingMsgs, err := mgr.RollbackTurns(ctx, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if actualRemoved != 2 { // Only 2 turns were left
+			t.Errorf("got actualRemoved %d; want 2", actualRemoved)
+		}
+		if remainingTurns != 0 {
+			t.Errorf("got remainingTurns %d; want 0", remainingTurns)
+		}
+		if remainingMsgs != 0 {
+			t.Errorf("got remainingMsgs %d; want 0", remainingMsgs)
+		}
+		if mgr.Contents != nil {
+			t.Error("expected Contents to be nil")
+		}
+	})
+
+	t.Run("Empty Rollback", func(t *testing.T) {
+		actualRemoved, remainingTurns, remainingMsgs, err := mgr.RollbackTurns(ctx, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if actualRemoved != 0 {
+			t.Errorf("got actualRemoved %d; want 0", actualRemoved)
+		}
+		if remainingTurns != 0 {
+			t.Errorf("got remainingTurns %d; want 0", remainingTurns)
+		}
+		if remainingMsgs != 0 {
+			t.Errorf("got remainingMsgs %d; want 0", remainingMsgs)
+		}
+	})
+}

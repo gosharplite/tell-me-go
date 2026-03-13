@@ -46,6 +46,10 @@ type mockHistoryManager struct {
 	ports.HistoryManager
 }
 
+func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	return 0, 0, 0, nil
+}
+
 type mockRegistry struct {
 	tools.IToolRegistry
 }

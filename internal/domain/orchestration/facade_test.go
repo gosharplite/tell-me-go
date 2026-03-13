@@ -140,6 +140,9 @@ func (m *mockHistory) GetResolver() llm.AssetResolver {
 }
 func (m *mockHistory) SetPinned(ctx context.Context, turnIndex int, pinned bool) error { return nil }
 func (m *mockHistory) Save(ctx context.Context) error                                  { return nil }
+func (m *mockHistory) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	return 0, 0, 0, nil
+}
 
 func TestChatterFacade_Chat(t *testing.T) {
 	tests := []struct {

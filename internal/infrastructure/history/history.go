@@ -237,3 +237,33 @@ func (m *Manager) AppendParts(ctx context.Context, index int, parts []*llm.Part)
 	m.Contents[index].Parts = append(m.Contents[index].Parts, clonedParts...)
 	return m.store.AppendParts(ctx, index, clonedParts)
 }
+
+// RollbackTurns removes the last N turns (1 turn = 2 messages) from the history.
+// It returns the actual number of turns removed, the remaining turns, the remaining total messages, and any error.
+func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved int, remainingTurns int, remainingMsgs int, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	originalLen := len(m.Contents)
+	if originalLen == 0 {
+		return 0, 0, 0, nil
+	}
+
+	removeMsgs := turns * 2
+	if removeMsgs >= originalLen {
+		actualRemoved = originalLen / 2
+		m.Contents = nil
+	} else {
+		actualRemoved = turns
+		m.Contents = m.Contents[:originalLen-removeMsgs]
+	}
+
+	if err := m.store.Save(ctx, m.Contents); err != nil {
+		return 0, 0, 0, err
+	}
+
+	remainingMsgs = len(m.Contents)
+	remainingTurns = remainingMsgs / 2
+
+	return actualRemoved, remainingTurns, remainingMsgs, nil
+}

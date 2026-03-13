@@ -112,6 +112,9 @@ type seqMockHistory struct {
 
 func (m *seqMockHistory) GetTotalEntries() int           { return 0 }
 func (m *seqMockHistory) GetResolver() llm.AssetResolver { return nil }
+func (m *seqMockHistory) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	return 0, 0, 0, nil
+}
 
 func TestChatterFacade_StrictEventSequence(t *testing.T) {
 	// 1. Setup Spy EventBus

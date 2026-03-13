@@ -127,6 +127,27 @@ func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinne
 	return nil
 }
 func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
+func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	originalLen := len(m.contents)
+	if originalLen == 0 {
+		return 0, 0, 0, nil
+	}
+
+	removeMsgs := turns * 2
+	var actualRemoved int
+	if removeMsgs >= originalLen {
+		actualRemoved = originalLen / 2
+		m.contents = nil
+	} else {
+		actualRemoved = turns
+		m.contents = m.contents[:originalLen-removeMsgs]
+	}
+
+	remainingMsgs := len(m.contents)
+	remainingTurns := remainingMsgs / 2
+
+	return actualRemoved, remainingTurns, remainingMsgs, nil
+}
 
 type mockGateway struct {
 	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
