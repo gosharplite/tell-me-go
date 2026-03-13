@@ -79,8 +79,8 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: fmt.Sprintf("Turn %d has been successfully %s.", index, status)}, nil
 }
 
-// RegisterInternal registers the internal tools with the provided registry.
-func RegisterInternal(r tools.IToolRegistry, cm *ContextManager) {
+// RegisterInternal registers the internal tools with the provided registrar.
+func RegisterInternal(r tools.ToolRegistrar, cm *ContextManager) {
 	it := NewInternalTools(cm)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{

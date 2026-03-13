@@ -13,20 +13,45 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// UIRenderer defines the interface for UI feedback.
-type UIRenderer interface {
+// ResponseStreamer defines the interface for streaming responses.
+type ResponseStreamer interface {
 	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content)
+}
+
+// StatusLogger defines the interface for logging status and system messages.
+type StatusLogger interface {
 	LogTurnStatus(status events.TurnStatus)
+	LogSystemMessage(msg string, level string)
+}
+
+// UsageLogger defines the interface for logging usage metrics.
+type UsageLogger interface {
 	LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time)
+}
+
+// ToolLogger defines the interface for logging tool calls and results.
+type ToolLogger interface {
 	LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool)
 	LogToolResult(name string, result tools.ToolResult, showTools bool)
-	LogSystemMessage(msg string, level string)
+}
+
+// RendererConfigurator defines the interface for configuring renderer behavior.
+type RendererConfigurator interface {
 	SetUseColor(use bool)
+}
+
+// UIRenderer defines the interface for UI feedback.
+type UIRenderer interface {
+	ResponseStreamer
+	StatusLogger
+	UsageLogger
+	ToolLogger
+	RendererConfigurator
 }
 
 // HistoryRenderer defines the interface for rendering chat history.
 type HistoryRenderer interface {
-	Render(w io.Writer, h HistoryManager, n int, options HistoryRenderOptions)
+	Render(w io.Writer, h HistoryReader, n int, options HistoryRenderOptions)
 }
 
 // HistoryRenderOptions defines the options for rendering chat history.

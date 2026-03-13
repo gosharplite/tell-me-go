@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Sentinel errors for repositories.
+// Sentinel errors for repository operations.
 var (
 	ErrConfigKeyNotFound = errors.New("config key not found")
 	ErrTaskNotFound      = errors.New("task not found")
@@ -49,40 +49,85 @@ type SessionInfo struct {
 	Provider string            `json:"provider,omitempty"`
 }
 
-// ITaskService defines the interface for task management.
-type ITaskService interface {
-	Initialize(ctx context.Context) error
+// TaskReader defines the interface for reading tasks.
+type TaskReader interface {
+	ListTasks(status string) []Task
+}
+
+// TaskWriter defines the interface for modifying tasks.
+type TaskWriter interface {
 	AddTask(ctx context.Context, content string) (Task, error)
 	UpdateTask(ctx context.Context, id float64, content, status string) (Task, error)
 	DeleteTask(ctx context.Context, id float64) error
-	ListTasks(status string) []Task
 	ClearTasks(ctx context.Context) error
+}
+
+// ITaskService defines the interface for task management.
+type ITaskService interface {
+	TaskReader
+	TaskWriter
+	Initialize(ctx context.Context) error
+}
+
+// ConfigReader defines the interface for reading configuration.
+type ConfigReader interface {
+	Get(key string) (string, error)
+	GetAll() map[string]string
+}
+
+// ConfigWriter defines the interface for modifying configuration.
+type ConfigWriter interface {
+	Set(ctx context.Context, key, val string) error
+	Delete(ctx context.Context, key string) error
 }
 
 // IConfigService defines the interface for configuration management.
 type IConfigService interface {
+	ConfigReader
+	ConfigWriter
 	Initialize(ctx context.Context) error
-	Set(ctx context.Context, key, val string) error
-	Get(key string) (string, error)
-	Delete(ctx context.Context, key string) error
-	GetAll() map[string]string
 }
 
-// IScratchpadService defines the interface for scratchpad management.
-type IScratchpadService interface {
-	Initialize(ctx context.Context) error
+// ScratchpadReader defines the interface for reading from the scratchpad.
+type ScratchpadReader interface {
 	Read() string
+}
+
+// ScratchpadWriter defines the interface for writing to the scratchpad.
+type ScratchpadWriter interface {
 	Write(ctx context.Context, content string) error
 	Append(ctx context.Context, content string) error
 	Clear(ctx context.Context) error
 }
 
-// ISessionProvider provides access to persistence services and session info.
-type ISessionProvider interface {
+// IScratchpadService defines the interface for scratchpad management.
+type IScratchpadService interface {
+	ScratchpadReader
+	ScratchpadWriter
+	Initialize(ctx context.Context) error
+}
+
+// PersistenceProvider provides access to domain-specific persistence services.
+type PersistenceProvider interface {
 	GetTasks() ITaskService
 	GetConfig() IConfigService
 	GetScratchpad() IScratchpadService
+}
+
+// SessionStateProvider manages session-level metadata and state.
+type SessionStateProvider interface {
 	GetInfo() SessionInfo
 	SetInfo(info SessionInfo)
+}
+
+// ResourceCloser defines an interface for closing resources.
+type ResourceCloser interface {
 	Close() error
+}
+
+// ISessionProvider provides access to persistence services and session info.
+type ISessionProvider interface {
+	PersistenceProvider
+	SessionStateProvider
+	ResourceCloser
 }

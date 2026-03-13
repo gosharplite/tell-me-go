@@ -53,8 +53,8 @@ func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]i
 	return tools.ToolResult{Text: string(data)}, nil
 }
 
-// Register adds persistence tools to the registry.
-func (t *persistenceTools) Register(r tools.IToolRegistry) {
+// Register adds persistence tools to the registrar.
+func (t *persistenceTools) Register(r tools.ToolRegistrar) {
 	if t.state == nil {
 		return
 	}

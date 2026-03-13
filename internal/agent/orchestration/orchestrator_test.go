@@ -90,7 +90,7 @@ type mockHistoryRenderer struct {
 	mock.Mock
 }
 
-func (m *mockHistoryRenderer) Render(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
+func (m *mockHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
 	m.Called(w, h, n, options)
 }
 
@@ -474,7 +474,7 @@ type behaviorMockHistoryRenderer struct {
 	tracker *behaviorTracker
 }
 
-func (m *behaviorMockHistoryRenderer) Render(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
+func (m *behaviorMockHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
 	m.tracker.record("HistoryRenderer.Render")
 	m.Called(w, h, n, options)
 }

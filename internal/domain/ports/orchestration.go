@@ -32,13 +32,28 @@ func NewSession(id string, h HistoryManager) *Session {
 	}
 }
 
-// Chatter defines the interface for the AI agent orchestration.
-type Chatter interface {
+// ChatExecutor defines the interface for executing chat turns and lifecycle management.
+type ChatExecutor interface {
 	Chat(ctx context.Context, s *Session, prompt string) error
+	Shutdown(ctx context.Context) error
+}
+
+// ChatConfigurator defines the interface for configuring chat parameters.
+type ChatConfigurator interface {
 	SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error
 	SetTieredThreshold(ctx context.Context, threshold int) error
+}
+
+// ChatEventSource defines the interface for subscribing to chat events.
+type ChatEventSource interface {
 	Subscribe(sub func(events.Event))
-	Shutdown(ctx context.Context) error
+}
+
+// Chatter defines the full interface for the AI agent orchestration.
+type Chatter interface {
+	ChatExecutor
+	ChatConfigurator
+	ChatEventSource
 }
 
 // ChatterConfig encapsulates the primitive configuration for a Chatter instance.
@@ -62,17 +77,32 @@ type SessionConfig interface {
 	GetConfig() *config.Config
 }
 
-// SessionDependencies defines the dependencies required for a session.
-type SessionDependencies interface {
+// LLMDependencyProvider provides access to LLM-related services.
+type LLMDependencyProvider interface {
 	GetGateway() llm.LLMGateway
-	GetHistoryManager() HistoryManager
-	GetRegistry() tools.IToolRegistry
-	GetSecurityManager() security.ISecurityManager
-	GetEventBus() events.EventBus
-	GetPaths() *persistence.Paths
 	GetPricingOverrides() map[string]pricing.ModelPricing
 	GetTracker() pricing.ICostTracker
 	GetPricingData() pricing.PricingData
+}
+
+// PersistenceDependencyProvider provides access to history and persistence paths.
+type PersistenceDependencyProvider interface {
+	GetHistoryManager() HistoryManager
+	GetPaths() *persistence.Paths
+}
+
+// InfrastructureDependencyProvider provides access to cross-cutting infrastructure.
+type InfrastructureDependencyProvider interface {
+	GetRegistry() tools.IToolRegistry
+	GetSecurityManager() security.ISecurityManager
+	GetEventBus() events.EventBus
+}
+
+// SessionDependencies defines the dependencies required for a session.
+type SessionDependencies interface {
+	LLMDependencyProvider
+	PersistenceDependencyProvider
+	InfrastructureDependencyProvider
 }
 
 // ContextMetadata contains diagnostics and auxiliary data from the pipeline.
