@@ -5,14 +5,17 @@ package tools_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -138,5 +141,97 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 	}
 	if !strings.Contains(res.Text, "Error") {
 		t.Errorf("expected error message in result, got %s", res.Text)
+	}
+}
+
+// MockRegistry forces an error on registration after a certain number of successful calls.
+type MockRegistry struct {
+	failAfter int
+	count     int
+}
+
+func (m *MockRegistry) Register(def *domaintools.ToolDeclaration, fn domaintools.ToolFunc) error {
+	if m.count >= m.failAfter {
+		return errors.New("simulated registration failure")
+	}
+	m.count++
+	return nil
+}
+
+func (m *MockRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, fn domaintools.ToolFunc, opts domaintools.ToolOptions) error {
+	if m.count >= m.failAfter {
+		return errors.New("simulated registration failure")
+	}
+	m.count++
+	return nil
+}
+
+func (m *MockRegistry) GetDeclarations() []*domaintools.ToolDeclaration { return nil }
+
+func (m *MockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
+	return domaintools.ToolResult{}, errors.New("not implemented")
+}
+
+func (m *MockRegistry) IsSerial(name string) bool      { return false }
+func (m *MockRegistry) IsLongRunning(name string) bool { return false }
+
+func TestRegisterAll_Errors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		failAfter int
+		setup     func(*tools.ToolRegistrationParams)
+	}{
+		{
+			name:      "fail in workspace.Register",
+			failAfter: 0,
+		},
+		{
+			name:      "fail in workspace.RegisterPersistence",
+			failAfter: 21,
+			setup: func(p *tools.ToolRegistrationParams) {
+				p.SessionProvider = &mockSessionProvider{}
+			},
+		},
+		{
+			name:      "fail in analysis.Register",
+			failAfter: 25,
+			setup: func(p *tools.ToolRegistrationParams) {
+				p.SessionProvider = &mockSessionProvider{}
+			},
+		},
+		{
+			name:      "fail in developer.Register",
+			failAfter: 46,
+			setup: func(p *tools.ToolRegistrationParams) {
+				p.SessionProvider = &mockSessionProvider{}
+			},
+		},
+		{
+			name:      "fail in integrations.RegisterAll",
+			failAfter: 53,
+			setup: func(p *tools.ToolRegistrationParams) {
+				p.SessionProvider = &mockSessionProvider{}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mockReg := &MockRegistry{failAfter: tt.failAfter}
+			params := tools.ToolRegistrationParams{
+				Registry: mockReg,
+			}
+			if tt.setup != nil {
+				tt.setup(&params)
+			}
+
+			err := tools.RegisterAll(params)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "simulated registration failure")
+		})
 	}
 }
