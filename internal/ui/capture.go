@@ -22,7 +22,7 @@ import (
 
 var (
 	// ErrNoInput is returned when no input is provided and SkipTTYWait is true.
-	ErrNoInput = errors.New("no input received")
+	ErrNoInput = errors.New("no input")
 )
 
 const (
@@ -66,17 +66,18 @@ func (c *capturer) IsTTY(v any) bool {
 
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
 func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...orchestration.CaptureOption) (string, error) {
-	// 1. Establish defaults
 	options := &orchestration.CaptureOptions{}
-	// 2. Apply variadic options
 	for _, opt := range opts {
 		opt(options)
 	}
 
 	prompt := strings.Join(fs.Args(), " ")
-
 	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
-		return val, nil
+		prompt = val
+	}
+
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 
 	if c.SM != nil {
@@ -95,17 +96,17 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...
 		return "", err
 	}
 
-	if ctx.Err() != nil {
-		return "", ctx.Err()
-	}
+	return c.finalizePrompt(prompt, options)
+}
 
+func (c *capturer) finalizePrompt(prompt string, options *orchestration.CaptureOptions) (string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		if options.SkipTTYWait() {
 			return "", ErrNoInput
 		}
 		fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")
-		fs.PrintDefaults()
+		fmt.Fprintln(c.Stderr, "Or use interactive mode: tell-me-go")
 		return "", fmt.Errorf("empty prompt")
 	}
 
