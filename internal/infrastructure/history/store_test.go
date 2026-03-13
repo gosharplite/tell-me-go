@@ -684,6 +684,7 @@ type mockFS struct {
 	mkdirErrFunc func(string) error
 	writeErr     error
 	openErr      error
+	closeErr     error
 }
 
 func (m *mockFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
@@ -712,10 +713,7 @@ func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 	if err != nil {
 		return nil, err
 	}
-	if m.writeErr != nil {
-		return &mockFileWithErr{File: f, writeErr: m.writeErr}, nil
-	}
-	return f, nil
+	return &mockFileWithErr{File: f, writeErr: m.writeErr, closeErr: m.closeErr}, nil
 }
 
 func (m *mockFS) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
@@ -732,6 +730,7 @@ func (m *mockFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
 type mockFileWithErr struct {
 	persistence.File
 	writeErr error
+	closeErr error
 }
 
 func (f *mockFileWithErr) Write(p []byte) (n int, err error) {
@@ -739,6 +738,14 @@ func (f *mockFileWithErr) Write(p []byte) (n int, err error) {
 		return 0, f.writeErr
 	}
 	return f.File.Write(p)
+}
+
+func (f *mockFileWithErr) Close() error {
+	if f.closeErr != nil {
+		_ = f.File.Close() // best effort
+		return f.closeErr
+	}
+	return f.File.Close()
 }
 
 func TestJSONLStore_IOErrors(t *testing.T) {
@@ -778,6 +785,26 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			},
 			action: func(ctx context.Context, s *jsonlStore) error {
 				return s.UpdateMetadata(ctx, 0, map[string]interface{}{})
+			},
+			wantErr: "mkdir failed",
+		},
+		{
+			name: "MkdirAll Failure on Archive",
+			setupMock: func(m *mockFS) {
+				m.mkdirErrFunc = func(path string) error { return errors.New("mkdir failed") }
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Archive(ctx, dummyContent)
+			},
+			wantErr: "mkdir failed",
+		},
+		{
+			name: "MkdirAll Failure on AppendParts",
+			setupMock: func(m *mockFS) {
+				m.mkdirErrFunc = func(path string) error { return errors.New("mkdir failed") }
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.AppendParts(ctx, 0, []*llm.Part{{Text: "test"}})
 			},
 			wantErr: "mkdir failed",
 		},
@@ -846,7 +873,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			wantErr: "context canceled",
 		},
 		{
-			name: "AssetStore Put Failure on Append",
+			name:      "AssetStore Put Failure on Append",
 			setupMock: func(m *mockFS) {
 				m.mkdirErrFunc = func(path string) error {
 					if strings.Contains(path, "assets") {
@@ -868,6 +895,38 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 				return s.Append(ctx, contentWithAsset)
 			},
 			wantErr: "asset mkdir failed",
+		},
+		{
+			name:      "Close Failure on Append",
+			setupMock: func(m *mockFS) { m.closeErr = errors.New("simulated close error") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Append(ctx, dummyContent)
+			},
+			wantErr: "simulated close error",
+		},
+		{
+			name:      "Close Failure on Archive",
+			setupMock: func(m *mockFS) { m.closeErr = errors.New("simulated close error") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Archive(ctx, dummyContent)
+			},
+			wantErr: "simulated close error",
+		},
+		{
+			name:      "Close Failure on UpdateMetadata",
+			setupMock: func(m *mockFS) { m.closeErr = errors.New("simulated close error") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.UpdateMetadata(ctx, 0, map[string]interface{}{"pinned": true})
+			},
+			wantErr: "simulated close error",
+		},
+		{
+			name:      "Close Failure on AppendParts",
+			setupMock: func(m *mockFS) { m.closeErr = errors.New("simulated close error") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.AppendParts(ctx, 0, []*llm.Part{{Text: "test"}})
+			},
+			wantErr: "simulated close error",
 		},
 	}
 
