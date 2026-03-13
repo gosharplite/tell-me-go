@@ -73,11 +73,15 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return nil
 	}
 
-	captureOpts := orchestration.CaptureOptions{
-		SkipTTYWait: opts.lastN > 0 || opts.backN > 0,
-		Raw:         opts.rawOutput,
+	var captureOpts []orchestration.CaptureOption
+	if opts.lastN > 0 || opts.backN > 0 {
+		captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
 	}
-	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts)
+	if opts.rawOutput {
+		captureOpts = append(captureOpts, orchestration.WithRaw(true))
+	}
+
+	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
 	if err != nil {
 		if !errors.Is(err, ui.ErrNoInput) {
 			return err

@@ -103,7 +103,7 @@ func (m *mockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts CaptureOptions) (string, error) {
+func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error) {
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
 }
@@ -531,7 +531,7 @@ func (m *behaviorMockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts CaptureOptions) (string, error) {
+func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error) {
 	m.tracker.record("Capturer.CapturePrompt")
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
