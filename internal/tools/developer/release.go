@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -49,31 +49,29 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	report.WriteString("### Release Readiness Report\n\n")
 
 	results := make([]checkResult, len(pipeline))
-	var wg sync.WaitGroup
+	g, gCtx := errgroup.WithContext(ctx)
 
 	// Limit concurrent execution to 2 processes to prevent CPU/RAM exhaustion
 	// and avoid build cache locking collisions in CI.
 	sem := semaphore.NewWeighted(2)
 
-	wg.Add(len(pipeline))
 	for i, check := range pipeline {
-		go func(i int, c readinessCheck) {
-			defer wg.Done()
-
+		i, c := i, check // Captured for closure
+		g.Go(func() error {
 			slog.Info("verify_release_readiness: enqueued check", slog.String("check", c.Name()))
 
 			// Acquire semaphore before executing heavy checks
-			if err := sem.Acquire(ctx, 1); err != nil {
+			if err := sem.Acquire(gCtx, 1); err != nil {
 				results[i] = checkResult{
 					OK:      false,
 					Message: fmt.Sprintf("failed to acquire semaphore: %v", err),
 				}
-				return
+				return err
 			}
 			defer sem.Release(1)
 
 			slog.Info("verify_release_readiness: running check", slog.String("check", c.Name()))
-			res := c.Run(ctx)
+			res := c.Run(gCtx)
 			if res.OK {
 				slog.Info("verify_release_readiness: completed check", slog.String("check", c.Name()), slog.Bool("ok", true))
 			} else {
@@ -81,10 +79,11 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 			}
 
 			results[i] = res
-		}(i, check)
+			return nil
+		})
 	}
 
-	wg.Wait()
+	_ = g.Wait() // Wait for all checks to finish (even if some return an error due to context cancellation)
 
 	allOK := true
 	for i, result := range results {

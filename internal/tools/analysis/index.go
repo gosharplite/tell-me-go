@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -109,33 +110,44 @@ func (idx *indexer) Refresh(ctx context.Context) error {
 	}
 
 	results := make(chan pkgResult, len(pkgs))
-	var wg sync.WaitGroup
+	g, gCtx := errgroup.WithContext(ctx)
 
 	for _, pkg := range pkgs {
-		wg.Add(1)
-		go func(p *packages.Package) {
-			defer wg.Done()
+		p := pkg // Captured for closure
+		g.Go(func() error {
 			h := newHarvester(fset)
 			h.info = p.TypesInfo
 
 			for _, file := range p.Syntax {
+				if gCtx.Err() != nil {
+					return gCtx.Err()
+				}
 				filename := fset.File(file.Pos()).Name()
 				h.currentPath, _ = filepath.Abs(filename)
 				ast.Inspect(file, h.visit)
 			}
 
-			results <- pkgResult{
+			select {
+			case results <- pkgResult{
 				symbols: h.symbolsByPath,
 				usages:  h.usagesByName,
+			}:
+			case <-gCtx.Done():
+				return gCtx.Err()
 			}
-		}(pkg)
+			return nil
+		})
 	}
 
 	// Wait for all workers to finish and close the results channel
 	go func() {
-		wg.Wait()
+		_ = g.Wait()
 		close(results)
 	}()
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
 
 	// Merge results (Reduce phase)
 	symbolsByPath := make(map[string][]symbolLocation)

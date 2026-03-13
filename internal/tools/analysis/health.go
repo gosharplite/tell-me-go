@@ -11,10 +11,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"golang.org/x/sync/errgroup"
 )
 
 type healthManager struct {
@@ -38,34 +38,33 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		alerts                                                   []string
 	)
 
-	var wg sync.WaitGroup
-	wg.Add(4)
+	g, gCtx := errgroup.WithContext(ctx)
 
 	// 1 & 2. Run Tests with Coverage
-	go func() {
-		defer wg.Done()
-		testStatus, testDetails, coverageStatus, coverageDetails = m.runTestsAndCoverage(ctx)
-	}()
+	g.Go(func() error {
+		testStatus, testDetails, coverageStatus, coverageDetails = m.runTestsAndCoverage(gCtx)
+		return nil
+	})
 
 	// 3. Linting
-	go func() {
-		defer wg.Done()
-		lintStatus, lintDetails = m.runLint(ctx)
-	}()
+	g.Go(func() error {
+		lintStatus, lintDetails = m.runLint(gCtx)
+		return nil
+	})
 
 	// 4. Complexity
-	go func() {
-		defer wg.Done()
-		compStatus, compDetails, alerts = m.checkComplexity(ctx)
-	}()
+	g.Go(func() error {
+		compStatus, compDetails, alerts = m.checkComplexity(gCtx)
+		return nil
+	})
 
 	// 5. Dead Code
-	go func() {
-		defer wg.Done()
-		deadStatus, deadDetails = m.checkDeadCode(ctx)
-	}()
+	g.Go(func() error {
+		deadStatus, deadDetails = m.checkDeadCode(gCtx)
+		return nil
+	})
 
-	wg.Wait()
+	_ = g.Wait() // Ignore nil errors as these gatherers don't return them currently
 
 	// Format table
 	var sb strings.Builder
