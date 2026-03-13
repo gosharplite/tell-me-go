@@ -32,24 +32,28 @@ const (
 
 // capturer handles capturing user input from TTY or pipes.
 type capturer struct {
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Stderr   io.Writer
-	SM       domain_security.ISecurityManager
-	reader   *bufio.Reader
-	readerMu sync.Mutex
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	SM         domain_security.ISecurityManager
+	reader     *bufio.Reader
+	readerMu   sync.Mutex
+	mockPrompt string
+	mockAnswer string
 
 	isTTYOverride *bool // For testing color logic
 }
 
 // NewCapturer creates a new capturer.
-func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager) domain_security.UserInteractor {
+func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager, mockPrompt, mockAnswer string) domain_security.UserInteractor {
 	return &capturer{
-		Stdin:  stdin,
-		Stdout: stdout,
-		Stderr: stderr,
-		SM:     sm,
-		reader: bufio.NewReader(stdin),
+		Stdin:      stdin,
+		Stdout:     stdout,
+		Stderr:     stderr,
+		SM:         sm,
+		reader:     bufio.NewReader(stdin),
+		mockPrompt: mockPrompt,
+		mockAnswer: mockAnswer,
 	}
 }
 
@@ -72,8 +76,8 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...
 	}
 
 	prompt := strings.Join(fs.Args(), " ")
-	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
-		prompt = val
+	if c.mockPrompt != "" {
+		prompt = c.mockPrompt
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -230,8 +234,8 @@ func (c *capturer) Prompt(message string) {
 
 // ReadSingleKey waits for a single key press from Stdin.
 func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
-	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
-		return strings.ToLower(val[:1]), nil
+	if c.mockAnswer != "" {
+		return strings.ToLower(c.mockAnswer[:1]), nil
 	}
 
 	var fd int

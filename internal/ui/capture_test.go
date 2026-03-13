@@ -10,7 +10,6 @@ import (
 	"flag"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -106,13 +105,11 @@ func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 }
 
 func TestPrompt_MockEnv(t *testing.T) {
-	os.Setenv("TELL_ME_MOCK_PROMPT", "mocked prompt")
-	defer os.Unsetenv("TELL_ME_MOCK_PROMPT")
-
 	capturer := &capturer{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
+		Stdin:      strings.NewReader(""),
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
+		mockPrompt: "mocked prompt",
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -268,15 +265,13 @@ func TestWarn_SemanticStyling(t *testing.T) {
 }
 
 func TestConfirm_SemanticStyling(t *testing.T) {
-	os.Setenv("TELL_ME_MOCK_ANSWER", "y")
-	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
-
 	var stderr bytes.Buffer
 	isTTY := true
 	capturer := &capturer{
 		Stdin:         strings.NewReader(""),
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
+		mockAnswer:    "y",
 	}
 
 	tests := []struct {

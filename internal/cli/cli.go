@@ -16,12 +16,14 @@ import (
 
 // app represents the tell-me-go application.
 type app struct {
-	Version string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
-	homeDir string
-	sm      *security.SecurityManager
+	Version    string
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	homeDir    string
+	sm         *security.SecurityManager
+	mockPrompt string
+	mockAnswer string
 }
 
 // New creates a new App instance with default IO and factories.
@@ -37,12 +39,14 @@ func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *a
 	sm := security.NewSecurityManager(nil)
 
 	return &app{
-		Version: version,
-		Stdin:   stdin,
-		Stdout:  stdout,
-		Stderr:  stderr,
-		homeDir: homeDir,
-		sm:      sm,
+		Version:    version,
+		Stdin:      stdin,
+		Stdout:     stdout,
+		Stderr:     stderr,
+		homeDir:    homeDir,
+		sm:         sm,
+		mockPrompt: os.Getenv("TELL_ME_MOCK_PROMPT"),
+		mockAnswer: os.Getenv("TELL_ME_MOCK_ANSWER"),
 	}
 }
 
@@ -66,12 +70,14 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	}
 
 	cmdCtx := &context{
-		Version: a.Version,
-		Stdin:   a.Stdin,
-		Stdout:  a.Stdout,
-		Stderr:  a.Stderr,
-		HomeDir: a.homeDir,
-		SM:      a.sm,
+		Version:    a.Version,
+		Stdin:      a.Stdin,
+		Stdout:     a.Stdout,
+		Stderr:     a.Stderr,
+		HomeDir:    a.homeDir,
+		SM:         a.sm,
+		MockPrompt: a.mockPrompt,
+		MockAnswer: a.mockAnswer,
 	}
 
 	cmd := factory(cmdCtx)

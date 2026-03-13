@@ -28,14 +28,16 @@ func init() {
 
 // chatCommand implements the main chat command.
 type chatCommand struct {
-	Version   string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
-	HomeDir   string
-	SM        domain_security.ISecurityManager
-	Loader    domain_config.ConfigLoader
-	Container di.Container
+	Version    string
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	HomeDir    string
+	SM         domain_security.ISecurityManager
+	Loader     domain_config.ConfigLoader
+	Container  di.Container
+	MockPrompt string
+	MockAnswer string
 }
 
 type cliOptions struct {
@@ -51,14 +53,16 @@ type cliOptions struct {
 func newChatCommand(ctx *context) *chatCommand {
 	container := di.NewBootstrapper(ctx.HomeDir, ctx.SM, ctx.Version, ctx.Stdout, ctx.Stderr, nil)
 	return &chatCommand{
-		Version:   ctx.Version,
-		Stdin:     ctx.Stdin,
-		Stdout:    ctx.Stdout,
-		Stderr:    ctx.Stderr,
-		HomeDir:   ctx.HomeDir,
-		SM:        ctx.SM,
-		Loader:    &config.YAMLConfigLoader{},
-		Container: container,
+		Version:    ctx.Version,
+		Stdin:      ctx.Stdin,
+		Stdout:     ctx.Stdout,
+		Stderr:     ctx.Stderr,
+		HomeDir:    ctx.HomeDir,
+		SM:         ctx.SM,
+		Loader:     &config.YAMLConfigLoader{},
+		Container:  container,
+		MockPrompt: ctx.MockPrompt,
+		MockAnswer: ctx.MockAnswer,
 	}
 }
 
@@ -111,7 +115,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 }
 
 func (c *chatCommand) initializeCLI(args []string) (orchestration.Capturer, *cliOptions, *flag.FlagSet, *domain_config.Config, error) {
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, c.MockPrompt, c.MockAnswer)
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
