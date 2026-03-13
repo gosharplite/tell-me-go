@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -449,38 +450,14 @@ func TestToolExecutor_ExecutionControl(t *testing.T) {
 func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	var activeCount int32
-	var maxActive int32
+	var activeCount, maxActive int32
 	blockCh := make(chan struct{})
 	startedCh := make(chan struct{}, 5)
 
-	toolFunc := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		current := atomic.AddInt32(&activeCount, 1)
-		for {
-			old := atomic.LoadInt32(&maxActive)
-			if current <= old || atomic.CompareAndSwapInt32(&maxActive, old, current) {
-				break
-			}
-		}
-		defer atomic.AddInt32(&activeCount, -1)
-
-		select {
-		case startedCh <- struct{}{}:
-		default:
-		}
-
-		// Safely block until test finishes or context cancels
-		select {
-		case <-blockCh:
-		case <-ctx.Done():
-		}
-		return tools.ToolResult{Text: "ok"}, nil
-	}
+	toolFunc := createTestToolFunc(&activeCount, &maxActive, startedCh, blockCh)
 
 	for i := 0; i < 5; i++ {
-		if err := reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc); err != nil {
-			t.Fatalf("failed to register tool%d: %v", i, err)
-		}
+		require.NoError(t, reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc))
 	}
 
 	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
@@ -488,37 +465,77 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 	exec.SetConcurrency(2, 0)
 	t.Cleanup(exec.Shutdown)
 
+	content := createTestToolContent(5)
+
+	g := executeConcurrentWorkers(t, exec, content, startedCh, 2)
+	assertConcurrencyLimit(t, &activeCount, &maxActive, 2, g, blockCh)
+}
+
+func createTestToolFunc(activeCount, maxActive *int32, startedCh chan struct{}, blockCh <-chan struct{}) tools.ToolFunc {
+	return func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		current := atomic.AddInt32(activeCount, 1)
+		for {
+			old := atomic.LoadInt32(maxActive)
+			if current <= old || atomic.CompareAndSwapInt32(maxActive, old, current) {
+				break
+			}
+		}
+		defer atomic.AddInt32(activeCount, -1)
+
+		select {
+		case startedCh <- struct{}{}:
+		default:
+		}
+
+		select {
+		case <-blockCh:
+		case <-ctx.Done():
+		}
+		return tools.ToolResult{Text: "ok"}, nil
+	}
+}
+
+func createTestToolContent(count int) *llm.Content {
 	content := &llm.Content{}
-	for i := 0; i < 5; i++ {
-		content.Parts = append(content.Parts, &llm.Part{FunctionCall: &llm.FunctionCall{Name: fmt.Sprintf("tool%d", i)}})
+	for i := 0; i < count; i++ {
+		content.Parts = append(content.Parts, &llm.Part{
+			FunctionCall: &llm.FunctionCall{Name: fmt.Sprintf("tool%d", i)},
+		})
+	}
+	return content
+}
+
+func executeConcurrentWorkers(t *testing.T, exec *ToolExecutor, content *llm.Content, startedCh <-chan struct{}, waitCount int) *errgroup.Group {
+	t.Helper()
+	g, _ := errgroup.WithContext(context.Background())
+	g.Go(func() error {
+		_, err := exec.Execute(context.Background(), content, 0, 10)
+		return err
+	})
+
+	for i := 0; i < waitCount; i++ {
+		select {
+		case <-startedCh:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for tools to start")
+		}
+	}
+	return g
+}
+
+func assertConcurrencyLimit(t *testing.T, activeCount, maxActive *int32, expected int32, g *errgroup.Group, blockCh chan struct{}) {
+	t.Helper()
+	if current := atomic.LoadInt32(activeCount); current != expected {
+		t.Errorf("expected %d active tools, got %d", expected, current)
 	}
 
-	var execErr error
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_, execErr = exec.Execute(context.Background(), content, 0, 10)
-	}()
-
-	// Wait for the first two tools to start (since concurrency is 2)
-	<-startedCh
-	<-startedCh
-
-	// Assert active count is at the limit
-	if atomic.LoadInt32(&activeCount) != 2 {
-		t.Errorf("expected 2 active tools, got %d", atomic.LoadInt32(&activeCount))
-	}
-
-	// Unblock the tools
 	close(blockCh)
-	<-done
-
-	if execErr != nil {
-		t.Fatal(execErr)
+	if err := g.Wait(); err != nil {
+		t.Fatalf("execution failed: %v", err)
 	}
 
-	if atomic.LoadInt32(&maxActive) > 2 {
-		t.Errorf("expected max 2 concurrent tools, got %d", maxActive)
+	if max := atomic.LoadInt32(maxActive); max > expected {
+		t.Errorf("expected max %d concurrent tools, got %d", expected, max)
 	}
 }
 
