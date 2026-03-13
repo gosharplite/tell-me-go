@@ -121,7 +121,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		}
 	}
 
-	infra_tools.RegisterAll(infra_tools.ToolRegistrationParams{
+	if err := infra_tools.RegisterAll(infra_tools.ToolRegistrationParams{
 		Registry:         reg,
 		SecurityManager:  b.SM,
 		CommandExecutor:  executor,
@@ -135,12 +135,18 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		AssetsDir:        filepath.Join(b.HomeDir, "assets/generated"),
 		EventBus:         bus,
 		FileSystem:       infra_persistence.NewOSFileSystem(),
-	})
+	}); err != nil {
+		return nil, nil, nil, fmt.Errorf("error registering tools: %w", err)
+	}
 
 	// Infrastructure-specific tool registration
-	telemetry.RegisterMetrics(reg, b.SM, paths.LogPath, cfg.Model, cfg.Mode, pricingOverrides)
+	if err := telemetry.RegisterMetrics(reg, b.SM, paths.LogPath, cfg.Model, cfg.Mode, pricingOverrides); err != nil {
+		return nil, nil, nil, fmt.Errorf("error registering metrics tools: %w", err)
+	}
 	if ism, ok := b.SM.(*internal_security.SecurityManager); ok {
-		internal_security.RegisterPolicy(reg, ism)
+		if err := internal_security.RegisterPolicy(reg, ism); err != nil {
+			return nil, nil, nil, fmt.Errorf("error registering policy tools: %w", err)
+		}
 	}
 
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)

@@ -60,8 +60,8 @@ type ToolOptions struct {
 
 // ToolRegistrar defines the interface for adding tools to the registry.
 type ToolRegistrar interface {
-	Register(def *ToolDeclaration, handler ToolFunc)
-	RegisterWithOptions(def *ToolDeclaration, handler ToolFunc, opts ToolOptions)
+	Register(def *ToolDeclaration, handler ToolFunc) error
+	RegisterWithOptions(def *ToolDeclaration, handler ToolFunc, opts ToolOptions) error
 }
 
 // ToolExecutor defines the interface for executing tools and checking their behavior.

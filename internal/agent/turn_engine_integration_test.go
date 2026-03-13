@@ -242,16 +242,17 @@ type cancelIntegrationRegistry struct {
 	handlers     map[string]tools.ToolFunc
 }
 
-func (m *cancelIntegrationRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {
+func (m *cancelIntegrationRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
 	m.declarations = append(m.declarations, def)
 	if m.handlers == nil {
 		m.handlers = make(map[string]tools.ToolFunc)
 	}
 	m.handlers[def.Name] = handler
+	return nil
 }
 
-func (m *cancelIntegrationRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
-	m.Register(def, handler)
+func (m *cancelIntegrationRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.Register(def, handler)
 }
 
 func (m *cancelIntegrationRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {

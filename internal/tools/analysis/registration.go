@@ -11,23 +11,27 @@ import (
 )
 
 // Register adds all consolidated analysis tools to the registry.
-func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) {
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) error {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	m := newAnalysisManager(idx, cache, sm, bus, executor, fs)
 
 	// Code Analysis Tools
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_architecture",
 		Description: "Map component dependencies and identify 'God Objects' or circular references. Verifies adherence to Hexagonal/Clean Architecture layers.",
-	}, m.Arch.VerifyArchitecture, tools.ToolOptions{LongRunning: true})
+	}, m.Arch.VerifyArchitecture, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_code_health",
 		Description: "Returns a high-level summary of project health, including test status, coverage, linting issues, and complexity alerts. Use this to verify system integrity after major refactors.",
-	}, m.Health.GetCodeHealth, tools.ToolOptions{LongRunning: true})
+	}, m.Health.GetCodeHealth, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_detailed_coverage",
 		Description: "Analyzes Go test coverage to identify specific untested code blocks, prioritizing error handling and business logic gaps.",
 		Parameters: &tools.Schema{
@@ -40,9 +44,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"path"},
 		},
-	}, m.Health.getDetailedCoverage, tools.ToolOptions{LongRunning: true})
+	}, m.Health.getDetailedCoverage, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_usages",
 		Description: "Uses static analysis (AST) to find all precise references to a specific Go symbol. Use this for accurate refactoring or impact analysis.",
 		Parameters: &tools.Schema{
@@ -59,9 +65,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"query"},
 		},
-	}, m.FindUsages, tools.ToolOptions{LongRunning: true})
+	}, m.FindUsages, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_definitions",
 		Description: "Finds the exact declaration(s) of a symbol using AST.",
 		Parameters: &tools.Schema{
@@ -78,9 +86,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"query"},
 		},
-	}, m.FindDefinitions, tools.ToolOptions{LongRunning: true})
+	}, m.FindDefinitions, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "list_symbols",
 		Description: "Lists all top-level symbols (functions, types, constants, variables) in a package or directory.",
 		Parameters: &tools.Schema{
@@ -96,9 +106,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 				},
 			},
 		},
-	}, m.ListSymbols)
+	}, m.ListSymbols); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "list_implementations",
 		Description: "Map the relationship between interfaces and structs in the codebase.",
 		Parameters: &tools.Schema{
@@ -111,9 +123,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"interface_name"},
 		},
-	}, m.ListImplementations)
+	}, m.ListImplementations); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_type_info",
 		Description: "Provides a detailed structural breakdown of a Go type, including fields, and all associated methods. Use this to understand internal state and behavior.",
 		Parameters: &tools.Schema{
@@ -130,14 +144,18 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"typename"},
 		},
-	}, m.GetTypeInfo)
+	}, m.GetTypeInfo); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_project_summary",
 		Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
-	}, m.Info.GetProjectSummary)
+	}, m.Info.GetProjectSummary); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_file_skeleton",
 		Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations.",
 		Parameters: &tools.Schema{
@@ -150,9 +168,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"filepath"},
 		},
-	}, m.Info.GetFileSkeleton)
+	}, m.Info.GetFileSkeleton); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "search_usages_globally",
 		Description: "Performs a high-speed text search across all non-ignored project files. Use this for non-code files (YAML, MD) or finding hardcoded strings.",
 		Parameters: &tools.Schema{
@@ -169,9 +189,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"query"},
 		},
-	}, m.Search.SearchUsagesGlobally)
+	}, m.Search.SearchUsagesGlobally); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_semantic_diff",
 		Description: "Analyzes Go code changes between the current state and a Git target using AST comparison. Summarizes logical changes rather than raw line diffs.",
 		Parameters: &tools.Schema{
@@ -184,9 +206,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"target"},
 		},
-	}, m.SemanticDiff)
+	}, m.SemanticDiff); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "rename_symbol",
 		Description:     "Safely renames a Go symbol (function, type, variable) across the project using AST.",
 		RequiresConsent: true,
@@ -212,9 +236,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"old_name", "new_name", "reason"},
 		},
-	}, m.Refactor.RenameSymbol, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, m.Refactor.RenameSymbol, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "list_todos",
 		Description: "Scans the project for TODO, FIXME, or BUG comments.",
 		Parameters: &tools.Schema{
@@ -226,9 +252,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 				},
 			},
 		},
-	}, m.Search.ListTodos)
+	}, m.Search.ListTodos); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "go_doc",
 		Description: "Retrieves the official Go documentation and comments for a symbol or package. Best for understanding the intended usage of a library.",
 		Parameters: &tools.Schema{
@@ -241,9 +269,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"symbol"},
 		},
-	}, m.Info.GoDoc)
+	}, m.Info.GoDoc); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_complexity_metrics",
 		Description: "Calculates the cyclomatic complexity of Go functions in a file or directory.",
 		Parameters: &tools.Schema{
@@ -256,9 +286,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"path"},
 		},
-	}, m.AnalyzeComplexity)
+	}, m.AnalyzeComplexity); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
 		Parameters: &tools.Schema{
@@ -271,9 +303,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 				},
 			},
 		},
-	}, m.GetPackageGraph)
+	}, m.GetPackageGraph); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "analyze_sequence_flow",
 		Description: "Trace a specific function call across package boundaries to generate a Mermaid Sequence Diagram.",
 		Parameters: &tools.Schema{
@@ -290,9 +324,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"start_symbol"},
 		},
-	}, m.AnalyzeSequenceFlow)
+	}, m.AnalyzeSequenceFlow); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "dead_code_graph",
 		Description: "Identify exported symbols with zero inbound references within the module. This is a heavy operation that requires a go.mod file and scans the entire module to find technical debt.",
 		Parameters: &tools.Schema{
@@ -311,9 +347,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 				},
 			},
 		},
-	}, m.FindOrphanedSymbols, tools.ToolOptions{LongRunning: true})
+	}, m.FindOrphanedSymbols, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "move_definition",
 		Description:     "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
 		RequiresConsent: true,
@@ -339,10 +377,12 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"symbol", "src_file", "dst_file", "reason"},
 		},
-	}, m.Refactor.MoveDefinition, tools.ToolOptions{Serial: true})
+	}, m.Refactor.MoveDefinition, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
 
 	// Visualization Tools
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "generate_mermaid_diagram",
 		Description: "transform a package dependency graph into Mermaid.js 'graph TD' syntax.",
 		Parameters: &tools.Schema{
@@ -355,5 +395,9 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 			},
 			Required: []string{"graph"},
 		},
-	}, generateMermaidDiagram)
+	}, generateMermaidDiagram); err != nil {
+		return err
+	}
+
+	return nil
 }

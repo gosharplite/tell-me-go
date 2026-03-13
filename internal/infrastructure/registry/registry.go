@@ -41,14 +41,14 @@ func New() tools.IToolRegistry {
 }
 
 // Register adds a new tool to the registry with default options.
-func (r *registry) Register(def *tools.ToolDeclaration, handler toolFunc) {
-	r.RegisterWithOptions(def, handler, ToolOptions{})
+func (r *registry) Register(def *tools.ToolDeclaration, handler toolFunc) error {
+	return r.RegisterWithOptions(def, handler, ToolOptions{})
 }
 
 // RegisterWithOptions adds a new tool to the registry with specific options.
-func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) {
+func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) error {
 	if def.Name == "" {
-		panic("cannot register tool with empty name")
+		return fmt.Errorf("cannot register tool with empty name")
 	}
 
 	r.mu.Lock()
@@ -69,7 +69,7 @@ func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolF
 				break
 			}
 		}
-		return
+		return nil
 	}
 
 	r.declarations = append(r.declarations, def)
@@ -78,6 +78,7 @@ func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolF
 		Handler:     handler,
 		Options:     opts,
 	}
+	return nil
 }
 
 // GetDeclarations returns the list of function declarations.

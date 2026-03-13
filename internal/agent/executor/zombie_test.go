@@ -19,8 +19,11 @@ type mockZombieRegistry struct {
 func (m *mockZombieRegistry) GetDeclarations() []*domaintools.ToolDeclaration {
 	return []*domaintools.ToolDeclaration{{Name: "hanging_tool"}}
 }
-func (m *mockZombieRegistry) Register(d *domaintools.ToolDeclaration, f domaintools.ToolFunc) {}
-func (m *mockZombieRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, handler domaintools.ToolFunc, opts domaintools.ToolOptions) {
+func (m *mockZombieRegistry) Register(d *domaintools.ToolDeclaration, f domaintools.ToolFunc) error {
+	return nil
+}
+func (m *mockZombieRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, handler domaintools.ToolFunc, opts domaintools.ToolOptions) error {
+	return nil
 }
 func (m *mockZombieRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
 	if m.executeFn != nil {

@@ -319,10 +319,10 @@ func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 }
 
 // RegisterPolicy adds security policy management tools to the registry.
-func RegisterPolicy(r tools.IToolRegistry, sm *SecurityManager) {
+func RegisterPolicy(r tools.IToolRegistry, sm *SecurityManager) error {
 	p := newPolicyTool(sm)
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_safepath",
 		Description: "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
 		Parameters: &tools.Schema{
@@ -339,14 +339,18 @@ func RegisterPolicy(r tools.IToolRegistry, sm *SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, p.RegisterSafePath, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RegisterSafePath, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "list_safepaths",
 		Description: "Lists all currently authorized safe paths and files.",
-	}, p.ListSafePaths)
+	}, p.ListSafePaths); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "remove_safepath",
 		Description: "Removes a directory or file from the authorized boundaries.",
 		Parameters: &tools.Schema{
@@ -359,9 +363,11 @@ func RegisterPolicy(r tools.IToolRegistry, sm *SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, p.RemoveSafePath, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RemoveSafePath, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_readpath",
 		Description: "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
 		Parameters: &tools.Schema{
@@ -378,14 +384,18 @@ func RegisterPolicy(r tools.IToolRegistry, sm *SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, p.RegisterReadPath, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RegisterReadPath, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "list_readpaths",
 		Description: "Lists all currently authorized read-only paths and files.",
-	}, p.ListReadPaths)
+	}, p.ListReadPaths); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "remove_readpath",
 		Description: "Removes a directory or file from the read-only authorized boundaries.",
 		Parameters: &tools.Schema{
@@ -398,15 +408,23 @@ func RegisterPolicy(r tools.IToolRegistry, sm *SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, p.RemoveReadPath, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RemoveReadPath, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
-	}, p.BypassConfirmation, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, p.BypassConfirmation, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, p.RevokeBypass, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RevokeBypass, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
+
+	return nil
 }

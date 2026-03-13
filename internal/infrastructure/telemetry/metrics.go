@@ -229,7 +229,7 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) {
+func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -239,7 +239,7 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 		ledger:           newLedgerStore(sm, model, pricingOverrides),
 	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -249,9 +249,11 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 		}
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
 		return tools.ToolResult{Text: res}, err
-	}, tools.ToolOptions{Serial: true})
+	}, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
 		Parameters: &tools.Schema{
@@ -291,7 +293,10 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 		}
 		res, err := m.getCostSummary(ctx, sArgs)
 		return tools.ToolResult{Text: res}, err
-	}, tools.ToolOptions{Serial: true})
+	}, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.

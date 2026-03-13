@@ -12,31 +12,45 @@ import (
 )
 
 // RegisterAll registers all external integration tools.
-func RegisterAll(r tools.IToolRegistry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) {
+func RegisterAll(r tools.IToolRegistry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) error {
 	// Register Media Tools
-	registerMedia(r, sm, client, assetsDir)
+	if err := registerMedia(r, sm, client, assetsDir); err != nil {
+		return err
+	}
 
 	// Register Network Tools
 	net := newnetworkTool(sm, nil)
-	registerNetwork(r, net)
+	if err := registerNetwork(r, net); err != nil {
+		return err
+	}
 
 	// Register Teams Tools
-	registerTeams(r, sm, nil)
+	if err := registerTeams(r, sm, nil); err != nil {
+		return err
+	}
 
 	// Register Confluence Tools
-	registerConfluence(r, sm, nil)
+	if err := registerConfluence(r, sm, nil); err != nil {
+		return err
+	}
 
 	// Register Jira Tools
-	registerJira(r, sm, nil)
+	if err := registerJira(r, sm, nil); err != nil {
+		return err
+	}
 
 	// Register Azure DevOps Tools
-	registerAzureDevOps(r, sm, nil)
+	if err := registerAzureDevOps(r, sm, nil); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func registerMedia(r tools.IToolRegistry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) {
+func registerMedia(r tools.IToolRegistry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) error {
 	m := &mediaManager{sm: sm, client: client, assetsDir: assetsDir}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "create_image",
 		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
 		Parameters: &tools.Schema{
@@ -57,9 +71,11 @@ func registerMedia(r tools.IToolRegistry, sm domain_security.ISecurityManager, c
 			},
 			Required: []string{"prompt"},
 		},
-	}, m.createImage, tools.ToolOptions{LongRunning: true})
+	}, m.createImage, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "read_image",
 		Description: "Reads a local image file for vision analysis.",
 		Parameters: &tools.Schema{
@@ -72,11 +88,14 @@ func registerMedia(r tools.IToolRegistry, sm domain_security.ISecurityManager, c
 			},
 			Required: []string{"filepath"},
 		},
-	}, m.readImage)
+	}, m.readImage); err != nil {
+		return err
+	}
+	return nil
 }
 
-func registerNetwork(r tools.IToolRegistry, net *networkTool) {
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+func registerNetwork(r tools.IToolRegistry, net *networkTool) error {
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "read_external_docs",
 		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
 		Parameters: &tools.Schema{
@@ -89,9 +108,11 @@ func registerNetwork(r tools.IToolRegistry, net *networkTool) {
 			},
 			Required: []string{"url"},
 		},
-	}, net.ReadExternalDocs, tools.ToolOptions{LongRunning: true})
+	}, net.ReadExternalDocs, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "http_request",
 		Description: "Executes a custom HTTP request.",
 		Parameters: &tools.Schema{
@@ -119,12 +140,15 @@ func registerNetwork(r tools.IToolRegistry, net *networkTool) {
 			},
 			Required: []string{"method", "url"},
 		},
-	}, net.HttpRequest, tools.ToolOptions{LongRunning: true})
+	}, net.HttpRequest, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
+	return nil
 }
 
-func registerTeams(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
+func registerTeams(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) error {
 	m := newteamsManager(sm, client)
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "send_teams_message",
 		Description:     "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
 		RequiresConsent: true,
@@ -146,13 +170,16 @@ func registerTeams(r tools.IToolRegistry, sm domain_security.ISecurityManager, c
 			},
 			Required: []string{"webhook_url", "message", "reason"},
 		},
-	}, m.sendTeamsMessage, tools.ToolOptions{Serial: true})
+	}, m.sendTeamsMessage, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+	return nil
 }
 
-func registerConfluence(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
+func registerConfluence(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) error {
 	m := newconfluenceManager(sm, client)
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "confluence_search",
 		Description: "Performs a discovery-based search for Confluence pages using keywords. space_id is required for keyword searches. If title is omitted, it lists up to 250 recent pages in the space.",
 		Parameters: &tools.Schema{
@@ -172,9 +199,11 @@ func registerConfluence(r tools.IToolRegistry, sm domain_security.ISecurityManag
 				},
 			},
 		},
-	}, m.confluenceSearch)
+	}, m.confluenceSearch); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "confluence_read",
 		Description: "Reads the content of a Confluence page and converts it to clean Markdown. Requires a numeric page_id.",
 		Parameters: &tools.Schema{
@@ -187,9 +216,11 @@ func registerConfluence(r tools.IToolRegistry, sm domain_security.ISecurityManag
 			},
 			Required: []string{"page_id"},
 		},
-	}, m.confluenceRead)
+	}, m.confluenceRead); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "confluence_write",
 		Description:     "Updates a Confluence page. Handles versioning and Markdown-to-XHTML conversion internally. Triggers security confirmation.",
 		RequiresConsent: true,
@@ -215,13 +246,16 @@ func registerConfluence(r tools.IToolRegistry, sm domain_security.ISecurityManag
 			},
 			Required: []string{"page_id", "markdown_content"},
 		},
-	}, m.confluenceWrite, tools.ToolOptions{Serial: true})
+	}, m.confluenceWrite, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+	return nil
 }
 
-func registerJira(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
+func registerJira(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) error {
 	m := newjiraManager(sm, client)
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "jira_search_issues",
 		Description: "Searches for Jira issues using JQL (Jira Query Language). Returns issue keys, summaries, statuses, and assignees.",
 		Parameters: &tools.Schema{
@@ -238,9 +272,11 @@ func registerJira(r tools.IToolRegistry, sm domain_security.ISecurityManager, cl
 			},
 			Required: []string{"jql"},
 		},
-	}, m.jiraSearchIssues)
+	}, m.jiraSearchIssues); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "jira_get_issue",
 		Description: "Retrieves full details for a specific Jira issue, including summary, status, priority, assignee, and description.",
 		Parameters: &tools.Schema{
@@ -253,10 +289,13 @@ func registerJira(r tools.IToolRegistry, sm domain_security.ISecurityManager, cl
 			},
 			Required: []string{"issue_key"},
 		},
-	}, m.jiraGetIssue)
+	}, m.jiraGetIssue); err != nil {
+		return err
+	}
+	return nil
 }
 
-func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
+func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) error {
 	var opts []adoOption
 	if client != nil {
 		opts = append(opts, withHTTPClient(client))
@@ -266,7 +305,7 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 	}
 	m := newADOManager(sm, opts...)
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pull_request",
 		Description: "Retrieves full metadata for a specific Azure DevOps Pull Request, including status, reviewers, and branch details.",
 		Parameters: &tools.Schema{
@@ -291,9 +330,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository", "pull_request_id"},
 		},
-	}, m.adoGetPullRequest)
+	}, m.adoGetPullRequest); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_list_pull_requests",
 		Description: "Lists pull requests in a specific Azure DevOps repository, with optional status filtering.",
 		Parameters: &tools.Schema{
@@ -322,9 +363,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository"},
 		},
-	}, m.adoListPullRequests)
+	}, m.adoListPullRequests); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pr_diff",
 		Description: "Retrieves the file changes (diffs) for a specific Azure DevOps Pull Request.",
 		Parameters: &tools.Schema{
@@ -349,9 +392,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository", "pull_request_id"},
 		},
-	}, m.adoGetPrDiff)
+	}, m.adoGetPrDiff); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pr_threads",
 		Description: "Retrieves discussion threads and comments for a specific Azure DevOps Pull Request.",
 		Parameters: &tools.Schema{
@@ -376,9 +421,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository", "pull_request_id"},
 		},
-	}, m.adoGetPrThreads)
+	}, m.adoGetPrThreads); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_file_content",
 		Description: "Retrieves the content of a specific file from an Azure DevOps repository at a given path and version (branch/commit).",
 		Parameters: &tools.Schema{
@@ -407,9 +454,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository", "path"},
 		},
-	}, m.adoGetFileContent)
+	}, m.adoGetFileContent); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_list_repository_items",
 		Description: "Lists items (files and folders) in a specific directory of an Azure DevOps repository.",
 		Parameters: &tools.Schema{
@@ -442,9 +491,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository"},
 		},
-	}, m.adoListRepositoryItems)
+	}, m.adoListRepositoryItems); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_list_pipelines",
 		Description: "Lists pipeline names and their corresponding IDs in an Azure DevOps project.",
 		Parameters: &tools.Schema{
@@ -461,9 +512,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project"},
 		},
-	}, m.adoListPipelines)
+	}, m.adoListPipelines); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_list_pipeline_runs",
 		Description: "Lists recent runs (executions) for a specific Azure DevOps pipeline.",
 		Parameters: &tools.Schema{
@@ -496,9 +549,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project"},
 		},
-	}, m.adoListPipelineRuns)
+	}, m.adoListPipelineRuns); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pipeline_run",
 		Description: "Retrieves the detailed status and result of a specific Azure DevOps pipeline run.",
 		Parameters: &tools.Schema{
@@ -523,9 +578,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "pipeline_id", "run_id"},
 		},
-	}, m.adoGetPipelineRun)
+	}, m.adoGetPipelineRun); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pipeline_definition",
 		Description: "Retrieves the full configuration metadata of an existing Azure DevOps pipeline, including variables and security settings.",
 		Parameters: &tools.Schema{
@@ -546,9 +603,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "pipeline_id"},
 		},
-	}, m.adoGetPipelineDefinition)
+	}, m.adoGetPipelineDefinition); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pipeline_logs",
 		Description: "Fetches the console output/logs of a failed pipeline run for diagnosis.",
 		Parameters: &tools.Schema{
@@ -601,9 +660,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "pipeline_id", "run_id"},
 		},
-	}, m.adoGetPipelineLogs)
+	}, m.adoGetPipelineLogs); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pr_statuses",
 		Description: "Retrieves the real-time status of all automated checks (builds, tests, quality gates) for a specific Azure DevOps Pull Request.",
 		Parameters: &tools.Schema{
@@ -628,9 +689,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository", "pull_request_id"},
 		},
-	}, m.adoGetPrStatuses)
+	}, m.adoGetPrStatuses); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pr_policy_evaluations",
 		Description: "Retrieves the real-time status of all automated policy evaluations (build gates, reviewer requirements) for a specific Azure DevOps Pull Request.",
 		Parameters: &tools.Schema{
@@ -655,9 +718,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository", "pull_request_id"},
 		},
-	}, m.adoGetPrPolicyEvaluations)
+	}, m.adoGetPrPolicyEvaluations); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_list_branch_policies",
 		Description: "Lists all branch policies (build gates, reviewer requirements, etc.) configured for a specific branch in an Azure DevOps repository.",
 		Parameters: &tools.Schema{
@@ -682,9 +747,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "repository", "branch_name"},
 		},
-	}, m.adoListBranchPolicies)
+	}, m.adoListBranchPolicies); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_build_timeline",
 		Description: "Retrieves the build timeline, providing the state, result, and log metadata for every task in the build.",
 		Parameters: &tools.Schema{
@@ -705,9 +772,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "build_id"},
 		},
-	}, m.adoGetBuildTimeline)
+	}, m.adoGetBuildTimeline); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_task_log",
 		Description: "Retrieves the raw console output/logs for a specific build task.",
 		Parameters: &tools.Schema{
@@ -756,9 +825,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "build_id", "log_id"},
 		},
-	}, m.adoGetTaskLog)
+	}, m.adoGetTaskLog); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_build_changes",
 		Description: "Retrieves the list of commits/changes included in a specific build.",
 		Parameters: &tools.Schema{
@@ -783,9 +854,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "build_id"},
 		},
-	}, m.adoGetBuildChanges)
+	}, m.adoGetBuildChanges); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_update_build_definition_variables",
 		Description: "Modifies variables for an existing pipeline (build) definition using a Read-Modify-Write cycle. Useful for locking down variable overrides.",
 		Parameters: &tools.Schema{
@@ -810,9 +883,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "definition_id", "variables"},
 		},
-	}, m.adoUpdateBuildDefinitionVariables)
+	}, m.adoUpdateBuildDefinitionVariables); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_create_pipeline",
 		Description: "Creates a new Azure DevOps YAML build pipeline. Idempotent: returns existing ID if the name already exists. Triggers security confirmation.",
 		Parameters: &tools.Schema{
@@ -852,9 +927,11 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "name", "repository_id", "yaml_path"},
 		},
-	}, m.adoCreatePipeline)
+	}, m.adoCreatePipeline); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "ado_run_pipeline",
 		Description: "Triggers a manual run of an existing Azure DevOps YAML pipeline. Returns the Run ID for tracking. Triggers security confirmation.",
 		Parameters: &tools.Schema{
@@ -887,5 +964,8 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 			},
 			Required: []string{"organization", "project", "pipeline_id"},
 		},
-	}, m.adoRunPipeline)
+	}, m.adoRunPipeline); err != nil {
+		return err
+	}
+	return nil
 }

@@ -28,9 +28,9 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	}
 	return []*tools.ToolDeclaration{{Name: "test_tool"}}
 }
-func (m *mockToolRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) {}
-func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
-	m.Register(def, handler)
+func (m *mockToolRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) error { return nil }
+func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.Register(def, handler)
 }
 func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	if m.executeFn != nil {
@@ -232,8 +232,9 @@ type orderMockRegistry struct {
 }
 
 func (m *orderMockRegistry) GetDeclarations() []*tools.ToolDeclaration           { return nil }
-func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) {}
-func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) error { return nil }
+func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return nil
 }
 func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil

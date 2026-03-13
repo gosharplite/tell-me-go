@@ -80,10 +80,10 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 }
 
 // RegisterInternal registers the internal tools with the provided registrar.
-func RegisterInternal(r tools.ToolRegistrar, cm *ContextManager) {
+func RegisterInternal(r tools.ToolRegistrar, cm *ContextManager) error {
 	it := NewInternalTools(cm)
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "summarize_history",
 		Description: "Summarizes a specified number of older conversation turns to free up context space.",
 		Parameters: &tools.Schema{
@@ -103,9 +103,11 @@ func RegisterInternal(r tools.ToolRegistrar, cm *ContextManager) {
 	}, it.summarizeHistory, tools.ToolOptions{
 		LongRunning: true,
 		Serial:      true,
-	})
+	}); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "manage_history",
 		Description: "Manages conversation history by pinning or unpinning specific turns to protect them from summarization/pruning.",
 		Parameters: &tools.Schema{
@@ -123,5 +125,8 @@ func RegisterInternal(r tools.ToolRegistrar, cm *ContextManager) {
 			},
 			Required: []string{"action", "index"},
 		},
-	}, it.ManageHistory)
+	}, it.ManageHistory); err != nil {
+		return err
+	}
+	return nil
 }

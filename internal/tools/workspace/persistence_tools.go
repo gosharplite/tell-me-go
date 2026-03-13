@@ -54,17 +54,19 @@ func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]i
 }
 
 // Register adds persistence tools to the registrar.
-func (t *persistenceTools) Register(r tools.ToolRegistrar) {
+func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 	if t.state == nil {
-		return
+		return nil
 	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
-	}, t.GetSessionInfo)
+	}, t.GetSessionInfo); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_scratchpad",
 		Description: "Read, write, or update the persistent scratchpad (scoped to current mode).",
 		Parameters: &tools.Schema{
@@ -82,9 +84,11 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageScratchpad, tools.ToolOptions{Serial: false})
+	}, t.ManageScratchpad, tools.ToolOptions{Serial: false}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_config",
 		Description: "Manages persistent key-value configuration/settings scoped by mode.",
 		Parameters: &tools.Schema{
@@ -106,9 +110,11 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageConfig, tools.ToolOptions{Serial: false})
+	}, t.ManageConfig, tools.ToolOptions{Serial: false}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode).",
 		Parameters: &tools.Schema{
@@ -134,7 +140,10 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageTasks, tools.ToolOptions{Serial: false})
+	}, t.ManageTasks, tools.ToolOptions{Serial: false}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ManageTasks handles the manage_tasks tool.

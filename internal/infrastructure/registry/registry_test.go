@@ -15,21 +15,16 @@ import (
 
 func TestRegistry_Resilience(t *testing.T) {
 	t.Parallel()
-	t.Run("panic on empty tool name", func(t *testing.T) {
+	t.Run("error on empty tool name", func(t *testing.T) {
 		t.Parallel()
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("The code did not panic")
-			} else {
-				errMsg := r.(string)
-				if errMsg != "cannot register tool with empty name" {
-					t.Errorf("Unexpected panic message: %s", errMsg)
-				}
-			}
-		}()
-
 		r := registry.New()
-		r.Register(&tools.ToolDeclaration{Name: ""}, nil)
+		err := r.Register(&tools.ToolDeclaration{Name: ""}, nil)
+		if err == nil {
+			t.Errorf("expected error for empty tool name, got nil")
+		}
+		if !strings.Contains(err.Error(), "cannot register tool with empty name") {
+			t.Errorf("expected 'cannot register tool with empty name' error, got: %v", err)
+		}
 	})
 
 	t.Run("error on unknown tool execution", func(t *testing.T) {

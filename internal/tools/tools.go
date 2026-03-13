@@ -37,12 +37,23 @@ type ToolRegistrationParams struct {
 }
 
 // RegisterAll registers all available tools into the registry.
-func RegisterAll(params ToolRegistrationParams) {
-	workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem)
-	if params.SessionProvider != nil {
-		workspace.RegisterPersistence(params.Registry, params.SessionProvider)
+func RegisterAll(params ToolRegistrationParams) error {
+	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem); err != nil {
+		return err
 	}
-	analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem)
-	developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem)
-	integrations.RegisterAll(params.Registry, params.SecurityManager, params.Client, params.AssetsDir)
+	if params.SessionProvider != nil {
+		if err := workspace.RegisterPersistence(params.Registry, params.SessionProvider); err != nil {
+			return err
+		}
+	}
+	if err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem); err != nil {
+		return err
+	}
+	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem); err != nil {
+		return err
+	}
+	if err := integrations.RegisterAll(params.Registry, params.SecurityManager, params.Client, params.AssetsDir); err != nil {
+		return err
+	}
+	return nil
 }

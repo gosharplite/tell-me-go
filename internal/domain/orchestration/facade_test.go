@@ -103,8 +103,9 @@ type mockRegistry struct {
 	getDeclarationsFunc func() []*tools.ToolDeclaration
 }
 
-func (m *mockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {}
-func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+func (m *mockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error { return nil }
+func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return nil
 }
 func (m *mockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil

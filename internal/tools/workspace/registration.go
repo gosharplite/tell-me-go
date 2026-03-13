@@ -17,13 +17,20 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) {
-	registerFiles(r, sm, fs)
-	registerSystem(r, sm, validator)
-	registerGit(r, sm, exec)
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) error {
+	if err := registerFiles(r, sm, fs); err != nil {
+		return err
+	}
+	if err := registerSystem(r, sm, validator); err != nil {
+		return err
+	}
+	if err := registerGit(r, sm, exec); err != nil {
+		return err
+	}
+	return nil
 }
 
-func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, fs persistence.FileSystem) {
+func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, fs persistence.FileSystem) error {
 	bm := newBackupManager(sm, fs, 10)
 	m := &fileSystemManager{
 		reader: &fileReader{sm: sm, fs: fs},
@@ -31,7 +38,7 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 		search: &fileSearcher{sm: sm, fs: fs},
 	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "list_files",
 		Description: "Returns a shallow list of filenames and directory names (similar to 'ls') in a specific path. Useful for confirming file existence before reading.",
 		Parameters: &tools.Schema{
@@ -43,9 +50,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 				},
 			},
 		},
-	}, m.reader.listFiles)
+	}, m.reader.listFiles); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_tree",
 		Description: "Returns a visual directory tree structure.",
 		Parameters: &tools.Schema{
@@ -61,9 +70,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 				},
 			},
 		},
-	}, m.reader.getTree)
+	}, m.reader.getTree); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "read_file",
 		Description: "Reads the full content of a specific file (similar to 'cat').",
 		Parameters: &tools.Schema{
@@ -76,9 +87,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 			},
 			Required: []string{"filepath"},
 		},
-	}, m.reader.readFile)
+	}, m.reader.readFile); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "search_files",
 		Description: "Performs a recursive regex search for a text pattern within a specific subdirectory. Use this when the search scope is restricted to a known module or folder.",
 		Parameters: &tools.Schema{
@@ -95,9 +108,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 			},
 			Required: []string{"query"},
 		},
-	}, m.search.searchFiles)
+	}, m.search.searchFiles); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "replace_text",
 		Description:     "Replaces the first occurrence of a specific text block in a file with new content.",
 		RequiresConsent: true,
@@ -123,9 +138,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 			},
 			Required: []string{"filepath", "old_text", "new_text", "reason"},
 		},
-	}, m.writer.replaceText, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, m.writer.replaceText, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "find_file",
 		Description: "Finds files based on name patterns using filepath.Match (e.g., '*.go'). Useful for locating specific configuration or source files by name.",
 		Parameters: &tools.Schema{
@@ -142,9 +159,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 			},
 			Required: []string{"pattern"},
 		},
-	}, m.reader.findFile)
+	}, m.reader.findFile); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_definitions",
 		Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives.",
 		Parameters: &tools.Schema{
@@ -160,9 +179,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 				},
 			},
 		},
-	}, m.search.grepDefinitions)
+	}, m.search.grepDefinitions); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "write_file",
 		Description:     "Creates a new file or overwrites an existing one with the provided content. Automatically creates parent directories.",
 		RequiresConsent: true,
@@ -184,9 +205,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 			},
 			Required: []string{"filepath", "content", "reason"},
 		},
-	}, m.writer.writeFile, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, m.writer.writeFile, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "append_text",
 		Description:     "Appends text to the end of a file. Efficient for logs or lists; avoids reading the whole file.",
 		RequiresConsent: true,
@@ -208,9 +231,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 			},
 			Required: []string{"filepath", "content", "reason"},
 		},
-	}, m.writer.appendText, tools.ToolOptions{Serial: true})
+	}, m.writer.appendText, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_file_diff",
 		Description: "Generates a standard unified diff between two arbitrary file paths on disk. Does not require Git history.",
 		Parameters: &tools.Schema{
@@ -227,9 +252,11 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 			},
 			Required: []string{"file1", "file2"},
 		},
-	}, m.reader.getFileDiff)
+	}, m.reader.getFileDiff); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "undo_file_change",
 		Description: "Reverts the last N file modifications (WRITE or REPLACE actions).",
 		Parameters: &tools.Schema{
@@ -246,14 +273,17 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 			},
 			Required: []string{"reason"},
 		},
-	}, m.writer.undoFileChange, tools.ToolOptions{Serial: true})
+	}, m.writer.undoFileChange, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+	return nil
 }
 
-func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, validator domain_security.ICommandValidator) {
+func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, validator domain_security.ICommandValidator) error {
 	shell := newshellTool(sm, validator)
 	interaction := newinteractionTool(sm)
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
 		Description:     "Executes a single shell command as if in a terminal without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
 		RequiresConsent: true,
@@ -279,9 +309,11 @@ func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, 
 			},
 			Required: []string{"command", "reason"},
 		},
-	}, shell.ExecuteCommand, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, shell.ExecuteCommand, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "pipe_commands",
 		Description:     "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.",
 		RequiresConsent: true,
@@ -310,9 +342,11 @@ func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, 
 			},
 			Required: []string{"commands", "reason"},
 		},
-	}, shell.PipeCommands, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, shell.PipeCommands, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "ask_user",
 		Description: "Asks the user a specific question to clarify requirements or request confirmation.",
 		Parameters: &tools.Schema{
@@ -325,18 +359,23 @@ func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, 
 			},
 			Required: []string{"question"},
 		},
-	}, interaction.askUser, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, interaction.askUser, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
+	return nil
 }
 
-func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {
+func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) error {
 	m := &gitManager{sm: sm, Exec: exec}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_git_status",
 		Description: "Retrieves the short status of the git repository (staged, unstaged, and untracked files).",
-	}, m.getGitStatus)
+	}, m.getGitStatus); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_git_diff",
 		Description: "Retrieves the git diff between the working directory (or staged index) and the last commit. Use this to review changes before committing.",
 		Parameters: &tools.Schema{
@@ -348,9 +387,11 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 				},
 			},
 		},
-	}, m.getGitDiff)
+	}, m.getGitDiff); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_git_log",
 		Description: "Retrieves the git commit log.",
 		Parameters: &tools.Schema{
@@ -362,9 +403,11 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 				},
 			},
 		},
-	}, m.getGitLog)
+	}, m.getGitLog); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_git_show",
 		Description: "Shows the full details (diff and metadata) of a specific commit hash (runs git show).",
 		Parameters: &tools.Schema{
@@ -377,9 +420,11 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 			},
 			Required: []string{"hash"},
 		},
-	}, m.getGitCommit)
+	}, m.getGitCommit); err != nil {
+		return err
+	}
 
-	r.Register(&tools.ToolDeclaration{
+	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "get_git_blame",
 		Description: "Shows who changed which lines in a file.",
 		Parameters: &tools.Schema{
@@ -392,9 +437,11 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 			},
 			Required: []string{"filepath"},
 		},
-	}, m.getGitBlame)
+	}, m.getGitBlame); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "git_commit",
 		Description:     "Commits staged changes with a message.",
 		RequiresConsent: true,
@@ -412,9 +459,11 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 			},
 			Required: []string{"message", "reason"},
 		},
-	}, m.gitCommit, tools.ToolOptions{Serial: true})
+	}, m.gitCommit, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "git_create_branch",
 		Description:     "Creates and checks out a new git branch.",
 		RequiresConsent: true,
@@ -432,10 +481,13 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 			},
 			Required: []string{"name", "reason"},
 		},
-	}, m.gitCreateBranch, tools.ToolOptions{Serial: true})
+	}, m.gitCreateBranch, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // RegisterPersistence adds persistence tools to the registry.
-func RegisterPersistence(r tools.IToolRegistry, state ports.ISessionProvider) {
-	newpersistenceTools(state).Register(r)
+func RegisterPersistence(r tools.IToolRegistry, state ports.ISessionProvider) error {
+	return newpersistenceTools(state).Register(r)
 }

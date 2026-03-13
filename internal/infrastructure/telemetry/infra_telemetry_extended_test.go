@@ -38,18 +38,20 @@ type mockRegistry struct {
 	handlers map[string]tools.ToolFunc
 }
 
-func (m *mockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {
+func (m *mockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
 	if m.handlers == nil {
 		m.handlers = make(map[string]tools.ToolFunc)
 	}
 	m.handlers[def.Name] = handler
+	return nil
 }
 
-func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+func (m *mockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	if m.handlers == nil {
 		m.handlers = make(map[string]tools.ToolFunc)
 	}
 	m.handlers[def.Name] = handler
+	return nil
 }
 
 func TestSessionCostTracker_Extended(t *testing.T) {

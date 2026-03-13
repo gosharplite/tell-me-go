@@ -47,19 +47,20 @@ func (m *integrationToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return decls
 }
 
-func (m *integrationToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) {
+func (m *integrationToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.declarations[declaration.Name] = declaration
 	m.handlers[declaration.Name] = implementation
+	return nil
 }
 
-func (m *integrationToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+func (m *integrationToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	m.mu.Lock()
 	m.serial[def.Name] = opts.Serial
 	m.longRunning[def.Name] = opts.LongRunning
 	m.mu.Unlock()
-	m.Register(def, handler)
+	return m.Register(def, handler)
 }
 
 func (m *integrationToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {

@@ -10,10 +10,10 @@ import (
 )
 
 // Register adds all development workflow and release tools to the registry.
-func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) {
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) error {
 	dev := newDevManager(sm, validator)
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_tests",
 		Description: "Executes project tests using authorized tools (go, pytest, npm, cargo, make). Returns 'PASS' or truncated failure logs. Shell metacharacters are forbidden for security.",
 		Parameters: &tools.Schema{
@@ -26,14 +26,18 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec t
 			},
 			Required: []string{"command"},
 		},
-	}, dev.runTests, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, dev.runTests, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "go_tidy",
 		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
-	}, dev.goTidy, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, dev.goTidy, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_coverage",
 		Description: "Runs Go tests with coverage and returns the summary.",
 		Parameters: &tools.Schema{
@@ -45,14 +49,18 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec t
 				},
 			},
 		},
-	}, dev.getCoverage, tools.ToolOptions{LongRunning: true})
+	}, dev.getCoverage, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_linter",
 		Description: "Runs the first available linter (golangci-lint or staticcheck). Returns a list of findings or success message.",
-	}, dev.runLinter, tools.ToolOptions{LongRunning: true})
+	}, dev.runLinter, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_benchmark",
 		Description: "Runs Go benchmarks and returns performance metrics (ns/op, B/op).",
 		Parameters: &tools.Schema{
@@ -68,12 +76,16 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec t
 				},
 			},
 		},
-	}, dev.runBenchmark, tools.ToolOptions{LongRunning: true})
+	}, dev.runBenchmark, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "check_vulnerabilities",
 		Description: "Runs 'govulncheck'.",
-	}, dev.checkVulnerabilities, tools.ToolOptions{LongRunning: true})
+	}, dev.checkVulnerabilities, tools.ToolOptions{LongRunning: true}); err != nil {
+		return err
+	}
 
 	// Release Management
 	rel := &releaseManager{
@@ -81,8 +93,11 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec t
 		fs:       fs,
 		executor: exec,
 	}
-	r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_release_readiness",
 		Description: "Performs an automated check of all SOP release requirements (clean build, secret scanning, go.mod check, and test execution).",
-	}, rel.verifyReleaseReadiness, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, rel.verifyReleaseReadiness, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
+	return nil
 }

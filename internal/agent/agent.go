@@ -95,7 +95,9 @@ func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	)
 
 	if cfg.registerInternal {
-		orchestration.RegisterInternal(registry, ctxManager)
+		if err := orchestration.RegisterInternal(registry, ctxManager); err != nil {
+			return nil, fmt.Errorf("failed to register internal tools: %w", err)
+		}
 	}
 
 	initCtx := cfg.initCtx
