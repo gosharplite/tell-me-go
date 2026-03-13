@@ -448,15 +448,11 @@ func TestHistoryManager_Archive(t *testing.T) {
 }
 
 func TestManager_RollbackTurns(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "history.jsonl")
-	fs := infrapersistence.NewOSFileSystem()
-	mgr := NewManager(fs, filePath, "")
-
 	ctx := context.Background()
+	fs := infrapersistence.NewOSFileSystem()
 
-	// Setup: 3 turns = 6 messages
-	messages := []*llm.Content{
+	// Setup initial states
+	threeTurns := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
 		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
@@ -464,62 +460,53 @@ func TestManager_RollbackTurns(t *testing.T) {
 		{Role: "user", Parts: []*llm.Part{{Text: "u3"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "m3"}}},
 	}
-	_ = mgr.SetContents(ctx, messages)
+	twoTurns := threeTurns[:4]
+	var emptyState []*llm.Content
 
-	t.Run("Normal Rollback (1 turn)", func(t *testing.T) {
-		actualRemoved, remainingTurns, remainingMsgs, err := mgr.RollbackTurns(ctx, 1)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if actualRemoved != 1 {
-			t.Errorf("got actualRemoved %d; want 1", actualRemoved)
-		}
-		if remainingTurns != 2 {
-			t.Errorf("got remainingTurns %d; want 2", remainingTurns)
-		}
-		if remainingMsgs != 4 {
-			t.Errorf("got remainingMsgs %d; want 4", remainingMsgs)
-		}
-		if len(mgr.Contents) != 4 {
-			t.Errorf("got slice length %d; want 4", len(mgr.Contents))
-		}
-		if mgr.Contents[3].Parts[0].Text != "m2" {
-			t.Errorf("got last msg text %q; want 'm2'", mgr.Contents[3].Parts[0].Text)
-		}
-	})
+	tests := []struct {
+		name          string
+		initialState  []*llm.Content
+		turnsToRemove int
+		wantRemoved   int
+		wantRemaining int
+		wantMsgs      int
+		wantErr       bool
+	}{
+		{"Normal Rollback (1 turn)", threeTurns, 1, 1, 2, 4, false},
+		{"Out-of-Bounds Rollback", twoTurns, 10, 2, 0, 0, false},
+		{"Empty Rollback", emptyState, 1, 0, 0, 0, false},
+	}
 
-	t.Run("Out-of-Bounds Rollback (10 turns from 2 turns left)", func(t *testing.T) {
-		actualRemoved, remainingTurns, remainingMsgs, err := mgr.RollbackTurns(ctx, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if actualRemoved != 2 { // Only 2 turns were left
-			t.Errorf("got actualRemoved %d; want 2", actualRemoved)
-		}
-		if remainingTurns != 0 {
-			t.Errorf("got remainingTurns %d; want 0", remainingTurns)
-		}
-		if remainingMsgs != 0 {
-			t.Errorf("got remainingMsgs %d; want 0", remainingMsgs)
-		}
-		if mgr.Contents != nil {
-			t.Error("expected Contents to be nil")
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, "history.jsonl")
+			mgr := NewManager(fs, filePath, "")
 
-	t.Run("Empty Rollback", func(t *testing.T) {
-		actualRemoved, remainingTurns, remainingMsgs, err := mgr.RollbackTurns(ctx, 1)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if actualRemoved != 0 {
-			t.Errorf("got actualRemoved %d; want 0", actualRemoved)
-		}
-		if remainingTurns != 0 {
-			t.Errorf("got remainingTurns %d; want 0", remainingTurns)
-		}
-		if remainingMsgs != 0 {
-			t.Errorf("got remainingMsgs %d; want 0", remainingMsgs)
-		}
-	})
+			if len(tt.initialState) > 0 {
+				if err := mgr.SetContents(ctx, tt.initialState); err != nil {
+					t.Fatalf("failed to setup initial state: %v", err)
+				}
+			}
+
+			actual, remaining, msgs, err := mgr.RollbackTurns(ctx, tt.turnsToRemove)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("RollbackTurns() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if actual != tt.wantRemoved {
+				t.Errorf("actualRemoved = %d; want %d", actual, tt.wantRemoved)
+			}
+			if remaining != tt.wantRemaining {
+				t.Errorf("remainingTurns = %d; want %d", remaining, tt.wantRemaining)
+			}
+			if msgs != tt.wantMsgs {
+				t.Errorf("remainingMsgs = %d; want %d", msgs, tt.wantMsgs)
+			}
+			if len(mgr.Contents) != tt.wantMsgs {
+				t.Errorf("len(mgr.Contents) = %d; want %d", len(mgr.Contents), tt.wantMsgs)
+			}
+		})
+	}
 }
