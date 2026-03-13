@@ -25,4 +25,6 @@ type Capturer interface {
 // Orchestrator defines the entry point for running a chat session.
 type Orchestrator interface {
 	Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic Capturer) error
+	Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies) error
+	RenderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool)
 }

@@ -129,27 +129,6 @@ func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 
 // Run executes the session orchestration.
 func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic Capturer) error {
-	isTTY := ic.IsTTY(o.Stdout)
-	o.renderHistory(sd.GetHistoryManager(), sc, isTTY)
-
-	if sc.GetBackN() > 0 {
-		actualRemoved, remainingTurns, remainingMsgs, err := sd.GetHistoryManager().RollbackTurns(ctx, sc.GetBackN())
-		if err != nil {
-			return fmt.Errorf("failed to rollback history: %w", err)
-		}
-		fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns. History now contains %d turns (%d messages).\n",
-			actualRemoved, remainingTurns, remainingMsgs)
-
-		// If no prompt was provided alongside -b, exit gracefully
-		if sc.GetPrompt() == "" {
-			return nil
-		}
-	}
-
-	if sc.GetPrompt() == "" && sc.GetLastN() > 0 {
-		return nil
-	}
-
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
@@ -191,7 +170,24 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 	return nil
 }
 
-func (o *orchestrator) renderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool) {
+// Rollback deletes the specified number of turns from history.
+func (o *orchestrator) Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies) error {
+	if sc.GetBackN() <= 0 {
+		return nil
+	}
+
+	actualRemoved, remainingTurns, remainingMsgs, err := sd.GetHistoryManager().RollbackTurns(ctx, sc.GetBackN())
+	if err != nil {
+		return fmt.Errorf("failed to rollback history: %w", err)
+	}
+	fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns. History now contains %d turns (%d messages).\n",
+		actualRemoved, remainingTurns, remainingMsgs)
+
+	return nil
+}
+
+// RenderHistory renders the last N messages from history.
+func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool) {
 	if sCfg.GetLastN() <= 0 {
 		return
 	}
@@ -338,5 +334,26 @@ func Run(ctx context.Context, params RunParams) error {
 		params.Config,
 	)
 
+	// Behavior 1: Render History (if requested)
+	isTTY := params.Capturer.IsTTY(params.Stdout)
+	orch.RenderHistory(params.Deps.GetHistoryManager(), sCfg, isTTY)
+
+	// Behavior 2: Handle Rollback (if requested)
+	if sCfg.GetBackN() > 0 {
+		if err := orch.Rollback(ctx, sCfg, params.Deps); err != nil {
+			return err
+		}
+		// If no prompt was provided alongside -b, exit early.
+		if sCfg.GetPrompt() == "" {
+			return nil
+		}
+	}
+
+	// Behavior 3: Handle History-only display (early exit)
+	if sCfg.GetPrompt() == "" && sCfg.GetLastN() > 0 {
+		return nil
+	}
+
+	// Behavior 4: Main Orchestration Loop (Chat)
 	return orch.Run(ctx, sCfg, params.Deps, params.Capturer)
 }
