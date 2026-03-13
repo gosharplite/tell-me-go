@@ -24,12 +24,12 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockConfigLoader is a mock of ConfigLoader.
-type MockConfigLoader struct {
+// mockConfigLoader is a mock of ConfigLoader.
+type mockConfigLoader struct {
 	mock.Mock
 }
 
-func (m *MockConfigLoader) Load(path string) (*config.Config, error) {
+func (m *mockConfigLoader) Load(path string) (*config.Config, error) {
 	args := m.Called(path)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -37,44 +37,44 @@ func (m *MockConfigLoader) Load(path string) (*config.Config, error) {
 	return args.Get(0).(*config.Config), args.Error(1)
 }
 
-func (m *MockConfigLoader) Watch(ctx context.Context, path string) (<-chan *config.Config, error) {
+func (m *mockConfigLoader) Watch(ctx context.Context, path string) (<-chan *config.Config, error) {
 	args := m.Called(ctx, path)
 	return args.Get(0).(<-chan *config.Config), args.Error(1)
 }
 
-// MockSecurityManager is a mock of ISecurityManager.
-type MockSecurityManager struct {
+// mockSecurityManager is a mock of ISecurityManager.
+type mockSecurityManager struct {
 	mock.Mock
 }
 
-func (m *MockSecurityManager) IsPathSafe(path string) (string, error)     { args := m.Called(path); return args.String(0), args.Error(1) }
-func (m *MockSecurityManager) IsPathWritable(path string) (string, error) { args := m.Called(path); return args.String(0), args.Error(1) }
-func (m *MockSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+func (m *mockSecurityManager) IsPathSafe(path string) (string, error)     { args := m.Called(path); return args.String(0), args.Error(1) }
+func (m *mockSecurityManager) IsPathWritable(path string) (string, error) { args := m.Called(path); return args.String(0), args.Error(1) }
+func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	args := m.Called(ctx, label, detail, reason, isSafe)
 	return args.Bool(0), args.Error(1)
 }
-func (m *MockSecurityManager) LogAudit(label1, val1, label2, val2 string) { m.Called(label1, val1, label2, val2) }
-func (m *MockSecurityManager) TerminalLock()                              { m.Called() }
-func (m *MockSecurityManager) TerminalUnlock()                            { m.Called() }
-func (m *MockSecurityManager) Prompt(message string)                      { m.Called(message) }
-func (m *MockSecurityManager) Warn(message string)                        { m.Called(message) }
-func (m *MockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+func (m *mockSecurityManager) LogAudit(label1, val1, label2, val2 string) { m.Called(label1, val1, label2, val2) }
+func (m *mockSecurityManager) TerminalLock()                              { m.Called() }
+func (m *mockSecurityManager) TerminalUnlock()                            { m.Called() }
+func (m *mockSecurityManager) Prompt(message string)                      { m.Called(message) }
+func (m *mockSecurityManager) Warn(message string)                        { m.Called(message) }
+func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	args := m.Called(ctx, message)
 	return args.Bool(0), args.Error(1)
 }
-func (m *MockSecurityManager) ReadLine(ctx context.Context) (string, error) {
+func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) {
 	args := m.Called(ctx)
 	return args.String(0), args.Error(1)
 }
-func (m *MockSecurityManager) IsCommandAllowed(command string) bool { return m.Called(command).Bool(0) }
-func (m *MockSecurityManager) IsBypassActive() bool              { return m.Called().Bool(0) }
+func (m *mockSecurityManager) IsCommandAllowed(command string) bool { return m.Called(command).Bool(0) }
+func (m *mockSecurityManager) IsBypassActive() bool              { return m.Called().Bool(0) }
 
-// MockContainer is a mock of Container.
-type MockContainer struct {
+// mockContainer is a mock of Container.
+type mockContainer struct {
 	mock.Mock
 }
 
-func (m *MockContainer) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
+func (m *mockContainer) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
 	var deps ports.SessionDependencies
 	if args.Get(0) != nil {
@@ -87,101 +87,101 @@ func (m *MockContainer) BuildSessionDependencies(ctx context.Context, cfg *confi
 	return deps, hManager, args.Get(2).(func()), args.Error(3)
 }
 
-func (m *MockContainer) GetAgentFactory() ports.ChatterFactory {
+func (m *mockContainer) GetAgentFactory() ports.ChatterFactory {
 	args := m.Called()
 	return args.Get(0).(ports.ChatterFactory)
 }
 
-func (m *MockContainer) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) {
+func (m *mockContainer) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) {
 	m.Called(ctx, hManager, deps, cfg)
 }
 
-// MockSessionDependencies is a mock of SessionDependencies.
-type MockSessionDependencies struct {
+// mockSessionDependencies is a mock of SessionDependencies.
+type mockSessionDependencies struct {
 	mock.Mock
 }
 
-func (m *MockSessionDependencies) GetGateway() llm.LLMGateway          { return nil }
-func (m *MockSessionDependencies) GetHistoryManager() ports.HistoryManager { return m.Called().Get(0).(ports.HistoryManager) }
-func (m *MockSessionDependencies) GetRegistry() tools.IToolRegistry      { return nil }
-func (m *MockSessionDependencies) GetSecurityManager() security.ISecurityManager {
+func (m *mockSessionDependencies) GetGateway() llm.LLMGateway          { return nil }
+func (m *mockSessionDependencies) GetHistoryManager() ports.HistoryManager { return m.Called().Get(0).(ports.HistoryManager) }
+func (m *mockSessionDependencies) GetRegistry() tools.IToolRegistry      { return nil }
+func (m *mockSessionDependencies) GetSecurityManager() security.ISecurityManager {
 	return m.Called().Get(0).(security.ISecurityManager)
 }
-func (m *MockSessionDependencies) GetEventBus() events.EventBus { return m.Called().Get(0).(events.EventBus) }
-func (m *MockSessionDependencies) GetPaths() *persistence.Paths { return m.Called().Get(0).(*persistence.Paths) }
-func (m *MockSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
-func (m *MockSessionDependencies) GetTracker() pricing.ICostTracker { return nil }
-func (m *MockSessionDependencies) GetPricingData() pricing.PricingData { return pricing.PricingData{} }
-func (m *MockSessionDependencies) GetClient() llm.LLMClient                      { return nil }
+func (m *mockSessionDependencies) GetEventBus() events.EventBus { return m.Called().Get(0).(events.EventBus) }
+func (m *mockSessionDependencies) GetPaths() *persistence.Paths { return m.Called().Get(0).(*persistence.Paths) }
+func (m *mockSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
+func (m *mockSessionDependencies) GetTracker() pricing.ICostTracker { return nil }
+func (m *mockSessionDependencies) GetPricingData() pricing.PricingData { return pricing.PricingData{} }
+func (m *mockSessionDependencies) GetClient() llm.LLMClient                      { return nil }
 
-// MockEventBus is a mock of EventBus.
-type MockEventBus struct {
+// mockEventBus is a mock of EventBus.
+type mockEventBus struct {
 	mock.Mock
 }
 
-func (m *MockEventBus) Publish(ctx context.Context, e events.Event) error { return m.Called(ctx, e).Error(0) }
-func (m *MockEventBus) Subscribe(sub func(events.Event)) {
+func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error { return m.Called(ctx, e).Error(0) }
+func (m *mockEventBus) Subscribe(sub func(events.Event)) {
 	m.Called(sub)
 }
-func (m *MockEventBus) Shutdown(ctx context.Context) error { return m.Called(ctx).Error(0) }
-func (m *MockEventBus) Flush(ctx context.Context) error    { return m.Called(ctx).Error(0) }
+func (m *mockEventBus) Shutdown(ctx context.Context) error { return m.Called(ctx).Error(0) }
+func (m *mockEventBus) Flush(ctx context.Context) error    { return m.Called(ctx).Error(0) }
 
-// MockAgent is a mock of Chatter.
-type MockAgent struct {
+// mockAgent is a mock of Chatter.
+type mockAgent struct {
 	mock.Mock
 }
 
-func (m *MockAgent) Chat(ctx context.Context, sess *ports.Session, prompt string) error {
+func (m *mockAgent) Chat(ctx context.Context, sess *ports.Session, prompt string) error {
 	return m.Called(ctx, sess, prompt).Error(0)
 }
-func (m *MockAgent) SetLimits(ctx context.Context, maxTurns, contextWindow, historyTurns int) error {
+func (m *mockAgent) SetLimits(ctx context.Context, maxTurns, contextWindow, historyTurns int) error {
 	return m.Called(ctx, maxTurns, contextWindow, historyTurns).Error(0)
 }
-func (m *MockAgent) SetTieredThreshold(ctx context.Context, threshold int) error {
+func (m *mockAgent) SetTieredThreshold(ctx context.Context, threshold int) error {
 	return m.Called(ctx, threshold).Error(0)
 }
-func (m *MockAgent) Subscribe(handler func(events.Event)) { m.Called(handler) }
-func (m *MockAgent) Shutdown(ctx context.Context) error   { return m.Called(ctx).Error(0) }
+func (m *mockAgent) Subscribe(handler func(events.Event)) { m.Called(handler) }
+func (m *mockAgent) Shutdown(ctx context.Context) error   { return m.Called(ctx).Error(0) }
 
-// MockCapturer is a mock of Capturer.
-type MockCapturer struct {
+// mockCapturer is a mock of Capturer.
+type mockCapturer struct {
 	mock.Mock
 }
 
-func (m *MockCapturer) IsTTY(v any) bool {
+func (m *mockCapturer) IsTTY(v any) bool {
 	args := m.Called(v)
 	return args.Bool(0)
 }
 
-func (m *MockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...orchestration.CaptureOption) (string, error) {
+func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...orchestration.CaptureOption) (string, error) {
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+func (m *mockCapturer) Confirm(ctx context.Context, message string) (bool, error) {
 	args := m.Called(ctx, message)
 	return args.Bool(0), args.Error(1)
 }
-func (m *MockCapturer) Warn(msg string)                      { m.Called(msg) }
-func (m *MockCapturer) Prompt(msg string)                    { m.Called(msg) }
-func (m *MockCapturer) ReadSingleKey(ctx context.Context) (string, error) {
+func (m *mockCapturer) Warn(msg string)                      { m.Called(msg) }
+func (m *mockCapturer) Prompt(msg string)                    { m.Called(msg) }
+func (m *mockCapturer) ReadSingleKey(ctx context.Context) (string, error) {
 	args := m.Called(ctx)
 	return args.String(0), args.Error(1)
 }
-func (m *MockCapturer) ReadLine(ctx context.Context) (string, error) {
+func (m *mockCapturer) ReadLine(ctx context.Context) (string, error) {
 	args := m.Called(ctx)
 	return args.String(0), args.Error(1)
 }
 
 func TestProcessMessage_Success(t *testing.T) {
 	ctx := context.Background()
-	loader := &MockConfigLoader{}
-	container := &MockContainer{}
-	sm := &MockSecurityManager{}
-	capturer := &MockCapturer{}
-	deps := &MockSessionDependencies{}
-	bus := &MockEventBus{}
-	agent := &MockAgent{}
+	loader := &mockConfigLoader{}
+	container := &mockContainer{}
+	sm := &mockSecurityManager{}
+	capturer := &mockCapturer{}
+	deps := &mockSessionDependencies{}
+	bus := &mockEventBus{}
+	agent := &mockAgent{}
 
 	service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
 
@@ -232,10 +232,10 @@ func TestProcessMessage_Success(t *testing.T) {
 
 func TestProcessMessage_BuildSessionDepsError(t *testing.T) {
 	ctx := context.Background()
-	loader := &MockConfigLoader{}
-	container := &MockContainer{}
-	sm := &MockSecurityManager{}
-	capturer := &MockCapturer{}
+	loader := &mockConfigLoader{}
+	container := &mockContainer{}
+	sm := &mockSecurityManager{}
+	capturer := &mockCapturer{}
 
 	service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
 
