@@ -239,7 +239,14 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 		m.Contents = nil
 	} else {
 		actualRemoved = turns
-		m.Contents = m.Contents[:originalLen-(turns*2)]
+		newLen := originalLen - (turns * 2)
+
+		// Nil out the truncated pointers to prevent memory leaks
+		for i := newLen; i < originalLen; i++ {
+			m.Contents[i] = nil
+		}
+
+		m.Contents = m.Contents[:newLen]
 	}
 
 	if err := m.store.Save(ctx, m.Contents); err != nil {
