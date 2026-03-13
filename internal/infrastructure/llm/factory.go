@@ -109,7 +109,7 @@ func resolveGoogleAuth(p *config.LLMProvider) (auth.Authenticator, error) {
 func resolveTimeout(cfg *config.Config) time.Duration {
 	timeout := time.Duration(cfg.HTTPTimeoutSeconds) * time.Second
 	if timeout == 0 {
-		return 5 * time.Minute
+		return 60 * time.Second
 	}
 	return timeout
 }

@@ -41,6 +41,10 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com/v1"
 	}
+	// Baseline defense against hung connections
+	if timeout == 0 {
+		timeout = 60 * time.Second
+	}
 	return &client{
 		httpClient:     &http.Client{Timeout: timeout},
 		authenticator:  authenticator,

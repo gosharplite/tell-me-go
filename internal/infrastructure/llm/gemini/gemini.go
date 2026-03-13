@@ -40,6 +40,11 @@ type Client struct {
 
 // NewClient returns a new Gemini API client.
 func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration) (*Client, error) {
+	// Baseline defense against hung connections
+	if timeout == 0 {
+		timeout = 60 * time.Second
+	}
+
 	c := &Client{
 		authenticator:     authenticator,
 		apiURL:            apiURL,
@@ -177,8 +182,8 @@ func (c *Client) RefreshAuth() error {
 	authenticator := c.authenticator
 	c.mu.RUnlock()
 	authenticator.Invalidate()
-	// Using a default 5m timeout for RefreshAuth if not stored
-	return c.initSDK(5 * time.Minute)
+	// Using a default 1m timeout for RefreshAuth to prevent hangs
+	return c.initSDK(1 * time.Minute)
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
