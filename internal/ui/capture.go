@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"golang.org/x/term"
 )
@@ -58,7 +59,7 @@ func (c *capturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
-func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN, backN int, raw bool) (string, error) {
+func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts orchestration.CaptureOptions) (string, error) {
 	prompt := strings.Join(fs.Args(), " ")
 
 	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
@@ -73,8 +74,8 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN, b
 	var err error
 	if !c.IsTTY(c.Stdin) {
 		prompt, err = c.captureFromPipe(ctx, prompt)
-	} else if prompt == "" && lastN == 0 && backN == 0 {
-		prompt, err = c.captureFromTTY(ctx, !raw)
+	} else if prompt == "" && !opts.SkipTTYWait {
+		prompt, err = c.captureFromTTY(ctx, !opts.Raw)
 	}
 
 	if err != nil {
@@ -87,7 +88,7 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN, b
 
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		if lastN > 0 || backN > 0 {
+		if opts.SkipTTYWait {
 			return "", nil
 		}
 		fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")
@@ -95,7 +96,7 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN, b
 		return "", fmt.Errorf("empty prompt")
 	}
 
-	c.printFeedback(c.Stderr, !raw, colorGreen,
+	c.printFeedback(c.Stderr, !opts.Raw, colorGreen,
 		fmt.Sprintf("[%s] Input captured. Processing...", time.Now().Format("15:04:05")))
 
 	return prompt, nil
