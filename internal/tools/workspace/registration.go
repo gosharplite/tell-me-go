@@ -38,244 +38,198 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 		search: &fileSearcher{sm: sm, fs: fs},
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "list_files",
-		Description: "Returns a shallow list of filenames and directory names (similar to 'ls') in a specific path. Useful for confirming file existence before reading.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The directory path to list (defaults to current directory '.')",
-				},
-			},
-		},
-	}, m.reader.listFiles); err != nil {
-		return err
+	type toolSpec struct {
+		decl    *tools.ToolDeclaration
+		handler tools.ToolFunc
+		opts    *tools.ToolOptions
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "get_tree",
-		Description: "Returns a visual directory tree structure.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The directory path to list (defaults to current directory '.')",
-				},
-				"max_depth": {
-					Type:        "INTEGER",
-					Description: "Depth of the tree (default 2)",
+	specs := []toolSpec{
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "list_files",
+				Description: "Returns a shallow list of filenames and directory names (similar to 'ls') in a specific path. Useful for confirming file existence before reading.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path": {Type: "STRING", Description: "The directory path to list (defaults to current directory '.')"},
+					},
 				},
 			},
+			handler: m.reader.listFiles,
 		},
-	}, m.reader.getTree); err != nil {
-		return err
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "get_tree",
+				Description: "Returns a visual directory tree structure.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path":      {Type: "STRING", Description: "The directory path to list (defaults to current directory '.')"},
+						"max_depth": {Type: "INTEGER", Description: "Depth of the tree (default 2)"},
+					},
+				},
+			},
+			handler: m.reader.getTree,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "read_file",
+				Description: "Reads the full content of a specific file (similar to 'cat').",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"filepath": {Type: "STRING", Description: "The path to the file to read."},
+					},
+					Required: []string{"filepath"},
+				},
+			},
+			handler: m.reader.readFile,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "search_files",
+				Description: "Performs a recursive regex search for a text pattern within a specific subdirectory. Use this when the search scope is restricted to a known module or folder.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path":  {Type: "STRING", Description: "The directory to search (defaults to '.')"},
+						"query": {Type: "STRING", Description: "The string or regex to search for."},
+					},
+					Required: []string{"query"},
+				},
+			},
+			handler: m.search.searchFiles,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:            "replace_text",
+				Description:     "Replaces the first occurrence of a specific text block in a file with new content.",
+				RequiresConsent: true,
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"filepath": {Type: "STRING", Description: "The path to the file to edit."},
+						"old_text": {Type: "STRING", Description: "The exact text block to find and replace."},
+						"new_text": {Type: "STRING", Description: "The new text to insert."},
+						"reason":   {Type: "STRING", Description: "Reason for this replacement."},
+					},
+					Required: []string{"filepath", "old_text", "new_text", "reason"},
+				},
+			},
+			handler: m.writer.replaceText,
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "find_file",
+				Description: "Finds files based on name patterns using filepath.Match (e.g., '*.go'). Useful for locating specific configuration or source files by name.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path":    {Type: "STRING", Description: "The directory path to start the search (defaults to '.')"},
+						"pattern": {Type: "STRING", Description: "The file name pattern to search for (e.g., 'config.*')."},
+					},
+					Required: []string{"pattern"},
+				},
+			},
+			handler: m.reader.findFile,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "get_definitions",
+				Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path":  {Type: "STRING", Description: "The directory path to search."},
+						"query": {Type: "STRING", Description: "Optional name pattern to filter definitions (regex)."},
+					},
+				},
+			},
+			handler: m.search.grepDefinitions,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:            "write_file",
+				Description:     "Creates a new file or overwrites an existing one with the provided content. Automatically creates parent directories.",
+				RequiresConsent: true,
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"filepath": {Type: "STRING", Description: "The path to the file to write."},
+						"content":  {Type: "STRING", Description: "The full content to write to the file."},
+						"reason":   {Type: "STRING", Description: "Reason for writing this file."},
+					},
+					Required: []string{"filepath", "content", "reason"},
+				},
+			},
+			handler: m.writer.writeFile,
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:            "append_text",
+				Description:     "Appends text to the end of a file. Efficient for logs or lists; avoids reading the whole file.",
+				RequiresConsent: true,
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"filepath": {Type: "STRING", Description: "The path to the file."},
+						"content":  {Type: "STRING", Description: "The text to append. Ensure you include a leading newline (\\n) if starting a new line."},
+						"reason":   {Type: "STRING", Description: "Reason for appending this text."},
+					},
+					Required: []string{"filepath", "content", "reason"},
+				},
+			},
+			handler: m.writer.appendText,
+			opts:    &tools.ToolOptions{Serial: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "get_file_diff",
+				Description: "Generates a standard unified diff between two arbitrary file paths on disk. Does not require Git history.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"file1": {Type: "STRING", Description: "The first file to compare."},
+						"file2": {Type: "STRING", Description: "The second file to compare."},
+					},
+					Required: []string{"file1", "file2"},
+				},
+			},
+			handler: m.reader.getFileDiff,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "undo_file_change",
+				Description: "Reverts the last N file modifications (WRITE or REPLACE actions).",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"n":      {Type: "INTEGER", Description: "Number of changes to revert (default 1)."},
+						"reason": {Type: "STRING", Description: "Reason for reverting the changes."},
+					},
+					Required: []string{"reason"},
+				},
+			},
+			handler: m.writer.undoFileChange,
+			opts:    &tools.ToolOptions{Serial: true},
+		},
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "read_file",
-		Description: "Reads the full content of a specific file (similar to 'cat').",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"filepath": {
-					Type:        "STRING",
-					Description: "The path to the file to read.",
-				},
-			},
-			Required: []string{"filepath"},
-		},
-	}, m.reader.readFile); err != nil {
-		return err
+	for _, spec := range specs {
+		if spec.opts != nil {
+			if err := r.RegisterWithOptions(spec.decl, spec.handler, *spec.opts); err != nil {
+				return err
+			}
+		} else {
+			if err := r.Register(spec.decl, spec.handler); err != nil {
+				return err
+			}
+		}
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "search_files",
-		Description: "Performs a recursive regex search for a text pattern within a specific subdirectory. Use this when the search scope is restricted to a known module or folder.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The directory to search (defaults to '.')",
-				},
-				"query": {
-					Type:        "STRING",
-					Description: "The string or regex to search for.",
-				},
-			},
-			Required: []string{"query"},
-		},
-	}, m.search.searchFiles); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:            "replace_text",
-		Description:     "Replaces the first occurrence of a specific text block in a file with new content.",
-		RequiresConsent: true,
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"filepath": {
-					Type:        "STRING",
-					Description: "The path to the file to edit.",
-				},
-				"old_text": {
-					Type:        "STRING",
-					Description: "The exact text block to find and replace.",
-				},
-				"new_text": {
-					Type:        "STRING",
-					Description: "The new text to insert.",
-				},
-				"reason": {
-					Type:        "STRING",
-					Description: "Reason for this replacement.",
-				},
-			},
-			Required: []string{"filepath", "old_text", "new_text", "reason"},
-		},
-	}, m.writer.replaceText, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "find_file",
-		Description: "Finds files based on name patterns using filepath.Match (e.g., '*.go'). Useful for locating specific configuration or source files by name.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The directory path to start the search (defaults to '.')",
-				},
-				"pattern": {
-					Type:        "STRING",
-					Description: "The file name pattern to search for (e.g., 'config.*').",
-				},
-			},
-			Required: []string{"pattern"},
-		},
-	}, m.reader.findFile); err != nil {
-		return err
-	}
-
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "get_definitions",
-		Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The directory path to search.",
-				},
-				"query": {
-					Type:        "STRING",
-					Description: "Optional name pattern to filter definitions (regex).",
-				},
-			},
-		},
-	}, m.search.grepDefinitions); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:            "write_file",
-		Description:     "Creates a new file or overwrites an existing one with the provided content. Automatically creates parent directories.",
-		RequiresConsent: true,
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"filepath": {
-					Type:        "STRING",
-					Description: "The path to the file to write.",
-				},
-				"content": {
-					Type:        "STRING",
-					Description: "The full content to write to the file.",
-				},
-				"reason": {
-					Type:        "STRING",
-					Description: "Reason for writing this file.",
-				},
-			},
-			Required: []string{"filepath", "content", "reason"},
-		},
-	}, m.writer.writeFile, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:            "append_text",
-		Description:     "Appends text to the end of a file. Efficient for logs or lists; avoids reading the whole file.",
-		RequiresConsent: true,
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"filepath": {
-					Type:        "STRING",
-					Description: "The path to the file.",
-				},
-				"content": {
-					Type:        "STRING",
-					Description: "The text to append. Ensure you include a leading newline (\\n) if starting a new line.",
-				},
-				"reason": {
-					Type:        "STRING",
-					Description: "Reason for appending this text.",
-				},
-			},
-			Required: []string{"filepath", "content", "reason"},
-		},
-	}, m.writer.appendText, tools.ToolOptions{Serial: true}); err != nil {
-		return err
-	}
-
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "get_file_diff",
-		Description: "Generates a standard unified diff between two arbitrary file paths on disk. Does not require Git history.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"file1": {
-					Type:        "STRING",
-					Description: "The first file to compare.",
-				},
-				"file2": {
-					Type:        "STRING",
-					Description: "The second file to compare.",
-				},
-			},
-			Required: []string{"file1", "file2"},
-		},
-	}, m.reader.getFileDiff); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "undo_file_change",
-		Description: "Reverts the last N file modifications (WRITE or REPLACE actions).",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"n": {
-					Type:        "INTEGER",
-					Description: "Number of changes to revert (default 1).",
-				},
-				"reason": {
-					Type:        "STRING",
-					Description: "Reason for reverting the changes.",
-				},
-			},
-			Required: []string{"reason"},
-		},
-	}, m.writer.undoFileChange, tools.ToolOptions{Serial: true}); err != nil {
-		return err
-	}
 	return nil
 }
 
