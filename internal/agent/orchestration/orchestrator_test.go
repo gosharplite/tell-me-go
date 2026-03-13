@@ -660,6 +660,7 @@ func TestOrchestrator_Rollback(t *testing.T) {
 	tests := []struct {
 		name          string
 		backN         int
+		rollbackErr   error
 		expectedCalls int
 		wantErr       bool
 	}{
@@ -675,16 +676,27 @@ func TestOrchestrator_Rollback(t *testing.T) {
 			expectedCalls: 0,
 			wantErr:       false,
 		},
+		{
+			name:          "rollback error propagation",
+			backN:         1,
+			rollbackErr:   fmt.Errorf("disk failure"),
+			expectedCalls: 1,
+			wantErr:       true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			mHistory.rollbackErr = tt.rollbackErr
 			sCfg := &sessionConfig{BackN: tt.backN}
 			deps := &sessionDependencies{HistoryManager: mHistory}
 			err := orch.Rollback(context.Background(), sCfg, deps)
 
 			if tt.wantErr {
 				assert.Error(t, err)
+				if tt.rollbackErr != nil {
+					assert.Contains(t, err.Error(), tt.rollbackErr.Error())
+				}
 			} else {
 				assert.NoError(t, err)
 			}
@@ -693,41 +705,45 @@ func TestOrchestrator_Rollback(t *testing.T) {
 }
 
 func TestRun_Routing(t *testing.T) {
-	mHistory := &mockHistoryManager{
-		contents: make([]*llm.Content, 4), // 2 turns
-	}
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
 	mCapturer := new(mockCapturer)
-	mChatter := new(mockChatter)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
-		return mChatter, nil
+	factory := func(mChatter ports.Chatter) func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+			return mChatter, nil
+		}
 	}
 
-	params := RunParams{
-		HomeDir:         "home",
-		Version:         "1.0.0",
-		Stdout:          io.Discard,
-		Stderr:          io.Discard,
-		AgentFactory:    factory,
-		HistoryRenderer: mHistoryRenderer,
-		UIRenderer:      mUIRenderer,
-		Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
-		Capturer:        mCapturer,
-		Config: &config.Config{
-			Model: "model",
-			Mode:  "mode",
-		},
+	setupParams := func(mHistory ports.HistoryManager, mChatter ports.Chatter) RunParams {
+		return RunParams{
+			HomeDir:         "home",
+			Version:         "1.0.0",
+			Stdout:          io.Discard,
+			Stderr:          io.Discard,
+			AgentFactory:    factory(mChatter),
+			HistoryRenderer: mHistoryRenderer,
+			UIRenderer:      mUIRenderer,
+			Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+			Capturer:        mCapturer,
+			Config: &config.Config{
+				Model: "model",
+				Mode:  "mode",
+			},
+		}
 	}
 
 	t.Run("Rollback only (no prompt)", func(t *testing.T) {
-		p := params
+		mHistory := &mockHistoryManager{
+			contents: make([]*llm.Content, 4), // 2 turns
+		}
+		mChatter := new(mockChatter)
+		p := setupParams(mHistory, mChatter)
 		p.BackN = 1
 		p.Prompt = ""
 
-		mCapturer.On("IsTTY", io.Discard).Return(true)
+		mCapturer.On("IsTTY", io.Discard).Return(true).Once()
 
 		err := Run(context.Background(), p)
 		assert.NoError(t, err)
@@ -736,10 +752,15 @@ func TestRun_Routing(t *testing.T) {
 	})
 
 	t.Run("Rollback and Chat", func(t *testing.T) {
-		p := params
+		mHistory := &mockHistoryManager{
+			contents: make([]*llm.Content, 4), // 2 turns
+		}
+		mChatter := new(mockChatter)
+		p := setupParams(mHistory, mChatter)
 		p.BackN = 1
 		p.Prompt = "hello"
 
+		mCapturer.ExpectedCalls = nil
 		mCapturer.On("IsTTY", io.Discard).Return(true)
 		mUIRenderer.On("SetUseColor", true).Return()
 		mChatter.On("Subscribe", mock.Anything).Return()
@@ -750,8 +771,26 @@ func TestRun_Routing(t *testing.T) {
 
 		err := Run(context.Background(), p)
 		assert.NoError(t, err)
-		// History already had 2 messages from previous test run if using same mHistory, 
-		// but each test run should probably have its own mock or reset.
-		// mHistory.contents = make([]*llm.Content, 4) // Reset for this subtest
+	})
+
+	t.Run("Rollback aborts on error", func(t *testing.T) {
+		mHistory := &mockHistoryManager{
+			contents: make([]*llm.Content, 4), // 2 turns
+			rollbackErr: fmt.Errorf("rollback failed"),
+		}
+		mChatter := new(mockChatter)
+		p := setupParams(mHistory, mChatter)
+		p.BackN = 1
+		p.Prompt = "hello"
+
+		mCapturer.ExpectedCalls = nil
+		mCapturer.On("IsTTY", io.Discard).Return(true)
+
+		err := Run(context.Background(), p)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "rollback failed")
+
+		// Verify that Chatter.Chat was NOT called
+		mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
 	})
 }

@@ -74,6 +74,7 @@ type mockHistoryManager struct {
 	resolver       llm.AssetResolver
 	setContentsErr error
 	getWindowErr   error
+	rollbackErr    error
 }
 
 func (m *mockHistoryManager) GetTotalEntries() int { return len(m.contents) }
@@ -128,6 +129,9 @@ func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinne
 }
 func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
 func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	if m.rollbackErr != nil {
+		return 0, 0, 0, m.rollbackErr
+	}
 	originalLen := len(m.contents)
 	if originalLen == 0 {
 		return 0, 0, 0, nil
