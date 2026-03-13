@@ -202,7 +202,7 @@ func (p *pathPolicy) RemovePath(path string, writable bool) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	newPaths := []string{}
+	newPaths := make([]string, 0, len(*paths))
 	found := false
 	for _, entry := range *paths {
 		if entry == abs {

@@ -256,8 +256,8 @@ func (c *Client) handleNoCandidates(resp *genai.GenerateContentResponse) error {
 }
 
 func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
-	var filteredHistory []*llm.Content
-	var dynamicSystemParts []*llm.Part
+	filteredHistory := make([]*llm.Content, 0, len(history))
+	dynamicSystemParts := make([]*llm.Part, 0, len(history)) // Upper bound
 
 	// 1. Separate system instructions from the standard conversation history
 	for _, h := range history {
@@ -352,7 +352,7 @@ func (c *Client) applyThinkingBudget(ctx context.Context, config *genai.Thinking
 }
 
 func (c *Client) toSDKContent(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []*genai.Content {
-	var sdkHistory []*genai.Content
+	sdkHistory := make([]*genai.Content, 0, len(history))
 	for _, h := range history {
 		sdkContent := toSDKContent(ctx, h, resolver)
 		if sdkContent == nil {
@@ -494,7 +494,7 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 		return nil, err
 	}
 
-	var results [][]byte
+	results := make([][]byte, 0, len(resp.GeneratedImages))
 	for _, img := range resp.GeneratedImages {
 		if img.Image != nil && len(img.Image.ImageBytes) > 0 {
 			results = append(results, img.Image.ImageBytes)

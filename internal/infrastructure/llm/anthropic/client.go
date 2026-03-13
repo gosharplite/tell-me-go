@@ -327,7 +327,8 @@ func toAnthropicSchema(s *tools.Schema) interface{} {
 
 func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
 	content := &llm.Content{
-		Role: "model",
+		Role:  "model",
+		Parts: make([]*llm.Part, 0, len(resp.Content)),
 	}
 
 	for _, block := range resp.Content {

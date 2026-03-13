@@ -761,7 +761,7 @@ func (m *metricsManager) aggregateCosts(history []sessionCostRecord, args costSu
 	intervalTotals, intervalUsage := m.aggregateHistory(history, start, end, location, format, args.GroupBy)
 
 	// Sort keys descending
-	var keys []string
+	keys := make([]string, 0, len(intervalTotals))
 	for k := range intervalTotals {
 		keys = append(keys, k)
 	}

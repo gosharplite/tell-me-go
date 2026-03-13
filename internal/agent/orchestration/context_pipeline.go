@@ -74,6 +74,8 @@ func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *reque
 }
 
 func (p *ContextPipeline) partitionTransformers() (canonical, transient []ports.ContextTransformer) {
+	canonical = make([]ports.ContextTransformer, 0, len(p.transformers))
+	transient = make([]ports.ContextTransformer, 0, len(p.transformers))
 	for _, t := range p.transformers {
 		if t.Priority() < priorityTransientThreshold {
 			canonical = append(canonical, t)

@@ -203,7 +203,7 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 		}
 	}
 
-	var data []byte
+	var buf bytes.Buffer
 	for _, c := range contents {
 		prepared, err := s.prepareForStorage(ctx, c)
 		if err != nil {
@@ -213,11 +213,11 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal content: %w", err)
 		}
-		data = append(data, line...)
-		data = append(data, '\n')
+		buf.Write(line)
+		buf.WriteByte('\n')
 	}
 
-	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
+	return s.fs.WriteFile(ctx, s.filePath, buf.Bytes(), 0644)
 }
 
 // Append appends multiple content entries to the history file.

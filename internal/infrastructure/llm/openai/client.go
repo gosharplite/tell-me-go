@@ -332,6 +332,8 @@ func normalizeRole(role string) string {
 }
 
 func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherParts []*llm.Part) {
+	toolResponseParts = make([]*llm.Part, 0, len(parts))
+	otherParts = make([]*llm.Part, 0, len(parts))
 	for _, p := range parts {
 		if p.FunctionResponse != nil {
 			toolResponseParts = append(toolResponseParts, p)
@@ -662,7 +664,10 @@ func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback
 	if len(toolCallsByIndex) == 0 {
 		return nil
 	}
-	finalContent := &llm.Content{Role: "model"}
+	finalContent := &llm.Content{
+		Role:  "model",
+		Parts: make([]*llm.Part, 0, len(toolCallsByIndex)),
+	}
 	// Sort by index to maintain order
 	for i := 0; i < len(toolCallsByIndex); i++ {
 		if state, ok := toolCallsByIndex[i]; ok && state.name != "" {
