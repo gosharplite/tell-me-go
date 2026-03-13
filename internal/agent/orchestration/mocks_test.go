@@ -133,8 +133,8 @@ func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 		return 0, 0, 0, m.rollbackErr
 	}
 	originalLen := len(m.contents)
-	if originalLen == 0 {
-		return 0, 0, 0, nil
+	if originalLen == 0 || turns <= 0 {
+		return 0, originalLen / 2, originalLen, nil
 	}
 
 	removeMsgs := turns * 2

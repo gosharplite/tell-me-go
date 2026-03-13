@@ -417,6 +417,17 @@ func TestHistoryManager_Archive(t *testing.T) {
 	}
 }
 
+type rollbackTestCase struct {
+	name          string
+	initialState  []*llm.Content
+	turnsToRemove int
+	setupStore    func(m *Manager) // Optional hook to override internal state
+	wantRemoved   int
+	wantRemaining int
+	wantMsgs      int
+	wantErr       bool
+}
+
 func TestManager_RollbackTurns(t *testing.T) {
 	ctx := context.Background()
 	fs := infrapersistence.NewOSFileSystem()
@@ -433,21 +444,12 @@ func TestManager_RollbackTurns(t *testing.T) {
 	twoTurns := threeTurns[:4]
 	var emptyState []*llm.Content
 
-	type testCase struct {
-		name          string
-		initialState  []*llm.Content
-		turnsToRemove int
-		setupStore    func(m *Manager) // Optional hook to override internal state
-		wantRemoved   int
-		wantRemaining int
-		wantMsgs      int
-		wantErr       bool
-	}
-
-	tests := []testCase{
+	tests := []rollbackTestCase{
 		{"Normal Rollback (1 turn)", threeTurns, 1, nil, 1, 2, 4, false},
 		{"Out-of-Bounds Rollback", twoTurns, 10, nil, 2, 0, 0, false},
 		{"Empty Rollback", emptyState, 1, nil, 0, 0, 0, false},
+		{"Negative Rollback (Should be No-Op)", threeTurns, -1, nil, 0, 3, 6, false},
+		{"Zero Rollback (Should be No-Op)", threeTurns, 0, nil, 0, 3, 6, false},
 		{
 			name:          "Save Error",
 			initialState:  threeTurns,
@@ -481,16 +483,7 @@ func TestManager_RollbackTurns(t *testing.T) {
 	}
 }
 
-func assertRollbackState(t *testing.T, mgr *Manager, tt struct {
-	name          string
-	initialState  []*llm.Content
-	turnsToRemove int
-	setupStore    func(m *Manager)
-	wantRemoved   int
-	wantRemaining int
-	wantMsgs      int
-	wantErr       bool
-}, actual, remaining, msgs int, err error) {
+func assertRollbackState(t *testing.T, mgr *Manager, tt rollbackTestCase, actual, remaining, msgs int, err error) {
 	t.Helper()
 	if (err != nil) != tt.wantErr {
 		t.Fatalf("RollbackTurns() error = %v, wantErr %v", err, tt.wantErr)
