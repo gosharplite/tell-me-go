@@ -6,6 +6,7 @@ package history
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -517,4 +518,63 @@ type mockFailingStore struct {
 
 func (m *mockFailingStore) Save(ctx context.Context, contents []*llm.Content) error {
 	return m.err
+}
+
+func FuzzManager_RollbackTurns(f *testing.F) {
+	// 1. Seed Corpus
+	f.Add(-1)
+	f.Add(0)
+	f.Add(1)
+	f.Add(5)
+	f.Add(100)
+	f.Add(math.MaxInt32)
+	f.Add(math.MinInt32)
+	f.Add(math.MaxInt)
+	f.Add(math.MinInt)
+
+	// 2. Fuzz Target
+	f.Fuzz(func(t *testing.T, turns int) {
+		// Setup dummy state: 10 messages (5 turns)
+		m := &Manager{
+			Contents: make([]*llm.Content, 10),
+			store:    &mockStore{},
+		}
+		for i := range m.Contents {
+			m.Contents[i] = &llm.Content{}
+		}
+		initialLen := len(m.Contents)
+		ctx := context.Background()
+
+		// Execute
+		actualRemoved, remainingTurns, remainingMsgs, err := m.RollbackTurns(ctx, turns)
+
+		// Assert Invariants
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		finalLen := len(m.Contents)
+
+		if finalLen < 0 {
+			t.Errorf("invariant violation: final length %d is negative (input turns: %d)", finalLen, turns)
+		}
+
+		if finalLen > initialLen {
+			t.Errorf("invariant violation: final length %d exceeds initial length %d (input turns: %d)", finalLen, initialLen, turns)
+		}
+
+		if actualRemoved < 0 {
+			t.Errorf("invariant violation: actualRemoved %d is negative (input turns: %d)", actualRemoved, turns)
+		}
+
+		// Ensure calculated remaining aligns with actual slice length
+		if remainingMsgs != finalLen {
+			t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
+		}
+		
+		expectedRemainingTurns := finalLen / 2
+		if remainingTurns != expectedRemainingTurns {
+			t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)
+		}
+	})
 }

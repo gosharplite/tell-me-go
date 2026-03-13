@@ -227,13 +227,13 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 
 	originalContents := m.Contents
 
-	removeMsgs := turns * 2
-	if removeMsgs >= originalLen {
+	// Prevent overflow and handle out-of-bounds turns
+	if turns > originalLen/2 {
 		actualRemoved = originalLen / 2
 		m.Contents = nil
 	} else {
 		actualRemoved = turns
-		m.Contents = m.Contents[:originalLen-removeMsgs]
+		m.Contents = m.Contents[:originalLen-(turns*2)]
 	}
 
 	if err := m.store.Save(ctx, m.Contents); err != nil {
