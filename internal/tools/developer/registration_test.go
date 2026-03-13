@@ -47,7 +47,9 @@ func TestRegister(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
 	exec := &mockCommandExecutor{}
 
-	Register(registry, sm, exec, validator, fs)
+	if err := Register(registry, sm, exec, validator, fs); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	toolNames := []string{
 		"run_tests",

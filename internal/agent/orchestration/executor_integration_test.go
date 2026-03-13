@@ -127,19 +127,21 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	var parallelOrder int32
 	var serialOrder int32
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_parallel",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&parallelOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "parallel done"}, nil
 	}, tools.ToolOptions{Serial: false, LongRunning: false})
+	require.NoError(t, err)
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&serialOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "serial done"}, nil
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
+	require.NoError(t, err)
 
 	// Simulate LLM response requesting both concurrently.
 	// We put parallel FIRST to ensure it completes before the serial tool starts.
@@ -179,19 +181,21 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 	var serialOrder int32
 	var parallelOrder int32
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&serialOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "serial done"}, nil
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
+	require.NoError(t, err)
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_parallel",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&parallelOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "parallel done"}, nil
 	}, tools.ToolOptions{Serial: false, LongRunning: false})
+	require.NoError(t, err)
 
 	// Put serial FIRST. In the new implementation, it MUST run first.
 	resp := &llm.Content{
@@ -228,7 +232,7 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 
 	exitSignal := make(chan struct{})
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{
+	regErr := reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		select {
@@ -239,6 +243,7 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 			return tools.ToolResult{}, ctx.Err()
 		}
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
+	require.NoError(t, regErr)
 
 	resp := &llm.Content{
 		Parts: []*llm.Part{

@@ -18,7 +18,7 @@ func TestNewToolRegistry(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
-	tools.RegisterAll(tools.ToolRegistrationParams{
+	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		Registry:        r,
 		SecurityManager: sm,
 		LogFile:         "tokens.log",
@@ -26,7 +26,9 @@ func TestNewToolRegistry(t *testing.T) {
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
 		FileSystem:      infrapersistence.NewOSFileSystem(),
-	})
+	}); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
 
 	if len(r.GetDeclarations()) == 0 {
 		t.Error("expected registered tools, got none")
@@ -37,7 +39,7 @@ func TestToolExecution(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
-	tools.RegisterAll(tools.ToolRegistrationParams{
+	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		Registry:        r,
 		SecurityManager: sm,
 		LogFile:         "tokens.log",
@@ -45,7 +47,9 @@ func TestToolExecution(t *testing.T) {
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
 		FileSystem:      infrapersistence.NewOSFileSystem(),
-	})
+	}); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
 
 	ctx := context.Background()
 	// list_files is registered by workspace.Register
@@ -59,7 +63,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
-	tools.RegisterAll(tools.ToolRegistrationParams{
+	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		Registry:        r,
 		SecurityManager: sm,
 		LogFile:         "tokens.log",
@@ -67,7 +71,9 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
 		FileSystem:      infrapersistence.NewOSFileSystem(),
-	})
+	}); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
 
 	ctx := context.Background()
 	graph := map[string]interface{}{

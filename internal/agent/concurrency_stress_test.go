@@ -37,12 +37,13 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	// Register a slow tool to keep the agent busy
-	reg.Register(&tools.ToolDeclaration{
+	err := reg.Register(&tools.ToolDeclaration{
 		Name: "slow_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(50 * time.Millisecond)
 		return tools.ToolResult{Text: "done"}, nil
 	})
+	require.NoError(t, err)
 
 	mockClient := &stressmockLLMClient{
 		sendChatFn: func(ctx context.Context, history []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -148,10 +149,11 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
-	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err = reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(10 * time.Millisecond)
 		return tools.ToolResult{Text: "ok"}, nil
 	})
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	var wg sync.WaitGroup

@@ -93,7 +93,9 @@ func TestAgent_ManageHistory(t *testing.T) {
 func TestRegisterInternal(t *testing.T) {
 	registry := &mockToolRegistry{}
 	cm := &ContextManager{}
-	RegisterInternal(registry, cm)
+	if err := RegisterInternal(registry, cm); err != nil {
+		t.Fatalf("RegisterInternal failed: %v", err)
+	}
 
 	decls := registry.GetDeclarations()
 	if len(decls) != 2 {

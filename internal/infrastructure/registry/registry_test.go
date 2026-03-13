@@ -43,9 +43,11 @@ func TestRegistry_Resilience(t *testing.T) {
 		t.Parallel()
 		r := registry.New()
 		targetErr := errors.New("something went wrong")
-		r.Register(&tools.ToolDeclaration{Name: "failer"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		if err := r.Register(&tools.ToolDeclaration{Name: "failer"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 			return tools.ToolResult{}, targetErr
-		})
+		}); err != nil {
+			t.Fatalf("failed to register tool: %v", err)
+		}
 
 		_, err := r.Execute(context.Background(), "failer", nil)
 		if err == nil {
@@ -63,8 +65,12 @@ func TestRegistry_Resilience(t *testing.T) {
 func TestRegistry_Options(t *testing.T) {
 	t.Parallel()
 	r := registry.New()
-	r.RegisterWithOptions(&tools.ToolDeclaration{Name: "serial_tool"}, nil, registry.ToolOptions{Serial: true})
-	r.RegisterWithOptions(&tools.ToolDeclaration{Name: "long_running_tool"}, nil, registry.ToolOptions{LongRunning: true})
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "serial_tool"}, nil, registry.ToolOptions{Serial: true}); err != nil {
+		t.Fatalf("failed to register tool serial_tool: %v", err)
+	}
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{Name: "long_running_tool"}, nil, registry.ToolOptions{LongRunning: true}); err != nil {
+		t.Fatalf("failed to register tool long_running_tool: %v", err)
+	}
 
 	if !r.IsSerial("serial_tool") {
 		t.Error("expected serial_tool to be serial")
@@ -90,8 +96,12 @@ func TestRegistry_Options(t *testing.T) {
 func TestRegistry_GetDeclarations(t *testing.T) {
 	t.Parallel()
 	r := registry.New()
-	r.Register(&tools.ToolDeclaration{Name: "tool1"}, nil)
-	r.Register(&tools.ToolDeclaration{Name: "tool2"}, nil)
+	if err := r.Register(&tools.ToolDeclaration{Name: "tool1"}, nil); err != nil {
+		t.Fatalf("failed to register tool1: %v", err)
+	}
+	if err := r.Register(&tools.ToolDeclaration{Name: "tool2"}, nil); err != nil {
+		t.Fatalf("failed to register tool2: %v", err)
+	}
 
 	decls := r.GetDeclarations()
 	if len(decls) != 2 {

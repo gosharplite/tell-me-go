@@ -277,17 +277,19 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	// Tool 1 & 2: Blocking
 	var wgStart sync.WaitGroup
 	wgStart.Add(2)
-	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool1"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
+	regErr := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool1"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
 		wgStart.Done()
 		<-ctx.Done()
 		return tools.ToolResult{}, ctx.Err()
 	}, tools.ToolOptions{})
+	require.NoError(t, regErr)
 
-	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool2"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
+	regErr = reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool2"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
 		wgStart.Done()
 		<-ctx.Done()
 		return tools.ToolResult{}, ctx.Err()
 	}, tools.ToolOptions{})
+	require.NoError(t, regErr)
 
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)

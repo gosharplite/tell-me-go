@@ -33,10 +33,12 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	historyPath := filepath.Join(tmpDir, "history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	reg.Register(&tools.ToolDeclaration{
+	if err := reg.Register(&tools.ToolDeclaration{
 		Name:        "dummy_tool",
 		Description: "A dummy tool for token estimation stability",
-	}, nil)
+	}, nil); err != nil {
+		t.Fatalf("failed to register tool: %v", err)
+	}
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus()
 
@@ -287,11 +289,13 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 
 	// 1. Register many tools to create a large schema (approx 2000 tokens)
 	for i := 0; i < 20; i++ {
-		reg.Register(&tools.ToolDeclaration{
+		if err := reg.Register(&tools.ToolDeclaration{
 			Name:        fmt.Sprintf("tool_%d", i),
 			Description: "A tool with a very long description to consume more tokens in the schema " + strings.Repeat("detail ", 20),
 			Parameters:  &tools.Schema{Type: "OBJECT"},
-		}, nil)
+		}, nil); err != nil {
+			t.Fatalf("failed to register tool_%d: %v", i, err)
+		}
 	}
 
 	// 2. Mock server for summarization

@@ -301,7 +301,9 @@ func TestNewTeamsManager(t *testing.T) {
 func TestRegister(t *testing.T) {
 	r := registry.New()
 	sm := security.NewSecurityManager(nil)
-	RegisterAll(r, sm, nil, "")
+	if err := RegisterAll(r, sm, nil, ""); err != nil {
+		t.Fatalf("RegisterAll failed: %v", err)
+	}
 
 	decls := r.GetDeclarations()
 	found := make(map[string]bool)

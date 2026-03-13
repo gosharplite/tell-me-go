@@ -44,7 +44,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 			Serial:      b.serial,
 			LongRunning: b.long,
 		}
-		reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		if err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 			if b.observe != nil {
 				b.observe()
 			}
@@ -59,7 +59,9 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 				}
 			}
 			return b.result, b.err
-		}, opts)
+		}, opts); err != nil {
+			t.Fatalf("failed to register tool %s: %v", name, err)
+		}
 	}
 
 	var sm *mockSecurityManager
@@ -464,7 +466,9 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 	}
 
 	for i := 0; i < 5; i++ {
-		reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc)
+		if err := reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc); err != nil {
+			t.Fatalf("failed to register tool%d: %v", i, err)
+		}
 	}
 
 	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
@@ -676,9 +680,10 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 func TestToolExecutor_EventPublishing(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err := reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "success"}, nil
 	})
+	require.NoError(t, err)
 
 	bus := &inframock.TestEventBus{}
 	exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
@@ -1069,10 +1074,11 @@ func TestToolExecutor_ZombieTool(t *testing.T) {
 	t.Parallel()
 
 	reg := registry.New()
-	reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "stubborn_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "stubborn_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(100 * time.Millisecond) // Ignores context!
 		return tools.ToolResult{Text: "finally finished"}, nil
 	}, registry.ToolOptions{LongRunning: true})
+	require.NoError(t, err)
 
 	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
 	require.NoError(t, err)

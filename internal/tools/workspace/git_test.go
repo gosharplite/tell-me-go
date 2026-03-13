@@ -165,7 +165,9 @@ func TestGitTools(t *testing.T) {
 			}
 
 			reg := registry.New()
-			Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
+			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+				t.Fatalf("Register failed: %v", err)
+			}
 
 			res, err := reg.Execute(context.Background(), tt.toolName, tt.args)
 			if (err != nil) != tt.wantErr {
@@ -261,7 +263,9 @@ func TestGitDestructiveActions(t *testing.T) {
 			}
 
 			reg := registry.New()
-			Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
+			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+				t.Fatalf("Register failed: %v", err)
+			}
 
 			res, err := reg.Execute(context.Background(), tt.toolName, tt.args)
 			if (err != nil) != tt.wantErr {
@@ -291,7 +295,9 @@ func TestGitBlameSafety(t *testing.T) {
 	}
 
 	reg := registry.New()
-	Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
+	if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
 	// Try to blame a file outside of allowed paths (assuming default policy denies it)
 	_, err := reg.Execute(context.Background(), "get_git_blame", map[string]interface{}{"filepath": "/etc/passwd"})

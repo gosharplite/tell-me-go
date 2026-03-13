@@ -115,7 +115,9 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	_ = os.Mkdir(outputDir, 0755)
 	logFile := filepath.Join(outputDir, "test.log")
 
-	RegisterMetrics(reg, sm, logFile, "test-model", "test-mode", nil)
+	if err := RegisterMetrics(reg, sm, logFile, "test-model", "test-mode", nil); err != nil {
+		t.Fatalf("RegisterMetrics failed: %v", err)
+	}
 
 	if _, ok := reg.handlers["estimate_cost"]; !ok {
 		t.Error("estimate_cost tool not registered")

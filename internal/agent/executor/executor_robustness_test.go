@@ -22,10 +22,11 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 		t.Skip("skipping slow robustness test in short mode")
 	}
 	reg := registry.New()
-	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err := reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(2 * time.Millisecond)
 		return tools.ToolResult{Text: "ok"}, nil
 	})
+	require.NoError(t, err)
 
 	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
@@ -69,7 +70,7 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 
 	// Create a tool that blocks until told to proceed, so we can reliably cancel context mid-batch
 	blockCh := make(chan struct{})
-	reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	regErr := reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		select {
 		case <-blockCh:
 			return tools.ToolResult{Text: "ok"}, nil
@@ -77,6 +78,7 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 			return tools.ToolResult{Text: "canceled", Error: ctx.Err()}, nil
 		}
 	})
+	require.NoError(t, regErr)
 
 	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
