@@ -15,8 +15,11 @@ import (
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	domain_tools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	orchestration_app "github.com/gosharplite/tell-me-go/internal/orchestration"
 )
 
 type integrationMockChatter struct {
@@ -60,15 +63,16 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		},
 	}
 
+	loader := &config.YAMLConfigLoader{}
+	chatService := orchestration_app.NewChatService(tmpDir, "1.0.0", &stdout, &stderr, sm, loader, container)
+
 	cmd := &chatCommand{
-		Version:   "1.0.0",
-		Stdin:     strings.NewReader("hello"),
-		Stdout:    &stdout,
-		Stderr:    &stderr,
-		HomeDir:   tmpDir,
-		SM:        sm,
-		Container: container,
-		Loader:    &mockLoader{},
+		Version:     "1.0.0",
+		Stdin:       strings.NewReader("hello"),
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		SM:          sm,
+		ChatService: chatService,
 	}
 
 	ctx := stdctx.Background()
@@ -168,4 +172,27 @@ func verifySecurityRegistration(t *testing.T, sm *security.SecurityManager, outp
 	if !found {
 		t.Errorf("output directory %s not registered as safe path, got: %v", outputDir, safePaths)
 	}
+}
+
+type mockClient struct {
+	domain_llm.LLMClient
+}
+
+func (m *mockClient) Generate(ctx stdctx.Context, input []*domain_llm.Content, tools []*domain_tools.ToolDeclaration, resolver domain_llm.AssetResolver) (<-chan *domain_llm.Content, func() (*domain_llm.Content, *domain_llm.Metrics, error)) {
+	ch := make(chan *domain_llm.Content, 1)
+	ch <- &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "response"}}}
+	close(ch)
+	return ch, func() (*domain_llm.Content, *domain_llm.Metrics, error) {
+		return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "response"}}}, &domain_llm.Metrics{}, nil
+	}
+}
+
+func (m *mockClient) SendChat(ctx stdctx.Context, history []*domain_llm.Content, tools []*domain_tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
+	return nil, nil, nil
+}
+func (m *mockClient) StreamChat(ctx stdctx.Context, history []*domain_llm.Content, tools []*domain_tools.ToolDeclaration, resolver domain_llm.AssetResolver, callback func(*domain_llm.Content)) (*domain_llm.Metrics, error) {
+	return nil, nil
+}
+func (m *mockClient) RefreshAuth() error {
+	return nil
 }

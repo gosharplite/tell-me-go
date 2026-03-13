@@ -8,6 +8,7 @@ import (
 	"io"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/orchestration"
 )
 
 // context provides shared dependencies for commands.
@@ -18,6 +19,7 @@ type context struct {
 	Stderr     io.Writer
 	HomeDir    string
 	SM         domain_security.ISecurityManager
+	ChatService orchestration.ChatService
 	MockPrompt string
 	MockAnswer string
 }
