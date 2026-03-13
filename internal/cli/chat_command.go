@@ -79,10 +79,11 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts)
 	if err != nil {
-		if errors.Is(err, ui.ErrNoInput) {
-			return nil
+		if !errors.Is(err, ui.ErrNoInput) {
+			return err
 		}
-		return err
+		// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
+		prompt = ""
 	}
 
 	deps, hManager, cleanup, err := c.Container.BuildSessionDependencies(ctx, cfg, opts.configPath, opts.newSession, capturer.(domain_security.UserInteractor))

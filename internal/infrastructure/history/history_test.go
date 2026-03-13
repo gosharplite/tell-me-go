@@ -467,14 +467,24 @@ func TestManager_RollbackTurns(t *testing.T) {
 		name          string
 		initialState  []*llm.Content
 		turnsToRemove int
+		setupStore    func(m *Manager) // Optional hook to override internal state
 		wantRemoved   int
 		wantRemaining int
 		wantMsgs      int
 		wantErr       bool
 	}{
-		{"Normal Rollback (1 turn)", threeTurns, 1, 1, 2, 4, false},
-		{"Out-of-Bounds Rollback", twoTurns, 10, 2, 0, 0, false},
-		{"Empty Rollback", emptyState, 1, 0, 0, 0, false},
+		{"Normal Rollback (1 turn)", threeTurns, 1, nil, 1, 2, 4, false},
+		{"Out-of-Bounds Rollback", twoTurns, 10, nil, 2, 0, 0, false},
+		{"Empty Rollback", emptyState, 1, nil, 0, 0, 0, false},
+		{
+			name:          "Save Error",
+			initialState:  threeTurns,
+			turnsToRemove: 1,
+			setupStore: func(mgr *Manager) {
+				mgr.setStore(&mockFailingStore{err: errors.New("disk full")})
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -489,10 +499,18 @@ func TestManager_RollbackTurns(t *testing.T) {
 				}
 			}
 
+			if tt.setupStore != nil {
+				tt.setupStore(mgr)
+			}
+
 			actual, remaining, msgs, err := mgr.RollbackTurns(ctx, tt.turnsToRemove)
 
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("RollbackTurns() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
 			}
 
 			if actual != tt.wantRemoved {
@@ -509,4 +527,13 @@ func TestManager_RollbackTurns(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockFailingStore struct {
+	mockStore
+	err error
+}
+
+func (m *mockFailingStore) Save(ctx context.Context, contents []*llm.Content) error {
+	return m.err
 }

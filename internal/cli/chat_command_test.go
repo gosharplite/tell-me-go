@@ -193,3 +193,100 @@ func (m *mockLoader) Load(path string) (*domain_config.Config, error) {
 		Mode:  "dev",
 	}, nil
 }
+
+func TestChatCommand_Execute_LastN(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "assistant.yaml")
+	if err := os.WriteFile(cfgPath, []byte("AIMODEL: test\nMODE: dev"), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	var stdout, stderr strings.Builder
+	sm := internal_security.NewSecurityManager(nil)
+	mChatter := &mockChatter{}
+	mClient := &mockClient{}
+	mContainer := &mockContainer{
+		AgentFactory: func(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+			return mChatter, nil
+		},
+		Client: mClient,
+	}
+
+	cmd := &chatCommand{
+		Version:   "1.0.0",
+		Stdin:     strings.NewReader(""), // No input
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+		HomeDir:   tmpDir,
+		Loader:    &mockLoader{},
+		SM:        sm,
+		Container: mContainer,
+	}
+
+	ctx := stdctx.Background()
+	args := []string{"chat", "-c", cfgPath, "-l", "1"}
+
+	err := cmd.Execute(ctx, args)
+	if err != nil {
+		t.Errorf("Execute failed: %v", err)
+	}
+
+	if mChatter.chatCalled {
+		t.Error("expected chatter NOT to be called for history-only display")
+	}
+
+	// Output should contain "No history found." or history messages.
+	// Since our mock container uses a real HistoryManager but it's empty:
+	if !strings.Contains(stdout.String(), "No history found.") {
+		t.Errorf("expected output to contain 'No history found.', got: %q", stdout.String())
+	}
+}
+
+func TestChatCommand_Execute_BackN(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "assistant.yaml")
+	if err := os.WriteFile(cfgPath, []byte("AIMODEL: test\nMODE: dev"), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	var stdout, stderr strings.Builder
+	sm := internal_security.NewSecurityManager(nil)
+	mChatter := &mockChatter{}
+	mClient := &mockClient{}
+	mContainer := &mockContainer{
+		AgentFactory: func(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+			return mChatter, nil
+		},
+		Client: mClient,
+	}
+
+	cmd := &chatCommand{
+		Version:   "1.0.0",
+		Stdin:     strings.NewReader(""), // No input
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+		HomeDir:   tmpDir,
+		Loader:    &mockLoader{},
+		SM:        sm,
+		Container: mContainer,
+	}
+
+	ctx := stdctx.Background()
+	args := []string{"chat", "-c", cfgPath, "-b", "1"}
+
+	err := cmd.Execute(ctx, args)
+	if err != nil {
+		t.Errorf("Execute failed: %v", err)
+	}
+
+	if mChatter.chatCalled {
+		t.Error("expected chatter NOT to be called for rollback-only display")
+	}
+
+	// Output should contain rollback message.
+	if !strings.Contains(stdout.String(), "Rolled back") {
+		t.Errorf("expected output to contain 'Rolled back', got: %q", stdout.String())
+	}
+}
