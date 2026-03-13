@@ -23,7 +23,7 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 	cancel()
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := capturer.CapturePrompt(ctx, fs, 0, false)
+	_, err := capturer.CapturePrompt(ctx, fs, 0, 0, false)
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
@@ -39,7 +39,7 @@ func TestPrompt_Pipe(t *testing.T) {
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestPrompt_Args(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestPrompt_Empty(t *testing.T) {
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	_, err := capturer.CapturePrompt(context.Background(), fs, 0, 0, false)
 	if err == nil {
 		t.Error("expected error for empty prompt, got nil")
 	}
@@ -96,7 +96,7 @@ func TestPrompt_MockEnv(t *testing.T) {
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestPrompt_Combined(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

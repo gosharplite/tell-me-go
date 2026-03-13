@@ -149,7 +149,12 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 			if err := sd.GetHistoryManager().SetContents(ctx, contents); err != nil {
 				return fmt.Errorf("failed to rollback history: %w", err)
 			}
-			fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns in history.\n", actualRemoved)
+
+			remainingMsgs := sd.GetHistoryManager().GetTotalEntries()
+			remainingTurns := remainingMsgs / 2
+
+			fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns. History now contains %d turns (%d messages).\n",
+				actualRemoved, remainingTurns, remainingMsgs)
 		}
 
 		// If no prompt was provided alongside -b, exit gracefully

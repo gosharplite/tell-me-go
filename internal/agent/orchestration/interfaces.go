@@ -13,7 +13,7 @@ import (
 // Capturer defines the interface for UI interactions that the orchestrator needs.
 type Capturer interface {
 	IsTTY(v any) bool
-	CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error)
+	CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN, backN int, raw bool) (string, error)
 }
 
 // Orchestrator defines the entry point for running a chat session.

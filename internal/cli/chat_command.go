@@ -72,7 +72,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return nil
 	}
 
-	prompt, err := capturer.CapturePrompt(ctx, fs, opts.lastN, opts.rawOutput)
+	prompt, err := capturer.CapturePrompt(ctx, fs, opts.lastN, opts.backN, opts.rawOutput)
 	if err != nil {
 		return err
 	}

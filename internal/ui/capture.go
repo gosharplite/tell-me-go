@@ -58,7 +58,7 @@ func (c *capturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
-func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
+func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN, backN int, raw bool) (string, error) {
 	prompt := strings.Join(fs.Args(), " ")
 
 	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
@@ -73,7 +73,7 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN in
 	var err error
 	if !c.IsTTY(c.Stdin) {
 		prompt, err = c.captureFromPipe(ctx, prompt)
-	} else if prompt == "" && lastN == 0 {
+	} else if prompt == "" && lastN == 0 && backN == 0 {
 		prompt, err = c.captureFromTTY(ctx, !raw)
 	}
 
@@ -87,7 +87,7 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN in
 
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		if lastN > 0 {
+		if lastN > 0 || backN > 0 {
 			return "", nil
 		}
 		fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")

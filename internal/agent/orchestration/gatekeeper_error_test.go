@@ -148,7 +148,7 @@ func (m *mockFailingChatter) GetName() string                                   
 type mockFailingCapturer struct{}
 
 func (m *mockFailingCapturer) IsTTY(any) bool { return false }
-func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, int, bool) (string, error) {
+func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, int, int, bool) (string, error) {
 	return "", nil
 }
 
