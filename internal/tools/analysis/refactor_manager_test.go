@@ -19,7 +19,6 @@ import (
 type refactorMockSecurityProvider struct {
 	domain.ISecurityManager
 	IsPathWritableFunc           func(path string) (string, error)
-	confirmDestructiveActionFunc func(ctx context.Context, action, target, detail string) (bool, error)
 	IsPathSafeFunc               func(path string) (string, error)
 }
 
@@ -51,13 +50,6 @@ func (m *refactorMockSecurityProvider) IsPathWritable(path string) (string, erro
 		return m.IsPathWritableFunc(path)
 	}
 	return path, nil
-}
-
-func (m *refactorMockSecurityProvider) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	if m.confirmDestructiveActionFunc != nil {
-		return m.confirmDestructiveActionFunc(ctx, action, target, detail)
-	}
-	return true, nil
 }
 
 func (m *refactorMockSecurityProvider) IsPathSafe(path string) (string, error) {

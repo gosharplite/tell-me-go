@@ -75,12 +75,9 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		b.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
-	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
-	if err := hManager.Load(ctx); err != nil {
-		if !errors.Is(err, ports.ErrHistoryNotFound) {
-			return nil, nil, nil, fmt.Errorf("error loading history: %w", err)
-		}
-		// If history doesn't exist, we just start with an empty session.
+	hManager, err := b.buildHistoryManager(ctx, paths)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	bus := events.NewSimpleEventBus()
@@ -97,35 +94,12 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, fmt.Errorf("client does not implement LLMGateway")
 	}
 
-	reg := registry.New()
+	sessionProvider, cleanup := b.buildSessionProvider(ctx, paths, cfg)
 
-	executor := &exec.RealExecutor{}
-	var sessionProvider ports.ISessionProvider
-	if state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir); err == nil {
-		sessionProvider = state
-		// Inject model and provider ground truth for tools like get_session_info
-		info := state.GetInfo()
-		info.Model = cfg.Model
-		info.Provider = cfg.SelectedProvider
-		state.SetInfo(info)
-	} else {
-		fmt.Fprintf(b.Stderr, "Warning: Failed to initialize session state: %v\n", err)
-	}
-	validator := internal_security.NewCommandValidator(b.SM, capturer)
-
-	cleanup := func() {
-		if sessionProvider != nil {
-			if err := sessionProvider.Close(); err != nil {
-				fmt.Fprintf(b.Stderr, "Warning: Failed to close session provider: %v\n", err)
-			}
-		}
-	}
-
-	if err := infra_tools.RegisterAll(infra_tools.ToolRegistrationParams{
-		Registry:         reg,
+	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
 		SecurityManager:  b.SM,
-		CommandExecutor:  executor,
-		CommandValidator: validator,
+		CommandExecutor:  &exec.RealExecutor{},
+		CommandValidator: internal_security.NewCommandValidator(b.SM, capturer),
 		SessionProvider:  sessionProvider,
 		LogFile:          paths.LogPath,
 		Model:            cfg.Model,
@@ -135,25 +109,85 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		AssetsDir:        filepath.Join(b.HomeDir, "assets/generated"),
 		EventBus:         bus,
 		FileSystem:       infra_persistence.NewOSFileSystem(),
-	}); err != nil {
-		return nil, nil, nil, fmt.Errorf("error registering tools: %w", err)
+	})
+	if err != nil {
+		cleanup()
+		return nil, nil, nil, err
+	}
+
+	deps := b.buildAgentOrchestrator(paths, hManager, client, gw, reg, pricingData, pricingOverrides, bus, cfg)
+
+	return deps, hManager, cleanup, nil
+}
+
+func (b *bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistence.Paths) (*history.Manager, error) {
+	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
+	if err := hManager.Load(ctx); err != nil {
+		if !errors.Is(err, ports.ErrHistoryNotFound) {
+			return nil, fmt.Errorf("error loading history: %w", err)
+		}
+	}
+	return hManager, nil
+}
+
+func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationParams) (tools.IToolRegistry, error) {
+	reg := registry.New()
+	params.Registry = reg
+
+	if err := infra_tools.RegisterAll(params); err != nil {
+		return nil, fmt.Errorf("error registering tools: %w", err)
 	}
 
 	// Infrastructure-specific tool registration
-	if err := telemetry.RegisterMetrics(reg, b.SM, paths.LogPath, cfg.Model, cfg.Mode, pricingOverrides); err != nil {
-		return nil, nil, nil, fmt.Errorf("error registering metrics tools: %w", err)
+	if err := telemetry.RegisterMetrics(reg, b.SM, params.LogFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
+		return nil, fmt.Errorf("error registering metrics tools: %w", err)
 	}
 	if ism, ok := b.SM.(*internal_security.SecurityManager); ok {
 		if err := internal_security.RegisterPolicy(reg, ism); err != nil {
-			return nil, nil, nil, fmt.Errorf("error registering policy tools: %w", err)
+			return nil, fmt.Errorf("error registering policy tools: %w", err)
 		}
 	}
+	return reg, nil
+}
 
+func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.ISessionProvider, func()) {
+	var sessionProvider ports.ISessionProvider
+	if state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir); err == nil {
+		sessionProvider = state
+		info := state.GetInfo()
+		info.Model = cfg.Model
+		info.Provider = cfg.SelectedProvider
+		state.SetInfo(info)
+	} else {
+		fmt.Fprintf(b.Stderr, "Warning: Failed to initialize session state: %v\n", err)
+	}
+
+	cleanup := func() {
+		if sessionProvider != nil {
+			if err := sessionProvider.Close(); err != nil {
+				fmt.Fprintf(b.Stderr, "Warning: Failed to close session provider: %v\n", err)
+			}
+		}
+	}
+	return sessionProvider, cleanup
+}
+
+func (b *bootstrapper) buildAgentOrchestrator(
+	paths *persistence.Paths,
+	hManager ports.HistoryManager,
+	client llm.LLMClient,
+	gw llm.LLMGateway,
+	reg tools.IToolRegistry,
+	pricingData pricing.PricingData,
+	pricingOverrides map[string]pricing.ModelPricing,
+	bus events.EventBus,
+	cfg *config.Config,
+) ports.SessionDependencies {
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
 	tracker := telemetry.NewSessionCostTracker(b.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
 
-	deps := &sessionDeps{
+	return &sessionDeps{
 		paths:            paths,
 		hManager:         hManager,
 		client:           client,
@@ -165,8 +199,6 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
 	}
-
-	return deps, hManager, cleanup, nil
 }
 
 type sessionDeps struct {

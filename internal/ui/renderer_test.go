@@ -33,9 +33,6 @@ func (m *mockLocker) TerminalUnlock() {
 	m.mu.Unlock()
 }
 
-func (m *mockLocker) confirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	return true, nil
-}
 func (m *mockLocker) IsPathSafe(path string) (string, error)     { return path, nil }
 func (m *mockLocker) IsPathWritable(path string) (string, error) { return path, nil }
 func (m *mockLocker) IsBypassActive() bool                       { return false }
