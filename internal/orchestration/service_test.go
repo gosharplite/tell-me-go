@@ -47,17 +47,25 @@ type mockSecurityManager struct {
 	mock.Mock
 }
 
-func (m *mockSecurityManager) IsPathSafe(path string) (string, error)     { args := m.Called(path); return args.String(0), args.Error(1) }
-func (m *mockSecurityManager) IsPathWritable(path string) (string, error) { args := m.Called(path); return args.String(0), args.Error(1) }
+func (m *mockSecurityManager) IsPathSafe(path string) (string, error) {
+	args := m.Called(path)
+	return args.String(0), args.Error(1)
+}
+func (m *mockSecurityManager) IsPathWritable(path string) (string, error) {
+	args := m.Called(path)
+	return args.String(0), args.Error(1)
+}
 func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	args := m.Called(ctx, label, detail, reason, isSafe)
 	return args.Bool(0), args.Error(1)
 }
-func (m *mockSecurityManager) LogAudit(label1, val1, label2, val2 string) { m.Called(label1, val1, label2, val2) }
-func (m *mockSecurityManager) TerminalLock()                              { m.Called() }
-func (m *mockSecurityManager) TerminalUnlock()                            { m.Called() }
-func (m *mockSecurityManager) Prompt(message string)                      { m.Called(message) }
-func (m *mockSecurityManager) Warn(message string)                        { m.Called(message) }
+func (m *mockSecurityManager) LogAudit(label1, val1, label2, val2 string) {
+	m.Called(label1, val1, label2, val2)
+}
+func (m *mockSecurityManager) TerminalLock()         { m.Called() }
+func (m *mockSecurityManager) TerminalUnlock()       { m.Called() }
+func (m *mockSecurityManager) Prompt(message string) { m.Called(message) }
+func (m *mockSecurityManager) Warn(message string)   { m.Called(message) }
 func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	args := m.Called(ctx, message)
 	return args.Bool(0), args.Error(1)
@@ -67,7 +75,7 @@ func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) {
 	return args.String(0), args.Error(1)
 }
 func (m *mockSecurityManager) IsCommandAllowed(command string) bool { return m.Called(command).Bool(0) }
-func (m *mockSecurityManager) IsBypassActive() bool              { return m.Called().Bool(0) }
+func (m *mockSecurityManager) IsBypassActive() bool                 { return m.Called().Bool(0) }
 
 // mockContainer is a mock of Container.
 type mockContainer struct {
@@ -101,25 +109,33 @@ type mockSessionDependencies struct {
 	mock.Mock
 }
 
-func (m *mockSessionDependencies) GetGateway() llm.LLMGateway          { return nil }
-func (m *mockSessionDependencies) GetHistoryManager() ports.HistoryManager { return m.Called().Get(0).(ports.HistoryManager) }
-func (m *mockSessionDependencies) GetRegistry() tools.IToolRegistry      { return nil }
+func (m *mockSessionDependencies) GetGateway() llm.LLMGateway { return nil }
+func (m *mockSessionDependencies) GetHistoryManager() ports.HistoryManager {
+	return m.Called().Get(0).(ports.HistoryManager)
+}
+func (m *mockSessionDependencies) GetRegistry() tools.IToolRegistry { return nil }
 func (m *mockSessionDependencies) GetSecurityManager() security.ISecurityManager {
 	return m.Called().Get(0).(security.ISecurityManager)
 }
-func (m *mockSessionDependencies) GetEventBus() events.EventBus { return m.Called().Get(0).(events.EventBus) }
-func (m *mockSessionDependencies) GetPaths() *persistence.Paths { return m.Called().Get(0).(*persistence.Paths) }
+func (m *mockSessionDependencies) GetEventBus() events.EventBus {
+	return m.Called().Get(0).(events.EventBus)
+}
+func (m *mockSessionDependencies) GetPaths() *persistence.Paths {
+	return m.Called().Get(0).(*persistence.Paths)
+}
 func (m *mockSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
-func (m *mockSessionDependencies) GetTracker() pricing.ICostTracker { return nil }
-func (m *mockSessionDependencies) GetPricingData() pricing.PricingData { return pricing.PricingData{} }
-func (m *mockSessionDependencies) GetClient() llm.LLMClient                      { return nil }
+func (m *mockSessionDependencies) GetTracker() pricing.ICostTracker                     { return nil }
+func (m *mockSessionDependencies) GetPricingData() pricing.PricingData                  { return pricing.PricingData{} }
+func (m *mockSessionDependencies) GetClient() llm.LLMClient                             { return nil }
 
 // mockEventBus is a mock of EventBus.
 type mockEventBus struct {
 	mock.Mock
 }
 
-func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error { return m.Called(ctx, e).Error(0) }
+func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
+	return m.Called(ctx, e).Error(0)
+}
 func (m *mockEventBus) Subscribe(sub func(events.Event)) {
 	m.Called(sub)
 }
@@ -162,8 +178,8 @@ func (m *mockCapturer) Confirm(ctx context.Context, message string) (bool, error
 	args := m.Called(ctx, message)
 	return args.Bool(0), args.Error(1)
 }
-func (m *mockCapturer) Warn(msg string)                      { m.Called(msg) }
-func (m *mockCapturer) Prompt(msg string)                    { m.Called(msg) }
+func (m *mockCapturer) Warn(msg string)   { m.Called(msg) }
+func (m *mockCapturer) Prompt(msg string) { m.Called(msg) }
 func (m *mockCapturer) ReadSingleKey(ctx context.Context) (string, error) {
 	args := m.Called(ctx)
 	return args.String(0), args.Error(1)

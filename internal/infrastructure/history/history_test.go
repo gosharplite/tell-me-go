@@ -571,7 +571,7 @@ func FuzzManager_RollbackTurns(f *testing.F) {
 		if remainingMsgs != finalLen {
 			t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
 		}
-		
+
 		expectedRemainingTurns := finalLen / 2
 		if remainingTurns != expectedRemainingTurns {
 			t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)

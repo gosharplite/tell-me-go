@@ -38,7 +38,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 		{
 			name: "Request Creation Failure",
 			// Invalid URL with control character to force http.NewRequestWithContext to fail
-			inputURL:   "https://api.example.com/" + string([]byte{0x7f}),
+			inputURL: "https://api.example.com/" + string([]byte{0x7f}),
 			call: func(ctx context.Context, m *adoManager) error {
 				_, err := m.executeRequest(ctx, http.MethodGet, m.baseURL, nil, nil)
 				return err
@@ -499,9 +499,9 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 			},
 			call: func(ctx context.Context, m *adoManager) error {
 				args := map[string]interface{}{
-					"organization": "org",
-					"project":      "proj",
-					"repository":   "repo",
+					"organization":    "org",
+					"project":         "proj",
+					"repository":      "repo",
 					"pull_request_id": 123,
 				}
 				_, err := m.adoGetPrStatuses(ctx, args)
@@ -521,9 +521,9 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 			},
 			call: func(ctx context.Context, m *adoManager) error {
 				args := map[string]interface{}{
-					"organization": "org",
-					"project":      "proj",
-					"repository":   "repo",
+					"organization":    "org",
+					"project":         "proj",
+					"repository":      "repo",
 					"pull_request_id": 123,
 				}
 				_, err := m.adoGetPrPolicyEvaluations(ctx, args)
@@ -549,9 +549,9 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 			},
 			call: func(ctx context.Context, m *adoManager) error {
 				args := map[string]interface{}{
-					"organization": "org",
-					"project":      "proj",
-					"repository":   "repo",
+					"organization":    "org",
+					"project":         "proj",
+					"repository":      "repo",
 					"pull_request_id": 123,
 				}
 				_, err := m.adoGetPrPolicyEvaluations(ctx, args)
@@ -624,9 +624,9 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 			},
 			call: func(ctx context.Context, m *adoManager) error {
 				args := map[string]interface{}{
-					"organization": "org",
-					"project":      "proj",
-					"repository":   "repo",
+					"organization":    "org",
+					"project":         "proj",
+					"repository":      "repo",
 					"pull_request_id": 123,
 				}
 				_, err := m.adoGetPrThreads(ctx, args)

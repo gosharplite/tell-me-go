@@ -13,15 +13,15 @@ import (
 
 // context provides shared dependencies for commands.
 type context struct {
-	Version    string
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
-	HomeDir    string
-	SM         domain_security.ISecurityManager
+	Version     string
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	HomeDir     string
+	SM          domain_security.ISecurityManager
 	ChatService orchestration.ChatService
-	MockPrompt string
-	MockAnswer string
+	MockPrompt  string
+	MockAnswer  string
 }
 
 // command represents a CLI command that can be executed.

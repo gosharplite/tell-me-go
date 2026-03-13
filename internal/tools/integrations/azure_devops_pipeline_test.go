@@ -416,10 +416,10 @@ func TestStreamRegexFilter_Truncation(t *testing.T) {
 	m := &adoManager{}
 
 	tests := []struct {
-		name          string
-		inputLines    int
-		maxLines      int
-		wantTruncated bool
+		name           string
+		inputLines     int
+		maxLines       int
+		wantTruncated  bool
 		wantMatchCount int
 	}{
 		{

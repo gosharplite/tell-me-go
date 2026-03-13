@@ -231,7 +231,7 @@ type orderMockRegistry struct {
 	serialTools map[string]bool
 }
 
-func (m *orderMockRegistry) GetDeclarations() []*tools.ToolDeclaration           { return nil }
+func (m *orderMockRegistry) GetDeclarations() []*tools.ToolDeclaration                 { return nil }
 func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) error { return nil }
 func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	return nil

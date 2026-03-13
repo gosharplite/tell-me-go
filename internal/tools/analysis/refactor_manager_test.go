@@ -18,8 +18,8 @@ import (
 
 type refactorMockSecurityProvider struct {
 	domain.ISecurityManager
-	IsPathWritableFunc           func(path string) (string, error)
-	IsPathSafeFunc               func(path string) (string, error)
+	IsPathWritableFunc func(path string) (string, error)
+	IsPathSafeFunc     func(path string) (string, error)
 }
 
 func (m *refactorMockSecurityProvider) TerminalLock()   {}

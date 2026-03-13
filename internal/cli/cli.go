@@ -87,15 +87,15 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	chatService := orchestration.NewChatService(a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm, loader, container)
 
 	cmdCtx := &context{
-		Version:    a.Version,
-		Stdin:      a.Stdin,
-		Stdout:     a.Stdout,
-		Stderr:     a.Stderr,
-		HomeDir:    a.homeDir,
-		SM:         a.sm,
+		Version:     a.Version,
+		Stdin:       a.Stdin,
+		Stdout:      a.Stdout,
+		Stderr:      a.Stderr,
+		HomeDir:     a.homeDir,
+		SM:          a.sm,
 		ChatService: chatService,
-		MockPrompt: a.mockPrompt,
-		MockAnswer: a.mockAnswer,
+		MockPrompt:  a.mockPrompt,
+		MockAnswer:  a.mockAnswer,
 	}
 
 	cmd := factory(cmdCtx)

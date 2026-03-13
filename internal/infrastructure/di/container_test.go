@@ -302,7 +302,7 @@ func (m *mockSessionDeps) GetTracker() pricing.ICostTracker {
 	return m.tracker
 }
 func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
-func (m *mockSessionDeps) GetClient() llm.LLMClient { return m.client }
+func (m *mockSessionDeps) GetClient() llm.LLMClient                             { return m.client }
 
 type mockTracker struct {
 	pricing.ICostTracker

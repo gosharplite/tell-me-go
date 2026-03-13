@@ -31,8 +31,8 @@ type mockSecurityProvider struct{}
 
 func (s *mockSecurityProvider) IsPathSafe(path string) (string, error)     { return path, nil }
 func (s *mockSecurityProvider) IsPathWritable(path string) (string, error) { return path, nil }
-func (s *mockSecurityProvider) IsCommandAllowed(command string) bool { return true }
-func (s *mockSecurityProvider) IsBypassActive() bool                 { return false }
+func (s *mockSecurityProvider) IsCommandAllowed(command string) bool       { return true }
+func (s *mockSecurityProvider) IsBypassActive() bool                       { return false }
 
 type mockExecutor struct {
 	OutputFunc         func(ctx context.Context, name string, args ...string) ([]byte, error)

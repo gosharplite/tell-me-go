@@ -17,7 +17,7 @@ import (
 
 func TestContextManager_FindSummarizationBoundary_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel before the loop or during the loop is tricky without more control, 
+	// Cancel before the loop or during the loop is tricky without more control,
 	// but we can at least verify it returns the context error.
 	cancel()
 
@@ -51,7 +51,7 @@ func TestContextManager_ValidateSubset_Cancelled(t *testing.T) {
 
 func TestTokenGatekeeper_AutoSummarize_GroupTurnsError(t *testing.T) {
 	tg := &tokenGatekeeper{
-		Estimator: &mockEstimator{},
+		Estimator:  &mockEstimator{},
 		Summarizer: &mockSummarizer{},
 	}
 
@@ -274,7 +274,7 @@ func TestContextManager_UpdateCache_VersionMismatch(t *testing.T) {
 	}
 
 	req := &request{
-		History: []*llm.Content{},
+		History:  []*llm.Content{},
 		Metadata: Metadata{},
 	}
 

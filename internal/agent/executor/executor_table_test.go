@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -23,6 +22,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 type toolBehavior struct {

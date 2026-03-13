@@ -873,7 +873,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			wantErr: "context canceled",
 		},
 		{
-			name:      "AssetStore Put Failure on Append",
+			name: "AssetStore Put Failure on Append",
 			setupMock: func(m *mockFS) {
 				m.mkdirErrFunc = func(path string) error {
 					if strings.Contains(path, "assets") {

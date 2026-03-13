@@ -775,7 +775,7 @@ func TestRun_Routing(t *testing.T) {
 
 	t.Run("Rollback aborts on error", func(t *testing.T) {
 		mHistory := &mockHistoryManager{
-			contents: make([]*llm.Content, 4), // 2 turns
+			contents:    make([]*llm.Content, 4), // 2 turns
 			rollbackErr: fmt.Errorf("rollback failed"),
 		}
 		mChatter := new(mockChatter)
