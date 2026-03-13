@@ -8,11 +8,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/stretchr/testify/mock"
 )
+
+type mockSessionProvider struct {
+	mock.Mock
+}
+
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo { return m.Called().Get(0).(ports.SessionInfo) }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) { m.Called(info) }
+func (m *mockSessionProvider) Close() error { return m.Called().Error(0) }
+func (m *mockSessionProvider) GetTasks() ports.ITaskService { return nil }
+func (m *mockSessionProvider) GetConfig() ports.IConfigService { return nil }
+func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return nil }
 
 func TestNewToolRegistry(t *testing.T) {
 	t.Parallel()
@@ -32,6 +45,25 @@ func TestNewToolRegistry(t *testing.T) {
 
 	if len(r.GetDeclarations()) == 0 {
 		t.Error("expected registered tools, got none")
+	}
+}
+
+func TestRegisterAll_WithSessionProvider(t *testing.T) {
+	t.Parallel()
+	sm := security.NewSecurityManager(nil)
+	r := registry.New()
+	sp := &mockSessionProvider{}
+	if err := tools.RegisterAll(tools.ToolRegistrationParams{
+		Registry:        r,
+		SecurityManager: sm,
+		SessionProvider: sp,
+		LogFile:         "tokens.log",
+		Model:           "model",
+		Mode:            "mode",
+		AssetsDir:       t.TempDir(),
+		FileSystem:      infrapersistence.NewOSFileSystem(),
+	}); err != nil {
+		t.Fatalf("RegisterAll with SessionProvider failed: %v", err)
 	}
 }
 

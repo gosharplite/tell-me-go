@@ -193,6 +193,15 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 	}
 }
 
+type mockHistoryManager struct {
+	ports.HistoryManager
+	saveErr error
+}
+
+func (m *mockHistoryManager) Save(ctx context.Context) error {
+	return m.saveErr
+}
+
 func TestFinalizeSession(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test-finalize")
@@ -215,7 +224,11 @@ func TestFinalizeSession(t *testing.T) {
 	assert.NotNil(t, cleanup)
 	defer cleanup()
 
+	// Test success
 	b.FinalizeSession(ctx, hManager, deps, cfg)
+
+	// Test with save error
+	b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, cfg)
 }
 
 func TestGetAgentFactory_Execution(t *testing.T) {
@@ -241,6 +254,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 		reg:      reg,
 		sm:       sm,
 		bus:      bus,
+		client:   client,
 	}
 
 	cfg := ports.ChatterConfig{
@@ -264,6 +278,7 @@ type mockSessionDeps struct {
 	bus      events.EventBus
 	tracker  pricing.ICostTracker
 	paths    *persistence.Paths
+	client   llm.LLMClient
 }
 
 func (m *mockSessionDeps) GetPaths() *persistence.Paths {
@@ -287,6 +302,7 @@ func (m *mockSessionDeps) GetTracker() pricing.ICostTracker {
 	return m.tracker
 }
 func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
+func (m *mockSessionDeps) GetClient() llm.LLMClient { return m.client }
 
 type mockTracker struct {
 	pricing.ICostTracker
@@ -324,4 +340,38 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	assert.NotNil(t, cleanup)
 
 	cleanup()
+}
+
+func TestSessionDeps_Getters(t *testing.T) {
+	paths := &persistence.Paths{}
+	hManager := &history.Manager{}
+	client := &mockLLMClient{}
+	gw := client
+	reg := registry.New()
+	sm := internal_security.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
+	tracker := &mockTracker{}
+	pData := pricing.PricingData{}
+
+	deps := &sessionDeps{
+		paths:       paths,
+		hManager:    hManager,
+		client:      client,
+		gw:          gw,
+		reg:         reg,
+		sm:          sm,
+		bus:         bus,
+		tracker:     tracker,
+		pricingData: pData,
+	}
+
+	assert.Equal(t, gw, deps.GetGateway())
+	assert.Equal(t, hManager, deps.GetHistoryManager())
+	assert.Equal(t, reg, deps.GetRegistry())
+	assert.Equal(t, sm, deps.GetSecurityManager())
+	assert.Equal(t, bus, deps.GetEventBus())
+	assert.Equal(t, paths, deps.GetPaths())
+	assert.Equal(t, tracker, deps.GetTracker())
+	assert.Equal(t, pData, deps.GetPricingData())
+	assert.Equal(t, client, deps.GetClient())
 }
