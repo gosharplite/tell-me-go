@@ -42,6 +42,7 @@ type cliOptions struct {
 	newSession  bool
 	showVersion bool
 	lastN       int
+	backN       int
 	rawOutput   bool
 }
 
@@ -125,6 +126,7 @@ func (c *chatCommand) performChat(ctx stdctx.Context, capturer orchestration.Cap
 		ConfigPath:      opts.configPath,
 		NewSession:      opts.newSession,
 		LastN:           opts.lastN,
+		BackN:           opts.backN,
 		RawOutput:       opts.rawOutput,
 		Prompt:          prompt,
 		Config:          cfg,
@@ -161,6 +163,7 @@ func (c *chatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, err
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
 	fs.BoolVar(&opts.showVersion, "v", false, "Show version information")
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
+	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
 	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
 	if err := fs.Parse(args); err != nil {
 		return nil, nil, err
@@ -174,7 +177,7 @@ func (c *chatCommand) sanitizeArgs(args []string) []string {
 	}
 	processed := args[1:]
 	for i, arg := range processed {
-		if arg == "-l" {
+		if arg == "-l" || arg == "-b" {
 			isNextNum := false
 			if i+1 < len(processed) {
 				if _, err := strconv.Atoi(processed[i+1]); err == nil {

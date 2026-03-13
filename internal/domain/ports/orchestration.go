@@ -57,6 +57,7 @@ type ChatterFactory func(ctx context.Context, deps SessionDependencies, cfg Chat
 type SessionConfig interface {
 	GetPrompt() string
 	GetLastN() int
+	GetBackN() int
 	GetRawOutput() bool
 	GetConfig() *config.Config
 }

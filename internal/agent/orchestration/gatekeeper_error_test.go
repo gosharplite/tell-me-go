@@ -175,7 +175,7 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 	cfg := &config.Config{
 		SelectedProvider: "test",
 	}
-	sc := newSessionConfig("", false, 0, false, "test prompt", cfg)
+	sc := newSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
 	sd := newSessionDependencies(&persistence.Paths{}, &mockHistoryManager{}, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil)

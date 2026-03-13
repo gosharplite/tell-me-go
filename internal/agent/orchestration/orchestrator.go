@@ -39,6 +39,7 @@ type sessionConfig struct {
 	ConfigPath string
 	NewSession bool
 	LastN      int
+	BackN      int
 	RawOutput  bool
 	Prompt     string
 	Config     *config.Config
@@ -46,15 +47,17 @@ type sessionConfig struct {
 
 func (c *sessionConfig) GetPrompt() string         { return c.Prompt }
 func (c *sessionConfig) GetLastN() int             { return c.LastN }
+func (c *sessionConfig) GetBackN() int             { return c.BackN }
 func (c *sessionConfig) GetRawOutput() bool        { return c.RawOutput }
 func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
 
 // newSessionConfig creates a new sessionConfig with required parameters.
-func newSessionConfig(configPath string, newSession bool, lastN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
+func newSessionConfig(configPath string, newSession bool, lastN, backN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
 	return &sessionConfig{
 		ConfigPath: configPath,
 		NewSession: newSession,
 		LastN:      lastN,
+		BackN:      backN,
 		RawOutput:  rawOutput,
 		Prompt:     prompt,
 		Config:     cfg,
@@ -128,6 +131,32 @@ func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic Capturer) error {
 	isTTY := ic.IsTTY(o.Stdout)
 	o.renderHistory(sd.GetHistoryManager(), sc, isTTY)
+
+	if sc.GetBackN() > 0 {
+		contents, err := sd.GetHistoryManager().GetWindow(ctx, 0, -1)
+		if err == nil && len(contents) > 0 {
+			removeMsgs := sc.GetBackN() * 2
+			var actualRemoved int
+
+			if removeMsgs >= len(contents) {
+				actualRemoved = len(contents) / 2
+				contents = nil // Clear all history
+			} else {
+				actualRemoved = sc.GetBackN()
+				contents = contents[:len(contents)-removeMsgs]
+			}
+
+			if err := sd.GetHistoryManager().SetContents(ctx, contents); err != nil {
+				return fmt.Errorf("failed to rollback history: %w", err)
+			}
+			fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns in history.\n", actualRemoved)
+		}
+
+		// If no prompt was provided alongside -b, exit gracefully
+		if sc.GetPrompt() == "" {
+			return nil
+		}
+	}
 
 	if sc.GetPrompt() == "" && sc.GetLastN() > 0 {
 		return nil
@@ -288,6 +317,7 @@ type RunParams struct {
 	ConfigPath      string
 	NewSession      bool
 	LastN           int
+	BackN           int
 	RawOutput       bool
 	Prompt          string
 	Config          *config.Config
@@ -314,6 +344,7 @@ func Run(ctx context.Context, params RunParams) error {
 		params.ConfigPath,
 		params.NewSession,
 		params.LastN,
+		params.BackN,
 		params.RawOutput,
 		params.Prompt,
 		params.Config,
