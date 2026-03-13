@@ -6,7 +6,6 @@ package developer
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -46,7 +45,6 @@ func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.Sec
 		sm:             sm,
 		validator:      security.NewCommandValidator(sm, interactor),
 		executor:       executor,
-		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,
 	}
 	return m, executor, sm

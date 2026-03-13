@@ -6,7 +6,6 @@ package workspace
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -72,11 +71,12 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command)
 
 	// 3. Execute
+	feedback := &warnWriter{sm: t.sm}
 	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
 		return t.executor.RunCommand(ctx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
-			Feedback:   os.Stderr,
+			Feedback:   feedback,
 			MaxCapture: t.maxOutput,
 		})
 	})
@@ -128,10 +128,11 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	}
 
 	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
+		feedback := &warnWriter{sm: t.sm}
 		return t.executor.RunPipeline(ctx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
-			Feedback:   os.Stderr,
+			Feedback:   feedback,
 			MaxCapture: t.maxOutput,
 		})
 	})
@@ -216,4 +217,17 @@ type shellSecurity interface {
 	domain_security.TerminalController
 	domain_security.Auditor
 	domain_security.PathValidator
+}
+
+type warnWriter struct {
+	sm shellSecurity
+}
+
+func (w *warnWriter) Write(p []byte) (n int, err error) {
+	// The process executor includes newlines in the feedback messages.
+	// Since Warn() also typically adds a newline, we trim one from the end
+	// to prevent double-spacing in the terminal.
+	msg := string(p)
+	w.sm.Warn(strings.TrimSuffix(msg, "\n"))
+	return len(p), nil
 }

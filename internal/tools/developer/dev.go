@@ -6,7 +6,6 @@ package developer
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -20,7 +19,6 @@ type devManager struct {
 	sm             devSecurity
 	validator      domain_security.ICommandValidator
 	executor       executor
-	stderr         io.Writer
 	createTempFile func(dir, pattern string) (*os.File, error)
 }
 
@@ -328,7 +326,6 @@ func newDevManager(sm devSecurity, validator domain_security.ICommandValidator) 
 		sm:             sm,
 		validator:      validator,
 		executor:       &realExecutor{},
-		stderr:         os.Stderr,
 		createTempFile: os.CreateTemp,
 	}
 }
