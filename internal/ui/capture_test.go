@@ -6,6 +6,7 @@ package ui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"io"
@@ -83,6 +84,24 @@ func TestPrompt_Empty(t *testing.T) {
 	_, err := capturer.CapturePrompt(context.Background(), fs, orchestration.CaptureOptions{})
 	if err == nil {
 		t.Error("expected error for empty prompt, got nil")
+	}
+}
+
+func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
+	capturer := &capturer{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	}
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, orchestration.CaptureOptions{SkipTTYWait: true})
+
+	if !errors.Is(err, ErrNoInput) {
+		t.Errorf("expected ErrNoInput, got %v", err)
+	}
+	if prompt != "" {
+		t.Errorf("expected empty prompt, got %q", prompt)
 	}
 }
 

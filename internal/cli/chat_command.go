@@ -5,6 +5,7 @@ package cli
 
 import (
 	stdctx "context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -78,6 +79,9 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts)
 	if err != nil {
+		if errors.Is(err, ui.ErrNoInput) {
+			return nil
+		}
 		return err
 	}
 

@@ -6,6 +6,7 @@ package ui
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -17,6 +18,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"golang.org/x/term"
+)
+
+var (
+	// ErrNoInput is returned when no input is provided and SkipTTYWait is true.
+	ErrNoInput = errors.New("no input received")
 )
 
 const (
@@ -89,7 +95,7 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts orc
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		if opts.SkipTTYWait {
-			return "", nil
+			return "", ErrNoInput
 		}
 		fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")
 		fs.PrintDefaults()
