@@ -143,15 +143,7 @@ func (t *sessionCostTracker) GetStats(ctx context.Context) (domain_pricing.Usage
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// If not initiated, we do a synchronous warmup as a fallback,
-	// but normally this should be triggered by Warmup() early.
-	if !t.initiated && t.logFile != "" {
-		if usage, totalCost, _, _, err := parseUsage(t.logFile, t.pricing, t.modelName); err == nil {
-			t.stats = usage
-			t.totalCost = totalCost
-		}
-		t.initiated = true
-	}
+	t.ensureInitialized()
 
 	return t.stats, t.totalCost
 }
@@ -160,6 +152,10 @@ func (t *sessionCostTracker) GetStats(ctx context.Context) (domain_pricing.Usage
 func (t *sessionCostTracker) Warmup() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.ensureInitialized()
+}
+
+func (t *sessionCostTracker) ensureInitialized() {
 	if !t.initiated && t.logFile != "" {
 		if usage, totalCost, _, _, err := parseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
@@ -173,6 +169,8 @@ func (t *sessionCostTracker) Warmup() {
 func (t *sessionCostTracker) Accumulate(mt llm.Metrics) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	t.ensureInitialized()
 
 	mtModel := mt.Model
 	if mtModel == "" {
@@ -190,6 +188,8 @@ func (t *sessionCostTracker) Accumulate(mt llm.Metrics) {
 func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	t.ensureInitialized()
 
 	mtModel := mt.Model
 	if mtModel == "" {

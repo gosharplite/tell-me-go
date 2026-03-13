@@ -69,7 +69,6 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 	tracker := NewSessionCostTracker(sm, logFile, "test-mode", "test-model", pricing.Models["test-model"], pricing)
 
 	t.Run("Warmup", func(t *testing.T) {
-		t.Parallel()
 		content := `{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500, "cached_tokens": 100}` + "\n"
 		err := os.WriteFile(logFile, []byte(content), 0644)
 		if err != nil {
@@ -87,7 +86,6 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 	})
 
 	t.Run("AccumulateAndReturn", func(t *testing.T) {
-		t.Parallel()
 		mt := llm.Metrics{
 			PromptTokens:   1000,
 			ResponseTokens: 500,
