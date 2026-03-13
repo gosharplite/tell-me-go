@@ -510,6 +510,9 @@ func TestManager_RollbackTurns(t *testing.T) {
 			}
 
 			if tt.wantErr {
+				if len(mgr.Contents) != len(tt.initialState) {
+					t.Errorf("expected Contents to be restored to length %d, got %d", len(tt.initialState), len(mgr.Contents))
+				}
 				return
 			}
 

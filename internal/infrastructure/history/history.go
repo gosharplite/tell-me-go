@@ -249,6 +249,8 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 		return 0, 0, 0, nil
 	}
 
+	originalContents := m.Contents
+
 	removeMsgs := turns * 2
 	if removeMsgs >= originalLen {
 		actualRemoved = originalLen / 2
@@ -259,7 +261,9 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	}
 
 	if err := m.store.Save(ctx, m.Contents); err != nil {
-		return 0, 0, 0, err
+		// Rollback in-memory state on I/O failure to maintain atomicity
+		m.Contents = originalContents
+		return 0, 0, 0, fmt.Errorf("failed to persist rollback: %w", err)
 	}
 
 	remainingMsgs = len(m.Contents)
