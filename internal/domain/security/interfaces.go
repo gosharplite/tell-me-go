@@ -11,6 +11,9 @@ type PathValidator interface {
 }
 
 type ActionConfirmer interface {
+	// Authorize requests user confirmation for a potentially destructive or unsafe action.
+	// This method is part of the public interface used across package boundaries 
+	// (e.g., by the agent executor and shell tools) and is not dead code.
 	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
 }
 
