@@ -68,7 +68,11 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return t.handleAuthResult(approved, err, "command: "+params.Command)
 	}
 
-	t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command)
+	if params.OutputFile != "" {
+		t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command, "OUTPUT_FILE", params.OutputFile, "APPEND", params.Append)
+	} else {
+		t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command)
+	}
 
 	// 3. Execute
 	feedback := &warnWriter{sm: t.sm}
@@ -119,7 +123,11 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return t.handleAuthResult(approved, err, "pipeline")
 	}
 
-	t.sm.LogAudit("PIPELINE", pipelineStr, "REASON", params.Reason)
+	if params.OutputFile != "" {
+		t.sm.LogAudit("PIPELINE", pipelineStr, "REASON", params.Reason, "OUTPUT_FILE", params.OutputFile, "APPEND", params.Append)
+	} else {
+		t.sm.LogAudit("PIPELINE", pipelineStr, "REASON", params.Reason)
+	}
 
 	// 2. Execute
 	pipedParts, err := t.splitPipeline(params.Commands)
@@ -176,6 +184,13 @@ func (t *shellTool) handleAuthResult(approved bool, err error, label string) (to
 }
 
 func (t *shellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
+	if outputFile != "" {
+		mode := " > "
+		if append {
+			mode = " >> "
+		}
+		detail = fmt.Sprintf("%s%s%s", detail, mode, outputFile)
+	}
 	return t.sm.Authorize(ctx, label, detail, reason, isSafe)
 }
 

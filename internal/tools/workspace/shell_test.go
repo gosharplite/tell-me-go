@@ -328,3 +328,127 @@ func TestShellTool_PipeCommands(t *testing.T) {
 		}
 	})
 }
+
+func TestShellTool_SecurityVisibility(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true) // So we don't block on Authorize
+	
+	mockSM := &mockShellSecurity{SecurityManager: sm}
+	validator := security.NewCommandValidator(sm, nil)
+	tool := newshellTool(mockSM, validator)
+	ctx := context.Background()
+
+	t.Run("ExecuteCommand with output file", func(t *testing.T) {
+		args := map[string]interface{}{
+			"command":     "ls -la",
+			"reason":      "testing visibility",
+			"output_file": "out.txt",
+			"append":      true,
+		}
+
+		_, err := tool.ExecuteCommand(ctx, args)
+		if err != nil {
+			t.Fatalf("ExecuteCommand failed: %v", err)
+		}
+
+		// Verify Authorize detail includes redirection
+		if !strings.Contains(mockSM.LastDetail, " >") {
+			t.Errorf("Authorize detail should contain redirection, got: %q", mockSM.LastDetail)
+		}
+		if !strings.Contains(mockSM.LastDetail, " >> ") {
+			t.Errorf("Authorize detail should contain append redirection ' >> ', got: %q", mockSM.LastDetail)
+		}
+		if !strings.Contains(mockSM.LastDetail, "out.txt") {
+			t.Errorf("Authorize detail should contain output file 'out.txt', got: %q", mockSM.LastDetail)
+		}
+
+		// Verify Audit Log includes OUTPUT_FILE and APPEND
+		foundOutputFile := false
+		foundAppend := false
+		for i := 0; i < len(mockSM.LastAuditKV); i += 2 {
+			if mockSM.LastAuditKV[i] == "OUTPUT_FILE" {
+				foundOutputFile = true
+				if mockSM.LastAuditKV[i+1] != "out.txt" {
+					t.Errorf("Audit log OUTPUT_FILE mismatch: got %v, want out.txt", mockSM.LastAuditKV[i+1])
+				}
+			}
+			if mockSM.LastAuditKV[i] == "APPEND" {
+				foundAppend = true
+				if val, ok := mockSM.LastAuditKV[i+1].(bool); !ok || !val {
+					t.Errorf("Audit log APPEND mismatch: got %v, want true", mockSM.LastAuditKV[i+1])
+				}
+			}
+		}
+		if !foundOutputFile {
+			t.Error("Audit log missing OUTPUT_FILE")
+		}
+		if !foundAppend {
+			t.Error("Audit log missing APPEND")
+		}
+	})
+
+	t.Run("PipeCommands with output file", func(t *testing.T) {
+		args := map[string]interface{}{
+			"commands":    []interface{}{"echo hello", "grep hello"},
+			"reason":      "testing pipe visibility",
+			"output_file": "pipe_out.txt",
+			"append":      false,
+		}
+
+		_, err := tool.PipeCommands(ctx, args)
+		if err != nil {
+			t.Fatalf("PipeCommands failed: %v", err)
+		}
+
+		// Verify Authorize detail includes redirection
+		if !strings.Contains(mockSM.LastDetail, " > ") {
+			t.Errorf("Authorize detail should contain redirection ' > ', got: %q", mockSM.LastDetail)
+		}
+		if strings.Contains(mockSM.LastDetail, " >> ") {
+			t.Errorf("Authorize detail should NOT contain append redirection ' >> ', got: %q", mockSM.LastDetail)
+		}
+		if !strings.Contains(mockSM.LastDetail, "pipe_out.txt") {
+			t.Errorf("Authorize detail should contain output file 'pipe_out.txt', got: %q", mockSM.LastDetail)
+		}
+
+		// Verify Audit Log includes OUTPUT_FILE and APPEND
+		foundOutputFile := false
+		foundAppend := false
+		for i := 0; i < len(mockSM.LastAuditKV); i += 2 {
+			if mockSM.LastAuditKV[i] == "OUTPUT_FILE" {
+				foundOutputFile = true
+				if mockSM.LastAuditKV[i+1] != "pipe_out.txt" {
+					t.Errorf("Audit log OUTPUT_FILE mismatch: got %v, want pipe_out.txt", mockSM.LastAuditKV[i+1])
+				}
+			}
+			if mockSM.LastAuditKV[i] == "APPEND" {
+				foundAppend = true
+				if val, ok := mockSM.LastAuditKV[i+1].(bool); !ok || val {
+					t.Errorf("Audit log APPEND mismatch: got %v, want false", mockSM.LastAuditKV[i+1])
+				}
+			}
+		}
+		if !foundOutputFile {
+			t.Error("Audit log missing OUTPUT_FILE")
+		}
+		if !foundAppend {
+			t.Error("Audit log missing APPEND")
+		}
+	})
+}
+
+type mockShellSecurity struct {
+	*security.SecurityManager
+	LastDetail    string
+	LastAuditKV   []interface{}
+}
+
+func (m *mockShellSecurity) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	m.LastDetail = detail
+	return m.SecurityManager.Authorize(ctx, label, detail, reason, isSafe)
+}
+
+func (m *mockShellSecurity) LogAudit(kv ...interface{}) {
+	m.LastAuditKV = kv
+	m.SecurityManager.LogAudit(kv...)
+}

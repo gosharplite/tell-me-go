@@ -16,15 +16,11 @@ import (
 
 // mockAuditor implements auditLogger for testing.
 type mockAuditor struct {
-	Logs []auditEntry
+	Logs [][]interface{}
 }
 
-type auditEntry struct {
-	Label1, Val1, Label2, Val2 string
-}
-
-func (m *mockAuditor) LogAudit(label1, val1, label2, val2 string) {
-	m.Logs = append(m.Logs, auditEntry{label1, val1, label2, val2})
+func (m *mockAuditor) LogAudit(kv ...interface{}) {
+	m.Logs = append(m.Logs, kv)
 }
 
 func (m *mockAuditor) SetLogFile(path string)                         {}
@@ -68,7 +64,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
 				assert.NotEmpty(t, spy.ConfirmCalls)
 				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0].Val1, "delete on file.txt")
+				assert.Contains(t, auditor.Logs[0][1], "delete on file.txt")
 			},
 		},
 		{
@@ -98,8 +94,8 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 				assert.NotEmpty(t, spy.Warns)
 				assert.Contains(t, spy.Warns[0], "[Auto-Approved]")
 				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0].Val1, "delete on file.txt")
-				assert.Contains(t, auditor.Logs[0].Val2, "(auto-approved via bypass_confirmation)")
+				assert.Contains(t, auditor.Logs[0][1], "delete on file.txt")
+				assert.Contains(t, auditor.Logs[0][3], "(auto-approved via bypass_confirmation)")
 			},
 		},
 		{
@@ -114,8 +110,8 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			wantResult: true,
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
 				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0].Val1, "write on large_file.txt")
-				assert.Contains(t, auditor.Logs[0].Val2, "... (truncated)")
+				assert.Contains(t, auditor.Logs[0][1], "write on large_file.txt")
+				assert.Contains(t, auditor.Logs[0][3], "... (truncated)")
 			},
 		},
 		{

@@ -14,7 +14,7 @@ import (
 
 // auditLogger defines the interface for security logging.
 type auditLogger interface {
-	LogAudit(label1, val1, label2, val2 string)
+	LogAudit(kv ...interface{})
 	SetLogFile(path string)
 	SetInteractor(interactor domain.UserInteractor)
 }
@@ -45,8 +45,9 @@ func (a *auditor) SetLogFile(path string) {
 	a.logFile = path
 }
 
-// LogAudit writes a two-line audit entry to the commands log file.
-func (a *auditor) LogAudit(label1, val1, label2, val2 string) {
+// LogAudit writes a multi-line audit entry to the commands log file.
+// It expects a sequence of label/value pairs.
+func (a *auditor) LogAudit(kv ...interface{}) {
 	a.mu.Lock()
 	interactor := a.interactor
 	logFile := a.logFile
@@ -70,6 +71,12 @@ func (a *auditor) LogAudit(label1, val1, label2, val2 string) {
 		}
 	}()
 
-	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label1, val1)
-	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label2, val2)
+	for i := 0; i < len(kv); i += 2 {
+		label := fmt.Sprintf("%v", kv[i])
+		var val interface{}
+		if i+1 < len(kv) {
+			val = kv[i+1]
+		}
+		fmt.Fprintf(f, "[%s] %s: %v\n", timestamp, label, val)
+	}
 }
