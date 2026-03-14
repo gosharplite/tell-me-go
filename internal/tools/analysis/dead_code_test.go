@@ -662,3 +662,51 @@ func TestInternal_NilReceiverCoverage(t *testing.T) {
 		}
 	})
 }
+
+func TestGetSymbolType(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  types.Object
+		want string
+	}{
+		{
+			name: "Function",
+			obj:  types.NewFunc(token.NoPos, nil, "Func", types.NewSignatureType(nil, nil, nil, nil, nil, false)),
+			want: "Function",
+		},
+		{
+			name: "Method",
+			obj:  types.NewFunc(token.NoPos, nil, "Method", types.NewSignatureType(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int]), nil, nil, nil, nil, false)),
+			want: "Method",
+		},
+		{
+			name: "Type",
+			obj:  types.NewTypeName(token.NoPos, nil, "Type", types.Typ[types.Int]),
+			want: "Type",
+		},
+		{
+			name: "Constant",
+			obj:  types.NewConst(token.NoPos, nil, "Const", types.Typ[types.Int], nil),
+			want: "Constant",
+		},
+		{
+			name: "Variable",
+			obj:  types.NewVar(token.NoPos, nil, "Var", types.Typ[types.Int]),
+			want: "Variable",
+		},
+		{
+			name: "Unknown",
+			obj:  nil,
+			want: "Unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getSymbolType(tt.obj)
+			if got != tt.want {
+				t.Errorf("getSymbolType() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
