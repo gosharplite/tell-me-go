@@ -66,3 +66,13 @@ type ICommandValidator interface {
 	ValidateStructure(parts []string) error
 	CheckPathSafety(parts []string) (bool, string)
 }
+
+// Compile-time interface method expressions.
+// These create hard AST references to ensure AST-based callgraph tools (like dead_code_graph)
+// do not falsely flag these public interface methods as dead code when they are consumed
+// implicitly via structural typing and local interface embedding across package boundaries.
+var (
+	_ = ActionConfirmer.Authorize
+	_ = TerminalController.ReadLine
+	_ = UserInteractor.ReadLine
+)
