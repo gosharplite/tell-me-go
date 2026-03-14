@@ -17,7 +17,7 @@ import (
 )
 
 // Compile-time assertions to ensure the infrastructure strictly implements the domain interfaces.
-// This creates a hard AST reference to clear dead-code false positives in static analysis tools 
+// This creates a hard AST reference to clear dead-code false positives in static analysis tools
 // that do not respect //nolint directives.
 var _ domain_security.ActionConfirmer = (*security.SecurityManager)(nil)
 var _ domain_security.TerminalController = (*security.SecurityManager)(nil)

@@ -508,7 +508,9 @@ type mockSymbolIndex struct {
 	GetImplementationsFunc func(ctx context.Context, id string) []string
 }
 
-func (m *mockSymbolIndex) Lookup(ctx context.Context, symbol string) ([]location, error) { return nil, nil }
+func (m *mockSymbolIndex) Lookup(ctx context.Context, symbol string) ([]location, error) {
+	return nil, nil
+}
 func (m *mockSymbolIndex) FindImplementors(ctx context.Context, interfaceName string) ([]typeName, error) {
 	return nil, nil
 }
@@ -530,12 +532,12 @@ func (m *mockSymbolIndex) Refresh(ctx context.Context) error                    
 
 func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 	tests := []struct {
-		name              string
-		initialTotal      map[string]int
-		initialExternal   map[string]int
-		implementations   map[string][]string
-		expectedTotal     map[string]int
-		expectedExternal  map[string]int
+		name             string
+		initialTotal     map[string]int
+		initialExternal  map[string]int
+		implementations  map[string][]string
+		expectedTotal    map[string]int
+		expectedExternal map[string]int
 	}{
 		{
 			name:            "Self-referential implementation",

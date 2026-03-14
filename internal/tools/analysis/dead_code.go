@@ -208,7 +208,7 @@ func (a *deadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
 	}
 	if sig.Recv() == nil {
 		// Interface methods defined directly on an interface have nil receivers in go/types.
-		// Since this function is only called when meta.isMethod == true, a nil receiver 
+		// Since this function is only called when meta.isMethod == true, a nil receiver
 		// guarantees it is an interface method.
 		return true
 	}
@@ -336,6 +336,61 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 	return tools.ToolResult{Text: sb.String()}
 }
 
+func formatDisplayName(id string, meta *symMeta) string {
+	displayName := meta.name
+	if meta.isMethod {
+		// Safely isolate the type and method by stripping the known package path first
+		suffix := strings.TrimPrefix(id, meta.pkgPath+".")
+		if parts := strings.Split(suffix, "."); len(parts) == 2 {
+			// Only struct methods will split into 2 parts: ["TypeName", "MethodName"]
+			displayName = fmt.Sprintf("(%s).%s", parts[0], meta.name)
+		}
+	}
+	return displayName
+}
+
+func (a *deadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState) *orphanReport {
+	total := state.totalUses[id]
+	external := state.externalUses[id]
+
+	if total > 0 && external > 0 {
+		return nil
+	}
+
+	var severity, reason string
+	if total == 0 {
+		severity = "DEAD"
+		reason = "No references found within the module (including interfaces/tests)."
+	} else if external == 0 {
+		severity = "PRIVATE"
+		reason = "Exported symbol is only used within its own package."
+	} else {
+		return nil
+	}
+
+	complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
+	impact := a.calculateImpactScore(meta.obj, state.pkgs)
+	displayName := formatDisplayName(id, meta)
+
+	if severity == "PRIVATE" && complexity >= 10 {
+		reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
+	}
+
+	if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
+		reason += " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
+	}
+
+	return &orphanReport{
+		Symbol:     displayName,
+		Pkg:        meta.pkgPath,
+		Type:       meta.symType,
+		Severity:   severity,
+		Reason:     reason,
+		Complexity: complexity,
+		Impact:     impact,
+	}
+}
+
 func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []orphanReport {
 	var findings []orphanReport
 
@@ -347,56 +402,8 @@ func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []
 	sort.Strings(ids)
 
 	for _, id := range ids {
-		meta := state.declarations[id]
-		total := state.totalUses[id]
-		external := state.externalUses[id]
-
-		// Use a more descriptive name for methods in the report
-		displayName := meta.name
-		if meta.isMethod {
-			// Safely isolate the type and method by stripping the known package path first
-			suffix := strings.TrimPrefix(id, meta.pkgPath+".")
-			if parts := strings.Split(suffix, "."); len(parts) == 2 {
-				// Only struct methods will split into 2 parts: ["TypeName", "MethodName"]
-				displayName = fmt.Sprintf("(%s).%s", parts[0], meta.name)
-			}
-		}
-
-		if total == 0 {
-			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
-			impact := a.calculateImpactScore(meta.obj, state.pkgs)
-			reason := "No references found within the module (including interfaces/tests)."
-			if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
-				reason = reason + " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
-			}
-			findings = append(findings, orphanReport{
-				Symbol:     displayName,
-				Pkg:        meta.pkgPath,
-				Type:       meta.symType,
-				Severity:   "DEAD",
-				Reason:     reason,
-				Complexity: complexity,
-				Impact:     impact,
-			})
-		} else if external == 0 {
-			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
-			impact := a.calculateImpactScore(meta.obj, state.pkgs)
-			reason := "Exported symbol is only used within its own package."
-			if complexity >= 10 {
-				reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
-			}
-			if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
-				reason = reason + " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
-			}
-			findings = append(findings, orphanReport{
-				Symbol:     displayName,
-				Pkg:        meta.pkgPath,
-				Type:       meta.symType,
-				Severity:   "PRIVATE",
-				Reason:     reason,
-				Complexity: complexity,
-				Impact:     impact,
-			})
+		if report := a.evaluateOrphan(id, state.declarations[id], state); report != nil {
+			findings = append(findings, *report)
 		}
 	}
 
