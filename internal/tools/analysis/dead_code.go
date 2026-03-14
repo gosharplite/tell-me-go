@@ -196,8 +196,14 @@ func (a *deadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
 		return false
 	}
 	sig, ok := fn.Type().(*types.Signature)
-	if !ok || sig.Recv() == nil {
+	if !ok {
 		return false
+	}
+	if sig.Recv() == nil {
+		// Interface methods defined directly on an interface have nil receivers in go/types.
+		// Since this function is only called when meta.isMethod == true, a nil receiver 
+		// guarantees it is an interface method.
+		return true
 	}
 	_, ok = sig.Recv().Type().Underlying().(*types.Interface)
 	return ok
@@ -209,11 +215,17 @@ func (a *deadCodeAnalyzer) isWellKnownContract(obj types.Object) bool {
 		return false
 	}
 	sig, ok := fn.Type().(*types.Signature)
-	if !ok || sig.Recv() == nil {
+	if !ok {
 		return false
 	}
 
-	return a.isNoArgStringMethod(fn, sig, "Error") || a.isNoArgStringMethod(fn, sig, "String")
+	// If it has a receiver, check if it's a pointer or named type that might implement Error/String
+	if sig.Recv() != nil {
+		return a.isNoArgStringMethod(fn, sig, "Error") || a.isNoArgStringMethod(fn, sig, "String")
+	}
+
+	// If it has no receiver (interface method), it's a contract definition
+	return fn.Name() == "Error" || fn.Name() == "String"
 }
 
 func (a *deadCodeAnalyzer) isNoArgStringMethod(fn *types.Func, sig *types.Signature, name string) bool {
