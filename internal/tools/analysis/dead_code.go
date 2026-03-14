@@ -361,11 +361,10 @@ func (a *deadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanS
 	if total == 0 {
 		severity = "DEAD"
 		reason = "No references found within the module (including interfaces/tests)."
-	} else if external == 0 {
+	} else {
+		// Implicitly: total > 0 && external == 0
 		severity = "PRIVATE"
 		reason = "Exported symbol is only used within its own package."
-	} else {
-		return nil
 	}
 
 	complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)

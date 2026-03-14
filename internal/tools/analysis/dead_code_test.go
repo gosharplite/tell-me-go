@@ -645,4 +645,20 @@ func TestInternal_NilReceiverCoverage(t *testing.T) {
 		assert.True(t, analyzer.isWellKnownContract(fnStructError), "Struct Error() string should be well-known")
 		assert.False(t, analyzer.isInterfaceMethod(fnStructOther), "Struct method is not an interface method")
 	})
+
+	t.Run("Non-Function Object Guard", func(t *testing.T) {
+		// Create a mock variable instead of a function/type
+		mockVar := types.NewVar(token.NoPos, nil, "MockVar", types.Typ[types.Int])
+
+		// Verify that the type guard safely catches the non-function and returns false
+		if analyzer.isWellKnownContract(mockVar) {
+			t.Errorf("Expected isWellKnownContract to return false for a *types.Var")
+		}
+		if analyzer.isInterfaceMethod(mockVar) {
+			t.Errorf("Expected isInterfaceMethod to return false for a *types.Var")
+		}
+		if analyzer.isInterfaceType(mockVar) {
+			t.Errorf("Expected isInterfaceType to return false for a *types.Var")
+		}
+	})
 }
