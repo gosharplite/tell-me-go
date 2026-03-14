@@ -14,6 +14,7 @@ type ActionConfirmer interface {
 	// Authorize requests user confirmation for a potentially destructive or unsafe action.
 	// This method is part of the public interface used across package boundaries
 	// (e.g., by the agent executor and shell tools) and is not dead code.
+	//nolint:unused // False positive: Implicitly used via interface embedding across boundaries.
 	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
 }
 
@@ -29,6 +30,7 @@ type TerminalController interface {
 	Confirm(ctx context.Context, message string) (bool, error)
 	// ReadLine reads a line of input from the terminal. This method is part of the public interface
 	// used across package boundaries (e.g., by workspace tools) and is not dead code.
+	//nolint:unused // False positive: Implicitly used via interface embedding across boundaries.
 	ReadLine(ctx context.Context) (string, error)
 }
 
@@ -53,6 +55,7 @@ type UserInteractor interface {
 	ReadSingleKey(ctx context.Context) (string, error)
 	// ReadLine reads a line of input from the terminal. This method is part of the public interface
 	// used across package boundaries (e.g., by workspace tools) and is not dead code.
+	//nolint:unused // False positive: Implicitly used via interface embedding across boundaries.
 	ReadLine(ctx context.Context) (string, error)
 }
 
