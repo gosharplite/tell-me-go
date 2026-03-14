@@ -239,7 +239,7 @@ func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, 
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
-		Description:     "Executes a single shell command as if in a terminal without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
+		Description:     "Executes a single binary directly via os/exec (NO shell interpreter). Security: Only whitelisted commands are auto-approved. Do NOT use shell operators like &&, ||, >, <, or wildcards (*). If you NEED shell features, you MUST explicitly wrap your command: e.g., bash -c 'ls *.go && echo done'. To pipe commands, use the 'pipe_commands' tool instead.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

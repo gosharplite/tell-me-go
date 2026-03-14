@@ -176,7 +176,7 @@ func (t *shellTool) handleAuthResult(approved bool, err error, label string) (to
 }
 
 func (t *shellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
-	return true, nil
+	return t.sm.Authorize(ctx, label, detail, reason, isSafe)
 }
 
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
@@ -217,6 +217,7 @@ type shellSecurity interface {
 	domain_security.TerminalController
 	domain_security.Auditor
 	domain_security.PathValidator
+	domain_security.ActionConfirmer
 }
 
 type warnWriter struct {
