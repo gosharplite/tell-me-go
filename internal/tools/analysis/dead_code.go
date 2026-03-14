@@ -158,7 +158,14 @@ func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, err
 func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, resolvedPath string) {
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
-	for id, meta := range state.declarations {
+	ids := make([]string, 0, len(state.declarations))
+	for id := range state.declarations {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		meta := state.declarations[id]
 		a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath)
 		if a.isInterfaceSymbol(meta) {
 			a.protectContractSymbol(state, id)
@@ -196,8 +203,14 @@ func (a *deadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
 		return false
 	}
 	sig, ok := fn.Type().(*types.Signature)
-	if !ok || sig.Recv() == nil {
+	if !ok {
 		return false
+	}
+	if sig.Recv() == nil {
+		// Interface methods defined directly on an interface have nil receivers in go/types.
+		// Since this function is only called when meta.isMethod == true, a nil receiver
+		// guarantees it is an interface method.
+		return true
 	}
 	_, ok = sig.Recv().Type().Underlying().(*types.Interface)
 	return ok
@@ -209,10 +222,11 @@ func (a *deadCodeAnalyzer) isWellKnownContract(obj types.Object) bool {
 		return false
 	}
 	sig, ok := fn.Type().(*types.Signature)
-	if !ok || sig.Recv() == nil {
+	if !ok {
 		return false
 	}
 
+	// Apply signature validation uniformly. 'isNoArgStringMethod' handles nil receivers safely.
 	return a.isNoArgStringMethod(fn, sig, "Error") || a.isNoArgStringMethod(fn, sig, "String")
 }
 
@@ -322,47 +336,73 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 	return tools.ToolResult{Text: sb.String()}
 }
 
+func formatDisplayName(id string, meta *symMeta) string {
+	displayName := meta.name
+	if meta.isMethod {
+		// Safely isolate the type and method by stripping the known package path first
+		suffix := strings.TrimPrefix(id, meta.pkgPath+".")
+		if parts := strings.Split(suffix, "."); len(parts) == 2 {
+			// Only struct methods will split into 2 parts: ["TypeName", "MethodName"]
+			displayName = fmt.Sprintf("(%s).%s", parts[0], meta.name)
+		}
+	}
+	return displayName
+}
+
+func (a *deadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state *scanState) *orphanReport {
+	total := state.totalUses[id]
+	external := state.externalUses[id]
+
+	if total > 0 && external > 0 {
+		return nil
+	}
+
+	var severity, reason string
+	if total == 0 {
+		severity = "DEAD"
+		reason = "No references found within the module (including interfaces/tests)."
+	} else {
+		// Implicitly: total > 0 && external == 0
+		severity = "PRIVATE"
+		reason = "Exported symbol is only used within its own package."
+	}
+
+	complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
+	impact := a.calculateImpactScore(meta.obj, state.pkgs)
+	displayName := formatDisplayName(id, meta)
+
+	if severity == "PRIVATE" && complexity >= 10 {
+		reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
+	}
+
+	if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
+		reason += " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
+	}
+
+	return &orphanReport{
+		Symbol:     displayName,
+		Pkg:        meta.pkgPath,
+		Type:       meta.symType,
+		Severity:   severity,
+		Reason:     reason,
+		Complexity: complexity,
+		Impact:     impact,
+	}
+}
+
 func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []orphanReport {
 	var findings []orphanReport
-	for id, meta := range state.declarations {
-		total := state.totalUses[id]
-		external := state.externalUses[id]
 
-		if total == 0 {
-			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
-			impact := a.calculateImpactScore(meta.obj, state.pkgs)
-			reason := "No references found within the module (including interfaces/tests)."
-			if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
-				reason = reason + " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
-			}
-			findings = append(findings, orphanReport{
-				Symbol:     meta.name,
-				Pkg:        meta.pkgPath,
-				Type:       meta.symType,
-				Severity:   "DEAD",
-				Reason:     reason,
-				Complexity: complexity,
-				Impact:     impact,
-			})
-		} else if external == 0 {
-			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
-			impact := a.calculateImpactScore(meta.obj, state.pkgs)
-			reason := "Exported symbol is only used within its own package."
-			if complexity >= 10 {
-				reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
-			}
-			if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
-				reason = reason + " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
-			}
-			findings = append(findings, orphanReport{
-				Symbol:     meta.name,
-				Pkg:        meta.pkgPath,
-				Type:       meta.symType,
-				Severity:   "PRIVATE",
-				Reason:     reason,
-				Complexity: complexity,
-				Impact:     impact,
-			})
+	// Sort IDs for deterministic iteration
+	ids := make([]string, 0, len(state.declarations))
+	for id := range state.declarations {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		if report := a.evaluateOrphan(id, state.declarations[id], state); report != nil {
+			findings = append(findings, *report)
 		}
 	}
 
@@ -527,14 +567,32 @@ func (a *deadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, state *
 }
 
 func (a *deadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *scanState) {
-	for id, count := range state.totalUses {
+	// Take a snapshot of the initial usages to prevent exponential overflow/corruption
+	// caused by cyclic implementations and in-place map mutation during iteration.
+	snapshotTotal := make(map[string]int, len(state.totalUses))
+	snapshotExternal := make(map[string]int, len(state.externalUses))
+	ids := make([]string, 0, len(state.totalUses))
+	for k, v := range state.totalUses {
+		snapshotTotal[k] = v
+		ids = append(ids, k)
+	}
+	for k, v := range state.externalUses {
+		snapshotExternal[k] = v
+	}
+	sort.Strings(ids) // Ensure deterministic propagation order
+
+	for _, id := range ids {
+		count := snapshotTotal[id]
 		if count > 0 {
 			for _, implId := range a.idx.GetImplementations(ctx, id) {
+				if id == implId {
+					continue // Prevent self-referential loops
+				}
 				if _, exists := state.declarations[implId]; !exists {
 					continue
 				}
 				state.totalUses[implId] += count
-				state.externalUses[implId] += state.externalUses[id]
+				state.externalUses[implId] += snapshotExternal[id]
 			}
 		}
 	}
