@@ -363,12 +363,8 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 		}
 
 		// Verify Audit Log includes OUTPUT_FILE and APPEND
-		if val, ok := mockSM.LastAuditFields["OUTPUT_FILE"].(string); !ok || val != "out.txt" {
-			t.Errorf("Audit log OUTPUT_FILE mismatch: got %v, want out.txt", mockSM.LastAuditFields["OUTPUT_FILE"])
-		}
-		if val, ok := mockSM.LastAuditFields["APPEND"].(bool); !ok || !val {
-			t.Errorf("Audit log APPEND mismatch: got %v, want true", mockSM.LastAuditFields["APPEND"])
-		}
+		assertAuditField(t, mockSM.LastAuditFields, "OUTPUT_FILE", "out.txt")
+		assertAuditField(t, mockSM.LastAuditFields, "APPEND", true)
 	})
 
 	t.Run("PipeCommands with output file", func(t *testing.T) {
@@ -396,13 +392,27 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 		}
 
 		// Verify Audit Log includes OUTPUT_FILE and APPEND
-		if val, ok := mockSM.LastAuditFields["OUTPUT_FILE"].(string); !ok || val != "pipe_out.txt" {
-			t.Errorf("Audit log OUTPUT_FILE mismatch: got %v, want pipe_out.txt", mockSM.LastAuditFields["OUTPUT_FILE"])
-		}
-		if val, ok := mockSM.LastAuditFields["APPEND"].(bool); !ok || val {
-			t.Errorf("Audit log APPEND mismatch: got %v, want false", mockSM.LastAuditFields["APPEND"])
-		}
+		assertAuditField(t, mockSM.LastAuditFields, "OUTPUT_FILE", "pipe_out.txt")
+		assertAuditField(t, mockSM.LastAuditFields, "APPEND", false)
 	})
+}
+
+func assertAuditField(t *testing.T, auditMap map[string]any, key string, want any) {
+	t.Helper() // MUST be included so failures trace back to the test file's caller line
+
+	if auditMap == nil {
+		t.Fatalf("audit map is nil")
+	}
+
+	got, ok := auditMap[key]
+	if !ok {
+		t.Errorf("audit field %q not found in audit log", key)
+		return
+	}
+
+	if got != want {
+		t.Errorf("audit field %q: got %v; want %v", key, got, want)
+	}
 }
 
 type mockShellSecurity struct {
