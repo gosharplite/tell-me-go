@@ -539,14 +539,28 @@ func (a *deadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, state *
 }
 
 func (a *deadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *scanState) {
-	for id, count := range state.totalUses {
+	// Take a snapshot of the initial usages to prevent exponential overflow/corruption
+	// caused by cyclic implementations and in-place map mutation during iteration.
+	snapshotTotal := make(map[string]int, len(state.totalUses))
+	snapshotExternal := make(map[string]int, len(state.externalUses))
+	for k, v := range state.totalUses {
+		snapshotTotal[k] = v
+	}
+	for k, v := range state.externalUses {
+		snapshotExternal[k] = v
+	}
+
+	for id, count := range snapshotTotal {
 		if count > 0 {
 			for _, implId := range a.idx.GetImplementations(ctx, id) {
+				if id == implId {
+					continue // Prevent self-referential loops
+				}
 				if _, exists := state.declarations[implId]; !exists {
 					continue
 				}
 				state.totalUses[implId] += count
-				state.externalUses[implId] += state.externalUses[id]
+				state.externalUses[implId] += snapshotExternal[id]
 			}
 		}
 	}
