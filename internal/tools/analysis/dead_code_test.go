@@ -608,15 +608,23 @@ func TestInternal_NilReceiverCoverage(t *testing.T) {
 	analyzer := &deadCodeAnalyzer{}
 
 	// 1. Test with nil receiver (simulating interface methods)
-	sigNil := types.NewSignatureType(nil, nil, nil, nil, nil, false)
-	fnError := types.NewFunc(token.NoPos, nil, "Error", sigNil)
-	fnString := types.NewFunc(token.NoPos, nil, "String", sigNil)
-	fnOther := types.NewFunc(token.NoPos, nil, "Other", sigNil)
+	// Must have a string return type to be a valid contract
+	resType := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.String]))
+	sigInterface := types.NewSignatureType(nil, nil, nil, nil, resType, false)
+	fnError := types.NewFunc(token.NoPos, nil, "Error", sigInterface)
+	fnString := types.NewFunc(token.NoPos, nil, "String", sigInterface)
+	fnOther := types.NewFunc(token.NoPos, nil, "Other", sigInterface)
 
-	assert.True(t, analyzer.isWellKnownContract(fnError), "Error should be a well-known contract")
-	assert.True(t, analyzer.isWellKnownContract(fnString), "String should be a well-known contract")
-	assert.False(t, analyzer.isWellKnownContract(fnOther), "Other should not be a well-known contract")
+	assert.True(t, analyzer.isWellKnownContract(fnError), "Error() string should be a well-known contract")
+	assert.True(t, analyzer.isWellKnownContract(fnString), "String() string should be a well-known contract")
+	assert.False(t, analyzer.isWellKnownContract(fnOther), "Other() string should not be a well-known contract")
 	assert.True(t, analyzer.isInterfaceMethod(fnOther), "Nil receiver should be treated as interface method")
+
+	// 1b. Negative test: Invalid Error(code int) signature on an interface
+	paramType := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int]))
+	sigInvalid := types.NewSignatureType(nil, nil, nil, paramType, nil, false)
+	fnInvalidError := types.NewFunc(token.NoPos, nil, "Error", sigInvalid)
+	assert.False(t, analyzer.isWellKnownContract(fnInvalidError), "Error(code int) should NOT be a well-known contract")
 
 	// 2. Test with non-nil receiver (struct methods)
 	recv := types.NewVar(token.NoPos, nil, "", types.Typ[types.String])
@@ -624,7 +632,6 @@ func TestInternal_NilReceiverCoverage(t *testing.T) {
 	fnStructOther := types.NewFunc(token.NoPos, nil, "Other", sigRecv)
 
 	// Valid Error() string on a struct
-	resType := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.String]))
 	sigError := types.NewSignatureType(recv, nil, nil, nil, resType, false)
 	fnStructError := types.NewFunc(token.NoPos, nil, "Error", sigError)
 

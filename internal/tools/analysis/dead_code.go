@@ -226,13 +226,8 @@ func (a *deadCodeAnalyzer) isWellKnownContract(obj types.Object) bool {
 		return false
 	}
 
-	// If it has a receiver, check if it's a pointer or named type that might implement Error/String
-	if sig.Recv() != nil {
-		return a.isNoArgStringMethod(fn, sig, "Error") || a.isNoArgStringMethod(fn, sig, "String")
-	}
-
-	// If it has no receiver (interface method), it's a contract definition
-	return fn.Name() == "Error" || fn.Name() == "String"
+	// Apply signature validation uniformly. 'isNoArgStringMethod' handles nil receivers safely.
+	return a.isNoArgStringMethod(fn, sig, "Error") || a.isNoArgStringMethod(fn, sig, "String")
 }
 
 func (a *deadCodeAnalyzer) isNoArgStringMethod(fn *types.Func, sig *types.Signature, name string) bool {
@@ -359,10 +354,11 @@ func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []
 		// Use a more descriptive name for methods in the report
 		displayName := meta.name
 		if meta.isMethod {
-			if parts := strings.Split(id, "."); len(parts) >= 3 {
-				// id format: pkgPath.TypeName.MethodName
-				typeName := parts[len(parts)-2]
-				displayName = fmt.Sprintf("(%s).%s", typeName, meta.name)
+			// Safely isolate the type and method by stripping the known package path first
+			suffix := strings.TrimPrefix(id, meta.pkgPath+".")
+			if parts := strings.Split(suffix, "."); len(parts) == 2 {
+				// Only struct methods will split into 2 parts: ["TypeName", "MethodName"]
+				displayName = fmt.Sprintf("(%s).%s", parts[0], meta.name)
 			}
 		}
 
