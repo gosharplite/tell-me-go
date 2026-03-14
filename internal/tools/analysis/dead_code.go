@@ -158,7 +158,14 @@ func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, err
 func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, resolvedPath string) {
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
-	for id, meta := range state.declarations {
+	ids := make([]string, 0, len(state.declarations))
+	for id := range state.declarations {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		meta := state.declarations[id]
 		a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath)
 		if a.isInterfaceSymbol(meta) {
 			a.protectContractSymbol(state, id)
@@ -336,9 +343,28 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 
 func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []orphanReport {
 	var findings []orphanReport
-	for id, meta := range state.declarations {
+
+	// Sort IDs for deterministic iteration
+	ids := make([]string, 0, len(state.declarations))
+	for id := range state.declarations {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		meta := state.declarations[id]
 		total := state.totalUses[id]
 		external := state.externalUses[id]
+
+		// Use a more descriptive name for methods in the report
+		displayName := meta.name
+		if meta.isMethod {
+			if parts := strings.Split(id, "."); len(parts) >= 3 {
+				// id format: pkgPath.TypeName.MethodName
+				typeName := parts[len(parts)-2]
+				displayName = fmt.Sprintf("(%s).%s", typeName, meta.name)
+			}
+		}
 
 		if total == 0 {
 			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
@@ -348,7 +374,7 @@ func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []
 				reason = reason + " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
 			}
 			findings = append(findings, orphanReport{
-				Symbol:     meta.name,
+				Symbol:     displayName,
 				Pkg:        meta.pkgPath,
 				Type:       meta.symType,
 				Severity:   "DEAD",
@@ -367,7 +393,7 @@ func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []
 				reason = reason + " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
 			}
 			findings = append(findings, orphanReport{
-				Symbol:     meta.name,
+				Symbol:     displayName,
 				Pkg:        meta.pkgPath,
 				Type:       meta.symType,
 				Severity:   "PRIVATE",
@@ -543,14 +569,18 @@ func (a *deadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *
 	// caused by cyclic implementations and in-place map mutation during iteration.
 	snapshotTotal := make(map[string]int, len(state.totalUses))
 	snapshotExternal := make(map[string]int, len(state.externalUses))
+	ids := make([]string, 0, len(state.totalUses))
 	for k, v := range state.totalUses {
 		snapshotTotal[k] = v
+		ids = append(ids, k)
 	}
 	for k, v := range state.externalUses {
 		snapshotExternal[k] = v
 	}
+	sort.Strings(ids) // Ensure deterministic propagation order
 
-	for id, count := range snapshotTotal {
+	for _, id := range ids {
+		count := snapshotTotal[id]
 		if count > 0 {
 			for _, implId := range a.idx.GetImplementations(ctx, id) {
 				if id == implId {

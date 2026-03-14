@@ -6,6 +6,8 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/tools/go/packages"
 )
 
 type deadCodeSecurityProvider struct {
@@ -102,7 +105,7 @@ func getFindOrphanedSymbolsTestCases() []struct {
 				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { _ = pkg1.S{} }",
 			},
 			expected: []orphanReport{
-				{Symbol: "DeadMethod", Pkg: "example.com/test/pkg1", Type: "Method", Severity: "DEAD"},
+				{Symbol: "(S).DeadMethod", Pkg: "example.com/test/pkg1", Type: "Method", Severity: "DEAD"},
 			},
 		},
 		{
@@ -305,6 +308,22 @@ func main() {
 			},
 			expected: nil, // Error() and String() should be protected
 		},
+		{
+			name: "Interface Contract Nil Receivers",
+			files: map[string]string{
+				"pkg1/pkg1.go": `package pkg1
+type CustomError interface {
+	Error() string
+	String() string
+	Other()
+}
+`,
+				"main.go": `package main
+func main() {}
+`,
+			},
+			expected: nil, // Interface methods are automatically protected as contracts
+		},
 	}
 }
 
@@ -483,4 +502,132 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_NoGoMod(t *testing.T) {
 	_, err = analyzer.FindOrphanedSymbols(ctx, args)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no go.mod found")
+}
+
+type mockSymbolIndex struct {
+	GetImplementationsFunc func(ctx context.Context, id string) []string
+}
+
+func (m *mockSymbolIndex) Lookup(ctx context.Context, symbol string) ([]location, error) { return nil, nil }
+func (m *mockSymbolIndex) FindImplementors(ctx context.Context, interfaceName string) ([]typeName, error) {
+	return nil, nil
+}
+func (m *mockSymbolIndex) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error) {
+	return nil, nil
+}
+func (m *mockSymbolIndex) GetUsages(ctx context.Context, symbol string, path string) ([]location, error) {
+	return nil, nil
+}
+func (m *mockSymbolIndex) IsSymbolUsed(ctx context.Context, name string) bool { return false }
+func (m *mockSymbolIndex) GetImplementations(ctx context.Context, interfaceMethodId string) []string {
+	if m.GetImplementationsFunc != nil {
+		return m.GetImplementationsFunc(ctx, interfaceMethodId)
+	}
+	return nil
+}
+func (m *mockSymbolIndex) Packages(ctx context.Context) ([]*packages.Package, error) { return nil, nil }
+func (m *mockSymbolIndex) Refresh(ctx context.Context) error                         { return nil }
+
+func TestPropagateInterfaceUsages_Regression(t *testing.T) {
+	tests := []struct {
+		name              string
+		initialTotal      map[string]int
+		initialExternal   map[string]int
+		implementations   map[string][]string
+		expectedTotal     map[string]int
+		expectedExternal  map[string]int
+	}{
+		{
+			name:            "Self-referential implementation",
+			initialTotal:    map[string]int{"InterfaceA": 1},
+			initialExternal: map[string]int{"InterfaceA": 1},
+			implementations: map[string][]string{
+				"InterfaceA": {"InterfaceA"},
+			},
+			expectedTotal:    map[string]int{"InterfaceA": 1},
+			expectedExternal: map[string]int{"InterfaceA": 1},
+		},
+		{
+			name:            "Mutual cycle",
+			initialTotal:    map[string]int{"InterfaceA": 1, "InterfaceB": 1},
+			initialExternal: map[string]int{"InterfaceA": 0, "InterfaceB": 1},
+			implementations: map[string][]string{
+				"InterfaceA": {"InterfaceB"},
+				"InterfaceB": {"InterfaceA"},
+			},
+			expectedTotal:    map[string]int{"InterfaceA": 2, "InterfaceB": 2},
+			expectedExternal: map[string]int{"InterfaceA": 1, "InterfaceB": 1},
+		},
+		{
+			name:            "One-way propagation",
+			initialTotal:    map[string]int{"InterfaceA": 1, "InterfaceB": 0},
+			initialExternal: map[string]int{"InterfaceA": 1, "InterfaceB": 0},
+			implementations: map[string][]string{
+				"InterfaceA": {"InterfaceB"},
+			},
+			expectedTotal:    map[string]int{"InterfaceA": 1, "InterfaceB": 1},
+			expectedExternal: map[string]int{"InterfaceA": 1, "InterfaceB": 1},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			state := &scanState{
+				declarations: make(map[string]*symMeta),
+				totalUses:    make(map[string]int),
+				externalUses: make(map[string]int),
+			}
+			for id, count := range tt.initialTotal {
+				state.totalUses[id] = count
+				state.declarations[id] = &symMeta{id: id}
+			}
+			for id, count := range tt.initialExternal {
+				state.externalUses[id] = count
+			}
+
+			mockIdx := &mockSymbolIndex{
+				GetImplementationsFunc: func(ctx context.Context, id string) []string {
+					return tt.implementations[id]
+				},
+			}
+			analyzer := &deadCodeAnalyzer{idx: mockIdx}
+			analyzer.propagateInterfaceUsages(ctx, state)
+
+			for id, count := range tt.expectedTotal {
+				assert.Equal(t, count, state.totalUses[id], "Total uses for %s mismatch", id)
+			}
+			for id, count := range tt.expectedExternal {
+				assert.Equal(t, count, state.externalUses[id], "External uses for %s mismatch", id)
+			}
+		})
+	}
+}
+
+func TestInternal_NilReceiverCoverage(t *testing.T) {
+	analyzer := &deadCodeAnalyzer{}
+
+	// 1. Test with nil receiver (simulating interface methods)
+	sigNil := types.NewSignatureType(nil, nil, nil, nil, nil, false)
+	fnError := types.NewFunc(token.NoPos, nil, "Error", sigNil)
+	fnString := types.NewFunc(token.NoPos, nil, "String", sigNil)
+	fnOther := types.NewFunc(token.NoPos, nil, "Other", sigNil)
+
+	assert.True(t, analyzer.isWellKnownContract(fnError), "Error should be a well-known contract")
+	assert.True(t, analyzer.isWellKnownContract(fnString), "String should be a well-known contract")
+	assert.False(t, analyzer.isWellKnownContract(fnOther), "Other should not be a well-known contract")
+	assert.True(t, analyzer.isInterfaceMethod(fnOther), "Nil receiver should be treated as interface method")
+
+	// 2. Test with non-nil receiver (struct methods)
+	recv := types.NewVar(token.NoPos, nil, "", types.Typ[types.String])
+	sigRecv := types.NewSignatureType(recv, nil, nil, nil, nil, false)
+	fnStructOther := types.NewFunc(token.NoPos, nil, "Other", sigRecv)
+
+	// Valid Error() string on a struct
+	resType := types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.String]))
+	sigError := types.NewSignatureType(recv, nil, nil, nil, resType, false)
+	fnStructError := types.NewFunc(token.NoPos, nil, "Error", sigError)
+
+	assert.True(t, analyzer.isWellKnownContract(fnStructError), "Struct Error() string should be well-known")
+	assert.False(t, analyzer.isInterfaceMethod(fnStructOther), "Struct method is not an interface method")
 }
