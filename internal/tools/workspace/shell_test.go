@@ -363,27 +363,11 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 		}
 
 		// Verify Audit Log includes OUTPUT_FILE and APPEND
-		foundOutputFile := false
-		foundAppend := false
-		for i := 0; i < len(mockSM.LastAuditKV); i += 2 {
-			if mockSM.LastAuditKV[i] == "OUTPUT_FILE" {
-				foundOutputFile = true
-				if mockSM.LastAuditKV[i+1] != "out.txt" {
-					t.Errorf("Audit log OUTPUT_FILE mismatch: got %v, want out.txt", mockSM.LastAuditKV[i+1])
-				}
-			}
-			if mockSM.LastAuditKV[i] == "APPEND" {
-				foundAppend = true
-				if val, ok := mockSM.LastAuditKV[i+1].(bool); !ok || !val {
-					t.Errorf("Audit log APPEND mismatch: got %v, want true", mockSM.LastAuditKV[i+1])
-				}
-			}
+		if val, ok := mockSM.LastAuditFields["OUTPUT_FILE"].(string); !ok || val != "out.txt" {
+			t.Errorf("Audit log OUTPUT_FILE mismatch: got %v, want out.txt", mockSM.LastAuditFields["OUTPUT_FILE"])
 		}
-		if !foundOutputFile {
-			t.Error("Audit log missing OUTPUT_FILE")
-		}
-		if !foundAppend {
-			t.Error("Audit log missing APPEND")
+		if val, ok := mockSM.LastAuditFields["APPEND"].(bool); !ok || !val {
+			t.Errorf("Audit log APPEND mismatch: got %v, want true", mockSM.LastAuditFields["APPEND"])
 		}
 	})
 
@@ -412,35 +396,20 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 		}
 
 		// Verify Audit Log includes OUTPUT_FILE and APPEND
-		foundOutputFile := false
-		foundAppend := false
-		for i := 0; i < len(mockSM.LastAuditKV); i += 2 {
-			if mockSM.LastAuditKV[i] == "OUTPUT_FILE" {
-				foundOutputFile = true
-				if mockSM.LastAuditKV[i+1] != "pipe_out.txt" {
-					t.Errorf("Audit log OUTPUT_FILE mismatch: got %v, want pipe_out.txt", mockSM.LastAuditKV[i+1])
-				}
-			}
-			if mockSM.LastAuditKV[i] == "APPEND" {
-				foundAppend = true
-				if val, ok := mockSM.LastAuditKV[i+1].(bool); !ok || val {
-					t.Errorf("Audit log APPEND mismatch: got %v, want false", mockSM.LastAuditKV[i+1])
-				}
-			}
+		if val, ok := mockSM.LastAuditFields["OUTPUT_FILE"].(string); !ok || val != "pipe_out.txt" {
+			t.Errorf("Audit log OUTPUT_FILE mismatch: got %v, want pipe_out.txt", mockSM.LastAuditFields["OUTPUT_FILE"])
 		}
-		if !foundOutputFile {
-			t.Error("Audit log missing OUTPUT_FILE")
-		}
-		if !foundAppend {
-			t.Error("Audit log missing APPEND")
+		if val, ok := mockSM.LastAuditFields["APPEND"].(bool); !ok || val {
+			t.Errorf("Audit log APPEND mismatch: got %v, want false", mockSM.LastAuditFields["APPEND"])
 		}
 	})
 }
 
 type mockShellSecurity struct {
 	*security.SecurityManager
-	LastDetail    string
-	LastAuditKV   []interface{}
+	LastDetail      string
+	LastAuditAction string
+	LastAuditFields map[string]any
 }
 
 func (m *mockShellSecurity) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
@@ -448,7 +417,8 @@ func (m *mockShellSecurity) Authorize(ctx context.Context, label, detail, reason
 	return m.SecurityManager.Authorize(ctx, label, detail, reason, isSafe)
 }
 
-func (m *mockShellSecurity) LogAudit(kv ...interface{}) {
-	m.LastAuditKV = kv
-	m.SecurityManager.LogAudit(kv...)
+func (m *mockShellSecurity) LogAudit(action string, fields map[string]any) {
+	m.LastAuditAction = action
+	m.LastAuditFields = fields
+	m.SecurityManager.LogAudit(action, fields)
 }

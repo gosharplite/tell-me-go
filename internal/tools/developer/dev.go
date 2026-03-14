@@ -127,7 +127,7 @@ func (m *devManager) authorizeAction(ctx context.Context, action, command, detai
 
 	// Use a consistent audit action name
 	auditAction := strings.ToLower(strings.ReplaceAll(action, " ", "_"))
-	m.sm.LogAudit("ACTION", auditAction, "COMMAND", command)
+	m.sm.LogAudit(auditAction, map[string]any{"COMMAND": command})
 	return true, nil
 }
 

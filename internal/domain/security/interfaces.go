@@ -18,7 +18,7 @@ type ActionConfirmer interface {
 }
 
 type Auditor interface {
-	LogAudit(kv ...interface{})
+	LogAudit(action string, fields map[string]any)
 }
 
 type TerminalController interface {

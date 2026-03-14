@@ -45,7 +45,7 @@ func (m *mockLocker) ReadLine(ctx context.Context) (string, error) {
 func (m *mockLocker) Confirm(ctx context.Context, message string) (bool, error) {
 	return true, nil
 }
-func (m *mockLocker) LogAudit(kv ...interface{}) {}
+func (m *mockLocker) LogAudit(action string, fields map[string]any) {}
 func (m *mockLocker) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }

@@ -68,11 +68,15 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return t.handleAuthResult(approved, err, "command: "+params.Command)
 	}
 
-	if params.OutputFile != "" {
-		t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command, "OUTPUT_FILE", params.OutputFile, "APPEND", params.Append)
-	} else {
-		t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command)
+	fields := map[string]any{
+		"REASON":  params.Reason,
+		"COMMAND": params.Command,
 	}
+	if params.OutputFile != "" {
+		fields["OUTPUT_FILE"] = params.OutputFile
+		fields["APPEND"] = params.Append
+	}
+	t.sm.LogAudit("EXECUTE_COMMAND", fields)
 
 	// 3. Execute
 	feedback := &warnWriter{sm: t.sm}
@@ -123,11 +127,15 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return t.handleAuthResult(approved, err, "pipeline")
 	}
 
-	if params.OutputFile != "" {
-		t.sm.LogAudit("PIPELINE", pipelineStr, "REASON", params.Reason, "OUTPUT_FILE", params.OutputFile, "APPEND", params.Append)
-	} else {
-		t.sm.LogAudit("PIPELINE", pipelineStr, "REASON", params.Reason)
+	fields := map[string]any{
+		"PIPELINE": pipelineStr,
+		"REASON":   params.Reason,
 	}
+	if params.OutputFile != "" {
+		fields["OUTPUT_FILE"] = params.OutputFile
+		fields["APPEND"] = params.Append
+	}
+	t.sm.LogAudit("PIPE_COMMANDS", fields)
 
 	// 2. Execute
 	pipedParts, err := t.splitPipeline(params.Commands)

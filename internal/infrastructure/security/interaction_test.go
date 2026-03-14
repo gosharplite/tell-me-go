@@ -16,11 +16,13 @@ import (
 
 // mockAuditor implements auditLogger for testing.
 type mockAuditor struct {
-	Logs [][]interface{}
+	Actions []string
+	Fields  []map[string]any
 }
 
-func (m *mockAuditor) LogAudit(kv ...interface{}) {
-	m.Logs = append(m.Logs, kv)
+func (m *mockAuditor) LogAudit(action string, fields map[string]any) {
+	m.Actions = append(m.Actions, action)
+	m.Fields = append(m.Fields, fields)
 }
 
 func (m *mockAuditor) SetLogFile(path string)                         {}
@@ -63,8 +65,9 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			wantResult: true,
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
 				assert.NotEmpty(t, spy.ConfirmCalls)
-				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0][1], "delete on file.txt")
+				assert.Len(t, auditor.Actions, 1)
+				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
+				assert.Contains(t, auditor.Fields[0]["ACTION"], "delete on file.txt")
 			},
 		},
 		{
@@ -79,7 +82,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			wantResult: false,
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
 				assert.NotEmpty(t, spy.ConfirmCalls)
-				assert.Empty(t, auditor.Logs)
+				assert.Empty(t, auditor.Actions)
 			},
 		},
 		{
@@ -93,9 +96,10 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 				assert.Empty(t, spy.ConfirmCalls)
 				assert.NotEmpty(t, spy.Warns)
 				assert.Contains(t, spy.Warns[0], "[Auto-Approved]")
-				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0][1], "delete on file.txt")
-				assert.Contains(t, auditor.Logs[0][3], "(auto-approved via bypass_confirmation)")
+				assert.Len(t, auditor.Actions, 1)
+				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
+				assert.Contains(t, auditor.Fields[0]["ACTION"], "delete on file.txt")
+				assert.Contains(t, auditor.Fields[0]["DETAIL"], "(auto-approved via bypass_confirmation)")
 			},
 		},
 		{
@@ -109,9 +113,10 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			},
 			wantResult: true,
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
-				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0][1], "write on large_file.txt")
-				assert.Contains(t, auditor.Logs[0][3], "... (truncated)")
+				assert.Len(t, auditor.Actions, 1)
+				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
+				assert.Contains(t, auditor.Fields[0]["ACTION"], "write on large_file.txt")
+				assert.Contains(t, auditor.Fields[0]["DETAIL"], "... (truncated)")
 			},
 		},
 		{

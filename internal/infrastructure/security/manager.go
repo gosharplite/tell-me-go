@@ -82,8 +82,8 @@ func (sm *SecurityManager) Authorize(ctx context.Context, label, detail, reason 
 }
 
 // LogAudit writes an audit entry.
-func (sm *SecurityManager) LogAudit(kv ...interface{}) {
-	sm.auditor.LogAudit(kv...)
+func (sm *SecurityManager) LogAudit(action string, fields map[string]any) {
+	sm.auditor.LogAudit(action, fields)
 }
 
 // Warn prints a security warning.
