@@ -34,7 +34,6 @@ func (m *mockSM) IsPathWritable(path string) (string, error) {
 
 func (m *mockSM) Close() error { return nil }
 
-
 // Mock Tool Registry
 type mockRegistry struct {
 	tools.IToolRegistry

@@ -2265,10 +2265,10 @@ func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reas
 	return m.approved, m.err
 }
 func (m *mockSecurityManager) LogAudit(action string, args ...any) {}
-func (m *mockSecurityManager) TerminalLock()                              {}
-func (m *mockSecurityManager) TerminalUnlock()                            {}
-func (m *mockSecurityManager) Prompt(message string)                      {}
-func (m *mockSecurityManager) Warn(message string)                        {}
+func (m *mockSecurityManager) TerminalLock()                       {}
+func (m *mockSecurityManager) TerminalUnlock()                     {}
+func (m *mockSecurityManager) Prompt(message string)               {}
+func (m *mockSecurityManager) Warn(message string)                 {}
 func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	m.confirmCalled = true
 	return m.approved, m.err
@@ -2277,4 +2277,3 @@ func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) { re
 func (m *mockSecurityManager) IsCommandAllowed(command string) bool         { return true }
 func (m *mockSecurityManager) IsBypassActive() bool                         { return false }
 func (m *mockSecurityManager) Close() error                                 { return nil }
-

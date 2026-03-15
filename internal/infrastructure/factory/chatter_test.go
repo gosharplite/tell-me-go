@@ -84,7 +84,6 @@ type mockSecurityManager struct {
 
 func (m *mockSecurityManager) Close() error { return nil }
 
-
 type mockTracker struct {
 	pricing.ICostTracker
 }

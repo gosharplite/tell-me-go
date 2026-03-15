@@ -96,10 +96,10 @@ func (s *integrationSecurityManager) Authorize(ctx context.Context, label, detai
 	return true, nil
 }
 func (s *integrationSecurityManager) LogAudit(action string, args ...any) {}
-func (s *integrationSecurityManager) TerminalLock()                              {}
-func (s *integrationSecurityManager) TerminalUnlock()                            {}
-func (s *integrationSecurityManager) Prompt(message string)                      {}
-func (s *integrationSecurityManager) Warn(message string)                        {}
+func (s *integrationSecurityManager) TerminalLock()                       {}
+func (s *integrationSecurityManager) TerminalUnlock()                     {}
+func (s *integrationSecurityManager) Prompt(message string)               {}
+func (s *integrationSecurityManager) Warn(message string)                 {}
 func (s *integrationSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	return true, nil
 }

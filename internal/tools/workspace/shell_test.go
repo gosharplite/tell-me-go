@@ -332,7 +332,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 func TestShellTool_SecurityVisibility(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true) // So we don't block on Authorize
-	
+
 	mockSM := &mockShellSecurity{SecurityManager: sm}
 	validator := security.NewCommandValidator(sm, nil)
 	tool := newshellTool(mockSM, validator)
