@@ -43,12 +43,14 @@ func (a *auditor) SetInteractor(interactor domain.UserInteractor) {
 // SetLogFile sets the path for logging executed commands.
 func (a *auditor) SetLogFile(path string) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	interactor := a.interactor
+	oldFile := a.file
+	a.file = nil
+	a.logger = nil
+	a.mu.Unlock()
 
-	if a.file != nil {
-		_ = a.file.Close()
-		a.file = nil
-		a.logger = nil
+	if oldFile != nil {
+		_ = oldFile.Close()
 	}
 
 	if path == "" {
@@ -57,14 +59,17 @@ func (a *auditor) SetLogFile(path string) {
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		if a.interactor != nil {
-			a.interactor.Warn(fmt.Sprintf("[Warning] Failed to open command log file: %v", err))
+		if interactor != nil {
+			interactor.Warn(fmt.Sprintf("[Warning] Failed to open command log file: %v", err))
 		}
 		return
 	}
 
+	logger := slog.New(slog.NewTextHandler(f, nil))
+	a.mu.Lock()
 	a.file = f
-	a.logger = slog.New(slog.NewTextHandler(f, nil))
+	a.logger = logger
+	a.mu.Unlock()
 }
 
 // LogAudit writes an audit entry to the commands log file using slog.

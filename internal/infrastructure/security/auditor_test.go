@@ -42,3 +42,24 @@ func TestAuditor_NoLogFile(t *testing.T) {
 	// Should not panic or fail when logFile is empty
 	a.LogAudit("TEST", "Action", "Test")
 }
+
+func TestAuditor_SetLogFileError(t *testing.T) {
+	t.Parallel()
+	mock := &MockInteractor{}
+	a := newAuditor()
+	a.SetInteractor(mock)
+
+	// Try to open a path that shouldn't be writable or is a directory
+	tmpDir := t.TempDir()
+	invalidPath := filepath.Join(tmpDir, "nonexistent_dir", "audit.log")
+
+	a.SetLogFile(invalidPath)
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	if len(mock.Warns) == 0 {
+		t.Error("Expected warning message, got none")
+	} else if !strings.Contains(mock.Warns[0], "Failed to open command log file") {
+		t.Errorf("Unexpected warning message: %s", mock.Warns[0])
+	}
+}
