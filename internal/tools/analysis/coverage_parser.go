@@ -336,8 +336,10 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 		return nil, err
 	}
 	tempPath := f.Name()
-	defer os.Remove(tempPath)
-	f.Close()
+	defer func() {
+		_ = os.Remove(tempPath)
+	}()
+	_ = f.Close()
 
 	_, _ = exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, packagePath)
 
@@ -353,7 +355,9 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 	if err != nil {
 		return nil, err
 	}
-	defer cf.Close()
+	defer func() {
+		_ = cf.Close()
+	}()
 
 	return parseDetailedCoverage(ctx, cf, exec, os.ReadFile)
 }
