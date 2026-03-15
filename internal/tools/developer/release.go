@@ -259,15 +259,18 @@ func (c *linterChecker) runStaticcheck(ctx context.Context) checkResult {
 }
 
 func (c *linterChecker) handleLinterResult(out []byte, err error, name string) checkResult {
+	outStr := strings.TrimSpace(string(out))
 	if err == nil {
-		outStr := strings.TrimSpace(string(out))
-		if outStr == "" {
+		if outStr == "" || outStr == "0 issues." {
 			return checkResult{OK: true, Message: fmt.Sprintf("All linting checks passed (%s).", name)}
 		}
 		return checkResult{OK: false, Message: fmt.Sprintf("%s found issues:\n%s", name, outStr)}
 	}
 
 	if strings.Contains(err.Error(), "exit status 1") {
+		if outStr == "0 issues." {
+			return checkResult{OK: true, Message: fmt.Sprintf("All linting checks passed (%s).", name)}
+		}
 		return checkResult{OK: false, Message: fmt.Sprintf("%s found issues:\n%s", name, string(out))}
 	}
 
