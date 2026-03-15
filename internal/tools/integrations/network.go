@@ -63,7 +63,7 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Limit reader to 5MB to prevent DoS
 	limitReader := io.LimitReader(resp.Body, 5*1024*1024+1)
@@ -73,10 +73,10 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Status: %s\n", resp.Status))
+	_, _ = fmt.Fprintf(&sb, "Status: %s\n", resp.Status)
 	sb.WriteString("Headers:\n")
 	for k, v := range resp.Header {
-		sb.WriteString(fmt.Sprintf("  %s: %s\n", k, strings.Join(v, ", ")))
+		_, _ = fmt.Fprintf(&sb, "  %s: %s\n", k, strings.Join(v, ", "))
 	}
 	sb.WriteString("\nBody:\n")
 
@@ -107,7 +107,7 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to fetch URL: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return tools.ToolResult{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)

@@ -35,11 +35,13 @@ func (m *refactorMockSecurityProvider) Warn(message string)   {}
 func (m *refactorMockSecurityProvider) Confirm(ctx context.Context, message string) (bool, error) {
 	return true, nil
 }
-func (m *refactorMockSecurityProvider) LogAudit(label1, val1, label2, val2 string) {
+func (m *refactorMockSecurityProvider) LogAudit(action string, args ...any) {
 }
 func (m *refactorMockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
+
+func (m *refactorMockSecurityProvider) Close() error { return nil }
 
 func (m *refactorMockSecurityProvider) GetSafetyService() *domain.SafetyService {
 	return domain.NewSafetyService(domain.DefaultPolicy())

@@ -68,7 +68,14 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return t.handleAuthResult(approved, err, "command: "+params.Command)
 	}
 
-	t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command)
+	argsAudit := []any{
+		"REASON", params.Reason,
+		"COMMAND", params.Command,
+	}
+	if params.OutputFile != "" {
+		argsAudit = append(argsAudit, "OUTPUT_FILE", params.OutputFile, "APPEND", params.Append)
+	}
+	t.sm.LogAudit("EXECUTE_COMMAND", argsAudit...)
 
 	// 3. Execute
 	feedback := &warnWriter{sm: t.sm}
@@ -119,7 +126,14 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return t.handleAuthResult(approved, err, "pipeline")
 	}
 
-	t.sm.LogAudit("PIPELINE", pipelineStr, "REASON", params.Reason)
+	argsAudit := []any{
+		"PIPELINE", pipelineStr,
+		"REASON", params.Reason,
+	}
+	if params.OutputFile != "" {
+		argsAudit = append(argsAudit, "OUTPUT_FILE", params.OutputFile, "APPEND", params.Append)
+	}
+	t.sm.LogAudit("PIPE_COMMANDS", argsAudit...)
 
 	// 2. Execute
 	pipedParts, err := t.splitPipeline(params.Commands)
@@ -176,7 +190,14 @@ func (t *shellTool) handleAuthResult(approved bool, err error, label string) (to
 }
 
 func (t *shellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
-	return true, nil
+	if outputFile != "" {
+		mode := " > "
+		if append {
+			mode = " >> "
+		}
+		detail = fmt.Sprintf("%s%s%s", detail, mode, outputFile)
+	}
+	return t.sm.Authorize(ctx, label, detail, reason, isSafe)
 }
 
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
@@ -217,6 +238,7 @@ type shellSecurity interface {
 	domain_security.TerminalController
 	domain_security.Auditor
 	domain_security.PathValidator
+	domain_security.ActionConfirmer
 }
 
 type warnWriter struct {

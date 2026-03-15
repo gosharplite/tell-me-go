@@ -32,6 +32,8 @@ func (m *mockSM) IsPathWritable(path string) (string, error) {
 	return path, nil
 }
 
+func (m *mockSM) Close() error { return nil }
+
 // Mock Tool Registry
 type mockRegistry struct {
 	tools.IToolRegistry
@@ -215,7 +217,7 @@ func TestTraceTelemetry(t *testing.T) {
 		// Flush event bus
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
-		bus.Flush(ctx)
+		_ = bus.Flush(ctx)
 
 		if _, err := os.Stat(traceFile); os.IsNotExist(err) {
 			t.Error("trace file not created via subscriber")
@@ -283,7 +285,7 @@ func TestLedger_Extended(t *testing.T) {
 		// Try to acquire again
 		f2, err := ls.acquireLedgerLock(historyPath)
 		if err == nil {
-			f2.Close()
+			_ = f2.Close()
 			t.Error("Should not be able to acquire lock again")
 		}
 

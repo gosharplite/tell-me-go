@@ -83,7 +83,7 @@ func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config
 func (e *processExecutor) prepareOutputFile(config executionConfig) *os.File {
 	file, ferr := e.openOutputFile(config)
 	if ferr != nil && config.Feedback != nil {
-		fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, ferr)
+		_, _ = fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, ferr)
 	}
 	return file
 }
@@ -167,7 +167,7 @@ func (e *processExecutor) handleCaptureError(err error, sb *strings.Builder, mu 
 	mu.Lock()
 	defer mu.Unlock()
 	if config.Feedback != nil {
-		fmt.Fprintln(config.Feedback, msg)
+		_, _ = fmt.Fprintln(config.Feedback, msg)
 	}
 
 	remaining := maxCapture - sb.Len()
@@ -402,7 +402,7 @@ func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, pref
 	}
 
 	if feedback != nil && feedbackMsg != "" {
-		fmt.Fprint(feedback, feedbackMsg)
+		_, _ = fmt.Fprint(feedback, feedbackMsg)
 	}
 }
 
@@ -418,7 +418,7 @@ func (sp *streamProcessor) appendErr(sb *strings.Builder, err error) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	if sp.feedback != nil {
-		fmt.Fprintln(sp.feedback, msg)
+		_, _ = fmt.Fprintln(sp.feedback, msg)
 	}
 
 	remaining := sp.maxCapture - *sp.totalCaptured
@@ -515,7 +515,7 @@ func (wt *writeTracker) Write(w io.Writer, p []byte) {
 	if _, err := w.Write(p); err != nil {
 		if wt.failed.CompareAndSwap(false, true) {
 			if wt.feedback != nil {
-				fmt.Fprintf(wt.feedback, "\n[Warning] Failed to write to output file %q: %v\n", wt.filePath, err)
+				_, _ = fmt.Fprintf(wt.feedback, "\n[Warning] Failed to write to output file %q: %v\n", wt.filePath, err)
 			}
 		}
 	}

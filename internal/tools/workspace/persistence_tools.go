@@ -208,7 +208,7 @@ func (t *persistenceTools) listTasks(status string) (tools.ToolResult, error) {
 		if task.Status == "completed" {
 			icon = "[x]"
 		}
-		sb.WriteString(fmt.Sprintf("%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status))
+		_, _ = fmt.Fprintf(&sb, "%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status)
 	}
 	return tools.ToolResult{Text: sb.String()}, nil
 }
@@ -327,7 +327,7 @@ func (t *persistenceTools) listConfig() (tools.ToolResult, error) {
 	}
 	var sb strings.Builder
 	for k, v := range config {
-		sb.WriteString(fmt.Sprintf("%s = %s\n", k, v))
+		_, _ = fmt.Fprintf(&sb, "%s = %s\n", k, v)
 	}
 	return tools.ToolResult{Text: sb.String()}, nil
 }

@@ -344,9 +344,9 @@ func TestStreamChat(t *testing.T) {
 		}
 
 		for _, chunk := range chunks {
-			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
 		}
-		fmt.Fprintf(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
 
@@ -525,7 +525,7 @@ func TestStreamChat_Errors(t *testing.T) {
 	t.Run("API Error in Chunk", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprintf(w, "data: %s\n\n", `{"error": {"message": "Something went wrong", "type": "api_error"}}`)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"error": {"message": "Something went wrong", "type": "api_error"}}`)
 		}))
 		defer server.Close()
 
@@ -600,9 +600,9 @@ func TestStreamChat_ToolCalls(t *testing.T) {
 			`{"choices":[{"delta":{"content":"done"}}]}`,
 		}
 		for _, chunk := range chunks {
-			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
 		}
-		fmt.Fprintf(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
 

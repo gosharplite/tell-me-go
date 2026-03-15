@@ -1,15 +1,21 @@
 # Copyright (c) 2026 gosharplite@gmail.com
 # SPDX-License-Identifier: MIT
 
-.PHONY: test test-race tidy fmt help
+VERSION ?= dev
+
+.PHONY: build test test-race tidy fmt help
 
 help:
 	@echo "tell-me-go development tasks:"
+	@echo "  make build      - Build binary with dynamic version (set VERSION=x.y.z)"
 	@echo "  make test       - Run all tests (standard)"
 	@echo "  make test-race  - Run tests with race detector (AI-SAFE, package-by-package)"
 	@echo "  make test-coverage - Run tests with coverage (excludes mocks/generated)"
 	@echo "  make tidy       - Tidy and vendor dependencies"
 	@echo "  make fmt        - Format code"
+
+build:
+	go build -ldflags="-X 'main.version=$(VERSION)'" -o tell-me-go ./cmd/tell-me-go
 
 test:
 	go test ./...

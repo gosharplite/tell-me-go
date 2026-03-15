@@ -127,7 +127,7 @@ func (m *devManager) authorizeAction(ctx context.Context, action, command, detai
 
 	// Use a consistent audit action name
 	auditAction := strings.ToLower(strings.ReplaceAll(action, " ", "_"))
-	m.sm.LogAudit("ACTION", auditAction, "COMMAND", command)
+	m.sm.LogAudit(auditAction, "COMMAND", command)
 	return true, nil
 }
 
@@ -184,8 +184,8 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tempName := f.Name()
-	f.Close()
-	defer os.Remove(tempName)
+	_ = f.Close()
+	defer func() { _ = os.Remove(tempName) }()
 
 	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, path)
 

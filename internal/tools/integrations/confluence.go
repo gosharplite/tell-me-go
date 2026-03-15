@@ -89,7 +89,7 @@ func (m *confluenceManager) resolveSpaceID(ctx context.Context, spaceKey string)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return "", fmt.Errorf("space key '%s' not found", spaceKey)
@@ -144,7 +144,7 @@ func (m *confluenceManager) fetchSearchPage(ctx context.Context, url string) (*s
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
@@ -298,7 +298,7 @@ func (m *confluenceManager) formatSearchResults(matches []searchMatch, warning s
 	resultText.WriteString(warning)
 	resultText.WriteString("Found pages:\n")
 	for _, page := range matches {
-		resultText.WriteString(fmt.Sprintf("- %s (ID: %s)\n", page.Title, page.ID))
+		_, _ = fmt.Fprintf(&resultText, "- %s (ID: %s)\n", page.Title, page.ID)
 	}
 
 	return tools.ToolResult{Text: resultText.String()}
@@ -327,15 +327,15 @@ func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID string)
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("confluence page not found: %s", pageID)
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("authentication failed: %s", resp.Status)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("confluence API returned status: %s", resp.Status)
 	}
 
@@ -343,7 +343,7 @@ func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID string)
 }
 
 func (m *confluenceManager) readAndValidateBody(respBody io.ReadCloser) ([]byte, error) {
-	defer respBody.Close()
+	defer func() { _ = respBody.Close() }()
 	const maxPageSize = 5 * 1024 * 1024
 	body, err := io.ReadAll(io.LimitReader(respBody, int64(maxPageSize)+1))
 	if err != nil {
@@ -467,7 +467,7 @@ func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID st
 	if err != nil {
 		return nil, fmt.Errorf("version fetch request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch current version, status: %s", resp.Status)
@@ -503,7 +503,7 @@ func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, pa
 	if err != nil {
 		return fmt.Errorf("update request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusConflict {
 		return fmt.Errorf("conflict: page version changed during update; please retry")

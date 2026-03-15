@@ -21,7 +21,7 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	binaryPath := filepath.Join(tempDir, "binary.bin")
 	err = os.WriteFile(binaryPath, []byte{0, 1, 2, 3}, 0644)

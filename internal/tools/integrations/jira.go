@@ -64,7 +64,7 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
@@ -134,13 +134,13 @@ func (m *jiraManager) formatSearchResponse(body io.ReadCloser) (string, error) {
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Found %d issues (showing %d):\n", totalFound, len(responseData.Issues)))
+	_, _ = fmt.Fprintf(&resultText, "Found %d issues (showing %d):\n", totalFound, len(responseData.Issues))
 	for _, issue := range responseData.Issues {
 		assignee := issue.Fields.Assignee.DisplayName
 		if assignee == "" {
 			assignee = "Unassigned"
 		}
-		resultText.WriteString(fmt.Sprintf("- [%s] %s (Status: %s, Assignee: %s)\n", issue.Key, issue.Fields.Summary, issue.Fields.Status.Name, assignee))
+		_, _ = fmt.Fprintf(&resultText, "- [%s] %s (Status: %s, Assignee: %s)\n", issue.Key, issue.Fields.Summary, issue.Fields.Status.Name, assignee)
 	}
 
 	return resultText.String(), nil
@@ -174,7 +174,7 @@ func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interfac
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return tools.ToolResult{}, fmt.Errorf("jira issue not found: %s", params.IssueKey)
@@ -220,14 +220,14 @@ func (m *jiraManager) formatGetIssueResponse(body io.ReadCloser) (string, error)
 	descriptionText := m.parseADF(issueData.Fields.Description)
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("# [%s] %s\n\n", issueData.Key, issueData.Fields.Summary))
-	resultText.WriteString(fmt.Sprintf("- **Status**: %s\n", issueData.Fields.Status.Name))
-	resultText.WriteString(fmt.Sprintf("- **Priority**: %s\n", issueData.Fields.Priority.Name))
+	_, _ = fmt.Fprintf(&resultText, "# [%s] %s\n\n", issueData.Key, issueData.Fields.Summary)
+	_, _ = fmt.Fprintf(&resultText, "- **Status**: %s\n", issueData.Fields.Status.Name)
+	_, _ = fmt.Fprintf(&resultText, "- **Priority**: %s\n", issueData.Fields.Priority.Name)
 	assignee := issueData.Fields.Assignee.DisplayName
 	if assignee == "" {
 		assignee = "Unassigned"
 	}
-	resultText.WriteString(fmt.Sprintf("- **Assignee**: %s\n\n", assignee))
+	_, _ = fmt.Fprintf(&resultText, "- **Assignee**: %s\n\n", assignee)
 	resultText.WriteString("## Description\n")
 	if descriptionText == "" {
 		resultText.WriteString("No description provided.")

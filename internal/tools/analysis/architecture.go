@@ -414,7 +414,7 @@ func (m *architectureManager) formatReport(violations []violation) string {
 	sb.WriteString("| :--- | :--- | :--- | :--- |\n")
 
 	for _, v := range violations {
-		sb.WriteString(fmt.Sprintf("| `%s` | %s | `%s` | %s |\n", v.pkg, v.category, v.target, v.reason))
+		_, _ = fmt.Fprintf(&sb, "| `%s` | %s | `%s` | %s |\n", v.pkg, v.category, v.target, v.reason)
 	}
 
 	sb.WriteString("\n**Recommendation**: Follow the dependency inversion principle. High-level modules should not depend on low-level modules; both should depend on abstractions defined in the Domain layer.\n")

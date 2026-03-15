@@ -74,9 +74,9 @@ func renderSubgraphs(sb *strings.Builder, graph map[string][]string) {
 	for _, root := range layerNames {
 		pkgs := layers[root]
 		sort.Strings(pkgs)
-		sb.WriteString(fmt.Sprintf("  subgraph %s[\"%s\"]\n", sanitize(root), root))
+		_, _ = fmt.Fprintf(sb, "  subgraph %s[\"%s\"]\n", sanitize(root), root)
 		for _, p := range pkgs {
-			sb.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", sanitize(p), p))
+			_, _ = fmt.Fprintf(sb, "    %s[\"%s\"]\n", sanitize(p), p)
 		}
 		sb.WriteString("  end\n")
 	}
@@ -97,10 +97,10 @@ func renderRelationships(sb *strings.Builder, graph map[string][]string, cycleEd
 		for _, dst := range deps {
 			edgeKey := fmt.Sprintf("%s|%s", src, dst)
 			if cycleEdges[edgeKey] {
-				sb.WriteString(fmt.Sprintf("  %s -->|cycle| %s\n", sanitize(src), sanitize(dst)))
+				_, _ = fmt.Fprintf(sb, "  %s -->|cycle| %s\n", sanitize(src), sanitize(dst))
 				cycleEdgeIndices = append(cycleEdgeIndices, fmt.Sprint(edgeIndex))
 			} else {
-				sb.WriteString(fmt.Sprintf("  %s --> %s\n", sanitize(src), sanitize(dst)))
+				_, _ = fmt.Fprintf(sb, "  %s --> %s\n", sanitize(src), sanitize(dst))
 			}
 			edgeIndex++
 		}
@@ -116,14 +116,14 @@ func renderStyles(sb *strings.Builder, pkgs []string, cycleEdgeIndices []string)
 	for _, pkg := range pkgs {
 		for _, rule := range defaultstyleRules {
 			if rule.Pattern.MatchString(pkg) {
-				sb.WriteString(fmt.Sprintf("  class %s %s;\n", sanitize(pkg), rule.Class))
+				_, _ = fmt.Fprintf(sb, "  class %s %s;\n", sanitize(pkg), rule.Class)
 				break
 			}
 		}
 	}
 
 	if len(cycleEdgeIndices) > 0 {
-		sb.WriteString(fmt.Sprintf("  linkStyle %s stroke:#f00,stroke-width:4px;\n", strings.Join(cycleEdgeIndices, ",")))
+		_, _ = fmt.Fprintf(sb, "  linkStyle %s stroke:#f00,stroke-width:4px;\n", strings.Join(cycleEdgeIndices, ","))
 	}
 }
 

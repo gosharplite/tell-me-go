@@ -126,9 +126,9 @@ func (m *typeManager) ListImplementations(ctx context.Context, args map[string]i
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Types implementing %s:\n", params.InterfaceName))
+	_, _ = fmt.Fprintf(&sb, "Types implementing %s:\n", params.InterfaceName)
 	for _, imp := range implementors {
-		sb.WriteString(fmt.Sprintf("- %s.%s\n", imp.PkgPath, imp.Name))
+		_, _ = fmt.Fprintf(&sb, "- %s.%s\n", imp.PkgPath, imp.Name)
 	}
 
 	return tools.ToolResult{Text: sb.String()}, nil
@@ -275,9 +275,9 @@ func (m *typeManager) findMethodsInPackage(dir, typeName string) ([]string, erro
 
 func (m *typeManager) renderTypeInfo(def typeDefinition, receivers []string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Type: %s\nLocation: %s\n", def.Name, def.location))
+	_, _ = fmt.Fprintf(&sb, "Type: %s\nLocation: %s\n", def.Name, def.location)
 	if def.Kind != "" {
-		sb.WriteString(fmt.Sprintf("Kind: %s\n", def.Kind))
+		_, _ = fmt.Fprintf(&sb, "Kind: %s\n", def.Kind)
 	}
 	if def.Doc != "" {
 		sb.WriteString("Doc: " + def.Doc)
@@ -290,20 +290,20 @@ func (m *typeManager) renderTypeInfo(def typeDefinition, receivers []string) str
 			if f.Tag != "" {
 				tag = " " + f.Tag
 			}
-			sb.WriteString(fmt.Sprintf("  - %s %s%s\n", f.Names, f.Type, tag))
+			_, _ = fmt.Fprintf(&sb, "  - %s %s%s\n", f.Names, f.Type, tag)
 		}
 	}
 
 	if len(def.Methods) > 0 {
 		sb.WriteString("Methods:\n")
 		for _, meth := range def.Methods {
-			sb.WriteString(fmt.Sprintf("  - %s\n", meth))
+			_, _ = fmt.Fprintf(&sb, "  - %s\n", meth)
 		}
 	}
 
 	sb.WriteString("Methods (Receivers):\n")
 	for _, meth := range receivers {
-		sb.WriteString(fmt.Sprintf("  - %s\n", meth))
+		_, _ = fmt.Fprintf(&sb, "  - %s\n", meth)
 	}
 
 	return sb.String()

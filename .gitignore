@@ -39,3 +39,6 @@ Thumbs.db
 *.out
 *.test
 *.prof
+
+# Workspace temporary test artifacts
+internal/tools/workspace/*.txt

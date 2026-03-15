@@ -95,17 +95,18 @@ func (s *integrationSecurityManager) IsPathWritable(path string) (string, error)
 func (s *integrationSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
-func (s *integrationSecurityManager) LogAudit(label1, val1, label2, val2 string) {}
-func (s *integrationSecurityManager) TerminalLock()                              {}
-func (s *integrationSecurityManager) TerminalUnlock()                            {}
-func (s *integrationSecurityManager) Prompt(message string)                      {}
-func (s *integrationSecurityManager) Warn(message string)                        {}
+func (s *integrationSecurityManager) LogAudit(action string, args ...any) {}
+func (s *integrationSecurityManager) TerminalLock()                       {}
+func (s *integrationSecurityManager) TerminalUnlock()                     {}
+func (s *integrationSecurityManager) Prompt(message string)               {}
+func (s *integrationSecurityManager) Warn(message string)                 {}
 func (s *integrationSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	return true, nil
 }
 func (s *integrationSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
 func (s *integrationSecurityManager) IsCommandAllowed(command string) bool         { return true }
 func (s *integrationSecurityManager) IsBypassActive() bool                         { return false }
+func (s *integrationSecurityManager) Close() error                                 { return nil }
 
 func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	if testing.Short() {

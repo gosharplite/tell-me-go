@@ -82,8 +82,8 @@ func (sm *SecurityManager) Authorize(ctx context.Context, label, detail, reason 
 }
 
 // LogAudit writes an audit entry.
-func (sm *SecurityManager) LogAudit(label1, val1, label2, val2 string) {
-	sm.auditor.LogAudit(label1, val1, label2, val2)
+func (sm *SecurityManager) LogAudit(action string, args ...any) {
+	sm.auditor.LogAudit(action, args...)
 }
 
 // Warn prints a security warning.
@@ -268,4 +268,9 @@ func (sm *SecurityManager) GetInteractor() domain.UserInteractor {
 type internalSecurityProvider interface {
 	domain.ISecurityManager
 	getSafetyService() *domain.SafetyService
+}
+
+// Close shuts down the security manager and releases its resources.
+func (sm *SecurityManager) Close() error {
+	return sm.auditor.Close()
 }

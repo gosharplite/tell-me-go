@@ -243,13 +243,13 @@ func TestMockFileSystem_More(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open failed: %v", err)
 		}
-		f1.Close()
+		_ = f1.Close()
 
 		f2, err := fs.OpenFile(ctx, "file.txt", os.O_RDONLY, 0644)
 		if err != nil {
 			t.Fatalf("OpenFile failed: %v", err)
 		}
-		f2.Close()
+		_ = f2.Close()
 
 		_, err = fs.Open(ctx, "missing.txt")
 		if err == nil {

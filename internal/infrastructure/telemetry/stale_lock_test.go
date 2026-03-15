@@ -23,7 +23,7 @@ func TestIsStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	lockPath := filepath.Join(tmpDir, "test.lock")
 
@@ -57,7 +57,7 @@ func TestRecordCost_BreaksStaleLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	outputDir := filepath.Join(tmpDir, "coder")
 	_ = os.MkdirAll(outputDir, 0755)
@@ -102,7 +102,7 @@ func TestRecoverLedger_DetectedModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	globalDir := tmpDir
 	sessionDir := filepath.Join(globalDir, "coder", "20260202_120000")

@@ -21,7 +21,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	filePath := filepath.Join(tmpDir, "test.txt")
 	content := "line 1\ntarget\nline 3\ntarget\nline 5"

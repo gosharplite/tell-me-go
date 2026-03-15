@@ -127,16 +127,16 @@ func (r *stdUIRenderer) renderMarkdown(text string) {
 
 func (r *stdUIRenderer) renderMarkdownWithUI(ui uiState, text string) {
 	stdout := ui.stdout
-	fmt.Fprintf(stdout, "%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
+	_, _ = fmt.Fprintf(stdout, "%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
 	if r.renderer == nil {
-		fmt.Fprint(stdout, text)
+		_, _ = fmt.Fprint(stdout, text)
 		return
 	}
 	out, err := r.renderer.Render(text)
 	if err != nil {
-		fmt.Fprint(stdout, text)
+		_, _ = fmt.Fprint(stdout, text)
 	} else {
-		fmt.Fprint(stdout, out)
+		_, _ = fmt.Fprint(stdout, out)
 	}
 }
 
@@ -258,7 +258,7 @@ func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime 
 		costStr = fmt.Sprintf(" %s($%.4f)%s", ui.c(colorGray), m.Cost, ui.c(colorGray))
 	}
 
-	fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d Th: %d%s %s[%s]%s\n",
+	_, _ = fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d Th: %d%s %s[%s]%s\n",
 		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, m.ThinkingTokens, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
 }
 
@@ -282,22 +282,22 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		}
 
 		if isActual {
-			fmt.Fprintf(stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
+			_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
 				ui.c(colorGray), timestamp, ui.c(tokenColor), tks, ui.c(colorGray), status.MaxHistoryTokens, ui.c(colorReset))
 		} else {
-			fmt.Fprintf(stderr, "%s[%s] Payload: ~%s%d%s/%d tokens%s\n",
+			_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: ~%s%d%s/%d tokens%s\n",
 				ui.c(colorGray), timestamp, ui.c(tokenColor), tks, ui.c(colorGray), status.MaxHistoryTokens, ui.c(colorReset))
 		}
 	}
 
 	if !status.IsPostCall {
-		fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
-		fmt.Fprintf(stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, ui.c(colorGray))
+		_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
+		_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, ui.c(colorGray))
 		printSystemLine(status.Tokens, false)
-		fmt.Fprintln(stderr) // Ensure visual gap before response
+		_, _ = fmt.Fprintln(stderr) // Ensure visual gap before response
 	} else if status.Metrics != nil {
 		m := status.Metrics
-		fmt.Fprintln(stderr) // Add vertical separation
+		_, _ = fmt.Fprintln(stderr) // Add vertical separation
 		printSystemLine(int(m.PromptTokens), true)
 
 		r.renderMetricsLine(ui, m, status.StartTime)
@@ -322,7 +322,7 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 				status.TotalO,
 				ui.c(colorGray))
 		}
-		fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
+		_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
 	}
 }
 
@@ -351,7 +351,7 @@ func (r *stdUIRenderer) renderThought(ui uiState, part *llm.Part, showThoughts b
 		}
 
 		sanitized := sanitizeForTerminal(part.Text)
-		fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", ui.c(colorGray), ts, sanitized, ui.c(colorReset))
+		_, _ = fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", ui.c(colorGray), ts, sanitized, ui.c(colorReset))
 	}
 }
 
@@ -359,9 +359,9 @@ func (r *stdUIRenderer) renderText(ui uiState, part *llm.Part, raw bool) {
 	if part.Text != "" && !part.IsThought {
 		stdout := ui.stdout
 		if raw {
-			fmt.Fprint(stdout, part.Text)
+			_, _ = fmt.Fprint(stdout, part.Text)
 			if !strings.HasSuffix(part.Text, "\n") {
-				fmt.Fprintln(stdout)
+				_, _ = fmt.Fprintln(stdout)
 			}
 		} else {
 			sanitized := sanitizeForTerminal(part.Text)
@@ -374,7 +374,7 @@ func (r *stdUIRenderer) renderInlineData(ui uiState, part *llm.Part) {
 	if part.InlineData != nil {
 		ts := ui.getTimestamp()
 		stderr := ui.stderr
-		fmt.Fprintf(stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
+		_, _ = fmt.Fprintf(stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
 			ui.c(colorGray), ts, part.InlineData.MIMEType, len(part.InlineData.Data), ui.c(colorReset))
 	}
 }
@@ -403,7 +403,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		if r.locker != nil {
 			r.locker.TerminalLock()
 		}
-		fmt.Fprint(ui.stdout, termSaveCursor)
+		_, _ = fmt.Fprint(ui.stdout, termSaveCursor)
 		if r.locker != nil {
 			r.locker.TerminalUnlock()
 		}
@@ -488,7 +488,7 @@ func (r *stdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui ui
 	if r.locker != nil {
 		r.locker.TerminalLock()
 	}
-	fmt.Fprint(ui.stdout, output)
+	_, _ = fmt.Fprint(ui.stdout, output)
 	if r.locker != nil {
 		r.locker.TerminalUnlock()
 	}
@@ -521,7 +521,7 @@ func (r *stdUIRenderer) safePrintStderr(msg string, ui uiState) {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
 	}
-	fmt.Fprint(ui.stderr, msg)
+	_, _ = fmt.Fprint(ui.stderr, msg)
 }
 
 func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
@@ -552,7 +552,7 @@ func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
 		if r.locker != nil {
 			r.locker.TerminalLock()
 		}
-		fmt.Fprintln(ui.stdout)
+		_, _ = fmt.Fprintln(ui.stdout)
 		if r.locker != nil {
 			r.locker.TerminalUnlock()
 		}
@@ -564,7 +564,7 @@ func (r *stdUIRenderer) clearAndRenderMarkdown(ui uiState, fullText string) {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
 	}
-	fmt.Fprint(ui.stdout, ui.c(termRestoreCursor)+ui.c(termClearForward))
+	_, _ = fmt.Fprint(ui.stdout, ui.c(termRestoreCursor)+ui.c(termClearForward))
 	r.renderMarkdownWithUI(ui, fullText)
 }
 
@@ -582,14 +582,14 @@ func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 		names = append(names, fc.Name)
 	}
 
-	fmt.Fprintf(stderr, "%s[%s] [Tool Engine (Step %d/%d)] Calling: %s%s\n",
+	_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Engine (Step %d/%d)] Calling: %s%s\n",
 		ui.c(colorCyan), ts, turn+1, maxTurns, strings.Join(names, ", "), ui.c(colorReset))
 
 	if showTools {
 		for _, fc := range calls {
 			// Extract and display the reason if present
 			if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
-				fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
+				_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
 					ui.c(colorGray), ts, reason, ui.c(colorReset))
 			}
 
@@ -604,7 +604,7 @@ func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 				}
 				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
 			}
-			fmt.Fprintf(stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
+			_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
 				ui.c(colorMagenta), ts, fc.Name, strings.Join(argParts, ", "), ui.c(colorReset))
 		}
 	}
@@ -630,11 +630,11 @@ func (r *stdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 			snippet = snippet[:197] + "..."
 		}
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
-		fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: %s%s\n", ui.c(colorCyan), timestamp, name, snippet, ui.c(colorReset))
+		_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: %s%s\n", ui.c(colorCyan), timestamp, name, snippet, ui.c(colorReset))
 	}
 
 	for _, b := range result.BinaryData {
-		fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
+		_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
 			ui.c(colorCyan), timestamp, name, b.MIMEType, len(b.Data), ui.c(colorReset))
 	}
 
@@ -666,6 +666,6 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 		prefix = "Info"
 	}
 
-	fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
+	_, _ = fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
 }

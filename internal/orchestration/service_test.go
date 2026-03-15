@@ -59,8 +59,8 @@ func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reas
 	args := m.Called(ctx, label, detail, reason, isSafe)
 	return args.Bool(0), args.Error(1)
 }
-func (m *mockSecurityManager) LogAudit(label1, val1, label2, val2 string) {
-	m.Called(label1, val1, label2, val2)
+func (m *mockSecurityManager) LogAudit(action string, args ...any) {
+	m.Called(action, args)
 }
 func (m *mockSecurityManager) TerminalLock()         { m.Called() }
 func (m *mockSecurityManager) TerminalUnlock()       { m.Called() }
@@ -76,6 +76,7 @@ func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) {
 }
 func (m *mockSecurityManager) IsCommandAllowed(command string) bool { return m.Called(command).Bool(0) }
 func (m *mockSecurityManager) IsBypassActive() bool                 { return m.Called().Bool(0) }
+func (m *mockSecurityManager) Close() error                         { return m.Called().Error(0) }
 
 // mockContainer is a mock of Container.
 type mockContainer struct {

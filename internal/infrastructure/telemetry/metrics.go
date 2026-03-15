@@ -373,7 +373,9 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 	if err != nil {
 		return fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
 	}
-	defer fAppend.Close()
+	defer func() {
+		_ = fAppend.Close()
+	}()
 
 	_, err = fAppend.WriteString(string(summaryBytes) + "\n")
 	if err != nil {
@@ -400,8 +402,8 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 		return
 	}
 	defer func() {
-		lock.Close()
-		os.Remove(lockPath)
+		_ = lock.Close()
+		_ = os.Remove(lockPath)
 	}()
 
 	// 2. Update history
@@ -571,25 +573,25 @@ func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakd
 	stats := breakdown.Stats
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Estimated Cost for Session (Model: %s):\n", m.model))
-	sb.WriteString(fmt.Sprintf("Pricing Data As Of: %s\n", pricing.UpdatedAt))
+	fmt.Fprintf(&sb, "Estimated Cost for Session (Model: %s):\n", m.model)
+	fmt.Fprintf(&sb, "Pricing Data As Of: %s\n", pricing.UpdatedAt)
 	sb.WriteString("\n")
 
 	sb.WriteString("| SKU | Count | Rate (USD/1M) | Cost (USD) |\n")
 	sb.WriteString("| :--- | :--- | :--- | :--- |\n")
 
-	sb.WriteString(fmt.Sprintf("| Text Input | %d | $%.2f | $%.6f |\n", stats.PromptTokens-stats.CachedTokens, p.Miss, breakdown.InputCost))
-	sb.WriteString(fmt.Sprintf("| Input Caching | %d | $%.2f | $%.6f |\n", stats.CachedTokens, p.Hit, breakdown.CacheCost))
+	fmt.Fprintf(&sb, "| Text Input | %d | $%.2f | $%.6f |\n", stats.PromptTokens-stats.CachedTokens, p.Miss, breakdown.InputCost)
+	fmt.Fprintf(&sb, "| Input Caching | %d | $%.2f | $%.6f |\n", stats.CachedTokens, p.Hit, breakdown.CacheCost)
 
 	thinkingRate := p.Thinking
 	if thinkingRate == 0 {
 		thinkingRate = p.Comp
 	}
-	sb.WriteString(fmt.Sprintf("| Text Output | %d | $%.2f | $%.6f |\n", stats.ResponseTokens, p.Comp, (float64(stats.ResponseTokens) * p.Comp / 1e6)))
+	fmt.Fprintf(&sb, "| Text Output | %d | $%.2f | $%.6f |\n", stats.ResponseTokens, p.Comp, (float64(stats.ResponseTokens) * p.Comp / 1e6))
 	if stats.ThinkingTokens > 0 {
-		sb.WriteString(fmt.Sprintf("| Thinking Tokens | %d | $%.2f | $%.6f |\n", stats.ThinkingTokens, thinkingRate, (float64(stats.ThinkingTokens) * thinkingRate / 1e6)))
+		fmt.Fprintf(&sb, "| Thinking Tokens | %d | $%.2f | $%.6f |\n", stats.ThinkingTokens, thinkingRate, (float64(stats.ThinkingTokens) * thinkingRate / 1e6))
 	}
-	sb.WriteString(fmt.Sprintf("| Search Queries | %d | $%.3f/Q | $%.6f |\n", stats.SearchQueries, p.SearchQuery, breakdown.SearchCost))
+	fmt.Fprintf(&sb, "| Search Queries | %d | $%.3f/Q | $%.6f |\n", stats.SearchQueries, p.SearchQuery, breakdown.SearchCost)
 	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", breakdown.TotalCost) + "** |\n")
 
 	return sb.String()
@@ -793,8 +795,8 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### %s\n\n", title))
-	sb.WriteString(fmt.Sprintf("| %s | Miss | Hit | Other | Eff %% | Total Cost (USD) |\n", headerName))
+	_, _ = fmt.Fprintf(&sb, "### %s\n\n", title)
+	_, _ = fmt.Fprintf(&sb, "| %s | Miss | Hit | Other | Eff %% | Total Cost (USD) |\n", headerName)
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
 	var grandTotal float64
@@ -811,7 +813,7 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 			eff = float64(hTokens) / float64(total) * 100
 		}
 
-		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %.1f%% | $%.4f |\n", k, mTokens, hTokens, oTokens, eff, cost))
+		_, _ = fmt.Fprintf(&sb, "| %s | %d | %d | %d | %.1f%% | $%.4f |\n", k, mTokens, hTokens, oTokens, eff, cost)
 		grandTotal += cost
 		totalM += mTokens
 		totalH += hTokens
@@ -822,7 +824,7 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 	if total := totalM + totalH; total > 0 {
 		totalEff = float64(totalH) / float64(total) * 100
 	}
-	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal))
+	_, _ = fmt.Fprintf(&sb, "| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal)
 
 	return sb.String()
 }

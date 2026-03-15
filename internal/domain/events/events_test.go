@@ -283,7 +283,7 @@ func TestSimpleEventBus_BufferEviction(t *testing.T) {
 	close(block)
 
 	// Wait for processing to finish
-	bus.Flush(context.Background())
+	_ = bus.Flush(context.Background())
 
 	mu.Lock()
 	defer mu.Unlock()

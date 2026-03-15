@@ -336,8 +336,10 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 		return nil, err
 	}
 	tempPath := f.Name()
-	defer os.Remove(tempPath)
-	f.Close()
+	defer func() {
+		_ = os.Remove(tempPath)
+	}()
+	_ = f.Close()
 
 	_, _ = exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, packagePath)
 
@@ -353,7 +355,9 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 	if err != nil {
 		return nil, err
 	}
-	defer cf.Close()
+	defer func() {
+		_ = cf.Close()
+	}()
 
 	return parseDetailedCoverage(ctx, cf, exec, os.ReadFile)
 }
@@ -402,13 +406,13 @@ func aggregateCoverageStats(blocks []uncoveredBlock) (high []uncoveredBlock, med
 }
 
 func renderReportSummary(sb *strings.Builder, packagePath string, total int, high, medium []uncoveredBlock, lowCount int, catStats map[string]int) {
-	sb.WriteString(fmt.Sprintf("Detailed Coverage Report for %s\n", packagePath))
+	_, _ = fmt.Fprintf(sb, "Detailed Coverage Report for %s\n", packagePath)
 	sb.WriteString(strings.Repeat("-", len(packagePath)+29) + "\n")
 	sb.WriteString("Summary:\n")
-	sb.WriteString(fmt.Sprintf("- Total Gaps: %d\n", total))
-	sb.WriteString(fmt.Sprintf("- High Priority (Architectural): %d\n", len(high)))
-	sb.WriteString(fmt.Sprintf("- Medium Priority (Technical Debt): %d\n", len(medium)))
-	sb.WriteString(fmt.Sprintf("- Low Priority: %d\n", lowCount))
+	_, _ = fmt.Fprintf(sb, "- Total Gaps: %d\n", total)
+	_, _ = fmt.Fprintf(sb, "- High Priority (Architectural): %d\n", len(high))
+	_, _ = fmt.Fprintf(sb, "- Medium Priority (Technical Debt): %d\n", len(medium))
+	_, _ = fmt.Fprintf(sb, "- Low Priority: %d\n", lowCount)
 	sb.WriteString("\nBreakdown by Category:\n")
 
 	var cats []string
@@ -417,7 +421,7 @@ func renderReportSummary(sb *strings.Builder, packagePath string, total int, hig
 	}
 	sort.Strings(cats)
 	for _, cat := range cats {
-		sb.WriteString(fmt.Sprintf("- %s: %d\n", cat, catStats[cat]))
+		_, _ = fmt.Fprintf(sb, "- %s: %d\n", cat, catStats[cat])
 	}
 }
 
@@ -425,19 +429,19 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock,
 	if len(blocks) == 0 {
 		return
 	}
-	sb.WriteString(fmt.Sprintf("\n[%s]\n", title))
+	_, _ = fmt.Fprintf(sb, "\n[%s]\n", title)
 
 	label := strings.ToLower(title)
 	label = strings.TrimSuffix(label, " gaps")
 
 	for i, b := range blocks {
 		if i >= maxItems {
-			sb.WriteString(fmt.Sprintf("... and %d more %s gaps.\n", len(blocks)-maxItems, label))
+			_, _ = fmt.Fprintf(sb, "... and %d more %s gaps.\n", len(blocks)-maxItems, label)
 			break
 		}
-		sb.WriteString(fmt.Sprintf("%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End))
-		sb.WriteString(fmt.Sprintf("   Category: %s\n", b.Category))
-		sb.WriteString(fmt.Sprintf("   Code:\n%s\n\n", b.Code))
+		_, _ = fmt.Fprintf(sb, "%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End)
+		_, _ = fmt.Fprintf(sb, "   Category: %s\n", b.Category)
+		_, _ = fmt.Fprintf(sb, "   Code:\n%s\n\n", b.Code)
 	}
 }
 

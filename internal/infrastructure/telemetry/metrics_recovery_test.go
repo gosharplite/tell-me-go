@@ -22,7 +22,7 @@ func TestRecoverLedger_ContextCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Create some dummy log files to make the walk take some time
 	for i := 0; i < 10; i++ {
@@ -57,7 +57,7 @@ func TestRecordCost_UsesContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(tempDir)
@@ -93,7 +93,7 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Create a log file so recovery has something to do
 	logPath := filepath.Join(tempDir, "test-mode", "session_tokens.log")

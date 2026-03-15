@@ -13,8 +13,8 @@ import (
 
 func TestNew(t *testing.T) {
 	t.Run("Default home directory", func(t *testing.T) {
-		os.Unsetenv("TELL_ME_HOME")
-		os.Unsetenv("AIT_HOME")
+		_ = os.Unsetenv("TELL_ME_HOME")
+		_ = os.Unsetenv("AIT_HOME")
 		app := New("1.0.0", nil, nil, nil)
 		if app.homeDir != "." {
 			t.Errorf("expected homeDir to be '.', got %s", app.homeDir)
@@ -23,8 +23,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("TELL_ME_HOME environment variable", func(t *testing.T) {
 		expected := "/tmp/tell-me-home"
-		os.Setenv("TELL_ME_HOME", expected)
-		defer os.Unsetenv("TELL_ME_HOME")
+		t.Setenv("TELL_ME_HOME", expected)
 		app := New("1.0.0", nil, nil, nil)
 		if app.homeDir != expected {
 			t.Errorf("expected homeDir to be %s, got %s", expected, app.homeDir)
@@ -32,10 +31,9 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("AIT_HOME environment variable", func(t *testing.T) {
-		os.Unsetenv("TELL_ME_HOME")
+		_ = os.Unsetenv("TELL_ME_HOME")
 		expected := "/tmp/ait-home"
-		os.Setenv("AIT_HOME", expected)
-		defer os.Unsetenv("AIT_HOME")
+		t.Setenv("AIT_HOME", expected)
 		app := New("1.0.0", nil, nil, nil)
 		if app.homeDir != expected {
 			t.Errorf("expected homeDir to be %s, got %s", expected, app.homeDir)

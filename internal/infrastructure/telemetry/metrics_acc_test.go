@@ -20,7 +20,7 @@ func TestSessionCostTracker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "tokens.log")
 	model := domain_pricing.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
@@ -70,7 +70,7 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "tokens.log")
 	model := domain_pricing.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
@@ -120,7 +120,7 @@ func TestSessionCostTracker_MixedModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "tokens.log")
 	pricingData := domain_pricing.PricingData{
@@ -163,7 +163,7 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	logFile := filepath.Join(tmpDir, "tokens.log")
 	pricingData := domain_pricing.PricingData{

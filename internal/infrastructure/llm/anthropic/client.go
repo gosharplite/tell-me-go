@@ -135,7 +135,9 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if err := c.checkResponse(resp); err != nil {
 		return nil, nil, err
@@ -189,9 +191,10 @@ func (c *client) appendSystemContent(currentSystem string, h *llm.Content) strin
 
 func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBlock, error) {
 	role := h.Role
-	if role == "model" {
+	switch role {
+	case "model":
 		role = "assistant"
-	} else if role == "tool" {
+	case "tool":
 		role = "user"
 	}
 
@@ -380,7 +383,9 @@ func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if err := c.checkResponse(resp); err != nil {
 		return nil, err
@@ -525,14 +530,15 @@ func (c *client) handleContentBlockStart(data string, callback func(*llm.Content
 	if err := json.Unmarshal([]byte(data), &start); err != nil {
 		return nil
 	}
-	if start.ContentBlock.Type == "thinking" {
+	switch start.ContentBlock.Type {
+	case "thinking":
 		update := &llm.Content{Role: "model"}
 		update.Parts = append(update.Parts, &llm.Part{
 			IsThought:        true,
 			ThoughtSignature: []byte(start.ContentBlock.Signature),
 		})
 		callback(update)
-	} else if start.ContentBlock.Type == "tool_use" {
+	case "tool_use":
 		state.toolCalls[start.Index] = &llm.Part{
 			FunctionCall: &llm.FunctionCall{
 				ID:   start.ContentBlock.ID,
@@ -658,7 +664,9 @@ func (c *client) checkResponse(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {
 		// Function-scoped defer: executes when this function returns,
 		// safely protecting against panics inside io.ReadAll.
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {

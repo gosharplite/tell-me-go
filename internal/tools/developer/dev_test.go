@@ -139,7 +139,7 @@ func setupCoverageMock(t *testing.T, m *devManager, executor *mockDevExecutor, e
 		}
 		f, err := os.CreateTemp(dir, pattern)
 		if err == nil {
-			t.Cleanup(func() { os.Remove(f.Name()) })
+			t.Cleanup(func() { _ = os.Remove(f.Name()) })
 		}
 		return f, err
 	}

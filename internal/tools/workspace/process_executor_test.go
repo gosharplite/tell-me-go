@@ -855,7 +855,7 @@ func setupSecurityTest(t *testing.T) string {
 func validateOpenResult(t *testing.T, f *os.File, err error, wantErr bool, errContain string) {
 	t.Helper()
 	if f != nil {
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 	}
 
 	if (err != nil) != wantErr {
@@ -891,8 +891,8 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 			}
 			if f != nil {
 				name := f.Name()
-				f.Close()
-				t.Cleanup(func() { os.Remove(name) })
+				_ = f.Close()
+				t.Cleanup(func() { _ = os.Remove(name) })
 				if !strings.Contains(name, tt.expected) {
 					t.Errorf("expected path to contain %q, got %q", tt.expected, name)
 				}

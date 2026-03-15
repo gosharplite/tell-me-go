@@ -159,13 +159,13 @@ func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persisten
 		info.Provider = cfg.SelectedProvider
 		state.SetInfo(info)
 	} else {
-		fmt.Fprintf(b.Stderr, "Warning: Failed to initialize session state: %v\n", err)
+		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to initialize session state: %v\n", err)
 	}
 
 	cleanup := func() {
 		if sessionProvider != nil {
 			if err := sessionProvider.Close(); err != nil {
-				fmt.Fprintf(b.Stderr, "Warning: Failed to close session provider: %v\n", err)
+				_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to close session provider: %v\n", err)
 			}
 		}
 	}
@@ -236,12 +236,12 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) {
 	// Finalize session
 	if saveErr := hManager.Save(ctx); saveErr != nil {
-		fmt.Fprintf(b.Stderr, "Warning: Error saving history: %v\n", saveErr)
+		_, _ = fmt.Fprintf(b.Stderr, "Warning: Error saving history: %v\n", saveErr)
 	}
 
 	// Calculate and record cost
 	if recordErr := telemetry.RecordSessionCost(ctx, b.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, "", deps.GetPricingOverrides()); recordErr != nil {
-		fmt.Fprintf(b.Stderr, "Warning: Failed to record final session cost: %v\n", recordErr)
+		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to record final session cost: %v\n", recordErr)
 	}
 }
 
@@ -264,10 +264,10 @@ func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string
 		sm.SetBypassFile(paths.BypassPath)
 		sm.SetCommandsLogFile(paths.CommandsLogPath)
 		if err := sm.LoadSafePaths(); err != nil {
-			fmt.Fprintf(b.Stderr, "Warning: Failed to load safe paths: %v\n", err)
+			_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to load safe paths: %v\n", err)
 		}
 		if err := sm.LoadReadOnlyPaths(); err != nil {
-			fmt.Fprintf(b.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
+			_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
 		}
 		sm.LoadBypassState()
 		sm.RegisterSafePath(filepath.Join(b.HomeDir, "output"))
@@ -280,10 +280,10 @@ func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, b.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
-		fmt.Fprintf(b.Stderr, "Warning: Failed to record session cost for backup: %v\n", err)
+		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to record session cost for backup: %v\n", err)
 	}
 	retentionDays := infra_persistence.LoadBackupRetentionDays(*paths)
 	if err := infra_persistence.RotateSession(b.Stdout, *paths, retentionDays); err != nil {
-		fmt.Fprintf(b.Stderr, "Warning: Session rotation failed: %v\n", err)
+		_, _ = fmt.Fprintf(b.Stderr, "Warning: Session rotation failed: %v\n", err)
 	}
 }

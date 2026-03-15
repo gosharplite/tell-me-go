@@ -56,13 +56,16 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 	if bypass {
 		h.interactor.Warn(fmt.Sprintf("[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).", action, target))
 		if h.auditor != nil {
-			h.auditor.LogAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
+			h.auditor.LogAudit("CONFIRM_ACTION",
+				"ACTION", action+" on "+target,
+				"DETAIL", detailLog+" (auto-approved via bypass_confirmation)",
+			)
 		}
 		return true, nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[CONFIRMATION REQUIRED]\nAI is requesting to %s: %s\n", action, target))
+	fmt.Fprintf(&sb, "[CONFIRMATION REQUIRED]\nAI is requesting to %s: %s\n", action, target)
 	if detail != "" {
 		if len(detail) > 1000 {
 			detail = detail[:1000] + "\n... (truncated)"
@@ -78,7 +81,10 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 
 	if confirmed {
 		if h.auditor != nil {
-			h.auditor.LogAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
+			h.auditor.LogAudit("CONFIRM_ACTION",
+				"ACTION", action+" on "+target,
+				"DETAIL", detailLog,
+			)
 		}
 		return true, nil
 	}

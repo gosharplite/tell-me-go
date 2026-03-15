@@ -276,7 +276,7 @@ func runStreamChatTest(t *testing.T, tt streamChatTestCase) {
 
 		for _, chunk := range tt.mockChunks {
 			data, _ := json.Marshal(chunk)
-			fmt.Fprintf(w, "data: %s\r\n\r\n", string(data))
+			_, _ = fmt.Fprintf(w, "data: %s\r\n\r\n", string(data))
 		}
 	}))
 	t.Cleanup(server.Close)
@@ -410,7 +410,7 @@ func runGenerateImagesTest(t *testing.T, tt generateImagesTestCase) {
 func handleGenerateImagesMock(t *testing.T, w http.ResponseWriter, r *http.Request, tt generateImagesTestCase) {
 	if tt.mockError != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, tt.mockError.Error())
+		_, _ = fmt.Fprint(w, tt.mockError.Error())
 		return
 	}
 
@@ -855,7 +855,7 @@ func TestGemini_EdgeCase_ToSDKContent(t *testing.T) {
 func TestStreamChat_InternalError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, "internal server error")
+		_, _ = fmt.Fprint(w, "internal server error")
 	}))
 	defer server.Close()
 

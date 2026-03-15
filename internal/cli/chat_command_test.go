@@ -31,6 +31,7 @@ type mockSM struct {
 func (m *mockSM) SetInteractor(interactor domain_security.UserInteractor) {}
 func (m *mockSM) TerminalLock()                                           {}
 func (m *mockSM) TerminalUnlock()                                         {}
+func (m *mockSM) Close() error                                            { return nil }
 
 func TestChatCommand_Execute(t *testing.T) {
 	t.Parallel()

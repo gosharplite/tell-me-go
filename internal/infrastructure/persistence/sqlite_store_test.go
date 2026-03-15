@@ -22,7 +22,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	}
 
 	t.Cleanup(func() {
-		db.Close()
+		_ = db.Close()
 	})
 
 	return db
@@ -39,7 +39,7 @@ func TestSQLiteConfigStore(t *testing.T) {
 
 func testConfigStoreGetNonExistent(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteConfigStore(db)
 	ctx := context.Background()
 
@@ -54,7 +54,7 @@ func testConfigStoreGetNonExistent(t *testing.T) {
 
 func testConfigStoreSetAndGet(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteConfigStore(db)
 	ctx := context.Background()
 
@@ -72,7 +72,7 @@ func testConfigStoreSetAndGet(t *testing.T) {
 
 func testConfigStoreUpdateExisting(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteConfigStore(db)
 	ctx := context.Background()
 
@@ -91,7 +91,7 @@ func testConfigStoreUpdateExisting(t *testing.T) {
 
 func testConfigStoreGetAll(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteConfigStore(db)
 	ctx := context.Background()
 
@@ -113,7 +113,7 @@ func testConfigStoreGetAll(t *testing.T) {
 
 func testConfigStoreDelete(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteConfigStore(db)
 	ctx := context.Background()
 
@@ -144,7 +144,7 @@ func TestSQLiteScratchpadStore(t *testing.T) {
 
 func testScratchpadGetEmpty(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
@@ -159,7 +159,7 @@ func testScratchpadGetEmpty(t *testing.T) {
 
 func testScratchpadGetInvalidKey(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
@@ -174,7 +174,7 @@ func testScratchpadGetInvalidKey(t *testing.T) {
 
 func testScratchpadSetInvalidKey(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
@@ -189,7 +189,7 @@ func testScratchpadSetInvalidKey(t *testing.T) {
 
 func testScratchpadSetAndGet(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
@@ -207,7 +207,7 @@ func testScratchpadSetAndGet(t *testing.T) {
 
 func testScratchpadUpdate(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
@@ -226,7 +226,7 @@ func testScratchpadUpdate(t *testing.T) {
 
 func testScratchpadGetAll(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
@@ -242,7 +242,7 @@ func testScratchpadGetAll(t *testing.T) {
 
 func testScratchpadDeleteInvalidKey(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
@@ -258,7 +258,7 @@ func testScratchpadDeleteInvalidKey(t *testing.T) {
 
 func testScratchpadDelete(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
@@ -286,7 +286,7 @@ func TestSQLiteTaskStore(t *testing.T) {
 
 func testTaskStoreReadEmpty(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -301,7 +301,7 @@ func testTaskStoreReadEmpty(t *testing.T) {
 
 func testTaskStoreAppendAndRead(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -333,7 +333,7 @@ func testTaskStoreAppendAndRead(t *testing.T) {
 
 func testTaskStoreUpdate(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -356,7 +356,7 @@ func testTaskStoreUpdate(t *testing.T) {
 
 func testTaskStoreDelete(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -377,7 +377,7 @@ func testTaskStoreDelete(t *testing.T) {
 
 func testTaskStoreDeleteAll(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -397,7 +397,7 @@ func testTaskStoreDeleteAll(t *testing.T) {
 func TestStoreErrors(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
-	db.Close() // Close DB to force errors
+	_ = db.Close() // Close DB to force errors
 
 	ctx := context.Background()
 

@@ -16,19 +16,31 @@ import (
 
 // mockAuditor implements auditLogger for testing.
 type mockAuditor struct {
-	Logs []auditEntry
+	Actions []string
+	Args    [][]any
 }
 
-type auditEntry struct {
-	Label1, Val1, Label2, Val2 string
+func (m *mockAuditor) LogAudit(action string, args ...any) {
+	m.Actions = append(m.Actions, action)
+	m.Args = append(m.Args, args)
 }
 
-func (m *mockAuditor) LogAudit(label1, val1, label2, val2 string) {
-	m.Logs = append(m.Logs, auditEntry{label1, val1, label2, val2})
+func (m *mockAuditor) getArgValue(callIdx int, key string) any {
+	if callIdx >= len(m.Args) {
+		return nil
+	}
+	args := m.Args[callIdx]
+	for i := 0; i < len(args); i += 2 {
+		if i+1 < len(args) && args[i] == key {
+			return args[i+1]
+		}
+	}
+	return nil
 }
 
 func (m *mockAuditor) SetLogFile(path string)                         {}
 func (m *mockAuditor) SetInteractor(interactor domain.UserInteractor) {}
+func (m *mockAuditor) Close() error                                   { return nil }
 
 // spyInteractor captures calls to UserInteractor methods.
 type spyInteractor struct {
@@ -67,8 +79,9 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			wantResult: true,
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
 				assert.NotEmpty(t, spy.ConfirmCalls)
-				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0].Val1, "delete on file.txt")
+				assert.Len(t, auditor.Actions, 1)
+				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
+				assert.Contains(t, auditor.getArgValue(0, "ACTION").(string), "delete on file.txt")
 			},
 		},
 		{
@@ -83,7 +96,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			wantResult: false,
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
 				assert.NotEmpty(t, spy.ConfirmCalls)
-				assert.Empty(t, auditor.Logs)
+				assert.Empty(t, auditor.Actions)
 			},
 		},
 		{
@@ -97,9 +110,10 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 				assert.Empty(t, spy.ConfirmCalls)
 				assert.NotEmpty(t, spy.Warns)
 				assert.Contains(t, spy.Warns[0], "[Auto-Approved]")
-				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0].Val1, "delete on file.txt")
-				assert.Contains(t, auditor.Logs[0].Val2, "(auto-approved via bypass_confirmation)")
+				assert.Len(t, auditor.Actions, 1)
+				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
+				assert.Contains(t, auditor.getArgValue(0, "ACTION").(string), "delete on file.txt")
+				assert.Contains(t, auditor.getArgValue(0, "DETAIL").(string), "(auto-approved via bypass_confirmation)")
 			},
 		},
 		{
@@ -113,9 +127,10 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			},
 			wantResult: true,
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
-				assert.Len(t, auditor.Logs, 1)
-				assert.Contains(t, auditor.Logs[0].Val1, "write on large_file.txt")
-				assert.Contains(t, auditor.Logs[0].Val2, "... (truncated)")
+				assert.Len(t, auditor.Actions, 1)
+				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
+				assert.Contains(t, auditor.getArgValue(0, "ACTION").(string), "write on large_file.txt")
+				assert.Contains(t, auditor.getArgValue(0, "DETAIL").(string), "... (truncated)")
 			},
 		},
 		{
