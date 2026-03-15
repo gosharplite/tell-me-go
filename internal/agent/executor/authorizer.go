@@ -82,7 +82,7 @@ func (a *securityAuthorizer) RequestBatchConsent(ctx context.Context, calls []*l
 	sb.WriteString("The agent requested the following actions requiring approval:\n")
 	for idx, i := range consentIndices {
 		c := calls[i]
-		sb.WriteString(fmt.Sprintf("%d. %s: %v\n", idx+1, c.Name, c.Args))
+		fmt.Fprintf(&sb, "%d. %s: %v\n", idx+1, c.Name, c.Args)
 	}
 	sb.WriteString("\nDo you approve all?")
 

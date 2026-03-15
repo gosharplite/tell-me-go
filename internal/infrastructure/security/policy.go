@@ -113,7 +113,7 @@ func (t *policyTool) ListSafePaths(ctx context.Context, args map[string]interfac
 	var sb strings.Builder
 	sb.WriteString("Currently authorized safe paths:\n")
 	for _, p := range paths {
-		sb.WriteString(fmt.Sprintf("- %s\n", p))
+		fmt.Fprintf(&sb, "- %s\n", p)
 	}
 	return tools.ToolResult{Text: sb.String()}, nil
 }
@@ -210,7 +210,7 @@ func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interfac
 	var sb strings.Builder
 	sb.WriteString("Currently authorized read-only paths:\n")
 	for _, p := range paths {
-		sb.WriteString(fmt.Sprintf("- %s\n", p))
+		fmt.Fprintf(&sb, "- %s\n", p)
 	}
 	return tools.ToolResult{Text: sb.String()}, nil
 }
@@ -260,12 +260,12 @@ func (t *policyTool) confirmAction(ctx context.Context, title, path, reason stri
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[SECURITY] AI is requesting %s %s\n", title, path))
+	fmt.Fprintf(&sb, "[SECURITY] AI is requesting %s %s\n", title, path)
 	if reason != "" {
 		if path == "" {
 			sb.WriteString(reason + "\n")
 		} else {
-			sb.WriteString(fmt.Sprintf("Reason: %s\n", reason))
+			fmt.Fprintf(&sb, "Reason: %s\n", reason)
 		}
 	}
 

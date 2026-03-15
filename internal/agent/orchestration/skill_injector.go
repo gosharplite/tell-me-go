@@ -71,7 +71,7 @@ func (t *skillInjector) buildInjectionBlock(selected []skills.Skill) string {
 	sb.WriteString("Use the following idiomatic patterns and best practices for this task:\n\n")
 
 	for _, s := range selected {
-		sb.WriteString(fmt.Sprintf("### %s\n%s\n\n---\n\n", s.Name, s.Content))
+		fmt.Fprintf(&sb, "### %s\n%s\n\n---\n\n", s.Name, s.Content)
 	}
 
 	return sb.String()

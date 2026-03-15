@@ -64,8 +64,7 @@ AIURL: "http://test.url"
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
-	os.Setenv("GOSHARP_MODE", "env-mode")
-	defer os.Unsetenv("GOSHARP_MODE")
+	t.Setenv("GOSHARP_MODE", "env-mode")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test_env.yaml")
@@ -82,16 +81,10 @@ func TestLoad_EnvOverride(t *testing.T) {
 }
 
 func TestLoad_MoreEnvOverrides(t *testing.T) {
-	os.Setenv("GOSHARP_PERSON", "env-person")
-	os.Setenv("GOSHARP_AIMODEL", "env-model")
-	os.Setenv("GOSHARP_AIURL", "env-url")
-	os.Setenv("TELL_ME_NO_STREAM", "true")
-	defer func() {
-		os.Unsetenv("GOSHARP_PERSON")
-		os.Unsetenv("GOSHARP_AIMODEL")
-		os.Unsetenv("GOSHARP_AIURL")
-		os.Unsetenv("TELL_ME_NO_STREAM")
-	}()
+	t.Setenv("GOSHARP_PERSON", "env-person")
+	t.Setenv("GOSHARP_AIMODEL", "env-model")
+	t.Setenv("GOSHARP_AIURL", "env-url")
+	t.Setenv("TELL_ME_NO_STREAM", "true")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test_env_more.yaml")
@@ -117,8 +110,7 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 }
 
 func TestLoad_EnvExpansion(t *testing.T) {
-	os.Setenv("MOCK_SECRET", "xyz123")
-	defer os.Unsetenv("MOCK_SECRET")
+	t.Setenv("MOCK_SECRET", "xyz123")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test_expansion.yaml")

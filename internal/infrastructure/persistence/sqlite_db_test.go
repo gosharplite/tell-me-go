@@ -31,7 +31,7 @@ func TestSQLiteMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	if err := migrateFromJSON(ctx, db, fs, tasksFile, configFile, scratchFile); err != nil {
 		t.Fatalf("migrateFromJSON failed: %v", err)
@@ -116,7 +116,7 @@ func TestSQLiteMigrations_MissingFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	// Migration should not fail if files are missing
 	if err := migrateFromJSON(ctx, db, fs, tasksFile, configFile, scratchFile); err != nil {
@@ -141,7 +141,7 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	// This should log an error internally but not return err in migrateFromJSON, or log it
 	if err := migrateFromJSON(ctx, db, fs, tasksFile, "", ""); err != nil {
@@ -176,7 +176,7 @@ func TestSQLiteMigrations_InvalidJSONConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	err = migrateFromJSON(ctx, db, fs, tasksFile, configFile, scratchFile)
 	if err != nil {

@@ -232,12 +232,16 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		// Function-scoped defer: executes when this function returns,
 		// safely protecting against panics inside io.ReadAll.
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -708,7 +712,9 @@ func (c *client) executeStreamRequest(ctx context.Context, history []*llm.Conten
 	if resp.StatusCode != http.StatusOK {
 		// Function-scoped defer: executes when this function returns,
 		// safely protecting against panics inside io.ReadAll.
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -748,7 +754,9 @@ func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	startTime := time.Now()
 	toolCallsByIndex := make(map[int]*toolCallState)

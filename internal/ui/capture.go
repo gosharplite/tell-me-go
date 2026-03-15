@@ -109,8 +109,8 @@ func (c *capturer) finalizePrompt(prompt string, options *orchestration.CaptureO
 		if options.SkipTTYWait() {
 			return "", ErrNoInput
 		}
-		fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")
-		fmt.Fprintln(c.Stderr, "Or use interactive mode: tell-me-go")
+		_, _ = fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")
+		_, _ = fmt.Fprintln(c.Stderr, "Or use interactive mode: tell-me-go")
 		return "", fmt.Errorf("empty prompt")
 	}
 
@@ -187,9 +187,9 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 // It DOES NOT perform terminal locking to avoid deadlocks when called from security components.
 func (c *capturer) printFeedback(w io.Writer, useColor bool, color, msg string) {
 	if useColor && c.IsTTY(w) {
-		fmt.Fprintf(w, "%s%s%s\n", color, msg, colorReset)
+		_, _ = fmt.Fprintf(w, "%s%s%s\n", color, msg, colorReset)
 	} else {
-		fmt.Fprintln(w, msg)
+		_, _ = fmt.Fprintln(w, msg)
 	}
 }
 
@@ -201,13 +201,13 @@ func (c *capturer) Confirm(ctx context.Context, message string) (bool, error) {
 	}
 
 	if color != "" && c.IsTTY(c.Stderr) {
-		fmt.Fprintf(c.Stderr, "%s%s%s", color, message, colorReset)
+		_, _ = fmt.Fprintf(c.Stderr, "%s%s%s", color, message, colorReset)
 	} else {
-		fmt.Fprint(c.Stderr, message)
+		_, _ = fmt.Fprint(c.Stderr, message)
 	}
 
 	char, err := c.ReadSingleKey(ctx)
-	fmt.Fprintf(c.Stderr, "\n")
+	_, _ = fmt.Fprintf(c.Stderr, "\n")
 	if err != nil {
 		return false, err
 	}
@@ -226,9 +226,9 @@ func (c *capturer) Warn(message string) {
 // Prompt displays an inline message without a newline.
 func (c *capturer) Prompt(message string) {
 	if c.IsTTY(c.Stderr) {
-		fmt.Fprintf(c.Stderr, "%s%s%s", colorYellow, message, colorReset)
+		_, _ = fmt.Fprintf(c.Stderr, "%s%s%s", colorYellow, message, colorReset)
 	} else {
-		fmt.Fprint(c.Stderr, message)
+		_, _ = fmt.Fprint(c.Stderr, message)
 	}
 }
 

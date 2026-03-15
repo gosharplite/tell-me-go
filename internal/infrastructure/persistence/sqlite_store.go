@@ -58,7 +58,9 @@ func (s *sqliteConfigStore) GetAll(ctx context.Context) (map[string]string, erro
 	if err != nil {
 		return nil, fmt.Errorf("querying all config: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	res := make(map[string]string)
 	for rows.Next() {
@@ -145,7 +147,9 @@ func (s *sqliteTaskStore) ReadAll(ctx context.Context) ([]ports.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying all tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var res []ports.Task
 	for rows.Next() {

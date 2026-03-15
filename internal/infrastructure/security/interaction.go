@@ -65,7 +65,7 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[CONFIRMATION REQUIRED]\nAI is requesting to %s: %s\n", action, target))
+	fmt.Fprintf(&sb, "[CONFIRMATION REQUIRED]\nAI is requesting to %s: %s\n", action, target)
 	if detail != "" {
 		if len(detail) > 1000 {
 			detail = detail[:1000] + "\n... (truncated)"

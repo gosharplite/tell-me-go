@@ -222,9 +222,10 @@ func (m *healthManager) checkDeadCode(ctx context.Context) (string, string) {
 	deadCount := 0
 	privateCount := 0
 	for _, r := range reports {
-		if r.Severity == "DEAD" {
+		switch r.Severity {
+		case "DEAD":
 			deadCount++
-		} else if r.Severity == "PRIVATE" {
+		case "PRIVATE":
 			privateCount++
 		}
 	}

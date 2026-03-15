@@ -210,9 +210,10 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 				assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "exceeds safety limit")
 
 				// Verify specific instructions
-				if tt.name == "Individual Breach" {
+				switch tt.name {
+				case "Individual Breach":
 					assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "The individual tool output is too massive")
-				} else if tt.name == "Cumulative Breach" {
+				case "Cumulative Breach":
 					assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "The total conversation context is nearly exhausted")
 				}
 			} else {

@@ -55,13 +55,13 @@ func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) erro
 					return fmt.Errorf("error creating backup directory: %w", err)
 				}
 				if w != nil {
-					fmt.Fprintf(w, "Archiving existing session files to %s\n", backupDir)
+					_, _ = fmt.Fprintf(w, "Archiving existing session files to %s\n", backupDir)
 				}
 				backupCreated = true
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))
 			if err := os.Rename(f, dest); err != nil {
-				fmt.Fprintf(os.Stderr, "Error archiving %s: %v\n", f, err)
+				_, _ = fmt.Fprintf(os.Stderr, "Error archiving %s: %v\n", f, err)
 			}
 		}
 	}
@@ -99,7 +99,7 @@ func cleanupOldBackups(paths persistence.Paths, retentionDays int) error {
 
 		path := filepath.Join(backupBaseDir, entry.Name())
 		if err := os.RemoveAll(path); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
 		}
 	}
 
