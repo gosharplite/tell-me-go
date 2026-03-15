@@ -63,3 +63,29 @@ func TestAuditor_SetLogFileError(t *testing.T) {
 		t.Errorf("Unexpected warning message: %s", mock.Warns[0])
 	}
 }
+
+func TestAuditor_Close(t *testing.T) {
+	t.Run("closes open file successfully", func(t *testing.T) {
+		a := newAuditor()
+
+		// Use t.TempDir() for guaranteed isolated cleanup
+		logFile := filepath.Join(t.TempDir(), "audit.log")
+		a.SetLogFile(logFile)
+
+		if err := a.Close(); err != nil {
+			t.Fatalf("unexpected error closing auditor: %v", err)
+		}
+
+		// Verify internal state is explicitly cleared
+		if a.file != nil || a.logger != nil {
+			t.Errorf("expected file and logger to be nil after Close()")
+		}
+	})
+
+	t.Run("safe to call on uninitialized file", func(t *testing.T) {
+		a := newAuditor()
+		if err := a.Close(); err != nil {
+			t.Fatalf("expected nil error when closing uninitialized auditor, got %v", err)
+		}
+	})
+}
