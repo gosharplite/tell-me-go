@@ -79,7 +79,7 @@ func (s *mockSecurityProvider) Authorize(ctx context.Context, label, detail, rea
 	return true, nil
 }
 
-func (s *mockSecurityProvider) LogAudit(action string, fields map[string]any) {}
+func (s *mockSecurityProvider) LogAudit(action string, args ...any) {}
 func (s *mockSecurityProvider) TerminalLock()                              {}
 func (s *mockSecurityProvider) TerminalUnlock()                            {}
 func (s *mockSecurityProvider) Prompt(message string)                      {}

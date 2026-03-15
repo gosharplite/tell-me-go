@@ -52,7 +52,7 @@ func (m *deadCodeSecurityProvider) Warn(message string)   {}
 func (m *deadCodeSecurityProvider) Confirm(ctx context.Context, message string) (bool, error) {
 	return true, nil
 }
-func (m *deadCodeSecurityProvider) LogAudit(action string, fields map[string]any) {
+func (m *deadCodeSecurityProvider) LogAudit(action string, args ...any) {
 }
 func (m *deadCodeSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil

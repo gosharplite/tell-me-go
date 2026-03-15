@@ -95,7 +95,7 @@ func (s *integrationSecurityManager) IsPathWritable(path string) (string, error)
 func (s *integrationSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }
-func (s *integrationSecurityManager) LogAudit(action string, fields map[string]any) {}
+func (s *integrationSecurityManager) LogAudit(action string, args ...any) {}
 func (s *integrationSecurityManager) TerminalLock()                              {}
 func (s *integrationSecurityManager) TerminalUnlock()                            {}
 func (s *integrationSecurityManager) Prompt(message string)                      {}

@@ -157,11 +157,12 @@ func TestSecurityManager_Misc(t *testing.T) {
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "commands.log")
 	sm.SetCommandsLogFile(logFile)
-	sm.LogAudit("TEST_ACTION", map[string]any{"ACTION": "test", "DETAIL": "detail"})
+	sm.LogAudit("TEST_ACTION", "ACTION", "test", "DETAIL", "detail")
 
 	data, _ := os.ReadFile(logFile)
-	if !strings.Contains(string(data), "ACTION: TEST_ACTION") || !strings.Contains(string(data), "ACTION: test") {
-		t.Error("Audit log content mismatch")
+	logContent := string(data)
+	if !strings.Contains(logContent, "AUDIT: TEST_ACTION") || !strings.Contains(logContent, "ACTION=test") {
+		t.Errorf("Audit log content mismatch: %q", logContent)
 	}
 
 	// Read/Write paths

@@ -5,24 +5,25 @@ package security
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
-	"time"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 // auditLogger defines the interface for security logging.
 type auditLogger interface {
-	LogAudit(action string, fields map[string]any)
+	LogAudit(action string, args ...any)
 	SetLogFile(path string)
 	SetInteractor(interactor domain.UserInteractor)
 }
 
 // auditor handles security logging.
 type auditor struct {
-	logFile    string
 	mu         sync.Mutex
+	file       *os.File
+	logger     *slog.Logger
 	interactor domain.UserInteractor
 }
 
@@ -42,36 +43,36 @@ func (a *auditor) SetInteractor(interactor domain.UserInteractor) {
 func (a *auditor) SetLogFile(path string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.logFile = path
+
+	if a.file != nil {
+		_ = a.file.Close()
+		a.file = nil
+		a.logger = nil
+	}
+
+	if path == "" {
+		return
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		if a.interactor != nil {
+			a.interactor.Warn(fmt.Sprintf("[Warning] Failed to open command log file: %v", err))
+		}
+		return
+	}
+
+	a.file = f
+	a.logger = slog.New(slog.NewTextHandler(f, nil))
 }
 
-// LogAudit writes a multi-line audit entry to the commands log file.
-func (a *auditor) LogAudit(action string, fields map[string]any) {
+// LogAudit writes an audit entry to the commands log file using slog.
+func (a *auditor) LogAudit(action string, args ...any) {
 	a.mu.Lock()
-	interactor := a.interactor
-	logFile := a.logFile
+	logger := a.logger
 	a.mu.Unlock()
 
-	if logFile == "" {
-		return
-	}
-
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		if interactor != nil {
-			interactor.Warn(fmt.Sprintf("[Warning] Failed to open command log file: %v", err))
-		}
-		return
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil && interactor != nil {
-			interactor.Warn(fmt.Sprintf("[Warning] Failed to close command log file: %v", cerr))
-		}
-	}()
-
-	fmt.Fprintf(f, "[%s] ACTION: %s\n", timestamp, action)
-	for label, val := range fields {
-		fmt.Fprintf(f, "[%s] %s: %v\n", timestamp, label, val)
+	if logger != nil {
+		logger.Info("AUDIT: "+action, args...)
 	}
 }

@@ -35,7 +35,7 @@ func (m *refactorMockSecurityProvider) Warn(message string)   {}
 func (m *refactorMockSecurityProvider) Confirm(ctx context.Context, message string) (bool, error) {
 	return true, nil
 }
-func (m *refactorMockSecurityProvider) LogAudit(action string, fields map[string]any) {
+func (m *refactorMockSecurityProvider) LogAudit(action string, args ...any) {
 }
 func (m *refactorMockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil

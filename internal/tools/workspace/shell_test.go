@@ -363,8 +363,8 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 		}
 
 		// Verify Audit Log includes OUTPUT_FILE and APPEND
-		assertAuditField(t, mockSM.LastAuditFields, "OUTPUT_FILE", "out.txt")
-		assertAuditField(t, mockSM.LastAuditFields, "APPEND", true)
+		assertAuditField(t, mockSM.LastAuditArgs, "OUTPUT_FILE", "out.txt")
+		assertAuditField(t, mockSM.LastAuditArgs, "APPEND", true)
 	})
 
 	t.Run("PipeCommands with output file", func(t *testing.T) {
@@ -392,20 +392,25 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 		}
 
 		// Verify Audit Log includes OUTPUT_FILE and APPEND
-		assertAuditField(t, mockSM.LastAuditFields, "OUTPUT_FILE", "pipe_out.txt")
-		assertAuditField(t, mockSM.LastAuditFields, "APPEND", false)
+		assertAuditField(t, mockSM.LastAuditArgs, "OUTPUT_FILE", "pipe_out.txt")
+		assertAuditField(t, mockSM.LastAuditArgs, "APPEND", false)
 	})
 }
 
-func assertAuditField(t *testing.T, auditMap map[string]any, key string, want any) {
+func assertAuditField(t *testing.T, args []any, key string, want any) {
 	t.Helper() // MUST be included so failures trace back to the test file's caller line
 
-	if auditMap == nil {
-		t.Fatalf("audit map is nil")
+	var got any
+	var found bool
+	for i := 0; i < len(args); i += 2 {
+		if i+1 < len(args) && args[i] == key {
+			got = args[i+1]
+			found = true
+			break
+		}
 	}
 
-	got, ok := auditMap[key]
-	if !ok {
+	if !found {
 		t.Errorf("audit field %q not found in audit log", key)
 		return
 	}
@@ -419,7 +424,7 @@ type mockShellSecurity struct {
 	*security.SecurityManager
 	LastDetail      string
 	LastAuditAction string
-	LastAuditFields map[string]any
+	LastAuditArgs   []any
 }
 
 func (m *mockShellSecurity) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
@@ -427,8 +432,8 @@ func (m *mockShellSecurity) Authorize(ctx context.Context, label, detail, reason
 	return m.SecurityManager.Authorize(ctx, label, detail, reason, isSafe)
 }
 
-func (m *mockShellSecurity) LogAudit(action string, fields map[string]any) {
+func (m *mockShellSecurity) LogAudit(action string, args ...any) {
 	m.LastAuditAction = action
-	m.LastAuditFields = fields
-	m.SecurityManager.LogAudit(action, fields)
+	m.LastAuditArgs = args
+	m.SecurityManager.LogAudit(action, args...)
 }

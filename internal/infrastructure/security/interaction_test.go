@@ -17,12 +17,25 @@ import (
 // mockAuditor implements auditLogger for testing.
 type mockAuditor struct {
 	Actions []string
-	Fields  []map[string]any
+	Args    [][]any
 }
 
-func (m *mockAuditor) LogAudit(action string, fields map[string]any) {
+func (m *mockAuditor) LogAudit(action string, args ...any) {
 	m.Actions = append(m.Actions, action)
-	m.Fields = append(m.Fields, fields)
+	m.Args = append(m.Args, args)
+}
+
+func (m *mockAuditor) getArgValue(callIdx int, key string) any {
+	if callIdx >= len(m.Args) {
+		return nil
+	}
+	args := m.Args[callIdx]
+	for i := 0; i < len(args); i += 2 {
+		if i+1 < len(args) && args[i] == key {
+			return args[i+1]
+		}
+	}
+	return nil
 }
 
 func (m *mockAuditor) SetLogFile(path string)                         {}
@@ -67,7 +80,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 				assert.NotEmpty(t, spy.ConfirmCalls)
 				assert.Len(t, auditor.Actions, 1)
 				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
-				assert.Contains(t, auditor.Fields[0]["ACTION"], "delete on file.txt")
+				assert.Contains(t, auditor.getArgValue(0, "ACTION").(string), "delete on file.txt")
 			},
 		},
 		{
@@ -98,8 +111,8 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 				assert.Contains(t, spy.Warns[0], "[Auto-Approved]")
 				assert.Len(t, auditor.Actions, 1)
 				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
-				assert.Contains(t, auditor.Fields[0]["ACTION"], "delete on file.txt")
-				assert.Contains(t, auditor.Fields[0]["DETAIL"], "(auto-approved via bypass_confirmation)")
+				assert.Contains(t, auditor.getArgValue(0, "ACTION").(string), "delete on file.txt")
+				assert.Contains(t, auditor.getArgValue(0, "DETAIL").(string), "(auto-approved via bypass_confirmation)")
 			},
 		},
 		{
@@ -115,8 +128,8 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
 				assert.Len(t, auditor.Actions, 1)
 				assert.Equal(t, "CONFIRM_ACTION", auditor.Actions[0])
-				assert.Contains(t, auditor.Fields[0]["ACTION"], "write on large_file.txt")
-				assert.Contains(t, auditor.Fields[0]["DETAIL"], "... (truncated)")
+				assert.Contains(t, auditor.getArgValue(0, "ACTION").(string), "write on large_file.txt")
+				assert.Contains(t, auditor.getArgValue(0, "DETAIL").(string), "... (truncated)")
 			},
 		},
 		{

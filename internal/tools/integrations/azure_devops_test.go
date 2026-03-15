@@ -2264,7 +2264,7 @@ func (m *mockSecurityManager) IsPathWritable(path string) (string, error) {
 func (m *mockSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return m.approved, m.err
 }
-func (m *mockSecurityManager) LogAudit(action string, fields map[string]any) {}
+func (m *mockSecurityManager) LogAudit(action string, args ...any) {}
 func (m *mockSecurityManager) TerminalLock()                              {}
 func (m *mockSecurityManager) TerminalUnlock()                            {}
 func (m *mockSecurityManager) Prompt(message string)                      {}
