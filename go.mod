@@ -1,6 +1,6 @@
 module github.com/gosharplite/tell-me-go
 
-go 1.25
+go 1.26
 
 require (
 	github.com/charmbracelet/glamour v0.10.0
