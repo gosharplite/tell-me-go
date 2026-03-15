@@ -11,7 +11,7 @@ To ensure that all project documentation (README, SOPs, and References) remains 
 ---
 
 ### Prerequisites
-- Go toolchain 1.25+.
+- Go toolchain 1.26+.
 - Knowledge of [Documentation Standards](./documentation_standards.md).
 - Access to Go static analysis tools (`go doc`, `go list`).
 

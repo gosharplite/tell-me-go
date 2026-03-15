@@ -13,7 +13,7 @@ To ensure a consistent and user-friendly command-line interface for `tell-me-go`
 ---
 
 ### Prerequisites
-- Go toolchain 1.25+.
+- Go toolchain 1.26+.
 - Standard `flag` package.
 
 ---

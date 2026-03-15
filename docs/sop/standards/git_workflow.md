@@ -12,7 +12,7 @@ To ensure that all changes to the `tell-me-go` repository are verified, logicall
 ---
 
 ### Prerequisites
-- Go toolchain (`go`) 1.25+ installed.
+- Go toolchain (`go`) 1.26+ installed.
 - All functional changes must be verified via the Go testing suite.
 - No sensitive information (API keys, secrets) should be staged.
 

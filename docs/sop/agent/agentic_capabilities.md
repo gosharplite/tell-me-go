@@ -12,7 +12,7 @@ To define the standards for implementing and executing tools (function calling) 
 ---
 
 ### Prerequisites
-- Go toolchain 1.25+.
+- Go toolchain 1.26+.
 - `docs/sop/technical/history_management.md` (defining role alternation).
 - Vertex AI support for `functionDeclarations`.
 

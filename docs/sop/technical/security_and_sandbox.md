@@ -11,7 +11,7 @@ To define the mandatory security protocols for the `tell-me-go` agent, ensuring 
 ---
 
 ### Prerequisites
-- Go toolchain 1.25+.
+- Go toolchain 1.26+.
 - [Agentic Capabilities](../agent/agentic_capabilities.md) (defining tool execution).
 
 ---

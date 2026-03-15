@@ -35,45 +35,39 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks, scratchpads, and authorized paths).
 
 ## 📋 Prerequisites
-*   **Go**: 1.25 or higher.
+*   **Go**: 1.26 or higher.
 
 ## 🛠️ Installation
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/gosharplite/tell-me-go.git
-    cd tell-me-go
-    ```
-2.  **Build the binary**:
-    ```bash
-    go build -o tell-me-go ./cmd/tell-me-go/
-    ```
+```bash
+go install github.com/gosharplite/tell-me-go/cmd/tell-me-go@latest
+```
 
 ## 💻 Usage
 Run the assistant by passing your prompt as an argument. By default, it uses `configs/assistant.yaml`.
 
 **Basic Usage:**
 ```bash
-./tell-me-go "How to use this tool?"
+tell-me-go "How to use this tool?"
 ```
 
 **History Management:**
 Show the last 5 messages:
 ```bash
-./tell-me-go -l 5
+tell-me-go -l 5
 ```
 Go back / undo the last message (shorthand):
 ```bash
-./tell-me-go -b
+tell-me-go -b
 ```
 Undo the last 3 turns from history:
 ```bash
-./tell-me-go -b 3
+tell-me-go -b 3
 ```
 
 **Raw Output Mode:**
 Skip Markdown rendering (useful for piping to other scripts):
 ```bash
-./tell-me-go -r "Write a bash script to list files"
+tell-me-go -r "Write a bash script to list files"
 ```
 
 **Pre-flight Status Log:**

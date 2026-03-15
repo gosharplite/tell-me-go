@@ -12,7 +12,7 @@ To define a consistent, scalable, and idiomatic Go directory structure for `tell
 ---
 
 ### Prerequisites
-- Go toolchain 1.25+.
+- Go toolchain 1.26+.
 - Familiarity with the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
 
 ---
