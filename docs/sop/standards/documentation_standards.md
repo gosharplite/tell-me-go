@@ -25,7 +25,7 @@ Every project repository must have a `README.md` in the root that follows this s
 1.  **Project Title**: Large heading with a brief, one-sentence tagline.
 2.  **Overview**: A concise description of the project's purpose and its relationship to the original `tell-me` (Bash).
 3.  **🚀 Features**: A bulleted list of current capabilities.
-4.  **📋 Prerequisites**: Tools and versions required (e.g., Go 1.25+).
+4.  **📋 Prerequisites**: Tools and versions required (e.g., Go 1.26+).
 5.  **🛠️ Installation**: Clear commands to build or install the tool.
 6.  **💻 Usage**: Practical examples of CLI commands and expected output.
 7.  **⚙️ Configuration**: Instructions on setting up YAML files and Environment Variables (e.g., `API_KEY`).
