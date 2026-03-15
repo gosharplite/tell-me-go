@@ -67,6 +67,13 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
+	// Ensure the security manager (and underlying audit log file) flushes and closes on exit
+	if a.sm != nil {
+		defer func() {
+			_ = a.sm.Close()
+		}()
+	}
+
 	// Determine which command to run
 	cmdName := "chat"
 	for _, arg := range args {
