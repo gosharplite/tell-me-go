@@ -224,7 +224,7 @@ func (m *adoManager) adoListPipelineRuns(ctx context.Context, args map[string]in
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing list pipeline runs request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var responseData struct {
 		Value []adoPipelineRun `json:"value"`
@@ -279,10 +279,10 @@ func (m *adoManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRu
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Recent runs for pipeline %d:\n\n", pipelineId))
+	_, _ = fmt.Fprintf(&resultText, "Recent runs for pipeline %d:\n\n", pipelineId)
 	for _, run := range runs {
-		resultText.WriteString(fmt.Sprintf("- Run ID: %d, Name: %s, Status: %s, Result: %s, Created: %s, Repo: %s\n",
-			run.Id, run.Name, run.State, run.Result, run.Created, run.Repository.Name))
+		_, _ = fmt.Fprintf(&resultText, "- Run ID: %d, Name: %s, Status: %s, Result: %s, Created: %s, Repo: %s\n",
+			run.Id, run.Name, run.State, run.Result, run.Created, run.Repository.Name)
 	}
 
 	return resultText.String()
@@ -311,7 +311,7 @@ func (m *adoManager) adoGetPipelineRun(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pipeline run request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var runData struct {
 		Id      int    `json:"id"`
@@ -327,12 +327,12 @@ func (m *adoManager) adoGetPipelineRun(ctx context.Context, args map[string]inte
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pipeline Run #%d Details:\n", runData.Id))
-	resultText.WriteString(fmt.Sprintf("- Name: %s\n", runData.Name))
-	resultText.WriteString(fmt.Sprintf("- Status: %s\n", runData.State))
-	resultText.WriteString(fmt.Sprintf("- Result: %s\n", runData.Result))
-	resultText.WriteString(fmt.Sprintf("- Created: %s\n", runData.Created))
-	resultText.WriteString(fmt.Sprintf("- URL: %s\n", runData.Url))
+	_, _ = fmt.Fprintf(&resultText, "Pipeline Run #%d Details:\n", runData.Id)
+	_, _ = fmt.Fprintf(&resultText, "- Name: %s\n", runData.Name)
+	_, _ = fmt.Fprintf(&resultText, "- Status: %s\n", runData.State)
+	_, _ = fmt.Fprintf(&resultText, "- Result: %s\n", runData.Result)
+	_, _ = fmt.Fprintf(&resultText, "- Created: %s\n", runData.Created)
+	_, _ = fmt.Fprintf(&resultText, "- URL: %s\n", runData.Url)
 
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
@@ -375,7 +375,7 @@ func (m *adoManager) listPipelineLogs(ctx context.Context, org, project string, 
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing list pipeline logs request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var logsData struct {
 		Value []struct {
@@ -393,9 +393,9 @@ func (m *adoManager) listPipelineLogs(ctx context.Context, org, project string, 
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Logs for Pipeline Run #%d:\n\n", runId))
+	_, _ = fmt.Fprintf(&resultText, "Logs for Pipeline Run #%d:\n\n", runId)
 	for _, log := range logsData.Value {
-		resultText.WriteString(fmt.Sprintf("- Log ID: %d (%d lines)\n", log.Id, log.Line))
+		_, _ = fmt.Fprintf(&resultText, "- Log ID: %d (%d lines)\n", log.Id, log.Line)
 	}
 	resultText.WriteString("\nPlease provide a log_id to fetch specific log content.")
 	return tools.ToolResult{Text: resultText.String()}, nil
@@ -409,7 +409,7 @@ func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project s
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing fetch pipeline log content request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	res, err := m.processLogContent(resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
 	if err != nil {
@@ -446,7 +446,7 @@ func (m *adoManager) adoGetBuildTimeline(ctx context.Context, args map[string]in
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get build timeline request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var timelineData struct {
 		Records []interface{} `json:"records"`
@@ -493,7 +493,7 @@ func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interfac
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get task log request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	res, err := m.processLogContent(resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
 	if err != nil {
@@ -861,7 +861,7 @@ func (m *adoManager) adoGetBuildChanges(ctx context.Context, args map[string]int
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get build changes request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	result, err := m.parseBuildChangesResponse(resp.Body)
 	if err != nil {
@@ -898,7 +898,7 @@ func (m *adoManager) fetchPipelines(ctx context.Context, org, project string) ([
 		if err != nil {
 			return nil, fmt.Errorf("executing fetch pipelines request: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var responseData struct {
 			Value []adoPipeline `json:"value"`
@@ -945,9 +945,9 @@ func (m *adoManager) adoListPipelines(ctx context.Context, args map[string]inter
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Found %d pipelines:\n", len(pipelines)))
+	_, _ = fmt.Fprintf(&resultText, "Found %d pipelines:\n", len(pipelines))
 	for _, p := range pipelines {
-		resultText.WriteString(fmt.Sprintf("- [%d] %s\n", p.Id, p.Name))
+		_, _ = fmt.Fprintf(&resultText, "- [%d] %s\n", p.Id, p.Name)
 	}
 
 	return tools.ToolResult{Text: resultText.String()}, nil
@@ -1106,7 +1106,7 @@ func (m *adoManager) executeCreatePipeline(ctx context.Context, org, project, na
 	if err != nil {
 		return 0, fmt.Errorf("executing create pipeline request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var newPipeline struct {
 		Id int `json:"id"`
@@ -1143,7 +1143,7 @@ func (m *adoManager) executeRunPipeline(ctx context.Context, org, project string
 	if err != nil {
 		return 0, "", fmt.Errorf("executing run pipeline request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var runResponse struct {
 		Id    int `json:"id"`
@@ -1183,7 +1183,7 @@ func (m *adoManager) adoGetPipelineDefinition(ctx context.Context, args map[stri
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pipeline definition request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var definition interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&definition); err != nil {
@@ -1253,7 +1253,7 @@ func (m *adoManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("fetching build definition: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var definition map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&definition); err != nil {
@@ -1280,7 +1280,7 @@ func (m *adoManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing update build definition variables request: %w", err)
 	}
-	defer putResp.Body.Close()
+	defer func() { _ = putResp.Body.Close() }()
 
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", params.DefinitionId)}, nil
 }

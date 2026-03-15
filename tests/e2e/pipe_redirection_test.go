@@ -22,7 +22,7 @@ func TestPipeCommandsTool(t *testing.T) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				fmt.Fprint(w, `{
+				_, _ = fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -39,7 +39,7 @@ func TestPipeCommandsTool(t *testing.T) {
 					}]
 				}`)
 			} else {
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Piping finished."}]}}]}`)
+				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Piping finished."}]}}]}`)
 			}
 			turns++
 			return
@@ -80,7 +80,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				fmt.Fprint(w, `{
+				_, _ = fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -98,7 +98,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 					}]
 				}`)
 			} else {
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Redirection finished."}]}}]}`)
+				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Redirection finished."}]}}]}`)
 			}
 			turns++
 			return
@@ -146,7 +146,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				fmt.Fprint(w, `{
+				_, _ = fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -165,7 +165,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 					}]
 				}`)
 			} else {
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Piped redirection finished."}]}}]}`)
+				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Piped redirection finished."}]}}]}`)
 			}
 			turns++
 			return

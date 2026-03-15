@@ -53,7 +53,7 @@ func (f *mermaidFormatter) writeParticipants(sb *strings.Builder, frames []callF
 	}
 
 	for _, p := range orderedParticipants {
-		sb.WriteString(fmt.Sprintf("    participant %s as %s\n", sanitize(p), p))
+		_, _ = fmt.Fprintf(sb, "    participant %s as %s\n", sanitize(p), p)
 	}
 }
 
@@ -70,13 +70,13 @@ func (f *mermaidFormatter) renderFrame(sb *strings.Builder, frame callFrame, sta
 	to := sanitize(frame.To)
 
 	if frame.Async {
-		sb.WriteString(fmt.Sprintf("    %s->>%s: %s (async)\n", from, to, frame.Function))
+		_, _ = fmt.Fprintf(sb, "    %s->>%s: %s (async)\n", from, to, frame.Function)
 	} else {
-		sb.WriteString(fmt.Sprintf("    %s->>+%s: %s\n", from, to, frame.Function))
+		_, _ = fmt.Fprintf(sb, "    %s->>+%s: %s\n", from, to, frame.Function)
 		ret := frame.Return
 		if ret == "" {
 			ret = " "
 		}
-		sb.WriteString(fmt.Sprintf("    %s-->>-%s: %s\n", to, from, ret))
+		_, _ = fmt.Fprintf(sb, "    %s-->>-%s: %s\n", to, from, ret)
 	}
 }

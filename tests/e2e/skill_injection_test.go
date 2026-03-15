@@ -45,7 +45,7 @@ func setupMockLLMServer(t *testing.T) (*httptest.Server, <-chan string) {
 
 		// Return a dummy response to keep the agent happy
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"choices": [{"message": {"role": "assistant", "content": "I will write a Go function."}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}`)
+		_, _ = fmt.Fprint(w, `{"choices": [{"message": {"role": "assistant", "content": "I will write a Go function."}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}`)
 	}))
 	t.Cleanup(server.Close)
 	return server, reqChan

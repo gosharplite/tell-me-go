@@ -26,7 +26,7 @@ func (r *StdHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, o
 func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
 	total := h.GetTotalEntries()
 	if total == 0 {
-		fmt.Fprintln(w, "No history found.")
+		_, _ = fmt.Fprintln(w, "No history found.")
 		return
 	}
 
@@ -37,7 +37,7 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 	start := total - n
 	contents, err := h.GetWindow(context.Background(), start, -1)
 	if err != nil {
-		fmt.Fprintf(w, "Error retrieving history: %v\n", err)
+		_, _ = fmt.Fprintf(w, "Error retrieving history: %v\n", err)
 		return
 	}
 
@@ -62,7 +62,7 @@ func renderHistory(w io.Writer, h ports.HistoryReader, n int, options ports.Hist
 				hr.renderPart(*p)
 			}
 		}
-		fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w)
 	}
 }
 
@@ -81,24 +81,24 @@ func (r *historyRenderer) renderHeader(role string) {
 		if role != "user" {
 			roleColor = colorMagenta
 		}
-		fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, colorReset)
+		_, _ = fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, colorReset)
 	} else {
-		fmt.Fprintln(r.writer, roleStr)
+		_, _ = fmt.Fprintln(r.writer, roleStr)
 	}
 }
 
 func (r *historyRenderer) renderText(text string) {
 	if r.raw || r.renderer == nil {
-		fmt.Fprint(r.writer, text)
+		_, _ = fmt.Fprint(r.writer, text)
 		if !strings.HasSuffix(text, "\n") {
-			fmt.Fprintln(r.writer)
+			_, _ = fmt.Fprintln(r.writer)
 		}
 	} else {
 		out, err := r.renderer.Render(text)
 		if err != nil {
-			fmt.Fprintln(r.writer, text)
+			_, _ = fmt.Fprintln(r.writer, text)
 		} else {
-			fmt.Fprint(r.writer, out)
+			_, _ = fmt.Fprint(r.writer, out)
 		}
 	}
 }
@@ -115,16 +115,16 @@ func (r *historyRenderer) renderPart(p llm.Part) {
 	}
 	if p.FunctionCall != nil {
 		if r.useColor {
-			fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", colorCyan, p.FunctionCall.Name, colorReset)
+			_, _ = fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", colorCyan, p.FunctionCall.Name, colorReset)
 		} else {
-			fmt.Fprintf(r.writer, "[Tool Call] %s\n", p.FunctionCall.Name)
+			_, _ = fmt.Fprintf(r.writer, "[Tool Call] %s\n", p.FunctionCall.Name)
 		}
 	}
 	if p.FunctionResponse != nil {
 		if r.useColor {
-			fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", colorCyan, p.FunctionResponse.Name, colorReset)
+			_, _ = fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", colorCyan, p.FunctionResponse.Name, colorReset)
 		} else {
-			fmt.Fprintf(r.writer, "[Tool Response] %s\n", p.FunctionResponse.Name)
+			_, _ = fmt.Fprintf(r.writer, "[Tool Response] %s\n", p.FunctionResponse.Name)
 		}
 	}
 }

@@ -70,7 +70,7 @@ func (m *adoManager) fetchPrStatuses(ctx context.Context, org, project, repo str
 	if err != nil {
 		return adoStatusResponse{}, fmt.Errorf("executing fetch pr statuses request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var statusData adoStatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&statusData); err != nil {
@@ -85,7 +85,7 @@ func (m *adoManager) formatPrStatuses(pullRequestId int, statusData adoStatusRes
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d Statuses:\n\n", pullRequestId))
+	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Statuses:\n\n", pullRequestId)
 
 	for _, item := range statusData.Value {
 		stateEmoji := getStatusEmoji(item.State)
@@ -95,12 +95,12 @@ func (m *adoManager) formatPrStatuses(pullRequestId int, statusData adoStatusRes
 			contextName = fmt.Sprintf("%s/%s", item.Context.Genre, item.Context.Name)
 		}
 
-		resultText.WriteString(fmt.Sprintf("%s **%s**: %s\n", stateEmoji, contextName, item.State))
+		_, _ = fmt.Fprintf(&resultText, "%s **%s**: %s\n", stateEmoji, contextName, item.State)
 		if item.Description != "" {
-			resultText.WriteString(fmt.Sprintf("   Description: %s\n", item.Description))
+			_, _ = fmt.Fprintf(&resultText, "   Description: %s\n", item.Description)
 		}
 		if item.TargetUrl != "" {
-			resultText.WriteString(fmt.Sprintf("   Details: %s\n", item.TargetUrl))
+			_, _ = fmt.Fprintf(&resultText, "   Details: %s\n", item.TargetUrl)
 		}
 		resultText.WriteString("\n")
 	}
@@ -181,7 +181,7 @@ func (m *adoManager) fetchPrProjectID(ctx context.Context, org, project, repo st
 	if err != nil {
 		return "", fmt.Errorf("executing fetch pr project ID request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var prData struct {
 		Repository struct {
@@ -223,7 +223,7 @@ func (m *adoManager) performPolicyEvaluationRequest(ctx context.Context, request
 	if err != nil {
 		return adoPolicyResponse{}, fmt.Errorf("performing policy evaluation request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var policyData adoPolicyResponse
 	if err := json.NewDecoder(resp.Body).Decode(&policyData); err != nil {
@@ -234,7 +234,7 @@ func (m *adoManager) performPolicyEvaluationRequest(ctx context.Context, request
 
 func (m *adoManager) formatPolicyEvaluations(pullRequestId int, policyData adoPolicyResponse) (tools.ToolResult, error) {
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d Policy Evaluations:\n\n", pullRequestId))
+	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Policy Evaluations:\n\n", pullRequestId)
 
 	found := false
 	for _, evaluation := range policyData.Value {
@@ -258,8 +258,8 @@ func (m *adoManager) formatPolicyEvaluations(pullRequestId int, policyData adoPo
 			requiredLabel = " [REQUIRED]"
 		}
 
-		resultText.WriteString(fmt.Sprintf("%s **%s**%s: %s\n",
-			statusEmoji, evaluation.Configuration.Type.DisplayName, requiredLabel, evaluation.Status))
+		_, _ = fmt.Fprintf(&resultText, "%s **%s**%s: %s\n",
+			statusEmoji, evaluation.Configuration.Type.DisplayName, requiredLabel, evaluation.Status)
 	}
 
 	if !found {
@@ -306,7 +306,7 @@ func (m *adoManager) fetchRepositoryId(ctx context.Context, org, project, repo s
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch repository metadata: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var repoData struct {
 		Id string `json:"id"`
@@ -325,7 +325,7 @@ func (m *adoManager) fetchPolicyConfigurations(ctx context.Context, org, project
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch policy configurations: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var policyConfigs struct {
 		Value []adoPolicyConfig `json:"value"`
@@ -343,7 +343,7 @@ func (m *adoManager) formatBranchPolicies(branchName, repositoryName string, pol
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Branch Policies for %s in %s:\n\n", branchName, repositoryName))
+	_, _ = fmt.Fprintf(&resultText, "Branch Policies for %s in %s:\n\n", branchName, repositoryName)
 
 	found := false
 	for _, config := range policyConfigs {
@@ -361,14 +361,14 @@ func (m *adoManager) formatBranchPolicies(branchName, repositoryName string, pol
 			requiredLabel = " [REQUIRED]"
 		}
 
-		resultText.WriteString(fmt.Sprintf("- Type: %s%s\n", config.Type.DisplayName, requiredLabel))
+		_, _ = fmt.Fprintf(&resultText, "- Type: %s%s\n", config.Type.DisplayName, requiredLabel)
 		resultText.WriteString("  Status: Enabled\n")
 		resultText.WriteString("  Settings:\n")
 		for k, v := range config.Settings {
 			if k == "scope" {
 				continue
 			}
-			resultText.WriteString(fmt.Sprintf("    %s: %v\n", formatKey(k), v))
+			_, _ = fmt.Fprintf(&resultText, "    %s: %v\n", formatKey(k), v)
 		}
 		resultText.WriteString("\n")
 	}

@@ -294,7 +294,7 @@ func TestStreamChat(t *testing.T) {
 		}
 
 		for _, e := range events {
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
 		}
 	}))
 	defer server.Close()
@@ -505,7 +505,7 @@ func TestStreamChatWithTools(t *testing.T) {
 		}
 
 		for _, e := range events {
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
 		}
 	}))
 	defer server.Close()
@@ -616,7 +616,7 @@ func TestStreamChat_Errors(t *testing.T) {
 	t.Run("SSE Error Event", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprintf(w, "event: error\ndata: %s\n\n", `{"error": {"type": "overloaded_error", "message": "Overloaded"}}`)
+			_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", `{"error": {"type": "overloaded_error", "message": "Overloaded"}}`)
 		}))
 		defer server.Close()
 
@@ -691,10 +691,10 @@ func TestAnthropic_RefreshAuth(t *testing.T) {
 func TestStreamChat_MalformedEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "event: content_block_start\ndata: {invalid json}\n\n")
-		fmt.Fprintf(w, "event: message_start\ndata: {invalid json}\n\n")
-		fmt.Fprintf(w, "event: message_delta\ndata: {invalid json}\n\n")
-		fmt.Fprintf(w, "event: error\ndata: malformed error\n\n")
+		_, _ = fmt.Fprintf(w, "event: content_block_start\ndata: {invalid json}\n\n")
+		_, _ = fmt.Fprintf(w, "event: message_start\ndata: {invalid json}\n\n")
+		_, _ = fmt.Fprintf(w, "event: message_delta\ndata: {invalid json}\n\n")
+		_, _ = fmt.Fprintf(w, "event: error\ndata: malformed error\n\n")
 	}))
 	defer server.Close()
 
@@ -767,7 +767,7 @@ func TestStreamPromptCaching(t *testing.T) {
 		}
 
 		for _, e := range events {
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
 		}
 	}))
 	defer server.Close()

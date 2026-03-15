@@ -66,7 +66,7 @@ func TestTransaction_Rollback(t *testing.T) {
 	tx := newTransaction()
 	path := "test_rollback.txt"
 	_ = os.WriteFile(path+".tmp", []byte("temp"), 0644)
-	defer os.Remove(path + ".tmp")
+	defer func() { _ = os.Remove(path + ".tmp") }()
 
 	tx.rollback([]string{path})
 

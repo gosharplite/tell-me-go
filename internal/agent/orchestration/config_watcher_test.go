@@ -239,7 +239,7 @@ MAX_TURNS: 5
 	}
 
 	// Remove file
-	os.Remove(mainPath)
+	_ = os.Remove(mainPath)
 	cw.Refresh("model-a")
 
 	// Assert old values persist

@@ -48,7 +48,7 @@ func parseUsage(path string, pd domain_pricing.PricingData, defaultModel string)
 	if err != nil {
 		return domain_pricing.UsageStats{}, 0, "", time.Time{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	state := &parseState{}
 	scanner := bufio.NewScanner(f)

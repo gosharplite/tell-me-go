@@ -79,7 +79,7 @@ func TestBuildSessionDependencies(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := internal_security.NewSecurityManager(nil)
 	client := new(mockLLMClient)
@@ -110,7 +110,7 @@ func TestBuildSessionDependencies(t *testing.T) {
 func TestGetAgentFactory(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "di-test-factory")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := internal_security.NewSecurityManager(nil)
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil)
@@ -123,7 +123,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test-errors")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	cfg := &config.Config{
 		Mode:  "assistant",
@@ -206,7 +206,7 @@ func TestFinalizeSession(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test-finalize")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := internal_security.NewSecurityManager(nil)
 	cfg := &config.Config{
@@ -234,7 +234,7 @@ func TestFinalizeSession(t *testing.T) {
 func TestGetAgentFactory_Execution(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "di-test-factory-exec")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := internal_security.NewSecurityManager(nil)
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil)
@@ -314,7 +314,7 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test-new-session")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := internal_security.NewSecurityManager(nil)
 	client := new(mockLLMClient)

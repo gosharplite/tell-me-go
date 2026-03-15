@@ -358,7 +358,7 @@ func (c *astCache) GetFileSkeletonGo(filePath string) (string, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("package %s\n\n", f.Name.Name))
+	_, _ = fmt.Fprintf(&sb, "package %s\n\n", f.Name.Name)
 
 	for _, decl := range f.Decls {
 		c.writeSkeletonDecl(&sb, fset, decl)

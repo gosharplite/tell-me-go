@@ -310,11 +310,11 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d potential technical debt items:\n", len(findings)))
+	_, _ = fmt.Fprintf(&sb, "Found %d potential technical debt items:\n", len(findings))
 	currentPkg := ""
 	for _, f := range findings {
 		if f.Pkg != currentPkg {
-			sb.WriteString(fmt.Sprintf("\n### Package: %s\n", f.Pkg))
+			_, _ = fmt.Fprintf(&sb, "\n### Package: %s\n", f.Pkg)
 			currentPkg = f.Pkg
 		}
 
@@ -330,7 +330,7 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 			prefix = "[HIGH COMPLEXITY] "
 		}
 
-		sb.WriteString(fmt.Sprintf("- %s[%s] %s (%s)%s: %s\n", prefix, f.Severity, f.Symbol, f.Type, metrics, f.Reason))
+		_, _ = fmt.Fprintf(&sb, "- %s[%s] %s (%s)%s: %s\n", prefix, f.Severity, f.Symbol, f.Type, metrics, f.Reason)
 	}
 
 	return tools.ToolResult{Text: sb.String()}

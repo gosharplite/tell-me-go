@@ -56,12 +56,12 @@ func (a *dependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[strin
 	for _, pkg := range pkgs {
 		internalImports := graph[pkg]
 		if len(internalImports) > 0 {
-			sb.WriteString(fmt.Sprintf("%s\n", pkg))
+			_, _ = fmt.Fprintf(&sb, "%s\n", pkg)
 			for _, imp := range internalImports {
-				sb.WriteString(fmt.Sprintf("  └── %s\n", imp))
+				_, _ = fmt.Fprintf(&sb, "  └── %s\n", imp)
 			}
 		} else {
-			sb.WriteString(fmt.Sprintf("%s (no internal dependencies)\n", pkg))
+			_, _ = fmt.Fprintf(&sb, "%s (no internal dependencies)\n", pkg)
 		}
 	}
 

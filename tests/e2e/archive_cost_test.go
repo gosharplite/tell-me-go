@@ -39,7 +39,7 @@ func TestArchiveCostPreservation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Clear output directory for a fresh subtest state
-			os.RemoveAll(outputDir)
+			_ = os.RemoveAll(outputDir)
 			if err := os.MkdirAll(outputDir, 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +65,7 @@ func setupTestEnvironment(t *testing.T) (binaryPath, tmpHome, configPath string)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}
-	t.Cleanup(func() { os.Remove(binaryPath) })
+	t.Cleanup(func() { _ = os.Remove(binaryPath) })
 
 	// Setup Test Home
 	var err error
@@ -73,12 +73,12 @@ func setupTestEnvironment(t *testing.T) (binaryPath, tmpHome, configPath string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(tmpHome) })
+	t.Cleanup(func() { _ = os.RemoveAll(tmpHome) })
 
 	if err := os.Setenv("TELL_ME_HOME", tmpHome); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Unsetenv("TELL_ME_HOME") })
+	t.Cleanup(func() { _ = os.Unsetenv("TELL_ME_HOME") })
 
 	// Create directories
 	outputDir := filepath.Join(tmpHome, "output")
@@ -143,11 +143,11 @@ func runAppWithNewSession(t *testing.T, binaryPath, configPath string) {
 	if err := os.Setenv("TELL_ME_MOCK_ANSWER", "Acknowledged."); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Unsetenv("TELL_ME_MOCK_ANSWER") })
+	t.Cleanup(func() { _ = os.Unsetenv("TELL_ME_MOCK_ANSWER") })
 	if err := os.Setenv("TELL_ME_MOCK_URL", "http://localhost:9999"); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Unsetenv("TELL_ME_MOCK_URL") })
+	t.Cleanup(func() { _ = os.Unsetenv("TELL_ME_MOCK_URL") })
 
 	cmd := exec.Command(binaryPath, "-c", configPath, "-new", "New session start")
 	// Expected to fail after archiving due to mock server not existing, but we only care about the archiving logic here.

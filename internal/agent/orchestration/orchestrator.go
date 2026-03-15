@@ -146,7 +146,7 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 
 	defer func() {
 		if err := chatAgent.Shutdown(ctx); err != nil {
-			fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)
+			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)
 		}
 	}()
 
@@ -180,7 +180,7 @@ func (o *orchestrator) Rollback(ctx context.Context, sc ports.SessionConfig, sd 
 	if err != nil {
 		return fmt.Errorf("failed to rollback history: %w", err)
 	}
-	fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns. History now contains %d turns (%d messages).\n",
+	_, _ = fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns. History now contains %d turns (%d messages).\n",
 		actualRemoved, remainingTurns, remainingMsgs)
 
 	return nil

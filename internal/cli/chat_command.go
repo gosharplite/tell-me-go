@@ -66,7 +66,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return err
 	}
 	if opts.showVersion {
-		fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
+		_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
 		return nil
 	}
 

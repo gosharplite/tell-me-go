@@ -113,6 +113,6 @@ func (a *changeAnalyzer) isGoFile(relPath string) bool {
 
 func (a *changeAnalyzer) renderChanges(sb *strings.Builder, relPath string, changes []string) {
 	if len(changes) > 0 {
-		sb.WriteString(fmt.Sprintf("\n[%s]\n  - %s\n", relPath, strings.Join(changes, "\n  - ")))
+		_, _ = fmt.Fprintf(sb, "\n[%s]\n  - %s\n", relPath, strings.Join(changes, "\n  - "))
 	}
 }

@@ -127,19 +127,19 @@ func (m *infoManager) renderProjectSummary(modInfo string, fileCounts map[string
 	}
 	sort.Strings(exts)
 	for _, ext := range exts {
-		sb.WriteString(fmt.Sprintf("  %s: %d\n", ext, fileCounts[ext]))
+		_, _ = fmt.Fprintf(&sb, "  %s: %d\n", ext, fileCounts[ext])
 	}
 
-	sb.WriteString(fmt.Sprintf("\nGo Packages (%d):\n", len(packages)))
+	_, _ = fmt.Fprintf(&sb, "\nGo Packages (%d):\n", len(packages))
 	pkgs := make([]string, 0, len(packages))
 	for pkg := range packages {
 		pkgs = append(pkgs, pkg)
 	}
 	sort.Strings(pkgs)
 	for _, pkg := range pkgs {
-		sb.WriteString(fmt.Sprintf("  - %s\n", pkg))
+		_, _ = fmt.Fprintf(&sb, "  - %s\n", pkg)
 	}
-	sb.WriteString(fmt.Sprintf("\nEstimated Go LOC: %d\n", totalLOC))
+	_, _ = fmt.Fprintf(&sb, "\nEstimated Go LOC: %d\n", totalLOC)
 
 	return sb.String()
 }
@@ -245,7 +245,7 @@ func (m *infoManager) countLines(ctx context.Context, path string) (int, error) 
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	count := 0

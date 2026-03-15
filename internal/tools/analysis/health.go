@@ -71,16 +71,16 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	sb.WriteString("### Project Health Dashboard\n")
 	sb.WriteString("| Metric | Status | Details |\n")
 	sb.WriteString("| :--- | :--- | :--- |\n")
-	sb.WriteString(fmt.Sprintf("| **Tests** | %s | %s |\n", testStatus, testDetails))
-	sb.WriteString(fmt.Sprintf("| **Coverage** | %s | %s |\n", coverageStatus, coverageDetails))
-	sb.WriteString(fmt.Sprintf("| **Linting** | %s | %s |\n", lintStatus, lintDetails))
-	sb.WriteString(fmt.Sprintf("| **Complexity** | %s | %s |\n", compStatus, compDetails))
-	sb.WriteString(fmt.Sprintf("| **Dead Code** | %s | %s |\n", deadStatus, deadDetails))
+	_, _ = fmt.Fprintf(&sb, "| **Tests** | %s | %s |\n", testStatus, testDetails)
+	_, _ = fmt.Fprintf(&sb, "| **Coverage** | %s | %s |\n", coverageStatus, coverageDetails)
+	_, _ = fmt.Fprintf(&sb, "| **Linting** | %s | %s |\n", lintStatus, lintDetails)
+	_, _ = fmt.Fprintf(&sb, "| **Complexity** | %s | %s |\n", compStatus, compDetails)
+	_, _ = fmt.Fprintf(&sb, "| **Dead Code** | %s | %s |\n", deadStatus, deadDetails)
 
 	if len(alerts) > 0 {
 		sb.WriteString("\n**Complexity Alerts (Threshold > 10):**\n")
 		for _, alert := range alerts {
-			sb.WriteString(fmt.Sprintf("- %s\n", alert))
+			_, _ = fmt.Fprintf(&sb, "- %s\n", alert)
 		}
 	}
 
@@ -98,8 +98,8 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 		return "ERROR", "Failed to create temp file", "N/A", err.Error()
 	}
 	tempPath := f.Name()
-	f.Close()
-	defer os.Remove(tempPath)
+	_ = f.Close()
+	defer func() { _ = os.Remove(tempPath) }()
 
 	out, err := m.Exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, "./...")
 	outStr := string(out)

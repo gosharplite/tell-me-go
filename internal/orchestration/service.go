@@ -55,7 +55,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 
 	defer func() {
 		if shutdownErr := deps.GetEventBus().Shutdown(ctx); shutdownErr != nil {
-			fmt.Fprintf(s.Stderr, "Warning: Event bus shutdown failed: %v\n", shutdownErr)
+			_, _ = fmt.Fprintf(s.Stderr, "Warning: Event bus shutdown failed: %v\n", shutdownErr)
 		}
 	}()
 

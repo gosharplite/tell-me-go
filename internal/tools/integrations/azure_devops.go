@@ -126,7 +126,7 @@ func (m *adoManager) checkResponseError(resp *http.Response, requestURL string) 
 		return nil
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("azure DevOps API returned status %s; additionally, failed to read response body: %w", resp.Status, err)
@@ -181,7 +181,7 @@ func (m *adoManager) adoGetFileContent(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get file content request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -226,7 +226,7 @@ func (m *adoManager) adoListRepositoryItems(ctx context.Context, args map[string
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing list repository items request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var responseData adoRepositoryItemsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
@@ -269,7 +269,7 @@ func (m *adoManager) formatRepositoryItems(scopePath, version string, responseDa
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Items in %s (%s):\n\n", scopePath, version))
+	_, _ = fmt.Fprintf(&resultText, "Items in %s (%s):\n\n", scopePath, version)
 	for _, item := range responseData.Value {
 		// Skip the scope path itself if it's the first element
 		if item.Path == scopePath && len(responseData.Value) > 1 {
@@ -279,7 +279,7 @@ func (m *adoManager) formatRepositoryItems(scopePath, version string, responseDa
 		if item.IsFolder {
 			prefix = "[DIR] "
 		}
-		resultText.WriteString(fmt.Sprintf("- %s %s\n", prefix, item.Path))
+		_, _ = fmt.Fprintf(&resultText, "- %s %s\n", prefix, item.Path)
 	}
 
 	return tools.ToolResult{Text: resultText.String()}

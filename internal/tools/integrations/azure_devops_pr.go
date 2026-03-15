@@ -41,7 +41,7 @@ func (m *adoManager) adoGetPullRequest(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pull request request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var prData adoPullRequestDetail
 	if err := json.NewDecoder(resp.Body).Decode(&prData); err != nil {
@@ -70,14 +70,14 @@ type adoPullRequestDetail struct {
 
 func (m *adoManager) formatPullRequestDetail(pullRequestId int, prData adoPullRequestDetail) string {
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d: %s\n", pullRequestId, prData.Title))
-	resultText.WriteString(fmt.Sprintf("Status: %s\n", prData.Status))
-	resultText.WriteString(fmt.Sprintf("Created By: %s\n", prData.CreatedBy.DisplayName))
-	resultText.WriteString(fmt.Sprintf("Created At: %s\n", prData.CreationDate))
-	resultText.WriteString(fmt.Sprintf("Source: %s\n", prData.SourceRefName))
-	resultText.WriteString(fmt.Sprintf("Target: %s\n", prData.TargetRefName))
-	resultText.WriteString(fmt.Sprintf("Merge Status: %s\n", prData.MergeStatus))
-	resultText.WriteString(fmt.Sprintf("Repository: %s (%s)", prData.Repository.Name, prData.Repository.Id))
+	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d: %s\n", pullRequestId, prData.Title)
+	_, _ = fmt.Fprintf(&resultText, "Status: %s\n", prData.Status)
+	_, _ = fmt.Fprintf(&resultText, "Created By: %s\n", prData.CreatedBy.DisplayName)
+	_, _ = fmt.Fprintf(&resultText, "Created At: %s\n", prData.CreationDate)
+	_, _ = fmt.Fprintf(&resultText, "Source: %s\n", prData.SourceRefName)
+	_, _ = fmt.Fprintf(&resultText, "Target: %s\n", prData.TargetRefName)
+	_, _ = fmt.Fprintf(&resultText, "Merge Status: %s\n", prData.MergeStatus)
+	_, _ = fmt.Fprintf(&resultText, "Repository: %s (%s)", prData.Repository.Name, prData.Repository.Id)
 
 	return resultText.String()
 }
@@ -108,7 +108,7 @@ func (m *adoManager) adoListPullRequests(ctx context.Context, args map[string]in
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing list pull requests request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var responseData struct {
 		Value []adoPullRequestShort `json:"value"`
@@ -162,10 +162,10 @@ func (m *adoManager) formatPullRequestsList(prs []adoPullRequestShort) string {
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Found %d pull requests:\n\n", len(prs)))
+	_, _ = fmt.Fprintf(&resultText, "Found %d pull requests:\n\n", len(prs))
 	for _, pr := range prs {
-		resultText.WriteString(fmt.Sprintf("- [#%d] %s (Created by: %s, Date: %s)\n",
-			pr.PullRequestId, pr.Title, pr.CreatedBy.DisplayName, pr.CreationDate))
+		_, _ = fmt.Fprintf(&resultText, "- [#%d] %s (Created by: %s, Date: %s)\n",
+			pr.PullRequestId, pr.Title, pr.CreatedBy.DisplayName, pr.CreationDate)
 	}
 
 	return resultText.String()
@@ -194,7 +194,7 @@ func (m *adoManager) adoGetPrDiff(ctx context.Context, args map[string]interface
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pr diff request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var changeData struct {
 		ChangeEntries []struct {
@@ -214,12 +214,12 @@ func (m *adoManager) adoGetPrDiff(ctx context.Context, args map[string]interface
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d Changes Summary:\n", params.PullRequestId))
-	resultText.WriteString(fmt.Sprintf("Total files changed: %d\n\n", len(changeData.ChangeEntries)))
+	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Changes Summary:\n", params.PullRequestId)
+	_, _ = fmt.Fprintf(&resultText, "Total files changed: %d\n\n", len(changeData.ChangeEntries))
 
 	for _, entry := range changeData.ChangeEntries {
 		changeType := cases.Title(language.English).String(entry.ChangeType)
-		resultText.WriteString(fmt.Sprintf("- [%s] %s\n", changeType, entry.Item.Path))
+		_, _ = fmt.Fprintf(&resultText, "- [%s] %s\n", changeType, entry.Item.Path)
 	}
 
 	return tools.ToolResult{Text: resultText.String()}, nil
@@ -262,7 +262,7 @@ func (m *adoManager) adoGetPrThreads(ctx context.Context, args map[string]interf
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("executing get pr threads request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var threadData adoThreadResponse
 	if err := json.NewDecoder(resp.Body).Decode(&threadData); err != nil {
@@ -274,7 +274,7 @@ func (m *adoManager) adoGetPrThreads(ctx context.Context, args map[string]interf
 
 func (m *adoManager) formatPrThreads(pullRequestId int, threadData adoThreadResponse) string {
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d Discussion Threads:\n\n", pullRequestId))
+	_, _ = fmt.Fprintf(&resultText, "Pull Request #%d Discussion Threads:\n\n", pullRequestId)
 
 	threadCount := 0
 	for _, thread := range threadData.Value {
@@ -296,12 +296,12 @@ func (m *adoManager) formatPrThreads(pullRequestId int, threadData adoThreadResp
 		}
 
 		threadCount++
-		resultText.WriteString(fmt.Sprintf("--- Thread %d ---\n", threadCount))
+		_, _ = fmt.Fprintf(&resultText, "--- Thread %d ---\n", threadCount)
 		for _, comment := range thread.Comments {
 			if comment.Content == "" {
 				continue
 			}
-			resultText.WriteString(fmt.Sprintf("[%s] %s: %s\n", comment.PublishedDate, comment.Author.DisplayName, comment.Content))
+			_, _ = fmt.Fprintf(&resultText, "[%s] %s: %s\n", comment.PublishedDate, comment.Author.DisplayName, comment.Content)
 		}
 		resultText.WriteString("\n")
 	}

@@ -49,12 +49,12 @@ func (tx *transaction) Commit(ctx context.Context) error {
 			return err
 		}
 		if err := format.Node(f, tx.fset, file); err != nil {
-			f.Close()
-			os.Remove(tmpPath)
+			_ = f.Close()
+			_ = os.Remove(tmpPath)
 			tx.rollback(writtenFiles)
 			return err
 		}
-		f.Close()
+		_ = f.Close()
 		writtenFiles = append(writtenFiles, path)
 	}
 
@@ -70,7 +70,7 @@ func (tx *transaction) Commit(ctx context.Context) error {
 
 func (tx *transaction) rollback(writtenFiles []string) {
 	for _, path := range writtenFiles {
-		os.Remove(path + ".tmp")
+		_ = os.Remove(path + ".tmp")
 	}
 }
 

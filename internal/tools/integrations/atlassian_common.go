@@ -81,7 +81,7 @@ func (p *atlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req
 		}
 
 		wait := p.getWaitTime(resp, i)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		select {
 		case <-time.After(wait):

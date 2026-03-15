@@ -795,8 +795,8 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### %s\n\n", title))
-	sb.WriteString(fmt.Sprintf("| %s | Miss | Hit | Other | Eff %% | Total Cost (USD) |\n", headerName))
+	_, _ = fmt.Fprintf(&sb, "### %s\n\n", title)
+	_, _ = fmt.Fprintf(&sb, "| %s | Miss | Hit | Other | Eff %% | Total Cost (USD) |\n", headerName)
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
 	var grandTotal float64
@@ -813,7 +813,7 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 			eff = float64(hTokens) / float64(total) * 100
 		}
 
-		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %.1f%% | $%.4f |\n", k, mTokens, hTokens, oTokens, eff, cost))
+		_, _ = fmt.Fprintf(&sb, "| %s | %d | %d | %d | %.1f%% | $%.4f |\n", k, mTokens, hTokens, oTokens, eff, cost)
 		grandTotal += cost
 		totalM += mTokens
 		totalH += hTokens
@@ -824,7 +824,7 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 	if total := totalM + totalH; total > 0 {
 		totalEff = float64(totalH) / float64(total) * 100
 	}
-	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal))
+	_, _ = fmt.Fprintf(&sb, "| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal)
 
 	return sb.String()
 }

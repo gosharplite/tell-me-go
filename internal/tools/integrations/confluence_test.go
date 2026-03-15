@@ -1146,7 +1146,7 @@ func TestConfluenceManager_SecureURLConstruction(t *testing.T) {
 
 		resp, err := m.fetchPageContent(context.Background(), specialID)
 		assert.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		mockClient.AssertExpectations(t)
 	})
 

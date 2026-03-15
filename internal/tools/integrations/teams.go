@@ -89,7 +89,7 @@ func (m *teamsManager) postToWebhook(ctx context.Context, url string, body []byt
 	if err != nil {
 		return "", fmt.Errorf("failed to send message: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("failed to send message to Teams, status: %s", resp.Status)

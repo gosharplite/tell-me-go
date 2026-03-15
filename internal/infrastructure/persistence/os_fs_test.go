@@ -57,7 +57,7 @@ func testWriteAndRead(t *testing.T, fs persistence.FileSystem, ctx context.Conte
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
-	f.Close()
+	_ = f.Close()
 }
 
 func testStatAndMetadata(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
@@ -247,7 +247,7 @@ func TestOSFileSystem_OpenFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenFile failed: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.Write([]byte("hello")); err != nil {
 		t.Fatalf("Write failed: %v", err)

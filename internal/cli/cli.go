@@ -109,7 +109,7 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 
 	if err := cmd.Execute(ctx, args); err != nil {
 		if errors.Is(err, stdctx.Canceled) {
-			fmt.Fprintln(a.Stderr)
+			_, _ = fmt.Fprintln(a.Stderr)
 			return nil
 		}
 		return err

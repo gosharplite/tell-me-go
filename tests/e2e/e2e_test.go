@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 	wd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		os.Exit(1)
 	}
 	projectRoot = filepath.Dir(filepath.Dir(wd))
@@ -50,12 +50,12 @@ func TestMain(m *testing.M) {
 	build := exec.Command("go", "build", "-o", binPath, mainPath)
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		os.Exit(1)
 	}
 
 	code := m.Run()
-	os.RemoveAll(tempDir)
+	_ = os.RemoveAll(tempDir)
 	os.Exit(code)
 }
 
@@ -536,7 +536,7 @@ func TestManageTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to open sqlite db: %v", err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		var count int
 		err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE content LIKE '%End-to-End Test Task%'").Scan(&count)
 		if err != nil || count == 0 {
@@ -578,7 +578,7 @@ func TestManageScratchpad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open sqlite db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var contentStr string
 	err = db.QueryRow("SELECT content FROM scratchpad WHERE id = 1").Scan(&contentStr)
 	if err != nil || !strings.Contains(contentStr, "# E2E Scratchpad") {
@@ -636,7 +636,7 @@ func setupProviderMockServer(t *testing.T, provider string, toolName string, too
 			// Turn 1: Return the requested tool call
 			resStr := createToolCallResponse(provider, toolName, toolArgs)
 			t.Logf("MOCK_SERVER_RESPONSE [%s]: %s\n", provider, resStr)
-			fmt.Fprint(w, resStr)
+			_, _ = fmt.Fprint(w, resStr)
 		} else {
 			// Turn 2: Capture the response from the agent and return a final message
 			*receivedResponse = *toolResult
@@ -646,7 +646,7 @@ func setupProviderMockServer(t *testing.T, provider string, toolName string, too
 			}
 			resStr := createTextResponse(provider, finalText)
 			t.Logf("MOCK_SERVER_RESPONSE [%s]: %s\n", provider, resStr)
-			fmt.Fprint(w, resStr)
+			_, _ = fmt.Fprint(w, resStr)
 		}
 	}))
 	return server, receivedResponse

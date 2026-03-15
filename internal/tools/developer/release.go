@@ -88,11 +88,11 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	allOK := true
 	for i, result := range results {
 		check := pipeline[i]
-		report.WriteString(fmt.Sprintf("#### %d. %s\n", i+1, check.Name()))
+		_, _ = fmt.Fprintf(&report, "#### %d. %s\n", i+1, check.Name())
 		if result.OK {
-			report.WriteString(fmt.Sprintf("- [OK] %s\n", result.Message))
+			_, _ = fmt.Fprintf(&report, "- [OK] %s\n", result.Message)
 		} else {
-			report.WriteString(fmt.Sprintf("- [FAIL] %s\n", result.Message))
+			_, _ = fmt.Fprintf(&report, "- [FAIL] %s\n", result.Message)
 			allOK = false
 		}
 		report.WriteString("\n")
@@ -205,7 +205,7 @@ func (c *buildChecker) Run(ctx context.Context) checkResult {
 	if err != nil {
 		return checkResult{OK: false, Message: fmt.Sprintf("Failed to create temp dir: %v", err)}
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	out, err := c.executor.CombinedOutput(ctx, "go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go")
 	if err != nil {

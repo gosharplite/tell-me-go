@@ -176,7 +176,7 @@ func (p *searchPipeline) scanFile(path string) error {
 	if err != nil {
 		return nil
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if isBin, err := checkBinary(file); err == nil && !isBin {
 		const maxScannerCapacity = 10 * 1024 * 1024
