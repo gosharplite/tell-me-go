@@ -76,6 +76,7 @@ func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) {
 }
 func (m *mockSecurityManager) IsCommandAllowed(command string) bool { return m.Called(command).Bool(0) }
 func (m *mockSecurityManager) IsBypassActive() bool                 { return m.Called().Bool(0) }
+func (m *mockSecurityManager) Close() error                         { return m.Called().Error(0) }
 
 // mockContainer is a mock of Container.
 type mockContainer struct {

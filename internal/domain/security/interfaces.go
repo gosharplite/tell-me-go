@@ -19,6 +19,7 @@ type ActionConfirmer interface {
 
 type Auditor interface {
 	LogAudit(action string, args ...any)
+	Close() error
 }
 
 type TerminalController interface {

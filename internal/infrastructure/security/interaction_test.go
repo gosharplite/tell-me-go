@@ -40,6 +40,7 @@ func (m *mockAuditor) getArgValue(callIdx int, key string) any {
 
 func (m *mockAuditor) SetLogFile(path string)                         {}
 func (m *mockAuditor) SetInteractor(interactor domain.UserInteractor) {}
+func (m *mockAuditor) Close() error                                   { return nil }
 
 // spyInteractor captures calls to UserInteractor methods.
 type spyInteractor struct {

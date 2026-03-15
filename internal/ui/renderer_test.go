@@ -50,6 +50,8 @@ func (m *mockLocker) Authorize(ctx context.Context, label, detail, reason string
 	return true, nil
 }
 
+func (m *mockLocker) Close() error { return nil }
+
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}

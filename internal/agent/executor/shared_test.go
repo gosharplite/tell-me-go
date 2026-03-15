@@ -23,6 +23,8 @@ func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.allowedCommands[command]
 }
 
+func (m *mockSecurityManager) Close() error { return nil }
+
 type mockConsentSecurityManager struct {
 	domain_security.ISecurityManager
 	confirmResult bool
@@ -34,6 +36,8 @@ func (m *mockConsentSecurityManager) TerminalUnlock()      {}
 func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {
 	return m.confirmResult, nil
 }
+
+func (m *mockConsentSecurityManager) Close() error { return nil }
 
 type panicRegistry struct {
 	tools.IToolRegistry

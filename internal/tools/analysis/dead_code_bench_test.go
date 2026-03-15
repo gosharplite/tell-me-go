@@ -42,6 +42,8 @@ func (m *benchmarkSecurityManager) Authorize(ctx context.Context, label, detail,
 	return true, nil
 }
 
+func (m *benchmarkSecurityManager) Close() error { return nil }
+
 func BenchmarkDeadCode_ColdScan(b *testing.B) {
 	ctx := context.Background()
 	args := map[string]interface{}{"path": "."}

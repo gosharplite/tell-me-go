@@ -58,6 +58,8 @@ func (m *deadCodeSecurityProvider) Authorize(ctx context.Context, label, detail,
 	return true, nil
 }
 
+func (m *deadCodeSecurityProvider) Close() error { return nil }
+
 func getFindOrphanedSymbolsTestCases() []struct {
 	name     string
 	files    map[string]string

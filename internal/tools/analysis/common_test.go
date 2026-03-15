@@ -90,3 +90,6 @@ func (s *mockSecurityProvider) Confirm(ctx context.Context, message string) (boo
 func (s *mockSecurityProvider) ReadLine(ctx context.Context) (string, error) {
 	return "", nil
 }
+
+func (s *mockSecurityProvider) Close() error { return nil }
+

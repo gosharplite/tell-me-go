@@ -106,6 +106,7 @@ func (s *integrationSecurityManager) Confirm(ctx context.Context, message string
 func (s *integrationSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
 func (s *integrationSecurityManager) IsCommandAllowed(command string) bool         { return true }
 func (s *integrationSecurityManager) IsBypassActive() bool                         { return false }
+func (s *integrationSecurityManager) Close() error                                 { return nil }
 
 func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	if testing.Short() {

@@ -17,6 +17,7 @@ type auditLogger interface {
 	LogAudit(action string, args ...any)
 	SetLogFile(path string)
 	SetInteractor(interactor domain.UserInteractor)
+	Close() error
 }
 
 // auditor handles security logging.
@@ -75,4 +76,19 @@ func (a *auditor) LogAudit(action string, args ...any) {
 	if logger != nil {
 		logger.Info("AUDIT: "+action, args...)
 	}
+}
+
+// Close syncs and closes the audit log file.
+func (a *auditor) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.file != nil {
+		_ = a.file.Sync()
+		err := a.file.Close()
+		a.file = nil
+		a.logger = nil
+		return err
+	}
+	return nil
 }

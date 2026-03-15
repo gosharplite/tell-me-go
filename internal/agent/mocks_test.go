@@ -100,6 +100,8 @@ func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.AllowAll
 }
 
+func (m *mockSecurityManager) Close() error { return nil }
+
 type mockSummarizer struct {
 	ports.Summarizer
 }

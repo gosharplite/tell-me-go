@@ -269,3 +269,8 @@ type internalSecurityProvider interface {
 	domain.ISecurityManager
 	getSafetyService() *domain.SafetyService
 }
+
+// Close shuts down the security manager and releases its resources.
+func (sm *SecurityManager) Close() error {
+	return sm.auditor.Close()
+}

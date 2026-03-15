@@ -41,6 +41,8 @@ func (m *refactorMockSecurityProvider) Authorize(ctx context.Context, label, det
 	return true, nil
 }
 
+func (m *refactorMockSecurityProvider) Close() error { return nil }
+
 func (m *refactorMockSecurityProvider) GetSafetyService() *domain.SafetyService {
 	return domain.NewSafetyService(domain.DefaultPolicy())
 }

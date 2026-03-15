@@ -2276,3 +2276,5 @@ func (m *mockSecurityManager) Confirm(ctx context.Context, message string) (bool
 func (m *mockSecurityManager) ReadLine(ctx context.Context) (string, error) { return "", nil }
 func (m *mockSecurityManager) IsCommandAllowed(command string) bool         { return true }
 func (m *mockSecurityManager) IsBypassActive() bool                         { return false }
+func (m *mockSecurityManager) Close() error                                 { return nil }
+
