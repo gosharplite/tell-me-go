@@ -40,7 +40,7 @@ verify_release_readiness
     git checkout main
     git fetch origin
     git reset --hard origin/main  # Safety: Ensure main matches remote truth
-    git merge dev --no-ff         # Create a merge commit for the release record
+    git merge dev --no-ff -m "Release version v1.1.0" # Avoid interactive editor pop-up
     ```
 2.  **Tag the release**:
     ```bash
