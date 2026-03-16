@@ -32,10 +32,10 @@ func TestMain_Execution(t *testing.T) {
 }
 
 func TestMainBootstrap(t *testing.T) {
-	// Simple smoke test to ensure Version is defined
+	// Simple smoke test to ensure version is defined
 
-	if Version == "" {
-		t.Error("Version should not be empty")
+	if version == "" {
+		t.Error("version should not be empty")
 	}
 }
 
@@ -129,14 +129,14 @@ func TestInitTracer_ContextCanceled(t *testing.T) {
 
 func TestGetVersion(t *testing.T) {
 	// 1. Save global state and defer restoration
-	originalVersion := Version
+	originalVersion := version
 	t.Cleanup(func() {
-		Version = originalVersion
+		version = originalVersion
 	})
 
 	// 2. Test explicit ldflags override
 	t.Run("returns explicitly set version", func(t *testing.T) {
-		Version = "v1.2.3"
+		version = "v1.2.3"
 		got := getVersion()
 		if got != "v1.2.3" {
 			t.Errorf("getVersion() = %v, want v1.2.3", got)
@@ -145,7 +145,7 @@ func TestGetVersion(t *testing.T) {
 
 	// 3. Test default/fallback behavior
 	t.Run("returns dev or devel when info is unavailable", func(t *testing.T) {
-		Version = "dev"
+		version = "dev"
 		got := getVersion()
 		if got != "dev" && got != "(devel)" {
 			t.Errorf("getVersion() = %v, want dev or (devel)", got)
