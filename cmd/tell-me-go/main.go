@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -19,9 +20,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/cli"
 )
 
-// version is the application version, usually set at build time via
-// -ldflags="-X 'main.version=vX.Y.Z'".
-var version = "dev"
+// Version is the application version, usually set at build time via
+// -ldflags="-X 'main.Version=vX.Y.Z'".
+var Version = "dev"
+
+func getVersion() string {
+	if Version != "dev" {
+		return Version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			return info.Main.Version
+		}
+	}
+	return Version
+}
 
 func initTracer(ctx context.Context) func(context.Context) error {
 	endpoint := os.Getenv("TELL_ME_TRACE_ENDPOINT")
@@ -76,7 +89,8 @@ func run() int {
 		}
 	}()
 
-	app := cli.New(version, os.Stdin, os.Stdout, os.Stderr)
+	appVersion := getVersion()
+	app := cli.New(appVersion, os.Stdin, os.Stdout, os.Stderr)
 	if err := app.Run(ctx, os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
