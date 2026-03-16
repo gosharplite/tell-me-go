@@ -29,9 +29,6 @@ func newshellTool(sm shellSecurity, validator domain_security.ICommandValidator)
 }
 
 func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	t.sm.TerminalLock()
-	defer t.sm.TerminalUnlock()
-
 	var params struct {
 		Command    string `json:"command"`
 		Reason     string `json:"reason"`
@@ -96,9 +93,6 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 }
 
 func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	t.sm.TerminalLock()
-	defer t.sm.TerminalUnlock()
-
 	var params struct {
 		Commands   []string `json:"commands"`
 		Reason     string   `json:"reason"`
@@ -201,6 +195,9 @@ func (t *shellTool) authorize(ctx context.Context, label, detail, reason string,
 }
 
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
+	t.sm.TerminalLock()
+	defer t.sm.TerminalUnlock()
+
 	t.sm.Warn(fmt.Sprintf("%s... (Output shown below)", msg))
 	t.sm.Warn("------------------------------------------------------------")
 	res, err := runFn()
