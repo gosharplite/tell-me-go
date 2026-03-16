@@ -5,6 +5,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -425,10 +426,14 @@ type mockShellSecurity struct {
 	LastDetail      string
 	LastAuditAction string
 	LastAuditArgs   []any
+	AuthorizeFunc   func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
 }
 
 func (m *mockShellSecurity) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	m.LastDetail = detail
+	if m.AuthorizeFunc != nil {
+		return m.AuthorizeFunc(ctx, label, detail, reason, isSafe)
+	}
 	return m.SecurityManager.Authorize(ctx, label, detail, reason, isSafe)
 }
 
@@ -436,4 +441,70 @@ func (m *mockShellSecurity) LogAudit(action string, args ...any) {
 	m.LastAuditAction = action
 	m.LastAuditArgs = args
 	m.SecurityManager.LogAudit(action, args...)
+}
+
+func TestShellTool_Authorization_Denials(t *testing.T) {
+	t.Run("Authorization Denials", func(t *testing.T) {
+		tests := []struct {
+			name        string
+			authResult  bool
+			authErr     error
+			expectedErr error
+		}{
+			{
+				name:        "User explicitly declines",
+				authResult:  false,
+				authErr:     nil, // Simulates user typing 'N' at the prompt
+				expectedErr: tools.ErrUserDeclined,
+			},
+			{
+				name:        "Authorization context timeout",
+				authResult:  false,
+				authErr:     context.DeadlineExceeded,
+				expectedErr: context.DeadlineExceeded,
+			},
+		}
+
+		for _, tt := range tests {
+			tt := tt // capture range variable for parallel execution safely
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				sm := security.NewSecurityManager(nil)
+				// 1. Setup the mock to return the table's simulated auth result
+				mockSec := &mockShellSecurity{
+					SecurityManager: sm,
+					AuthorizeFunc: func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+						return tt.authResult, tt.authErr
+					},
+				}
+
+				validator := security.NewCommandValidator(sm, nil)
+				// 2. Initialize the tool with the mock
+				tool := newshellTool(mockSec, validator)
+
+				// 3. Action: Attempt to execute a command
+				_, err := tool.ExecuteCommand(context.Background(), map[string]interface{}{
+					"command": "rm -rf /",
+					"reason":  "testing denial",
+				})
+
+				// 4. Assertion: Verify the exact sentinel error is returned
+				if !errors.Is(err, tt.expectedErr) {
+					t.Errorf("ExecuteCommand: expected error %v, got %v", tt.expectedErr, err)
+				}
+
+				// 5. Action: Attempt to execute piped commands
+				_, err = tool.PipeCommands(context.Background(), map[string]interface{}{
+					"commands": []interface{}{"ls", "grep foo"},
+					"reason":   "testing denial",
+				})
+
+				// 6. Assertion: Verify the exact sentinel error is returned
+				if !errors.Is(err, tt.expectedErr) {
+					t.Errorf("PipeCommands: expected error %v, got %v", tt.expectedErr, err)
+				}
+			})
+		}
+	})
 }
