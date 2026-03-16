@@ -7,6 +7,7 @@ import (
 	"bytes"
 	stdctx "context"
 	"errors"
+	"log/slog"
 	"os"
 	"testing"
 )
@@ -122,4 +123,46 @@ func TestApp_Run_CommandError(t *testing.T) {
 	if !errors.Is(err, customErr) {
 		t.Errorf("expected %v, got %v", customErr, err)
 	}
+}
+
+func TestNew_LogLevel(t *testing.T) {
+	// Global state is shared, so we must be careful and restore it.
+	origLogger := slog.Default()
+	t.Cleanup(func() {
+		slog.SetDefault(origLogger)
+	})
+
+	t.Run("Default to LevelWarn", func(t *testing.T) {
+		_ = os.Unsetenv("TELL_ME_DEBUG")
+		stderr := &bytes.Buffer{}
+		_ = New("1.0.0", nil, nil, stderr)
+
+		slog.Info("this info message should NOT appear")
+		slog.Warn("this warn message should appear")
+
+		output := stderr.String()
+		if bytes.Contains([]byte(output), []byte("level=INFO")) {
+			t.Errorf("expected no INFO log, got %q", output)
+		}
+		if !bytes.Contains([]byte(output), []byte("level=WARN")) {
+			t.Errorf("expected WARN log, got %q", output)
+		}
+	})
+
+	t.Run("TELL_ME_DEBUG=1 enables LevelDebug", func(t *testing.T) {
+		t.Setenv("TELL_ME_DEBUG", "1")
+		stderr := &bytes.Buffer{}
+		_ = New("1.0.0", nil, nil, stderr)
+
+		slog.Debug("this debug message should appear")
+		slog.Info("this info message should appear")
+
+		output := stderr.String()
+		if !bytes.Contains([]byte(output), []byte("level=DEBUG")) {
+			t.Errorf("expected DEBUG log, got %q", output)
+		}
+		if !bytes.Contains([]byte(output), []byte("level=INFO")) {
+			t.Errorf("expected INFO log, got %q", output)
+		}
+	})
 }

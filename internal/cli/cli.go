@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 
@@ -49,6 +50,15 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer) *app {
 	}
 
 	sm := security.NewSecurityManager(nil)
+
+	logLevel := slog.LevelWarn
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		logLevel = slog.LevelDebug
+	}
+	logHandler := slog.NewTextHandler(stderr, &slog.HandlerOptions{
+		Level: logLevel,
+	})
+	slog.SetDefault(slog.New(logHandler))
 
 	return &app{
 		Version:    version,
