@@ -20,20 +20,20 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/cli"
 )
 
-// Version is the application version, usually set at build time via
-// -ldflags="-X 'main.Version=vX.Y.Z'".
-var Version = "dev"
+// version is the application version, usually set at build time via
+// -ldflags="-X 'main.version=vX.Y.Z'".
+var version = "dev"
 
 func getVersion() string {
-	if Version != "dev" {
-		return Version
+	if version != "dev" {
+		return version
 	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		if info.Main.Version != "" && info.Main.Version != "(devel)" {
 			return info.Main.Version
 		}
 	}
-	return Version
+	return version
 }
 
 func initTracer(ctx context.Context) func(context.Context) error {
