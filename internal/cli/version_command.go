@@ -26,6 +26,6 @@ func init() {
 
 // Execute prints the version information.
 func (c *versionCommand) Execute(ctx stdctx.Context, args []string) error {
-	_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
-	return nil
+	_, err := fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
+	return err
 }
