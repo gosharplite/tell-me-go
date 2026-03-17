@@ -370,6 +370,26 @@ func TestPartEqual(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "FunctionCall inequality - Mismatched ID",
+			p1: &Part{
+				FunctionCall: &FunctionCall{ID: "call-1", Name: "get_weather"},
+			},
+			p2: &Part{
+				FunctionCall: &FunctionCall{ID: "call-2", Name: "get_weather"},
+			},
+			expected: false,
+		},
+		{
+			name: "FunctionCall inequality - Mismatched Name",
+			p1: &Part{
+				FunctionCall: &FunctionCall{ID: "call-1", Name: "get_weather"},
+			},
+			p2: &Part{
+				FunctionCall: &FunctionCall{ID: "call-1", Name: "get_stock"},
+			},
+			expected: false,
+		},
+		{
 			name: "Same function response",
 			p1: &Part{
 				FunctionResponse: &FunctionResponse{Name: "test", Response: map[string]interface{}{"res": "ok"}},
@@ -378,6 +398,26 @@ func TestPartEqual(t *testing.T) {
 				FunctionResponse: &FunctionResponse{Name: "test", Response: map[string]interface{}{"res": "ok"}},
 			},
 			expected: true,
+		},
+		{
+			name: "FunctionResponse inequality - Mismatched ID",
+			p1: &Part{
+				FunctionResponse: &FunctionResponse{ID: "res-1", Name: "test"},
+			},
+			p2: &Part{
+				FunctionResponse: &FunctionResponse{ID: "res-2", Name: "test"},
+			},
+			expected: false,
+		},
+		{
+			name: "FunctionResponse inequality - Mismatched Name",
+			p1: &Part{
+				FunctionResponse: &FunctionResponse{ID: "res-1", Name: "test1"},
+			},
+			p2: &Part{
+				FunctionResponse: &FunctionResponse{ID: "res-1", Name: "test2"},
+			},
+			expected: false,
 		},
 		{
 			name:     "Same AssetID",
@@ -508,6 +548,22 @@ func TestAddPart(t *testing.T) {
 			newPart: &Part{IsThought: true},
 			expected: []*Part{
 				{IsThought: true},
+			},
+		},
+		{
+			name: "Merge parts with incoming ThoughtSignature",
+			initial: []*Part{
+				{Text: "Initial thought. "},
+			},
+			newPart: &Part{
+				Text:             "Conclusive thought.",
+				ThoughtSignature: []byte("sig-123"),
+			},
+			expected: []*Part{
+				{
+					Text:             "Initial thought. Conclusive thought.",
+					ThoughtSignature: []byte("sig-123"),
+				},
 			},
 		},
 	}
