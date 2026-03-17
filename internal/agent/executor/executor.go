@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -38,6 +38,7 @@ type ToolExecutor struct {
 	registry           domaintools.IToolRegistry
 	authorizer         ToolAuthorizer
 	events             events.EventBus
+	logger             ports.Logger
 	maxConcurrentTools int
 	toolTimeout        time.Duration
 	longRunningTimeout time.Duration
@@ -67,7 +68,7 @@ func withZombieTimeout(timeout time.Duration) executorOption {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, observer domaintools.ExecutionObserver, opts ...executorOption) (*ToolExecutor, error) {
+func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, logger ports.Logger, observer domaintools.ExecutionObserver, opts ...executorOption) (*ToolExecutor, error) {
 	if registry == nil {
 		return nil, errors.New("registry is required")
 	}
@@ -75,10 +76,15 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		return nil, errors.New("ExecutionObserver is required")
 	}
 
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
+
 	e := &ToolExecutor{
 		registry:           registry,
 		authorizer:         newSecurityAuthorizer(sm, registry),
 		events:             bus,
+		logger:             logger,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
 		longRunningTimeout: 5 * time.Minute,
@@ -250,16 +256,16 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	duration := time.Since(startTime)
 
 	if waitErr != nil {
-		slog.Error("Tool execution turn failed or was cancelled",
-			slog.Int("turn", turn),
-			slog.String("error", waitErr.Error()),
-			slog.Int64("duration_ms", duration.Milliseconds()),
+		e.logger.Error("Tool execution turn failed or was cancelled",
+			"turn", turn,
+			"error", waitErr.Error(),
+			"duration_ms", duration.Milliseconds(),
 		)
 	} else {
-		slog.Info("Tool execution turn completed",
-			slog.Int("turn", turn),
-			slog.Int("tool_calls", len(calls)),
-			slog.Int64("duration_ms", duration.Milliseconds()),
+		e.logger.Info("Tool execution turn completed",
+			"turn", turn,
+			"tool_calls", len(calls),
+			"duration_ms", duration.Milliseconds(),
 		)
 	}
 
@@ -352,7 +358,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 	for batchIdx, batch := range batches {
 		if err := ctx.Err(); err != nil {
-			slog.Warn("Execution plan interrupted", slog.String("reason", "context cancelled"), slog.Int("batch_idx", batchIdx))
+			e.logger.Warn("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
 			e.failRemainingTasks(batches, batchIdx, -1, calls, resChan, err, "batch interrupted")
 			return err
 		}
@@ -360,9 +366,9 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		batchStart := time.Now()
 		if batch.isSerial {
 			if !e.executeSerialBatch(ctx, batch, calls, resChan) {
-				slog.Warn("Serial batch failed or interrupted, halting execution plan",
-					slog.Int("batch_idx", batchIdx),
-					slog.String("tool_name", calls[batch.tasks[0]].Name))
+				e.logger.Warn("Serial batch failed or interrupted, halting execution plan",
+					"batch_idx", batchIdx,
+					"tool_name", calls[batch.tasks[0]].Name)
 				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, resChan, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
 				return nil // Exit the execution plan early
 			}
@@ -370,11 +376,11 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			e.executeParallelBatch(ctx, batch, calls, resChan)
 		}
 
-		slog.Debug("Batch execution completed",
-			slog.Int("batch_idx", batchIdx),
-			slog.Bool("is_serial", batch.isSerial),
-			slog.Int("task_count", len(batch.tasks)),
-			slog.Int64("duration_ms", time.Since(batchStart).Milliseconds()))
+		e.logger.Debug("Batch execution completed",
+			"batch_idx", batchIdx,
+			"is_serial", batch.isSerial,
+			"task_count", len(batch.tasks),
+			"duration_ms", time.Since(batchStart).Milliseconds())
 	}
 	return nil
 }
@@ -808,22 +814,22 @@ func formatToolExecutionError(err error, resultErr error) string {
 
 func (e *ToolExecutor) logToolExecution(callName, status, errStr string, duration time.Duration, isSerial, isLongRunning bool, err, resultErr error) {
 	logAttrs := []any{
-		slog.String("tool_name", callName),
-		slog.Bool("is_serial", isSerial),
-		slog.Bool("is_long_running", isLongRunning),
-		slog.Int64("duration_ms", duration.Milliseconds()),
-		slog.String("status", status),
+		"tool_name", callName,
+		"is_serial", isSerial,
+		"is_long_running", isLongRunning,
+		"duration_ms", duration.Milliseconds(),
+		"status", status,
 	}
 	if errStr != "" {
-		logAttrs = append(logAttrs, slog.String("error_reason", errStr))
+		logAttrs = append(logAttrs, "error_reason", errStr)
 	}
 
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(resultErr, context.DeadlineExceeded) {
-		slog.Warn("Tool execution timed out", logAttrs...)
+		e.logger.Warn("Tool execution timed out", logAttrs...)
 	} else if status == "error" {
-		slog.Error("Tool execution failed", logAttrs...)
+		e.logger.Error("Tool execution failed", logAttrs...)
 	} else {
-		slog.Info("Tool execution completed", logAttrs...)
+		e.logger.Info("Tool execution completed", logAttrs...)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
@@ -61,7 +62,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -155,7 +156,7 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -191,7 +192,7 @@ func TestBuildExecutionBatches_PreservesOrder(t *testing.T) {
 			"S2": true,
 		},
 	}
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -245,7 +246,7 @@ func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
 func TestToolExecutor_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.Shutdown() // Deterministically close the pool
 
@@ -278,7 +279,7 @@ func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -302,9 +303,9 @@ func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
 	assert.Equal(t, "success", trace.ToolExecutions[0].Status)
 }
 
-func TestNewToolExecutor_NilLogger(t *testing.T) {
+func TestNewToolExecutor_NilObserver(t *testing.T) {
 	reg := &mockToolRegistry{}
-	_, err := NewToolExecutor(reg, nil, nil, nil)
+	_, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 
@@ -312,14 +313,14 @@ func TestNewToolExecutor_NilLogger(t *testing.T) {
 	sabotageOpt := func(e *ToolExecutor) {
 		e.observer = nil
 	}
-	_, err = NewToolExecutor(reg, nil, nil, &MockLogger{}, sabotageOpt)
+	_, err = NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, sabotageOpt)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
 
 func TestNewToolExecutor_NilRegistry(t *testing.T) {
 	// Call with nil registry
-	executor, err := NewToolExecutor(nil, nil, nil, nil)
+	executor, err := NewToolExecutor(nil, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)

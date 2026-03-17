@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
@@ -21,7 +22,7 @@ func TestExecutionAdapter_Execute(t *testing.T) {
 	}
 
 	// Use existing mockSecurityManager from shared_test.go
-	ex, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	ex, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	if err != nil {
 		t.Fatalf("failed to create executor: %v", err)
 	}

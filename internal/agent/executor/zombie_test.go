@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,7 +54,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 	// mock the toolTimeout since NewToolExecutor sets it to default
@@ -92,7 +93,7 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 	}
 
 	// Use very short zombie timeout
-	exec, err := NewToolExecutor(reg, nil, nil, mockLog,
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
 		withZombieTimeout(1*time.Millisecond),
 	)
 	require.NoError(t, err)
