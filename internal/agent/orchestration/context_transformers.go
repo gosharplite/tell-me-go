@@ -350,27 +350,8 @@ func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.C
 		if content == nil || content.Role != "model" {
 			continue
 		}
-
-		var signature []byte
-		// First pass: find the signature
-		for _, p := range content.Parts {
-			if len(p.ThoughtSignature) > 0 {
-				signature = p.ThoughtSignature
-				break
-			}
-		}
-
-		// Second pass: attach it to function calls if missing
-		if len(signature) > 0 {
-			for _, p := range content.Parts {
-				if p.FunctionCall != nil && len(p.ThoughtSignature) == 0 {
-					// We must allocate a new slice to avoid sharing pointers 
-					// if we later modify the signature, though usually read-only.
-					p.ThoughtSignature = make([]byte, len(signature))
-					copy(p.ThoughtSignature, signature)
-					modified = true
-				}
-			}
+		if propagateSignatureToMessage(content) {
+			modified = true
 		}
 	}
 
@@ -378,6 +359,44 @@ func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.C
 		req.PersistHistory = true
 	}
 	return nil
+}
+
+func propagateSignatureToMessage(content *llm.Content) bool {
+	if content == nil {
+		return false
+	}
+
+	var signature []byte
+	// First pass: find the signature
+	for _, p := range content.Parts {
+		if p == nil {
+			continue
+		}
+		if len(p.ThoughtSignature) > 0 {
+			signature = p.ThoughtSignature
+			break
+		}
+	}
+
+	if len(signature) == 0 {
+		return false
+	}
+
+	modified := false
+	// Second pass: attach it to function calls if missing
+	for _, p := range content.Parts {
+		if p == nil {
+			continue
+		}
+		if p.FunctionCall != nil && len(p.ThoughtSignature) == 0 {
+			// We must allocate a new slice to avoid sharing pointers 
+			// if we later modify the signature, though usually read-only.
+			p.ThoughtSignature = make([]byte, len(signature))
+			copy(p.ThoughtSignature, signature)
+			modified = true
+		}
+	}
+	return modified
 }
 
 func (t *thoughtSignaturePropagator) Priority() int { return 6 } // Run after contentCleaner (5)
