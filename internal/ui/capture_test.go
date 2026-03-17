@@ -11,6 +11,7 @@ import (
 	"flag"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -451,5 +452,102 @@ func TestCapturer_ReadLine_ContextCancellation_Concurrency(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Test timed out: ReadLine did not respect context cancellation")
+	}
+}
+
+func TestCapturer_ReadSingleKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		mockAnswer string
+		setupInput func(t *testing.T) io.Reader
+		setupCtx   func() (context.Context, context.CancelFunc)
+		want       string
+		wantErr    bool
+	}{
+		{
+			name:       "fast return with mockAnswer",
+			mockAnswer: "Yes",
+			setupInput: func(t *testing.T) io.Reader {
+				return nil // Shouldn't be read
+			},
+			setupCtx: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			want:    "y",
+			wantErr: false,
+		},
+		{
+			name:       "context cancellation triggers readByteFallback",
+			mockAnswer: "",
+			setupInput: func(t *testing.T) io.Reader {
+				pr, pw := io.Pipe()
+				t.Cleanup(func() {
+					_ = pr.Close()
+					_ = pw.Close()
+				})
+				// It's an io.Reader but not an *os.File, so it triggers fallback immediately
+				return pr 
+			},
+			setupCtx: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel() // Cancel immediately
+				return ctx, cancel
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name:       "non-TTY os.File triggers readByteFallback and reads byte",
+			mockAnswer: "",
+			setupInput: func(t *testing.T) io.Reader {
+				f, err := os.CreateTemp(t.TempDir(), "test-stdin-*")
+				if err != nil {
+					t.Fatalf("failed to create temp file: %v", err)
+				}
+				t.Cleanup(func() { _ = f.Close() })
+
+				_, err = f.Write([]byte("x"))
+				if err != nil {
+					t.Fatalf("failed to write to temp file: %v", err)
+				}
+				_, err = f.Seek(0, 0) // rewind to beginning
+				if err != nil {
+					t.Fatalf("failed to seek: %v", err)
+				}
+				return f
+			},
+			setupCtx: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			want:    "x",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stdin := tt.setupInput(t)
+			ctx, cancel := tt.setupCtx()
+			t.Cleanup(cancel)
+
+			// Construct Capturer with isolated Stdin
+			// Using correct NewCapturer signature:
+			// func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor
+			c := NewCapturer(stdin, io.Discard, io.Discard, nil, nil, "", tt.mockAnswer)
+
+			got, err := c.ReadSingleKey(ctx)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ReadSingleKey() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ReadSingleKey() got = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
