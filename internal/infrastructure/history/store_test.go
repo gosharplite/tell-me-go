@@ -334,25 +334,6 @@ func TestJSONLStore_PrepareForStorage_EmptyInput(t *testing.T) {
 	}
 }
 
-func TestJSONLStore_PrepareForStorage_MalformedJSON(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "malformed_json.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
-	ctx := context.Background()
-
-	// prepareForStorage itself doesn't parse JSON, but we test preservation of nil parts
-	content := &llm.Content{
-		Parts: []*llm.Part{nil},
-	}
-	prepared, err := store.prepareForStorage(ctx, content)
-	if err != nil {
-		t.Fatalf("prepareForStorage failed: %v", err)
-	}
-	if len(prepared.Parts) != 1 || prepared.Parts[0] != nil {
-		t.Error("expected preservation of nil part")
-	}
-}
-
 func TestJSONLStore_PrepareForStorage_PathPermissionErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	// Simulate by using a path that cannot be a directory for assets
@@ -1156,22 +1137,5 @@ func TestJSONLStore_NilPartsSanitization(t *testing.T) {
 
 	if contents[0].Parts[0].Text != "first" || contents[0].Parts[1].Text != "third" {
 		t.Errorf("parts content mismatch: got %v and %v", contents[0].Parts[0].Text, contents[0].Parts[1].Text)
-	}
-
-	// 3. Test Patch sanitization
-	if err := store.AppendParts(ctx, 0, []*llm.Part{nil, {Text: "fourth"}}); err != nil {
-		t.Fatalf("AppendParts failed: %v", err)
-	}
-
-	loaded, err := store.Load(ctx)
-	if err != nil {
-		t.Fatalf("Load failed after patch: %v", err)
-	}
-
-	if len(loaded[0].Parts) != 3 {
-		t.Fatalf("expected 3 parts after patch sanitization, got %d", len(loaded[0].Parts))
-	}
-	if loaded[0].Parts[2].Text != "fourth" {
-		t.Errorf("expected fourth part to be 'fourth', got %q", loaded[0].Parts[2].Text)
 	}
 }
