@@ -491,7 +491,7 @@ func TestCapturer_ReadSingleKey(t *testing.T) {
 					_ = pw.Close()
 				})
 				// It's an io.Reader but not an *os.File, so it triggers fallback immediately
-				return pr 
+				return pr
 			},
 			setupCtx: func() (context.Context, context.CancelFunc) {
 				ctx, cancel := context.WithCancel(context.Background())
