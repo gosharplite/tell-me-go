@@ -31,7 +31,7 @@ type app struct {
 }
 
 // New creates a new App instance with default IO and factories.
-func New(version string, stdin io.Reader, stdout, stderr io.Writer) *app {
+func New(version string, stdin io.Reader, stdout, stderr io.Writer) (*app, *slog.Logger) {
 	if stdin == nil {
 		stdin = os.Stdin
 	}
@@ -58,7 +58,7 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer) *app {
 	logHandler := slog.NewTextHandler(stderr, &slog.HandlerOptions{
 		Level: logLevel,
 	})
-	slog.SetDefault(slog.New(logHandler))
+	logger := slog.New(logHandler)
 
 	return &app{
 		Version:    version,
@@ -69,7 +69,7 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer) *app {
 		sm:         sm,
 		mockPrompt: os.Getenv("TELL_ME_MOCK_PROMPT"),
 		mockAnswer: os.Getenv("TELL_ME_MOCK_ANSWER"),
-	}
+	}, logger
 }
 
 // Run executes the application logic.
