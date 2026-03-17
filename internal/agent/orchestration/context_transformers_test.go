@@ -1453,6 +1453,28 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "Multiple thought signatures uses the first one found",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							{IsThought: true, Text: "think 1", ThoughtSignature: []byte("sig-1")},
+							{IsThought: true, Text: "think 2", ThoughtSignature: []byte("sig-2")},
+							{FunctionCall: &llm.FunctionCall{Name: "test"}},
+						},
+					},
+				},
+			},
+			wantPersist: true,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				fcPart := req.History[0].Parts[2]
+				if string(fcPart.ThoughtSignature) != "sig-1" {
+					t.Errorf("expected first thought signature 'sig-1', got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
