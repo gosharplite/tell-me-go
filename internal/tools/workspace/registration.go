@@ -397,7 +397,7 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "git_commit",
-		Description:     "Commits staged changes with a message.",
+		Description:     "Commits currently staged changes with a message. You MUST stage files first using 'execute_command' with 'git add <files>' before calling this tool.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

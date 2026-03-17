@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/orchestration"
 )
 
 // app represents the tell-me-go application.
@@ -30,7 +31,7 @@ type app struct {
 }
 
 // New creates a new App instance with default IO and factories.
-func New(version string, stdin io.Reader, stdout, stderr io.Writer) *app {
+func New(version string, stdin io.Reader, stdout, stderr io.Writer) (*app, *slog.Logger) {
 	if stdin == nil {
 		stdin = os.Stdin
 	}
@@ -50,6 +51,15 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer) *app {
 
 	sm := security.NewSecurityManager(nil)
 
+	logLevel := slog.LevelWarn
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		logLevel = slog.LevelDebug
+	}
+	logHandler := slog.NewTextHandler(stderr, &slog.HandlerOptions{
+		Level: logLevel,
+	})
+	logger := slog.New(logHandler)
+
 	return &app{
 		Version:    version,
 		Stdin:      stdin,
@@ -59,7 +69,7 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer) *app {
 		sm:         sm,
 		mockPrompt: os.Getenv("TELL_ME_MOCK_PROMPT"),
 		mockAnswer: os.Getenv("TELL_ME_MOCK_ANSWER"),
-	}
+	}, logger
 }
 
 // Run executes the application logic.
@@ -91,7 +101,7 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	// Assembly root: wire dependencies for orchestration
 	container := di.NewBootstrapper(a.homeDir, a.sm, a.Version, a.Stdout, a.Stderr, nil)
 	loader := &config.YAMLConfigLoader{}
-	chatService := orchestration.NewChatService(a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm, loader, container)
+	chatService := agent.NewChatService(a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm, loader, container)
 
 	cmdCtx := &context{
 		Version:     a.Version,

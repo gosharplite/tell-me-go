@@ -7,15 +7,14 @@ import (
 	"bytes"
 	stdctx "context"
 	"errors"
-	"os"
 	"testing"
 )
 
 func TestNew(t *testing.T) {
 	t.Run("Default home directory", func(t *testing.T) {
-		_ = os.Unsetenv("TELL_ME_HOME")
-		_ = os.Unsetenv("AIT_HOME")
-		app := New("1.0.0", nil, nil, nil)
+		t.Setenv("TELL_ME_HOME", "")
+		t.Setenv("AIT_HOME", "")
+		app, _ := New("1.0.0", nil, nil, nil)
 		if app.homeDir != "." {
 			t.Errorf("expected homeDir to be '.', got %s", app.homeDir)
 		}
@@ -24,17 +23,17 @@ func TestNew(t *testing.T) {
 	t.Run("TELL_ME_HOME environment variable", func(t *testing.T) {
 		expected := "/tmp/tell-me-home"
 		t.Setenv("TELL_ME_HOME", expected)
-		app := New("1.0.0", nil, nil, nil)
+		app, _ := New("1.0.0", nil, nil, nil)
 		if app.homeDir != expected {
 			t.Errorf("expected homeDir to be %s, got %s", expected, app.homeDir)
 		}
 	})
 
 	t.Run("AIT_HOME environment variable", func(t *testing.T) {
-		_ = os.Unsetenv("TELL_ME_HOME")
+		t.Setenv("TELL_ME_HOME", "")
 		expected := "/tmp/ait-home"
 		t.Setenv("AIT_HOME", expected)
-		app := New("1.0.0", nil, nil, nil)
+		app, _ := New("1.0.0", nil, nil, nil)
 		if app.homeDir != expected {
 			t.Errorf("expected homeDir to be %s, got %s", expected, app.homeDir)
 		}
@@ -45,7 +44,7 @@ func TestApp_Run_Version(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	version := "1.2.3"
-	app := New(version, nil, stdout, stderr)
+	app, _ := New(version, nil, stdout, stderr)
 
 	err := app.Run(stdctx.Background(), []string{"--version"})
 	if err != nil {
@@ -62,7 +61,7 @@ func TestApp_Run_Version(t *testing.T) {
 func TestApp_Run_UnknownCommand(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	app := New("1.0.0", nil, stdout, stderr)
+	app, _ := New("1.0.0", nil, stdout, stderr)
 
 	// "chat" is not registered in this test yet, so it should fail.
 	err := app.Run(stdctx.Background(), []string{})
@@ -87,7 +86,7 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 	})
 
 	stderr := &bytes.Buffer{}
-	app := New("1.0.0", nil, nil, stderr)
+	app, _ := New("1.0.0", nil, nil, stderr)
 
 	ctx, cancel := stdctx.WithCancel(stdctx.Background())
 	cancel() // Cancel it immediately
@@ -117,9 +116,45 @@ func TestApp_Run_CommandError(t *testing.T) {
 		return &mockCommand{err: customErr}
 	})
 
-	app := New("1.0.0", nil, nil, nil)
+	app, _ := New("1.0.0", nil, nil, nil)
 	err := app.Run(stdctx.Background(), []string{})
 	if !errors.Is(err, customErr) {
 		t.Errorf("expected %v, got %v", customErr, err)
 	}
+}
+
+func TestNew_LogLevel(t *testing.T) {
+	t.Run("Default to LevelWarn", func(t *testing.T) {
+		t.Setenv("TELL_ME_DEBUG", "")
+		stderr := &bytes.Buffer{}
+		_, logger := New("1.0.0", nil, nil, stderr)
+
+		logger.Info("this info message should NOT appear")
+		logger.Warn("this warn message should appear")
+
+		output := stderr.String()
+		if bytes.Contains([]byte(output), []byte("level=INFO")) {
+			t.Errorf("expected no INFO log, got %q", output)
+		}
+		if !bytes.Contains([]byte(output), []byte("level=WARN")) {
+			t.Errorf("expected WARN log, got %q", output)
+		}
+	})
+
+	t.Run("TELL_ME_DEBUG=1 enables LevelDebug", func(t *testing.T) {
+		t.Setenv("TELL_ME_DEBUG", "1")
+		stderr := &bytes.Buffer{}
+		_, logger := New("1.0.0", nil, nil, stderr)
+
+		logger.Debug("this debug message should appear")
+		logger.Info("this info message should appear")
+
+		output := stderr.String()
+		if !bytes.Contains([]byte(output), []byte("level=DEBUG")) {
+			t.Errorf("expected DEBUG log, got %q", output)
+		}
+		if !bytes.Contains([]byte(output), []byte("level=INFO")) {
+			t.Errorf("expected INFO log, got %q", output)
+		}
+	})
 }

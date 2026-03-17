@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime/debug"
 	"time"
@@ -90,7 +91,9 @@ func run() int {
 	}()
 
 	appVersion := getVersion()
-	app := cli.New(appVersion, os.Stdin, os.Stdout, os.Stderr)
+	app, logger := cli.New(appVersion, os.Stdin, os.Stdout, os.Stderr)
+	// Set the global logger only in the main entry point.
+	slog.SetDefault(logger)
 	if err := app.Run(ctx, os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1

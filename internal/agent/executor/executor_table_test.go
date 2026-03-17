@@ -16,6 +16,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
@@ -53,10 +54,12 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 				panic(b.panic)
 			}
 			if b.delay > 0 {
+				timer := time.NewTimer(b.delay)
+				defer timer.Stop()
 				select {
 				case <-ctx.Done():
 					return tools.ToolResult{}, ctx.Err()
-				case <-time.After(b.delay):
+				case <-timer.C:
 				}
 			}
 			return b.result, b.err
@@ -78,7 +81,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	}
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewToolExecutor(reg, sm, bus, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	exec, err := NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -460,7 +463,7 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 		require.NoError(t, reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc))
 	}
 
-	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.SetConcurrency(2, 0)
 	t.Cleanup(exec.Shutdown)
@@ -514,9 +517,11 @@ func executeConcurrentWorkers(t *testing.T, exec *ToolExecutor, content *llm.Con
 	})
 
 	for i := 0; i < waitCount; i++ {
+		timer := time.NewTimer(ciSafeTimeout)
 		select {
 		case <-startedCh:
-		case <-time.After(2 * time.Second):
+			timer.Stop()
+		case <-timer.C:
 			t.Fatal("timeout waiting for tools to start")
 		}
 	}
@@ -655,7 +660,7 @@ func TestResultCollector(t *testing.T) {
 func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewToolExecutor(reg, nil, nil, &MockLogger{})
+	e, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(e.Shutdown)
 
@@ -734,7 +739,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 	require.NoError(t, err)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -761,7 +766,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 func TestToolExecutor_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(e.Shutdown)
 
@@ -780,7 +785,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewToolExecutor(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
 
@@ -800,7 +805,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewToolExecutor(reg, nil, bus, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewToolExecutor(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
 
@@ -1129,7 +1134,7 @@ func TestToolExecutor_ZombieTool(t *testing.T) {
 	}, registry.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
+	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)

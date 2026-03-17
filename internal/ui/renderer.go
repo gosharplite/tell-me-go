@@ -20,6 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/term"
 )
 
@@ -28,7 +29,7 @@ type stdUIRenderer struct {
 	locker   domain_security.ISecurityManager
 	stdout   io.Writer
 	stderr   io.Writer
-	now      func() time.Time
+	clock    clock.Clock
 	renderer *glamour.TermRenderer
 	mu       sync.RWMutex
 	useColor bool
@@ -47,7 +48,10 @@ type streamState struct {
 }
 
 // NewRenderer creates a new ports.UIRenderer.
-func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writer) ports.UIRenderer {
+func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writer, clk clock.Clock) ports.UIRenderer {
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
 	tr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
@@ -56,7 +60,7 @@ func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writ
 		locker:   locker,
 		stdout:   stdout,
 		stderr:   stderr,
-		now:      time.Now,
+		clock:    clk,
 		renderer: tr,
 		useColor: true,
 	}
@@ -101,11 +105,14 @@ func (r *stdUIRenderer) SetWriters(stdout, stderr io.Writer) {
 	r.stderr = stderr
 }
 
-// SetNow allows overriding the time function (primarily for testing).
-func (r *stdUIRenderer) SetNow(now func() time.Time) {
+// SetClock allows overriding the clock (primarily for testing).
+func (r *stdUIRenderer) SetClock(clk clock.Clock) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.now = now
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	r.clock = clk
 }
 
 func (r *stdUIRenderer) getTimestamp() string {
@@ -114,11 +121,7 @@ func (r *stdUIRenderer) getTimestamp() string {
 
 func (r *stdUIRenderer) nowSafe() time.Time {
 	ui := r.getUIState()
-	n := ui.now
-	if n != nil {
-		return n()
-	}
-	return time.Now()
+	return ui.clock.Now()
 }
 
 func (r *stdUIRenderer) renderMarkdown(text string) {
@@ -144,7 +147,7 @@ type uiState struct {
 	stdout   io.Writer
 	stderr   io.Writer
 	useColor bool
-	now      func() time.Time
+	clock    clock.Clock
 }
 
 func (s uiState) c(color string) string {
@@ -155,11 +158,7 @@ func (s uiState) c(color string) string {
 }
 
 func (s uiState) getTimestamp() string {
-	n := s.now
-	if n == nil {
-		n = time.Now
-	}
-	return n().Format("15:04:05")
+	return s.clock.Now().Format("15:04:05")
 }
 
 func (r *stdUIRenderer) getUIState() uiState {
@@ -177,7 +176,7 @@ func (r *stdUIRenderer) getUIState() uiState {
 		stdout:   stdout,
 		stderr:   stderr,
 		useColor: r.useColor,
-		now:      r.now,
+		clock:    r.clock,
 	}
 }
 
@@ -244,11 +243,7 @@ func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime 
 		ui.c(colorGray))
 
 	if !startTime.IsZero() {
-		n := ui.now
-		if n == nil {
-			n = time.Now
-		}
-		totalSessionDuration := n().Sub(startTime).Seconds()
+		totalSessionDuration := ui.clock.Now().Sub(startTime).Seconds()
 		timingStr = fmt.Sprintf("%s / %.2fs%s", timingStr, totalSessionDuration, ui.c(colorGray))
 	}
 
@@ -466,7 +461,7 @@ func (r *stdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part, ui
 		return
 	}
 	if !state.thoughtActive && state.showThoughts {
-		r.safePrintStderr(fmt.Sprintf("%s[%s] [Thinking]\n", ui.c(colorGray), ui.getTimestamp()), ui)
+		r.safePrintStderr(fmt.Sprintf("%s[%s] [Thinking]\n", ui.c(colorGray), ui.clock.Now().Format("15:04:05")), ui)
 		state.thoughtActive = true
 	}
 	if state.showThoughts && part.Text != "" {

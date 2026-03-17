@@ -13,10 +13,10 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/term"
 )
 
@@ -36,6 +36,7 @@ type capturer struct {
 	Stdout     io.Writer
 	Stderr     io.Writer
 	SM         domain_security.ISecurityManager
+	Clock      clock.Clock
 	reader     *bufio.Reader
 	readerMu   sync.Mutex
 	mockPrompt string
@@ -45,12 +46,16 @@ type capturer struct {
 }
 
 // NewCapturer creates a new capturer.
-func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager, mockPrompt, mockAnswer string) domain_security.UserInteractor {
+func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor {
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
 	return &capturer{
 		Stdin:      stdin,
 		Stdout:     stdout,
 		Stderr:     stderr,
 		SM:         sm,
+		Clock:      clk,
 		reader:     bufio.NewReader(stdin),
 		mockPrompt: mockPrompt,
 		mockAnswer: mockAnswer,
@@ -115,7 +120,7 @@ func (c *capturer) finalizePrompt(prompt string, options *orchestration.CaptureO
 	}
 
 	c.printFeedback(c.Stderr, !options.Raw(), colorGreen,
-		fmt.Sprintf("[%s] Input captured. Processing...", time.Now().Format("15:04:05")))
+		fmt.Sprintf("[%s] Input captured. Processing...", c.Clock.Now().Format("15:04:05")))
 
 	return prompt, nil
 }
@@ -195,6 +200,10 @@ func (c *capturer) printFeedback(w io.Writer, useColor bool, color, msg string) 
 
 // Confirm prompts the user for confirmation.
 func (c *capturer) Confirm(ctx context.Context, message string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	color := ""
 	if strings.HasPrefix(message, "[SECURITY]") || strings.HasPrefix(message, "[CONFIRMATION REQUIRED]") {
 		color = colorRed
@@ -220,7 +229,10 @@ func (c *capturer) Warn(message string) {
 	if strings.HasPrefix(message, "[SECURITY]") {
 		color = colorRed
 	}
-	c.printFeedback(c.Stderr, true, color, message)
+
+	timestamp := c.Clock.Now().Format("15:04:05")
+	formattedMessage := fmt.Sprintf("[%s] %s", timestamp, message)
+	c.printFeedback(c.Stderr, true, color, formattedMessage)
 }
 
 // Prompt displays an inline message without a newline.

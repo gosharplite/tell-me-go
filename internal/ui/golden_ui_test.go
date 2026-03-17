@@ -20,11 +20,11 @@ var update = flag.Bool("update", false, "update golden files")
 func TestUIRendererGolden(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
-
 	// Inject deterministic dependencies
 	frozenTime := time.Date(2026, 1, 1, 15, 4, 5, 0, time.UTC)
-	r.SetNow(func() time.Time { return frozenTime })
+	mc := &mockClock{now: frozenTime}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+
 	r.SetUseColor(true)
 
 	// Ensure testdata directory exists

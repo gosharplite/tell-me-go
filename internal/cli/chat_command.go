@@ -11,9 +11,10 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	orchestration_app "github.com/gosharplite/tell-me-go/internal/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
@@ -30,7 +31,7 @@ type chatCommand struct {
 	Stdout      io.Writer
 	Stderr      io.Writer
 	SM          domain_security.ISecurityManager
-	ChatService orchestration_app.ChatService
+	ChatService agent.ChatService
 	MockPrompt  string
 	MockAnswer  string
 }
@@ -71,7 +72,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// 2. Invoking a Use Case / Service interface
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
@@ -96,7 +97,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// Delegate all business logic and orchestration to the ChatService
-	return c.ChatService.ProcessMessage(ctx, orchestration_app.ChatOptions{
+	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
 		ConfigPath: opts.configPath,
 		NewSession: opts.newSession,
 		LastN:      opts.lastN,

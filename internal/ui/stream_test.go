@@ -9,12 +9,13 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 func TestStreamResponse(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	renderer := NewRenderer(locker, &stdout, &stderr)
+	renderer := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
 
 	t.Run("Normal Streaming", func(t *testing.T) {
 		stdout.Reset()

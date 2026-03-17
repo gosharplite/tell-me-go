@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
@@ -117,7 +118,7 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	bus := &mockEventBus{} // from mocks_test.go
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
+	exec, err := executor.NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
 	defer exec.Shutdown()
 
@@ -171,7 +172,7 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
+	exec, err := executor.NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
 	defer exec.Shutdown()
 
@@ -224,7 +225,7 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(timeout))
+	exec, err := executor.NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(timeout))
 	require.NoError(t, err)
 	defer exec.Shutdown()
 

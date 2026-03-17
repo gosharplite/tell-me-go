@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
@@ -51,17 +52,19 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 	reg := &mockToolRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			close(toolStarted)
+			timer := time.NewTimer(ciSafeTimeout)
+			defer timer.Stop()
 			select {
 			case <-ctx.Done():
 				close(toolFinished)
 				return tools.ToolResult{}, ctx.Err()
-			case <-time.After(2 * time.Second):
+			case <-timer.C:
 				return tools.ToolResult{Text: "timeout"}, nil
 			}
 		},
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -88,10 +91,13 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 	cancel()
 
 	// Wait for Execute to return
+	timer1 := time.NewTimer(ciSafeTimeout)
+	defer timer1.Stop()
+
 	select {
 	case <-done:
 		// Success
-	case <-time.After(1 * time.Second):
+	case <-timer1.C:
 		t.Fatal("Execute did not return after context cancellation")
 	}
 
@@ -99,10 +105,13 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 	assert.Equal(t, context.Canceled, execErr)
 
 	// Verify tool also finished
+	timer2 := time.NewTimer(ciSafeTimeout)
+	defer timer2.Stop()
+
 	select {
 	case <-toolFinished:
 		// Success
-	case <-time.After(1 * time.Second):
+	case <-timer2.C:
 		t.Error("Tool implementation did not receive context cancellation")
 	}
 }
@@ -131,10 +140,13 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 
 	cancel() // Cancel the task context
 
+	timer3 := time.NewTimer(100 * time.Millisecond)
+	defer timer3.Stop()
+
 	select {
 	case <-finished:
 		// Worker should be free now
-	case <-time.After(100 * time.Millisecond):
+	case <-timer3.C:
 		t.Error("Worker did not release after task context cancellation")
 	}
 
@@ -144,10 +156,13 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 		close(task2Started)
 	})
 
+	timer4 := time.NewTimer(100 * time.Millisecond)
+	defer timer4.Stop()
+
 	select {
 	case <-task2Started:
 		// Success
-	case <-time.After(100 * time.Millisecond):
+	case <-timer4.C:
 		t.Error("Worker pool became unresponsive after task cancellation")
 	}
 }
@@ -155,7 +170,7 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -173,12 +188,15 @@ func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 
 	exec.executeParallelBatch(ctx, batch, calls, resChan)
 
+	timer5 := time.NewTimer(ciSafeTimeout)
+	defer timer5.Stop()
+
 	select {
 	case res := <-resChan:
 		assert.Equal(t, 0, res.index)
 		assert.Equal(t, "test_tool", res.name)
 		assert.ErrorContains(t, res.tr.Error, "batch interrupted")
-	case <-time.After(1 * time.Second):
+	case <-timer5.C:
 		t.Fatal("Expected result on resChan, but got none")
 	}
 }
@@ -191,7 +209,7 @@ func TestBuildExecutionBatches_PreservesOrder(t *testing.T) {
 			"S2": true,
 		},
 	}
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -245,7 +263,7 @@ func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
 func TestToolExecutor_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.Shutdown() // Deterministically close the pool
 
@@ -278,7 +296,7 @@ func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewToolExecutor(reg, nil, nil, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -302,9 +320,9 @@ func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
 	assert.Equal(t, "success", trace.ToolExecutions[0].Status)
 }
 
-func TestNewToolExecutor_NilLogger(t *testing.T) {
+func TestNewToolExecutor_NilObserver(t *testing.T) {
 	reg := &mockToolRegistry{}
-	_, err := NewToolExecutor(reg, nil, nil, nil)
+	_, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 
@@ -312,17 +330,47 @@ func TestNewToolExecutor_NilLogger(t *testing.T) {
 	sabotageOpt := func(e *ToolExecutor) {
 		e.observer = nil
 	}
-	_, err = NewToolExecutor(reg, nil, nil, &MockLogger{}, sabotageOpt)
+	_, err = NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, sabotageOpt)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
 
 func TestNewToolExecutor_NilRegistry(t *testing.T) {
 	// Call with nil registry
-	executor, err := NewToolExecutor(nil, nil, nil, nil)
+	executor, err := NewToolExecutor(nil, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "registry is required")
 	require.Nil(t, executor)
+}
+
+func TestNewToolExecutor_NilLogger_FallbackBehavior(t *testing.T) {
+	t.Parallel()
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+			return tools.ToolResult{Text: "success"}, nil
+		},
+	}
+	observer := &MockLogger{}
+
+	// Explicitly pass nil for the logger
+	exec, err := NewToolExecutor(reg, nil, nil, nil, observer)
+	require.NoError(t, err)
+	require.NotNil(t, exec)
+	t.Cleanup(exec.Shutdown)
+
+	// Call a public method that triggers logging
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		},
+	}
+
+	// This should not panic because e.logger should have defaulted to NoOpLogger
+	assert.NotPanics(t, func() {
+		results, err := exec.Execute(context.Background(), respContent, 0, 10)
+		assert.NoError(t, err)
+		assert.NotNil(t, results)
+	})
 }

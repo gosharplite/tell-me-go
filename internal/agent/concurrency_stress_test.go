@@ -151,7 +151,7 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
