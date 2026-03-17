@@ -196,101 +196,129 @@ func (m *mockServiceCapturer) ReadLine(ctx context.Context) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
-func TestProcessMessage_Success(t *testing.T) {
-	ctx := context.Background()
-	loader := &mockServiceConfigLoader{}
-	container := &mockServiceContainer{}
-	sm := &mockServiceSecurityManager{}
-	capturer := &mockServiceCapturer{}
-	deps := &mockServiceSessionDependencies{}
-	bus := &mockServiceEventBus{}
-	agent := &mockServiceAgent{}
+func TestProcessMessage(t *testing.T) {
+	errFileNotFound := errors.New("file not found")
+	errBuild := errors.New("build error")
 
-	service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
+	tests := []struct {
+		name        string
+		setupMock   func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func()
+		opts        ChatOptions
+		wantErr     bool
+		errMsg      string
+		expectedErr error
+	}{
+		{
+			name: "Success",
+			opts: ChatOptions{ConfigPath: "config.yaml", Prompt: "hello"},
+			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func() {
+				cfg := &config.Config{
+					Mode: "assistant",
+					Providers: map[string]config.LLMProvider{
+						"test": {Model: "test-model"},
+					},
+					SelectedProvider: "test",
+				}
+				l.On("Load", "config.yaml").Return(cfg, nil)
 
-	cfg := &config.Config{
-		Mode: "assistant",
-		Providers: map[string]config.LLMProvider{
-			"test": {Model: "test-model"},
+				cleanupCalled := false
+				cleanup := func() { cleanupCalled = true }
+
+				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, &history.Manager{}, cleanup, nil)
+				c.On("GetAgentFactory").Return(ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
+					return agent, nil
+				}))
+				c.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return()
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetPaths").Return(&persistence.Paths{})
+				deps.On("GetHistoryManager").Return(&history.Manager{})
+				deps.On("GetPricingData").Return(pricing.PricingData{})
+
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+				agent.On("Subscribe", mock.Anything).Return()
+				agent.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+				agent.On("Shutdown", mock.Anything).Return(nil)
+
+				cap.On("IsTTY", mock.Anything).Return(true)
+
+				return func() {
+					assert.True(t, cleanupCalled)
+				}
+			},
 		},
-		SelectedProvider: "test",
+		{
+			name: "BuildSessionDepsError",
+			opts: ChatOptions{ConfigPath: "config.yaml"},
+			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func() {
+				cfg := &config.Config{Mode: "assistant"}
+				l.On("Load", "config.yaml").Return(cfg, nil)
+				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func() {}, errBuild)
+				return nil
+			},
+			wantErr:     true,
+			errMsg:      "build error",
+			expectedErr: errBuild,
+		},
+		{
+			name: "ConfigLoadError",
+			opts: ChatOptions{ConfigPath: "invalid.yaml"},
+			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func() {
+				l.On("Load", "invalid.yaml").Return((*config.Config)(nil), errFileNotFound)
+				return nil
+			},
+			wantErr:     true,
+			errMsg:      "invalid.yaml",
+			expectedErr: errFileNotFound,
+		},
 	}
 
-	loader.On("Load", "config.yaml").Return(cfg, nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			loader := &mockServiceConfigLoader{}
+			container := &mockServiceContainer{}
+			sm := &mockServiceSecurityManager{}
+			capturer := &mockServiceCapturer{}
+			deps := &mockServiceSessionDependencies{}
+			bus := &mockServiceEventBus{}
+			agent := &mockServiceAgent{}
 
-	cleanupCalled := false
-	cleanup := func() { cleanupCalled = true }
+			service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
 
-	container.On("BuildSessionDependencies", ctx, cfg, "config.yaml", false, capturer).Return(deps, &history.Manager{}, cleanup, nil)
-	container.On("GetAgentFactory").Return(ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
-		return agent, nil
-	}))
-	container.On("FinalizeSession", ctx, mock.Anything, deps, cfg).Return()
+			var verify func()
+			if tt.setupMock != nil {
+				verify = tt.setupMock(loader, container, sm, capturer, deps, bus, agent)
+			}
 
-	deps.On("GetEventBus").Return(bus)
-	deps.On("GetPaths").Return(&persistence.Paths{})
-	deps.On("GetHistoryManager").Return(&history.Manager{})
-	deps.On("GetPricingData").Return(pricing.PricingData{})
+			err := service.ProcessMessage(ctx, tt.opts, capturer)
 
-	bus.On("Shutdown", ctx).Return(nil)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
 
-	agent.On("SetLimits", ctx, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	agent.On("SetTieredThreshold", ctx, mock.Anything).Return(nil)
-	agent.On("Subscribe", mock.Anything).Return()
-	agent.On("Chat", ctx, mock.Anything, "hello").Return(nil)
-	agent.On("Shutdown", ctx).Return(nil)
+			if verify != nil {
+				verify()
+			}
 
-	capturer.On("IsTTY", mock.Anything).Return(true)
-
-	opts := ChatOptions{ConfigPath: "config.yaml", Prompt: "hello"}
-	err := service.ProcessMessage(ctx, opts, capturer)
-
-	assert.NoError(t, err)
-	assert.True(t, cleanupCalled)
-	loader.AssertExpectations(t)
-	container.AssertExpectations(t)
-	bus.AssertExpectations(t)
-	agent.AssertExpectations(t)
+			loader.AssertExpectations(t)
+			container.AssertExpectations(t)
+			if !tt.wantErr {
+				bus.AssertExpectations(t)
+				agent.AssertExpectations(t)
+			}
+		})
+	}
 }
 
-func TestProcessMessage_BuildSessionDepsError(t *testing.T) {
-	ctx := context.Background()
-	loader := &mockServiceConfigLoader{}
-	container := &mockServiceContainer{}
-	sm := &mockServiceSecurityManager{}
-	capturer := &mockServiceCapturer{}
-
-	service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
-
-	cfg := &config.Config{Mode: "assistant"}
-	loader.On("Load", "config.yaml").Return(cfg, nil)
-
-	container.On("BuildSessionDependencies", ctx, cfg, "config.yaml", false, capturer).Return(nil, nil, func() {}, errors.New("build error"))
-
-	opts := ChatOptions{ConfigPath: "config.yaml"}
-	err := service.ProcessMessage(ctx, opts, capturer)
-
-	assert.Error(t, err)
-	assert.Equal(t, "build error", err.Error())
-}
-
-func TestProcessMessage_ConfigLoadError(t *testing.T) {
-	ctx := context.Background()
-	loader := &mockServiceConfigLoader{}
-	container := &mockServiceContainer{}
-	sm := &mockServiceSecurityManager{}
-	capturer := &mockServiceCapturer{}
-
-	service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
-
-	expectedErr := errors.New("file not found")
-	loader.On("Load", "invalid.yaml").Return((*config.Config)(nil), expectedErr)
-
-	opts := ChatOptions{ConfigPath: "invalid.yaml"}
-	err := service.ProcessMessage(ctx, opts, capturer)
-
-	// Architectural mandate: Assert exact error mapping
-	assert.ErrorIs(t, err, expectedErr)
-	assert.Contains(t, err.Error(), "invalid.yaml")
-	loader.AssertExpectations(t)
-}
