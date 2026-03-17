@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -144,6 +145,9 @@ func (c *Content) clone() *Content {
 
 // clone returns a deep copy of Part.
 func (p *Part) clone() *Part {
+	if p == nil {
+		return nil
+	}
 	clone := &Part{
 		Text:             p.Text,
 		IsThought:        p.IsThought,
@@ -336,4 +340,18 @@ func (c *Content) Validate() {
 		}
 		c.TransientParts = cleanTransientParts
 	}
+}
+
+// ValidateStructure checks the content for structural integrity (e.g., no nil parts).
+// It returns an error if the content is malformed.
+func (c *Content) ValidateStructure() error {
+	if c == nil {
+		return errors.New("nil content")
+	}
+	for i, p := range c.Parts {
+		if p == nil {
+			return fmt.Errorf("nil part at index %d", i)
+		}
+	}
+	return nil
 }

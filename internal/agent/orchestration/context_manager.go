@@ -138,6 +138,19 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		cm.mu.RUnlock()
 		return nil, nil, err
 	}
+
+	// [FAIL-FAST] Boundary Validation: Validate history before passing to pipeline
+	for i, msg := range history {
+		if msg == nil {
+			cm.mu.RUnlock()
+			return nil, nil, fmt.Errorf("%w: nil message at index %d in loaded history", errInvalidPayload, i)
+		}
+		if err := msg.ValidateStructure(); err != nil {
+			cm.mu.RUnlock()
+			return nil, nil, fmt.Errorf("%w: invalid content at index %d: %w", errInvalidPayload, i, err)
+		}
+	}
+
 	pipeline := cm.Pipeline
 	cm.mu.RUnlock()
 
