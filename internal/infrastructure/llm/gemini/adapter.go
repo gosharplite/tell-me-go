@@ -63,6 +63,7 @@ func toSDKFunctionCall(f *llm.FunctionCall) *genai.FunctionCall {
 		return nil
 	}
 	return &genai.FunctionCall{
+		ID:   f.ID,
 		Name: f.Name,
 		Args: f.Args,
 	}
@@ -73,6 +74,7 @@ func toSDKFunctionResponse(f *llm.FunctionResponse) *genai.FunctionResponse {
 		return nil
 	}
 	return &genai.FunctionResponse{
+		ID:       f.ID,
 		Name:     f.Name,
 		Response: f.Response,
 	}
@@ -147,9 +149,12 @@ func fromSDKFunctionCall(f *genai.FunctionCall, index int) *llm.FunctionCall {
 	if f == nil {
 		return nil
 	}
-	// Gemini SDK currently lacks ID field in FunctionCall.
-	// We generate a deterministic ID to satisfy orchestration requirements.
-	id := fmt.Sprintf("gemini-call-%d-%s", index, f.Name)
+	// Prefer the SDK's internal ID if available (supported in newer Gemini versions).
+	id := f.ID
+	if id == "" {
+		// Fallback to a deterministic ID to satisfy orchestration requirements.
+		id = fmt.Sprintf("gemini-call-%d-%s", index, f.Name)
+	}
 	return &llm.FunctionCall{
 		ID:   id,
 		Name: f.Name,
@@ -161,8 +166,12 @@ func fromSDKFunctionResponse(f *genai.FunctionResponse, index int) *llm.Function
 	if f == nil {
 		return nil
 	}
-	// Deterministic ID matching the one in fromSDKFunctionCall
-	id := fmt.Sprintf("gemini-call-%d-%s", index, f.Name)
+	// Prefer the SDK's internal ID if available.
+	id := f.ID
+	if id == "" {
+		// Deterministic ID matching the one in fromSDKFunctionCall
+		id = fmt.Sprintf("gemini-call-%d-%s", index, f.Name)
+	}
 	return &llm.FunctionResponse{
 		ID:       id,
 		Name:     f.Name,
