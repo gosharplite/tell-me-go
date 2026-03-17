@@ -106,11 +106,14 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 	_, _ = exec.runWithTimeout(context.Background(), hangingTool, nil)
 
 	// Blocks exactly until the log occurs, or times out cleanly
+	timer := time.NewTimer(ciSafeTimeout)
+	defer timer.Stop()
+
 	select {
 	case msg := <-mockLog.CriticalLogs:
 		assert.Contains(t, msg, "CRITICAL: Tool goroutine permanently leaked")
 		assert.Contains(t, msg, "hanging_tool")
-	case <-time.After(2 * time.Second):
+	case <-timer.C:
 		t.Fatal("Timeout waiting for critical log")
 	}
 }

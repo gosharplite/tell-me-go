@@ -38,13 +38,16 @@ func TestToolPanicSerial(t *testing.T) {
 
 	assert.False(t, canContinue, "Should not continue after panic")
 
+	timer := time.NewTimer(ciSafeTimeout)
+	defer timer.Stop()
+
 	select {
 	case res := <-resChan:
 		assert.Equal(t, 0, res.index)
 		assert.Contains(t, res.tr.Text, "encountered an internal fatal error (panic)")
 		assert.Error(t, res.tr.Error)
 		assert.Contains(t, res.tr.Error.Error(), "Panic detected: simulated serial tool panic")
-	case <-time.After(1 * time.Second):
+	case <-timer.C:
 		t.Fatal("Timeout waiting for result")
 	}
 }
@@ -86,12 +89,15 @@ func TestToolPanicParallel(t *testing.T) {
 
 	results := make(map[string]toolExecResult)
 	for i := 0; i < 2; i++ {
+		timer := time.NewTimer(ciSafeTimeout)
 		select {
 		case res := <-resChan:
 			results[res.name] = res
-		case <-time.After(1 * time.Second):
+		case <-timer.C:
+			timer.Stop()
 			t.Fatal("Timeout waiting for results")
 		}
+		timer.Stop()
 	}
 
 	panicRes := results["panic_tool"]
@@ -166,11 +172,14 @@ func TestZombieToolTimeout(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "timed out")
 	assert.True(t, duration >= 10*time.Millisecond)
 
+	timer := time.NewTimer(ciSafeTimeout)
+	defer timer.Stop()
+
 	// Wait for zombie monitor to fire
 	select {
 	case msg := <-exec.observer.(*MockLogger).CriticalLogs:
 		assert.Contains(t, msg, "CRITICAL: Tool goroutine permanently leaked: zombie_tool")
-	case <-time.After(1 * time.Second): // time.After is okay ONLY as a fail-safe test timeout
+	case <-timer.C:
 		t.Fatal("Timeout waiting for zombie monitor to fire")
 	}
 
@@ -195,11 +204,14 @@ func TestExecuteSerialTaskRecovery(t *testing.T) {
 
 	exec.executeSerialTask(ctx, 0, fc, resChan)
 
+	timer := time.NewTimer(ciSafeTimeout)
+	defer timer.Stop()
+
 	select {
 	case res := <-resChan:
 		assert.Contains(t, res.tr.Text, "encountered an internal fatal error (panic)")
 		assert.Contains(t, res.tr.Error.Error(), "panic during serial resolve")
-	case <-time.After(1 * time.Second):
+	case <-timer.C:
 		t.Fatal("Timeout waiting for result")
 	}
 }
@@ -223,11 +235,14 @@ func TestEnqueueParallelTaskRecovery(t *testing.T) {
 	exec.enqueueParallelTask(ctx, 0, fc, resChan, &wg)
 	wg.Wait()
 
+	timer2 := time.NewTimer(ciSafeTimeout)
+	defer timer2.Stop()
+
 	select {
 	case res := <-resChan:
 		assert.Contains(t, res.tr.Text, "encountered an internal fatal error (panic)")
 		assert.Contains(t, res.tr.Error.Error(), "panic during parallel resolve")
-	case <-time.After(1 * time.Second):
+	case <-timer2.C:
 		t.Fatal("Timeout waiting for result")
 	}
 }

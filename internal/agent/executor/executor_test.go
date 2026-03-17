@@ -52,11 +52,13 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 	reg := &mockToolRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 			close(toolStarted)
+			timer := time.NewTimer(ciSafeTimeout)
+			defer timer.Stop()
 			select {
 			case <-ctx.Done():
 				close(toolFinished)
 				return tools.ToolResult{}, ctx.Err()
-			case <-time.After(2 * time.Second):
+			case <-timer.C:
 				return tools.ToolResult{Text: "timeout"}, nil
 			}
 		},
@@ -89,10 +91,13 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 	cancel()
 
 	// Wait for Execute to return
+	timer1 := time.NewTimer(ciSafeTimeout)
+	defer timer1.Stop()
+
 	select {
 	case <-done:
 		// Success
-	case <-time.After(1 * time.Second):
+	case <-timer1.C:
 		t.Fatal("Execute did not return after context cancellation")
 	}
 
@@ -100,10 +105,13 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 	assert.Equal(t, context.Canceled, execErr)
 
 	// Verify tool also finished
+	timer2 := time.NewTimer(ciSafeTimeout)
+	defer timer2.Stop()
+
 	select {
 	case <-toolFinished:
 		// Success
-	case <-time.After(1 * time.Second):
+	case <-timer2.C:
 		t.Error("Tool implementation did not receive context cancellation")
 	}
 }
@@ -132,10 +140,13 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 
 	cancel() // Cancel the task context
 
+	timer3 := time.NewTimer(100 * time.Millisecond)
+	defer timer3.Stop()
+
 	select {
 	case <-finished:
 		// Worker should be free now
-	case <-time.After(100 * time.Millisecond):
+	case <-timer3.C:
 		t.Error("Worker did not release after task context cancellation")
 	}
 
@@ -145,10 +156,13 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 		close(task2Started)
 	})
 
+	timer4 := time.NewTimer(100 * time.Millisecond)
+	defer timer4.Stop()
+
 	select {
 	case <-task2Started:
 		// Success
-	case <-time.After(100 * time.Millisecond):
+	case <-timer4.C:
 		t.Error("Worker pool became unresponsive after task cancellation")
 	}
 }
@@ -174,12 +188,15 @@ func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 
 	exec.executeParallelBatch(ctx, batch, calls, resChan)
 
+	timer5 := time.NewTimer(ciSafeTimeout)
+	defer timer5.Stop()
+
 	select {
 	case res := <-resChan:
 		assert.Equal(t, 0, res.index)
 		assert.Equal(t, "test_tool", res.name)
 		assert.ErrorContains(t, res.tr.Error, "batch interrupted")
-	case <-time.After(1 * time.Second):
+	case <-timer5.C:
 		t.Fatal("Expected result on resChan, but got none")
 	}
 }

@@ -54,10 +54,12 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 				panic(b.panic)
 			}
 			if b.delay > 0 {
+				timer := time.NewTimer(b.delay)
+				defer timer.Stop()
 				select {
 				case <-ctx.Done():
 					return tools.ToolResult{}, ctx.Err()
-				case <-time.After(b.delay):
+				case <-timer.C:
 				}
 			}
 			return b.result, b.err
@@ -515,9 +517,11 @@ func executeConcurrentWorkers(t *testing.T, exec *ToolExecutor, content *llm.Con
 	})
 
 	for i := 0; i < waitCount; i++ {
+		timer := time.NewTimer(ciSafeTimeout)
 		select {
 		case <-startedCh:
-		case <-time.After(2 * time.Second):
+			timer.Stop()
+		case <-timer.C:
 			t.Fatal("timeout waiting for tools to start")
 		}
 	}
