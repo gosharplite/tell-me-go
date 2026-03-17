@@ -326,3 +326,29 @@ func (p *Part) IsEmpty() bool {
 		!p.IsThought &&
 		len(p.ThoughtSignature) == 0
 }
+
+// Validate ensures the Content object is in a valid state for the domain.
+// It removes any nil pointers from the Parts and TransientParts slices.
+func (c *Content) Validate() {
+	if c == nil {
+		return
+	}
+	if len(c.Parts) > 0 {
+		cleanParts := make([]*Part, 0, len(c.Parts))
+		for _, p := range c.Parts {
+			if p != nil {
+				cleanParts = append(cleanParts, p)
+			}
+		}
+		c.Parts = cleanParts
+	}
+	if len(c.TransientParts) > 0 {
+		cleanTransientParts := make([]*Part, 0, len(c.TransientParts))
+		for _, p := range c.TransientParts {
+			if p != nil {
+				cleanTransientParts = append(cleanTransientParts, p)
+			}
+		}
+		c.TransientParts = cleanTransientParts
+	}
+}

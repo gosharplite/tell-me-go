@@ -604,3 +604,96 @@ func TestPart_canMergeWith_Nil(t *testing.T) {
 		t.Error("part should not be able to merge with nil")
 	}
 }
+
+func TestContent_Validate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name              string
+		content           *Content
+		expectedParts     []*Part
+		expectedTransient []*Part
+	}{
+		{
+			name:    "nil content",
+			content: nil,
+		},
+		{
+			name: "content with nil parts",
+			content: &Content{
+				Parts: []*Part{
+					{Text: "first"},
+					nil,
+					{Text: "third"},
+				},
+			},
+			expectedParts: []*Part{
+				{Text: "first"},
+				{Text: "third"},
+			},
+		},
+		{
+			name: "content with all nil parts",
+			content: &Content{
+				Parts: []*Part{nil, nil},
+			},
+			expectedParts: []*Part{},
+		},
+		{
+			name: "content with no nil parts",
+			content: &Content{
+				Parts: []*Part{
+					{Text: "first"},
+					{Text: "second"},
+				},
+			},
+			expectedParts: []*Part{
+				{Text: "first"},
+				{Text: "second"},
+			},
+		},
+		{
+			name: "content with transient nil parts",
+			content: &Content{
+				TransientParts: []*Part{
+					nil,
+					{Text: "transient"},
+				},
+			},
+			expectedTransient: []*Part{
+				{Text: "transient"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.content == nil {
+				tt.content.Validate() // Should not panic
+				return
+			}
+			tt.content.Validate()
+
+			if tt.expectedParts != nil {
+				if len(tt.content.Parts) != len(tt.expectedParts) {
+					t.Fatalf("expected %d parts, got %d", len(tt.expectedParts), len(tt.content.Parts))
+				}
+				for i := range tt.content.Parts {
+					if tt.content.Parts[i].Text != tt.expectedParts[i].Text {
+						t.Errorf("part %d mismatch: got %v, want %v", i, tt.content.Parts[i].Text, tt.expectedParts[i].Text)
+					}
+				}
+			}
+
+			if tt.expectedTransient != nil {
+				if len(tt.content.TransientParts) != len(tt.expectedTransient) {
+					t.Fatalf("expected %d transient parts, got %d", len(tt.expectedTransient), len(tt.content.TransientParts))
+				}
+				for i := range tt.content.TransientParts {
+					if tt.content.TransientParts[i].Text != tt.expectedTransient[i].Text {
+						t.Errorf("transient part %d mismatch: got %v, want %v", i, tt.content.TransientParts[i].Text, tt.expectedTransient[i].Text)
+					}
+				}
+			}
+		})
+	}
+}

@@ -1127,3 +1127,51 @@ func TestJSONLStore_Migration(t *testing.T) {
 		t.Error("legacy history.json was not removed after migration")
 	}
 }
+
+func TestJSONLStore_NilPartsSanitization(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "nil_parts.jsonl")
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	ctx := context.Background()
+
+	// 1. Manually write a JSONL line with a null part
+	content := `{"role":"user", "parts":[{"text":"first"}, null, {"text":"third"}]}` + "\n"
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Load and verify sanitization
+	contents, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(contents) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(contents))
+	}
+
+	if len(contents[0].Parts) != 2 {
+		t.Fatalf("expected 2 parts after sanitization, got %d", len(contents[0].Parts))
+	}
+
+	if contents[0].Parts[0].Text != "first" || contents[0].Parts[1].Text != "third" {
+		t.Errorf("parts content mismatch: got %v and %v", contents[0].Parts[0].Text, contents[0].Parts[1].Text)
+	}
+
+	// 3. Test Patch sanitization
+	if err := store.AppendParts(ctx, 0, []*llm.Part{nil, {Text: "fourth"}}); err != nil {
+		t.Fatalf("AppendParts failed: %v", err)
+	}
+
+	loaded, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed after patch: %v", err)
+	}
+
+	if len(loaded[0].Parts) != 3 {
+		t.Fatalf("expected 3 parts after patch sanitization, got %d", len(loaded[0].Parts))
+	}
+	if loaded[0].Parts[2].Text != "fourth" {
+		t.Errorf("expected fourth part to be 'fourth', got %q", loaded[0].Parts[2].Text)
+	}
+}
