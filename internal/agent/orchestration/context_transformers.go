@@ -4,6 +4,7 @@
 package orchestration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -389,10 +390,9 @@ func propagateSignatureToMessage(content *llm.Content) bool {
 			continue
 		}
 		if p.FunctionCall != nil && len(p.ThoughtSignature) == 0 {
-			// We must allocate a new slice to avoid sharing pointers 
+			// We must allocate a new slice to avoid sharing pointers
 			// if we later modify the signature, though usually read-only.
-			p.ThoughtSignature = make([]byte, len(signature))
-			copy(p.ThoughtSignature, signature)
+			p.ThoughtSignature = bytes.Clone(signature)
 			modified = true
 		}
 	}

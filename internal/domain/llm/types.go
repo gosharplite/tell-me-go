@@ -165,10 +165,7 @@ func (p *Part) clone() *Part {
 		FunctionCall:     p.FunctionCall.clone(),
 		FunctionResponse: p.FunctionResponse.clone(),
 	}
-	if p.ThoughtSignature != nil {
-		clone.ThoughtSignature = make([]byte, len(p.ThoughtSignature))
-		copy(clone.ThoughtSignature, p.ThoughtSignature)
-	}
+	clone.ThoughtSignature = bytes.Clone(p.ThoughtSignature)
 	return clone
 }
 
@@ -180,10 +177,7 @@ func (b *Blob) clone() *Blob {
 	clone := &Blob{
 		MIMEType: b.MIMEType,
 	}
-	if b.Data != nil {
-		clone.Data = make([]byte, len(b.Data))
-		copy(clone.Data, b.Data)
-	}
+	clone.Data = bytes.Clone(b.Data)
 	return clone
 }
 
