@@ -28,7 +28,11 @@ func (t *emptyTurnFilter) Transform(ctx context.Context, req *ports.ContextReque
 			continue
 		}
 
-		if !isTurnEmpty(turn) {
+		empty, err := isTurnEmpty(turn)
+		if err != nil {
+			return err
+		}
+		if !empty {
 			filtered = append(filtered, turn...)
 		}
 	}
@@ -66,6 +70,9 @@ type transientMerger struct{}
 
 func (t *transientMerger) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	for i, msg := range req.History {
+		if msg == nil {
+			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+		}
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared
 			cloned := llm.CloneContent(msg)
@@ -86,6 +93,9 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 	var current []*llm.Content
 
 	for i, msg := range history {
+		if msg == nil {
+			return nil, fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+		}
 		if i%100 == 0 {
 			select {
 			case <-ctx.Done():
@@ -98,7 +108,11 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 			return nil, fmt.Errorf("%w: empty role at index %d", errInvalidPayload, i)
 		}
 
-		if isTurnBoundary(msg, current) {
+		boundary, err := isTurnBoundary(msg, current)
+		if err != nil {
+			return nil, err
+		}
+		if boundary {
 			turns = append(turns, current)
 			current = nil
 		}
@@ -111,14 +125,14 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 	return turns, nil
 }
 
-func isTurnBoundary(msg *llm.Content, current []*llm.Content) bool {
+func isTurnBoundary(msg *llm.Content, current []*llm.Content) (bool, error) {
 	if len(current) == 0 {
-		return false
+		return false, nil
 	}
 
 	// Boundary usually starts with user or system
 	if msg.Role != "user" && msg.Role != "system" {
-		return false
+		return false, nil
 	}
 
 	// If the last message was a tool call, and this is a user message,
@@ -126,32 +140,53 @@ func isTurnBoundary(msg *llm.Content, current []*llm.Content) bool {
 	// System messages always break turns.
 	if msg.Role == "user" {
 		last := current[len(current)-1]
-		if last.Role == "model" && isToolCall(last) {
-			return false
+		if last == nil {
+			return false, fmt.Errorf("%w: nil message in current turn", errInvalidPayload)
 		}
-	}
-
-	return true
-}
-
-func isToolCall(msg *llm.Content) bool {
-	for _, p := range msg.Parts {
-		if p.FunctionCall != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func isTurnEmpty(turn []*llm.Content) bool {
-	for _, msg := range turn {
-		for _, p := range msg.Parts {
-			if !p.IsEmpty() {
-				return false
+		if last.Role == "model" {
+			toolCall, err := isToolCall(last)
+			if err != nil {
+				return false, err
+			}
+			if toolCall {
+				return false, nil
 			}
 		}
 	}
-	return true
+
+	return true, nil
+}
+
+func isToolCall(msg *llm.Content) (bool, error) {
+	if msg == nil {
+		return false, fmt.Errorf("%w: nil message", errInvalidPayload)
+	}
+	for i, p := range msg.Parts {
+		if p == nil {
+			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+		}
+		if p.FunctionCall != nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func isTurnEmpty(turn []*llm.Content) (bool, error) {
+	for i, msg := range turn {
+		if msg == nil {
+			return false, fmt.Errorf("%w: nil message in turn at index %d", errInvalidPayload, i)
+		}
+		for j, p := range msg.Parts {
+			if p == nil {
+				return false, fmt.Errorf("%w: nil part in message %d at index %d", errInvalidPayload, i, j)
+			}
+			if !p.IsEmpty() {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
 }
 
 // historyRepairer ensures the history is valid for the API after a crash or interruption.
@@ -163,12 +198,18 @@ func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextReque
 	}
 
 	last := req.History[len(req.History)-1]
+	if last == nil {
+		return fmt.Errorf("%w: nil message at end of history", errInvalidPayload)
+	}
 	if last.Role != "model" {
 		return nil
 	}
 
 	responses := make([]*llm.Part, 0, len(last.Parts))
-	for _, p := range last.Parts {
+	for i, p := range last.Parts {
+		if p == nil {
+			return fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+		}
 		if p.FunctionCall != nil {
 			responses = append(responses, &llm.Part{
 				FunctionResponse: &llm.FunctionResponse{
@@ -197,8 +238,15 @@ type contentCleaner struct{}
 
 func (t *contentCleaner) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	modified := false
-	for _, content := range req.History {
-		if cleanContent(content) {
+	for i, content := range req.History {
+		if content == nil {
+			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+		}
+		changed, err := cleanContent(content)
+		if err != nil {
+			return err
+		}
+		if changed {
 			modified = true
 		}
 	}
@@ -208,10 +256,16 @@ func (t *contentCleaner) Transform(ctx context.Context, req *ports.ContextReques
 	return nil
 }
 
-func cleanContent(content *llm.Content) bool {
+func cleanContent(content *llm.Content) (bool, error) {
+	if content == nil {
+		return false, fmt.Errorf("%w: nil message", errInvalidPayload)
+	}
 	// 1. O(N) check to see if an allocation/rebuild is actually needed
 	hasEmpty := false
-	for _, p := range content.Parts {
+	for i, p := range content.Parts {
+		if p == nil {
+			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+		}
 		if p.IsEmpty() {
 			hasEmpty = true
 			break
@@ -220,12 +274,15 @@ func cleanContent(content *llm.Content) bool {
 
 	// 2. Happy path: Zero allocations
 	if !hasEmpty && len(content.Parts) > 0 {
-		return false
+		return false, nil
 	}
 
 	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
-	for _, p := range content.Parts {
+	for i, p := range content.Parts {
+		if p == nil {
+			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+		}
 		if !p.IsEmpty() {
 			cleanParts = append(cleanParts, p)
 		}
@@ -237,7 +294,7 @@ func cleanContent(content *llm.Content) bool {
 	}
 
 	content.Parts = cleanParts
-	return true
+	return true, nil
 }
 
 func (t *contentCleaner) Priority() int { return 5 }
@@ -249,10 +306,17 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 	cleanHistory := make([]*llm.Content, 0, len(req.History))
 	modified := false
 
-	for _, content := range req.History {
+	for i, content := range req.History {
+		if content == nil {
+			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+		}
 		partsBefore := len(content.Parts)
 
-		if cleanToolParts(content) {
+		changed, err := cleanToolParts(content)
+		if err != nil {
+			return err
+		}
+		if changed {
 			modified = true
 		}
 
@@ -272,11 +336,18 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 	return nil
 }
 
-func cleanToolParts(content *llm.Content) bool {
+func cleanToolParts(content *llm.Content) (bool, error) {
+	if content == nil {
+		return false, fmt.Errorf("%w: nil message", errInvalidPayload)
+	}
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	changed := false
 
-	for _, p := range content.Parts {
+	for i, p := range content.Parts {
+		// Skip nil parts
+		if p == nil {
+			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+		}
 		// Skip tool calls with empty IDs - they cause API errors
 		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
 			changed = true
@@ -293,7 +364,7 @@ func cleanToolParts(content *llm.Content) bool {
 	if changed {
 		content.Parts = cleanParts
 	}
-	return changed
+	return changed, nil
 }
 
 func (t *toolResponseCleaner) Priority() int { return 3 } // Run after historyRepairer (0) but before contentCleaner (5)
@@ -306,7 +377,10 @@ func (t *emptyMessagePruner) Transform(ctx context.Context, req *ports.ContextRe
 	cleanHistory := make([]*llm.Content, 0, len(req.History))
 	modified := false
 
-	for _, content := range req.History {
+	for i, content := range req.History {
+		if content == nil {
+			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+		}
 		if len(content.Parts) == 0 {
 			modified = true
 		} else {
@@ -330,11 +404,18 @@ type thoughtSignaturePropagator struct{}
 
 func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	modified := false
-	for _, content := range req.History {
+	for i, content := range req.History {
+		if content == nil {
+			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+		}
 		if content.Role != "model" {
 			continue
 		}
-		if propagateSignatureToMessage(content) {
+		changed, err := propagateSignatureToMessage(content)
+		if err != nil {
+			return err
+		}
+		if changed {
 			modified = true
 		}
 	}
@@ -345,10 +426,16 @@ func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.C
 	return nil
 }
 
-func propagateSignatureToMessage(content *llm.Content) bool {
+func propagateSignatureToMessage(content *llm.Content) (bool, error) {
+	if content == nil {
+		return false, fmt.Errorf("%w: nil message", errInvalidPayload)
+	}
 	var signature []byte
 	// First pass: find the signature
-	for _, p := range content.Parts {
+	for i, p := range content.Parts {
+		if p == nil {
+			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+		}
 		if len(p.ThoughtSignature) > 0 {
 			signature = p.ThoughtSignature
 			break
@@ -356,12 +443,15 @@ func propagateSignatureToMessage(content *llm.Content) bool {
 	}
 
 	if len(signature) == 0 {
-		return false
+		return false, nil
 	}
 
 	modified := false
 	// Second pass: attach it to function calls if missing
-	for _, p := range content.Parts {
+	for i, p := range content.Parts {
+		if p == nil {
+			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+		}
 		if p.FunctionCall != nil && len(p.ThoughtSignature) == 0 {
 			// We must allocate a new slice to avoid sharing pointers
 			// if we later modify the signature, though usually read-only.
@@ -369,7 +459,7 @@ func propagateSignatureToMessage(content *llm.Content) bool {
 			modified = true
 		}
 	}
-	return modified
+	return modified, nil
 }
 
 func (t *thoughtSignaturePropagator) Priority() int { return 6 } // Run after contentCleaner (5)

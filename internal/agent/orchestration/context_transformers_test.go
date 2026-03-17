@@ -732,7 +732,9 @@ func TestIsTurnEmpty_Helper(t *testing.T) {
 		{"FunctionCall", []*llm.Content{{Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "c"}}}}}, false},
 	}
 	for _, tt := range tests {
-		require.Equal(t, tt.expected, isTurnEmpty(tt.turn), tt.name)
+		got, err := isTurnEmpty(tt.turn)
+		require.NoError(t, err, tt.name)
+		require.Equal(t, tt.expected, got, tt.name)
 	}
 }
 
@@ -1183,10 +1185,52 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 }
 
 func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
-	t.Run("groupTurns with empty", func(t *testing.T) {
-		turns, err := groupTurns(context.Background(), []*llm.Content{})
-		require.NoError(t, err)
-		require.Nil(t, turns)
+	ctx := context.Background()
+
+	t.Run("groupTurns with nil element", func(t *testing.T) {
+		history := []*llm.Content{nil}
+		_, err := groupTurns(ctx, history)
+		require.ErrorIs(t, err, errInvalidPayload)
+		require.Contains(t, err.Error(), "nil message at index 0")
+	})
+
+	t.Run("thoughtSignaturePropagator with nil element", func(t *testing.T) {
+		p := &thoughtSignaturePropagator{}
+		req := &ports.ContextRequest{History: []*llm.Content{nil}}
+		err := p.Transform(ctx, req)
+		require.ErrorIs(t, err, errInvalidPayload)
+	})
+
+	t.Run("contentCleaner with nil element", func(t *testing.T) {
+		p := &contentCleaner{}
+		req := &ports.ContextRequest{History: []*llm.Content{nil}}
+		err := p.Transform(ctx, req)
+		require.ErrorIs(t, err, errInvalidPayload)
+	})
+
+	t.Run("toolResponseCleaner with nil element", func(t *testing.T) {
+		p := &toolResponseCleaner{}
+		req := &ports.ContextRequest{History: []*llm.Content{nil}}
+		err := p.Transform(ctx, req)
+		require.ErrorIs(t, err, errInvalidPayload)
+	})
+
+	t.Run("cleanToolParts with nil part", func(t *testing.T) {
+		msg := &llm.Content{Parts: []*llm.Part{nil}}
+		_, err := cleanToolParts(msg)
+		require.ErrorIs(t, err, errInvalidPayload)
+	})
+
+	t.Run("cleanContent with nil part", func(t *testing.T) {
+		msg := &llm.Content{Parts: []*llm.Part{nil}}
+		_, err := cleanContent(msg)
+		require.ErrorIs(t, err, errInvalidPayload)
+	})
+
+	t.Run("propagateSignatureToMessage with nil part", func(t *testing.T) {
+		msg := &llm.Content{Role: "model", Parts: []*llm.Part{nil}}
+		_, err := propagateSignatureToMessage(msg)
+		require.ErrorIs(t, err, errInvalidPayload)
 	})
 }
 
