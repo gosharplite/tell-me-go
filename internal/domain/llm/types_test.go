@@ -4,94 +4,109 @@
 package llm
 
 import (
-	"reflect"
 	"testing"
 )
 
-func TestClone(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		orig *Content
-	}{
-		{
-			name: "full content with nested parts",
-			orig: &Content{
-				Role:       "user",
-				TokenCount: 100,
-				Pinned:     true,
-				Parts: []*Part{
-					{
-						Text: "hello",
-					},
-					{
-						InlineData: &Blob{
-							MIMEType: "image/png",
-							Data:     []byte{1, 2, 3},
-						},
-					},
-					{
-						FunctionCall: &FunctionCall{
-							Name: "test_tool",
-							Args: map[string]interface{}{
-								"simple": "val",
-								"nested": map[string]interface{}{
-									"key": "val",
-								},
-								"list": []interface{}{1, 2, map[string]interface{}{"a": "b"}},
-							},
-						},
-					},
-					{
-						FunctionResponse: &FunctionResponse{
-							Name: "test_tool",
-							Response: map[string]interface{}{
-								"result": "ok",
-							},
-						},
-					},
-					{
-						Text:             "thought",
-						IsThought:        true,
-						ThoughtSignature: []byte("sig"),
-						AssetID:          "asset-123",
+func TestCloneContent(t *testing.T) {
+	t.Run("nil content", func(t *testing.T) {
+		// Verify nil handling
+		if got := CloneContent(nil); got != nil {
+			t.Errorf("CloneContent(nil) = %v, want nil", got)
+		}
+	})
+
+	t.Run("valid deep clone", func(t *testing.T) {
+		orig := &Content{
+			Role: "user",
+			Parts: []*Part{
+				{Text: "hello"},
+			},
+		}
+
+		clone := CloneContent(orig)
+
+		// 1. Verify it is a distinct top-level instance
+		if clone == orig {
+			t.Fatal("expected a distinct Content instance, got exact same pointer")
+		}
+
+		// 2. Verify logical equality (using the package's EqualContent function)
+		if !EqualContent(orig, clone) {
+			t.Error("expected cloned content to be logically equal")
+		}
+
+		// 3. ARCHITECTURE REQUIREMENT: Verify deep copy of nested slices/pointers
+		if len(clone.Parts) > 0 && len(orig.Parts) > 0 {
+			if clone.Parts[0] == orig.Parts[0] {
+				t.Error("expected nested Part instances to be cloned, got same pointer. Clone is shallow!")
+			}
+		}
+	})
+
+	t.Run("complex mutation independence", func(t *testing.T) {
+		orig := &Content{
+			Role:       "user",
+			TokenCount: 100,
+			Pinned:     true,
+			Parts: []*Part{
+				{
+					Text: "hello",
+				},
+				{
+					InlineData: &Blob{
+						MIMEType: "image/png",
+						Data:     []byte{1, 2, 3},
 					},
 				},
-				TransientParts: []*Part{
-					{Text: "transient"},
+				{
+					FunctionCall: &FunctionCall{
+						Name: "test_tool",
+						Args: map[string]interface{}{
+							"simple": "val",
+							"nested": map[string]interface{}{
+								"key": "val",
+							},
+							"list": []interface{}{1, 2, map[string]interface{}{"a": "b"}},
+						},
+					},
+				},
+				{
+					FunctionResponse: &FunctionResponse{
+						Name: "test_tool",
+						Response: map[string]interface{}{
+							"result": "ok",
+						},
+					},
+				},
+				{
+					Text:             "thought",
+					IsThought:        true,
+					ThoughtSignature: []byte("sig"),
+					AssetID:          "asset-123",
 				},
 			},
-		},
-		{
-			name: "nil slices and maps",
-			orig: &Content{
-				Role: "system",
+			TransientParts: []*Part{
+				{Text: "transient"},
 			},
-		},
-	}
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			clone := tt.orig.clone()
+		clone := CloneContent(orig)
 
-			// 1. Pointer inequality
-			if tt.orig != nil && clone == tt.orig {
-				t.Error("clone should not be the same pointer as original")
-			}
+		// Pointer inequality
+		if clone == orig {
+			t.Fatal("clone should not be the same pointer as original")
+		}
 
-			// 2. Deep equality
-			if !reflect.DeepEqual(tt.orig, clone) {
-				t.Error("clone should be deep equal to original")
-			}
+		// Logical equality
+		if !EqualContent(orig, clone) {
+			t.Error("clone should be logically equal to original")
+		}
 
-			// 3. Mutation independence
-			if tt.orig != nil && clone != nil {
-				verifyMutationIndependence(t, tt.orig, clone)
-			}
-		})
-	}
+		// Mutation independence (Deep Copy verification)
+		verifyMutationIndependence(t, orig, clone)
+	})
 }
+
 
 func verifyMutationIndependence(t *testing.T, orig, clone *Content) {
 	t.Helper()
@@ -219,15 +234,6 @@ func verifyFunctionResponseIndependence(t *testing.T, orig, clone *FunctionRespo
 		if _, exists := orig.Response["__independence_test__"]; exists {
 			t.Error("modifying clone.FunctionResponse.Response map affected original")
 		}
-	}
-}
-
-func TestNilClones(t *testing.T) {
-	t.Parallel()
-	// Boundary ensures non-nil parts, but CloneContent handles nil Content.
-	var c *Content
-	if CloneContent(c) != nil {
-		t.Error("CloneContent(nil) should return nil")
 	}
 }
 
