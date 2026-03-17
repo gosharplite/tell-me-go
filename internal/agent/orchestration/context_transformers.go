@@ -66,9 +66,6 @@ type transientMerger struct{}
 
 func (t *transientMerger) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	for i, msg := range req.History {
-		if msg == nil {
-			continue
-		}
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared
 			cloned := llm.CloneContent(msg)
@@ -95,10 +92,6 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 				return nil, ctx.Err()
 			default:
 			}
-		}
-
-		if msg == nil {
-			return nil, fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
 		}
 
 		if msg.Role == "" {
@@ -142,13 +135,7 @@ func isTurnBoundary(msg *llm.Content, current []*llm.Content) bool {
 }
 
 func isToolCall(msg *llm.Content) bool {
-	if msg == nil {
-		return false
-	}
 	for _, p := range msg.Parts {
-		if p == nil {
-			continue
-		}
 		if p.FunctionCall != nil {
 			return true
 		}
@@ -158,13 +145,7 @@ func isToolCall(msg *llm.Content) bool {
 
 func isTurnEmpty(turn []*llm.Content) bool {
 	for _, msg := range turn {
-		if msg == nil {
-			continue
-		}
 		for _, p := range msg.Parts {
-			if p == nil {
-				continue
-			}
 			if !p.IsEmpty() {
 				return false
 			}
@@ -182,15 +163,12 @@ func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextReque
 	}
 
 	last := req.History[len(req.History)-1]
-	if last == nil || last.Role != "model" {
+	if last.Role != "model" {
 		return nil
 	}
 
 	responses := make([]*llm.Part, 0, len(last.Parts))
 	for _, p := range last.Parts {
-		if p == nil {
-			continue
-		}
 		if p.FunctionCall != nil {
 			responses = append(responses, &llm.Part{
 				FunctionResponse: &llm.FunctionResponse{
@@ -231,15 +209,10 @@ func (t *contentCleaner) Transform(ctx context.Context, req *ports.ContextReques
 }
 
 func cleanContent(content *llm.Content) bool {
-	// 1. Add defensive nil-check to prevent panics
-	if content == nil {
-		return false
-	}
-
-	// 2. O(N) check to see if an allocation/rebuild is actually needed
+	// 1. O(N) check to see if an allocation/rebuild is actually needed
 	hasEmpty := false
 	for _, p := range content.Parts {
-		if p == nil || p.IsEmpty() {
+		if p.IsEmpty() {
 			hasEmpty = true
 			break
 		}
@@ -253,7 +226,7 @@ func cleanContent(content *llm.Content) bool {
 	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	for _, p := range content.Parts {
-		if p != nil && !p.IsEmpty() {
+		if !p.IsEmpty() {
 			cleanParts = append(cleanParts, p)
 		}
 	}
@@ -277,10 +250,6 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 	modified := false
 
 	for _, content := range req.History {
-		if content == nil {
-			modified = true
-			continue
-		}
 		partsBefore := len(content.Parts)
 
 		if cleanToolParts(content) {
@@ -304,18 +273,10 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 }
 
 func cleanToolParts(content *llm.Content) bool {
-	if content == nil {
-		return false
-	}
-
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	changed := false
 
 	for _, p := range content.Parts {
-		if p == nil {
-			changed = true
-			continue
-		}
 		// Skip tool calls with empty IDs - they cause API errors
 		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
 			changed = true
@@ -346,7 +307,7 @@ func (t *emptyMessagePruner) Transform(ctx context.Context, req *ports.ContextRe
 	modified := false
 
 	for _, content := range req.History {
-		if content == nil || len(content.Parts) == 0 {
+		if len(content.Parts) == 0 {
 			modified = true
 		} else {
 			cleanHistory = append(cleanHistory, content)
@@ -370,7 +331,7 @@ type thoughtSignaturePropagator struct{}
 func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	modified := false
 	for _, content := range req.History {
-		if content == nil || content.Role != "model" {
+		if content.Role != "model" {
 			continue
 		}
 		if propagateSignatureToMessage(content) {
@@ -385,16 +346,9 @@ func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.C
 }
 
 func propagateSignatureToMessage(content *llm.Content) bool {
-	if content == nil {
-		return false
-	}
-
 	var signature []byte
 	// First pass: find the signature
 	for _, p := range content.Parts {
-		if p == nil {
-			continue
-		}
 		if len(p.ThoughtSignature) > 0 {
 			signature = p.ThoughtSignature
 			break
@@ -408,9 +362,6 @@ func propagateSignatureToMessage(content *llm.Content) bool {
 	modified := false
 	// Second pass: attach it to function calls if missing
 	for _, p := range content.Parts {
-		if p == nil {
-			continue
-		}
 		if p.FunctionCall != nil && len(p.ThoughtSignature) == 0 {
 			// We must allocate a new slice to avoid sharing pointers
 			// if we later modify the signature, though usually read-only.

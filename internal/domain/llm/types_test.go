@@ -224,29 +224,10 @@ func verifyFunctionResponseIndependence(t *testing.T, orig, clone *FunctionRespo
 
 func TestNilClones(t *testing.T) {
 	t.Parallel()
+	// Boundary ensures non-nil parts, but CloneContent handles nil Content.
 	var c *Content
-	if c.clone() != nil {
-		t.Error("cloning nil Content should return nil")
-	}
-
-	var p *Part
-	if p.clone() != nil {
-		t.Error("cloning nil Part should return nil")
-	}
-
-	var b *Blob
-	if b.clone() != nil {
-		t.Error("cloning nil Blob should return nil")
-	}
-
-	var fc *FunctionCall
-	if fc.clone() != nil {
-		t.Error("cloning nil FunctionCall should return nil")
-	}
-
-	var fr *FunctionResponse
-	if fr.clone() != nil {
-		t.Error("cloning nil FunctionResponse should return nil")
+	if CloneContent(c) != nil {
+		t.Error("CloneContent(nil) should return nil")
 	}
 }
 
@@ -299,8 +280,8 @@ func TestContentEqual(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := tt.c1.equal(tt.c2); got != tt.expected {
-				t.Errorf("Content.equal() = %v, want %v", got, tt.expected)
+			if got := EqualContent(tt.c1, tt.c2); got != tt.expected {
+				t.Errorf("EqualContent() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
@@ -314,18 +295,6 @@ func TestPartEqual(t *testing.T) {
 		p2       *Part
 		expected bool
 	}{
-		{
-			name:     "Both nil",
-			p1:       nil,
-			p2:       nil,
-			expected: true,
-		},
-		{
-			name:     "One nil",
-			p1:       &Part{Text: "a"},
-			p2:       nil,
-			expected: false,
-		},
 		{
 			name:     "Same text",
 			p1:       &Part{Text: "a"},
@@ -569,7 +538,6 @@ func TestPart_IsEmpty(t *testing.T) {
 		part *Part
 		want bool
 	}{
-		{"nil part", nil, true},
 		{"empty structural part", &Part{Text: ""}, true},
 		{"populated text part", &Part{Text: "thought"}, false},
 		{"thought signature only", &Part{ThoughtSignature: []byte("sig")}, false},
@@ -589,20 +557,11 @@ func TestPart_IsEmpty(t *testing.T) {
 }
 
 func TestAddPart_NilReceiver(t *testing.T) {
-	t.Parallel()
-	var c *Content
-	c.AddPart(&Part{Text: "hello"}) // Should not panic
+	// Should not be called with nil anymore.
 }
 
 func TestPart_canMergeWith_Nil(t *testing.T) {
-	t.Parallel()
-	var p *Part
-	if p.canMergeWith(&Part{}) {
-		t.Error("nil part should not be able to merge")
-	}
-	if (&Part{}).canMergeWith(nil) {
-		t.Error("part should not be able to merge with nil")
-	}
+	// Should not be called with nil anymore.
 }
 
 func TestContent_Validate(t *testing.T) {

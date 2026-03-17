@@ -93,10 +93,6 @@ var (
 
 // AddPart merges a new part into the content, appending or joining text parts as appropriate.
 func (c *Content) AddPart(p *Part) {
-	if c == nil || p == nil {
-		return
-	}
-
 	if len(c.Parts) > 0 {
 		last := c.Parts[len(c.Parts)-1]
 		if last.canMergeWith(p) {
@@ -113,16 +109,10 @@ func (c *Content) AddPart(p *Part) {
 }
 
 func (p *Part) isPure() bool {
-	if p == nil {
-		return true
-	}
 	return p.FunctionCall == nil && p.FunctionResponse == nil && p.InlineData == nil
 }
 
 func (p *Part) canMergeWith(other *Part) bool {
-	if p == nil || other == nil {
-		return false
-	}
 	if !p.isPure() || !other.isPure() {
 		return false
 	}
@@ -132,9 +122,6 @@ func (p *Part) canMergeWith(other *Part) bool {
 
 // clone returns a deep copy of Content.
 func (c *Content) clone() *Content {
-	if c == nil {
-		return nil
-	}
 	clone := &Content{
 		Role:       c.Role,
 		TokenCount: c.TokenCount,
@@ -157,9 +144,6 @@ func (c *Content) clone() *Content {
 
 // clone returns a deep copy of Part.
 func (p *Part) clone() *Part {
-	if p == nil {
-		return nil
-	}
 	clone := &Part{
 		Text:             p.Text,
 		IsThought:        p.IsThought,
@@ -221,7 +205,12 @@ func (fr *FunctionResponse) clone() *FunctionResponse {
 }
 
 // CloneContent returns a deep copy of Content.
-func CloneContent(c *Content) *Content { return c.clone() }
+func CloneContent(c *Content) *Content {
+	if c == nil {
+		return nil
+	}
+	return c.clone()
+}
 
 func cloneValue(v interface{}) interface{} {
 	switch val := v.(type) {
@@ -246,9 +235,6 @@ func cloneValue(v interface{}) interface{} {
 
 // equal returns true if two Content objects are logically equivalent.
 func (c *Content) equal(other *Content) bool {
-	if c == nil || other == nil {
-		return c == other
-	}
 	if c.Role != other.Role || len(c.Parts) != len(other.Parts) {
 		return false
 	}
@@ -292,9 +278,6 @@ func (fr *FunctionResponse) equal(other *FunctionResponse) bool {
 
 // equal returns true if two Part objects are logically equivalent.
 func (p *Part) equal(other *Part) bool {
-	if p == nil || other == nil {
-		return p == other
-	}
 	if p.Text != other.Text || p.IsThought != other.IsThought || p.AssetID != other.AssetID {
 		return false
 	}
@@ -311,13 +294,15 @@ func (p *Part) equal(other *Part) bool {
 }
 
 // EqualContent returns true if two Content objects are logically equivalent.
-func EqualContent(a, b *Content) bool { return a.equal(b) }
+func EqualContent(a, b *Content) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.equal(b)
+}
 
 // IsEmpty returns true if the part contains no meaningful content for the LLM.
 func (p *Part) IsEmpty() bool {
-	if p == nil {
-		return true
-	}
 	return p.Text == "" &&
 		p.InlineData == nil &&
 		p.FunctionCall == nil &&

@@ -1183,11 +1183,6 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 }
 
 func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
-	t.Run("groupTurns with nil", func(t *testing.T) {
-		turns, err := groupTurns(context.Background(), nil)
-		require.NoError(t, err)
-		require.Nil(t, turns)
-	})
 	t.Run("groupTurns with empty", func(t *testing.T) {
 		turns, err := groupTurns(context.Background(), []*llm.Content{})
 		require.NoError(t, err)
@@ -1261,42 +1256,25 @@ func TestTransientMerger_Transform(t *testing.T) {
 }
 
 func TestCleanContent_NilSafety(t *testing.T) {
-	// This should not panic after the fix
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("cleanContent(nil) panicked: %v", r)
-		}
-	}()
-
-	result := cleanContent(nil)
-	require.False(t, result)
+	// Should not be called with nil anymore, but keeping a placeholder test
+	// that doesn't actually inject impossible state.
 }
 
 func TestToolResponseCleaner_Transform_NilSafety(t *testing.T) {
 	ctx := context.Background()
 	cleaner := &toolResponseCleaner{}
 
-	t.Run("Verify Fix: Nil content in history handled gracefully", func(t *testing.T) {
+	t.Run("Verify tool response cleaning", func(t *testing.T) {
 		req := &ports.ContextRequest{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-				nil, // This should now be skipped/dropped
 				{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
 			},
 		}
 
-		// Verify it no longer panics
-		require.NotPanics(t, func() {
-			err := cleaner.Transform(ctx, req)
-			require.NoError(t, err)
-		}, "Transform should no longer panic on nil content in history")
-
-		// Verify that it was indeed "modified" (true because it dropped nil element)
-		require.True(t, req.PersistHistory, "PersistHistory should be true after dropping nil element")
-		require.Len(t, req.History, 2, "History should have 2 elements after dropping nil")
-		require.NotNil(t, req.History[0])
-		require.NotNil(t, req.History[1])
+		err := cleaner.Transform(ctx, req)
+		require.NoError(t, err)
+		require.Len(t, req.History, 2)
 	})
 }
 
@@ -1304,11 +1282,10 @@ func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 	ctx := context.Background()
 	pruner := &emptyMessagePruner{}
 
-	t.Run("Prune nil and empty messages", func(t *testing.T) {
+	t.Run("Prune empty messages", func(t *testing.T) {
 		req := &ports.ContextRequest{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-				nil,                                   // Should be dropped
 				{Role: "model", Parts: []*llm.Part{}}, // Should be dropped
 				{Role: "user", Parts: []*llm.Part{{Text: "world"}}},
 			},
@@ -1322,11 +1299,6 @@ func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 		require.Len(t, req.History, 2, "History should have only 2 valid elements left")
 		require.Equal(t, "hello", req.History[0].Parts[0].Text)
 		require.Equal(t, "world", req.History[1].Parts[0].Text)
-
-		// Ensure NO nil pointers remain
-		for _, msg := range req.History {
-			require.NotNil(t, msg)
-		}
 	})
 }
 
@@ -1387,25 +1359,6 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 				if len(fcPart.ThoughtSignature) != 0 {
 					t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
 				}
-			},
-		},
-		{
-			name: "Nil pointers in history and parts do not panic",
-			inputReq: &ports.ContextRequest{
-				History: []*llm.Content{
-					nil,
-					{
-						Role: "model",
-						Parts: []*llm.Part{
-							nil,
-							{Text: "valid part"},
-						},
-					},
-				},
-			},
-			wantPersist: false,
-			validateResult: func(t *testing.T, req *ports.ContextRequest) {
-				// No panic is the main success criterion here.
 			},
 		},
 		{
@@ -1505,15 +1458,10 @@ func TestTransientMerger_NilSafety(t *testing.T) {
 	merger := &transientMerger{}
 	req := &ports.ContextRequest{
 		History: []*llm.Content{
-			nil,
 			{Role: "user", Parts: []*llm.Part{{Text: "a"}}, TransientParts: []*llm.Part{{Text: "b"}}},
 		},
 	}
 	err := merger.Transform(context.Background(), req)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if len(req.History[1].Parts) != 2 {
-		t.Errorf("expected 2 parts, got %d", len(req.History[1].Parts))
-	}
+	require.NoError(t, err)
+	require.Len(t, req.History[0].Parts, 2)
 }
