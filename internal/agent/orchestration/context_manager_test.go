@@ -403,3 +403,34 @@ func TestContextManager_CheckContext_Cancellation(t *testing.T) {
 	err := cm.checkContext(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+
+	t.Run("fails on nil message in history", func(t *testing.T) {
+		history := &mockHistoryManager{
+			contents: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+				nil, // malformed entry
+			},
+		}
+		cm := NewContextManager(strategy, history, nil, nil)
+		_, _, err := cm.Prepare(context.Background(), 1)
+		require.Error(t, err)
+		require.ErrorIs(t, err, errInvalidPayload)
+		require.Contains(t, err.Error(), "nil message at index 1")
+	})
+
+	t.Run("fails on nil part in message", func(t *testing.T) {
+		history := &mockHistoryManager{
+			contents: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{nil}}, // malformed entry
+			},
+		}
+		cm := NewContextManager(strategy, history, nil, nil)
+		_, _, err := cm.Prepare(context.Background(), 1)
+		require.Error(t, err)
+		require.ErrorIs(t, err, errInvalidPayload)
+		require.Contains(t, err.Error(), "invalid content at index 0")
+	})
+}

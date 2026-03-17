@@ -108,7 +108,11 @@ func TestIsTurnEmpty_ThoughtSignature(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isTurnEmpty(tt.turn); got != tt.expected {
+			got, err := isTurnEmpty(tt.turn)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.expected {
 				t.Errorf("%s: expected %v, got %v", tt.name, tt.expected, got)
 			}
 		})

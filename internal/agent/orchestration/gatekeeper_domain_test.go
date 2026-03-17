@@ -28,14 +28,6 @@ func TestTokenGatekeeper_DomainBoundaryValidation(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name: "Nil Message",
-			history: []*llm.Content{
-				{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
-				nil,
-			},
-			expectedError: errInvalidPayload,
-		},
-		{
 			name: "Empty Role",
 			history: []*llm.Content{
 				{Role: "", Parts: []*llm.Part{{Text: "Hello"}}},

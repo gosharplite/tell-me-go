@@ -337,7 +337,9 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 	for _, block := range resp.Content {
 		switch block.Type {
 		case "text":
-			content.Parts = append(content.Parts, &llm.Part{Text: block.Text})
+			if block.Text != "" {
+				content.Parts = append(content.Parts, &llm.Part{Text: block.Text})
+			}
 		case "thinking":
 			content.Parts = append(content.Parts, &llm.Part{
 				Text:             block.Thinking,
@@ -358,6 +360,8 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 			})
 		}
 	}
+
+	content.Validate() // Final boundary sanitization
 
 	metrics := &llm.Metrics{
 		Model:          c.model,
@@ -537,6 +541,7 @@ func (c *client) handleContentBlockStart(data string, callback func(*llm.Content
 			IsThought:        true,
 			ThoughtSignature: []byte(start.ContentBlock.Signature),
 		})
+		update.Validate()
 		callback(update)
 	case "tool_use":
 		state.toolCalls[start.Index] = &llm.Part{
@@ -576,12 +581,11 @@ func (c *client) handleContentBlockDelta(data string, callback func(*llm.Content
 			ThoughtSignature: []byte(delta.Delta.Signature),
 		})
 	}
-	if delta.Delta.Type == "input_json_delta" {
-		if b, ok := state.toolJSONs[delta.Index]; ok {
-			b.WriteString(delta.Delta.PartialJSON)
-		}
+	if b, ok := state.toolJSONs[delta.Index]; ok {
+		b.WriteString(delta.Delta.PartialJSON)
 	}
 	if len(update.Parts) > 0 {
+		update.Validate()
 		callback(update)
 	}
 	return nil
@@ -601,6 +605,7 @@ func (c *client) handleContentBlockStop(data string, callback func(*llm.Content)
 				part.FunctionCall.Args = args
 			}
 			update := &llm.Content{Role: "model", Parts: []*llm.Part{part}}
+			update.Validate()
 			callback(update)
 			delete(state.toolCalls, stop.Index)
 			delete(state.toolJSONs, stop.Index)

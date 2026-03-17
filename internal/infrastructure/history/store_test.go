@@ -334,25 +334,6 @@ func TestJSONLStore_PrepareForStorage_EmptyInput(t *testing.T) {
 	}
 }
 
-func TestJSONLStore_PrepareForStorage_MalformedJSON(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "malformed_json.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
-	ctx := context.Background()
-
-	// prepareForStorage itself doesn't parse JSON, but we test preservation of nil parts
-	content := &llm.Content{
-		Parts: []*llm.Part{nil},
-	}
-	prepared, err := store.prepareForStorage(ctx, content)
-	if err != nil {
-		t.Fatalf("prepareForStorage failed: %v", err)
-	}
-	if len(prepared.Parts) != 1 || prepared.Parts[0] != nil {
-		t.Error("expected preservation of nil part")
-	}
-}
-
 func TestJSONLStore_PrepareForStorage_PathPermissionErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	// Simulate by using a path that cannot be a directory for assets
@@ -1125,5 +1106,36 @@ func TestJSONLStore_Migration(t *testing.T) {
 	// 5. Verify history.json is removed
 	if _, err := os.Stat(jsonPath); err == nil {
 		t.Error("legacy history.json was not removed after migration")
+	}
+}
+
+func TestJSONLStore_NilPartsSanitization(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "nil_parts.jsonl")
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
+	ctx := context.Background()
+
+	// 1. Manually write a JSONL line with a null part
+	content := `{"role":"user", "parts":[{"text":"first"}, null, {"text":"third"}]}` + "\n"
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Load and verify sanitization
+	contents, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(contents) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(contents))
+	}
+
+	if len(contents[0].Parts) != 2 {
+		t.Fatalf("expected 2 parts after sanitization, got %d", len(contents[0].Parts))
+	}
+
+	if contents[0].Parts[0].Text != "first" || contents[0].Parts[1].Text != "third" {
+		t.Errorf("parts content mismatch: got %v and %v", contents[0].Parts[0].Text, contents[0].Parts[1].Text)
 	}
 }

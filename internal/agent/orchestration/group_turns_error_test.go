@@ -29,12 +29,6 @@ func TestHistoryPruner_GroupTurnsErrorPropagation(t *testing.T) {
 				{Role: "", Parts: []*llm.Part{{Text: "invalid"}}},
 			},
 		},
-		{
-			name: "Nil message",
-			history: []*llm.Content{
-				nil,
-			},
-		},
 	}
 
 	for _, tt := range tests {

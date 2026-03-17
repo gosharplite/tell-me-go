@@ -126,6 +126,10 @@ func (c *capturer) finalizePrompt(prompt string, options *orchestration.CaptureO
 }
 
 func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	type readResult struct {
 		data string
 		err  error
@@ -134,6 +138,8 @@ func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, 
 	// Size 1 buffer is REQUIRED to prevent goroutine leaks on context cancellation
 	ch := make(chan readResult, 1)
 
+	// ARCHITECTURE NOTE: This goroutine will intentionally hang waiting for the next keystroke if the context is canceled,
+	// as os.Stdin blocking reads cannot be interrupted gracefully without closing the file descriptor.
 	go func() {
 		bytes, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
 		if err != nil {
@@ -159,6 +165,10 @@ func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, 
 }
 
 func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	c.printFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
 
 	type readResult struct {
@@ -169,6 +179,8 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 	// Size 1 buffer is REQUIRED to prevent goroutine leaks on context cancellation
 	ch := make(chan readResult, 1)
 
+	// ARCHITECTURE NOTE: This goroutine will intentionally hang waiting for the next keystroke if the context is canceled,
+	// as os.Stdin blocking reads cannot be interrupted gracefully without closing the file descriptor.
 	go func() {
 		bytes, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
 		if err != nil {
@@ -246,6 +258,10 @@ func (c *capturer) Prompt(message string) {
 
 // ReadSingleKey waits for a single key press from Stdin.
 func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	if c.mockAnswer != "" {
 		return strings.ToLower(c.mockAnswer[:1]), nil
 	}
@@ -275,12 +291,18 @@ func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
 }
 
 func (c *capturer) readByteFallback(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	type result struct {
 		b   byte
 		err error
 	}
 	resChan := make(chan result, 1)
 
+	// ARCHITECTURE NOTE: This goroutine will intentionally hang waiting for the next keystroke if the context is canceled,
+	// as os.Stdin blocking reads cannot be interrupted gracefully without closing the file descriptor.
 	go func() {
 		c.readerMu.Lock()
 		defer c.readerMu.Unlock()
@@ -304,10 +326,8 @@ func (c *capturer) readByteFallback(ctx context.Context) (string, error) {
 
 // ReadLine reads a line of input.
 func (c *capturer) ReadLine(ctx context.Context) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	default:
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 
 	type result struct {
@@ -315,6 +335,8 @@ func (c *capturer) ReadLine(ctx context.Context) (string, error) {
 		err error
 	}
 	resChan := make(chan result, 1)
+	// ARCHITECTURE NOTE: This goroutine will intentionally hang waiting for the next keystroke if the context is canceled,
+	// as os.Stdin blocking reads cannot be interrupted gracefully without closing the file descriptor.
 	go func() {
 		c.readerMu.Lock()
 		defer c.readerMu.Unlock()

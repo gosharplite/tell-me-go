@@ -110,6 +110,9 @@ func (s *jsonlStore) loadLegacyJSON(ctx context.Context, data []byte) ([]*llm.Co
 	if err := json.Unmarshal(data, &contents); err != nil {
 		return nil, fmt.Errorf("failed to decode legacy JSON: %w", err)
 	}
+	for _, c := range contents {
+		c.Validate()
+	}
 	return contents, nil
 }
 
@@ -170,7 +173,11 @@ func (s *jsonlStore) loadJSONL(ctx context.Context, data []byte) ([]*llm.Content
 func (s *jsonlStore) applyPatch(patch historyPatch, contents []*llm.Content) []*llm.Content {
 	if patch.Index >= 0 && patch.Index < len(contents) {
 		if len(patch.AppendParts) > 0 {
-			contents[patch.Index].Parts = append(contents[patch.Index].Parts, patch.AppendParts...)
+			for _, p := range patch.AppendParts {
+				if p != nil {
+					contents[patch.Index].Parts = append(contents[patch.Index].Parts, p)
+				}
+			}
 		}
 		if pinned, ok := patch.Metadata["pinned"]; ok {
 			if pinnedBool, ok := pinned.(bool); ok {
@@ -186,6 +193,7 @@ func (s *jsonlStore) parseContent(raw json.RawMessage) (*llm.Content, error) {
 	if err := json.Unmarshal(raw, &content); err != nil {
 		return nil, fmt.Errorf("failed to decode JSONL content: %w", err)
 	}
+	content.Validate() // Boundary sanitization
 	return &content, nil
 }
 

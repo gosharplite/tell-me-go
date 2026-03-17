@@ -483,6 +483,8 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 		return nil, nil, err
 	}
 
+	content.Validate() // Final boundary sanitization
+
 	metrics := &llm.Metrics{
 		Model:          c.model,
 		PromptTokens:   resp.Usage.PromptTokens,
@@ -633,6 +635,7 @@ func (c *client) handleDeltaContent(d delta, callback func(*llm.Content)) {
 		if d.ReasoningContent != "" {
 			update.Parts = append(update.Parts, &llm.Part{Text: d.ReasoningContent, IsThought: true})
 		}
+		update.Validate()
 		callback(update)
 	}
 }
@@ -683,6 +686,7 @@ func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback
 		}
 	}
 	if len(finalContent.Parts) > 0 {
+		finalContent.Validate()
 		callback(finalContent)
 	}
 	return nil

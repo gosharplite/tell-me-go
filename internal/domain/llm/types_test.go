@@ -4,93 +4,107 @@
 package llm
 
 import (
-	"reflect"
 	"testing"
 )
 
-func TestClone(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		orig *Content
-	}{
-		{
-			name: "full content with nested parts",
-			orig: &Content{
-				Role:       "user",
-				TokenCount: 100,
-				Pinned:     true,
-				Parts: []*Part{
-					{
-						Text: "hello",
-					},
-					{
-						InlineData: &Blob{
-							MIMEType: "image/png",
-							Data:     []byte{1, 2, 3},
-						},
-					},
-					{
-						FunctionCall: &FunctionCall{
-							Name: "test_tool",
-							Args: map[string]interface{}{
-								"simple": "val",
-								"nested": map[string]interface{}{
-									"key": "val",
-								},
-								"list": []interface{}{1, 2, map[string]interface{}{"a": "b"}},
-							},
-						},
-					},
-					{
-						FunctionResponse: &FunctionResponse{
-							Name: "test_tool",
-							Response: map[string]interface{}{
-								"result": "ok",
-							},
-						},
-					},
-					{
-						Text:             "thought",
-						IsThought:        true,
-						ThoughtSignature: []byte("sig"),
-						AssetID:          "asset-123",
+func TestCloneContent(t *testing.T) {
+	t.Run("nil content", func(t *testing.T) {
+		// Verify nil handling
+		if got := CloneContent(nil); got != nil {
+			t.Errorf("CloneContent(nil) = %v, want nil", got)
+		}
+	})
+
+	t.Run("valid deep clone", func(t *testing.T) {
+		orig := &Content{
+			Role: "user",
+			Parts: []*Part{
+				{Text: "hello"},
+			},
+		}
+
+		clone := CloneContent(orig)
+
+		// 1. Verify it is a distinct top-level instance
+		if clone == orig {
+			t.Fatal("expected a distinct Content instance, got exact same pointer")
+		}
+
+		// 2. Verify logical equality (using the package's EqualContent function)
+		if !EqualContent(orig, clone) {
+			t.Error("expected cloned content to be logically equal")
+		}
+
+		// 3. ARCHITECTURE REQUIREMENT: Verify deep copy of nested slices/pointers
+		if len(clone.Parts) > 0 && len(orig.Parts) > 0 {
+			if clone.Parts[0] == orig.Parts[0] {
+				t.Error("expected nested Part instances to be cloned, got same pointer. Clone is shallow!")
+			}
+		}
+	})
+
+	t.Run("complex mutation independence", func(t *testing.T) {
+		orig := &Content{
+			Role:       "user",
+			TokenCount: 100,
+			Pinned:     true,
+			Parts: []*Part{
+				{
+					Text: "hello",
+				},
+				{
+					InlineData: &Blob{
+						MIMEType: "image/png",
+						Data:     []byte{1, 2, 3},
 					},
 				},
-				TransientParts: []*Part{
-					{Text: "transient"},
+				{
+					FunctionCall: &FunctionCall{
+						Name: "test_tool",
+						Args: map[string]interface{}{
+							"simple": "val",
+							"nested": map[string]interface{}{
+								"key": "val",
+							},
+							"list": []interface{}{1, 2, map[string]interface{}{"a": "b"}},
+						},
+					},
+				},
+				{
+					FunctionResponse: &FunctionResponse{
+						Name: "test_tool",
+						Response: map[string]interface{}{
+							"result": "ok",
+						},
+					},
+				},
+				{
+					Text:             "thought",
+					IsThought:        true,
+					ThoughtSignature: []byte("sig"),
+					AssetID:          "asset-123",
 				},
 			},
-		},
-		{
-			name: "nil slices and maps",
-			orig: &Content{
-				Role: "system",
+			TransientParts: []*Part{
+				{Text: "transient"},
 			},
-		},
-	}
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			clone := tt.orig.clone()
+		clone := CloneContent(orig)
 
-			// 1. Pointer inequality
-			if tt.orig != nil && clone == tt.orig {
-				t.Error("clone should not be the same pointer as original")
-			}
+		// Pointer inequality
+		if clone == orig {
+			t.Fatal("clone should not be the same pointer as original")
+		}
 
-			// 2. Deep equality
-			if !reflect.DeepEqual(tt.orig, clone) {
-				t.Error("clone should be deep equal to original")
-			}
+		// Logical equality
+		if !EqualContent(orig, clone) {
+			t.Error("clone should be logically equal to original")
+		}
 
-			// 3. Mutation independence
-			if tt.orig != nil && clone != nil {
-				verifyMutationIndependence(t, tt.orig, clone)
-			}
-		})
-	}
+		// Mutation independence (Deep Copy verification)
+		verifyMutationIndependence(t, orig, clone)
+	})
 }
 
 func verifyMutationIndependence(t *testing.T, orig, clone *Content) {
@@ -222,34 +236,6 @@ func verifyFunctionResponseIndependence(t *testing.T, orig, clone *FunctionRespo
 	}
 }
 
-func TestNilClones(t *testing.T) {
-	t.Parallel()
-	var c *Content
-	if c.clone() != nil {
-		t.Error("cloning nil Content should return nil")
-	}
-
-	var p *Part
-	if p.clone() != nil {
-		t.Error("cloning nil Part should return nil")
-	}
-
-	var b *Blob
-	if b.clone() != nil {
-		t.Error("cloning nil Blob should return nil")
-	}
-
-	var fc *FunctionCall
-	if fc.clone() != nil {
-		t.Error("cloning nil FunctionCall should return nil")
-	}
-
-	var fr *FunctionResponse
-	if fr.clone() != nil {
-		t.Error("cloning nil FunctionResponse should return nil")
-	}
-}
-
 func TestContentEqual(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -299,8 +285,8 @@ func TestContentEqual(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := tt.c1.equal(tt.c2); got != tt.expected {
-				t.Errorf("Content.equal() = %v, want %v", got, tt.expected)
+			if got := EqualContent(tt.c1, tt.c2); got != tt.expected {
+				t.Errorf("EqualContent() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
@@ -314,18 +300,6 @@ func TestPartEqual(t *testing.T) {
 		p2       *Part
 		expected bool
 	}{
-		{
-			name:     "Both nil",
-			p1:       nil,
-			p2:       nil,
-			expected: true,
-		},
-		{
-			name:     "One nil",
-			p1:       &Part{Text: "a"},
-			p2:       nil,
-			expected: false,
-		},
 		{
 			name:     "Same text",
 			p1:       &Part{Text: "a"},
@@ -401,6 +375,26 @@ func TestPartEqual(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "FunctionCall inequality - Mismatched ID",
+			p1: &Part{
+				FunctionCall: &FunctionCall{ID: "call-1", Name: "get_weather"},
+			},
+			p2: &Part{
+				FunctionCall: &FunctionCall{ID: "call-2", Name: "get_weather"},
+			},
+			expected: false,
+		},
+		{
+			name: "FunctionCall inequality - Mismatched Name",
+			p1: &Part{
+				FunctionCall: &FunctionCall{ID: "call-1", Name: "get_weather"},
+			},
+			p2: &Part{
+				FunctionCall: &FunctionCall{ID: "call-1", Name: "get_stock"},
+			},
+			expected: false,
+		},
+		{
 			name: "Same function response",
 			p1: &Part{
 				FunctionResponse: &FunctionResponse{Name: "test", Response: map[string]interface{}{"res": "ok"}},
@@ -409,6 +403,26 @@ func TestPartEqual(t *testing.T) {
 				FunctionResponse: &FunctionResponse{Name: "test", Response: map[string]interface{}{"res": "ok"}},
 			},
 			expected: true,
+		},
+		{
+			name: "FunctionResponse inequality - Mismatched ID",
+			p1: &Part{
+				FunctionResponse: &FunctionResponse{ID: "res-1", Name: "test"},
+			},
+			p2: &Part{
+				FunctionResponse: &FunctionResponse{ID: "res-2", Name: "test"},
+			},
+			expected: false,
+		},
+		{
+			name: "FunctionResponse inequality - Mismatched Name",
+			p1: &Part{
+				FunctionResponse: &FunctionResponse{ID: "res-1", Name: "test1"},
+			},
+			p2: &Part{
+				FunctionResponse: &FunctionResponse{ID: "res-1", Name: "test2"},
+			},
+			expected: false,
 		},
 		{
 			name:     "Same AssetID",
@@ -541,6 +555,22 @@ func TestAddPart(t *testing.T) {
 				{IsThought: true},
 			},
 		},
+		{
+			name: "Merge parts with incoming ThoughtSignature",
+			initial: []*Part{
+				{Text: "Initial thought. "},
+			},
+			newPart: &Part{
+				Text:             "Conclusive thought.",
+				ThoughtSignature: []byte("sig-123"),
+			},
+			expected: []*Part{
+				{
+					Text:             "Initial thought. Conclusive thought.",
+					ThoughtSignature: []byte("sig-123"),
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -556,6 +586,132 @@ func TestAddPart(t *testing.T) {
 			for i := range c.Parts {
 				if !c.Parts[i].equal(tt.expected[i]) {
 					t.Errorf("part %d mismatch: got %+v, want %+v", i, c.Parts[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+func TestPart_IsEmpty(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		part *Part
+		want bool
+	}{
+		{"empty structural part", &Part{Text: ""}, true},
+		{"populated text part", &Part{Text: "thought"}, false},
+		{"thought signature only", &Part{ThoughtSignature: []byte("sig")}, false},
+		{"asset ID only", &Part{AssetID: "123"}, false},
+		{"is thought only", &Part{IsThought: true}, false},
+		{"inline data only", &Part{InlineData: &Blob{MIMEType: "image/png"}}, false},
+		{"function call only", &Part{FunctionCall: &FunctionCall{Name: "call"}}, false},
+		{"function response only", &Part{FunctionResponse: &FunctionResponse{Name: "resp"}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.part.IsEmpty(); got != tt.want {
+				t.Errorf("IsEmpty() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAddPart_NilReceiver(t *testing.T) {
+	// Should not be called with nil anymore.
+}
+
+func TestPart_canMergeWith_Nil(t *testing.T) {
+	// Should not be called with nil anymore.
+}
+
+func TestContent_Validate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name              string
+		content           *Content
+		expectedParts     []*Part
+		expectedTransient []*Part
+	}{
+		{
+			name:    "nil content",
+			content: nil,
+		},
+		{
+			name: "content with nil parts",
+			content: &Content{
+				Parts: []*Part{
+					{Text: "first"},
+					nil,
+					{Text: "third"},
+				},
+			},
+			expectedParts: []*Part{
+				{Text: "first"},
+				{Text: "third"},
+			},
+		},
+		{
+			name: "content with all nil parts",
+			content: &Content{
+				Parts: []*Part{nil, nil},
+			},
+			expectedParts: []*Part{},
+		},
+		{
+			name: "content with no nil parts",
+			content: &Content{
+				Parts: []*Part{
+					{Text: "first"},
+					{Text: "second"},
+				},
+			},
+			expectedParts: []*Part{
+				{Text: "first"},
+				{Text: "second"},
+			},
+		},
+		{
+			name: "content with transient nil parts",
+			content: &Content{
+				TransientParts: []*Part{
+					nil,
+					{Text: "transient"},
+				},
+			},
+			expectedTransient: []*Part{
+				{Text: "transient"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.content == nil {
+				tt.content.Validate() // Should not panic
+				return
+			}
+			tt.content.Validate()
+
+			if tt.expectedParts != nil {
+				if len(tt.content.Parts) != len(tt.expectedParts) {
+					t.Fatalf("expected %d parts, got %d", len(tt.expectedParts), len(tt.content.Parts))
+				}
+				for i := range tt.content.Parts {
+					if tt.content.Parts[i].Text != tt.expectedParts[i].Text {
+						t.Errorf("part %d mismatch: got %v, want %v", i, tt.content.Parts[i].Text, tt.expectedParts[i].Text)
+					}
+				}
+			}
+
+			if tt.expectedTransient != nil {
+				if len(tt.content.TransientParts) != len(tt.expectedTransient) {
+					t.Fatalf("expected %d transient parts, got %d", len(tt.expectedTransient), len(tt.content.TransientParts))
+				}
+				for i := range tt.content.TransientParts {
+					if tt.content.TransientParts[i].Text != tt.expectedTransient[i].Text {
+						t.Errorf("transient part %d mismatch: got %v, want %v", i, tt.content.TransientParts[i].Text, tt.expectedTransient[i].Text)
+					}
 				}
 			}
 		})

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -93,10 +94,6 @@ var (
 
 // AddPart merges a new part into the content, appending or joining text parts as appropriate.
 func (c *Content) AddPart(p *Part) {
-	if p == nil {
-		return
-	}
-
 	if len(c.Parts) > 0 {
 		last := c.Parts[len(c.Parts)-1]
 		if last.canMergeWith(p) {
@@ -117,9 +114,6 @@ func (p *Part) isPure() bool {
 }
 
 func (p *Part) canMergeWith(other *Part) bool {
-	if p == nil || other == nil {
-		return false
-	}
 	if !p.isPure() || !other.isPure() {
 		return false
 	}
@@ -129,9 +123,6 @@ func (p *Part) canMergeWith(other *Part) bool {
 
 // clone returns a deep copy of Content.
 func (c *Content) clone() *Content {
-	if c == nil {
-		return nil
-	}
 	clone := &Content{
 		Role:       c.Role,
 		TokenCount: c.TokenCount,
@@ -165,10 +156,7 @@ func (p *Part) clone() *Part {
 		FunctionCall:     p.FunctionCall.clone(),
 		FunctionResponse: p.FunctionResponse.clone(),
 	}
-	if p.ThoughtSignature != nil {
-		clone.ThoughtSignature = make([]byte, len(p.ThoughtSignature))
-		copy(clone.ThoughtSignature, p.ThoughtSignature)
-	}
+	clone.ThoughtSignature = bytes.Clone(p.ThoughtSignature)
 	return clone
 }
 
@@ -180,10 +168,7 @@ func (b *Blob) clone() *Blob {
 	clone := &Blob{
 		MIMEType: b.MIMEType,
 	}
-	if b.Data != nil {
-		clone.Data = make([]byte, len(b.Data))
-		copy(clone.Data, b.Data)
-	}
+	clone.Data = bytes.Clone(b.Data)
 	return clone
 }
 
@@ -224,7 +209,12 @@ func (fr *FunctionResponse) clone() *FunctionResponse {
 }
 
 // CloneContent returns a deep copy of Content.
-func CloneContent(c *Content) *Content { return c.clone() }
+func CloneContent(c *Content) *Content {
+	if c == nil {
+		return nil
+	}
+	return c.clone()
+}
 
 func cloneValue(v interface{}) interface{} {
 	switch val := v.(type) {
@@ -249,9 +239,6 @@ func cloneValue(v interface{}) interface{} {
 
 // equal returns true if two Content objects are logically equivalent.
 func (c *Content) equal(other *Content) bool {
-	if c == nil || other == nil {
-		return c == other
-	}
 	if c.Role != other.Role || len(c.Parts) != len(other.Parts) {
 		return false
 	}
@@ -295,9 +282,6 @@ func (fr *FunctionResponse) equal(other *FunctionResponse) bool {
 
 // equal returns true if two Part objects are logically equivalent.
 func (p *Part) equal(other *Part) bool {
-	if p == nil || other == nil {
-		return p == other
-	}
 	if p.Text != other.Text || p.IsThought != other.IsThought || p.AssetID != other.AssetID {
 		return false
 	}
@@ -314,13 +298,15 @@ func (p *Part) equal(other *Part) bool {
 }
 
 // EqualContent returns true if two Content objects are logically equivalent.
-func EqualContent(a, b *Content) bool { return a.equal(b) }
+func EqualContent(a, b *Content) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.equal(b)
+}
 
 // IsEmpty returns true if the part contains no meaningful content for the LLM.
 func (p *Part) IsEmpty() bool {
-	if p == nil {
-		return true
-	}
 	return p.Text == "" &&
 		p.InlineData == nil &&
 		p.FunctionCall == nil &&
@@ -328,4 +314,44 @@ func (p *Part) IsEmpty() bool {
 		p.AssetID == "" &&
 		!p.IsThought &&
 		len(p.ThoughtSignature) == 0
+}
+
+// Validate ensures the Content object is in a valid state for the domain.
+// It removes any nil pointers from the Parts and TransientParts slices.
+func (c *Content) Validate() {
+	if c == nil {
+		return
+	}
+	if len(c.Parts) > 0 {
+		cleanParts := make([]*Part, 0, len(c.Parts))
+		for _, p := range c.Parts {
+			if p != nil {
+				cleanParts = append(cleanParts, p)
+			}
+		}
+		c.Parts = cleanParts
+	}
+	if len(c.TransientParts) > 0 {
+		cleanTransientParts := make([]*Part, 0, len(c.TransientParts))
+		for _, p := range c.TransientParts {
+			if p != nil {
+				cleanTransientParts = append(cleanTransientParts, p)
+			}
+		}
+		c.TransientParts = cleanTransientParts
+	}
+}
+
+// ValidateStructure checks the content for structural integrity (e.g., no nil parts).
+// It returns an error if the content is malformed.
+func (c *Content) ValidateStructure() error {
+	if c == nil {
+		return errors.New("nil content")
+	}
+	for i, p := range c.Parts {
+		if p == nil {
+			return fmt.Errorf("nil part at index %d", i)
+		}
+	}
+	return nil
 }

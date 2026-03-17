@@ -114,8 +114,12 @@ func fromSDKContent(c *genai.Content) *llm.Content {
 		Parts: make([]*llm.Part, 0, len(c.Parts)),
 	}
 	for i, p := range c.Parts {
+		if p == nil {
+			continue
+		}
 		res.Parts = append(res.Parts, fromSDKPart(p, i))
 	}
+	res.Validate() // Final boundary sanitization
 	return res
 }
 

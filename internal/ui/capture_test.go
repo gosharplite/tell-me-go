@@ -19,8 +19,14 @@ import (
 
 func TestCapturePromptContextCancellation(t *testing.T) {
 	t.Parallel()
+	pr, pw := io.Pipe()
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close()
+	})
+
 	capturer := &capturer{
-		Stdin:  strings.NewReader(""),
+		Stdin:  pr,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
@@ -239,8 +245,14 @@ func TestCaptureFromTTY(t *testing.T) {
 
 func TestCaptureFromTTY_Cancel(t *testing.T) {
 	t.Parallel()
+	pr, pw := io.Pipe()
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close()
+	})
+
 	capturer := &capturer{
-		Stdin:  strings.NewReader("never read"),
+		Stdin:  pr,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
@@ -370,13 +382,18 @@ func TestCapturer_Confirm_ContextCancelled(t *testing.T) {
 	cancel()
 
 	// 2. Setup capturer with dummy streams (io.Discard or similar)
-	stdin := strings.NewReader("never read")
+	pr, pw := io.Pipe()
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close()
+	})
+
 	c := &capturer{
-		Stdin:  stdin,
+		Stdin:  pr,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-		reader: bufio.NewReader(stdin),
+		reader: bufio.NewReader(pr),
 	}
 
 	// 3. Execute the blocking call
@@ -398,13 +415,18 @@ func TestCapturer_ReadLine_ContextCancelled(t *testing.T) {
 	cancel()
 
 	// 2. Setup capturer with dummy streams (io.Discard or similar)
-	stdin := strings.NewReader("never read")
+	pr, pw := io.Pipe()
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close()
+	})
+
 	c := &capturer{
-		Stdin:  stdin,
+		Stdin:  pr,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-		reader: bufio.NewReader(stdin),
+		reader: bufio.NewReader(pr),
 	}
 
 	// 3. Execute the blocking call

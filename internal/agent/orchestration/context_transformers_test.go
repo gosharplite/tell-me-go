@@ -724,15 +724,75 @@ func TestIsTurnEmpty_Helper(t *testing.T) {
 		name     string
 		turn     []*llm.Content
 		expected bool
+		wantErr  bool
 	}{
-		{"Empty", []*llm.Content{{Parts: []*llm.Part{{Text: ""}}}}, true},
-		{"Text", []*llm.Content{{Parts: []*llm.Part{{Text: "hi"}}}}, false},
-		{"AssetID", []*llm.Content{{Parts: []*llm.Part{{AssetID: "123"}}}}, false},
-		{"Thought", []*llm.Content{{Parts: []*llm.Part{{IsThought: true}}}}, false},
-		{"FunctionCall", []*llm.Content{{Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "c"}}}}}, false},
+		{name: "Empty", turn: []*llm.Content{{Parts: []*llm.Part{{Text: ""}}}}, expected: true},
+		{name: "Text", turn: []*llm.Content{{Parts: []*llm.Part{{Text: "hi"}}}}, expected: false},
+		{name: "AssetID", turn: []*llm.Content{{Parts: []*llm.Part{{AssetID: "123"}}}}, expected: false},
+		{name: "Thought", turn: []*llm.Content{{Parts: []*llm.Part{{IsThought: true}}}}, expected: false},
+		{name: "FunctionCall", turn: []*llm.Content{{Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "c"}}}}}, expected: false},
+		{name: "Nil content", turn: []*llm.Content{nil}, wantErr: true},
+		{name: "Nil part", turn: []*llm.Content{{Parts: []*llm.Part{nil}}}, wantErr: true},
 	}
 	for _, tt := range tests {
-		require.Equal(t, tt.expected, isTurnEmpty(tt.turn), tt.name)
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isTurnEmpty(tt.turn)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, errInvalidPayload)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expected, got)
+			}
+		})
+	}
+}
+
+func TestIsToolCall_Helper(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      *llm.Content
+		expected bool
+		wantErr  bool
+	}{
+		{
+			name: "Standard message",
+			msg: &llm.Content{
+				Parts: []*llm.Part{{Text: "hello"}},
+			},
+			expected: false,
+		},
+		{
+			name: "Tool call",
+			msg: &llm.Content{
+				Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
+			},
+			expected: true,
+		},
+		{
+			name:    "Nil message",
+			msg:     nil,
+			wantErr: true,
+		},
+		{
+			name: "Nil part",
+			msg: &llm.Content{
+				Parts: []*llm.Part{nil},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isToolCall(tt.msg)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, errInvalidPayload)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expected, got)
+			}
+		})
 	}
 }
 
@@ -1182,16 +1242,165 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 	}
 }
 
+func TestContextPipeline_NilSafety(t *testing.T) {
+	ctx := context.Background()
+	// Use a pipeline with multiple transformers that iterate over history and parts
+	pipeline := NewContextPipeline(
+		&contentCleaner{},
+		&thoughtSignaturePropagator{},
+		&transientMerger{},
+		&toolResponseCleaner{},
+	)
+
+	tests := []struct {
+		name    string
+		history []*llm.Content
+		wantErr bool
+	}{
+		{
+			name: "nil message in history",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+				nil, // Malformed data injected here
+			},
+			wantErr: true,
+		},
+		{
+			name: "nil part in message parts",
+			history: []*llm.Content{
+				{
+					Role:  "model",
+					Parts: []*llm.Part{nil}, // Malformed data injected here
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "nil part in model message with thought signature",
+			history: []*llm.Content{
+				{
+					Role:  "model",
+					Parts: []*llm.Part{{IsThought: true, ThoughtSignature: []byte("sig")}, nil},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "nil message in history for transient merger",
+			history: []*llm.Content{
+				nil,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &ports.ContextRequest{
+				History: tt.history,
+			}
+
+			err := pipeline.executeWithPersistence(ctx, req, nil)
+
+			if tt.wantErr {
+				require.Error(t, err, "expected error for malformed payload")
+				require.ErrorIs(t, err, errInvalidPayload, "expected errInvalidPayload sentinel")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
-	t.Run("groupTurns with nil", func(t *testing.T) {
-		turns, err := groupTurns(context.Background(), nil)
-		require.NoError(t, err)
-		require.Nil(t, turns)
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		transformer ports.ContextTransformer
+		history     []*llm.Content
+		wantErr     error
+	}{
+		{
+			name:        "groupTurns with nil message",
+			transformer: nil, // special case, call function directly
+			history:     []*llm.Content{nil},
+			wantErr:     errInvalidPayload,
+		},
+		{
+			name:        "thoughtSignaturePropagator with nil message",
+			transformer: &thoughtSignaturePropagator{},
+			history:     []*llm.Content{nil},
+			wantErr:     errInvalidPayload,
+		},
+		{
+			name:        "contentCleaner with nil message",
+			transformer: &contentCleaner{},
+			history:     []*llm.Content{nil},
+			wantErr:     errInvalidPayload,
+		},
+		{
+			name:        "toolResponseCleaner with nil message",
+			transformer: &toolResponseCleaner{},
+			history:     []*llm.Content{nil},
+			wantErr:     errInvalidPayload,
+		},
+		{
+			name:        "emptyTurnFilter with nil message",
+			transformer: &emptyTurnFilter{},
+			history:     []*llm.Content{nil},
+			wantErr:     errInvalidPayload,
+		},
+		{
+			name:        "historyRepairer with nil message at end",
+			transformer: &historyRepairer{},
+			history:     []*llm.Content{nil},
+			wantErr:     errInvalidPayload,
+		},
+		{
+			name:        "transientMerger with nil message",
+			transformer: &transientMerger{},
+			history:     []*llm.Content{nil},
+			wantErr:     errInvalidPayload,
+		},
+		{
+			name:        "emptyMessagePruner with nil message",
+			transformer: &emptyMessagePruner{},
+			history:     []*llm.Content{nil},
+			wantErr:     errInvalidPayload,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.transformer == nil {
+				_, err := groupTurns(ctx, tt.history)
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+
+			req := &ports.ContextRequest{History: tt.history}
+			err := tt.transformer.Transform(ctx, req)
+			require.ErrorIs(t, err, tt.wantErr)
+		})
+	}
+
+	t.Run("cleanToolParts with nil part", func(t *testing.T) {
+		msg := &llm.Content{Parts: []*llm.Part{nil}}
+		_, err := cleanToolParts(msg)
+		require.ErrorIs(t, err, errInvalidPayload)
 	})
-	t.Run("groupTurns with empty", func(t *testing.T) {
-		turns, err := groupTurns(context.Background(), []*llm.Content{})
-		require.NoError(t, err)
-		require.Nil(t, turns)
+
+	t.Run("cleanContent with nil part", func(t *testing.T) {
+		msg := &llm.Content{Parts: []*llm.Part{nil}}
+		_, err := cleanContent(msg)
+		require.ErrorIs(t, err, errInvalidPayload)
+	})
+
+	t.Run("propagateSignatureToMessage with nil part", func(t *testing.T) {
+		msg := &llm.Content{Role: "model", Parts: []*llm.Part{nil}}
+		_, err := propagateSignatureToMessage(msg)
+		require.ErrorIs(t, err, errInvalidPayload)
 	})
 }
 
@@ -1261,42 +1470,37 @@ func TestTransientMerger_Transform(t *testing.T) {
 }
 
 func TestCleanContent_NilSafety(t *testing.T) {
-	// This should not panic after the fix
+	t.Run("nil content", func(t *testing.T) {
+		_, err := cleanContent(nil)
+		require.ErrorIs(t, err, errInvalidPayload)
+	})
 
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("cleanContent(nil) panicked: %v", r)
+	t.Run("nil part in content", func(t *testing.T) {
+		msg := &llm.Content{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: "valid"}, nil},
 		}
-	}()
-
-	result := cleanContent(nil)
-	require.False(t, result)
+		_, err := cleanContent(msg)
+		require.ErrorIs(t, err, errInvalidPayload)
+		require.Contains(t, err.Error(), "nil part at index 1")
+	})
 }
 
 func TestToolResponseCleaner_Transform_NilSafety(t *testing.T) {
 	ctx := context.Background()
 	cleaner := &toolResponseCleaner{}
 
-	t.Run("Verify Fix: Nil content in history handled gracefully", func(t *testing.T) {
+	t.Run("Verify tool response cleaning", func(t *testing.T) {
 		req := &ports.ContextRequest{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-				nil, // This should now be skipped/dropped
 				{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
 			},
 		}
 
-		// Verify it no longer panics
-		require.NotPanics(t, func() {
-			err := cleaner.Transform(ctx, req)
-			require.NoError(t, err)
-		}, "Transform should no longer panic on nil content in history")
-
-		// Verify that it was indeed "modified" (true because it dropped nil element)
-		require.True(t, req.PersistHistory, "PersistHistory should be true after dropping nil element")
-		require.Len(t, req.History, 2, "History should have 2 elements after dropping nil")
-		require.NotNil(t, req.History[0])
-		require.NotNil(t, req.History[1])
+		err := cleaner.Transform(ctx, req)
+		require.NoError(t, err)
+		require.Len(t, req.History, 2)
 	})
 }
 
@@ -1304,11 +1508,10 @@ func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 	ctx := context.Background()
 	pruner := &emptyMessagePruner{}
 
-	t.Run("Prune nil and empty messages", func(t *testing.T) {
+	t.Run("Prune empty messages", func(t *testing.T) {
 		req := &ports.ContextRequest{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-				nil,                                   // Should be dropped
 				{Role: "model", Parts: []*llm.Part{}}, // Should be dropped
 				{Role: "user", Parts: []*llm.Part{{Text: "world"}}},
 			},
@@ -1322,10 +1525,169 @@ func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 		require.Len(t, req.History, 2, "History should have only 2 valid elements left")
 		require.Equal(t, "hello", req.History[0].Parts[0].Text)
 		require.Equal(t, "world", req.History[1].Parts[0].Text)
-
-		// Ensure NO nil pointers remain
-		for _, msg := range req.History {
-			require.NotNil(t, msg)
-		}
 	})
+}
+
+func TestThoughtSignaturePropagator_Transform(t *testing.T) {
+	propagator := &thoughtSignaturePropagator{}
+	ctx := context.Background()
+
+	tests := []struct {
+		name           string
+		inputReq       *ports.ContextRequest
+		wantPersist    bool
+		validateResult func(t *testing.T, req *ports.ContextRequest)
+	}{
+		{
+			name: "propagates signature to function calls",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "user",
+						Parts: []*llm.Part{
+							{Text: "hello"},
+						},
+					},
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							{IsThought: true, Text: "thinking", ThoughtSignature: []byte("sig-123")},
+							{FunctionCall: &llm.FunctionCall{Name: "execute_command"}},
+						},
+					},
+				},
+			},
+			wantPersist: true,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				modelMsg := req.History[1]
+				fcPart := modelMsg.Parts[1]
+				if string(fcPart.ThoughtSignature) != "sig-123" {
+					t.Errorf("expected thought signature 'sig-123', got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+		{
+			name: "ignores non-model roles",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "user",
+						Parts: []*llm.Part{
+							{IsThought: true, Text: "thinking", ThoughtSignature: []byte("sig-123")},
+							{FunctionCall: &llm.FunctionCall{Name: "execute_command"}},
+						},
+					},
+				},
+			},
+			wantPersist: false,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				fcPart := req.History[0].Parts[1]
+				if len(fcPart.ThoughtSignature) != 0 {
+					t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+		{
+			name: "Nil History slice handled gracefully",
+			inputReq: &ports.ContextRequest{
+				History: nil,
+			},
+			wantPersist: false,
+		},
+		{
+			name: "Model message without thought signature is ignored",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							{Text: "just text"},
+							{FunctionCall: &llm.FunctionCall{Name: "test"}},
+						},
+					},
+				},
+			},
+			wantPersist: false,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				fcPart := req.History[0].Parts[1]
+				if len(fcPart.ThoughtSignature) != 0 {
+					t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+		{
+			name: "Existing signature on FunctionCall is preserved",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							{IsThought: true, Text: "thinking", ThoughtSignature: []byte("new-sig")},
+							{
+								FunctionCall:     &llm.FunctionCall{Name: "test"},
+								ThoughtSignature: []byte("existing-sig"),
+							},
+						},
+					},
+				},
+			},
+			wantPersist: false,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				fcPart := req.History[0].Parts[1]
+				if string(fcPart.ThoughtSignature) != "existing-sig" {
+					t.Errorf("expected existing thought signature 'existing-sig', got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+		{
+			name: "Multiple thought signatures uses the first one found",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							{IsThought: true, Text: "think 1", ThoughtSignature: []byte("sig-1")},
+							{IsThought: true, Text: "think 2", ThoughtSignature: []byte("sig-2")},
+							{FunctionCall: &llm.FunctionCall{Name: "test"}},
+						},
+					},
+				},
+			},
+			wantPersist: true,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				fcPart := req.History[0].Parts[2]
+				if string(fcPart.ThoughtSignature) != "sig-1" {
+					t.Errorf("expected first thought signature 'sig-1', got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := propagator.Transform(ctx, tt.inputReq)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.inputReq.PersistHistory != tt.wantPersist {
+				t.Errorf("PersistHistory = %v, want %v", tt.inputReq.PersistHistory, tt.wantPersist)
+			}
+			if tt.validateResult != nil {
+				tt.validateResult(t, tt.inputReq)
+			}
+		})
+	}
+}
+
+func TestTransientMerger_NilSafety(t *testing.T) {
+	t.Parallel()
+	merger := &transientMerger{}
+	req := &ports.ContextRequest{
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "a"}}, TransientParts: []*llm.Part{{Text: "b"}}},
+		},
+	}
+	err := merger.Transform(context.Background(), req)
+	require.NoError(t, err)
+	require.Len(t, req.History[0].Parts, 2)
 }
