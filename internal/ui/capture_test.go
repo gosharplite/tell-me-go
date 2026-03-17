@@ -423,8 +423,12 @@ func TestCapturer_ReadLine_ContextCancellation_Concurrency(t *testing.T) {
 
 	// 1. Create a pipe that blocks forever because nothing will write to it
 	pr, pw := io.Pipe()
-	defer pr.Close()
-	defer pw.Close()
+	defer func() {
+		_ = pr.Close()
+	}()
+	defer func() {
+		_ = pw.Close()
+	}()
 
 	// 2. Setup capturer with the blocking reader using the constructor
 	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "")
