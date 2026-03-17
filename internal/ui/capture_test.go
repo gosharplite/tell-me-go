@@ -12,13 +12,16 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCapturePromptContextCancellation(t *testing.T) {
+	t.Parallel()
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -31,11 +34,13 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 }
 
 func TestPrompt_Pipe(t *testing.T) {
+	t.Parallel()
 	inputStr := "hello from pipe"
 	capturer := &capturer{
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -51,10 +56,12 @@ func TestPrompt_Pipe(t *testing.T) {
 }
 
 func TestPrompt_Args(t *testing.T) {
+	t.Parallel()
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -73,10 +80,12 @@ func TestPrompt_Args(t *testing.T) {
 }
 
 func TestPrompt_Empty(t *testing.T) {
+	t.Parallel()
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -87,10 +96,12 @@ func TestPrompt_Empty(t *testing.T) {
 }
 
 func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
+	t.Parallel()
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -105,10 +116,12 @@ func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 }
 
 func TestPrompt_MockEnv(t *testing.T) {
+	t.Parallel()
 	capturer := &capturer{
 		Stdin:      strings.NewReader(""),
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
+		Clock:      &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 		mockPrompt: "mocked prompt",
 	}
 
@@ -124,12 +137,14 @@ func TestPrompt_MockEnv(t *testing.T) {
 }
 
 func TestPrompt_EmptyPipe(t *testing.T) {
+	t.Parallel()
 	// Empty stdin (simulated pipe)
 
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -149,12 +164,14 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 }
 
 func TestPrintFeedback_NoSM(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: &buf,
 		Stderr: io.Discard,
 		SM:     nil, // No security manager
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	// Should not panic and should print the message
@@ -165,11 +182,13 @@ func TestPrintFeedback_NoSM(t *testing.T) {
 }
 
 func TestPrompt_Combined(t *testing.T) {
+	t.Parallel()
 	inputStr := "pipe input"
 	capturer := &capturer{
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -189,6 +208,7 @@ func TestPrompt_Combined(t *testing.T) {
 }
 
 func TestIsTTY_False(t *testing.T) {
+	t.Parallel()
 	capturer := &capturer{}
 	if capturer.IsTTY("not a file") {
 		t.Error("expected IsTTY to be false for string")
@@ -196,11 +216,13 @@ func TestIsTTY_False(t *testing.T) {
 }
 
 func TestCaptureFromTTY(t *testing.T) {
+	t.Parallel()
 	inputStr := "tty input"
 	capturer := &capturer{
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	prompt, err := capturer.captureFromTTY(context.Background(), false)
@@ -214,10 +236,12 @@ func TestCaptureFromTTY(t *testing.T) {
 }
 
 func TestCaptureFromTTY_Cancel(t *testing.T) {
+	t.Parallel()
 	capturer := &capturer{
 		Stdin:  strings.NewReader("never read"),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -229,27 +253,33 @@ func TestCaptureFromTTY_Cancel(t *testing.T) {
 }
 
 func TestWarn_SemanticStyling(t *testing.T) {
+	t.Parallel()
 	var stderr bytes.Buffer
 	isTTY := true
+	mc := &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}
 	capturer := &capturer{
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
+		Clock:         mc,
 	}
 
 	tests := []struct {
-		name    string
-		message string
-		color   string
+		name     string
+		message  string
+		color    string
+		expected string
 	}{
 		{
-			name:    "Security warning",
-			message: "[SECURITY] High risk",
-			color:   colorRed,
+			name:     "Security warning",
+			message:  "[SECURITY] High risk",
+			color:    colorRed,
+			expected: colorRed + "[12:00:00] [SECURITY] High risk" + colorReset + "\n",
 		},
 		{
-			name:    "Normal warning",
-			message: "Regular warning",
-			color:   colorYellow,
+			name:     "Normal warning",
+			message:  "Regular warning",
+			color:    colorYellow,
+			expected: colorYellow + "[12:00:00] Regular warning" + colorReset + "\n",
 		},
 	}
 
@@ -259,22 +289,15 @@ func TestWarn_SemanticStyling(t *testing.T) {
 			capturer.Warn(tt.message)
 			got := stderr.String()
 
-			// Expected: <color>[HH:MM:SS] <message><reset>\n
-			if !strings.HasPrefix(got, tt.color) {
-				t.Errorf("expected color prefix %q, got %q", tt.color, got)
-			}
-			if !strings.HasSuffix(got, tt.message+colorReset+"\n") {
-				t.Errorf("expected message suffix %q, got %q", tt.message+colorReset+"\n", got)
-			}
-			// Verify it contains a timestamp in brackets
-			if !strings.Contains(got, "[") || !strings.Contains(got, "]") {
-				t.Errorf("expected timestamp in output, got %q", got)
+			if got != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, got)
 			}
 		})
 	}
 }
 
 func TestConfirm_SemanticStyling(t *testing.T) {
+	t.Parallel()
 	var stderr bytes.Buffer
 	isTTY := true
 	capturer := &capturer{
@@ -282,6 +305,7 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
 		mockAnswer:    "y",
+		Clock:         &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	tests := []struct {
@@ -321,11 +345,13 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 }
 
 func TestPrompt_SemanticStyling(t *testing.T) {
+	t.Parallel()
 	var stderr bytes.Buffer
 	isTTY := true
 	capturer := &capturer{
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
+		Clock:         &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
 	capturer.Prompt("Answer > ")
@@ -334,3 +360,4 @@ func TestPrompt_SemanticStyling(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, stderr.String())
 	}
 }
+

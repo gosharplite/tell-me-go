@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	orchestration_app "github.com/gosharplite/tell-me-go/internal/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
@@ -71,7 +72,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// 2. Invoking a Use Case / Service interface
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {

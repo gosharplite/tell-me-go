@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 type mockLocker struct {
@@ -55,8 +56,8 @@ func (m *mockLocker) Close() error { return nil }
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
-	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	t.Run("LogSystemMessage", func(t *testing.T) {
 		stdout.Reset()
@@ -70,7 +71,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	t.Run("LogTurnStatus", func(t *testing.T) {
 		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
-			Timestamp:        r.now(),
+			Timestamp:        mc.Now(),
 			CurrentTurns:     0,
 			SessionTurns:     0,
 			MaxHistoryTurns:  10,
@@ -96,7 +97,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 			ResponseTokens: 5,
 			TotalTokens:    15,
 		}
-		r.LogUsage(context.Background(), metrics, tmpFile, r.now())
+		r.LogUsage(context.Background(), metrics, tmpFile, mc.Now())
 
 		data, err := os.ReadFile(tmpFile)
 		if err != nil {
@@ -111,8 +112,8 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 func TestStdUIRenderer_StatusLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
-	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
 		stderr.Reset()
@@ -143,8 +144,8 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 func TestStdUIRenderer_ToolLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
-	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
@@ -173,8 +174,8 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
-	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	t.Run("renderResponse_Markdown", func(t *testing.T) {
 		stdout.Reset()
@@ -198,8 +199,8 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 func TestStdUIRenderer_Streaming(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
-	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	t.Run("StreamResponse_Simple", func(t *testing.T) {
 		stdout.Reset()
@@ -262,8 +263,8 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 func TestLogTurnStatus_Format(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
-	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:       r.nowSafe(),
@@ -326,7 +327,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 
 	// Check Ready line with aggregates
 	r.LogTurnStatus(events.TurnStatus{
-		Timestamp:   r.now(),
+		Timestamp:   mc.Now(),
 		IsPostCall:  true,
 		TaskCost:    0.0001,
 		SessionCost: 0.1234,
@@ -347,7 +348,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 func TestStreamResponseCursorAnchoring(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr)
+	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
 
 	t.Run("Anchoring enabled when rawOutput is false", func(t *testing.T) {
 		stdout.Reset()
@@ -395,8 +396,8 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 func TestStdUIRenderer_Colors(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr)
-	r.(*stdUIRenderer).SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	t.Run("Green cost in LogTurnStatus", func(t *testing.T) {
 		stderr.Reset()
@@ -448,8 +449,8 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
-	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	t.Run("Tool metrics omit total duration", func(t *testing.T) {
 		stderr.Reset()
@@ -491,7 +492,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 func TestStdUIRenderer_Concurrency(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{}).(*stdUIRenderer)
 
 	const (
 		numGoroutines = 50
@@ -536,10 +537,11 @@ func TestStdUIRenderer_GetTimestamp(t *testing.T) {
 	locker := &mockLocker{}
 
 	t.Run("Mocked time", func(t *testing.T) {
+		mc := &mockClock{now: time.Date(2026, 1, 1, 12, 34, 56, 0, time.UTC)}
 		r := &stdUIRenderer{
 			locker: locker,
+			clock:  mc,
 		}
-		r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 34, 56, 0, time.UTC) })
 		got := r.getTimestamp()
 		want := "12:34:56"
 		if got != want {
@@ -547,12 +549,12 @@ func TestStdUIRenderer_GetTimestamp(t *testing.T) {
 		}
 	})
 
-	t.Run("Nil now fallback", func(t *testing.T) {
-		r := &stdUIRenderer{locker: locker}
+	t.Run("Real clock fallback", func(t *testing.T) {
+		r := NewRenderer(locker, nil, nil, nil).(*stdUIRenderer)
 		got := r.getTimestamp()
 		// Just verify it doesn't panic and returns a valid looking timestamp (HH:MM:SS)
 		if len(got) != 8 || got[2] != ':' || got[5] != ':' {
-			t.Errorf("getTimestamp() with nil now returned invalid format: %q", got)
+			t.Errorf("getTimestamp() with real clock returned invalid format: %q", got)
 		}
 	})
 }
@@ -562,6 +564,7 @@ func TestStdUIRenderer_NilRendererFallback(t *testing.T) {
 	r := &stdUIRenderer{
 		stdout:   &stdout,
 		renderer: nil, // Explicitly nil
+		clock:    clock.RealClock{},
 	}
 
 	testText := "# Hello World"
@@ -574,18 +577,20 @@ func TestStdUIRenderer_NilRendererFallback(t *testing.T) {
 }
 
 func TestStdUIRenderer_NowSafeRace(t *testing.T) {
-	r := &stdUIRenderer{}
+	r := &stdUIRenderer{
+		clock: clock.RealClock{},
+	}
 	stop := make(chan bool)
 
-	// Goroutine 1: Rapidly swap the 'now' function
+	// Goroutine 1: Rapidly swap the clock
 	go func() {
 		for {
 			select {
 			case <-stop:
 				return
 			default:
-				r.SetNow(func() time.Time { return time.Now() })
-				r.SetNow(nil)
+				r.SetClock(clock.RealClock{})
+				r.SetClock(nil)
 			}
 		}
 	}()
@@ -600,7 +605,7 @@ func TestStdUIRenderer_NowSafeRace(t *testing.T) {
 func TestStreamResponse_ScrollAware(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr)
+	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
 
 	t.Run("Redraw on no scroll", func(t *testing.T) {
 		stdout.Reset()
@@ -665,13 +670,13 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr)
-	r.(*stdUIRenderer).SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	t.Run("LogUsage terminal output for summaries", func(t *testing.T) {
 		stderr.Reset()
 		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100, Cost: 0.05}
-		r.LogUsage(context.Background(), metrics, t.TempDir()+"/test.log", time.Now())
+		r.LogUsage(context.Background(), metrics, t.TempDir()+"/test.log", mc.Now())
 
 		output := stderr.String()
 		if !strings.Contains(output, "$0.0500") {
@@ -694,7 +699,7 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(locker, nil, nil).(*stdUIRenderer)
+			r := NewRenderer(locker, nil, nil, clock.RealClock{}).(*stdUIRenderer)
 			r.SetUseColor(tt.useColor)
 			ui := r.getUIState()
 			if got := ui.c(tt.input); got != tt.expected {
@@ -707,8 +712,8 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 func TestStreamResponse_IgnoresThoughtsInFinalOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr)
-	r.(*stdUIRenderer).SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

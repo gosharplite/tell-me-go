@@ -12,6 +12,7 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
@@ -60,7 +61,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}()
 
 	// 3. Delegate to agent orchestration
-	uiRenderer := ui.NewRenderer(s.SM, s.Stdout, s.Stderr)
+	uiRenderer := ui.NewRenderer(s.SM, s.Stdout, s.Stderr, clock.RealClock{})
 	historyRenderer := &ui.StdHistoryRenderer{}
 
 	err = orchestration.Run(ctx, orchestration.RunParams{
