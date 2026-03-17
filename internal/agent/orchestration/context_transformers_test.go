@@ -1332,67 +1332,141 @@ func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 
 func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 	propagator := &thoughtSignaturePropagator{}
+	ctx := context.Background()
 
-	t.Run("propagates signature to function calls", func(t *testing.T) {
-		req := &ports.ContextRequest{
-			History: []*llm.Content{
-				{
-					Role: "user",
-					Parts: []*llm.Part{
-						{Text: "hello"},
+	tests := []struct {
+		name           string
+		inputReq       *ports.ContextRequest
+		wantPersist    bool
+		validateResult func(t *testing.T, req *ports.ContextRequest)
+	}{
+		{
+			name: "propagates signature to function calls",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "user",
+						Parts: []*llm.Part{
+							{Text: "hello"},
+						},
 					},
-				},
-				{
-					Role: "model",
-					Parts: []*llm.Part{
-						{IsThought: true, Text: "thinking", ThoughtSignature: []byte("sig-123")},
-						{FunctionCall: &llm.FunctionCall{Name: "execute_command"}},
-					},
-				},
-			},
-		}
-
-		err := propagator.Transform(context.Background(), req)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if !req.PersistHistory {
-			t.Error("expected PersistHistory to be true")
-		}
-
-		modelMsg := req.History[1]
-		fcPart := modelMsg.Parts[1]
-		if string(fcPart.ThoughtSignature) != "sig-123" {
-			t.Errorf("expected thought signature 'sig-123', got '%s'", fcPart.ThoughtSignature)
-		}
-	})
-
-	t.Run("ignores non-model roles", func(t *testing.T) {
-		req := &ports.ContextRequest{
-			History: []*llm.Content{
-				{
-					Role: "user",
-					Parts: []*llm.Part{
-						{IsThought: true, Text: "thinking", ThoughtSignature: []byte("sig-123")},
-						{FunctionCall: &llm.FunctionCall{Name: "execute_command"}},
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							{IsThought: true, Text: "thinking", ThoughtSignature: []byte("sig-123")},
+							{FunctionCall: &llm.FunctionCall{Name: "execute_command"}},
+						},
 					},
 				},
 			},
-		}
+			wantPersist: true,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				modelMsg := req.History[1]
+				fcPart := modelMsg.Parts[1]
+				if string(fcPart.ThoughtSignature) != "sig-123" {
+					t.Errorf("expected thought signature 'sig-123', got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+		{
+			name: "ignores non-model roles",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "user",
+						Parts: []*llm.Part{
+							{IsThought: true, Text: "thinking", ThoughtSignature: []byte("sig-123")},
+							{FunctionCall: &llm.FunctionCall{Name: "execute_command"}},
+						},
+					},
+				},
+			},
+			wantPersist: false,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				fcPart := req.History[0].Parts[1]
+				if len(fcPart.ThoughtSignature) != 0 {
+					t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+		{
+			name: "Nil pointers in history and parts do not panic",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					nil,
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							nil,
+							{Text: "valid part"},
+						},
+					},
+				},
+			},
+			wantPersist: false,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				// No panic is the main success criterion here.
+			},
+		},
+		{
+			name: "Model message without thought signature is ignored",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							{Text: "just text"},
+							{FunctionCall: &llm.FunctionCall{Name: "test"}},
+						},
+					},
+				},
+			},
+			wantPersist: false,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				fcPart := req.History[0].Parts[1]
+				if len(fcPart.ThoughtSignature) != 0 {
+					t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+		{
+			name: "Existing signature on FunctionCall is preserved",
+			inputReq: &ports.ContextRequest{
+				History: []*llm.Content{
+					{
+						Role: "model",
+						Parts: []*llm.Part{
+							{IsThought: true, Text: "thinking", ThoughtSignature: []byte("new-sig")},
+							{
+								FunctionCall:     &llm.FunctionCall{Name: "test"},
+								ThoughtSignature: []byte("existing-sig"),
+							},
+						},
+					},
+				},
+			},
+			wantPersist: false,
+			validateResult: func(t *testing.T, req *ports.ContextRequest) {
+				fcPart := req.History[0].Parts[1]
+				if string(fcPart.ThoughtSignature) != "existing-sig" {
+					t.Errorf("expected existing thought signature 'existing-sig', got '%s'", fcPart.ThoughtSignature)
+				}
+			},
+		},
+	}
 
-		err := propagator.Transform(context.Background(), req)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if req.PersistHistory {
-			t.Error("expected PersistHistory to be false")
-		}
-
-		fcPart := req.History[0].Parts[1]
-		if len(fcPart.ThoughtSignature) != 0 {
-			t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := propagator.Transform(ctx, tt.inputReq)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.inputReq.PersistHistory != tt.wantPersist {
+				t.Errorf("PersistHistory = %v, want %v", tt.inputReq.PersistHistory, tt.wantPersist)
+			}
+			if tt.validateResult != nil {
+				tt.validateResult(t, tt.inputReq)
+			}
+		})
+	}
 }
