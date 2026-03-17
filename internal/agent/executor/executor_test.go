@@ -327,3 +327,33 @@ func TestNewToolExecutor_NilRegistry(t *testing.T) {
 	require.Contains(t, err.Error(), "registry is required")
 	require.Nil(t, executor)
 }
+
+func TestNewToolExecutor_NilLogger_FallbackBehavior(t *testing.T) {
+	t.Parallel()
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+			return tools.ToolResult{Text: "success"}, nil
+		},
+	}
+	observer := &MockLogger{}
+
+	// Explicitly pass nil for the logger
+	exec, err := NewToolExecutor(reg, nil, nil, nil, observer)
+	require.NoError(t, err)
+	require.NotNil(t, exec)
+	t.Cleanup(exec.Shutdown)
+
+	// Call a public method that triggers logging
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		},
+	}
+
+	// This should not panic because e.logger should have defaulted to NoOpLogger
+	assert.NotPanics(t, func() {
+		results, err := exec.Execute(context.Background(), respContent, 0, 10)
+		assert.NoError(t, err)
+		assert.NotNil(t, results)
+	})
+}
