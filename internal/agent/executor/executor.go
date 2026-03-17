@@ -256,13 +256,13 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	duration := time.Since(startTime)
 
 	if waitErr != nil {
-		e.logger.Error("Tool execution turn failed or was cancelled",
+		e.logger.Debug("Tool execution turn failed or was cancelled",
 			"turn", turn,
 			"error", waitErr.Error(),
 			"duration_ms", duration.Milliseconds(),
 		)
 	} else {
-		e.logger.Info("Tool execution turn completed",
+		e.logger.Debug("Tool execution turn completed",
 			"turn", turn,
 			"tool_calls", len(calls),
 			"duration_ms", duration.Milliseconds(),
@@ -358,7 +358,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 	for batchIdx, batch := range batches {
 		if err := ctx.Err(); err != nil {
-			e.logger.Warn("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
+			e.logger.Debug("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
 			e.failRemainingTasks(batches, batchIdx, -1, calls, resChan, err, "batch interrupted")
 			return err
 		}
@@ -366,7 +366,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		batchStart := time.Now()
 		if batch.isSerial {
 			if !e.executeSerialBatch(ctx, batch, calls, resChan) {
-				e.logger.Warn("Serial batch failed or interrupted, halting execution plan",
+				e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
 					"batch_idx", batchIdx,
 					"tool_name", calls[batch.tasks[0]].Name)
 				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, resChan, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
@@ -825,11 +825,11 @@ func (e *ToolExecutor) logToolExecution(callName, status, errStr string, duratio
 	}
 
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(resultErr, context.DeadlineExceeded) {
-		e.logger.Warn("Tool execution timed out", logAttrs...)
+		e.logger.Debug("Tool execution timed out", logAttrs...)
 	} else if status == "error" {
-		e.logger.Error("Tool execution failed", logAttrs...)
+		e.logger.Debug("Tool execution failed", logAttrs...)
 	} else {
-		e.logger.Info("Tool execution completed", logAttrs...)
+		e.logger.Debug("Tool execution completed", logAttrs...)
 	}
 }
 
