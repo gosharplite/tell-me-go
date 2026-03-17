@@ -237,19 +237,19 @@ func TestWarn_SemanticStyling(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		message  string
-		expected string
+		name    string
+		message string
+		color   string
 	}{
 		{
-			name:     "Security warning",
-			message:  "[SECURITY] High risk",
-			expected: colorRed + "[SECURITY] High risk" + colorReset + "\n",
+			name:    "Security warning",
+			message: "[SECURITY] High risk",
+			color:   colorRed,
 		},
 		{
-			name:     "Normal warning",
-			message:  "Regular warning",
-			expected: colorYellow + "Regular warning" + colorReset + "\n",
+			name:    "Normal warning",
+			message: "Regular warning",
+			color:   colorYellow,
 		},
 	}
 
@@ -257,8 +257,18 @@ func TestWarn_SemanticStyling(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			stderr.Reset()
 			capturer.Warn(tt.message)
-			if stderr.String() != tt.expected {
-				t.Errorf("expected %q, got %q", tt.expected, stderr.String())
+			got := stderr.String()
+
+			// Expected: <color>[HH:MM:SS] <message><reset>\n
+			if !strings.HasPrefix(got, tt.color) {
+				t.Errorf("expected color prefix %q, got %q", tt.color, got)
+			}
+			if !strings.HasSuffix(got, tt.message+colorReset+"\n") {
+				t.Errorf("expected message suffix %q, got %q", tt.message+colorReset+"\n", got)
+			}
+			// Verify it contains a timestamp in brackets
+			if !strings.Contains(got, "[") || !strings.Contains(got, "]") {
+				t.Errorf("expected timestamp in output, got %q", got)
 			}
 		})
 	}

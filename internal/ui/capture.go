@@ -220,7 +220,10 @@ func (c *capturer) Warn(message string) {
 	if strings.HasPrefix(message, "[SECURITY]") {
 		color = colorRed
 	}
-	c.printFeedback(c.Stderr, true, color, message)
+
+	timestamp := time.Now().Format("15:04:05")
+	formattedMessage := fmt.Sprintf("[%s] %s", timestamp, message)
+	c.printFeedback(c.Stderr, true, color, formattedMessage)
 }
 
 // Prompt displays an inline message without a newline.
