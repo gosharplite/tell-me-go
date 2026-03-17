@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -358,5 +359,61 @@ func TestPrompt_SemanticStyling(t *testing.T) {
 	expected := colorYellow + "Answer > " + colorReset
 	if stderr.String() != expected {
 		t.Errorf("expected %q, got %q", expected, stderr.String())
+	}
+}
+
+func TestCapturer_Confirm_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	// 1. Pre-cancel the context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// 2. Setup capturer with dummy streams (io.Discard or similar)
+	stdin := strings.NewReader("never read")
+	c := &capturer{
+		Stdin:  stdin,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
+		reader: bufio.NewReader(stdin),
+	}
+
+	// 3. Execute the blocking call
+	result, err := c.Confirm(ctx, "Proceed?")
+
+	// 4. Architectural mandate: Must return context.Canceled immediately
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if result != false {
+		t.Error("expected false result on cancellation")
+	}
+}
+
+func TestCapturer_ReadLine_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	// 1. Pre-cancel the context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// 2. Setup capturer with dummy streams (io.Discard or similar)
+	stdin := strings.NewReader("never read")
+	c := &capturer{
+		Stdin:  stdin,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
+		reader: bufio.NewReader(stdin),
+	}
+
+	// 3. Execute the blocking call
+	result, err := c.ReadLine(ctx)
+
+	// 4. Architectural mandate: Must return context.Canceled immediately
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if result != "" {
+		t.Errorf("expected empty result on cancellation, got %q", result)
 	}
 }

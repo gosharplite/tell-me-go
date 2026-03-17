@@ -200,6 +200,10 @@ func (c *capturer) printFeedback(w io.Writer, useColor bool, color, msg string) 
 
 // Confirm prompts the user for confirmation.
 func (c *capturer) Confirm(ctx context.Context, message string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	color := ""
 	if strings.HasPrefix(message, "[SECURITY]") || strings.HasPrefix(message, "[CONFIRMATION REQUIRED]") {
 		color = colorRed
