@@ -561,3 +561,46 @@ func TestAddPart(t *testing.T) {
 		})
 	}
 }
+
+func TestPart_IsEmpty(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		part *Part
+		want bool
+	}{
+		{"nil part", nil, true},
+		{"empty structural part", &Part{Text: ""}, true},
+		{"populated text part", &Part{Text: "thought"}, false},
+		{"thought signature only", &Part{ThoughtSignature: []byte("sig")}, false},
+		{"asset ID only", &Part{AssetID: "123"}, false},
+		{"is thought only", &Part{IsThought: true}, false},
+		{"inline data only", &Part{InlineData: &Blob{MIMEType: "image/png"}}, false},
+		{"function call only", &Part{FunctionCall: &FunctionCall{Name: "call"}}, false},
+		{"function response only", &Part{FunctionResponse: &FunctionResponse{Name: "resp"}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.part.IsEmpty(); got != tt.want {
+				t.Errorf("IsEmpty() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAddPart_NilReceiver(t *testing.T) {
+	t.Parallel()
+	var c *Content
+	c.AddPart(&Part{Text: "hello"}) // Should not panic
+}
+
+func TestPart_canMergeWith_Nil(t *testing.T) {
+	t.Parallel()
+	var p *Part
+	if p.canMergeWith(&Part{}) {
+		t.Error("nil part should not be able to merge")
+	}
+	if (&Part{}).canMergeWith(nil) {
+		t.Error("part should not be able to merge with nil")
+	}
+}

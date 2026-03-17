@@ -93,7 +93,7 @@ var (
 
 // AddPart merges a new part into the content, appending or joining text parts as appropriate.
 func (c *Content) AddPart(p *Part) {
-	if p == nil {
+	if c == nil || p == nil {
 		return
 	}
 
@@ -113,6 +113,9 @@ func (c *Content) AddPart(p *Part) {
 }
 
 func (p *Part) isPure() bool {
+	if p == nil {
+		return true
+	}
 	return p.FunctionCall == nil && p.FunctionResponse == nil && p.InlineData == nil
 }
 

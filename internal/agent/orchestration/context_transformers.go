@@ -66,6 +66,9 @@ type transientMerger struct{}
 
 func (t *transientMerger) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	for i, msg := range req.History {
+		if msg == nil {
+			continue
+		}
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared
 			cloned := llm.CloneContent(msg)
@@ -139,7 +142,13 @@ func isTurnBoundary(msg *llm.Content, current []*llm.Content) bool {
 }
 
 func isToolCall(msg *llm.Content) bool {
+	if msg == nil {
+		return false
+	}
 	for _, p := range msg.Parts {
+		if p == nil {
+			continue
+		}
 		if p.FunctionCall != nil {
 			return true
 		}
@@ -149,7 +158,13 @@ func isToolCall(msg *llm.Content) bool {
 
 func isTurnEmpty(turn []*llm.Content) bool {
 	for _, msg := range turn {
+		if msg == nil {
+			continue
+		}
 		for _, p := range msg.Parts {
+			if p == nil {
+				continue
+			}
 			if !p.IsEmpty() {
 				return false
 			}
@@ -167,12 +182,15 @@ func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextReque
 	}
 
 	last := req.History[len(req.History)-1]
-	if last.Role != "model" {
+	if last == nil || last.Role != "model" {
 		return nil
 	}
 
 	responses := make([]*llm.Part, 0, len(last.Parts))
 	for _, p := range last.Parts {
+		if p == nil {
+			continue
+		}
 		if p.FunctionCall != nil {
 			responses = append(responses, &llm.Part{
 				FunctionResponse: &llm.FunctionResponse{
@@ -221,7 +239,7 @@ func cleanContent(content *llm.Content) bool {
 	// 2. O(N) check to see if an allocation/rebuild is actually needed
 	hasEmpty := false
 	for _, p := range content.Parts {
-		if p.IsEmpty() {
+		if p == nil || p.IsEmpty() {
 			hasEmpty = true
 			break
 		}
@@ -235,7 +253,7 @@ func cleanContent(content *llm.Content) bool {
 	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	for _, p := range content.Parts {
-		if !p.IsEmpty() {
+		if p != nil && !p.IsEmpty() {
 			cleanParts = append(cleanParts, p)
 		}
 	}
@@ -294,6 +312,10 @@ func cleanToolParts(content *llm.Content) bool {
 	changed := false
 
 	for _, p := range content.Parts {
+		if p == nil {
+			changed = true
+			continue
+		}
 		// Skip tool calls with empty IDs - they cause API errors
 		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
 			changed = true

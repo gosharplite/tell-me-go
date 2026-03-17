@@ -1409,6 +1409,13 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 			},
 		},
 		{
+			name: "Nil History slice handled gracefully",
+			inputReq: &ports.ContextRequest{
+				History: nil,
+			},
+			wantPersist: false,
+		},
+		{
 			name: "Model message without thought signature is ignored",
 			inputReq: &ports.ContextRequest{
 				History: []*llm.Content{
@@ -1490,5 +1497,23 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 				tt.validateResult(t, tt.inputReq)
 			}
 		})
+	}
+}
+
+func TestTransientMerger_NilSafety(t *testing.T) {
+	t.Parallel()
+	merger := &transientMerger{}
+	req := &ports.ContextRequest{
+		History: []*llm.Content{
+			nil,
+			{Role: "user", Parts: []*llm.Part{{Text: "a"}}, TransientParts: []*llm.Part{{Text: "b"}}},
+		},
+	}
+	err := merger.Transform(context.Background(), req)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(req.History[1].Parts) != 2 {
+		t.Errorf("expected 2 parts, got %d", len(req.History[1].Parts))
 	}
 }
