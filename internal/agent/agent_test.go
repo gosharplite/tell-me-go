@@ -755,7 +755,7 @@ func (m *mockToolRegistryWithExpectations) Register(declaration *tools.ToolDecla
 }
 
 func (m *mockToolRegistryWithExpectations) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	// To satisfy the required pattern "On('RegisterInternal', ...)", 
+	// To satisfy the required pattern "On('RegisterInternal', ...)",
 	// we delegate to a mockable RegisterInternal method.
 	return m.RegisterInternal(def)
 }

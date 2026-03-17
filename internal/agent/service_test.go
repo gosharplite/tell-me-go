@@ -74,9 +74,11 @@ func (m *mockServiceSecurityManager) ReadLine(ctx context.Context) (string, erro
 	args := m.Called(ctx)
 	return args.String(0), args.Error(1)
 }
-func (m *mockServiceSecurityManager) IsCommandAllowed(command string) bool { return m.Called(command).Bool(0) }
-func (m *mockServiceSecurityManager) IsBypassActive() bool                 { return m.Called().Bool(0) }
-func (m *mockServiceSecurityManager) Close() error                         { return m.Called().Error(0) }
+func (m *mockServiceSecurityManager) IsCommandAllowed(command string) bool {
+	return m.Called(command).Bool(0)
+}
+func (m *mockServiceSecurityManager) IsBypassActive() bool { return m.Called().Bool(0) }
+func (m *mockServiceSecurityManager) Close() error         { return m.Called().Error(0) }
 
 // mockServiceContainer is a mock of Container.
 type mockServiceContainer struct {
@@ -124,10 +126,14 @@ func (m *mockServiceSessionDependencies) GetEventBus() events.EventBus {
 func (m *mockServiceSessionDependencies) GetPaths() *persistence.Paths {
 	return m.Called().Get(0).(*persistence.Paths)
 }
-func (m *mockServiceSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
-func (m *mockServiceSessionDependencies) GetTracker() pricing.ICostTracker                     { return nil }
-func (m *mockServiceSessionDependencies) GetPricingData() pricing.PricingData                  { return pricing.PricingData{} }
-func (m *mockServiceSessionDependencies) GetClient() llm.LLMClient                             { return nil }
+func (m *mockServiceSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing {
+	return nil
+}
+func (m *mockServiceSessionDependencies) GetTracker() pricing.ICostTracker { return nil }
+func (m *mockServiceSessionDependencies) GetPricingData() pricing.PricingData {
+	return pricing.PricingData{}
+}
+func (m *mockServiceSessionDependencies) GetClient() llm.LLMClient { return nil }
 
 // mockServiceEventBus is a mock of EventBus.
 type mockServiceEventBus struct {

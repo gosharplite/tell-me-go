@@ -58,7 +58,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	for i, check := range pipeline {
 		i, c := i, check // Captured for closure
 		g.Go(func() error {
-			slog.Info("verify_release_readiness: enqueued check", slog.String("check", c.Name()))
+			slog.Debug("verify_release_readiness: enqueued check", slog.String("check", c.Name()))
 
 			// Acquire semaphore before executing heavy checks
 			if err := sem.Acquire(gCtx, 1); err != nil {
@@ -70,13 +70,13 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 			}
 			defer sem.Release(1)
 
-			slog.Info("verify_release_readiness: running check", slog.String("check", c.Name()))
+			slog.Debug("verify_release_readiness: running check", slog.String("check", c.Name()))
 			res := c.Run(gCtx)
-			if res.OK {
-				slog.Info("verify_release_readiness: completed check", slog.String("check", c.Name()), slog.Bool("ok", true))
-			} else {
-				slog.Warn("verify_release_readiness: check failed", slog.String("check", c.Name()), slog.Bool("ok", false))
-			}
+			// Both success and failure of a check are normal operational info, not system warnings.
+			slog.Info("verify_release_readiness: check finished",
+				slog.String("check", c.Name()),
+				slog.Bool("ok", res.OK),
+			)
 
 			results[i] = res
 			return nil
