@@ -49,6 +49,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 		&toolResponseCleaner{}, // Remove tool responses with empty IDs
 		&emptyMessagePruner{},  // Explicitly drop messages with 0 parts
 		&contentCleaner{},
+		&thoughtSignaturePropagator{},
 		&historyPruner{
 			Policy: &compositePruningPolicy{
 				Policies: []ports.PruningPolicy{

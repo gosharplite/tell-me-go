@@ -338,3 +338,46 @@ func (t *emptyMessagePruner) Transform(ctx context.Context, req *ports.ContextRe
 }
 
 func (t *emptyMessagePruner) Priority() int { return 4 } // Run after toolResponseCleaner (3) but before contentCleaner (5)
+
+// thoughtSignaturePropagator ensures that if any part in a content block contains
+// a thought_signature (common with Gemini 2.0 thinking models), ALL FunctionCall parts
+// in that same block must also have the exact same thought_signature.
+type thoughtSignaturePropagator struct{}
+
+func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	modified := false
+	for _, content := range req.History {
+		if content == nil || content.Role != "model" {
+			continue
+		}
+
+		var signature []byte
+		// First pass: find the signature
+		for _, p := range content.Parts {
+			if len(p.ThoughtSignature) > 0 {
+				signature = p.ThoughtSignature
+				break
+			}
+		}
+
+		// Second pass: attach it to function calls if missing
+		if len(signature) > 0 {
+			for _, p := range content.Parts {
+				if p.FunctionCall != nil && len(p.ThoughtSignature) == 0 {
+					// We must allocate a new slice to avoid sharing pointers 
+					// if we later modify the signature, though usually read-only.
+					p.ThoughtSignature = make([]byte, len(signature))
+					copy(p.ThoughtSignature, signature)
+					modified = true
+				}
+			}
+		}
+	}
+
+	if modified {
+		req.PersistHistory = true
+	}
+	return nil
+}
+
+func (t *thoughtSignaturePropagator) Priority() int { return 6 } // Run after contentCleaner (5)

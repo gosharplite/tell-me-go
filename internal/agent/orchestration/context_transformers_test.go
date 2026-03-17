@@ -1329,3 +1329,70 @@ func TestEmptyMessagePruner_Transform_DropsNil(t *testing.T) {
 		}
 	})
 }
+
+func TestThoughtSignaturePropagator_Transform(t *testing.T) {
+	propagator := &thoughtSignaturePropagator{}
+
+	t.Run("propagates signature to function calls", func(t *testing.T) {
+		req := &ports.ContextRequest{
+			History: []*llm.Content{
+				{
+					Role: "user",
+					Parts: []*llm.Part{
+						{Text: "hello"},
+					},
+				},
+				{
+					Role: "model",
+					Parts: []*llm.Part{
+						{IsThought: true, Text: "thinking", ThoughtSignature: []byte("sig-123")},
+						{FunctionCall: &llm.FunctionCall{Name: "execute_command"}},
+					},
+				},
+			},
+		}
+
+		err := propagator.Transform(context.Background(), req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !req.PersistHistory {
+			t.Error("expected PersistHistory to be true")
+		}
+
+		modelMsg := req.History[1]
+		fcPart := modelMsg.Parts[1]
+		if string(fcPart.ThoughtSignature) != "sig-123" {
+			t.Errorf("expected thought signature 'sig-123', got '%s'", fcPart.ThoughtSignature)
+		}
+	})
+
+	t.Run("ignores non-model roles", func(t *testing.T) {
+		req := &ports.ContextRequest{
+			History: []*llm.Content{
+				{
+					Role: "user",
+					Parts: []*llm.Part{
+						{IsThought: true, Text: "thinking", ThoughtSignature: []byte("sig-123")},
+						{FunctionCall: &llm.FunctionCall{Name: "execute_command"}},
+					},
+				},
+			},
+		}
+
+		err := propagator.Transform(context.Background(), req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if req.PersistHistory {
+			t.Error("expected PersistHistory to be false")
+		}
+
+		fcPart := req.History[0].Parts[1]
+		if len(fcPart.ThoughtSignature) != 0 {
+			t.Errorf("expected empty thought signature, got '%s'", fcPart.ThoughtSignature)
+		}
+	})
+}
