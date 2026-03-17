@@ -445,12 +445,15 @@ func TestCapturer_ReadLine_ContextCancellation_Concurrency(t *testing.T) {
 	}()
 
 	// 5. Wait for the context to cancel the read, or fail the test if it hangs
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 			t.Errorf("expected context cancellation error, got: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-timer.C:
 		t.Fatal("Test timed out: ReadLine did not respect context cancellation")
 	}
 }
