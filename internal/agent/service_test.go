@@ -267,3 +267,24 @@ func TestProcessMessage_BuildSessionDepsError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, "build error", err.Error())
 }
+
+func TestProcessMessage_ConfigLoadError(t *testing.T) {
+	ctx := context.Background()
+	loader := &mockServiceConfigLoader{}
+	container := &mockServiceContainer{}
+	sm := &mockServiceSecurityManager{}
+	capturer := &mockServiceCapturer{}
+
+	service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
+
+	expectedErr := errors.New("file not found")
+	loader.On("Load", "invalid.yaml").Return((*config.Config)(nil), expectedErr)
+
+	opts := ChatOptions{ConfigPath: "invalid.yaml"}
+	err := service.ProcessMessage(ctx, opts, capturer)
+
+	// Architectural mandate: Assert exact error mapping
+	assert.ErrorIs(t, err, expectedErr)
+	assert.Contains(t, err.Error(), "invalid.yaml")
+	loader.AssertExpectations(t)
+}
