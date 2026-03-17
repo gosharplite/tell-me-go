@@ -417,3 +417,37 @@ func TestCapturer_ReadLine_ContextCancelled(t *testing.T) {
 		t.Errorf("expected empty result on cancellation, got %q", result)
 	}
 }
+
+func TestCapturer_ReadLine_ContextCancellation_Concurrency(t *testing.T) {
+	t.Parallel()
+
+	// 1. Create a pipe that blocks forever because nothing will write to it
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	// 2. Setup capturer with the blocking reader using the constructor
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "")
+
+	// 3. Create a context that cancels quickly
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+
+	// 4. Execute the blocking read in a goroutine
+	go func() {
+		_, err := c.ReadLine(ctx)
+		errCh <- err
+	}()
+
+	// 5. Wait for the context to cancel the read, or fail the test if it hangs
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context cancellation error, got: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test timed out: ReadLine did not respect context cancellation")
+	}
+}
