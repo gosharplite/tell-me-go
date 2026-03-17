@@ -25,6 +25,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -715,4 +717,71 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error from applyConfig, got: %v", err)
 	}
+}
+
+func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
+	t.Parallel()
+	mockClient := &mockLLMClient{}
+	bus := events.NewSimpleEventBus()
+	h := &mockHistoryManager{}
+	sm := security_impl.NewSecurityManager(nil)
+
+	// Use testify mock for the registry to simulate failures
+	mockRegistry := &mockToolRegistryWithExpectations{}
+	expectedErr := errors.New("duplicate tool schema")
+
+	// Force the mock's registration method to return a predefined error
+	// Architectural Instruction: The pattern provided uses "RegisterInternal".
+	// Since orchestration.RegisterInternal calls RegisterWithOptions, we bridge them here.
+	mockRegistry.On("RegisterInternal", mock.Anything).Return(expectedErr)
+
+	// Attempt to create the agent (adjust parameters to match your actual constructor)
+	agent, err := newAgent(mockClient, bus, h, "test-provider", mockRegistry, sm, withInternalTools())
+
+	// Architectural mandate: Ensure initialization fails fast and propagates the error
+	assert.ErrorIs(t, err, expectedErr)
+	assert.Nil(t, agent)
+	mockRegistry.AssertExpectations(t)
+}
+
+// mockToolRegistryWithExpectations implements IToolRegistry using testify/mock.
+type mockToolRegistryWithExpectations struct {
+	mock.Mock
+}
+
+func (m *mockToolRegistryWithExpectations) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
+	args := m.Called(declaration, implementation)
+	return args.Error(0)
+}
+
+func (m *mockToolRegistryWithExpectations) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	// To satisfy the required pattern "On('RegisterInternal', ...)", 
+	// we delegate to a mockable RegisterInternal method.
+	return m.RegisterInternal(def)
+}
+
+func (m *mockToolRegistryWithExpectations) RegisterInternal(declaration interface{}) error {
+	args := m.Called(declaration)
+	return args.Error(0)
+}
+
+func (m *mockToolRegistryWithExpectations) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	call := m.Called(ctx, name, args)
+	return call.Get(0).(tools.ToolResult), call.Error(1)
+}
+
+func (m *mockToolRegistryWithExpectations) GetDeclarations() []*tools.ToolDeclaration {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).([]*tools.ToolDeclaration)
+}
+
+func (m *mockToolRegistryWithExpectations) IsSerial(name string) bool {
+	return m.Called(name).Bool(0)
+}
+
+func (m *mockToolRegistryWithExpectations) IsLongRunning(name string) bool {
+	return m.Called(name).Bool(0)
 }
