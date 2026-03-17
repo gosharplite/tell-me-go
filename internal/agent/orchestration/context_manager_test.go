@@ -406,7 +406,7 @@ func TestContextManager_CheckContext_Cancellation(t *testing.T) {
 
 func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
-	
+
 	t.Run("fails on nil message in history", func(t *testing.T) {
 		history := &mockHistoryManager{
 			contents: []*llm.Content{

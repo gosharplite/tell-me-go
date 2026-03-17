@@ -107,7 +107,6 @@ func TestCloneContent(t *testing.T) {
 	})
 }
 
-
 func verifyMutationIndependence(t *testing.T, orig, clone *Content) {
 	t.Helper()
 
