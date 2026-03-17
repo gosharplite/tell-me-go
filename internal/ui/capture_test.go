@@ -360,4 +360,3 @@ func TestPrompt_SemanticStyling(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, stderr.String())
 	}
 }
-

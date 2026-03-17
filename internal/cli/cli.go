@@ -12,10 +12,10 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/orchestration"
 )
 
 // app represents the tell-me-go application.
@@ -101,7 +101,7 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	// Assembly root: wire dependencies for orchestration
 	container := di.NewBootstrapper(a.homeDir, a.sm, a.Version, a.Stdout, a.Stderr, nil)
 	loader := &config.YAMLConfigLoader{}
-	chatService := orchestration.NewChatService(a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm, loader, container)
+	chatService := agent.NewChatService(a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm, loader, container)
 
 	cmdCtx := &context{
 		Version:     a.Version,

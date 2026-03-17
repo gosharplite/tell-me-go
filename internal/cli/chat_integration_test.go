@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -19,7 +20,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	orchestration_app "github.com/gosharplite/tell-me-go/internal/orchestration"
 )
 
 type integrationMockChatter struct {
@@ -64,7 +64,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	}
 
 	loader := &config.YAMLConfigLoader{}
-	chatService := orchestration_app.NewChatService(tmpDir, "1.0.0", &stdout, &stderr, sm, loader, container)
+	chatService := agent.NewChatService(tmpDir, "1.0.0", &stdout, &stderr, sm, loader, container)
 
 	cmd := &chatCommand{
 		Version:     "1.0.0",
