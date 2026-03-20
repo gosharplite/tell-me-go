@@ -19,7 +19,7 @@ type configService struct {
 }
 
 // NewConfigService creates a new configService.
-func NewConfigService(store ports.KVStore) ports.ConfigService {
+func NewConfigService(store ports.KVStore) ports.ConfigReader {
 	return &configService{
 		store:  store,
 		config: make(map[string]string),

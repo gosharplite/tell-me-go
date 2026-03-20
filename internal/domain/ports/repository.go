@@ -69,8 +69,8 @@ type TaskStore interface {
 	Initialize(ctx context.Context) error
 }
 
-// ConfigReader defines the interface for reading configuration.
-type ConfigReader interface {
+// ConfigGetter defines the interface for reading configuration.
+type ConfigGetter interface {
 	Get(key string) (string, error)
 	GetAll() map[string]string
 }
@@ -81,9 +81,9 @@ type ConfigWriter interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// ConfigService defines the interface for configuration management.
-type ConfigService interface {
-	ConfigReader
+// ConfigReader defines the interface for configuration management.
+type ConfigReader interface {
+	ConfigGetter
 	ConfigWriter
 	Initialize(ctx context.Context) error
 }
@@ -110,7 +110,7 @@ type ScratchpadService interface {
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
 	GetTasks() TaskStore
-	GetConfig() ConfigService
+	GetConfig() ConfigReader
 	GetScratchpad() ScratchpadService
 }
 

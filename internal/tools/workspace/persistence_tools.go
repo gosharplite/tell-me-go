@@ -18,7 +18,7 @@ import (
 type persistenceTools struct {
 	tasks      ports.TaskStore
 	scratchpad ports.ScratchpadService
-	config     ports.ConfigService
+	config     ports.ConfigReader
 	state      ports.SessionProvider
 }
 
