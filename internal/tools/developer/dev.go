@@ -17,7 +17,7 @@ import (
 
 type devManager struct {
 	sm             devSecurity
-	validator      domain_security.ICommandValidator
+	validator      domain_security.CommandValidator
 	executor       executor
 	createTempFile func(dir, pattern string) (*os.File, error)
 }
@@ -321,7 +321,7 @@ func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
 }
 
-func newDevManager(sm devSecurity, validator domain_security.ICommandValidator) *devManager {
+func newDevManager(sm devSecurity, validator domain_security.CommandValidator) *devManager {
 	return &devManager{
 		sm:             sm,
 		validator:      validator,

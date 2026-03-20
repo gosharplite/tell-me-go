@@ -24,7 +24,7 @@ type ToolRegistrationParams struct {
 	Registry         tools.Registry
 	SecurityManager  domain_security.Manager
 	CommandExecutor  tools.CommandExecutor
-	CommandValidator domain_security.ICommandValidator
+	CommandValidator domain_security.CommandValidator
 	SessionProvider  ports.ISessionProvider
 	LogFile          string
 	Model            string

@@ -20,7 +20,7 @@ type commandValidator struct {
 }
 
 // NewCommandValidator creates a new commandValidator.
-func NewCommandValidator(sm domain.Manager, interactor domain.UserInteractor) domain.ICommandValidator {
+func NewCommandValidator(sm domain.Manager, interactor domain.UserInteractor) domain.CommandValidator {
 	var safety *domain.SafetyService
 	if sm != nil {
 		if ism, ok := sm.(internalSecurityProvider); ok {

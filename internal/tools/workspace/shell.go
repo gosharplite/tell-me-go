@@ -14,12 +14,12 @@ import (
 
 type shellTool struct {
 	sm        shellSecurity
-	validator domain_security.ICommandValidator
+	validator domain_security.CommandValidator
 	executor  *processExecutor
 	maxOutput int
 }
 
-func newshellTool(sm shellSecurity, validator domain_security.ICommandValidator) *shellTool {
+func newshellTool(sm shellSecurity, validator domain_security.CommandValidator) *shellTool {
 	return &shellTool{
 		sm:        sm,
 		validator: validator,

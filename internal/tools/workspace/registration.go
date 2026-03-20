@@ -17,7 +17,7 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) error {
+func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem) error {
 	if err := registerFiles(r, sm, fs); err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 	return nil
 }
 
-func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.ICommandValidator) error {
+func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator) error {
 	shell := newshellTool(sm, validator)
 	interaction := newinteractionTool(sm)
 
