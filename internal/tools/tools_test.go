@@ -26,10 +26,10 @@ type mockSessionProvider struct {
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
 	return m.Called().Get(0).(ports.SessionInfo)
 }
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)          { m.Called(info) }
-func (m *mockSessionProvider) Close() error                            { return m.Called().Error(0) }
-func (m *mockSessionProvider) GetTasks() ports.TaskService             { return nil }
-func (m *mockSessionProvider) GetConfig() ports.ConfigService          { return nil }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)         { m.Called(info) }
+func (m *mockSessionProvider) Close() error                           { return m.Called().Error(0) }
+func (m *mockSessionProvider) GetTasks() ports.TaskService            { return nil }
+func (m *mockSessionProvider) GetConfig() ports.ConfigService         { return nil }
 func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadService { return nil }
 
 func TestNewToolRegistry(t *testing.T) {

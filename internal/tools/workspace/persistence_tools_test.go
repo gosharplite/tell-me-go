@@ -122,12 +122,12 @@ type mockSessionProvider struct {
 	listStore  *mockListStore
 }
 
-func (m *mockSessionProvider) GetTasks() ports.TaskService             { return m.tasks }
-func (m *mockSessionProvider) GetConfig() ports.ConfigService          { return m.config }
+func (m *mockSessionProvider) GetTasks() ports.TaskService            { return m.tasks }
+func (m *mockSessionProvider) GetConfig() ports.ConfigService         { return m.config }
 func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadService { return m.scratchpad }
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo              { return m.info }
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)          { m.info = info }
-func (m *mockSessionProvider) Close() error                            { return nil }
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo             { return m.info }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)         { m.info = info }
+func (m *mockSessionProvider) Close() error                           { return nil }
 
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 	kv := &mockKVStore{kv: make(map[string]string)}

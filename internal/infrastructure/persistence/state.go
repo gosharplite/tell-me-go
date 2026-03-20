@@ -22,10 +22,10 @@ type sessionState struct {
 	db         *sql.DB
 }
 
-func (s *sessionState) GetTasks() ports.TaskService             { return s.Tasks }
-func (s *sessionState) GetConfig() ports.ConfigService          { return s.Config }
+func (s *sessionState) GetTasks() ports.TaskService            { return s.Tasks }
+func (s *sessionState) GetConfig() ports.ConfigService         { return s.Config }
 func (s *sessionState) GetScratchpad() ports.ScratchpadService { return s.Scratchpad }
-func (s *sessionState) GetInfo() ports.SessionInfo              { return s.Info }
+func (s *sessionState) GetInfo() ports.SessionInfo             { return s.Info }
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	s.Info = info
