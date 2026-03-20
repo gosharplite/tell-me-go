@@ -318,8 +318,8 @@ func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 	return "Are you absolutely sure? This allows the AI to read/write files in this location in future sessions."
 }
 
-// RegisterPolicy adds security policy management tools to the registry.
-func RegisterPolicy(r tools.IToolRegistry, sm *SecurityManager) error {
+// RegisterPolicyTools adds security policy management tools to the registry.
+func (sm *SecurityManager) RegisterPolicyTools(r tools.IToolRegistry) error {
 	p := newPolicyTool(sm)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{

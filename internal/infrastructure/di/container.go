@@ -30,6 +30,21 @@ import (
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 )
 
+// ConfigurableSecurityManager extends the domain security manager with configuration methods.
+type ConfigurableSecurityManager interface {
+	security.ISecurityManager
+	SetCommandsLogFile(path string)
+	SetSafePathsFile(path string)
+	SetReadOnlyPathsFile(path string)
+	SetBypassFile(path string)
+	LoadSafePaths() error
+	LoadReadOnlyPaths() error
+	LoadBypassState()
+	RegisterSafePath(path string)
+	RegisterReadOnlyPath(path string)
+	RegisterPolicyTools(r tools.IToolRegistry) error
+}
+
 // Container defines the interface for building session dependencies and provides factories.
 type Container interface {
 	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error)
@@ -40,7 +55,7 @@ type Container interface {
 // bootstrapper handles the instantiation and wiring of system components.
 type bootstrapper struct {
 	HomeDir       string
-	SM            security.ISecurityManager
+	SM            ConfigurableSecurityManager
 	Version       string
 	Stdout        io.Writer
 	Stderr        io.Writer
@@ -48,7 +63,7 @@ type bootstrapper struct {
 }
 
 // NewBootstrapper creates a new Container instance.
-func NewBootstrapper(homeDir string, sm security.ISecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error)) Container {
+func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error)) Container {
 	if clientFactory == nil {
 		clientFactory = infra_llm.NewClient
 	}
@@ -74,6 +89,9 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	if newSession {
 		b.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
+
+	// Initialize commands log after session rotation to avoid file locks on Windows.
+	b.SM.SetCommandsLogFile(paths.CommandsLogPath)
 
 	hManager, err := b.buildHistoryManager(ctx, paths)
 	if err != nil {
@@ -142,10 +160,8 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	if err := telemetry.RegisterMetrics(reg, b.SM, params.LogFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
 		return nil, fmt.Errorf("error registering metrics tools: %w", err)
 	}
-	if ism, ok := b.SM.(*internal_security.SecurityManager); ok {
-		if err := internal_security.RegisterPolicy(reg, ism); err != nil {
-			return nil, fmt.Errorf("error registering policy tools: %w", err)
-		}
+	if err := b.SM.RegisterPolicyTools(reg); err != nil {
+		return nil, fmt.Errorf("error registering policy tools: %w", err)
 	}
 	return reg, nil
 }
@@ -258,21 +274,18 @@ func (b *bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 
 // setupSecurity configures the security manager with necessary paths and bypass states.
 func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) {
-	if sm, ok := b.SM.(*internal_security.SecurityManager); ok {
-		sm.SetSafePathsFile(paths.SafePathsPath)
-		sm.SetReadOnlyPathsFile(paths.ReadPathsPath)
-		sm.SetBypassFile(paths.BypassPath)
-		sm.SetCommandsLogFile(paths.CommandsLogPath)
-		if err := sm.LoadSafePaths(); err != nil {
-			_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to load safe paths: %v\n", err)
-		}
-		if err := sm.LoadReadOnlyPaths(); err != nil {
-			_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
-		}
-		sm.LoadBypassState()
-		sm.RegisterSafePath(filepath.Join(b.HomeDir, "output"))
-		sm.RegisterReadOnlyPath(configPath)
+	b.SM.SetSafePathsFile(paths.SafePathsPath)
+	b.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
+	b.SM.SetBypassFile(paths.BypassPath)
+	if err := b.SM.LoadSafePaths(); err != nil {
+		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to load safe paths: %v\n", err)
 	}
+	if err := b.SM.LoadReadOnlyPaths(); err != nil {
+		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
+	}
+	b.SM.LoadBypassState()
+	b.SM.RegisterSafePath(filepath.Join(b.HomeDir, "output"))
+	b.SM.RegisterReadOnlyPath(configPath)
 }
 
 // handleNewSession manages session rotation and cost recording for new sessions.
