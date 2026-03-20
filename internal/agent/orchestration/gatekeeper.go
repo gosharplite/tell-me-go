@@ -15,11 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-var (
-	// errInvalidPayload is returned when the history content is malformed or invalid.
-	errInvalidPayload = errors.New("invalid payload history")
-)
-
+// tokenEstimator interface defines the method for estimating tokens.
 type tokenEstimator interface {
 	estimateTokens(contents []*llm.Content) int
 }
@@ -106,7 +102,7 @@ func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 	n, err := t.autoSummarize(ctx, req)
 	if err != nil {
 		// Propagate critical errors, but continue if blocked
-		if errors.Is(err, errInvalidPayload) {
+		if errors.Is(err, ErrInvalidPayload) {
 			return tokens, err
 		}
 		if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {

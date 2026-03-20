@@ -417,7 +417,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 		cm := NewContextManager(strategy, history, nil, nil)
 		_, _, err := cm.Prepare(context.Background(), 1)
 		require.Error(t, err)
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 		require.Contains(t, err.Error(), "nil message at index 1")
 	})
 
@@ -430,7 +430,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 		cm := NewContextManager(strategy, history, nil, nil)
 		_, _, err := cm.Prepare(context.Background(), 1)
 		require.Error(t, err)
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 		require.Contains(t, err.Error(), "invalid content at index 0")
 	})
 }

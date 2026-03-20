@@ -739,7 +739,7 @@ func TestIsTurnEmpty_Helper(t *testing.T) {
 			got, err := isTurnEmpty(tt.turn)
 			if tt.wantErr {
 				require.Error(t, err)
-				require.ErrorIs(t, err, errInvalidPayload)
+				require.ErrorIs(t, err, ErrInvalidPayload)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.expected, got)
@@ -787,7 +787,7 @@ func TestIsToolCall_Helper(t *testing.T) {
 			got, err := isToolCall(tt.msg)
 			if tt.wantErr {
 				require.Error(t, err)
-				require.ErrorIs(t, err, errInvalidPayload)
+				require.ErrorIs(t, err, ErrInvalidPayload)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.expected, got)
@@ -1304,10 +1304,81 @@ func TestContextPipeline_NilSafety(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err, "expected error for malformed payload")
-				require.ErrorIs(t, err, errInvalidPayload, "expected errInvalidPayload sentinel")
+				require.ErrorIs(t, err, ErrInvalidPayload, "expected ErrInvalidPayload sentinel")
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestContent_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       *llm.Content
+		wantErr     bool
+		expectedErr error
+	}{
+		{
+			name: "valid content",
+			input: &llm.Content{
+				Role:  "user",
+				Parts: []*llm.Part{{Text: "hello"}},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "nil payload",
+			input:       nil,
+			wantErr:     true,
+			expectedErr: ErrInvalidPayload,
+		},
+		{
+			name: "empty parts",
+			input: &llm.Content{
+				Role:  "user",
+				Parts: []*llm.Part{},
+			},
+			wantErr:     true,
+			expectedErr: ErrMissingParts,
+		},
+		{
+			name: "nil part in parts",
+			input: &llm.Content{
+				Role:  "user",
+				Parts: []*llm.Part{nil},
+			},
+			wantErr:     true,
+			expectedErr: ErrInvalidPayload,
+		},
+		{
+			name: "valid with transient parts",
+			input: &llm.Content{
+				Role:           "user",
+				TransientParts: []*llm.Part{{Text: "transient"}},
+			},
+			wantErr: false,
+		},
+		{
+			name: "nil transient part",
+			input: &llm.Content{
+				Role:           "user",
+				TransientParts: []*llm.Part{nil},
+			},
+			wantErr:     true,
+			expectedErr: ErrInvalidPayload,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, tt.expectedErr)
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }
@@ -1322,52 +1393,58 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 		wantErr     error
 	}{
 		{
+			name:        "groupTurns with nil history",
+			transformer: nil, // special case
+			history:     nil,
+			wantErr:     ErrInvalidPayload,
+		},
+		{
 			name:        "groupTurns with nil message",
-			transformer: nil, // special case, call function directly
+			transformer: nil,
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "thoughtSignaturePropagator with nil message",
 			transformer: &thoughtSignaturePropagator{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "contentCleaner with nil message",
 			transformer: &contentCleaner{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "toolResponseCleaner with nil message",
 			transformer: &toolResponseCleaner{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "emptyTurnFilter with nil message",
 			transformer: &emptyTurnFilter{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "historyRepairer with nil message at end",
 			transformer: &historyRepairer{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "transientMerger with nil message",
 			transformer: &transientMerger{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "emptyMessagePruner with nil message",
 			transformer: &emptyMessagePruner{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 	}
 
@@ -1385,22 +1462,98 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 		})
 	}
 
-	t.Run("cleanToolParts with nil part", func(t *testing.T) {
-		msg := &llm.Content{Parts: []*llm.Part{nil}}
-		_, err := cleanToolParts(msg)
-		require.ErrorIs(t, err, errInvalidPayload)
+	t.Run("cleanToolParts boundary cases", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			input   *llm.Content
+			wantErr error
+		}{
+			{"nil content", nil, ErrInvalidPayload},
+			{"nil part", &llm.Content{Parts: []*llm.Part{nil}}, ErrInvalidPayload},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := cleanToolParts(tt.input)
+				require.ErrorIs(t, err, tt.wantErr)
+			})
+		}
 	})
 
-	t.Run("cleanContent with nil part", func(t *testing.T) {
-		msg := &llm.Content{Parts: []*llm.Part{nil}}
-		_, err := cleanContent(msg)
-		require.ErrorIs(t, err, errInvalidPayload)
+	t.Run("propagateSignatureToMessage boundary cases", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			input   *llm.Content
+			wantErr error
+		}{
+			{"nil content", nil, ErrInvalidPayload},
+			{"nil part first pass", &llm.Content{Role: "model", Parts: []*llm.Part{nil}}, ErrInvalidPayload},
+			{"nil part second pass", &llm.Content{Role: "model", Parts: []*llm.Part{{ThoughtSignature: []byte("sig")}, nil}}, ErrInvalidPayload},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := propagateSignatureToMessage(tt.input)
+				require.ErrorIs(t, err, tt.wantErr)
+			})
+		}
 	})
 
-	t.Run("propagateSignatureToMessage with nil part", func(t *testing.T) {
-		msg := &llm.Content{Role: "model", Parts: []*llm.Part{nil}}
-		_, err := propagateSignatureToMessage(msg)
-		require.ErrorIs(t, err, errInvalidPayload)
+	t.Run("isTurnBoundary boundary cases", func(t *testing.T) {
+		// Test last == nil in current turn
+		_, err := isTurnBoundary(&llm.Content{Role: "user"}, []*llm.Content{nil})
+		require.ErrorIs(t, err, ErrInvalidPayload)
+
+		// Test isToolCall returning error
+		_, err = isTurnBoundary(&llm.Content{Role: "user"}, []*llm.Content{{Role: "model", Parts: []*llm.Part{nil}}})
+		require.ErrorIs(t, err, ErrInvalidPayload)
+	})
+
+	t.Run("transformer error propagation", func(t *testing.T) {
+		ctx := context.Background()
+		// emptyTurnFilter error from isTurnEmpty (nil part in message, not last turn)
+		etf := &emptyTurnFilter{}
+		err := etf.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{nil}},
+			{Role: "user"},
+		}})
+		require.ErrorIs(t, err, ErrInvalidPayload)
+
+		// groupTurns error from validateTurnContent (empty role)
+		_, err = groupTurns(ctx, []*llm.Content{{Role: ""}})
+		require.ErrorIs(t, err, ErrInvalidPayload)
+
+		// groupTurns error from validateTurnContent (context cancelled)
+		cancelledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err = groupTurns(cancelledCtx, []*llm.Content{{Role: "user"}})
+		require.ErrorIs(t, err, context.Canceled)
+
+		// groupTurns error from isTurnBoundary (via isToolCall failing on nil part)
+		_, err = groupTurns(ctx, []*llm.Content{
+			{Role: "model", Parts: []*llm.Part{nil}},
+			{Role: "user"},
+		})
+		require.ErrorIs(t, err, ErrInvalidPayload)
+
+		// historyRepairer error from nil part
+		hr := &historyRepairer{}
+		err = hr.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+			{Role: "model", Parts: []*llm.Part{nil}},
+		}})
+		require.ErrorIs(t, err, ErrInvalidPayload)
+
+		// contentCleaner error from cleanContent
+		cc := &contentCleaner{}
+		err = cc.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{nil}},
+		}})
+		require.ErrorIs(t, err, ErrInvalidPayload)
+
+		// thoughtSignaturePropagator error from propagateSignatureToMessage
+		tsp := &thoughtSignaturePropagator{}
+		err = tsp.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+			{Role: "model", Parts: []*llm.Part{nil}},
+		}})
+		require.ErrorIs(t, err, ErrInvalidPayload)
 	})
 }
 
@@ -1472,7 +1625,7 @@ func TestTransientMerger_Transform(t *testing.T) {
 func TestCleanContent_NilSafety(t *testing.T) {
 	t.Run("nil content", func(t *testing.T) {
 		_, err := cleanContent(nil)
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 	})
 
 	t.Run("nil part in content", func(t *testing.T) {
@@ -1481,7 +1634,7 @@ func TestCleanContent_NilSafety(t *testing.T) {
 			Parts: []*llm.Part{{Text: "valid"}, nil},
 		}
 		_, err := cleanContent(msg)
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 		require.Contains(t, err.Error(), "nil part at index 1")
 	})
 }
@@ -1724,7 +1877,7 @@ func TestCleanContent_Table(t *testing.T) {
 				nil,
 			},
 			wantChanged: false,
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 	}
 
