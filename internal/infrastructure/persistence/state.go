@@ -15,14 +15,14 @@ import (
 
 // sessionState manages all persistent services and session metadata.
 type sessionState struct {
-	Tasks      *services.TaskService
+	Tasks      ports.TaskService
 	Config     *services.ConfigService
 	Scratchpad *services.ScratchpadService
 	Info       ports.SessionInfo
 	db         *sql.DB
 }
 
-func (s *sessionState) GetTasks() ports.ITaskService            { return s.Tasks }
+func (s *sessionState) GetTasks() ports.TaskService             { return s.Tasks }
 func (s *sessionState) GetConfig() ports.IConfigService         { return s.Config }
 func (s *sessionState) GetScratchpad() ports.IScratchpadService { return s.Scratchpad }
 func (s *sessionState) GetInfo() ports.SessionInfo              { return s.Info }
@@ -110,7 +110,7 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 		paths, nil
 }
 
-func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], configStore, scratchStore ports.KVStore) (*services.TaskService, *services.ConfigService, *services.ScratchpadService, error) {
+func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], configStore, scratchStore ports.KVStore) (ports.TaskService, *services.ConfigService, *services.ScratchpadService, error) {
 	tasks := services.NewTaskService(taskStore)
 	config := services.NewConfigService(configStore)
 	scratch := services.NewScratchpadService(scratchStore)
