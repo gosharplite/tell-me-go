@@ -17,14 +17,14 @@ import (
 type sessionState struct {
 	Tasks      ports.TaskService
 	Config     ports.ConfigService
-	Scratchpad *services.ScratchpadService
+	Scratchpad ports.ScratchpadService
 	Info       ports.SessionInfo
 	db         *sql.DB
 }
 
 func (s *sessionState) GetTasks() ports.TaskService             { return s.Tasks }
 func (s *sessionState) GetConfig() ports.ConfigService          { return s.Config }
-func (s *sessionState) GetScratchpad() ports.IScratchpadService { return s.Scratchpad }
+func (s *sessionState) GetScratchpad() ports.ScratchpadService { return s.Scratchpad }
 func (s *sessionState) GetInfo() ports.SessionInfo              { return s.Info }
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
@@ -110,7 +110,7 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 		paths, nil
 }
 
-func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], configStore, scratchStore ports.KVStore) (ports.TaskService, ports.ConfigService, *services.ScratchpadService, error) {
+func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], configStore, scratchStore ports.KVStore) (ports.TaskService, ports.ConfigService, ports.ScratchpadService, error) {
 	tasks := services.NewTaskService(taskStore)
 	config := services.NewConfigService(configStore)
 	scratch := services.NewScratchpadService(scratchStore)

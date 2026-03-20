@@ -100,8 +100,8 @@ type ScratchpadWriter interface {
 	Clear(ctx context.Context) error
 }
 
-// IScratchpadService defines the interface for scratchpad management.
-type IScratchpadService interface {
+// ScratchpadService defines the interface for scratchpad management.
+type ScratchpadService interface {
 	ScratchpadReader
 	ScratchpadWriter
 	Initialize(ctx context.Context) error
@@ -111,7 +111,7 @@ type IScratchpadService interface {
 type PersistenceProvider interface {
 	GetTasks() TaskService
 	GetConfig() ConfigService
-	GetScratchpad() IScratchpadService
+	GetScratchpad() ScratchpadService
 }
 
 // SessionStateProvider manages session-level metadata and state.

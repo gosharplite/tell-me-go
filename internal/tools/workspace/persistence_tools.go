@@ -17,7 +17,7 @@ import (
 // persistenceTools provides tool wrappers for persistence services.
 type persistenceTools struct {
 	tasks      ports.TaskService
-	scratchpad ports.IScratchpadService
+	scratchpad ports.ScratchpadService
 	config     ports.ConfigService
 	state      ports.ISessionProvider
 }

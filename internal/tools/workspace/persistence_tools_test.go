@@ -116,7 +116,7 @@ func (m *mockListStore) DeleteAll(ctx context.Context) error {
 type mockSessionProvider struct {
 	tasks      ports.TaskService
 	config     ports.ConfigService
-	scratchpad *services.ScratchpadService
+	scratchpad ports.ScratchpadService
 	info       ports.SessionInfo
 	kvStore    *mockKVStore
 	listStore  *mockListStore
@@ -124,7 +124,7 @@ type mockSessionProvider struct {
 
 func (m *mockSessionProvider) GetTasks() ports.TaskService             { return m.tasks }
 func (m *mockSessionProvider) GetConfig() ports.ConfigService          { return m.config }
-func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return m.scratchpad }
+func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadService { return m.scratchpad }
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo              { return m.info }
 func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)          { m.info = info }
 func (m *mockSessionProvider) Close() error                            { return nil }
