@@ -11,7 +11,7 @@ import (
 )
 
 type mockSecurityManager struct {
-	domain_security.ISecurityManager
+	domain_security.Manager
 	allowedCommands map[string]bool
 	allowAll        bool
 }
@@ -26,7 +26,7 @@ func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 func (m *mockSecurityManager) Close() error { return nil }
 
 type mockConsentSecurityManager struct {
-	domain_security.ISecurityManager
+	domain_security.Manager
 	confirmResult bool
 }
 

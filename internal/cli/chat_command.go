@@ -30,7 +30,7 @@ type chatCommand struct {
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
-	SM          domain_security.ISecurityManager
+	SM          domain_security.Manager
 	ChatService agent.ChatService
 	MockPrompt  string
 	MockAnswer  string

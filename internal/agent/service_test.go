@@ -42,7 +42,7 @@ func (m *mockServiceConfigLoader) Watch(ctx context.Context, path string) (<-cha
 	return args.Get(0).(<-chan *config.Config), args.Error(1)
 }
 
-// mockServiceSecurityManager is a mock of ISecurityManager.
+// mockServiceSecurityManager is a mock of Manager.
 type mockServiceSecurityManager struct {
 	mock.Mock
 }
@@ -118,8 +118,8 @@ func (m *mockServiceSessionDependencies) GetHistoryManager() ports.HistoryManage
 	return m.Called().Get(0).(ports.HistoryManager)
 }
 func (m *mockServiceSessionDependencies) GetRegistry() tools.Registry { return nil }
-func (m *mockServiceSessionDependencies) GetSecurityManager() security.ISecurityManager {
-	return m.Called().Get(0).(security.ISecurityManager)
+func (m *mockServiceSessionDependencies) GetSecurityManager() security.Manager {
+	return m.Called().Get(0).(security.Manager)
 }
 func (m *mockServiceSessionDependencies) GetEventBus() events.EventBus {
 	return m.Called().Get(0).(events.EventBus)

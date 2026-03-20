@@ -20,7 +20,7 @@ import (
 )
 
 type deadCodeSecurityProvider struct {
-	domain_security.ISecurityManager
+	domain_security.Manager
 	tempDir string
 }
 

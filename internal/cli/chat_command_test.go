@@ -25,7 +25,7 @@ func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOpti
 }
 
 type mockSM struct {
-	domain_security.ISecurityManager
+	domain_security.Manager
 }
 
 func (m *mockSM) SetInteractor(interactor domain_security.UserInteractor) {}

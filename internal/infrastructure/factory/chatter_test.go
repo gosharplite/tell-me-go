@@ -22,7 +22,7 @@ type mockSessionDeps struct {
 	gw       llm.LLMGateway
 	hManager ports.HistoryManager
 	reg      tools.Registry
-	sm       security.ISecurityManager
+	sm       security.Manager
 	bus      events.EventBus
 	paths    *persistence.Paths
 	tracker  pricing.CostTracker
@@ -31,7 +31,7 @@ type mockSessionDeps struct {
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
 func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
 func (d *mockSessionDeps) GetRegistry() tools.Registry                          { return d.reg }
-func (d *mockSessionDeps) GetSecurityManager() security.ISecurityManager        { return d.sm }
+func (d *mockSessionDeps) GetSecurityManager() security.Manager                 { return d.sm }
 func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
 func (d *mockSessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
 func (d *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
@@ -79,7 +79,7 @@ func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 type mockSecurityManager struct {
-	security.ISecurityManager
+	security.Manager
 }
 
 func (m *mockSecurityManager) Close() error { return nil }

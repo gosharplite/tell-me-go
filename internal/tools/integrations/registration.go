@@ -12,7 +12,7 @@ import (
 )
 
 // RegisterAll registers all external integration tools.
-func RegisterAll(r tools.Registry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) error {
+func RegisterAll(r tools.Registry, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
 	// Register Media Tools
 	if err := registerMedia(r, sm, client, assetsDir); err != nil {
 		return err
@@ -47,7 +47,7 @@ func RegisterAll(r tools.Registry, sm domain_security.ISecurityManager, client l
 	return nil
 }
 
-func registerMedia(r tools.Registry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) error {
+func registerMedia(r tools.Registry, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
 	m := &mediaManager{sm: sm, client: client, assetsDir: assetsDir}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -146,7 +146,7 @@ func registerNetwork(r tools.Registry, net *networkTool) error {
 	return nil
 }
 
-func registerTeams(r tools.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) error {
+func registerTeams(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
 	m := newteamsManager(sm, client)
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "send_teams_message",
@@ -176,7 +176,7 @@ func registerTeams(r tools.Registry, sm domain_security.ISecurityManager, client
 	return nil
 }
 
-func registerConfluence(r tools.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) error {
+func registerConfluence(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
 	m := newconfluenceManager(sm, client)
 
 	if err := r.Register(&tools.ToolDeclaration{
@@ -252,7 +252,7 @@ func registerConfluence(r tools.Registry, sm domain_security.ISecurityManager, c
 	return nil
 }
 
-func registerJira(r tools.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) error {
+func registerJira(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
 	m := newjiraManager(sm, client)
 
 	if err := r.Register(&tools.ToolDeclaration{
@@ -295,7 +295,7 @@ func registerJira(r tools.Registry, sm domain_security.ISecurityManager, client 
 	return nil
 }
 
-func registerAzureDevOps(r tools.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) error {
+func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
 	var opts []adoOption
 	if client != nil {
 		opts = append(opts, withHTTPClient(client))

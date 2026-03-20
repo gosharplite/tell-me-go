@@ -38,7 +38,7 @@ type PolicyEvaluator interface {
 	IsBypassActive() bool
 }
 
-type ISecurityManager interface {
+type Manager interface {
 	PathValidator
 	ActionConfirmer
 	Auditor

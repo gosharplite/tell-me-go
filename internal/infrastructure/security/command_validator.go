@@ -14,13 +14,13 @@ import (
 
 // commandValidator handles command validation and security checks.
 type commandValidator struct {
-	sm         domain.ISecurityManager
+	sm         domain.Manager
 	safety     *domain.SafetyService
 	interactor domain.UserInteractor
 }
 
 // NewCommandValidator creates a new commandValidator.
-func NewCommandValidator(sm domain.ISecurityManager, interactor domain.UserInteractor) domain.ICommandValidator {
+func NewCommandValidator(sm domain.Manager, interactor domain.UserInteractor) domain.ICommandValidator {
 	var safety *domain.SafetyService
 	if sm != nil {
 		if ism, ok := sm.(internalSecurityProvider); ok {

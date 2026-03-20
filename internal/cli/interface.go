@@ -18,7 +18,7 @@ type context struct {
 	Stdout      io.Writer
 	Stderr      io.Writer
 	HomeDir     string
-	SM          domain_security.ISecurityManager
+	SM          domain_security.Manager
 	ChatService agent.ChatService
 	MockPrompt  string
 	MockAnswer  string

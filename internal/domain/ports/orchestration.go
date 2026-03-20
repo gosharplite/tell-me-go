@@ -94,7 +94,7 @@ type PersistenceDependencyProvider interface {
 // InfrastructureDependencyProvider provides access to cross-cutting infrastructure.
 type InfrastructureDependencyProvider interface {
 	GetRegistry() tools.Registry
-	GetSecurityManager() security.ISecurityManager
+	GetSecurityManager() security.Manager
 	GetEventBus() events.EventBus
 }
 

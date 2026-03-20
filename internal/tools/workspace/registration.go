@@ -17,7 +17,7 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r tools.Registry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) error {
+func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) error {
 	if err := registerFiles(r, sm, fs); err != nil {
 		return err
 	}
@@ -30,7 +30,7 @@ func Register(r tools.Registry, sm domain_security.ISecurityManager, exec tools.
 	return nil
 }
 
-func registerFiles(r tools.Registry, sm domain_security.ISecurityManager, fs persistence.FileSystem) error {
+func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.FileSystem) error {
 	bm := newBackupManager(sm, fs, 10)
 	m := &fileSystemManager{
 		reader: &fileReader{sm: sm, fs: fs},
@@ -233,7 +233,7 @@ func registerFiles(r tools.Registry, sm domain_security.ISecurityManager, fs per
 	return nil
 }
 
-func registerSystem(r tools.Registry, sm domain_security.ISecurityManager, validator domain_security.ICommandValidator) error {
+func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.ICommandValidator) error {
 	shell := newshellTool(sm, validator)
 	interaction := newinteractionTool(sm)
 
@@ -319,7 +319,7 @@ func registerSystem(r tools.Registry, sm domain_security.ISecurityManager, valid
 	return nil
 }
 
-func registerGit(r tools.Registry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) error {
+func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor) error {
 	m := &gitManager{sm: sm, Exec: exec}
 
 	if err := r.Register(&tools.ToolDeclaration{

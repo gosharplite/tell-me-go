@@ -68,7 +68,7 @@ func withZombieTimeout(timeout time.Duration) executorOption {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.Registry, sm domain_security.ISecurityManager, bus events.EventBus, logger ports.Logger, observer domaintools.ExecutionObserver, opts ...executorOption) (*ToolExecutor, error) {
+func NewToolExecutor(registry domaintools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer domaintools.ExecutionObserver, opts ...executorOption) (*ToolExecutor, error) {
 	if registry == nil {
 		return nil, errors.New("registry is required")
 	}

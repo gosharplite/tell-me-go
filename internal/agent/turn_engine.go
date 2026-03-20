@@ -180,7 +180,7 @@ type turnEngine struct {
 	hooks            []turnHook
 	retryPolicy      retryPolicy
 	clock            clock.Clock
-	sm               domain_security.ISecurityManager
+	sm               domain_security.Manager
 	providerName     string
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
@@ -205,7 +205,7 @@ func withCostTracker(tracker domain_pricing.CostTracker) engineOption {
 }
 
 // withConfig sets the security and usage configuration for the engine.
-func withConfig(sm domain_security.ISecurityManager, providerName, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
+func withConfig(sm domain_security.Manager, providerName, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
 	return func(e *turnEngine) {
 		e.sm = sm
 		e.providerName = providerName

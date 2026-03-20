@@ -11,7 +11,7 @@ import (
 )
 
 // Register adds all consolidated analysis tools to the registry.
-func Register(r tools.Registry, sm domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) error {
+func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) error {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	m := newAnalysisManager(idx, cache, sm, bus, executor, fs)

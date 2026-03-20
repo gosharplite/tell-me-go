@@ -32,7 +32,7 @@ import (
 
 // ConfigurableSecurityManager extends the domain security manager with configuration methods.
 type ConfigurableSecurityManager interface {
-	security.ISecurityManager
+	security.Manager
 	SetCommandsLogFile(path string)
 	SetSafePathsFile(path string)
 	SetReadOnlyPathsFile(path string)
@@ -61,7 +61,7 @@ type bootstrapper struct {
 	Stderr           io.Writer
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
-	RegisterMetrics  func(r tools.Registry, sm security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
+	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
 	RotateSession    func(stdout io.Writer, paths persistence.Paths, retentionDays int) error
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.ISessionProvider, error)
 }
@@ -236,19 +236,19 @@ type sessionDeps struct {
 	client           llm.LLMClient
 	gw               llm.LLMGateway
 	reg              tools.Registry
-	sm               security.ISecurityManager
+	sm               security.Manager
 	tracker          pricing.CostTracker
 	pricingData      pricing.PricingData
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
 }
 
-func (d *sessionDeps) GetGateway() llm.LLMGateway                    { return d.gw }
-func (d *sessionDeps) GetHistoryManager() ports.HistoryManager       { return d.hManager }
-func (d *sessionDeps) GetRegistry() tools.Registry                   { return d.reg }
-func (d *sessionDeps) GetSecurityManager() security.ISecurityManager { return d.sm }
-func (d *sessionDeps) GetEventBus() events.EventBus                  { return d.bus }
-func (d *sessionDeps) GetPaths() *persistence.Paths                  { return d.paths }
+func (d *sessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
+func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
+func (d *sessionDeps) GetRegistry() tools.Registry             { return d.reg }
+func (d *sessionDeps) GetSecurityManager() security.Manager    { return d.sm }
+func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
+func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
 func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides
 }

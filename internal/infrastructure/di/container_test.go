@@ -474,7 +474,7 @@ type mockSessionDeps struct {
 	gw       llm.LLMGateway
 	hManager ports.HistoryManager
 	reg      tools.Registry
-	sm       security.ISecurityManager
+	sm       security.Manager
 	bus      events.EventBus
 	tracker  pricing.CostTracker
 	paths    *persistence.Paths
@@ -491,7 +491,7 @@ func (m *mockSessionDeps) GetPricingData() pricing.PricingData     { return pric
 func (m *mockSessionDeps) GetGateway() llm.LLMGateway              { return m.gw }
 func (m *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return m.hManager }
 func (m *mockSessionDeps) GetRegistry() tools.Registry             { return m.reg }
-func (m *mockSessionDeps) GetSecurityManager() security.ISecurityManager {
+func (m *mockSessionDeps) GetSecurityManager() security.Manager {
 	return m.sm
 }
 func (m *mockSessionDeps) GetEventBus() events.EventBus { return m.bus }
@@ -630,7 +630,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "TelemetryRegistrationFails",
 			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RegisterMetrics = func(r tools.Registry, sm security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
+				b.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
 					return simulatedErr
 				}
 			},

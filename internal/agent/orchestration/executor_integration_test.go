@@ -86,9 +86,9 @@ func (m *integrationToolRegistry) IsLongRunning(name string) bool {
 	return m.longRunning[name]
 }
 
-// integrationSecurityManager implements security.ISecurityManager with all-allow defaults.
+// integrationSecurityManager implements security.Manager with all-allow defaults.
 type integrationSecurityManager struct {
-	security.ISecurityManager
+	security.Manager
 }
 
 func (s *integrationSecurityManager) IsPathSafe(path string) (string, error)     { return path, nil }
