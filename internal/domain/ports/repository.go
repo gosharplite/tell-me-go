@@ -81,8 +81,8 @@ type ConfigWriter interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// IConfigService defines the interface for configuration management.
-type IConfigService interface {
+// ConfigService defines the interface for configuration management.
+type ConfigService interface {
 	ConfigReader
 	ConfigWriter
 	Initialize(ctx context.Context) error
@@ -110,7 +110,7 @@ type IScratchpadService interface {
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
 	GetTasks() TaskService
-	GetConfig() IConfigService
+	GetConfig() ConfigService
 	GetScratchpad() IScratchpadService
 }
 

@@ -29,7 +29,7 @@ func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
 func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)          { m.Called(info) }
 func (m *mockSessionProvider) Close() error                            { return m.Called().Error(0) }
 func (m *mockSessionProvider) GetTasks() ports.TaskService             { return nil }
-func (m *mockSessionProvider) GetConfig() ports.IConfigService         { return nil }
+func (m *mockSessionProvider) GetConfig() ports.ConfigService          { return nil }
 func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return nil }
 
 func TestNewToolRegistry(t *testing.T) {
