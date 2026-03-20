@@ -93,19 +93,8 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 	var current []*llm.Content
 
 	for i, msg := range history {
-		if msg == nil {
-			return nil, fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
-		}
-		if i%100 == 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			default:
-			}
-		}
-
-		if msg.Role == "" {
-			return nil, fmt.Errorf("%w: empty role at index %d", errInvalidPayload, i)
+		if err := validateTurnContent(ctx, msg, i); err != nil {
+			return nil, err
 		}
 
 		boundary, err := isTurnBoundary(msg, current)
@@ -123,6 +112,23 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 		turns = append(turns, current)
 	}
 	return turns, nil
+}
+
+func validateTurnContent(ctx context.Context, msg *llm.Content, index int) error {
+	if msg == nil {
+		return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, index)
+	}
+	if index%100 == 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+	}
+	if msg.Role == "" {
+		return fmt.Errorf("%w: empty role at index %d", errInvalidPayload, index)
+	}
+	return nil
 }
 
 func isTurnBoundary(msg *llm.Content, current []*llm.Content) (bool, error) {
@@ -278,23 +284,24 @@ func cleanContent(content *llm.Content) (bool, error) {
 	}
 
 	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
+	content.Parts = rebuildCleanParts(content)
+	return true, nil
+}
+
+func rebuildCleanParts(content *llm.Content) []*llm.Part {
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
-	for i, p := range content.Parts {
-		if p == nil {
-			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
-		}
+	for _, p := range content.Parts {
+		// Nil checks were already performed in the first pass in cleanContent
 		if !p.IsEmpty() {
 			cleanParts = append(cleanParts, p)
 		}
 	}
 
-	// 4. Fallback if everything was empty
+	// Fallback if everything was empty
 	if len(cleanParts) == 0 {
 		cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
 	}
-
-	content.Parts = cleanParts
-	return true, nil
+	return cleanParts
 }
 
 func (t *contentCleaner) Priority() int { return 5 }

@@ -140,15 +140,9 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	}
 
 	// [FAIL-FAST] Boundary Validation: Validate history before passing to pipeline
-	for i, msg := range history {
-		if msg == nil {
-			cm.mu.RUnlock()
-			return nil, nil, fmt.Errorf("%w: nil message at index %d in loaded history", errInvalidPayload, i)
-		}
-		if err := msg.ValidateStructure(); err != nil {
-			cm.mu.RUnlock()
-			return nil, nil, fmt.Errorf("%w: invalid content at index %d: %w", errInvalidPayload, i, err)
-		}
+	if err := validateHistoryBoundaries(history); err != nil {
+		cm.mu.RUnlock()
+		return nil, nil, err
 	}
 
 	pipeline := cm.Pipeline
@@ -166,24 +160,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	}
 
 	// 3. Execute Pipeline
-	// We execute the pipeline to prepare the Read-Model (context window).
-	// We DO NOT persist the pruned/transformed history back to the store,
-	// preserving the user's full Event Sourced history safely on disk.
-	var persisted bool
-	err = pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
-		cm.mu.Lock()
-		defer cm.mu.Unlock()
-
-		// Safety: ensure history hasn't changed (e.g., via AddContent)
-		// while the slow LLM summarization was running.
-		if cm.version != snapshotVersion {
-			return fmt.Errorf("%w: concurrent history modification detected during context preparation", llm.ErrTransient)
-		}
-
-		cm.version++
-		persisted = true
-		return cm.History.SetContents(ctx, h)
-	})
+	persisted, err := cm.executePipeline(ctx, pipeline, req, snapshotVersion)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -198,6 +175,40 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	}
 
 	return req.History, &req.Metadata, nil
+}
+
+func validateHistoryBoundaries(history []*llm.Content) error {
+	for i, msg := range history {
+		if msg == nil {
+			return fmt.Errorf("%w: nil message at index %d in loaded history", errInvalidPayload, i)
+		}
+		if err := msg.ValidateStructure(); err != nil {
+			return fmt.Errorf("%w: invalid content at index %d: %w", errInvalidPayload, i, err)
+		}
+	}
+	return nil
+}
+
+func (cm *ContextManager) executePipeline(ctx context.Context, pipeline *ContextPipeline, req *request, snapshotVersion int) (bool, error) {
+	// We execute the pipeline to prepare the Read-Model (context window).
+	// We DO NOT persist the pruned/transformed history back to the store,
+	// preserving the user's full Event Sourced history safely on disk.
+	var persisted bool
+	err := pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
+		cm.mu.Lock()
+		defer cm.mu.Unlock()
+
+		// Safety: ensure history hasn't changed (e.g., via AddContent)
+		// while the slow LLM summarization was running.
+		if cm.version != snapshotVersion {
+			return fmt.Errorf("%w: concurrent history modification detected during context preparation", llm.ErrTransient)
+		}
+
+		cm.version++
+		persisted = true
+		return cm.History.SetContents(ctx, h)
+	})
+	return persisted, err
 }
 
 // AddContent appends content to the history in a thread-safe manner, validating role alternation.
