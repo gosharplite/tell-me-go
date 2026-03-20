@@ -63,10 +63,10 @@ type mockConfigurableSecurityManager struct {
 
 func (m *mockConfigurableSecurityManager) RegisterSafePath(path string)     { m.Called(path) }
 func (m *mockConfigurableSecurityManager) RegisterReadOnlyPath(path string) { m.Called(path) }
-func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string)  { m.Called(path) }
+func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string)   { m.Called(path) }
 func (m *mockConfigurableSecurityManager) SetSafePathsFile(path string)     { m.Called(path) }
 func (m *mockConfigurableSecurityManager) SetReadOnlyPathsFile(path string) { m.Called(path) }
-func (m *mockConfigurableSecurityManager) SetBypassFile(path string)         { m.Called(path) }
+func (m *mockConfigurableSecurityManager) SetBypassFile(path string)        { m.Called(path) }
 func (m *mockConfigurableSecurityManager) LoadBypassState()                 { m.Called() }
 func (m *mockConfigurableSecurityManager) LoadSafePaths() error {
 	args := m.Called()
@@ -93,11 +93,11 @@ func (m *mockConfigurableSecurityManager) Authorize(ctx context.Context, label, 
 	return true, nil
 }
 func (m *mockConfigurableSecurityManager) LogAudit(action string, args ...any) {}
-func (m *mockConfigurableSecurityManager) Close() error                         { return nil }
-func (m *mockConfigurableSecurityManager) TerminalLock()                        {}
-func (m *mockConfigurableSecurityManager) TerminalUnlock()                      {}
-func (m *mockConfigurableSecurityManager) Prompt(message string)                {}
-func (m *mockConfigurableSecurityManager) Warn(message string)                  {}
+func (m *mockConfigurableSecurityManager) Close() error                        { return nil }
+func (m *mockConfigurableSecurityManager) TerminalLock()                       {}
+func (m *mockConfigurableSecurityManager) TerminalUnlock()                     {}
+func (m *mockConfigurableSecurityManager) Prompt(message string)               {}
+func (m *mockConfigurableSecurityManager) Warn(message string)                 {}
 func (m *mockConfigurableSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
 	return true, nil
 }
@@ -407,7 +407,7 @@ func TestFinalizeSession(t *testing.T) {
 	assert.Contains(t, err.Error(), "save failed")
 
 	// Test with record cost error
-	sm.ExpectedCalls = nil 
+	sm.ExpectedCalls = nil
 	setupDefaultSMExpectations(sm)
 	sm.On("IsPathSafe", mock.Anything).Return("", errors.New("record cost failed"))
 
@@ -586,8 +586,8 @@ type mockSessionProvider struct {
 	mock.Mock
 }
 
-func (m *mockSessionProvider) GetTasks() ports.ITaskService           { return nil }
-func (m *mockSessionProvider) GetConfig() ports.IConfigService        { return nil }
+func (m *mockSessionProvider) GetTasks() ports.ITaskService            { return nil }
+func (m *mockSessionProvider) GetConfig() ports.IConfigService         { return nil }
 func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return nil }
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
 	args := m.Called()
@@ -681,7 +681,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 
 			newSession := (tt.name == "SessionRotationFails")
 			_, _, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
-			
+
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
