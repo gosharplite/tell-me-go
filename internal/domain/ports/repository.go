@@ -81,11 +81,16 @@ type ConfigWriter interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// ConfigReader defines the interface for configuration management.
+// ConfigReader defines the interface for reading configuration.
 type ConfigReader interface {
 	ConfigGetter
-	ConfigWriter
 	Initialize(ctx context.Context) error
+}
+
+// ConfigStore defines the interface for configuration management.
+type ConfigStore interface {
+	ConfigReader
+	ConfigWriter
 }
 
 // ScratchpadReader defines the interface for reading from the scratchpad.
@@ -110,7 +115,7 @@ type ScratchpadService interface {
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
 	GetTasks() TaskStore
-	GetConfig() ConfigReader
+	GetConfig() ConfigStore
 	GetScratchpad() ScratchpadService
 }
 
