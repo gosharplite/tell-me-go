@@ -5,6 +5,8 @@ package llm
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCloneContent(t *testing.T) {
@@ -687,32 +689,17 @@ func TestContent_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.content == nil {
-				tt.content.Validate() // Should not panic
-				return
-			}
 			tt.content.Validate()
 
-			if tt.expectedParts != nil {
-				if len(tt.content.Parts) != len(tt.expectedParts) {
-					t.Fatalf("expected %d parts, got %d", len(tt.expectedParts), len(tt.content.Parts))
-				}
-				for i := range tt.content.Parts {
-					if tt.content.Parts[i].Text != tt.expectedParts[i].Text {
-						t.Errorf("part %d mismatch: got %v, want %v", i, tt.content.Parts[i].Text, tt.expectedParts[i].Text)
-					}
-				}
+			if tt.content == nil {
+				return
 			}
 
+			if tt.expectedParts != nil {
+				assert.Equal(t, tt.expectedParts, tt.content.Parts)
+			}
 			if tt.expectedTransient != nil {
-				if len(tt.content.TransientParts) != len(tt.expectedTransient) {
-					t.Fatalf("expected %d transient parts, got %d", len(tt.expectedTransient), len(tt.content.TransientParts))
-				}
-				for i := range tt.content.TransientParts {
-					if tt.content.TransientParts[i].Text != tt.expectedTransient[i].Text {
-						t.Errorf("transient part %d mismatch: got %v, want %v", i, tt.content.TransientParts[i].Text, tt.expectedTransient[i].Text)
-					}
-				}
+				assert.Equal(t, tt.expectedTransient, tt.content.TransientParts)
 			}
 		})
 	}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -58,10 +59,13 @@ type mockConfigurableSecurityManager struct {
 	mock.Mock
 }
 
-func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string)  {}
-func (m *mockConfigurableSecurityManager) SetSafePathsFile(path string)     {}
-func (m *mockConfigurableSecurityManager) SetReadOnlyPathsFile(path string) {}
-func (m *mockConfigurableSecurityManager) SetBypassFile(path string)         {}
+func (m *mockConfigurableSecurityManager) RegisterSafePath(path string)     { m.Called(path) }
+func (m *mockConfigurableSecurityManager) RegisterReadOnlyPath(path string) { m.Called(path) }
+func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string)  { m.Called(path) }
+func (m *mockConfigurableSecurityManager) SetSafePathsFile(path string)     { m.Called(path) }
+func (m *mockConfigurableSecurityManager) SetReadOnlyPathsFile(path string) { m.Called(path) }
+func (m *mockConfigurableSecurityManager) SetBypassFile(path string)         { m.Called(path) }
+func (m *mockConfigurableSecurityManager) LoadBypassState()                 { m.Called() }
 func (m *mockConfigurableSecurityManager) LoadSafePaths() error {
 	args := m.Called()
 	return args.Error(0)
@@ -70,19 +74,18 @@ func (m *mockConfigurableSecurityManager) LoadReadOnlyPaths() error {
 	args := m.Called()
 	return args.Error(0)
 }
-func (m *mockConfigurableSecurityManager) LoadBypassState()                 {}
-func (m *mockConfigurableSecurityManager) RegisterSafePath(path string)     {}
-func (m *mockConfigurableSecurityManager) RegisterReadOnlyPath(path string) {}
 func (m *mockConfigurableSecurityManager) RegisterPolicyTools(r tools.IToolRegistry) error {
 	args := m.Called(r)
 	return args.Error(0)
 }
 
 func (m *mockConfigurableSecurityManager) IsPathSafe(path string) (string, error) {
-	return path, nil
+	args := m.Called(path)
+	return args.String(0), args.Error(1)
 }
 func (m *mockConfigurableSecurityManager) IsPathWritable(path string) (string, error) {
-	return path, nil
+	args := m.Called(path)
+	return args.String(0), args.Error(1)
 }
 func (m *mockConfigurableSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
@@ -106,6 +109,16 @@ func (m *mockConfigurableSecurityManager) IsBypassActive() bool {
 	return false
 }
 
+func setupDefaultSMExpectations(m *mockConfigurableSecurityManager) {
+	m.On("LoadBypassState").Return().Maybe()
+	m.On("SetSafePathsFile", mock.Anything).Return().Maybe()
+	m.On("SetReadOnlyPathsFile", mock.Anything).Return().Maybe()
+	m.On("SetBypassFile", mock.Anything).Return().Maybe()
+	m.On("SetCommandsLogFile", mock.Anything).Return().Maybe()
+	m.On("RegisterSafePath", mock.Anything).Return().Maybe()
+	m.On("RegisterReadOnlyPath", mock.Anything).Return().Maybe()
+}
+
 func TestBuildSessionDependencies(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test")
@@ -113,9 +126,11 @@ func TestBuildSessionDependencies(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
-	sm.On("LoadSafePaths").Return(nil)
-	sm.On("LoadReadOnlyPaths").Return(nil)
-	sm.On("RegisterPolicyTools", mock.Anything).Return(nil)
+	setupDefaultSMExpectations(sm)
+	sm.On("LoadSafePaths").Return(nil).Maybe()
+	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+	sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
+
 	client := new(mockLLMClient)
 
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
@@ -147,6 +162,7 @@ func TestGetAgentFactory(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil)
 
 	factory := bootstrapper.GetAgentFactory()
@@ -197,8 +213,8 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return home
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(nil)
-				sm.On("LoadReadOnlyPaths").Return(nil)
+				sm.On("LoadSafePaths").Return(nil).Maybe()
+				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 			},
 			wantErr: "error loading history",
 		},
@@ -211,8 +227,8 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return nil, simulatedErr
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(nil)
-				sm.On("LoadReadOnlyPaths").Return(nil)
+				sm.On("LoadSafePaths").Return(nil).Maybe()
+				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 			},
 			targetErr: simulatedErr,
 		},
@@ -227,23 +243,92 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			wantErr:   "failed to load safe paths",
 			targetErr: simulatedErr,
 		},
+		{
+			name: "FailsOnLoadReadOnlyPathsError",
+			setup: func(t *testing.T) string {
+				return filepath.Join(tempDir, "readonly-err-home")
+			},
+			mockSetup: func(sm *mockConfigurableSecurityManager) {
+				sm.On("LoadSafePaths").Return(nil)
+				sm.On("LoadReadOnlyPaths").Return(simulatedErr)
+			},
+			wantErr:   "failed to load read-only paths",
+			targetErr: simulatedErr,
+		},
+		{
+			name: "FailsOnRegisterPolicyToolsError",
+			setup: func(t *testing.T) string {
+				return filepath.Join(tempDir, "policy-err-home")
+			},
+			mockSetup: func(sm *mockConfigurableSecurityManager) {
+				sm.On("LoadSafePaths").Return(nil).Maybe()
+				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+				sm.On("RegisterPolicyTools", mock.Anything).Return(simulatedErr)
+			},
+			wantErr:   "error registering policy tools",
+			targetErr: simulatedErr,
+		},
+		{
+			name: "FailsOnTriggerNewSession_RecordCostError",
+			setup: func(t *testing.T) string {
+				return filepath.Join(tempDir, "newsession-err-home")
+			},
+			mockSetup: func(sm *mockConfigurableSecurityManager) {
+				sm.On("LoadSafePaths").Return(nil).Maybe()
+				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+				sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
+				// RecordSessionCost -> EstimateCost -> IsPathSafe
+				sm.On("IsPathSafe", mock.Anything).Return("", simulatedErr)
+			},
+			targetErr: simulatedErr,
+		},
+		{
+			name: "FailsOnStateInitError",
+			setup: func(t *testing.T) string {
+				home := filepath.Join(tempDir, "sessionstate-err-home")
+				modeDir := filepath.Join(home, "output", cfg.Mode)
+				err := os.MkdirAll(modeDir, 0755)
+				require.NoError(t, err)
+				// Create a directory where the db file should be to cause SQLite init to fail
+				dbPath := filepath.Join(modeDir, "tellmego.db")
+				err = os.MkdirAll(dbPath, 0755)
+				require.NoError(t, err)
+				return home
+			},
+			mockSetup: func(sm *mockConfigurableSecurityManager) {
+				sm.On("LoadSafePaths").Return(nil).Maybe()
+				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+			},
+			wantErr: "failed to initialize session state",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			homeDir := tt.setup(t)
 			sm := new(mockConfigurableSecurityManager)
+			setupDefaultSMExpectations(sm)
+
 			if tt.mockSetup != nil {
 				tt.mockSetup(sm)
 			}
-			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, tt.clientFactory)
-			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
-			assert.Error(t, err)
-			if tt.wantErr != "" {
-				assert.Contains(t, err.Error(), tt.wantErr)
+			cf := tt.clientFactory
+			if cf == nil {
+				cf = func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+					return new(mockLLMClient), nil
+				}
 			}
-			if tt.targetErr != nil {
-				assert.ErrorIs(t, err, tt.targetErr)
+			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, cf)
+			newSession := strings.Contains(tt.name, "TriggerNewSession")
+			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
+			assert.Error(t, err)
+			if err != nil {
+				if tt.wantErr != "" {
+					assert.Contains(t, err.Error(), tt.wantErr)
+				}
+				if tt.targetErr != nil {
+					assert.ErrorIs(t, err, tt.targetErr)
+				}
 			}
 		})
 	}
@@ -265,9 +350,7 @@ func TestFinalizeSession(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
-	sm.On("LoadSafePaths").Return(nil)
-	sm.On("LoadReadOnlyPaths").Return(nil)
-	sm.On("RegisterPolicyTools", mock.Anything).Return(nil)
+	setupDefaultSMExpectations(sm)
 
 	cfg := &config.Config{
 		Mode:  "assistant",
@@ -278,6 +361,11 @@ func TestFinalizeSession(t *testing.T) {
 	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
 	})
+
+	sm.On("LoadSafePaths").Return(nil).Maybe()
+	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+	sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
+	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 
 	deps, hManager, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
 	assert.NoError(t, err)
@@ -292,6 +380,17 @@ func TestFinalizeSession(t *testing.T) {
 	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, cfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "save failed")
+
+	// Test with record cost error
+	sm.ExpectedCalls = nil 
+	setupDefaultSMExpectations(sm)
+	sm.On("IsPathSafe", mock.Anything).Return("", errors.New("record cost failed"))
+
+	err = b.FinalizeSession(ctx, hManager, deps, cfg)
+	assert.Error(t, err)
+	if err != nil {
+		assert.Contains(t, err.Error(), "record cost failed")
+	}
 }
 
 func TestGetAgentFactory_Execution(t *testing.T) {
@@ -300,6 +399,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil)
 
 	factory := bootstrapper.GetAgentFactory()
@@ -380,9 +480,12 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	sm := new(mockConfigurableSecurityManager)
-	sm.On("LoadSafePaths").Return(nil)
-	sm.On("LoadReadOnlyPaths").Return(nil)
-	sm.On("RegisterPolicyTools", mock.Anything).Return(nil)
+	setupDefaultSMExpectations(sm)
+	sm.On("LoadSafePaths").Return(nil).Maybe()
+	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+	sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
+	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
+
 	client := new(mockLLMClient)
 
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
