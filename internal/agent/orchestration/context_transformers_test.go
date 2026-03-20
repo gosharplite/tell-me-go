@@ -1322,8 +1322,14 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 		wantErr     error
 	}{
 		{
+			name:        "groupTurns with nil history",
+			transformer: nil, // special case
+			history:     nil,
+			wantErr:     errInvalidPayload,
+		},
+		{
 			name:        "groupTurns with nil message",
-			transformer: nil, // special case, call function directly
+			transformer: nil,
 			history:     []*llm.Content{nil},
 			wantErr:     errInvalidPayload,
 		},
@@ -1385,21 +1391,97 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 		})
 	}
 
-	t.Run("cleanToolParts with nil part", func(t *testing.T) {
-		msg := &llm.Content{Parts: []*llm.Part{nil}}
-		_, err := cleanToolParts(msg)
+	t.Run("cleanToolParts boundary cases", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			input   *llm.Content
+			wantErr error
+		}{
+			{"nil content", nil, errInvalidPayload},
+			{"nil part", &llm.Content{Parts: []*llm.Part{nil}}, errInvalidPayload},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := cleanToolParts(tt.input)
+				require.ErrorIs(t, err, tt.wantErr)
+			})
+		}
+	})
+
+	t.Run("propagateSignatureToMessage boundary cases", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			input   *llm.Content
+			wantErr error
+		}{
+			{"nil content", nil, errInvalidPayload},
+			{"nil part first pass", &llm.Content{Role: "model", Parts: []*llm.Part{nil}}, errInvalidPayload},
+			{"nil part second pass", &llm.Content{Role: "model", Parts: []*llm.Part{{ThoughtSignature: []byte("sig")}, nil}}, errInvalidPayload},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := propagateSignatureToMessage(tt.input)
+				require.ErrorIs(t, err, tt.wantErr)
+			})
+		}
+	})
+
+	t.Run("isTurnBoundary boundary cases", func(t *testing.T) {
+		// Test last == nil in current turn
+		_, err := isTurnBoundary(&llm.Content{Role: "user"}, []*llm.Content{nil})
+		require.ErrorIs(t, err, errInvalidPayload)
+
+		// Test isToolCall returning error
+		_, err = isTurnBoundary(&llm.Content{Role: "user"}, []*llm.Content{{Role: "model", Parts: []*llm.Part{nil}}})
 		require.ErrorIs(t, err, errInvalidPayload)
 	})
 
-	t.Run("cleanContent with nil part", func(t *testing.T) {
-		msg := &llm.Content{Parts: []*llm.Part{nil}}
-		_, err := cleanContent(msg)
+	t.Run("transformer error propagation", func(t *testing.T) {
+		ctx := context.Background()
+		// emptyTurnFilter error from isTurnEmpty (nil part in message, not last turn)
+		etf := &emptyTurnFilter{}
+		err := etf.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{nil}},
+			{Role: "user"},
+		}})
 		require.ErrorIs(t, err, errInvalidPayload)
-	})
 
-	t.Run("propagateSignatureToMessage with nil part", func(t *testing.T) {
-		msg := &llm.Content{Role: "model", Parts: []*llm.Part{nil}}
-		_, err := propagateSignatureToMessage(msg)
+		// groupTurns error from validateTurnContent (empty role)
+		_, err = groupTurns(ctx, []*llm.Content{{Role: ""}})
+		require.ErrorIs(t, err, errInvalidPayload)
+
+		// groupTurns error from validateTurnContent (context cancelled)
+		cancelledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err = groupTurns(cancelledCtx, []*llm.Content{{Role: "user"}})
+		require.ErrorIs(t, err, context.Canceled)
+
+		// groupTurns error from isTurnBoundary (via isToolCall failing on nil part)
+		_, err = groupTurns(ctx, []*llm.Content{
+			{Role: "model", Parts: []*llm.Part{nil}},
+			{Role: "user"},
+		})
+		require.ErrorIs(t, err, errInvalidPayload)
+
+		// historyRepairer error from nil part
+		hr := &historyRepairer{}
+		err = hr.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+			{Role: "model", Parts: []*llm.Part{nil}},
+		}})
+		require.ErrorIs(t, err, errInvalidPayload)
+
+		// contentCleaner error from cleanContent
+		cc := &contentCleaner{}
+		err = cc.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{nil}},
+		}})
+		require.ErrorIs(t, err, errInvalidPayload)
+
+		// thoughtSignaturePropagator error from propagateSignatureToMessage
+		tsp := &thoughtSignaturePropagator{}
+		err = tsp.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
+			{Role: "model", Parts: []*llm.Part{nil}},
+		}})
 		require.ErrorIs(t, err, errInvalidPayload)
 	})
 }
@@ -1690,4 +1772,56 @@ func TestTransientMerger_NilSafety(t *testing.T) {
 	err := merger.Transform(context.Background(), req)
 	require.NoError(t, err)
 	require.Len(t, req.History[0].Parts, 2)
+}
+
+func TestCleanContent_Table(t *testing.T) {
+	tests := []struct {
+		name        string
+		parts       []*llm.Part
+		wantChanged bool
+		wantErr     error
+	}{
+		{
+			name: "Standard payload",
+			parts: []*llm.Part{
+				{Text: "valid_part"},
+			},
+			wantChanged: false,
+			wantErr:     nil,
+		},
+		{
+			name: "Mixed payload",
+			parts: []*llm.Part{
+				{Text: "valid_part"},
+				{Text: ""},
+				{Text: "valid_part"},
+			},
+			wantChanged: true,
+			wantErr:     nil,
+		},
+		{
+			name: "Malicious payload",
+			parts: []*llm.Part{
+				{Text: ""},
+				nil,
+			},
+			wantChanged: false,
+			wantErr:     errInvalidPayload,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := &llm.Content{
+				Parts: tt.parts,
+			}
+			changed, err := cleanContent(content)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantChanged, changed)
+		})
+	}
 }

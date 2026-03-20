@@ -276,7 +276,7 @@ func TestPolicy_Register(t *testing.T) {
 	t.Parallel()
 	sm, _, _ := setupPolicyTest(t)
 	r := registry.New()
-	if err := RegisterPolicy(r, sm); err != nil {
-		t.Fatalf("RegisterPolicy failed: %v", err)
+	if err := sm.RegisterPolicyTools(r); err != nil {
+		t.Fatalf("RegisterPolicyTools failed: %v", err)
 	}
 }

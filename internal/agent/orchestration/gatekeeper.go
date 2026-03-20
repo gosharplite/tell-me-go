@@ -15,11 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-var (
-	// errInvalidPayload is returned when the history content is malformed or invalid.
-	errInvalidPayload = errors.New("invalid payload history")
-)
-
+// tokenEstimator interface defines the method for estimating tokens.
 type tokenEstimator interface {
 	estimateTokens(contents []*llm.Content) int
 }

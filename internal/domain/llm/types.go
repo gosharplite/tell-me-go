@@ -81,6 +81,12 @@ type LLMClient interface {
 	RefreshAuth() error
 }
 
+// ExtendedClient defines a client that provides both raw LLM operations and resilient Gateway capabilities.
+type ExtendedClient interface {
+	LLMClient
+	LLMGateway
+}
+
 var (
 	// ErrContextLimitExceeded is returned when the payload exceeds the safety threshold.
 	ErrContextLimitExceeded = errors.New("payload estimate exceeds safety limit")
@@ -351,6 +357,11 @@ func (c *Content) ValidateStructure() error {
 	for i, p := range c.Parts {
 		if p == nil {
 			return fmt.Errorf("nil part at index %d", i)
+		}
+	}
+	for i, p := range c.TransientParts {
+		if p == nil {
+			return fmt.Errorf("nil transient part at index %d", i)
 		}
 	}
 	return nil

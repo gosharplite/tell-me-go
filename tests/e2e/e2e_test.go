@@ -220,45 +220,75 @@ func TestEnvironmentPersistence(t *testing.T) {
 	homeDir := t.TempDir()
 	env := []string{"TELL_ME_HOME=" + homeDir}
 
-	// 2. Create dummy persistent and session files
-	outputDir := filepath.Join(homeDir, "output")
-	modeDir := filepath.Join(outputDir, "assistant")
+	// 1. Shared Setup: Create dummy persistent and session files
+	modeDir := filepath.Join(homeDir, "output", "assistant")
 	if err := os.MkdirAll(modeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	sessionFiles := []string{"history.jsonl", "tokens.log", "commands.log"}
-	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log", "tellmego.db"}
+	persistentFiles := map[string]string{
+		"safepaths.json": "[]",
+		"readpaths.json": "[]",
+		"scratchpad.md":  "persistent content",
+		"tasks.json":     "[]",
+		"bypass.log":     "false",
+	}
 
+	for f, content := range persistentFiles {
+		_ = os.WriteFile(filepath.Join(modeDir, f), []byte(content), 0644)
+	}
 	for _, f := range sessionFiles {
 		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
 	}
-	for _, f := range persistentFiles {
-		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644)
-	}
 
-	// 3. Run with -new flag
-	_, _, _ = runCommandWithEnv(env, "", "-new", "hello persistence")
+	// 2. Shared Setup: Setup mock server
+	server, _ := setupProviderMockServer(t, "google", "list_files", map[string]interface{}{"path": "."}, nil)
+	defer server.Close()
 
-	// 4. Verify persistent files STILL exist in output
-	for _, f := range persistentFiles {
-		if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
-			t.Errorf("Expected persistent file %s to remain, but it was moved or deleted", f)
+	configPath := createTempConfig(t, "google", server.URL)
+	env = append(env, "TELL_ME_MOCK_URL="+server.URL, "TELL_ME_NO_STREAM=true")
+
+	var stdout, stderr string
+
+	t.Run("ExecuteNewSession", func(t *testing.T) {
+		var err error
+		stdout, stderr, err = runCommandWithEnv(env, "", "-c", configPath, "-new", "hello persistence")
+		if err != nil {
+			t.Fatalf("unexpected command failure: %v\nStderr: %s", err, stderr)
 		}
-	}
+	})
 
-	// 5. Verify session files are archived (check backup content)
-	backupsDir := filepath.Join(outputDir, "backups")
-	entries, _ := os.ReadDir(backupsDir)
-	if len(entries) == 0 {
-		t.Fatalf("Expected backup entries")
+	t.Run("VerifyPersistentFiles", func(t *testing.T) {
+		for f := range persistentFiles {
+			if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
+				t.Errorf("Expected persistent file %s to remain. Stderr: %s", f, stderr)
+			}
+		}
+	})
+
+	t.Run("VerifyArchivedFiles", func(t *testing.T) {
+		verifyFilesArchived(t, homeDir, sessionFiles, stdout, stderr)
+	})
+}
+
+func verifyFilesArchived(t *testing.T, homeDir string, sessionFiles []string, stdout, stderr string) {
+	t.Helper()
+	backupsDir := filepath.Join(homeDir, "output", "backups")
+	entries, err := os.ReadDir(backupsDir)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("Expected backup entries in %s. Err: %v. Stderr: %s. Stdout: %s", backupsDir, err, stderr, stdout)
 	}
 
 	backupSubDir := filepath.Join(backupsDir, entries[0].Name())
 	for _, f := range sessionFiles {
-		content, _ := os.ReadFile(filepath.Join(backupSubDir, f))
+		content, err := os.ReadFile(filepath.Join(backupSubDir, f))
+		if err != nil {
+			t.Errorf("Failed to read archived file %s: %v", f, err)
+			continue
+		}
 		if string(content) != "session content" {
-			t.Errorf("Expected archived session file %s in backup with 'session content'", f)
+			t.Errorf("Expected archived session file %s in backup with 'session content', got %q", f, string(content))
 		}
 	}
 }

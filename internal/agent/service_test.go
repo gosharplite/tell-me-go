@@ -103,8 +103,9 @@ func (m *mockServiceContainer) GetAgentFactory() ports.ChatterFactory {
 	return args.Get(0).(ports.ChatterFactory)
 }
 
-func (m *mockServiceContainer) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) {
-	m.Called(ctx, hManager, deps, cfg)
+func (m *mockServiceContainer) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+	args := m.Called(ctx, hManager, deps, cfg)
+	return args.Error(0)
 }
 
 // mockServiceSessionDependencies is a mock of SessionDependencies.
@@ -228,7 +229,7 @@ func TestProcessMessage(t *testing.T) {
 				c.On("GetAgentFactory").Return(ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
 					return agent, nil
 				}))
-				c.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return()
+				c.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(nil)
 
 				deps.On("GetEventBus").Return(bus)
 				deps.On("GetPaths").Return(&persistence.Paths{})

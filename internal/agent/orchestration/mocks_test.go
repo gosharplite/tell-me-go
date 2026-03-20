@@ -16,6 +16,9 @@ import (
 
 type mockToolRegistry struct {
 	declarations []*tools.ToolDeclaration
+	registerErr  error
+	failAfter    int
+	callCount    int
 }
 
 func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
@@ -23,6 +26,10 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 func (m *mockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
+	m.callCount++
+	if m.registerErr != nil && (m.failAfter == 0 || m.callCount > m.failAfter) {
+		return m.registerErr
+	}
 	m.declarations = append(m.declarations, declaration)
 	return nil
 }

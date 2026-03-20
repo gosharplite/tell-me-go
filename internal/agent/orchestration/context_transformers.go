@@ -6,10 +6,16 @@ package orchestration
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+)
+
+var (
+	// errInvalidPayload is returned when the history content is malformed or invalid.
+	errInvalidPayload = errors.New("invalid payload history")
 )
 
 // emptyTurnFilter removes turns where both user and model messages have no meaningful content.
@@ -86,6 +92,9 @@ func (t *transientMerger) Transform(ctx context.Context, req *ports.ContextReque
 func (t *transientMerger) Priority() int { return priorityTransientThreshold + 5 }
 
 func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, error) {
+	if history == nil {
+		return nil, fmt.Errorf("groupTurns: %w", errInvalidPayload)
+	}
 	if len(history) == 0 {
 		return nil, nil
 	}
@@ -93,19 +102,8 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 	var current []*llm.Content
 
 	for i, msg := range history {
-		if msg == nil {
-			return nil, fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
-		}
-		if i%100 == 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			default:
-			}
-		}
-
-		if msg.Role == "" {
-			return nil, fmt.Errorf("%w: empty role at index %d", errInvalidPayload, i)
+		if err := validateTurnContent(ctx, msg, i); err != nil {
+			return nil, err
 		}
 
 		boundary, err := isTurnBoundary(msg, current)
@@ -123,6 +121,23 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 		turns = append(turns, current)
 	}
 	return turns, nil
+}
+
+func validateTurnContent(ctx context.Context, msg *llm.Content, index int) error {
+	if msg == nil {
+		return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, index)
+	}
+	if index%100 == 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+	}
+	if msg.Role == "" {
+		return fmt.Errorf("%w: empty role at index %d", errInvalidPayload, index)
+	}
+	return nil
 }
 
 func isTurnBoundary(msg *llm.Content, current []*llm.Content) (bool, error) {
@@ -268,7 +283,6 @@ func cleanContent(content *llm.Content) (bool, error) {
 		}
 		if p.IsEmpty() {
 			hasEmpty = true
-			break
 		}
 	}
 
@@ -278,23 +292,24 @@ func cleanContent(content *llm.Content) (bool, error) {
 	}
 
 	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
+	content.Parts = rebuildCleanParts(content)
+	return true, nil
+}
+
+func rebuildCleanParts(content *llm.Content) []*llm.Part {
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
-	for i, p := range content.Parts {
-		if p == nil {
-			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
-		}
+	for _, p := range content.Parts {
+		// Nil checks were already performed in the first pass in cleanContent
 		if !p.IsEmpty() {
 			cleanParts = append(cleanParts, p)
 		}
 	}
 
-	// 4. Fallback if everything was empty
+	// Fallback if everything was empty
 	if len(cleanParts) == 0 {
 		cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
 	}
-
-	content.Parts = cleanParts
-	return true, nil
+	return cleanParts
 }
 
 func (t *contentCleaner) Priority() int { return 5 }
@@ -338,7 +353,7 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 
 func cleanToolParts(content *llm.Content) (bool, error) {
 	if content == nil {
-		return false, fmt.Errorf("%w: nil message", errInvalidPayload)
+		return false, fmt.Errorf("cleanToolParts: %w", errInvalidPayload)
 	}
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	changed := false
@@ -346,7 +361,7 @@ func cleanToolParts(content *llm.Content) (bool, error) {
 	for i, p := range content.Parts {
 		// Skip nil parts
 		if p == nil {
-			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("cleanToolParts: %w at index %d", errInvalidPayload, i)
 		}
 		// Skip tool calls with empty IDs - they cause API errors
 		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
@@ -428,13 +443,13 @@ func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.C
 
 func propagateSignatureToMessage(content *llm.Content) (bool, error) {
 	if content == nil {
-		return false, fmt.Errorf("%w: nil message", errInvalidPayload)
+		return false, fmt.Errorf("propagateSignatureToMessage: %w", errInvalidPayload)
 	}
 	var signature []byte
 	// First pass: find the signature
 	for i, p := range content.Parts {
 		if p == nil {
-			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("propagateSignatureToMessage: %w at index %d", errInvalidPayload, i)
 		}
 		if len(p.ThoughtSignature) > 0 {
 			signature = p.ThoughtSignature
@@ -450,7 +465,7 @@ func propagateSignatureToMessage(content *llm.Content) (bool, error) {
 	// Second pass: attach it to function calls if missing
 	for i, p := range content.Parts {
 		if p == nil {
-			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("propagateSignatureToMessage: %w at index %d", errInvalidPayload, i)
 		}
 		if p.FunctionCall != nil && len(p.ThoughtSignature) == 0 {
 			// We must allocate a new slice to avoid sharing pointers

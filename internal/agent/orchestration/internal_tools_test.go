@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -208,4 +209,34 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 			t.Fatal("expected error for missing arguments, got nil")
 		}
 	})
+}
+
+func TestRegisterInternal_ErrorPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		failAfter int
+	}{
+		{
+			name:      "fail on first registration",
+			failAfter: 0,
+		},
+		{
+			name:      "fail on second registration",
+			failAfter: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := &mockToolRegistry{
+				registerErr: fmt.Errorf("registry error"),
+				failAfter:   tt.failAfter,
+			}
+			cm := &ContextManager{}
+			err := RegisterInternal(registry, cm)
+			if err == nil {
+				t.Fatalf("expected initialization to fail when registry returns an error (failAfter=%d)", tt.failAfter)
+			}
+		})
+	}
 }

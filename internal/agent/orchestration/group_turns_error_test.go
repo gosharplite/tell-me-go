@@ -40,7 +40,7 @@ func TestHistoryPruner_GroupTurnsErrorPropagation(t *testing.T) {
 			err := pruner.Transform(ctx, req)
 			require.Error(t, err, "Expected error from groupTurns for malformed history")
 
-			// We haven't defined ErrInvalidPayload yet, so this will fail to compile or find the symbol if I use it here.
+			// We haven't defined errInvalidPayload yet, so this will fail to compile or find the symbol if I use it here.
 			// But for TDD, I should use what I intend to define.
 			require.True(t, errors.Is(err, errInvalidPayload), "Expected errInvalidPayload sentinel")
 		})
