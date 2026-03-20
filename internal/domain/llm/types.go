@@ -359,5 +359,10 @@ func (c *Content) ValidateStructure() error {
 			return fmt.Errorf("nil part at index %d", i)
 		}
 	}
+	for i, p := range c.TransientParts {
+		if p == nil {
+			return fmt.Errorf("nil transient part at index %d", i)
+		}
+	}
 	return nil
 }

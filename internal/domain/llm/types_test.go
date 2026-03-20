@@ -704,3 +704,61 @@ func TestContent_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestContent_ValidateStructure(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content *Content
+		wantErr bool
+	}{
+		{
+			name:    "nil content",
+			content: nil,
+			wantErr: true,
+		},
+		{
+			name: "valid content",
+			content: &Content{
+				Role:  "user",
+				Parts: []*Part{{Text: "hello"}},
+			},
+			wantErr: false,
+		},
+		{
+			name: "nil part in parts",
+			content: &Content{
+				Role:  "user",
+				Parts: []*Part{nil},
+			},
+			wantErr: true,
+		},
+		{
+			name: "nil transient part",
+			content: &Content{
+				Role:           "user",
+				TransientParts: []*Part{nil},
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid with transient parts",
+			content: &Content{
+				Role:           "user",
+				TransientParts: []*Part{{Text: "transient"}},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.content.ValidateStructure()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

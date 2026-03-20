@@ -182,7 +182,7 @@ func validateHistoryBoundaries(history []*llm.Content) error {
 		if msg == nil {
 			return fmt.Errorf("%w: nil message at index %d in loaded history", errInvalidPayload, i)
 		}
-		if err := validate(msg); err != nil {
+		if err := msg.ValidateStructure(); err != nil {
 			return fmt.Errorf("%w: invalid content at index %d: %w", errInvalidPayload, i, err)
 		}
 	}

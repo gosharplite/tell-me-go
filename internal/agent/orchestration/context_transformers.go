@@ -478,21 +478,3 @@ func propagateSignatureToMessage(content *llm.Content) (bool, error) {
 }
 
 func (t *thoughtSignaturePropagator) Priority() int { return 6 } // Run after contentCleaner (5)
-
-// validate ensures the Content object is in a valid state for orchestration.
-func validate(msg *llm.Content) error {
-	if msg == nil {
-		return fmt.Errorf("validate: %w", errInvalidPayload)
-	}
-	for i, p := range msg.Parts {
-		if p == nil {
-			return fmt.Errorf("validate: %w: nil part at index %d", errInvalidPayload, i)
-		}
-	}
-	for i, p := range msg.TransientParts {
-		if p == nil {
-			return fmt.Errorf("validate: %w: nil transient part at index %d", errInvalidPayload, i)
-		}
-	}
-	return nil
-}
