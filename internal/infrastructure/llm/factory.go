@@ -21,7 +21,7 @@ import (
 )
 
 // NewClient is the central factory for creating LLM providers.
-func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error) {
+func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 	p := cfg.GetActiveProvider()
 
 	authenticator, err := createAuthenticator(&p)

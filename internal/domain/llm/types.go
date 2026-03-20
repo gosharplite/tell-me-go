@@ -81,6 +81,12 @@ type LLMClient interface {
 	RefreshAuth() error
 }
 
+// ExtendedClient defines a client that provides both raw LLM operations and resilient Gateway capabilities.
+type ExtendedClient interface {
+	LLMClient
+	LLMGateway
+}
+
 var (
 	// ErrContextLimitExceeded is returned when the payload exceeds the safety threshold.
 	ErrContextLimitExceeded = errors.New("payload estimate exceeds safety limit")

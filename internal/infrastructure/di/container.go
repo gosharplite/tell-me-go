@@ -59,11 +59,11 @@ type bootstrapper struct {
 	Version       string
 	Stdout        io.Writer
 	Stderr        io.Writer
-	ClientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error)
+	ClientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 }
 
 // NewBootstrapper creates a new Container instance.
-func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.LLMClient, error)) Container {
+func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) Container {
 	if clientFactory == nil {
 		clientFactory = infra_llm.NewClient
 	}
@@ -107,11 +107,6 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
 
-	gw, ok := client.(llm.LLMGateway)
-	if !ok {
-		return nil, nil, nil, fmt.Errorf("client does not implement LLMGateway")
-	}
-
 	sessionProvider, cleanup := b.buildSessionProvider(ctx, paths, cfg)
 
 	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
@@ -133,7 +128,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	deps := b.buildAgentOrchestrator(paths, hManager, client, gw, reg, pricingData, pricingOverrides, bus, cfg)
+	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg)
 
 	return deps, hManager, cleanup, nil
 }
