@@ -12,22 +12,22 @@ import (
 
 const scratchpadKey = "content"
 
-// scratchpadService handles the logic for managing the scratchpad.
-type scratchpadService struct {
+// ScratchpadService handles the logic for managing the scratchpad.
+type ScratchpadService struct {
 	mu         sync.RWMutex
 	store      ports.KVStore
 	scratchpad string
 }
 
-// NewScratchpadService creates a new scratchpadService.
-func NewScratchpadService(store ports.KVStore) ports.ScratchpadService {
-	return &scratchpadService{
+// NewScratchpadService creates a new ScratchpadService.
+func NewScratchpadService(store ports.KVStore) *ScratchpadService {
+	return &ScratchpadService{
 		store: store,
 	}
 }
 
 // Initialize loads the scratchpad from the repository.
-func (s *scratchpadService) Initialize(ctx context.Context) error {
+func (s *ScratchpadService) Initialize(ctx context.Context) error {
 	content, err := s.store.Get(ctx, scratchpadKey)
 	if err != nil {
 		return err
@@ -39,14 +39,14 @@ func (s *scratchpadService) Initialize(ctx context.Context) error {
 }
 
 // Read returns the current scratchpad content.
-func (s *scratchpadService) Read() string {
+func (s *ScratchpadService) Read() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.scratchpad
 }
 
 // Write overwrites the scratchpad content.
-func (s *scratchpadService) Write(ctx context.Context, content string) error {
+func (s *ScratchpadService) Write(ctx context.Context, content string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -59,7 +59,7 @@ func (s *scratchpadService) Write(ctx context.Context, content string) error {
 }
 
 // Append adds content to the scratchpad.
-func (s *scratchpadService) Append(ctx context.Context, content string) error {
+func (s *ScratchpadService) Append(ctx context.Context, content string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -78,7 +78,7 @@ func (s *scratchpadService) Append(ctx context.Context, content string) error {
 }
 
 // Clear empties the scratchpad.
-func (s *scratchpadService) Clear(ctx context.Context) error {
+func (s *ScratchpadService) Clear(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

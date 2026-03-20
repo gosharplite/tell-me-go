@@ -66,7 +66,6 @@ type TaskWriter interface {
 type TaskStore interface {
 	TaskReader
 	TaskWriter
-	Initialize(ctx context.Context) error
 }
 
 // ConfigGetter defines the interface for reading configuration.
@@ -95,7 +94,6 @@ type ConfigReader interface {
 type ConfigStore interface {
 	ConfigReader
 	ConfigWriter
-	Initializer
 }
 
 // ScratchpadReader defines the interface for reading from the scratchpad.
@@ -110,18 +108,17 @@ type ScratchpadWriter interface {
 	Clear(ctx context.Context) error
 }
 
-// ScratchpadService defines the interface for scratchpad management.
-type ScratchpadService interface {
+// ScratchpadStore defines the interface for scratchpad management.
+type ScratchpadStore interface {
 	ScratchpadReader
 	ScratchpadWriter
-	Initialize(ctx context.Context) error
 }
 
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
 	GetTasks() TaskStore
 	GetConfig() ConfigStore
-	GetScratchpad() ScratchpadService
+	GetScratchpad() ScratchpadStore
 }
 
 // SessionStateProvider manages session-level metadata and state.

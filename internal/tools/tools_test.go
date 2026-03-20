@@ -30,7 +30,7 @@ func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)         { m.Called
 func (m *mockSessionProvider) Close() error                           { return m.Called().Error(0) }
 func (m *mockSessionProvider) GetTasks() ports.TaskStore              { return nil }
 func (m *mockSessionProvider) GetConfig() ports.ConfigStore           { return nil }
-func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadService { return nil }
+func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadStore   { return nil }
 
 func TestNewToolRegistry(t *testing.T) {
 	t.Parallel()

@@ -116,7 +116,7 @@ func (m *mockListStore) DeleteAll(ctx context.Context) error {
 type mockSessionProvider struct {
 	tasks      ports.TaskStore
 	config     ports.ConfigStore
-	scratchpad ports.ScratchpadService
+	scratchpad ports.ScratchpadStore
 	info       ports.SessionInfo
 	kvStore    *mockKVStore
 	listStore  *mockListStore
@@ -124,7 +124,7 @@ type mockSessionProvider struct {
 
 func (m *mockSessionProvider) GetTasks() ports.TaskStore              { return m.tasks }
 func (m *mockSessionProvider) GetConfig() ports.ConfigStore           { return m.config }
-func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadService { return m.scratchpad }
+func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadStore   { return m.scratchpad }
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo             { return m.info }
 func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)         { m.info = info }
 func (m *mockSessionProvider) Close() error                           { return nil }
@@ -189,7 +189,9 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			args: map[string]interface{}{"action": "list"},
 			setup: func(m *mockListStore, ts ports.TaskStore) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
-				_ = ts.Initialize(context.Background())
+				if s, ok := ts.(ports.Initializer); ok {
+					_ = s.Initialize(context.Background())
+				}
 			},
 			expectedResult: "task 1",
 		},
@@ -198,7 +200,9 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			args: map[string]interface{}{"action": "update", "task_id": 1.0, "status": "completed"},
 			setup: func(m *mockListStore, ts ports.TaskStore) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
-				_ = ts.Initialize(context.Background())
+				if s, ok := ts.(ports.Initializer); ok {
+					_ = s.Initialize(context.Background())
+				}
 			},
 			expectedResult: "Task 1 updated",
 		},
@@ -210,7 +214,9 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 					{ID: 1, Content: "task 1", Status: "completed"},
 					{ID: 2, Content: "task 2", Status: "pending"},
 				}
-				_ = ts.Initialize(context.Background())
+				if s, ok := ts.(ports.Initializer); ok {
+					_ = s.Initialize(context.Background())
+				}
 			},
 			expectedResult: "[x]",
 		},
@@ -219,7 +225,9 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			args: map[string]interface{}{"action": "delete", "task_id": 1.0},
 			setup: func(m *mockListStore, ts ports.TaskStore) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
-				_ = ts.Initialize(context.Background())
+				if s, ok := ts.(ports.Initializer); ok {
+					_ = s.Initialize(context.Background())
+				}
 			},
 			expectedResult: "Task 1 deleted",
 		},
@@ -228,7 +236,9 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			args: map[string]interface{}{"action": "clear"},
 			setup: func(m *mockListStore, ts ports.TaskStore) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
-				_ = ts.Initialize(context.Background())
+				if s, ok := ts.(ports.Initializer); ok {
+					_ = s.Initialize(context.Background())
+				}
 			},
 			expectedResult: "All tasks cleared",
 		},
