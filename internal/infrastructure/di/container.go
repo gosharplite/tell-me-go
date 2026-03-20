@@ -263,16 +263,19 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 
 // FinalizeSession saves history and records session cost.
 func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+	var errs []error
+
 	// Finalize session
 	if saveErr := hManager.Save(ctx); saveErr != nil {
-		return fmt.Errorf("error saving history: %w", saveErr)
+		errs = append(errs, fmt.Errorf("error saving history: %w", saveErr))
 	}
 
 	// Calculate and record cost
 	if recordErr := telemetry.RecordSessionCost(ctx, b.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, "", deps.GetPricingOverrides()); recordErr != nil {
-		return fmt.Errorf("failed to record final session cost: %w", recordErr)
+		errs = append(errs, fmt.Errorf("failed to record final session cost: %w", recordErr))
 	}
-	return nil
+
+	return errors.Join(errs...)
 }
 
 // getPricingOverrides extracts pricing overrides from the configuration.

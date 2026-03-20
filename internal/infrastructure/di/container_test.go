@@ -393,6 +393,18 @@ func TestFinalizeSession(t *testing.T) {
 	if err != nil {
 		assert.Contains(t, err.Error(), "record cost failed")
 	}
+
+	// Test with both errors
+	sm.ExpectedCalls = nil
+	setupDefaultSMExpectations(sm)
+	sm.On("IsPathSafe", mock.Anything).Return("", errors.New("record cost failed"))
+
+	err = b.FinalizeSession(ctx, &mockHistoryManager{saveErr: errors.New("save failed")}, deps, cfg)
+	assert.Error(t, err)
+	if err != nil {
+		assert.Contains(t, err.Error(), "save failed")
+		assert.Contains(t, err.Error(), "record cost failed")
+	}
 }
 
 func TestGetAgentFactory_Execution(t *testing.T) {
