@@ -243,19 +243,28 @@ func TestEnvironmentPersistence(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(modeDir, f), []byte(content), 0644)
 	}
 
-	// 3. Run with -new flag
-	// Using a tool that exists but without mock server to ensure startup completes.
-	// Even if it fails on API call, rotation should have occurred.
-	stdout, stderr, err := runCommandWithEnv(env, "", "-new", "hello persistence")
+	// 3. Setup mock server to avoid real API calls and ensure success
+	server, _ := setupProviderMockServer(t, "google", "list_files", map[string]interface{}{"path": "."}, nil)
+	defer server.Close()
 
-	// 4. Verify persistent files STILL exist in output
+	configPath := createTempConfig(t, "google", server.URL)
+	env = append(env, "TELL_ME_MOCK_URL="+server.URL, "TELL_ME_NO_STREAM=true")
+
+	// 4. Run with -new flag
+	// Using a tool that exists to ensure startup completes.
+	stdout, stderr, err := runCommandWithEnv(env, "", "-c", configPath, "-new", "hello persistence")
+	if err != nil {
+		t.Fatalf("unexpected command failure: %v\nStderr: %s", err, stderr)
+	}
+
+	// 5. Verify persistent files STILL exist in output
 	for f := range persistentFiles {
 		if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
 			t.Errorf("Expected persistent file %s to remain, but it was moved or deleted. Stderr: %s", f, stderr)
 		}
 	}
 
-	// 5. Verify session files are archived (check backup content)
+	// 6. Verify session files are archived (check backup content)
 	backupsDir := filepath.Join(outputDir, "backups")
 	entries, err := os.ReadDir(backupsDir)
 	if err != nil || len(entries) == 0 {
