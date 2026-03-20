@@ -35,7 +35,7 @@ type toolExecResult struct {
 // ToolExecutor handles the execution of tools, using a WorkerPool for concurrency.
 type ToolExecutor struct {
 	mu                 sync.RWMutex
-	registry           domaintools.IToolRegistry
+	registry           domaintools.Registry
 	authorizer         ToolAuthorizer
 	events             events.EventBus
 	logger             ports.Logger
@@ -68,7 +68,7 @@ func withZombieTimeout(timeout time.Duration) executorOption {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, logger ports.Logger, observer domaintools.ExecutionObserver, opts ...executorOption) (*ToolExecutor, error) {
+func NewToolExecutor(registry domaintools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer domaintools.ExecutionObserver, opts ...executorOption) (*ToolExecutor, error) {
 	if registry == nil {
 		return nil, errors.New("registry is required")
 	}
@@ -670,7 +670,7 @@ func (e *ToolExecutor) resolveTool(call *llm.FunctionCall) (*domaintools.ToolDec
 	return resolveTool(reg, call)
 }
 
-func resolveTool(reg domaintools.IToolRegistry, call *llm.FunctionCall) (*domaintools.ToolDeclaration, error) {
+func resolveTool(reg domaintools.Registry, call *llm.FunctionCall) (*domaintools.ToolDeclaration, error) {
 	var tool *domaintools.ToolDeclaration
 	var validTools []string
 	for _, decl := range reg.GetDeclarations() {

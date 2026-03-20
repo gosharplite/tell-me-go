@@ -26,7 +26,7 @@ type orchestrator struct {
 	HomeDir         string
 	Version         string
 	Loader          config.ConfigLoader
-	SM              domain_security.ISecurityManager
+	SM              domain_security.Manager
 	Stdout          io.Writer
 	Stderr          io.Writer
 	AgentFactory    ports.ChatterFactory
@@ -70,9 +70,9 @@ type sessionDependencies struct {
 	HistoryManager   ports.HistoryManager
 	Client           domain_llm.LLMClient
 	Gateway          domain_llm.LLMGateway
-	Registry         domaintools.IToolRegistry
-	SecurityManager  domain_security.ISecurityManager
-	Tracker          domain_pricing.ICostTracker
+	Registry         domaintools.Registry
+	SecurityManager  domain_security.Manager
+	Tracker          domain_pricing.CostTracker
 	PricingData      domain_pricing.PricingData
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	EventBus         events.EventBus
@@ -82,8 +82,8 @@ func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gate
 func (d *sessionDependencies) GetHistoryManager() ports.HistoryManager {
 	return d.HistoryManager
 }
-func (d *sessionDependencies) GetRegistry() domaintools.IToolRegistry { return d.Registry }
-func (d *sessionDependencies) GetSecurityManager() domain_security.ISecurityManager {
+func (d *sessionDependencies) GetRegistry() domaintools.Registry { return d.Registry }
+func (d *sessionDependencies) GetSecurityManager() domain_security.Manager {
 	return d.SecurityManager
 }
 func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
@@ -91,13 +91,13 @@ func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
 func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
 	return d.PricingOverrides
 }
-func (d *sessionDependencies) GetTracker() domain_pricing.ICostTracker { return d.Tracker }
+func (d *sessionDependencies) GetTracker() domain_pricing.CostTracker { return d.Tracker }
 func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 	return d.PricingData
 }
 
 // newSessionDependencies creates a new sessionDependencies with all required components.
-func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
+func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -113,7 +113,7 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 }
 
 // newOrchestrator creates a new orchestrator.
-func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer) Orchestrator {
+func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer) Orchestrator {
 	return &orchestrator{
 		HomeDir:         homeDir,
 		Version:         version,
@@ -292,7 +292,7 @@ type RunParams struct {
 	HomeDir         string
 	Version         string
 	Loader          config.ConfigLoader
-	SM              domain_security.ISecurityManager
+	SM              domain_security.Manager
 	Stdout          io.Writer
 	Stderr          io.Writer
 	AgentFactory    ports.ChatterFactory

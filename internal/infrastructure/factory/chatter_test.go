@@ -21,21 +21,21 @@ import (
 type mockSessionDeps struct {
 	gw       llm.LLMGateway
 	hManager ports.HistoryManager
-	reg      tools.IToolRegistry
-	sm       security.ISecurityManager
+	reg      tools.Registry
+	sm       security.Manager
 	bus      events.EventBus
 	paths    *persistence.Paths
-	tracker  pricing.ICostTracker
+	tracker  pricing.CostTracker
 }
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
 func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
-func (d *mockSessionDeps) GetRegistry() tools.IToolRegistry                     { return d.reg }
-func (d *mockSessionDeps) GetSecurityManager() security.ISecurityManager        { return d.sm }
+func (d *mockSessionDeps) GetRegistry() tools.Registry                          { return d.reg }
+func (d *mockSessionDeps) GetSecurityManager() security.Manager                 { return d.sm }
 func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
 func (d *mockSessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
 func (d *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
-func (d *mockSessionDeps) GetTracker() pricing.ICostTracker                     { return d.tracker }
+func (d *mockSessionDeps) GetTracker() pricing.CostTracker                      { return d.tracker }
 func (d *mockSessionDeps) GetPricingData() pricing.PricingData                  { return pricing.PricingData{} }
 
 type mockGateway struct {
@@ -51,7 +51,7 @@ func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 }
 
 type mockRegistry struct {
-	tools.IToolRegistry
+	tools.Registry
 }
 
 func (m *mockRegistry) Register(tool *tools.ToolDeclaration, handler tools.ToolFunc) error {
@@ -79,13 +79,13 @@ func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 type mockSecurityManager struct {
-	security.ISecurityManager
+	security.Manager
 }
 
 func (m *mockSecurityManager) Close() error { return nil }
 
 type mockTracker struct {
-	pricing.ICostTracker
+	pricing.CostTracker
 }
 
 func TestNewChatter(t *testing.T) {

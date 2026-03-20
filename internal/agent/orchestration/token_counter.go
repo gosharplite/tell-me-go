@@ -10,11 +10,11 @@ import (
 
 // HeuristicTokenCounter provides a rule-of-thumb token estimation.
 type HeuristicTokenCounter struct {
-	registry tools.IToolRegistry
+	registry tools.Registry
 }
 
 // NewHeuristicTokenCounter creates a new heuristic-based counter.
-func NewHeuristicTokenCounter(registry tools.IToolRegistry) *HeuristicTokenCounter {
+func NewHeuristicTokenCounter(registry tools.Registry) *HeuristicTokenCounter {
 	return &HeuristicTokenCounter{registry: registry}
 }
 

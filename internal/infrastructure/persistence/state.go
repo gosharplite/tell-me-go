@@ -15,17 +15,17 @@ import (
 
 // sessionState manages all persistent services and session metadata.
 type sessionState struct {
-	Tasks      *services.TaskService
-	Config     *services.ConfigService
-	Scratchpad *services.ScratchpadService
+	Tasks      ports.TaskService
+	Config     ports.ConfigService
+	Scratchpad ports.ScratchpadService
 	Info       ports.SessionInfo
 	db         *sql.DB
 }
 
-func (s *sessionState) GetTasks() ports.ITaskService            { return s.Tasks }
-func (s *sessionState) GetConfig() ports.IConfigService         { return s.Config }
-func (s *sessionState) GetScratchpad() ports.IScratchpadService { return s.Scratchpad }
-func (s *sessionState) GetInfo() ports.SessionInfo              { return s.Info }
+func (s *sessionState) GetTasks() ports.TaskService            { return s.Tasks }
+func (s *sessionState) GetConfig() ports.ConfigService         { return s.Config }
+func (s *sessionState) GetScratchpad() ports.ScratchpadService { return s.Scratchpad }
+func (s *sessionState) GetInfo() ports.SessionInfo             { return s.Info }
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	s.Info = info
@@ -39,7 +39,7 @@ func (s *sessionState) Close() error {
 }
 
 // NewSessionState initializes repositories and services.
-func NewSessionState(ctx context.Context, configDir string) (ports.ISessionProvider, error) {
+func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
 	if storageType == "" {
 		storageType = "sqlite" // Set sqlite as default storage
@@ -110,7 +110,7 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 		paths, nil
 }
 
-func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], configStore, scratchStore ports.KVStore) (*services.TaskService, *services.ConfigService, *services.ScratchpadService, error) {
+func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], configStore, scratchStore ports.KVStore) (ports.TaskService, ports.ConfigService, ports.ScratchpadService, error) {
 	tasks := services.NewTaskService(taskStore)
 	config := services.NewConfigService(configStore)
 	scratch := services.NewScratchpadService(scratchStore)

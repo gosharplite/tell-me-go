@@ -38,7 +38,7 @@ type PolicyEvaluator interface {
 	IsBypassActive() bool
 }
 
-type ISecurityManager interface {
+type Manager interface {
 	PathValidator
 	ActionConfirmer
 	Auditor
@@ -57,8 +57,8 @@ type UserInteractor interface {
 	ReadLine(ctx context.Context) (string, error)
 }
 
-// ICommandValidator defines the interface for command validation.
-type ICommandValidator interface {
+// CommandValidator defines the interface for command validation.
+type CommandValidator interface {
 	IsSafe(command string) (bool, string)
 	Split(cmd string) ([]string, error)
 	ValidateStructure(parts []string) error

@@ -319,7 +319,7 @@ func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 }
 
 // RegisterPolicyTools adds security policy management tools to the registry.
-func (sm *SecurityManager) RegisterPolicyTools(r tools.IToolRegistry) error {
+func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry) error {
 	p := newPolicyTool(sm)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{

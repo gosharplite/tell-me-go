@@ -35,7 +35,7 @@ type capturer struct {
 	Stdin      io.Reader
 	Stdout     io.Writer
 	Stderr     io.Writer
-	SM         domain_security.ISecurityManager
+	SM         domain_security.Manager
 	Clock      clock.Clock
 	reader     *bufio.Reader
 	readerMu   sync.Mutex
@@ -46,7 +46,7 @@ type capturer struct {
 }
 
 // NewCapturer creates a new capturer.
-func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor {
+func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor {
 	if clk == nil {
 		clk = clock.RealClock{}
 	}

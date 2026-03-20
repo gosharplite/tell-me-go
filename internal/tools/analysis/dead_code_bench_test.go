@@ -13,7 +13,7 @@ import (
 )
 
 type benchmarkSecurityManager struct {
-	domain_security.ISecurityManager
+	domain_security.Manager
 }
 
 func (m *benchmarkSecurityManager) IsPathSafe(path string) (string, error) {

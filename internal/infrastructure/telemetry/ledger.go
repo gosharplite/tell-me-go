@@ -40,13 +40,13 @@ const ledgerRecoveryTimeout = 10 * time.Minute
 
 // ledgerStore handles persistence and recovery of cost metrics.
 type ledgerStore struct {
-	sm               domain_security.ISecurityManager
+	sm               domain_security.Manager
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 }
 
 // newLedgerStore creates a new ledgerStore.
-func newLedgerStore(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) *ledgerStore {
+func newLedgerStore(sm domain_security.Manager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) *ledgerStore {
 	return &ledgerStore{
 		sm:               sm,
 		model:            model,

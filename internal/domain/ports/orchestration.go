@@ -81,7 +81,7 @@ type SessionConfig interface {
 type LLMDependencyProvider interface {
 	GetGateway() llm.LLMGateway
 	GetPricingOverrides() map[string]pricing.ModelPricing
-	GetTracker() pricing.ICostTracker
+	GetTracker() pricing.CostTracker
 	GetPricingData() pricing.PricingData
 }
 
@@ -93,8 +93,8 @@ type PersistenceDependencyProvider interface {
 
 // InfrastructureDependencyProvider provides access to cross-cutting infrastructure.
 type InfrastructureDependencyProvider interface {
-	GetRegistry() tools.IToolRegistry
-	GetSecurityManager() security.ISecurityManager
+	GetRegistry() tools.Registry
+	GetSecurityManager() security.Manager
 	GetEventBus() events.EventBus
 }
 

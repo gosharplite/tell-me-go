@@ -17,7 +17,7 @@ import (
 )
 
 type refactorMockSecurityProvider struct {
-	domain.ISecurityManager
+	domain.Manager
 	IsPathWritableFunc func(path string) (string, error)
 	IsPathSafeFunc     func(path string) (string, error)
 }

@@ -21,7 +21,7 @@ import (
 
 // Mock Security Manager
 type mockSM struct {
-	domain_security.ISecurityManager
+	domain_security.Manager
 }
 
 func (m *mockSM) IsPathSafe(path string) (string, error) {
@@ -36,7 +36,7 @@ func (m *mockSM) Close() error { return nil }
 
 // Mock Tool Registry
 type mockRegistry struct {
-	tools.IToolRegistry
+	tools.Registry
 	handlers map[string]tools.ToolFunc
 }
 

@@ -62,8 +62,8 @@ type TaskWriter interface {
 	ClearTasks(ctx context.Context) error
 }
 
-// ITaskService defines the interface for task management.
-type ITaskService interface {
+// TaskService defines the interface for task management.
+type TaskService interface {
 	TaskReader
 	TaskWriter
 	Initialize(ctx context.Context) error
@@ -81,8 +81,8 @@ type ConfigWriter interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// IConfigService defines the interface for configuration management.
-type IConfigService interface {
+// ConfigService defines the interface for configuration management.
+type ConfigService interface {
 	ConfigReader
 	ConfigWriter
 	Initialize(ctx context.Context) error
@@ -100,8 +100,8 @@ type ScratchpadWriter interface {
 	Clear(ctx context.Context) error
 }
 
-// IScratchpadService defines the interface for scratchpad management.
-type IScratchpadService interface {
+// ScratchpadService defines the interface for scratchpad management.
+type ScratchpadService interface {
 	ScratchpadReader
 	ScratchpadWriter
 	Initialize(ctx context.Context) error
@@ -109,9 +109,9 @@ type IScratchpadService interface {
 
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
-	GetTasks() ITaskService
-	GetConfig() IConfigService
-	GetScratchpad() IScratchpadService
+	GetTasks() TaskService
+	GetConfig() ConfigService
+	GetScratchpad() ScratchpadService
 }
 
 // SessionStateProvider manages session-level metadata and state.
@@ -125,8 +125,8 @@ type ResourceCloser interface {
 	Close() error
 }
 
-// ISessionProvider provides access to persistence services and session info.
-type ISessionProvider interface {
+// SessionProvider provides access to persistence services and session info.
+type SessionProvider interface {
 	PersistenceProvider
 	SessionStateProvider
 	ResourceCloser

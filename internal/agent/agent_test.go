@@ -455,7 +455,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 }
 
 type mockCostTracker struct {
-	domain_pricing.ICostTracker
+	domain_pricing.CostTracker
 }
 
 func TestAgent_Option_WithPricing(t *testing.T) {
@@ -744,7 +744,7 @@ func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
 	mockRegistry.AssertExpectations(t)
 }
 
-// mockToolRegistryWithExpectations implements IToolRegistry using testify/mock.
+// mockToolRegistryWithExpectations implements Registry using testify/mock.
 type mockToolRegistryWithExpectations struct {
 	mock.Mock
 }

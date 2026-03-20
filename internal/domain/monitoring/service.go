@@ -19,7 +19,7 @@ var _ orchestration.MonitoringTracker = (*service)(nil)
 
 // service handles business telemetry, cost tracking, and event emission.
 type service struct {
-	tracker pricing.ICostTracker
+	tracker pricing.CostTracker
 	bus     events.EventBus
 }
 
@@ -27,7 +27,7 @@ type service struct {
 type option func(*service)
 
 // WithTracker sets the cost tracker for the service.
-func WithTracker(t pricing.ICostTracker) option {
+func WithTracker(t pricing.CostTracker) option {
 	return func(s *service) {
 		s.tracker = t
 	}

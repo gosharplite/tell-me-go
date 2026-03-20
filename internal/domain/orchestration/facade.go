@@ -28,7 +28,7 @@ type chatterFacade struct {
 	monitor     MonitoringTracker
 
 	bus      events.EventBus
-	registry tools.IToolRegistry
+	registry tools.Registry
 	history  ports.HistoryManager
 
 	// Internal state/config
@@ -70,7 +70,7 @@ func WithEventBus(bus events.EventBus) facadeOption {
 }
 
 // WithRegistry sets the tool registry for the facade.
-func WithRegistry(reg tools.IToolRegistry) facadeOption {
+func WithRegistry(reg tools.Registry) facadeOption {
 	return func(f *chatterFacade) { f.registry = reg }
 }
 

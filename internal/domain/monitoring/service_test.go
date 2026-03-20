@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// mockCostTracker is a mock for pricing.ICostTracker.
+// mockCostTracker is a mock for pricing.CostTracker.
 type mockCostTracker struct {
 	mock.Mock
 }
 
-var _ pricing.ICostTracker = (*mockCostTracker)(nil)
+var _ pricing.CostTracker = (*mockCostTracker)(nil)
 
 func (m *mockCostTracker) GetTotalCost(ctx context.Context) float64 {
 	return m.Called(ctx).Get(0).(float64)

@@ -121,8 +121,8 @@ type turnState struct {
 	TaskCost             float64                 `json:"task_cost"`
 }
 
-// iToolExecutor defines the interface for tool execution.
-type iToolExecutor interface {
+// toolExecutor defines the interface for tool execution.
+type toolExecutor interface {
 	Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
 
@@ -149,13 +149,13 @@ type turn struct {
 	State        *turnState
 	CtxManager   *orchestration.ContextManager
 	Gateway      llm.LLMGateway
-	executor     iToolExecutor
-	Registry     tools.IToolRegistry
+	executor     toolExecutor
+	Registry     tools.Registry
 	TokenCounter llm.TokenCounter
 	Events       events.EventBus
 	MaxToolTurns int
 	Clock        clock.Clock
-	CostTracker  domain_pricing.ICostTracker
+	CostTracker  domain_pricing.CostTracker
 	ProviderName string
 	Model        string
 
@@ -171,8 +171,8 @@ type turnEngine struct {
 	mu               sync.RWMutex
 	ctxManager       *orchestration.ContextManager
 	gateway          llm.LLMGateway
-	executor         iToolExecutor
-	registry         tools.IToolRegistry
+	executor         toolExecutor
+	registry         tools.Registry
 	tokenCounter     llm.TokenCounter
 	events           events.EventBus
 	processors       map[turnPhase]turnProcessor
@@ -180,11 +180,11 @@ type turnEngine struct {
 	hooks            []turnHook
 	retryPolicy      retryPolicy
 	clock            clock.Clock
-	sm               domain_security.ISecurityManager
+	sm               domain_security.Manager
 	providerName     string
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
-	costTracker      domain_pricing.ICostTracker
+	costTracker      domain_pricing.CostTracker
 }
 
 // withClock sets a custom clock implementation.
@@ -198,14 +198,14 @@ func withClock(c clock.Clock) engineOption {
 type engineOption func(*turnEngine)
 
 // withCostTracker sets the cost tracker for the engine.
-func withCostTracker(tracker domain_pricing.ICostTracker) engineOption {
+func withCostTracker(tracker domain_pricing.CostTracker) engineOption {
 	return func(e *turnEngine) {
 		e.costTracker = tracker
 	}
 }
 
 // withConfig sets the security and usage configuration for the engine.
-func withConfig(sm domain_security.ISecurityManager, providerName, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
+func withConfig(sm domain_security.Manager, providerName, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
 	return func(e *turnEngine) {
 		e.sm = sm
 		e.providerName = providerName
@@ -224,7 +224,7 @@ func (e *turnEngine) ApplyOptions(opts ...engineOption) {
 }
 
 // Reconfigure propagates configuration changes to the engine.
-func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICostTracker) {
+func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.CostTracker) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.providerName = cfg.ProviderName
@@ -234,7 +234,7 @@ func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICost
 }
 
 // newTurnEngine creates a new turnEngine with a default pipeline.
-func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
+func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.ContextManager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
 	e := &turnEngine{
 		gateway:      gw,
 		executor:     ex,

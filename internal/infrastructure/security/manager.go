@@ -264,9 +264,9 @@ func (sm *SecurityManager) GetInteractor() domain.UserInteractor {
 	return sm.interaction.interactor
 }
 
-// internalSecurityProvider extends domain.ISecurityManager with methods used only within the security package.
+// internalSecurityProvider extends domain.Manager with methods used only within the security package.
 type internalSecurityProvider interface {
-	domain.ISecurityManager
+	domain.Manager
 	getSafetyService() *domain.SafetyService
 }
 

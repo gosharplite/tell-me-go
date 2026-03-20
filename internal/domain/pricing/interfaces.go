@@ -9,8 +9,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
-// ICostTracker defines the interface for tracking session costs.
-type ICostTracker interface {
+// CostTracker defines the interface for tracking session costs.
+type CostTracker interface {
 	GetTotalCost(ctx context.Context) float64
 	GetDailyCost(ctx context.Context) float64
 	GetStats(ctx context.Context) (UsageStats, float64)

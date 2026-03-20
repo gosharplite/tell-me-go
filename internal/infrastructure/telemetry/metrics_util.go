@@ -20,7 +20,7 @@ import (
 
 // GetPricing attempts to load pricing data from $TELL_ME_HOME/assets/pricing.json,
 // falling back to hardcoded defaults if the file is missing or invalid.
-func GetPricing(ctx context.Context, sm domain_security.ISecurityManager, outputDir string) domain_pricing.PricingData {
+func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir string) domain_pricing.PricingData {
 	// 1. Try to load from $TELL_ME_HOME/assets/pricing.json
 	// Use the parent of outputDir to find the assets folder
 	homeDir := filepath.Dir(outputDir)

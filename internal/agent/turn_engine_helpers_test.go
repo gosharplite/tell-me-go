@@ -19,7 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
-// mockExecutor implements iToolExecutor for testing.
+// mockExecutor implements toolExecutor for testing.
 type mockExecutor struct {
 	ExecuteFunc func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }

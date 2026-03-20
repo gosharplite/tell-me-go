@@ -76,7 +76,7 @@ func (m *mockConfigurableSecurityManager) LoadReadOnlyPaths() error {
 	args := m.Called()
 	return args.Error(0)
 }
-func (m *mockConfigurableSecurityManager) RegisterPolicyTools(r tools.IToolRegistry) error {
+func (m *mockConfigurableSecurityManager) RegisterPolicyTools(r tools.Registry) error {
 	args := m.Called(r)
 	return args.Error(0)
 }
@@ -473,10 +473,10 @@ type mockSessionDeps struct {
 	ports.SessionDependencies
 	gw       llm.LLMGateway
 	hManager ports.HistoryManager
-	reg      tools.IToolRegistry
-	sm       security.ISecurityManager
+	reg      tools.Registry
+	sm       security.Manager
 	bus      events.EventBus
-	tracker  pricing.ICostTracker
+	tracker  pricing.CostTracker
 	paths    *persistence.Paths
 	client   llm.LLMClient
 }
@@ -490,12 +490,12 @@ func (m *mockSessionDeps) GetPaths() *persistence.Paths {
 func (m *mockSessionDeps) GetPricingData() pricing.PricingData     { return pricing.PricingData{} }
 func (m *mockSessionDeps) GetGateway() llm.LLMGateway              { return m.gw }
 func (m *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return m.hManager }
-func (m *mockSessionDeps) GetRegistry() tools.IToolRegistry        { return m.reg }
-func (m *mockSessionDeps) GetSecurityManager() security.ISecurityManager {
+func (m *mockSessionDeps) GetRegistry() tools.Registry             { return m.reg }
+func (m *mockSessionDeps) GetSecurityManager() security.Manager {
 	return m.sm
 }
 func (m *mockSessionDeps) GetEventBus() events.EventBus { return m.bus }
-func (m *mockSessionDeps) GetTracker() pricing.ICostTracker {
+func (m *mockSessionDeps) GetTracker() pricing.CostTracker {
 	if m.tracker == nil {
 		return &mockTracker{}
 	}
@@ -505,7 +505,7 @@ func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing 
 func (m *mockSessionDeps) GetClient() llm.LLMClient                             { return m.client }
 
 type mockTracker struct {
-	pricing.ICostTracker
+	pricing.CostTracker
 }
 
 func (m *mockTracker) Warmup() {}
@@ -586,9 +586,9 @@ type mockSessionProvider struct {
 	mock.Mock
 }
 
-func (m *mockSessionProvider) GetTasks() ports.ITaskService            { return nil }
-func (m *mockSessionProvider) GetConfig() ports.IConfigService         { return nil }
-func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return nil }
+func (m *mockSessionProvider) GetTasks() ports.TaskService            { return nil }
+func (m *mockSessionProvider) GetConfig() ports.ConfigService         { return nil }
+func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadService { return nil }
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
 	args := m.Called()
 	return args.Get(0).(ports.SessionInfo)
@@ -630,7 +630,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "TelemetryRegistrationFails",
 			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RegisterMetrics = func(r tools.IToolRegistry, sm security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
+				b.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
 					return simulatedErr
 				}
 			},
@@ -654,7 +654,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				mockSP.On("SetInfo", mock.Anything).Return().Maybe()
 				mockSP.On("Close").Return(simulatedErr)
 
-				b.NewSessionState = func(ctx context.Context, modeDir string) (ports.ISessionProvider, error) {
+				b.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 					return mockSP, nil
 				}
 			},

@@ -260,7 +260,7 @@ func LoopFunc() {}`
 
 func TestSequenceAnalyzer_Helpers(t *testing.T) {
 	t.Parallel()
-	a := &sequenceAnalyzer{}
+	a := &defaultSequenceAnalyzer{}
 	t.Run("exprToString", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {

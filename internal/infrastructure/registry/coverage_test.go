@@ -17,12 +17,12 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
-		actions  func(t *testing.T, r tools.IToolRegistry)
-		validate func(t *testing.T, r tools.IToolRegistry)
+		actions  func(t *testing.T, r tools.Registry)
+		validate func(t *testing.T, r tools.Registry)
 	}{
 		{
 			name: "update existing tool",
-			actions: func(t *testing.T, r tools.IToolRegistry) {
+			actions: func(t *testing.T, r tools.Registry) {
 				def1 := &tools.ToolDeclaration{Name: "tool1", Description: "desc1"}
 				h1 := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 					return tools.ToolResult{Text: "v1"}, nil
@@ -39,7 +39,7 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 					t.Fatalf("failed to register tool with options: %v", err)
 				}
 			},
-			validate: func(t *testing.T, r tools.IToolRegistry) {
+			validate: func(t *testing.T, r tools.Registry) {
 				decls := r.GetDeclarations()
 				if len(decls) != 1 {
 					t.Errorf("expected 1 declaration, got %d", len(decls))

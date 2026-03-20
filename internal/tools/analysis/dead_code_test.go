@@ -20,7 +20,7 @@ import (
 )
 
 type deadCodeSecurityProvider struct {
-	domain_security.ISecurityManager
+	domain_security.Manager
 	tempDir string
 }
 
@@ -595,7 +595,7 @@ func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 					return tt.implementations[id]
 				},
 			}
-			analyzer := &deadCodeAnalyzer{idx: mockIdx}
+			analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
 			analyzer.propagateInterfaceUsages(ctx, state)
 
 			for id, count := range tt.expectedTotal {
@@ -609,7 +609,7 @@ func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 }
 
 func TestInternal_NilReceiverCoverage(t *testing.T) {
-	analyzer := &deadCodeAnalyzer{}
+	analyzer := &defaultDeadCodeAnalyzer{}
 
 	t.Run("Nil Receiver - Interface Methods", func(t *testing.T) {
 		// Must have a string return type to be a valid contract

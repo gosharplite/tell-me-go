@@ -21,13 +21,13 @@ type chatService struct {
 	Version   string
 	Stdout    io.Writer
 	Stderr    io.Writer
-	SM        domain_security.ISecurityManager
+	SM        domain_security.Manager
 	Loader    domain_config.ConfigLoader
 	Container di.Container
 }
 
 // NewChatService creates a new concrete implementation of ChatService.
-func NewChatService(homeDir, version string, stdout, stderr io.Writer, sm domain_security.ISecurityManager, loader domain_config.ConfigLoader, container di.Container) ChatService {
+func NewChatService(homeDir, version string, stdout, stderr io.Writer, sm domain_security.Manager, loader domain_config.ConfigLoader, container di.Container) ChatService {
 	return &chatService{
 		HomeDir:   homeDir,
 		Version:   version,

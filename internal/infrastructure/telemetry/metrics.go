@@ -35,12 +35,12 @@ type sessionCostTracker struct {
 	modelName string
 	logFile   string
 	mode      string
-	sm        domain_security.ISecurityManager
+	sm        domain_security.Manager
 	initiated bool
 }
 
 // NewSessionCostTracker creates a new tracker.
-func NewSessionCostTracker(sm domain_security.ISecurityManager, logFile string, mode string, modelName string, model domain_pricing.ModelPricing, pricing domain_pricing.PricingData) domain_pricing.ICostTracker {
+func NewSessionCostTracker(sm domain_security.Manager, logFile string, mode string, modelName string, model domain_pricing.ModelPricing, pricing domain_pricing.PricingData) domain_pricing.CostTracker {
 	return &sessionCostTracker{
 		sm:        sm,
 		logFile:   logFile,
@@ -209,7 +209,7 @@ func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 }
 
 type metricsManager struct {
-	sm               domain_security.ISecurityManager
+	sm               domain_security.Manager
 	metricsMu        sync.Mutex
 	logFile          string
 	model            string
@@ -229,7 +229,7 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
+func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -300,7 +300,7 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.
-func RecordSessionCost(ctx context.Context, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model, mode, sessionID string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
+func RecordSessionCost(ctx context.Context, sm domain_security.Manager, tracker domain_pricing.CostTracker, logPath, model, mode, sessionID string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logPath,
@@ -326,7 +326,7 @@ func RecordSessionCost(ctx context.Context, sm domain_security.ISecurityManager,
 	return appendSummaryToLog(logPath, usage, totalCost, model)
 }
 
-func resolveUsageForSummary(ctx context.Context, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model string, overrides map[string]domain_pricing.ModelPricing) (domain_pricing.UsageStats, float64, error) {
+func resolveUsageForSummary(ctx context.Context, sm domain_security.Manager, tracker domain_pricing.CostTracker, logPath, model string, overrides map[string]domain_pricing.ModelPricing) (domain_pricing.UsageStats, float64, error) {
 	if tracker != nil {
 		usage, totalCost := tracker.GetStats(ctx)
 		return usage, totalCost, nil

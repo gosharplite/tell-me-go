@@ -114,20 +114,20 @@ func (m *mockListStore) DeleteAll(ctx context.Context) error {
 }
 
 type mockSessionProvider struct {
-	tasks      *services.TaskService
-	config     *services.ConfigService
-	scratchpad *services.ScratchpadService
+	tasks      ports.TaskService
+	config     ports.ConfigService
+	scratchpad ports.ScratchpadService
 	info       ports.SessionInfo
 	kvStore    *mockKVStore
 	listStore  *mockListStore
 }
 
-func (m *mockSessionProvider) GetTasks() ports.ITaskService            { return m.tasks }
-func (m *mockSessionProvider) GetConfig() ports.IConfigService         { return m.config }
-func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return m.scratchpad }
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo              { return m.info }
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)          { m.info = info }
-func (m *mockSessionProvider) Close() error                            { return nil }
+func (m *mockSessionProvider) GetTasks() ports.TaskService            { return m.tasks }
+func (m *mockSessionProvider) GetConfig() ports.ConfigService         { return m.config }
+func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadService { return m.scratchpad }
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo             { return m.info }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)         { m.info = info }
+func (m *mockSessionProvider) Close() error                           { return nil }
 
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 	kv := &mockKVStore{kv: make(map[string]string)}
@@ -175,7 +175,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 	tests := []struct {
 		name           string
 		args           map[string]interface{}
-		setup          func(*mockListStore, *services.TaskService)
+		setup          func(*mockListStore, ports.TaskService)
 		expectedResult string
 		expectError    bool
 	}{
@@ -187,7 +187,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 		{
 			name: "Successfully list tasks",
 			args: map[string]interface{}{"action": "list"},
-			setup: func(m *mockListStore, ts *services.TaskService) {
+			setup: func(m *mockListStore, ts ports.TaskService) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				_ = ts.Initialize(context.Background())
 			},
@@ -196,7 +196,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 		{
 			name: "Successfully update task",
 			args: map[string]interface{}{"action": "update", "task_id": 1.0, "status": "completed"},
-			setup: func(m *mockListStore, ts *services.TaskService) {
+			setup: func(m *mockListStore, ts ports.TaskService) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				_ = ts.Initialize(context.Background())
 			},
@@ -205,7 +205,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 		{
 			name: "Successfully list completed tasks",
 			args: map[string]interface{}{"action": "list", "status": "completed"},
-			setup: func(m *mockListStore, ts *services.TaskService) {
+			setup: func(m *mockListStore, ts ports.TaskService) {
 				m.tasks = []ports.Task{
 					{ID: 1, Content: "task 1", Status: "completed"},
 					{ID: 2, Content: "task 2", Status: "pending"},
@@ -217,7 +217,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 		{
 			name: "Successfully delete task",
 			args: map[string]interface{}{"action": "delete", "task_id": 1.0},
-			setup: func(m *mockListStore, ts *services.TaskService) {
+			setup: func(m *mockListStore, ts ports.TaskService) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				_ = ts.Initialize(context.Background())
 			},
@@ -226,7 +226,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 		{
 			name: "Successfully clear tasks",
 			args: map[string]interface{}{"action": "clear"},
-			setup: func(m *mockListStore, ts *services.TaskService) {
+			setup: func(m *mockListStore, ts ports.TaskService) {
 				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				_ = ts.Initialize(context.Background())
 			},

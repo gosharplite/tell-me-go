@@ -562,7 +562,7 @@ func TestCapturer_ReadSingleKey(t *testing.T) {
 
 			// Construct Capturer with isolated Stdin
 			// Using correct NewCapturer signature:
-			// func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor
+			// func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor
 			c := NewCapturer(stdin, io.Discard, io.Discard, nil, nil, "", tt.mockAnswer)
 
 			got, err := c.ReadSingleKey(ctx)

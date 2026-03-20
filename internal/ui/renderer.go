@@ -26,7 +26,7 @@ import (
 
 // stdUIRenderer implements ports.UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
-	locker   domain_security.ISecurityManager
+	locker   domain_security.Manager
 	stdout   io.Writer
 	stderr   io.Writer
 	clock    clock.Clock
@@ -48,7 +48,7 @@ type streamState struct {
 }
 
 // NewRenderer creates a new ports.UIRenderer.
-func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writer, clk clock.Clock) ports.UIRenderer {
+func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock) ports.UIRenderer {
 	if clk == nil {
 		clk = clock.RealClock{}
 	}

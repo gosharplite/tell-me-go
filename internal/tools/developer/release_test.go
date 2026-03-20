@@ -148,7 +148,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	}
 }
 
-func runReleaseReadinessTest(t *testing.T, sm domain_security.ISecurityManager, name string, files func() map[string][]byte, runFunc func(context.Context, string, ...string) ([]byte, error), wantSubstr string) {
+func runReleaseReadinessTest(t *testing.T, sm domain_security.Manager, name string, files func() map[string][]byte, runFunc func(context.Context, string, ...string) ([]byte, error), wantSubstr string) {
 	fs := persistence.NewMockFileSystem()
 	fs.Files = files()
 

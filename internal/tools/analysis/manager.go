@@ -13,24 +13,24 @@ import (
 )
 
 // Analyzer interfaces for segregation and testing
-type iComplexityAnalyzer interface {
+type complexityAnalyzer interface {
 	Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 	GatherComplexities(ctx context.Context, root string) ([]funcComplexity, error)
 }
 
-type iDependencyAnalyzer interface {
+type dependencyAnalyzer interface {
 	GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-type iSequenceAnalyzer interface {
+type sequenceAnalyzer interface {
 	AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-type iChangeAnalyzer interface {
+type changeAnalyzer interface {
 	SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-type iTypeManager interface {
+type typeManager interface {
 	GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 	ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 	ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
@@ -38,19 +38,19 @@ type iTypeManager interface {
 	FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-type iDeadCodeAnalyzer interface {
+type deadCodeAnalyzer interface {
 	FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 	GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error)
 }
 
 // analysisManager is the consolidated hub for all code analysis, refactoring, and development tools.
 type analysisManager struct {
-	Complexity iComplexityAnalyzer
-	Dependency iDependencyAnalyzer
-	Sequence   iSequenceAnalyzer
-	Change     iChangeAnalyzer
-	Types      iTypeManager
-	DeadCode   iDeadCodeAnalyzer
+	Complexity complexityAnalyzer
+	Dependency dependencyAnalyzer
+	Sequence   sequenceAnalyzer
+	Change     changeAnalyzer
+	Types      typeManager
+	DeadCode   deadCodeAnalyzer
 
 	// Refactoring
 	Refactor *refactorManager
@@ -67,7 +67,7 @@ type analysisManager struct {
 	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) *analysisManager {
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) *analysisManager {
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
 		Dependency: newDependencyAnalyzer(executor, sp, bus),
