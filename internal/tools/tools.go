@@ -25,7 +25,7 @@ type ToolRegistrationParams struct {
 	SecurityManager  domain_security.Manager
 	CommandExecutor  tools.CommandExecutor
 	CommandValidator domain_security.CommandValidator
-	SessionProvider  ports.ISessionProvider
+	SessionProvider  ports.SessionProvider
 	LogFile          string
 	Model            string
 	Mode             string

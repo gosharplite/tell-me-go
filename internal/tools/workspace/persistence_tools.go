@@ -19,11 +19,11 @@ type persistenceTools struct {
 	tasks      ports.TaskService
 	scratchpad ports.ScratchpadService
 	config     ports.ConfigService
-	state      ports.ISessionProvider
+	state      ports.SessionProvider
 }
 
 // newpersistenceTools creates a new persistenceTools instance.
-func newpersistenceTools(state ports.ISessionProvider) *persistenceTools {
+func newpersistenceTools(state ports.SessionProvider) *persistenceTools {
 	if state == nil {
 		return &persistenceTools{}
 	}

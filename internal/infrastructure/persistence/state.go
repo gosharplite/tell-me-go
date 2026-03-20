@@ -39,7 +39,7 @@ func (s *sessionState) Close() error {
 }
 
 // NewSessionState initializes repositories and services.
-func NewSessionState(ctx context.Context, configDir string) (ports.ISessionProvider, error) {
+func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
 	if storageType == "" {
 		storageType = "sqlite" // Set sqlite as default storage

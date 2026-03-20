@@ -125,8 +125,8 @@ type ResourceCloser interface {
 	Close() error
 }
 
-// ISessionProvider provides access to persistence services and session info.
-type ISessionProvider interface {
+// SessionProvider provides access to persistence services and session info.
+type SessionProvider interface {
 	PersistenceProvider
 	SessionStateProvider
 	ResourceCloser

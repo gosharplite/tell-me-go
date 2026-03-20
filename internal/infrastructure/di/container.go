@@ -63,7 +63,7 @@ type bootstrapper struct {
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
 	RotateSession    func(stdout io.Writer, paths persistence.Paths, retentionDays int) error
-	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.ISessionProvider, error)
+	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
 // NewBootstrapper creates a new Container instance.
@@ -178,8 +178,8 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	return reg, nil
 }
 
-func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.ISessionProvider, func(), error) {
-	var sessionProvider ports.ISessionProvider
+func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(), error) {
+	var sessionProvider ports.SessionProvider
 	state, err := b.NewSessionState(ctx, paths.ModeDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize session state: %w", err)

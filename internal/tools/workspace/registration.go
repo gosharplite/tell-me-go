@@ -442,6 +442,6 @@ func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.Comman
 }
 
 // RegisterPersistence adds persistence tools to the registry.
-func RegisterPersistence(r tools.Registry, state ports.ISessionProvider) error {
+func RegisterPersistence(r tools.Registry, state ports.SessionProvider) error {
 	return newpersistenceTools(state).Register(r)
 }

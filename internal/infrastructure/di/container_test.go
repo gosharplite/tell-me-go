@@ -654,7 +654,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				mockSP.On("SetInfo", mock.Anything).Return().Maybe()
 				mockSP.On("Close").Return(simulatedErr)
 
-				b.NewSessionState = func(ctx context.Context, modeDir string) (ports.ISessionProvider, error) {
+				b.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 					return mockSP, nil
 				}
 			},
