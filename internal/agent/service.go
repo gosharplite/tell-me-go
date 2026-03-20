@@ -88,7 +88,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	// 4. Finalize session state
 	if finalizeErr := s.Container.FinalizeSession(ctx, hManager, deps, cfg); finalizeErr != nil {
 		if err != nil {
-			return fmt.Errorf("session processing failed: %w; additionally, finalize session failed: %v", err, finalizeErr)
+			return fmt.Errorf("session processing failed: %w; additionally, finalize session failed: %w", err, finalizeErr)
 		}
 		return fmt.Errorf("finalize session failed: %w", finalizeErr)
 	}

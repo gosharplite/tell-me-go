@@ -68,12 +68,15 @@ func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) erro
 		}
 	}
 
+	// Always execute cleanup regardless of previous file archiving failures
+	if cleanupErr := cleanupOldBackups(paths, retentionDays); cleanupErr != nil {
+		errs = append(errs, cleanupErr)
+	}
+
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-
-	// Cleanup old backups
-	return cleanupOldBackups(paths, retentionDays)
+	return nil
 }
 
 // cleanupOldBackups removes backups older than the specified retention days.

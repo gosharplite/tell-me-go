@@ -16,9 +16,6 @@ import (
 var (
 	// errInvalidPayload is returned when the history content is malformed or invalid.
 	errInvalidPayload = errors.New("invalid payload history")
-
-	// errMissingParts is returned when a message has no parts.
-	errMissingParts = errors.New("missing message parts")
 )
 
 // emptyTurnFilter removes turns where both user and model messages have no meaningful content.
@@ -486,9 +483,6 @@ func (t *thoughtSignaturePropagator) Priority() int { return 6 } // Run after co
 func validate(msg *llm.Content) error {
 	if msg == nil {
 		return fmt.Errorf("validate: %w", errInvalidPayload)
-	}
-	if len(msg.Parts) == 0 && len(msg.TransientParts) == 0 {
-		return fmt.Errorf("validate: %w", errMissingParts)
 	}
 	for i, p := range msg.Parts {
 		if p == nil {

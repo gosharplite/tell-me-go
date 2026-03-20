@@ -1339,8 +1339,7 @@ func TestContent_Validate(t *testing.T) {
 				Role:  "user",
 				Parts: []*llm.Part{},
 			},
-			wantErr:     true,
-			expectedErr: errMissingParts,
+			wantErr: false,
 		},
 		{
 			name: "nil part in parts",
