@@ -1691,3 +1691,55 @@ func TestTransientMerger_NilSafety(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, req.History[0].Parts, 2)
 }
+
+func TestCleanContent_Table(t *testing.T) {
+	tests := []struct {
+		name        string
+		parts       []*llm.Part
+		wantChanged bool
+		wantErr     error
+	}{
+		{
+			name: "Standard payload",
+			parts: []*llm.Part{
+				{Text: "valid_part"},
+			},
+			wantChanged: false,
+			wantErr:     nil,
+		},
+		{
+			name: "Mixed payload",
+			parts: []*llm.Part{
+				{Text: "valid_part"},
+				{Text: ""},
+				{Text: "valid_part"},
+			},
+			wantChanged: true,
+			wantErr:     nil,
+		},
+		{
+			name: "Malicious payload",
+			parts: []*llm.Part{
+				{Text: ""},
+				nil,
+			},
+			wantChanged: false,
+			wantErr:     errInvalidPayload,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := &llm.Content{
+				Parts: tt.parts,
+			}
+			changed, err := cleanContent(content)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantChanged, changed)
+		})
+	}
+}

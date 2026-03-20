@@ -274,7 +274,6 @@ func cleanContent(content *llm.Content) (bool, error) {
 		}
 		if p.IsEmpty() {
 			hasEmpty = true
-			break
 		}
 	}
 

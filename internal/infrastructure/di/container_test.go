@@ -21,7 +21,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -55,13 +54,58 @@ func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, tool
 	return nil, nil
 }
 
+type mockConfigurableSecurityManager struct {
+	mock.Mock
+}
+
+func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string)  {}
+func (m *mockConfigurableSecurityManager) SetSafePathsFile(path string)     {}
+func (m *mockConfigurableSecurityManager) SetReadOnlyPathsFile(path string) {}
+func (m *mockConfigurableSecurityManager) SetBypassFile(path string)         {}
+func (m *mockConfigurableSecurityManager) LoadSafePaths() error             { return nil }
+func (m *mockConfigurableSecurityManager) LoadReadOnlyPaths() error         { return nil }
+func (m *mockConfigurableSecurityManager) LoadBypassState()                 {}
+func (m *mockConfigurableSecurityManager) RegisterSafePath(path string)     {}
+func (m *mockConfigurableSecurityManager) RegisterReadOnlyPath(path string) {}
+func (m *mockConfigurableSecurityManager) RegisterPolicyTools(r tools.IToolRegistry) error {
+	return nil
+}
+
+func (m *mockConfigurableSecurityManager) IsPathSafe(path string) (string, error) {
+	return path, nil
+}
+func (m *mockConfigurableSecurityManager) IsPathWritable(path string) (string, error) {
+	return path, nil
+}
+func (m *mockConfigurableSecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return true, nil
+}
+func (m *mockConfigurableSecurityManager) LogAudit(action string, args ...any) {}
+func (m *mockConfigurableSecurityManager) Close() error                         { return nil }
+func (m *mockConfigurableSecurityManager) TerminalLock()                        {}
+func (m *mockConfigurableSecurityManager) TerminalUnlock()                      {}
+func (m *mockConfigurableSecurityManager) Prompt(message string)                {}
+func (m *mockConfigurableSecurityManager) Warn(message string)                  {}
+func (m *mockConfigurableSecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+	return true, nil
+}
+func (m *mockConfigurableSecurityManager) ReadLine(ctx context.Context) (string, error) {
+	return "", nil
+}
+func (m *mockConfigurableSecurityManager) IsCommandAllowed(command string) bool {
+	return true
+}
+func (m *mockConfigurableSecurityManager) IsBypassActive() bool {
+	return false
+}
+
 func TestBuildSessionDependencies(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test")
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	sm := internal_security.NewSecurityManager(nil)
+	sm := new(mockConfigurableSecurityManager)
 	client := new(mockLLMClient)
 
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
@@ -92,7 +136,7 @@ func TestGetAgentFactory(t *testing.T) {
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	sm := internal_security.NewSecurityManager(nil)
+	sm := new(mockConfigurableSecurityManager)
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil)
 
 	factory := bootstrapper.GetAgentFactory()
@@ -155,7 +199,8 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			homeDir := tt.setup(t)
-			b := NewBootstrapper(homeDir, internal_security.NewSecurityManager(nil), "1.0.0", io.Discard, io.Discard, tt.clientFactory)
+			sm := new(mockConfigurableSecurityManager)
+			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, tt.clientFactory)
 			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
@@ -178,7 +223,7 @@ func TestFinalizeSession(t *testing.T) {
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	sm := internal_security.NewSecurityManager(nil)
+	sm := new(mockConfigurableSecurityManager)
 	cfg := &config.Config{
 		Mode:  "assistant",
 		Model: "test-model",
@@ -206,7 +251,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	sm := internal_security.NewSecurityManager(nil)
+	sm := new(mockConfigurableSecurityManager)
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil)
 
 	factory := bootstrapper.GetAgentFactory()
@@ -286,7 +331,7 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	sm := internal_security.NewSecurityManager(nil)
+	sm := new(mockConfigurableSecurityManager)
 	client := new(mockLLMClient)
 
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
@@ -318,7 +363,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	client := &mockLLMClient{}
 	gw := client
 	reg := registry.New()
-	sm := internal_security.NewSecurityManager(nil)
+	sm := new(mockConfigurableSecurityManager)
 	bus := events.NewSimpleEventBus()
 	tracker := &mockTracker{}
 	pData := pricing.PricingData{}
