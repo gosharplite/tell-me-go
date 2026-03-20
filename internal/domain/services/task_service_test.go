@@ -61,17 +61,17 @@ func (m *mockTaskRepo) Append(ctx context.Context, task ports.Task) error {
 	return nil
 }
 
-func setupTaskService(t *testing.T) (ports.TaskService, *mockTaskRepo) {
+func setupTaskStore(t *testing.T) (ports.TaskStore, *mockTaskRepo) {
 	t.Helper()
 	repo := &mockTaskRepo{}
-	s := NewTaskService(repo)
+	s := NewTaskStore(repo)
 	return s, repo
 }
 
-func TestTaskService_Add(t *testing.T) {
+func TestTaskStore_Add(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, repo := setupTaskService(t)
+	s, repo := setupTaskStore(t)
 
 	task, err := s.AddTask(ctx, "Test task")
 	if err != nil {
@@ -85,10 +85,10 @@ func TestTaskService_Add(t *testing.T) {
 	}
 }
 
-func TestTaskService_Update(t *testing.T) {
+func TestTaskStore_Update(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, _ := setupTaskService(t)
+	s, _ := setupTaskStore(t)
 	_, _ = s.AddTask(ctx, "Initial task")
 
 	_, err := s.UpdateTask(ctx, 1, "Updated task", "completed")
@@ -101,10 +101,10 @@ func TestTaskService_Update(t *testing.T) {
 	}
 }
 
-func TestTaskService_Delete(t *testing.T) {
+func TestTaskStore_Delete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, _ := setupTaskService(t)
+	s, _ := setupTaskStore(t)
 	_, _ = s.AddTask(ctx, "To be deleted")
 
 	if err := s.DeleteTask(ctx, 1); err != nil {
@@ -115,11 +115,11 @@ func TestTaskService_Delete(t *testing.T) {
 	}
 }
 
-func TestTaskService_Concurrency(t *testing.T) {
+func TestTaskStore_Concurrency(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	repo := &mockTaskRepo{}
-	s := NewTaskService(repo)
+	s := NewTaskStore(repo)
 
 	const workers = 100
 	done := make(chan bool)
@@ -140,7 +140,7 @@ func TestTaskService_Concurrency(t *testing.T) {
 	}
 }
 
-func TestTaskService_Initialize(t *testing.T) {
+func TestTaskStore_Initialize(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
@@ -152,7 +152,7 @@ func TestTaskService_Initialize(t *testing.T) {
 				{ID: 10, Content: "Task 10"},
 			},
 		}
-		s := NewTaskService(repo)
+		s := NewTaskStore(repo)
 
 		err := s.Initialize(ctx)
 		if err != nil {
@@ -179,7 +179,7 @@ func TestTaskService_Initialize(t *testing.T) {
 		repo := &mockTaskRepo{
 			readErr: errors.New("read error"),
 		}
-		s := NewTaskService(repo)
+		s := NewTaskStore(repo)
 
 		err := s.Initialize(ctx)
 		if err == nil {
@@ -188,13 +188,13 @@ func TestTaskService_Initialize(t *testing.T) {
 	})
 }
 
-func TestTaskService_ClearTasks(t *testing.T) {
+func TestTaskStore_ClearTasks(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("Success", func(t *testing.T) {
 		t.Parallel()
-		s, repo := setupTaskService(t)
+		s, repo := setupTaskStore(t)
 		_, _ = s.AddTask(ctx, "Task 1")
 		_, _ = s.AddTask(ctx, "Task 2")
 
@@ -214,7 +214,7 @@ func TestTaskService_ClearTasks(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		t.Parallel()
 		repo := &mockTaskRepo{}
-		s := NewTaskService(repo)
+		s := NewTaskStore(repo)
 		_, err := s.AddTask(ctx, "Task")
 		if err != nil {
 			t.Fatalf("setup failed: %v", err)
@@ -228,13 +228,13 @@ func TestTaskService_ClearTasks(t *testing.T) {
 	})
 }
 
-func TestTaskService_ErrorPaths(t *testing.T) {
+func TestTaskStore_ErrorPaths(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("AddTask Empty Content", func(t *testing.T) {
 		t.Parallel()
-		s, _ := setupTaskService(t)
+		s, _ := setupTaskStore(t)
 		_, err := s.AddTask(ctx, "")
 		if err == nil {
 			t.Error("expected error for empty content")
@@ -244,7 +244,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	t.Run("AddTask Write Error", func(t *testing.T) {
 		t.Parallel()
 		repo := &mockTaskRepo{writeErr: errors.New("write fail")}
-		s := NewTaskService(repo)
+		s := NewTaskStore(repo)
 		_, err := s.AddTask(ctx, "Test")
 		if err == nil {
 			t.Error("expected write error")
@@ -253,7 +253,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 
 	t.Run("UpdateTask Not Found", func(t *testing.T) {
 		t.Parallel()
-		s, _ := setupTaskService(t)
+		s, _ := setupTaskStore(t)
 		_, err := s.UpdateTask(ctx, 999, "content", "status")
 		if err == nil {
 			t.Error("expected not found error")
@@ -262,7 +262,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 
 	t.Run("UpdateTask Write Error", func(t *testing.T) {
 		t.Parallel()
-		s, repo := setupTaskService(t)
+		s, repo := setupTaskStore(t)
 		_, _ = s.AddTask(ctx, "Task")
 		repo.writeErr = errors.New("write fail")
 		_, err := s.UpdateTask(ctx, 1, "Updated", "completed")
@@ -273,7 +273,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 
 	t.Run("DeleteTask Not Found", func(t *testing.T) {
 		t.Parallel()
-		s, _ := setupTaskService(t)
+		s, _ := setupTaskStore(t)
 		err := s.DeleteTask(ctx, 999)
 		if err == nil {
 			t.Error("expected not found error")
@@ -282,7 +282,7 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 
 	t.Run("DeleteTask Write Error", func(t *testing.T) {
 		t.Parallel()
-		s, repo := setupTaskService(t)
+		s, repo := setupTaskStore(t)
 		_, _ = s.AddTask(ctx, "Task")
 		repo.writeErr = errors.New("write fail")
 		err := s.DeleteTask(ctx, 1)
@@ -292,10 +292,10 @@ func TestTaskService_ErrorPaths(t *testing.T) {
 	})
 }
 
-func TestTaskService_ListTasks_Filter(t *testing.T) {
+func TestTaskStore_ListTasks_Filter(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, _ := setupTaskService(t)
+	s, _ := setupTaskStore(t)
 	_, _ = s.AddTask(ctx, "Pending 1")
 	_, _ = s.AddTask(ctx, "Pending 2")
 	t3, _ := s.AddTask(ctx, "Completed")
@@ -312,10 +312,10 @@ func TestTaskService_ListTasks_Filter(t *testing.T) {
 	}
 }
 
-func TestTaskService_UpdateTask_Partial(t *testing.T) {
+func TestTaskStore_UpdateTask_Partial(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, _ := setupTaskService(t)
+	s, _ := setupTaskStore(t)
 	t1, _ := s.AddTask(ctx, "Task 1")
 
 	// Update only content
@@ -331,10 +331,10 @@ func TestTaskService_UpdateTask_Partial(t *testing.T) {
 	}
 }
 
-func TestTaskService_DeleteTask_Multiple(t *testing.T) {
+func TestTaskStore_DeleteTask_Multiple(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s, repo := setupTaskService(t)
+	s, repo := setupTaskStore(t)
 	_, _ = s.AddTask(ctx, "Task 1")
 	t2, _ := s.AddTask(ctx, "Task 2")
 	_, _ = s.AddTask(ctx, "Task 3")

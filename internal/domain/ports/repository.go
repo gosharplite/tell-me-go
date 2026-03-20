@@ -62,8 +62,8 @@ type TaskWriter interface {
 	ClearTasks(ctx context.Context) error
 }
 
-// TaskService defines the interface for task management.
-type TaskService interface {
+// TaskStore defines the interface for task management.
+type TaskStore interface {
 	TaskReader
 	TaskWriter
 	Initialize(ctx context.Context) error
@@ -109,7 +109,7 @@ type ScratchpadService interface {
 
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
-	GetTasks() TaskService
+	GetTasks() TaskStore
 	GetConfig() ConfigService
 	GetScratchpad() ScratchpadService
 }

@@ -21,8 +21,8 @@ type taskService struct {
 	nextID float64
 }
 
-// NewTaskService creates a new taskService.
-func NewTaskService(store ports.ListStore[ports.Task]) ports.TaskService {
+// NewTaskStore creates a new taskService.
+func NewTaskStore(store ports.ListStore[ports.Task]) ports.TaskStore {
 	return &taskService{
 		store:  store,
 		tasks:  make(map[float64]ports.Task),
