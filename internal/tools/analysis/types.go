@@ -13,7 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type typeManager struct {
+type defaultTypeManager struct {
 	Indexer symbolIndex
 	Cache   *astCache
 	SP      security.PathValidator
@@ -34,15 +34,15 @@ type fieldInfo struct {
 	Tag   string
 }
 
-func newTypeManager(idx symbolIndex, cache *astCache, sp security.PathValidator) *typeManager {
-	return &typeManager{
+func newTypeManager(idx symbolIndex, cache *astCache, sp security.PathValidator) *defaultTypeManager {
+	return &defaultTypeManager{
 		Indexer: idx,
 		Cache:   cache,
 		SP:      sp,
 	}
 }
 
-func (m *typeManager) GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Typename string `json:"typename"`
 		Path     string `json:"path"`
@@ -82,7 +82,7 @@ func (m *typeManager) GetTypeInfo(ctx context.Context, args map[string]interface
 	return tools.ToolResult{Text: m.renderTypeInfo(def, receivers)}, nil
 }
 
-func (m *typeManager) ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path         string `json:"path"`
 		ExportedOnly bool   `json:"exported_only"`
@@ -104,7 +104,7 @@ func (m *typeManager) ListSymbols(ctx context.Context, args map[string]interface
 	return m.wrapResults(results, "No symbols found."), nil
 }
 
-func (m *typeManager) ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		InterfaceName string `json:"interface_name"`
 	}
@@ -134,7 +134,7 @@ func (m *typeManager) ListImplementations(ctx context.Context, args map[string]i
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *typeManager) FindUsages(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) FindUsages(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
 		Path  string `json:"path"`
@@ -170,7 +170,7 @@ func (m *typeManager) FindUsages(ctx context.Context, args map[string]interface{
 	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *typeManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
 		Path  string `json:"path"`
@@ -192,7 +192,7 @@ func (m *typeManager) FindDefinitions(ctx context.Context, args map[string]inter
 	return m.wrapResults(results, "No definitions found."), nil
 }
 
-func (m *typeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc location) typeDefinition {
+func (m *defaultTypeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc location) typeDefinition {
 	def := typeDefinition{
 		Name:     ts.Name.Name,
 		location: fmt.Sprintf("%s:%d", loc.Path, loc.Line),
@@ -214,7 +214,7 @@ func (m *typeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc l
 	return def
 }
 
-func (m *typeManager) parseFields(list *ast.FieldList) []fieldInfo {
+func (m *defaultTypeManager) parseFields(list *ast.FieldList) []fieldInfo {
 	if list == nil {
 		return nil
 	}
@@ -237,7 +237,7 @@ func (m *typeManager) parseFields(list *ast.FieldList) []fieldInfo {
 	return fields
 }
 
-func (m *typeManager) parseInterfaceMethods(list *ast.FieldList) []string {
+func (m *defaultTypeManager) parseInterfaceMethods(list *ast.FieldList) []string {
 	if list == nil {
 		return nil
 	}
@@ -250,7 +250,7 @@ func (m *typeManager) parseInterfaceMethods(list *ast.FieldList) []string {
 	return methods
 }
 
-func (m *typeManager) findMethodsInPackage(dir, typeName string) ([]string, error) {
+func (m *defaultTypeManager) findMethodsInPackage(dir, typeName string) ([]string, error) {
 	var methods []string
 	err := filepath.Walk(dir, func(p string, i os.FileInfo, e error) error {
 		if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
@@ -273,7 +273,7 @@ func (m *typeManager) findMethodsInPackage(dir, typeName string) ([]string, erro
 	return methods, err
 }
 
-func (m *typeManager) renderTypeInfo(def typeDefinition, receivers []string) string {
+func (m *defaultTypeManager) renderTypeInfo(def typeDefinition, receivers []string) string {
 	var sb strings.Builder
 	_, _ = fmt.Fprintf(&sb, "Type: %s\nLocation: %s\n", def.Name, def.location)
 	if def.Kind != "" {
@@ -309,7 +309,7 @@ func (m *typeManager) renderTypeInfo(def typeDefinition, receivers []string) str
 	return sb.String()
 }
 
-func (m *typeManager) classifySymbol(decl ast.Decl) (string, string, bool) {
+func (m *defaultTypeManager) classifySymbol(decl ast.Decl) (string, string, bool) {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
 		return d.Name.Name, "func", true
@@ -333,7 +333,7 @@ func (m *typeManager) classifySymbol(decl ast.Decl) (string, string, bool) {
 	return "", "", false
 }
 
-func (m *typeManager) shouldIncludeSymbol(name, query string, exportedOnly bool) bool {
+func (m *defaultTypeManager) shouldIncludeSymbol(name, query string, exportedOnly bool) bool {
 	if exportedOnly && !ast.IsExported(name) {
 		return false
 	}
@@ -343,7 +343,7 @@ func (m *typeManager) shouldIncludeSymbol(name, query string, exportedOnly bool)
 	return true
 }
 
-func (m *typeManager) formatSymbol(name, kind string, decl ast.Decl) string {
+func (m *defaultTypeManager) formatSymbol(name, kind string, decl ast.Decl) string {
 	switch kind {
 	case "type":
 		return "type " + name
@@ -359,7 +359,7 @@ func (m *typeManager) formatSymbol(name, kind string, decl ast.Decl) string {
 	return name
 }
 
-func (m *typeManager) matchSymbolInFile(f *ast.File, fset *token.FileSet, filePath string, query string, exportedOnly bool) []string {
+func (m *defaultTypeManager) matchSymbolInFile(f *ast.File, fset *token.FileSet, filePath string, query string, exportedOnly bool) []string {
 	var results []string
 	for _, decl := range f.Decls {
 		name, kind, ok := m.classifySymbol(decl)
@@ -372,7 +372,7 @@ func (m *typeManager) matchSymbolInFile(f *ast.File, fset *token.FileSet, filePa
 	return results
 }
 
-func (m *typeManager) collectSymbols(root, query string, exportedOnly bool) ([]string, error) {
+func (m *defaultTypeManager) collectSymbols(root, query string, exportedOnly bool) ([]string, error) {
 	var results []string
 	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(p) != ".go" {
@@ -388,14 +388,14 @@ func (m *typeManager) collectSymbols(root, query string, exportedOnly bool) ([]s
 	return results, err
 }
 
-func (m *typeManager) resolvePath(path string) (string, error) {
+func (m *defaultTypeManager) resolvePath(path string) (string, error) {
 	if path == "" {
 		path = "."
 	}
 	return m.SP.IsPathSafe(path)
 }
 
-func (m *typeManager) wrapResults(results []string, notFoundMsg string) tools.ToolResult {
+func (m *defaultTypeManager) wrapResults(results []string, notFoundMsg string) tools.ToolResult {
 	if len(results) == 0 {
 		return tools.ToolResult{Text: notFoundMsg}
 	}

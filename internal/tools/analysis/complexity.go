@@ -13,13 +13,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type complexityAnalyzer struct {
+type defaultComplexityAnalyzer struct {
 	Cache *astCache
 	SP    security.PathValidator
 }
 
-func newComplexityAnalyzer(cache *astCache, sp security.PathValidator) *complexityAnalyzer {
-	return &complexityAnalyzer{
+func newComplexityAnalyzer(cache *astCache, sp security.PathValidator) *defaultComplexityAnalyzer {
+	return &defaultComplexityAnalyzer{
 		Cache: cache,
 		SP:    sp,
 	}
@@ -32,7 +32,7 @@ type funcComplexity struct {
 	FilePath   string
 }
 
-func (a *complexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
@@ -57,7 +57,7 @@ func (a *complexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 	return tools.ToolResult{Text: a.formatResults(complexities)}, nil
 }
 
-func (a *complexityAnalyzer) GatherComplexities(ctx context.Context, root string) ([]funcComplexity, error) {
+func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string) ([]funcComplexity, error) {
 	var complexities []funcComplexity
 	err := filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
 		select {
@@ -76,7 +76,7 @@ func (a *complexityAnalyzer) GatherComplexities(ctx context.Context, root string
 	return complexities, err
 }
 
-func (a *complexityAnalyzer) analyzeFile(filePath string) []funcComplexity {
+func (a *defaultComplexityAnalyzer) analyzeFile(filePath string) []funcComplexity {
 	f, fset, err := a.Cache.Get(filePath)
 	if err != nil {
 		return nil
@@ -102,7 +102,7 @@ func (a *complexityAnalyzer) analyzeFile(filePath string) []funcComplexity {
 	return fileComplexities
 }
 
-func (a *complexityAnalyzer) formatResults(complexities []funcComplexity) string {
+func (a *defaultComplexityAnalyzer) formatResults(complexities []funcComplexity) string {
 	// Sort by complexity descending
 	sort.Slice(complexities, func(i, j int) bool {
 		if complexities[i].Complexity != complexities[j].Complexity {

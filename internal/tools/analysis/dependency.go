@@ -11,21 +11,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type dependencyAnalyzer struct {
+type defaultDependencyAnalyzer struct {
 	Exec   tools.CommandExecutor
 	SP     domain_security.PolicyEvaluator
 	Events events.EventBus
 }
 
-func newDependencyAnalyzer(exec tools.CommandExecutor, sp domain_security.PolicyEvaluator, bus events.EventBus) *dependencyAnalyzer {
-	return &dependencyAnalyzer{
+func newDependencyAnalyzer(exec tools.CommandExecutor, sp domain_security.PolicyEvaluator, bus events.EventBus) *defaultDependencyAnalyzer {
+	return &defaultDependencyAnalyzer{
 		Exec:   exec,
 		SP:     sp,
 		Events: bus,
 	}
 }
 
-func (a *dependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if a.Events != nil {
 		_ = a.Events.Publish(ctx, events.SystemMessageEvent{
 			Message: "[Tool Action] Analyzing package dependencies",
@@ -68,7 +68,7 @@ func (a *dependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[strin
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (a *dependencyAnalyzer) buildGraph(ctx context.Context) (map[string][]string, error) {
+func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string][]string, error) {
 	out, err := a.Exec.CombinedOutput(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	if err != nil {
 		return nil, fmt.Errorf("listing packages: %w (output: %s)", err, string(out))
