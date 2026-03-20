@@ -11,23 +11,23 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// configService handles the logic for managing configuration.
-type configService struct {
+// ConfigService handles the logic for managing configuration.
+type ConfigService struct {
 	mu     sync.RWMutex
 	store  ports.KVStore
 	config map[string]string
 }
 
-// NewConfigService creates a new configService.
-func NewConfigService(store ports.KVStore) ports.ConfigStore {
-	return &configService{
+// NewConfigService creates a new ConfigService.
+func NewConfigService(store ports.KVStore) *ConfigService {
+	return &ConfigService{
 		store:  store,
 		config: make(map[string]string),
 	}
 }
 
 // Initialize loads the configuration from the repository.
-func (s *configService) Initialize(ctx context.Context) error {
+func (s *ConfigService) Initialize(ctx context.Context) error {
 	config, err := s.store.GetAll(ctx)
 	if err != nil {
 		return err
@@ -39,7 +39,7 @@ func (s *configService) Initialize(ctx context.Context) error {
 }
 
 // Set sets a configuration key-value pair.
-func (s *configService) Set(ctx context.Context, key, val string) error {
+func (s *ConfigService) Set(ctx context.Context, key, val string) error {
 	if key == "" {
 		return fmt.Errorf("key is required for set")
 	}
@@ -65,7 +65,7 @@ func (s *configService) Set(ctx context.Context, key, val string) error {
 }
 
 // Get returns the value for a configuration key.
-func (s *configService) Get(key string) (string, error) {
+func (s *ConfigService) Get(key string) (string, error) {
 	if key == "" {
 		return "", fmt.Errorf("key is required for get")
 	}
@@ -80,7 +80,7 @@ func (s *configService) Get(key string) (string, error) {
 }
 
 // Delete removes a configuration key.
-func (s *configService) Delete(ctx context.Context, key string) error {
+func (s *ConfigService) Delete(ctx context.Context, key string) error {
 	if key == "" {
 		return fmt.Errorf("key is required for delete")
 	}
@@ -105,7 +105,7 @@ func (s *configService) Delete(ctx context.Context, key string) error {
 }
 
 // GetAll returns all configuration settings.
-func (s *configService) GetAll() map[string]string {
+func (s *ConfigService) GetAll() map[string]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

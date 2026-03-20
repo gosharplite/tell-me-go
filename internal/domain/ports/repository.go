@@ -81,16 +81,21 @@ type ConfigWriter interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// Initializer defines an interface for components requiring lifecycle initialization.
+type Initializer interface {
+	Initialize(ctx context.Context) error
+}
+
 // ConfigReader defines the interface for reading configuration.
 type ConfigReader interface {
 	ConfigGetter
-	Initialize(ctx context.Context) error
 }
 
 // ConfigStore defines the interface for configuration management.
 type ConfigStore interface {
 	ConfigReader
 	ConfigWriter
+	Initializer
 }
 
 // ScratchpadReader defines the interface for reading from the scratchpad.
