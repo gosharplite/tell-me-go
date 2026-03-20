@@ -4,6 +4,7 @@
 package di
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -543,4 +545,120 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.Equal(t, tracker, deps.GetTracker())
 	assert.Equal(t, pData, deps.GetPricingData())
 	assert.Equal(t, client, deps.GetClient())
+}
+
+type mockSessionProvider struct {
+	mock.Mock
+}
+
+func (m *mockSessionProvider) GetTasks() ports.ITaskService           { return nil }
+func (m *mockSessionProvider) GetConfig() ports.IConfigService        { return nil }
+func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return nil }
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
+	args := m.Called()
+	return args.Get(0).(ports.SessionInfo)
+}
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {
+	m.Called(info)
+}
+func (m *mockSessionProvider) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func TestContainer_InitializationErrors(t *testing.T) {
+	ctx := context.Background()
+	tempDir, err := os.MkdirTemp("", "di-test-init-errors")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	simulatedErr := errors.New("simulated error")
+	cfg := &config.Config{
+		Mode:  "assistant",
+		Model: "test-model",
+	}
+
+	tests := []struct {
+		name      string
+		mockSetup func(b *bootstrapper, sm *mockConfigurableSecurityManager)
+		wantErr   string
+	}{
+		{
+			name: "ToolRegistrationFails",
+			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
+				b.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
+					return simulatedErr
+				}
+			},
+			wantErr: "error registering tools: simulated error",
+		},
+		{
+			name: "TelemetryRegistrationFails",
+			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
+				b.RegisterMetrics = func(r tools.IToolRegistry, sm security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
+					return simulatedErr
+				}
+			},
+			wantErr: "error registering metrics tools: simulated error",
+		},
+		{
+			name: "SessionRotationFails",
+			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
+				b.RotateSession = func(stdout io.Writer, paths persistence.Paths, retentionDays int) error {
+					return simulatedErr
+				}
+				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
+			},
+			wantErr: "session initialization failed during rotation: session rotation failed: simulated error",
+		},
+		{
+			name: "SessionProviderCloseFails",
+			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
+				mockSP := new(mockSessionProvider)
+				mockSP.On("GetInfo").Return(ports.SessionInfo{}).Maybe()
+				mockSP.On("SetInfo", mock.Anything).Return().Maybe()
+				mockSP.On("Close").Return(simulatedErr)
+
+				b.NewSessionState = func(ctx context.Context, modeDir string) (ports.ISessionProvider, error) {
+					return mockSP, nil
+				}
+			},
+			wantErr: "", // No error from BuildSessionDependencies
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := new(mockConfigurableSecurityManager)
+			setupDefaultSMExpectations(sm)
+			sm.On("LoadSafePaths").Return(nil).Maybe()
+			sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+			sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
+
+			var stderr bytes.Buffer
+			b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+				return new(mockLLMClient), nil
+			}).(*bootstrapper)
+
+			if tt.mockSetup != nil {
+				tt.mockSetup(b, sm)
+			}
+
+			newSession := (tt.name == "SessionRotationFails")
+			_, _, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
+			
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+				if cleanup != nil {
+					cleanup()
+					if tt.name == "SessionProviderCloseFails" {
+						assert.Contains(t, stderr.String(), "Warning: Failed to close session provider")
+					}
+				}
+			}
+		})
+	}
 }

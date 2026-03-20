@@ -54,12 +54,16 @@ type Container interface {
 
 // bootstrapper handles the instantiation and wiring of system components.
 type bootstrapper struct {
-	HomeDir       string
-	SM            ConfigurableSecurityManager
-	Version       string
-	Stdout        io.Writer
-	Stderr        io.Writer
-	ClientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
+	HomeDir          string
+	SM               ConfigurableSecurityManager
+	Version          string
+	Stdout           io.Writer
+	Stderr           io.Writer
+	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
+	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
+	RegisterMetrics  func(r tools.IToolRegistry, sm security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
+	RotateSession    func(stdout io.Writer, paths persistence.Paths, retentionDays int) error
+	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.ISessionProvider, error)
 }
 
 // NewBootstrapper creates a new Container instance.
@@ -68,12 +72,16 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 		clientFactory = infra_llm.NewClient
 	}
 	return &bootstrapper{
-		HomeDir:       homeDir,
-		SM:            sm,
-		Version:       version,
-		Stdout:        stdout,
-		Stderr:        stderr,
-		ClientFactory: clientFactory,
+		HomeDir:          homeDir,
+		SM:               sm,
+		Version:          version,
+		Stdout:           stdout,
+		Stderr:           stderr,
+		ClientFactory:    clientFactory,
+		RegisterAllTools: infra_tools.RegisterAll,
+		RegisterMetrics:  telemetry.RegisterMetrics,
+		RotateSession:    infra_persistence.RotateSession,
+		NewSessionState:  infra_persistence.NewSessionState,
 	}
 }
 
@@ -156,12 +164,12 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	reg := registry.New()
 	params.Registry = reg
 
-	if err := infra_tools.RegisterAll(params); err != nil {
+	if err := b.RegisterAllTools(params); err != nil {
 		return nil, fmt.Errorf("error registering tools: %w", err)
 	}
 
 	// Infrastructure-specific tool registration
-	if err := telemetry.RegisterMetrics(reg, b.SM, params.LogFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
+	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
 		return nil, fmt.Errorf("error registering metrics tools: %w", err)
 	}
 	if err := b.SM.RegisterPolicyTools(reg); err != nil {
@@ -172,7 +180,7 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 
 func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.ISessionProvider, func(), error) {
 	var sessionProvider ports.ISessionProvider
-	state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir)
+	state, err := b.NewSessionState(ctx, paths.ModeDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize session state: %w", err)
 	}
@@ -303,7 +311,7 @@ func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 		return fmt.Errorf("failed to record session cost for backup: %w", err)
 	}
 	retentionDays := infra_persistence.LoadBackupRetentionDays(*paths)
-	if err := infra_persistence.RotateSession(b.Stdout, *paths, retentionDays); err != nil {
+	if err := b.RotateSession(b.Stdout, *paths, retentionDays); err != nil {
 		return fmt.Errorf("session rotation failed: %w", err)
 	}
 	return nil
