@@ -55,30 +55,6 @@ func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, tool
 	return nil, nil
 }
 
-type mockOnlyClient struct {
-	mock.Mock
-}
-
-func (m *mockOnlyClient) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	return nil, nil, nil
-}
-
-func (m *mockOnlyClient) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return nil, nil
-}
-
-func (m *mockOnlyClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return nil, nil
-}
-
-func (m *mockOnlyClient) RefreshAuth() error {
-	return nil
-}
-
-func (m *mockOnlyClient) Generate(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	return nil, nil
-}
-
 func TestBuildSessionDependencies(t *testing.T) {
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "di-test")
