@@ -24,11 +24,11 @@ type ToolAuthorizer interface {
 type securityAuthorizer struct {
 	mu       sync.RWMutex
 	sm       domain_security.ISecurityManager
-	registry domaintools.IToolRegistry
+	registry domaintools.Registry
 }
 
 // newSecurityAuthorizer creates a new ToolAuthorizer.
-func newSecurityAuthorizer(sm domain_security.ISecurityManager, registry domaintools.IToolRegistry) ToolAuthorizer {
+func newSecurityAuthorizer(sm domain_security.ISecurityManager, registry domaintools.Registry) ToolAuthorizer {
 	return &securityAuthorizer{
 		sm:       sm,
 		registry: registry,

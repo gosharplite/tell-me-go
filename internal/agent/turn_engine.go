@@ -150,7 +150,7 @@ type turn struct {
 	CtxManager   *orchestration.ContextManager
 	Gateway      llm.LLMGateway
 	executor     toolExecutor
-	Registry     tools.IToolRegistry
+	Registry     tools.Registry
 	TokenCounter llm.TokenCounter
 	Events       events.EventBus
 	MaxToolTurns int
@@ -172,7 +172,7 @@ type turnEngine struct {
 	ctxManager       *orchestration.ContextManager
 	gateway          llm.LLMGateway
 	executor         toolExecutor
-	registry         tools.IToolRegistry
+	registry         tools.Registry
 	tokenCounter     llm.TokenCounter
 	events           events.EventBus
 	processors       map[turnPhase]turnProcessor
@@ -234,7 +234,7 @@ func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICost
 }
 
 // newTurnEngine creates a new turnEngine with a default pipeline.
-func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
+func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.ContextManager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
 	e := &turnEngine{
 		gateway:      gw,
 		executor:     ex,

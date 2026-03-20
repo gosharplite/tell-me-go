@@ -229,7 +229,7 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
+func RegisterMetrics(r tools.Registry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,

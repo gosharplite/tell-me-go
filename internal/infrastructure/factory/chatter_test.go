@@ -21,7 +21,7 @@ import (
 type mockSessionDeps struct {
 	gw       llm.LLMGateway
 	hManager ports.HistoryManager
-	reg      tools.IToolRegistry
+	reg      tools.Registry
 	sm       security.ISecurityManager
 	bus      events.EventBus
 	paths    *persistence.Paths
@@ -30,7 +30,7 @@ type mockSessionDeps struct {
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
 func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
-func (d *mockSessionDeps) GetRegistry() tools.IToolRegistry                     { return d.reg }
+func (d *mockSessionDeps) GetRegistry() tools.Registry                          { return d.reg }
 func (d *mockSessionDeps) GetSecurityManager() security.ISecurityManager        { return d.sm }
 func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
 func (d *mockSessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
@@ -51,7 +51,7 @@ func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 }
 
 type mockRegistry struct {
-	tools.IToolRegistry
+	tools.Registry
 }
 
 func (m *mockRegistry) Register(tool *tools.ToolDeclaration, handler tools.ToolFunc) error {

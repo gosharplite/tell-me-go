@@ -21,7 +21,7 @@ import (
 
 // ToolRegistrationParams encapsulates all dependencies for tool registration.
 type ToolRegistrationParams struct {
-	Registry         tools.IToolRegistry
+	Registry         tools.Registry
 	SecurityManager  domain_security.ISecurityManager
 	CommandExecutor  tools.CommandExecutor
 	CommandValidator domain_security.ICommandValidator

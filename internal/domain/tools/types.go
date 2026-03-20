@@ -76,8 +76,8 @@ type ToolMetadataProvider interface {
 	GetDeclarations() []*ToolDeclaration
 }
 
-// IToolRegistry defines the interface for the tool registry.
-type IToolRegistry interface {
+// Registry defines the interface for the tool registry.
+type Registry interface {
 	ToolRegistrar
 	ToolExecutor
 	ToolMetadataProvider

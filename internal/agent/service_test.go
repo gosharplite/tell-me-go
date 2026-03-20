@@ -117,7 +117,7 @@ func (m *mockServiceSessionDependencies) GetGateway() llm.LLMGateway { return ni
 func (m *mockServiceSessionDependencies) GetHistoryManager() ports.HistoryManager {
 	return m.Called().Get(0).(ports.HistoryManager)
 }
-func (m *mockServiceSessionDependencies) GetRegistry() tools.IToolRegistry { return nil }
+func (m *mockServiceSessionDependencies) GetRegistry() tools.Registry { return nil }
 func (m *mockServiceSessionDependencies) GetSecurityManager() security.ISecurityManager {
 	return m.Called().Get(0).(security.ISecurityManager)
 }

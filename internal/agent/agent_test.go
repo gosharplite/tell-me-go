@@ -744,7 +744,7 @@ func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
 	mockRegistry.AssertExpectations(t)
 }
 
-// mockToolRegistryWithExpectations implements IToolRegistry using testify/mock.
+// mockToolRegistryWithExpectations implements Registry using testify/mock.
 type mockToolRegistryWithExpectations struct {
 	mock.Mock
 }

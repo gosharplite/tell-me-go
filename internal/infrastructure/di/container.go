@@ -42,7 +42,7 @@ type ConfigurableSecurityManager interface {
 	LoadBypassState()
 	RegisterSafePath(path string)
 	RegisterReadOnlyPath(path string)
-	RegisterPolicyTools(r tools.IToolRegistry) error
+	RegisterPolicyTools(r tools.Registry) error
 }
 
 // Container defines the interface for building session dependencies and provides factories.
@@ -61,7 +61,7 @@ type bootstrapper struct {
 	Stderr           io.Writer
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
-	RegisterMetrics  func(r tools.IToolRegistry, sm security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
+	RegisterMetrics  func(r tools.Registry, sm security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
 	RotateSession    func(stdout io.Writer, paths persistence.Paths, retentionDays int) error
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.ISessionProvider, error)
 }
@@ -160,7 +160,7 @@ func (b *bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistenc
 	return hManager, nil
 }
 
-func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationParams) (tools.IToolRegistry, error) {
+func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationParams) (tools.Registry, error) {
 	reg := registry.New()
 	params.Registry = reg
 
@@ -206,7 +206,7 @@ func (b *bootstrapper) buildAgentOrchestrator(
 	hManager ports.HistoryManager,
 	client llm.LLMClient,
 	gw llm.LLMGateway,
-	reg tools.IToolRegistry,
+	reg tools.Registry,
 	pricingData pricing.PricingData,
 	pricingOverrides map[string]pricing.ModelPricing,
 	bus events.EventBus,
@@ -235,7 +235,7 @@ type sessionDeps struct {
 	hManager         ports.HistoryManager
 	client           llm.LLMClient
 	gw               llm.LLMGateway
-	reg              tools.IToolRegistry
+	reg              tools.Registry
 	sm               security.ISecurityManager
 	tracker          pricing.ICostTracker
 	pricingData      pricing.PricingData
@@ -245,7 +245,7 @@ type sessionDeps struct {
 
 func (d *sessionDeps) GetGateway() llm.LLMGateway                    { return d.gw }
 func (d *sessionDeps) GetHistoryManager() ports.HistoryManager       { return d.hManager }
-func (d *sessionDeps) GetRegistry() tools.IToolRegistry              { return d.reg }
+func (d *sessionDeps) GetRegistry() tools.Registry                   { return d.reg }
 func (d *sessionDeps) GetSecurityManager() security.ISecurityManager { return d.sm }
 func (d *sessionDeps) GetEventBus() events.EventBus                  { return d.bus }
 func (d *sessionDeps) GetPaths() *persistence.Paths                  { return d.paths }

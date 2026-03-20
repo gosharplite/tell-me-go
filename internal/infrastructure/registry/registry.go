@@ -33,7 +33,7 @@ type registry struct {
 }
 
 // New initializes an empty tool registry.
-func New() tools.IToolRegistry {
+func New() tools.Registry {
 	return &registry{
 		declarations: make([]*tools.ToolDeclaration, 0),
 		entries:      make(map[string]toolEntry),

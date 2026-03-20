@@ -21,7 +21,7 @@ const (
 
 // PipelineFactory encapsulates the logic for creating context processing pipelines.
 type PipelineFactory struct {
-	Registry      tools.IToolRegistry
+	Registry      tools.Registry
 	History       ports.HistoryManager
 	Summarizer    ports.Summarizer
 	Estimator     llm.TokenEstimator

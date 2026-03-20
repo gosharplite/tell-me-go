@@ -45,7 +45,7 @@ type agent struct {
 }
 
 // newAgent creates a new agent with required dependencies.
-func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) (ports.Chatter, error) {
+func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.Registry, sm domain_security.ISecurityManager, opts ...option) (ports.Chatter, error) {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)

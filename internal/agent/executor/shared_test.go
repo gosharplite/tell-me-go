@@ -40,7 +40,7 @@ func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (b
 func (m *mockConsentSecurityManager) Close() error { return nil }
 
 type panicRegistry struct {
-	tools.IToolRegistry
+	tools.Registry
 	panicOnExec bool
 	panicOnGet  bool
 	serial      bool

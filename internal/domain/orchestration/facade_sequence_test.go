@@ -101,7 +101,7 @@ func (m *seqMockExecution) Execute(ctx context.Context, content *llm.Content, tu
 }
 
 type seqMockRegistry struct {
-	tools.IToolRegistry
+	tools.Registry
 }
 
 func (m *seqMockRegistry) GetDeclarations() []*tools.ToolDeclaration { return nil }
