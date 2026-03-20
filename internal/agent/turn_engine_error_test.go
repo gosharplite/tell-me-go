@@ -43,7 +43,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 	return nil, nil
 }
 
-func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
+func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
 	bus := &events.SimpleEventBus{}
 	reg := &mockToolRegistry{}
 

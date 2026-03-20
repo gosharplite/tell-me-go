@@ -121,8 +121,8 @@ type turnState struct {
 	TaskCost             float64                 `json:"task_cost"`
 }
 
-// iToolExecutor defines the interface for tool execution.
-type iToolExecutor interface {
+// toolExecutor defines the interface for tool execution.
+type toolExecutor interface {
 	Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
 
@@ -149,7 +149,7 @@ type turn struct {
 	State        *turnState
 	CtxManager   *orchestration.ContextManager
 	Gateway      llm.LLMGateway
-	executor     iToolExecutor
+	executor     toolExecutor
 	Registry     tools.IToolRegistry
 	TokenCounter llm.TokenCounter
 	Events       events.EventBus
@@ -171,7 +171,7 @@ type turnEngine struct {
 	mu               sync.RWMutex
 	ctxManager       *orchestration.ContextManager
 	gateway          llm.LLMGateway
-	executor         iToolExecutor
+	executor         toolExecutor
 	registry         tools.IToolRegistry
 	tokenCounter     llm.TokenCounter
 	events           events.EventBus
@@ -234,7 +234,7 @@ func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICost
 }
 
 // newTurnEngine creates a new turnEngine with a default pipeline.
-func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
+func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
 	e := &turnEngine{
 		gateway:      gw,
 		executor:     ex,
