@@ -12,6 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
@@ -252,27 +253,38 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pt, provider := setupPersistenceTools()
-			if tt.setup != nil {
-				tt.setup(provider.listStore, provider.tasks)
-			}
-			ctx := context.Background()
-			res, err := pt.ManageTasks(ctx, tt.args)
+			setupManageTasks(t, tt.setup, provider)
 
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
-				return
-			}
+			res, err := pt.ManageTasks(context.Background(), tt.args)
 
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-
-			if !strings.Contains(res.Text, tt.expectedResult) {
-				t.Errorf("Expected result to contain %q, got %q", tt.expectedResult, res.Text)
-			}
+			assertManageTasksResult(t, res, err, tt.expectedResult, tt.expectError)
 		})
+	}
+}
+
+func setupManageTasks(t *testing.T, setup func(*mockListStore, ports.TaskStore), provider *mockSessionProvider) {
+	t.Helper()
+	if setup != nil {
+		setup(provider.listStore, provider.tasks)
+	}
+}
+
+func assertManageTasksResult(t *testing.T, res tools.ToolResult, err error, expectedResult string, expectError bool) {
+	t.Helper()
+
+	if expectError {
+		if err == nil {
+			t.Error("Expected error but got none")
+		}
+		return
+	}
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if !strings.Contains(res.Text, expectedResult) {
+		t.Errorf("Expected result to contain %q, got %q", expectedResult, res.Text)
 	}
 }
 
