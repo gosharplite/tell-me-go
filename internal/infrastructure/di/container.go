@@ -49,7 +49,7 @@ type ConfigurableSecurityManager interface {
 type Container interface {
 	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error)
 	GetAgentFactory() ports.ChatterFactory
-	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config)
+	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error
 }
 
 // bootstrapper handles the instantiation and wiring of system components.
@@ -85,9 +85,13 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	}
 
 	pricingOverrides := b.getPricingOverrides(cfg)
-	b.setupSecurity(paths, configPath)
+	if err := b.setupSecurity(paths, configPath); err != nil {
+		return nil, nil, nil, err
+	}
 	if newSession {
-		b.handleNewSession(ctx, paths, cfg, pricingOverrides)
+		if err := b.handleNewSession(ctx, paths, cfg, pricingOverrides); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
 	// Initialize commands log after session rotation to avoid file locks on Windows.
@@ -107,7 +111,10 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
 
-	sessionProvider, cleanup := b.buildSessionProvider(ctx, paths, cfg)
+	sessionProvider, cleanup, err := b.buildSessionProvider(ctx, paths, cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
 		SecurityManager:  b.SM,
@@ -161,17 +168,18 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	return reg, nil
 }
 
-func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.ISessionProvider, func()) {
+func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.ISessionProvider, func(), error) {
 	var sessionProvider ports.ISessionProvider
-	if state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir); err == nil {
-		sessionProvider = state
-		info := state.GetInfo()
-		info.Model = cfg.Model
-		info.Provider = cfg.SelectedProvider
-		state.SetInfo(info)
-	} else {
-		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to initialize session state: %v\n", err)
+	state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize session state: %w", err)
 	}
+
+	sessionProvider = state
+	info := state.GetInfo()
+	info.Model = cfg.Model
+	info.Provider = cfg.SelectedProvider
+	state.SetInfo(info)
 
 	cleanup := func() {
 		if sessionProvider != nil {
@@ -180,7 +188,7 @@ func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persisten
 			}
 		}
 	}
-	return sessionProvider, cleanup
+	return sessionProvider, cleanup, nil
 }
 
 func (b *bootstrapper) buildAgentOrchestrator(
@@ -244,16 +252,17 @@ func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
 }
 
 // FinalizeSession saves history and records session cost.
-func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) {
+func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
 	// Finalize session
 	if saveErr := hManager.Save(ctx); saveErr != nil {
-		_, _ = fmt.Fprintf(b.Stderr, "Warning: Error saving history: %v\n", saveErr)
+		return fmt.Errorf("error saving history: %w", saveErr)
 	}
 
 	// Calculate and record cost
 	if recordErr := telemetry.RecordSessionCost(ctx, b.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, "", deps.GetPricingOverrides()); recordErr != nil {
-		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to record final session cost: %v\n", recordErr)
+		return fmt.Errorf("failed to record final session cost: %w", recordErr)
 	}
+	return nil
 }
 
 // getPricingOverrides extracts pricing overrides from the configuration.
@@ -268,30 +277,32 @@ func (b *bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 }
 
 // setupSecurity configures the security manager with necessary paths and bypass states.
-func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) {
+func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) error {
 	b.SM.SetSafePathsFile(paths.SafePathsPath)
 	b.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
 	b.SM.SetBypassFile(paths.BypassPath)
 	if err := b.SM.LoadSafePaths(); err != nil {
-		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to load safe paths: %v\n", err)
+		return fmt.Errorf("failed to load safe paths: %w", err)
 	}
 	if err := b.SM.LoadReadOnlyPaths(); err != nil {
-		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
+		return fmt.Errorf("failed to load read-only paths: %w", err)
 	}
 	b.SM.LoadBypassState()
 	b.SM.RegisterSafePath(filepath.Join(b.HomeDir, "output"))
 	b.SM.RegisterReadOnlyPath(configPath)
+	return nil
 }
 
 // handleNewSession manages session rotation and cost recording for new sessions.
-func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
+func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) error {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, b.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
-		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to record session cost for backup: %v\n", err)
+		return fmt.Errorf("failed to record session cost for backup: %w", err)
 	}
 	retentionDays := infra_persistence.LoadBackupRetentionDays(*paths)
 	if err := infra_persistence.RotateSession(b.Stdout, *paths, retentionDays); err != nil {
-		_, _ = fmt.Fprintf(b.Stderr, "Warning: Session rotation failed: %v\n", err)
+		return fmt.Errorf("session rotation failed: %w", err)
 	}
+	return nil
 }
