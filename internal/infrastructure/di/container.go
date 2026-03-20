@@ -311,8 +311,10 @@ func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, b.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
-		return fmt.Errorf("failed to record session cost for backup: %w", err)
+		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to record session cost for backup (log may be missing/corrupt): %v\n", err)
 	}
+
+	// Critical path: always attempt to rotate the session
 	retentionDays := infra_persistence.LoadBackupRetentionDays(*paths)
 	if err := b.RotateSession(b.Stdout, *paths, retentionDays); err != nil {
 		return fmt.Errorf("session rotation failed: %w", err)

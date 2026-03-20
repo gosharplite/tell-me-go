@@ -271,20 +271,6 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			targetErr: simulatedErr,
 		},
 		{
-			name: "FailsOnTriggerNewSession_RecordCostError",
-			setup: func(t *testing.T) string {
-				return filepath.Join(tempDir, "newsession-err-home")
-			},
-			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(nil).Maybe()
-				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
-				sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
-				// RecordSessionCost -> EstimateCost -> IsPathSafe
-				sm.On("IsPathSafe", mock.Anything).Return("", simulatedErr)
-			},
-			targetErr: simulatedErr,
-		},
-		{
 			name: "FailsOnStateInitError",
 			setup: func(t *testing.T) string {
 				home := filepath.Join(tempDir, "sessionstate-err-home")
@@ -334,6 +320,43 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
+	ctx := context.Background()
+	tempDir, err := os.MkdirTemp("", "di-test-warning")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	cfg := &config.Config{
+		Mode:  "assistant",
+		Model: "test-model",
+	}
+	simulatedErr := errors.New("simulated error")
+
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+	sm.On("LoadSafePaths").Return(nil).Maybe()
+	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+	sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
+	// RecordSessionCost -> EstimateCost -> IsPathSafe
+	sm.On("IsPathSafe", mock.Anything).Return("", simulatedErr)
+
+	var stderr bytes.Buffer
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	deps, hManager, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", true, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, deps)
+	assert.NotNil(t, hManager)
+	assert.NotNil(t, cleanup)
+
+	assert.Contains(t, stderr.String(), "Warning: Failed to record session cost for backup")
+	assert.Contains(t, stderr.String(), simulatedErr.Error())
+
+	cleanup()
 }
 
 type mockHistoryManager struct {
