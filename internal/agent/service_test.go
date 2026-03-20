@@ -130,7 +130,7 @@ func (m *mockServiceSessionDependencies) GetPaths() *persistence.Paths {
 func (m *mockServiceSessionDependencies) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return nil
 }
-func (m *mockServiceSessionDependencies) GetTracker() pricing.ICostTracker { return nil }
+func (m *mockServiceSessionDependencies) GetTracker() pricing.CostTracker { return nil }
 func (m *mockServiceSessionDependencies) GetPricingData() pricing.PricingData {
 	return pricing.PricingData{}
 }

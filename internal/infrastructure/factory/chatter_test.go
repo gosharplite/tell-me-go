@@ -25,7 +25,7 @@ type mockSessionDeps struct {
 	sm       security.ISecurityManager
 	bus      events.EventBus
 	paths    *persistence.Paths
-	tracker  pricing.ICostTracker
+	tracker  pricing.CostTracker
 }
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
@@ -35,7 +35,7 @@ func (d *mockSessionDeps) GetSecurityManager() security.ISecurityManager        
 func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
 func (d *mockSessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
 func (d *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
-func (d *mockSessionDeps) GetTracker() pricing.ICostTracker                     { return d.tracker }
+func (d *mockSessionDeps) GetTracker() pricing.CostTracker                      { return d.tracker }
 func (d *mockSessionDeps) GetPricingData() pricing.PricingData                  { return pricing.PricingData{} }
 
 type mockGateway struct {
@@ -85,7 +85,7 @@ type mockSecurityManager struct {
 func (m *mockSecurityManager) Close() error { return nil }
 
 type mockTracker struct {
-	pricing.ICostTracker
+	pricing.CostTracker
 }
 
 func TestNewChatter(t *testing.T) {

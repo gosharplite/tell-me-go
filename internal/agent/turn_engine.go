@@ -155,7 +155,7 @@ type turn struct {
 	Events       events.EventBus
 	MaxToolTurns int
 	Clock        clock.Clock
-	CostTracker  domain_pricing.ICostTracker
+	CostTracker  domain_pricing.CostTracker
 	ProviderName string
 	Model        string
 
@@ -184,7 +184,7 @@ type turnEngine struct {
 	providerName     string
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
-	costTracker      domain_pricing.ICostTracker
+	costTracker      domain_pricing.CostTracker
 }
 
 // withClock sets a custom clock implementation.
@@ -198,7 +198,7 @@ func withClock(c clock.Clock) engineOption {
 type engineOption func(*turnEngine)
 
 // withCostTracker sets the cost tracker for the engine.
-func withCostTracker(tracker domain_pricing.ICostTracker) engineOption {
+func withCostTracker(tracker domain_pricing.CostTracker) engineOption {
 	return func(e *turnEngine) {
 		e.costTracker = tracker
 	}
@@ -224,7 +224,7 @@ func (e *turnEngine) ApplyOptions(opts ...engineOption) {
 }
 
 // Reconfigure propagates configuration changes to the engine.
-func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICostTracker) {
+func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.CostTracker) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.providerName = cfg.ProviderName

@@ -142,8 +142,8 @@ func (m *mockFailingChatter) SetLimits(ctx context.Context, maxToolTurns, contex
 func (m *mockFailingChatter) SetTieredThreshold(ctx context.Context, tieredThreshold int) error {
 	return nil
 }
-func (m *mockFailingChatter) SetCostTracker(tracker domain_pricing.ICostTracker) {}
-func (m *mockFailingChatter) GetName() string                                    { return "mock" }
+func (m *mockFailingChatter) SetCostTracker(tracker domain_pricing.CostTracker) {}
+func (m *mockFailingChatter) GetName() string                                   { return "mock" }
 
 type mockFailingCapturer struct{}
 

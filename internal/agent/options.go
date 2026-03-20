@@ -19,7 +19,7 @@ type agentConfig struct {
 	mode             string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	loader           domain_config.ConfigLoader
-	tracker          domain_pricing.ICostTracker
+	tracker          domain_pricing.CostTracker
 	initCtx          context.Context
 }
 
@@ -64,7 +64,7 @@ func withLoader(loader domain_config.ConfigLoader) option {
 }
 
 // withSessionCostTracker sets the cost tracker for the agent.
-func withSessionCostTracker(tracker domain_pricing.ICostTracker) option {
+func withSessionCostTracker(tracker domain_pricing.CostTracker) option {
 	return func(c *agentConfig) {
 		c.tracker = tracker
 	}

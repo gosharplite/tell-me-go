@@ -72,7 +72,7 @@ type sessionDependencies struct {
 	Gateway          domain_llm.LLMGateway
 	Registry         domaintools.Registry
 	SecurityManager  domain_security.ISecurityManager
-	Tracker          domain_pricing.ICostTracker
+	Tracker          domain_pricing.CostTracker
 	PricingData      domain_pricing.PricingData
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	EventBus         events.EventBus
@@ -91,13 +91,13 @@ func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
 func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
 	return d.PricingOverrides
 }
-func (d *sessionDependencies) GetTracker() domain_pricing.ICostTracker { return d.Tracker }
+func (d *sessionDependencies) GetTracker() domain_pricing.CostTracker { return d.Tracker }
 func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 	return d.PricingData
 }
 
 // newSessionDependencies creates a new sessionDependencies with all required components.
-func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
+func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.ISecurityManager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,

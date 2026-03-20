@@ -39,7 +39,7 @@ type agent struct {
 	strategy      *orchestration.ContextStrategy
 	executor      *executor.ToolExecutor
 	events        events.EventBus
-	tracker       domain_pricing.ICostTracker
+	tracker       domain_pricing.CostTracker
 
 	config runtimeConfig
 }

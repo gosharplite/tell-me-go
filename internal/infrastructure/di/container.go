@@ -237,7 +237,7 @@ type sessionDeps struct {
 	gw               llm.LLMGateway
 	reg              tools.Registry
 	sm               security.ISecurityManager
-	tracker          pricing.ICostTracker
+	tracker          pricing.CostTracker
 	pricingData      pricing.PricingData
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
@@ -252,7 +252,7 @@ func (d *sessionDeps) GetPaths() *persistence.Paths                  { return d.
 func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides
 }
-func (d *sessionDeps) GetTracker() pricing.ICostTracker    { return d.tracker }
+func (d *sessionDeps) GetTracker() pricing.CostTracker     { return d.tracker }
 func (d *sessionDeps) GetPricingData() pricing.PricingData { return d.pricingData }
 func (d *sessionDeps) GetClient() llm.LLMClient            { return d.client }
 

@@ -476,7 +476,7 @@ type mockSessionDeps struct {
 	reg      tools.Registry
 	sm       security.ISecurityManager
 	bus      events.EventBus
-	tracker  pricing.ICostTracker
+	tracker  pricing.CostTracker
 	paths    *persistence.Paths
 	client   llm.LLMClient
 }
@@ -495,7 +495,7 @@ func (m *mockSessionDeps) GetSecurityManager() security.ISecurityManager {
 	return m.sm
 }
 func (m *mockSessionDeps) GetEventBus() events.EventBus { return m.bus }
-func (m *mockSessionDeps) GetTracker() pricing.ICostTracker {
+func (m *mockSessionDeps) GetTracker() pricing.CostTracker {
 	if m.tracker == nil {
 		return &mockTracker{}
 	}
@@ -505,7 +505,7 @@ func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing 
 func (m *mockSessionDeps) GetClient() llm.LLMClient                             { return m.client }
 
 type mockTracker struct {
-	pricing.ICostTracker
+	pricing.CostTracker
 }
 
 func (m *mockTracker) Warmup() {}

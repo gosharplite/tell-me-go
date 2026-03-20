@@ -111,5 +111,5 @@ type mockLoader struct {
 }
 
 type mockTracker struct {
-	domain_pricing.ICostTracker
+	domain_pricing.CostTracker
 }
