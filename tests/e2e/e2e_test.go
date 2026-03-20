@@ -220,9 +220,8 @@ func TestEnvironmentPersistence(t *testing.T) {
 	homeDir := t.TempDir()
 	env := []string{"TELL_ME_HOME=" + homeDir}
 
-	// 2. Create dummy persistent and session files
-	outputDir := filepath.Join(homeDir, "output")
-	modeDir := filepath.Join(outputDir, "assistant")
+	// 1. Shared Setup: Create dummy persistent and session files
+	modeDir := filepath.Join(homeDir, "output", "assistant")
 	if err := os.MkdirAll(modeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -236,36 +235,46 @@ func TestEnvironmentPersistence(t *testing.T) {
 		"bypass.log":     "false",
 	}
 
-	for _, f := range sessionFiles {
-		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
-	}
 	for f, content := range persistentFiles {
 		_ = os.WriteFile(filepath.Join(modeDir, f), []byte(content), 0644)
 	}
+	for _, f := range sessionFiles {
+		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
+	}
 
-	// 3. Setup mock server to avoid real API calls and ensure success
+	// 2. Shared Setup: Setup mock server
 	server, _ := setupProviderMockServer(t, "google", "list_files", map[string]interface{}{"path": "."}, nil)
 	defer server.Close()
 
 	configPath := createTempConfig(t, "google", server.URL)
 	env = append(env, "TELL_ME_MOCK_URL="+server.URL, "TELL_ME_NO_STREAM=true")
 
-	// 4. Run with -new flag
-	// Using a tool that exists to ensure startup completes.
-	stdout, stderr, err := runCommandWithEnv(env, "", "-c", configPath, "-new", "hello persistence")
-	if err != nil {
-		t.Fatalf("unexpected command failure: %v\nStderr: %s", err, stderr)
-	}
+	var stdout, stderr string
 
-	// 5. Verify persistent files STILL exist in output
-	for f := range persistentFiles {
-		if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
-			t.Errorf("Expected persistent file %s to remain, but it was moved or deleted. Stderr: %s", f, stderr)
+	t.Run("ExecuteNewSession", func(t *testing.T) {
+		var err error
+		stdout, stderr, err = runCommandWithEnv(env, "", "-c", configPath, "-new", "hello persistence")
+		if err != nil {
+			t.Fatalf("unexpected command failure: %v\nStderr: %s", err, stderr)
 		}
-	}
+	})
 
-	// 6. Verify session files are archived (check backup content)
-	backupsDir := filepath.Join(outputDir, "backups")
+	t.Run("VerifyPersistentFiles", func(t *testing.T) {
+		for f := range persistentFiles {
+			if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
+				t.Errorf("Expected persistent file %s to remain. Stderr: %s", f, stderr)
+			}
+		}
+	})
+
+	t.Run("VerifyArchivedFiles", func(t *testing.T) {
+		verifyFilesArchived(t, homeDir, sessionFiles, stdout, stderr)
+	})
+}
+
+func verifyFilesArchived(t *testing.T, homeDir string, sessionFiles []string, stdout, stderr string) {
+	t.Helper()
+	backupsDir := filepath.Join(homeDir, "output", "backups")
 	entries, err := os.ReadDir(backupsDir)
 	if err != nil || len(entries) == 0 {
 		t.Fatalf("Expected backup entries in %s. Err: %v. Stderr: %s. Stdout: %s", backupsDir, err, stderr, stdout)
