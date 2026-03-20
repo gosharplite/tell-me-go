@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -47,6 +48,7 @@ func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) erro
 	filesToMove := []string{paths.HistoryPath, paths.LogPath, paths.CommandsLogPath}
 	backupDir := filepath.Join(outputDir, "backups", timestamp)
 
+	var errs []error
 	backupCreated := false
 	for _, f := range filesToMove {
 		if _, err := os.Stat(f); err == nil {
@@ -61,9 +63,13 @@ func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) erro
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))
 			if err := os.Rename(f, dest); err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "Error archiving %s: %v\n", f, err)
+				errs = append(errs, fmt.Errorf("error archiving %s: %w", f, err))
 			}
 		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	// Cleanup old backups

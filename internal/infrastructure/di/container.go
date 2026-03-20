@@ -89,8 +89,10 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 	if newSession {
+		// Hard dependency: session rotation must complete before we continue.
+		// Errors here MUST halt execution to prevent state corruption.
 		if err := b.handleNewSession(ctx, paths, cfg, pricingOverrides); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, fmt.Errorf("session initialization failed during rotation: %w", err)
 		}
 	}
 

@@ -228,37 +228,49 @@ func TestEnvironmentPersistence(t *testing.T) {
 	}
 
 	sessionFiles := []string{"history.jsonl", "tokens.log", "commands.log"}
-	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log", "tellmego.db"}
+	persistentFiles := map[string]string{
+		"safepaths.json": "[]",
+		"readpaths.json": "[]",
+		"scratchpad.md":  "persistent content",
+		"tasks.json":     "[]",
+		"bypass.log":     "false",
+	}
 
 	for _, f := range sessionFiles {
 		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
 	}
-	for _, f := range persistentFiles {
-		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644)
+	for f, content := range persistentFiles {
+		_ = os.WriteFile(filepath.Join(modeDir, f), []byte(content), 0644)
 	}
 
 	// 3. Run with -new flag
-	_, _, _ = runCommandWithEnv(env, "", "-new", "hello persistence")
+	// Using a tool that exists but without mock server to ensure startup completes.
+	// Even if it fails on API call, rotation should have occurred.
+	stdout, stderr, err := runCommandWithEnv(env, "", "-new", "hello persistence")
 
 	// 4. Verify persistent files STILL exist in output
-	for _, f := range persistentFiles {
+	for f := range persistentFiles {
 		if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
-			t.Errorf("Expected persistent file %s to remain, but it was moved or deleted", f)
+			t.Errorf("Expected persistent file %s to remain, but it was moved or deleted. Stderr: %s", f, stderr)
 		}
 	}
 
 	// 5. Verify session files are archived (check backup content)
 	backupsDir := filepath.Join(outputDir, "backups")
-	entries, _ := os.ReadDir(backupsDir)
-	if len(entries) == 0 {
-		t.Fatalf("Expected backup entries")
+	entries, err := os.ReadDir(backupsDir)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("Expected backup entries in %s. Err: %v. Stderr: %s. Stdout: %s", backupsDir, err, stderr, stdout)
 	}
 
 	backupSubDir := filepath.Join(backupsDir, entries[0].Name())
 	for _, f := range sessionFiles {
-		content, _ := os.ReadFile(filepath.Join(backupSubDir, f))
+		content, err := os.ReadFile(filepath.Join(backupSubDir, f))
+		if err != nil {
+			t.Errorf("Failed to read archived file %s: %v", f, err)
+			continue
+		}
 		if string(content) != "session content" {
-			t.Errorf("Expected archived session file %s in backup with 'session content'", f)
+			t.Errorf("Expected archived session file %s in backup with 'session content', got %q", f, string(content))
 		}
 	}
 }
