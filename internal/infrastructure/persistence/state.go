@@ -111,7 +111,7 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 }
 
 func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], configStore, scratchStore ports.KVStore) (ports.TaskStore, ports.ConfigService, ports.ScratchpadService, error) {
-	tasks := services.NewTaskStore(taskStore)
+	tasks := services.NewTaskService(taskStore)
 	config := services.NewConfigService(configStore)
 	scratch := services.NewScratchpadService(scratchStore)
 

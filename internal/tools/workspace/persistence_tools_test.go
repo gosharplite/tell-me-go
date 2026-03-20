@@ -132,7 +132,7 @@ func (m *mockSessionProvider) Close() error                           { return n
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 	kv := &mockKVStore{kv: make(map[string]string)}
 	lt := &mockListStore{}
-	ts := services.NewTaskStore(lt)
+	ts := services.NewTaskService(lt)
 	cs := services.NewConfigService(kv)
 	ss := services.NewScratchpadService(kv)
 
