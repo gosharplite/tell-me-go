@@ -40,9 +40,9 @@ func TestHistoryPruner_GroupTurnsErrorPropagation(t *testing.T) {
 			err := pruner.Transform(ctx, req)
 			require.Error(t, err, "Expected error from groupTurns for malformed history")
 
-			// We haven't defined ErrInvalidPayload yet, so this will fail to compile or find the symbol if I use it here.
+			// We haven't defined errInvalidPayload yet, so this will fail to compile or find the symbol if I use it here.
 			// But for TDD, I should use what I intend to define.
-			require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload sentinel")
+			require.True(t, errors.Is(err, errInvalidPayload), "Expected errInvalidPayload sentinel")
 		})
 	}
 }
@@ -73,7 +73,7 @@ func TestTokenGatekeeper_GroupTurnsErrorPropagation(t *testing.T) {
 
 	err := tg.Transform(ctx, req)
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload sentinel from tokenGatekeeper")
+	require.True(t, errors.Is(err, errInvalidPayload), "Expected errInvalidPayload sentinel from tokenGatekeeper")
 }
 
 // Mocks copied from context_transformers_test.go if needed, or I can use the ones already in the package if they are exported or in the same package.
@@ -98,7 +98,7 @@ func TestContextManager_GroupTurnsErrorPropagation(t *testing.T) {
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload sentinel from ContextManager.SummarizeRange")
+	require.True(t, errors.Is(err, errInvalidPayload), "Expected errInvalidPayload sentinel from ContextManager.SummarizeRange")
 }
 
 func TestEmptyTurnFilter_GroupTurnsErrorPropagation(t *testing.T) {
@@ -113,7 +113,7 @@ func TestEmptyTurnFilter_GroupTurnsErrorPropagation(t *testing.T) {
 
 	err := filter.Transform(ctx, req)
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload sentinel from emptyTurnFilter")
+	require.True(t, errors.Is(err, errInvalidPayload), "Expected errInvalidPayload sentinel from emptyTurnFilter")
 }
 
 func TestHistoryPruner_GroupTurnsEmptyRoleError(t *testing.T) {
@@ -130,7 +130,7 @@ func TestHistoryPruner_GroupTurnsEmptyRoleError(t *testing.T) {
 
 	err := pruner.Transform(ctx, req)
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload sentinel from groupTurns for empty role")
+	require.True(t, errors.Is(err, errInvalidPayload), "Expected errInvalidPayload sentinel from groupTurns for empty role")
 }
 
 func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
@@ -167,7 +167,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 
 	_, _, err = cm.SummarizeRange(ctx, 2, "")
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrInvalidPayload), "Expected ErrInvalidPayload from sabotaged history")
+	require.True(t, errors.Is(err, errInvalidPayload), "Expected errInvalidPayload from sabotaged history")
 }
 
 func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {

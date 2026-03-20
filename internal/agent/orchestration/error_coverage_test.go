@@ -70,7 +70,7 @@ func TestTokenGatekeeper_AutoSummarize_GroupTurnsError(t *testing.T) {
 	}
 
 	_, err := tg.autoSummarize(context.Background(), req)
-	require.ErrorIs(t, err, ErrInvalidPayload)
+	require.ErrorIs(t, err, errInvalidPayload)
 }
 
 type mockFailingEventBus struct {
@@ -508,5 +508,5 @@ func TestTokenGatekeeper_TriggerSummarization_InvalidPayload(t *testing.T) {
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
-	require.ErrorIs(t, err, ErrInvalidPayload)
+	require.ErrorIs(t, err, errInvalidPayload)
 }

@@ -180,10 +180,10 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 func validateHistoryBoundaries(history []*llm.Content) error {
 	for i, msg := range history {
 		if msg == nil {
-			return fmt.Errorf("%w: nil message at index %d in loaded history", ErrInvalidPayload, i)
+			return fmt.Errorf("%w: nil message at index %d in loaded history", errInvalidPayload, i)
 		}
 		if err := msg.ValidateStructure(); err != nil {
-			return fmt.Errorf("%w: invalid content at index %d: %w", ErrInvalidPayload, i, err)
+			return fmt.Errorf("%w: invalid content at index %d: %w", errInvalidPayload, i, err)
 		}
 	}
 	return nil
