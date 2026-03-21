@@ -288,7 +288,15 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 	case err := <-ch:
 		return err
 	case <-ctx.Done():
-		return fmt.Errorf("publish timeout for event %s: %w", event.Type(), ctx.Err())
+		err := fmt.Errorf("publish timeout for event %s: %w", event.Type(), ctx.Err())
+
+		// 1. Emit structured log with context ensuring visibility even if caller drops the error
+		slog.WarnContext(ctx, "Event dropped due to publish timeout",
+			slog.String("event_type", event.Type()),
+			slog.String("error", err.Error()),
+		)
+
+		return err
 	}
 }
 
