@@ -30,7 +30,7 @@ type Subscriber interface {
 }
 
 var (
-	ErrBusClosed         = errors.New("event bus is closed")
+	errBusClosed         = errors.New("event bus is closed")
 	errBusNotInitialized = errors.New("event bus is nil or uninitialized")
 )
 
@@ -103,7 +103,7 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
-		return ErrBusClosed
+		return errBusClosed
 	}
 
 	// 1. Safely copy the subscriber slices while holding the read lock.
@@ -176,8 +176,8 @@ func (b *SimpleEventBus) Subscribe(sub func(context.Context, Event)) {
 	b.globalSubscribers = append(b.globalSubscribers, &funcSubscriber{f: sub})
 }
 
-// SubscribeGlobal registers a Subscriber that receives all events.
-func (b *SimpleEventBus) SubscribeGlobal(sub Subscriber) {
+// subscribeGlobal registers a Subscriber that receives all events.
+func (b *SimpleEventBus) subscribeGlobal(sub Subscriber) {
 	if b == nil || sub == nil {
 		return
 	}
@@ -192,8 +192,8 @@ func (b *SimpleEventBus) SubscribeGlobal(sub Subscriber) {
 	b.globalSubscribers = append(b.globalSubscribers, sub)
 }
 
-// SubscribeSubscriber registers a Subscriber for a specific event type.
-func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
+// subscribeSubscriber registers a Subscriber for a specific event type.
+func (b *SimpleEventBus) subscribeSubscriber(eventType string, sub Subscriber) {
 	if b == nil || sub == nil {
 		return
 	}
@@ -231,7 +231,7 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	if b.closed {
-		return ErrBusClosed
+		return errBusClosed
 	}
 	return nil
 }
