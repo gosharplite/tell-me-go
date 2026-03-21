@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
@@ -123,6 +124,9 @@ func (m *mockServiceSessionDependencies) GetSecurityManager() security.Manager {
 }
 func (m *mockServiceSessionDependencies) GetEventBus() events.EventBus {
 	return m.Called().Get(0).(events.EventBus)
+}
+func (m *mockServiceSessionDependencies) GetLogger() *slog.Logger {
+	return m.Called().Get(0).(*slog.Logger)
 }
 func (m *mockServiceSessionDependencies) GetPaths() *persistence.Paths {
 	return m.Called().Get(0).(*persistence.Paths)

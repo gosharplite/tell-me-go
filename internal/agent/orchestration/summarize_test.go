@@ -213,11 +213,8 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "3"}}})
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
-	cm := &ContextManager{
-		Strategy:   strategy,
-		History:    hManager,
-		Summarizer: &mockSummarizer{},
-	}
+	cm := NewContextManager(strategy, hManager, nil, nil)
+	cm.Summarizer = &mockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err == nil {
@@ -253,12 +250,8 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	mockG := &mockGateway{}
 	summarizerImpl := llm.NewSummarizer(mockG, bus)
 
-	cm := &ContextManager{
-		Strategy:   strategy,
-		History:    hManager,
-		Summarizer: summarizerImpl,
-		Events:     bus,
-	}
+	cm := NewContextManager(strategy, hManager, bus, nil)
+	cm.Summarizer = summarizerImpl
 
 	turns := 1
 	_, _, err := cm.SummarizeRange(ctx, turns, "")
@@ -308,11 +301,8 @@ func TestSummarizeHistory_ContextCancellation(t *testing.T) {
 		_ = hManager.AddContent(context.Background(), &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 
-	cm := &ContextManager{
-		History:    hManager,
-		Summarizer: &mockSummarizer{},
-		Strategy:   NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil),
-	}
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil), hManager, nil, nil)
+	cm.Summarizer = &mockSummarizer{}
 	it := NewInternalTools(cm)
 
 	// Call the tool with the cancelled context

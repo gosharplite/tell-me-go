@@ -206,9 +206,7 @@ func (c *resultCollector) Wait(ctx context.Context) ([]domaintools.ToolResult, e
 			if !isCompleted[res.index] {
 				c.trs[res.index] = res.tr
 				isCompleted[res.index] = true
-				if c.bus != nil {
-					_ = events.SafePublish(ctx, c.bus, events.ToolResultEvent{Name: res.name, Result: res.tr})
-				}
+				_ = events.SafePublish(ctx, c.bus, events.ToolResultEvent{Name: res.name, Result: res.tr})
 				completedCount++
 			}
 		}
@@ -275,12 +273,10 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 			e.mu.RLock()
 			bus := e.events
 			e.mu.RUnlock()
-			if bus != nil {
-				_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
-					Message: tr.Text,
-					Level:   "warn",
-				})
-			}
+			_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
+				Message: tr.Text,
+				Level:   "warn",
+			})
 		}
 	}
 
@@ -301,25 +297,21 @@ func (e *ToolExecutor) publishLimitError(ctx context.Context, maxToolTurns int) 
 	e.mu.RLock()
 	bus := e.events
 	e.mu.RUnlock()
-	if bus != nil {
-		_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
-			Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
-			Level:   "error",
-		})
-	}
+	_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
+		Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
+		Level:   "error",
+	})
 }
 
 func (e *ToolExecutor) publishCallEvent(ctx context.Context, calls []*llm.FunctionCall, turn int, maxToolTurns int) {
 	e.mu.RLock()
 	bus := e.events
 	e.mu.RUnlock()
-	if bus != nil {
-		_ = events.SafePublish(ctx, bus, events.ToolCallEvent{
-			Calls:    calls,
-			Turn:     turn,
-			MaxTurns: maxToolTurns,
-		})
-	}
+	_ = events.SafePublish(ctx, bus, events.ToolCallEvent{
+		Calls:    calls,
+		Turn:     turn,
+		MaxTurns: maxToolTurns,
+	})
 }
 
 func (e *ToolExecutor) assembleResponse(calls []*llm.FunctionCall, results []domaintools.ToolResult) *llm.Content {
@@ -555,13 +547,11 @@ func (e *ToolExecutor) handlePanic(ctx context.Context, r interface{}, toolName 
 	bus := e.events
 	e.mu.RUnlock()
 
-	if bus != nil {
-		msg := fmt.Sprintf("CRITICAL: Panic in tool executor while running %q: %v\n%s", toolName, r, string(stack))
-		_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
-			Message: msg,
-			Level:   "error",
-		})
-	}
+	msg := fmt.Sprintf("CRITICAL: Panic in tool executor while running %q: %v\n%s", toolName, r, string(stack))
+	_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
+		Message: msg,
+		Level:   "error",
+	})
 
 	return domaintools.ToolResult{
 		Text:  fmt.Sprintf("Tool %q encountered an internal fatal error (panic) and was terminated.", toolName),

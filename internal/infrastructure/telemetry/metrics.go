@@ -874,9 +874,6 @@ func logTrace(ctx context.Context, logFile string, trace *domain_telemetry.TurnT
 
 // RegisterTraceSubscriber subscribes a listener to TraceEvents.
 func RegisterTraceSubscriber(bus events.EventBus, logFile string) {
-	if bus == nil {
-		return
-	}
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if te, ok := e.(events.TraceEvent); ok {
 			logTrace(ctx, logFile, te.Trace)

@@ -5,11 +5,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -55,8 +57,11 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	defer cleanup()
 
 	defer func() {
-		if shutdownErr := deps.GetEventBus().Shutdown(ctx); shutdownErr != nil {
-			_, _ = fmt.Fprintf(s.Stderr, "Warning: Event bus shutdown failed: %v\n", shutdownErr)
+		if err := deps.GetEventBus().Shutdown(ctx); err != nil {
+			if errors.Is(err, events.ErrBusNotInitialized) {
+				return
+			}
+			_, _ = fmt.Fprintf(s.Stderr, "Warning: Event bus shutdown failed: %v\n", err)
 		}
 	}()
 

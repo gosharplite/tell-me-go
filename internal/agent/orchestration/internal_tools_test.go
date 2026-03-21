@@ -27,7 +27,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U2"}}})
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "M2"}}})
 
-	cm := &ContextManager{History: hManager}
+	cm := NewContextManager(nil, hManager, nil, nil)
 	it := NewInternalTools(cm)
 
 	tests := []struct {
@@ -94,7 +94,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 
 func TestRegisterInternal(t *testing.T) {
 	registry := &mockToolRegistry{}
-	cm := &ContextManager{}
+	cm := NewContextManager(nil, nil, nil, nil)
 	if err := RegisterInternal(registry, cm); err != nil {
 		t.Fatalf("RegisterInternal failed: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestRegisterInternal_ErrorPath(t *testing.T) {
 				registerErr: fmt.Errorf("registry error"),
 				failAfter:   tt.failAfter,
 			}
-			cm := &ContextManager{}
+			cm := NewContextManager(nil, nil, nil, nil)
 			err := RegisterInternal(registry, cm)
 			if err == nil {
 				t.Fatalf("expected initialization to fail when registry returns an error (failAfter=%d)", tt.failAfter)

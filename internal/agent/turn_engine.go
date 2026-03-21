@@ -372,8 +372,10 @@ func (e *turnEngine) executeTurn(parentCtx context.Context, turn *turn) error {
 	err := e.runPhaseLoop(ctxWithTrace, turn)
 
 	e.finalizeTurnTrace(trace, err)
-	if e.events != nil {
-		_ = events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace})
+	if err := events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace}); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			// Other errors could be logged
+		}
 	}
 
 	e.notifyAfterTurn(turn, err)
@@ -460,10 +462,11 @@ func (p *guardStep) process(ctx context.Context, turn *turn) (processResult, err
 		return processResult{}, newAgentError(llm.ErrTerminal, fmt.Sprintf("turn %d exceeds limit %d", turn.Index, maxTurns), llm.ErrMaxTurnsReached)
 	}
 
-	if turn.Events != nil {
-		if err := events.SafePublish(ctx, turn.Events, events.TurnStarted{Turn: turn.Index, MaxTurns: maxTurns}); err != nil {
-			return processResult{}, err
+	if err := events.SafePublish(ctx, turn.Events, events.TurnStarted{Turn: turn.Index, MaxTurns: maxTurns}); err != nil {
+		if errors.Is(err, events.ErrBusNotInitialized) {
+			return processResult{NextPhase: phaseRefining}, nil
 		}
+		return processResult{}, err
 	}
 	return processResult{NextPhase: phaseRefining}, nil
 }
@@ -693,13 +696,13 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	turn.State.RetryCount++
 
 	// Publish retry notification to the UI/EventBus
-	if turn.Events != nil {
-		msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
-			turn.State.LastError, delay.Round(time.Millisecond), turn.State.RetryCount)
-		if err := events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
-			Message: msg,
-			Level:   "warn",
-		}); err != nil {
+	msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
+		turn.State.LastError, delay.Round(time.Millisecond), turn.State.RetryCount)
+	if err := events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
+		Message: msg,
+		Level:   "warn",
+	}); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
 			return processResult{}, err
 		}
 	}
@@ -752,11 +755,13 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn) {
 		// Delegate mutation to the utility with context-aware instruction
 		truncateOversizedResponse(toolResponse, toolTokens, instruction)
 
-		if turn.Events != nil {
-			_ = events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
-				Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
-				Level:   "error",
-			})
+	if err := events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
+		Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
+		Level:   "error",
+	}); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			// Other errors could be logged
 		}
+	}
 	}
 }

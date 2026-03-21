@@ -31,13 +31,10 @@ func TestSummarizeRange_Archival(t *testing.T) {
 
 	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100}, nil)
 
-	cm := &ContextManager{
-		Strategy: strategy,
-		History:  hManager,
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-				return "Summary of history", &llm.Metrics{}, nil
-			},
+	cm := NewContextManager(strategy, hManager, nil, nil)
+	cm.Summarizer = &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			return "Summary of history", &llm.Metrics{}, nil
 		},
 	}
 

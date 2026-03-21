@@ -5,6 +5,7 @@ package factory
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -37,6 +38,7 @@ func (d *mockSessionDeps) GetPaths() *persistence.Paths                         
 func (d *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
 func (d *mockSessionDeps) GetTracker() pricing.CostTracker                      { return d.tracker }
 func (d *mockSessionDeps) GetPricingData() pricing.PricingData                  { return pricing.PricingData{} }
+func (d *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
 
 type mockGateway struct {
 	llm.LLMGateway

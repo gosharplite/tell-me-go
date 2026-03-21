@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/require"
+	"log/slog"
 )
 
 type mockFailingSummarizer struct{}
@@ -178,7 +179,7 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 	sc := newSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := newSessionDependencies(&persistence.Paths{}, &mockHistoryManager{}, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil)
+	sd := newSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default())
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {

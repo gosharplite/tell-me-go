@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -316,22 +317,19 @@ func (f *chatterFacade) SetTieredThreshold(ctx context.Context, threshold int) e
 }
 
 func (f *chatterFacade) Subscribe(sub func(context.Context, events.Event)) {
-	if f.bus != nil {
-		f.bus.Subscribe(sub)
-	}
+	f.bus.Subscribe(sub)
 }
 
 func (f *chatterFacade) Shutdown(ctx context.Context) error {
-	if f.bus != nil {
-		return f.bus.Shutdown(ctx)
+	err := f.bus.Shutdown(ctx)
+	if errors.Is(err, events.ErrBusNotInitialized) {
+		return nil
 	}
-	return nil
+	return err
 }
 
 func (f *chatterFacade) emit(ctx context.Context, e events.Event) {
-	if f.bus != nil {
-		_ = f.bus.Publish(ctx, e)
-	}
+	_ = f.bus.Publish(ctx, e)
 }
 
 func (f *chatterFacade) emitTurnStatus(ctx context.Context, turn int, tokens int, metrics *llm.Metrics, isPostCall bool, startTime time.Time) {

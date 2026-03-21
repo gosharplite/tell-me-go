@@ -5,6 +5,7 @@ package monitoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -59,14 +60,12 @@ func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64
 		metrics.Cost = turnCost
 	}
 
-	if s.bus != nil {
-		err := events.SafePublish(ctx, s.bus, events.UsageMetricsEvent{
-			Context: ctx,
-			Metrics: metrics,
-		})
-		if err != nil {
-			return turnCost, fmt.Errorf("failed to publish metrics event: %w", err)
-		}
+	err := events.SafePublish(ctx, s.bus, events.UsageMetricsEvent{
+		Context: ctx,
+		Metrics: metrics,
+	})
+	if err != nil && !errors.Is(err, events.ErrBusNotInitialized) {
+		return turnCost, fmt.Errorf("failed to publish metrics event: %w", err)
 	}
 
 	return turnCost, nil
@@ -87,7 +86,7 @@ func (s *service) GetStatusData(ctx context.Context) orchestration.StatusData {
 
 // RecordError logs and potentially emits events for errors that occur during orchestration.
 func (s *service) RecordError(ctx context.Context, err error) {
-	if err == nil || s.bus == nil {
+	if err == nil {
 		return
 	}
 

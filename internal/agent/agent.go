@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -150,10 +151,14 @@ func (a *agent) Subscribe(sub func(context.Context, events.Event)) {
 }
 
 func (a *agent) emit(ctx context.Context, e events.Event) {
-	if a.events != nil {
-		// [SCALABILITY FIX] Always use a bounded context for publishing events
-		// to prevent cascading system deadlocks if a subscriber stalls.
-		_ = events.SafePublish(ctx, a.events, e)
+	// [SCALABILITY FIX] Always use a bounded context for publishing events
+	// to prevent cascading system deadlocks if a subscriber stalls.
+	if err := events.SafePublish(ctx, a.events, e); err != nil {
+		if errors.Is(err, events.ErrBusNotInitialized) {
+			// Silent skip if bus is missing
+			return
+		}
+		// Other errors could be logged if we had a logger in agent struct
 	}
 }
 
@@ -197,7 +202,11 @@ func (a *agent) Shutdown(ctx context.Context) error {
 	}
 
 	if a.events != nil {
-		return a.events.Shutdown(ctx)
+		err := a.events.Shutdown(ctx)
+		if errors.Is(err, events.ErrBusNotInitialized) {
+			return nil
+		}
+		return err
 	}
 	return nil
 }

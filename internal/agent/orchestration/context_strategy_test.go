@@ -454,3 +454,13 @@ func TestContextStrategy_ConfigUpdatedEvent(t *testing.T) {
 	assert.Equal(t, 5555, cs.GetTieredThreshold())
 	assert.Equal(t, 4444, cs.getContextWindow())
 }
+
+func TestContextStrategy_Count(t *testing.T) {
+	mockCounter := &mockTokenCounter{tokens: 42}
+	cs := NewContextStrategy(mockCounter, nil)
+
+	contents := []*llm.Content{{Parts: []*llm.Part{{Text: "hello"}}}}
+	got := cs.Count(contents)
+
+	assert.Equal(t, 42, got)
+}

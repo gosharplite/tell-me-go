@@ -6,6 +6,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -324,12 +325,15 @@ func (cm *ContextManager) wrapSummarizationError(err error) error {
 }
 
 func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tokens int) {
-	if cm.Events != nil {
-		if err := events.SafePublish(ctx, cm.Events, events.SystemMessageEvent{
-			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokens),
-		}); err != nil {
-			cm.logger.Debug("failed to emit summarization event", slog.Any("error", err))
+	err := events.SafePublish(ctx, cm.Events, events.SystemMessageEvent{
+		Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokens),
+	})
+	if err != nil {
+		if errors.Is(err, events.ErrBusNotInitialized) {
+			cm.logger.Debug("skipping summarization event: event bus not initialized")
+			return
 		}
+		cm.logger.Debug("failed to emit summarization event", slog.Any("error", err))
 	}
 }
 

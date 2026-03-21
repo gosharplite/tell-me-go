@@ -26,7 +26,7 @@ import (
 func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 	telemetry.RegisterTraceSubscriber(deps.GetEventBus(), cfg.LogPath)
 
-	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus())
+	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus(), infra_llm.WithLogger(deps.GetLogger()))
 
 	// 1. Prepare specialized domain service dependencies.
 	homeDir := filepath.Dir(filepath.Dir(deps.GetPaths().ModeDir))
@@ -46,9 +46,9 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		SkillSelector: skillSelector,
 		Events:        deps.GetEventBus(),
 	}
-	ctxManager := agent_orchestration.NewContextManager(strategy, deps.GetHistoryManager(), deps.GetEventBus(), factory)
+	ctxManager := agent_orchestration.NewContextManager(strategy, deps.GetHistoryManager(), deps.GetEventBus(), factory, agent_orchestration.WithLogger(deps.GetLogger()))
 
-	toolExec, err := agent_executor.NewToolExecutor(deps.GetRegistry(), deps.GetSecurityManager(), deps.GetEventBus(), telemetry.NewSlogLogger(nil), &agent_executor.TelemetryLogger{})
+	toolExec, err := agent_executor.NewToolExecutor(deps.GetRegistry(), deps.GetSecurityManager(), deps.GetEventBus(), telemetry.NewSlogLogger(deps.GetLogger()), &agent_executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
