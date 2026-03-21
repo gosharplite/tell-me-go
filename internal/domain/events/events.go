@@ -51,7 +51,7 @@ type SimpleEventBus struct {
 	closing           chan struct{}
 	ctx               context.Context
 	cancel            context.CancelFunc
-	logger            *slog.Logger
+	log               *slog.Logger
 }
 
 // BusOption defines a functional option for configuring the SimpleEventBus.
@@ -60,7 +60,7 @@ type BusOption func(*SimpleEventBus)
 // WithLogger sets the logger for the SimpleEventBus.
 func WithLogger(l *slog.Logger) BusOption {
 	return func(b *SimpleEventBus) {
-		b.logger = l
+		b.log = l
 	}
 }
 
@@ -72,7 +72,7 @@ func NewSimpleEventBus(ctx context.Context, opts ...BusOption) *SimpleEventBus {
 		closing:     make(chan struct{}),
 		ctx:         ctx,
 		cancel:      cancel,
-		logger:      slog.Default(),
+		log:         slog.Default(),
 	}
 
 	for _, opt := range opts {
@@ -82,11 +82,11 @@ func NewSimpleEventBus(ctx context.Context, opts ...BusOption) *SimpleEventBus {
 	return b
 }
 
-func (b *SimpleEventBus) Logger() *slog.Logger {
-	if b == nil || b.logger == nil {
+func (b *SimpleEventBus) logger() *slog.Logger {
+	if b == nil || b.log == nil {
 		return slog.Default()
 	}
-	return b.logger
+	return b.log
 }
 
 func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
@@ -136,7 +136,7 @@ func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, e
 			stack := string(debug.Stack())
 
 			// 1. Emit structured log with context
-			b.Logger().ErrorContext(ctx, "Subscriber panicked during event handling",
+			b.logger().ErrorContext(ctx, "Subscriber panicked during event handling",
 				slog.String("subscriber_type", subType),
 				slog.String("event_type", eventType),
 				slog.Any("panic_reason", r),
@@ -322,8 +322,8 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 		err := fmt.Errorf("publish timeout for event %s: %w", event.Type(), ctx.Err())
 
 		logger := slog.Default()
-		if l, ok := bus.(interface{ Logger() *slog.Logger }); ok {
-			logger = l.Logger()
+		if l, ok := bus.(interface{ logger() *slog.Logger }); ok {
+			logger = l.logger()
 		}
 
 		// 1. Emit structured log with context ensuring visibility even if caller drops the error
