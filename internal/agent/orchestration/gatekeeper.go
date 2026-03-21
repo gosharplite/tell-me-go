@@ -89,7 +89,7 @@ func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 			Tokens:   tokens,
 			MaxLimit: limit,
 			Reason:   reason,
-		}); err != nil && !errors.Is(err, events.ErrBufferOverflow) {
+		}); err != nil {
 			return tokens, err
 		}
 	}

@@ -134,8 +134,8 @@ func generateMockResponse(t *testing.T, isToolResult bool, provider string) stri
 				"parts": [
 					{"functionCall": {"name": "manage_tasks", "args": {"action": "add", "content": "Parallel Task A"}}},
 					{"functionCall": {"name": "manage_tasks", "args": {"action": "add", "content": "Parallel Task B"}}},
-					{"functionCall": {"name": "manage_config", "args": {"action": "set", "key": "c1", "value": "v1"}}},
-					{"functionCall": {"name": "manage_config", "args": {"action": "set", "key": "c2", "value": "v2"}}}
+					{"functionCall": {"name": "manage_tasks", "args": {"action": "add", "content": "Parallel Task C"}}},
+					{"functionCall": {"name": "manage_tasks", "args": {"action": "add", "content": "Parallel Task D"}}}
 				]
 			}
 		}]

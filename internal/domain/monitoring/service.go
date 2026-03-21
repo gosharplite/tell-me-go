@@ -5,7 +5,6 @@ package monitoring
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -65,7 +64,7 @@ func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64
 			Context: ctx,
 			Metrics: metrics,
 		})
-		if err != nil && !errors.Is(err, events.ErrBufferOverflow) {
+		if err != nil {
 			return turnCost, fmt.Errorf("failed to publish metrics event: %w", err)
 		}
 	}

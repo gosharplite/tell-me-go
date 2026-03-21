@@ -28,7 +28,6 @@ type Subscriber interface {
 }
 
 var (
-	ErrBufferOverflow    = errors.New("event buffer overflowed, events were dropped")
 	ErrBusClosed         = errors.New("event bus is closed")
 	errBusNotInitialized = errors.New("event bus is nil or uninitialized")
 )

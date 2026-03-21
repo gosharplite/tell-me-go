@@ -351,9 +351,9 @@ func TestTokenGatekeeper_GetStrategy_Coverage(t *testing.T) {
 	require.NotNil(t, strategy)
 }
 
-func TestTokenGatekeeper_TriggerSummarization_BufferOverflow(t *testing.T) {
-	// We want to hit the ErrBufferOverflow branch in triggerSummarization
-	mockBus := &mockFailingEventBus{err: events.ErrBufferOverflow}
+func TestTokenGatekeeper_TriggerSummarization_EventError_Swallowed(t *testing.T) {
+	// We want to verify that other errors from SafePublish are NOT swallowed.
+	mockBus := &mockFailingEventBus{err: errors.New("publish error")}
 	tg := &tokenGatekeeper{
 		Events:    mockBus,
 		Estimator: &mockEstimator{},
@@ -379,7 +379,8 @@ func TestTokenGatekeeper_TriggerSummarization_BufferOverflow(t *testing.T) {
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
-	require.NoError(t, err, "Buffer overflow should be swallowed")
+	require.Error(t, err, "Event publish error should not be swallowed anymore")
+	require.Equal(t, "publish error", err.Error())
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
