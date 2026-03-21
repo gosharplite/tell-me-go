@@ -19,6 +19,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
 // runtimeConfig consolidates all agent configuration parameters.
@@ -54,7 +55,7 @@ func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	}
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry))
-	exec, err := executor.NewToolExecutor(registry, sm, bus, nil, &executor.TelemetryLogger{})
+	exec, err := executor.NewToolExecutor(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}

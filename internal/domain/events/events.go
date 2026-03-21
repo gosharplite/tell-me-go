@@ -37,8 +37,8 @@ var (
 )
 
 const (
-	defaultQueueSize          = 1024
-	defaultWorkers            = 8
+	defaultQueueSize         = 1024
+	defaultWorkers           = 8
 	defaultMaxConcurrentSubs = 1024
 )
 

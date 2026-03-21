@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/goleak"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
@@ -145,7 +145,7 @@ func TestSafePublish_Timeout(t *testing.T) {
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(ctx)
 	defer func() { _ = bus.Shutdown(ctx) }()
-	
+
 	ctx2, cancel := context.WithCancel(context.Background())
 	cancel() // Already canceled
 

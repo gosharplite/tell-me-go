@@ -423,7 +423,6 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 	}
 }
 
-
 func TestContextStrategy_Count(t *testing.T) {
 	mockCounter := &mockTokenCounter{tokens: 42}
 	cs := NewContextStrategy(mockCounter)

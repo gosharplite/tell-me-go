@@ -75,9 +75,8 @@ func NewToolExecutor(registry domaintools.Registry, sm domain_security.Manager, 
 	if observer == nil {
 		return nil, errors.New("ExecutionObserver is required")
 	}
-
 	if logger == nil {
-		logger = &ports.NoOpLogger{}
+		return nil, errors.New("logger is required")
 	}
 
 	e := &ToolExecutor{
