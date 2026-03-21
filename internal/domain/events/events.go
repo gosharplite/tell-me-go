@@ -28,7 +28,7 @@ type Subscriber interface {
 var (
 	ErrBufferOverflow    = errors.New("event buffer overflowed, events were dropped")
 	ErrBusClosed         = errors.New("event bus is closed")
-	ErrBusNotInitialized = errors.New("event bus is nil or uninitialized")
+	errBusNotInitialized = errors.New("event bus is nil or uninitialized")
 )
 
 // EventBus defines the interface for publishing and subscribing to events.
@@ -39,9 +39,6 @@ type EventBus interface {
 	Flush(ctx context.Context) error
 }
 
-// defaultMaxQueueSize is the default capacity for the event ring buffer.
-const defaultMaxQueueSize = 1000
-
 // SimpleEventBus is an implementation of EventBus.
 type SimpleEventBus struct {
 	mu          sync.RWMutex
@@ -50,10 +47,6 @@ type SimpleEventBus struct {
 	closing     chan struct{}
 	ctx         context.Context
 	cancel      context.CancelFunc
-}
-
-type flushEvent struct {
-	done chan error
 }
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus.
@@ -67,14 +60,9 @@ func NewSimpleEventBus(ctx context.Context) *SimpleEventBus {
 	}
 }
 
-// NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom capacity (ignored in this implementation).
-func NewSimpleEventBusWithCapacity(ctx context.Context, capacity int) *SimpleEventBus {
-	return NewSimpleEventBus(ctx)
-}
-
 func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	if b == nil {
-		return ErrBusNotInitialized
+		return errBusNotInitialized
 	}
 
 	select {
@@ -135,7 +123,6 @@ var allKnownTypes = []string{
 	"TraceEvent",
 	"ConfigUpdated",
 	"TurnStatusEvent",
-	"flushEvent",
 	"testEvent",
 }
 
@@ -176,7 +163,7 @@ func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 // Shutdown gracefully stops the event bus.
 func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	if b == nil {
-		return ErrBusNotInitialized
+		return errBusNotInitialized
 	}
 
 	b.mu.Lock()
@@ -191,7 +178,7 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 // Flush is a no-op as this implementation is synchronous.
 func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	if b == nil {
-		return ErrBusNotInitialized
+		return errBusNotInitialized
 	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -268,7 +255,7 @@ type TraceEvent struct {
 // It returns an error if the context is cancelled or the publication fails (e.g., buffer overflow).
 func SafePublish(ctx context.Context, bus EventBus, e Event, timeout time.Duration) error {
 	if bus == nil {
-		return ErrBusNotInitialized
+		return errBusNotInitialized
 	}
 	pubCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -285,4 +272,3 @@ func (e SystemMessageEvent) Type() string { return "SystemMessageEvent" }
 func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" }
 func (e SummarizationRequired) Type() string { return "SummarizationRequired" }
 func (e TraceEvent) Type() string { return "TraceEvent" }
-func (e flushEvent) Type() string { return "flushEvent" }
