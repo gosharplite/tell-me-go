@@ -55,7 +55,7 @@ func TestTestEventBus_Subscribe(t *testing.T) {
 	bus := &TestEventBus{}
 
 	var receivedID int
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if ev, ok := e.(myEvent); ok {
 			receivedID = ev.ID
 		}

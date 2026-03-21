@@ -4,6 +4,7 @@
 package orchestration
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -51,7 +52,7 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 	}
 
 	if bus != nil {
-		bus.Subscribe(func(e events.Event) {
+		bus.Subscribe(func(ctx context.Context, e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
 				cs.setTieredThreshold(cfg.Limits.TieredThreshold)

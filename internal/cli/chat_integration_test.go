@@ -38,7 +38,7 @@ func (m *integrationMockChatter) SetLimits(ctx stdctx.Context, toolTurns, histor
 func (m *integrationMockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) error {
 	return nil
 }
-func (m *integrationMockChatter) Subscribe(sub func(events.Event))  {}
+func (m *integrationMockChatter) Subscribe(sub func(stdctx.Context, events.Event))  {}
 func (m *integrationMockChatter) Shutdown(ctx stdctx.Context) error { return nil }
 
 func TestChatCommand_NewSessionIntegration(t *testing.T) {

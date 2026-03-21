@@ -23,6 +23,8 @@ type Event interface {
 }
 
 // Subscriber defines the interface for event handlers.
+// CRITICAL: Implementations MUST monitor ctx.Done() and abort
+// long-running operations immediately to prevent goroutine leaks.
 type Subscriber interface {
 	Handle(ctx context.Context, e Event) error
 }
@@ -35,7 +37,7 @@ var (
 // EventBus defines the interface for publishing and subscribing to events.
 type EventBus interface {
 	Publish(ctx context.Context, e Event) error
-	Subscribe(sub func(Event))
+	Subscribe(sub func(context.Context, Event))
 	Shutdown(ctx context.Context) error
 	Flush(ctx context.Context) error
 }
@@ -151,15 +153,15 @@ func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, e
 }
 
 type funcSubscriber struct {
-	f func(Event)
+	f func(context.Context, Event)
 }
 
 func (s *funcSubscriber) Handle(ctx context.Context, e Event) error {
-	s.f(e)
+	s.f(ctx, e)
 	return nil
 }
 
-func (b *SimpleEventBus) Subscribe(sub func(Event)) {
+func (b *SimpleEventBus) Subscribe(sub func(context.Context, Event)) {
 	if b == nil || sub == nil {
 		return
 	}

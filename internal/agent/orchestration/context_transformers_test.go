@@ -1048,7 +1048,7 @@ func (m *mockTransformerEventBus) Publish(ctx context.Context, event events.Even
 	return nil
 }
 
-func (m *mockTransformerEventBus) Subscribe(handler func(events.Event)) {}
+func (m *mockTransformerEventBus) Subscribe(handler func(context.Context, events.Event)) {}
 
 func (m *mockTransformerEventBus) Shutdown(ctx context.Context) error { return nil }
 

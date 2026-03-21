@@ -44,7 +44,7 @@ func (m *mockChatter) SetTieredThreshold(ctx context.Context, threshold int) err
 	return args.Error(0)
 }
 
-func (m *mockChatter) Subscribe(sub func(events.Event)) {
+func (m *mockChatter) Subscribe(sub func(context.Context, events.Event)) {
 	m.Called(sub)
 }
 
@@ -243,9 +243,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				stream := make(chan *llm.Content)
 				ev.Stream = stream
 				close(stream)
-				bridge.handleEvent(ev)
+				bridge.handleEvent(context.Background(), ev)
 			} else {
-				bridge.handleEvent(tt.event)
+				bridge.handleEvent(context.Background(), tt.event)
 			}
 
 			mRenderer.AssertExpectations(t)
@@ -458,7 +458,7 @@ func (m *behaviorMockChatter) SetTieredThreshold(ctx context.Context, threshold 
 	return args.Error(0)
 }
 
-func (m *behaviorMockChatter) Subscribe(sub func(events.Event)) {
+func (m *behaviorMockChatter) Subscribe(sub func(context.Context, events.Event)) {
 	m.tracker.record("Chatter.Subscribe")
 	m.Called(sub)
 }

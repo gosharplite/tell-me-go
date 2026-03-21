@@ -501,7 +501,7 @@ func TestAgent_Subscribe(t *testing.T) {
 
 	var eventReceived events.Event
 	var mu sync.Mutex
-	a.Subscribe(func(e events.Event) {
+	a.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		if _, ok := e.(events.ConfigUpdated); ok {

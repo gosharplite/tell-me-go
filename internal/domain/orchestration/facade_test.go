@@ -80,7 +80,7 @@ func (m *mockMonitor) RecordError(ctx context.Context, err error) {
 
 type mockEventBus struct {
 	publishFunc   func(ctx context.Context, e events.Event) error
-	subscribeFunc func(sub func(events.Event))
+	subscribeFunc func(sub func(context.Context, events.Event))
 }
 
 func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
@@ -90,7 +90,7 @@ func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
 	return nil
 }
 
-func (m *mockEventBus) Subscribe(sub func(events.Event)) {
+func (m *mockEventBus) Subscribe(sub func(context.Context, events.Event)) {
 	if m.subscribeFunc != nil {
 		m.subscribeFunc(sub)
 	}
@@ -374,10 +374,10 @@ func TestChatterFacade_OtherMethods(t *testing.T) {
 
 	t.Run("Subscribe", func(t *testing.T) {
 		called := false
-		eb.subscribeFunc = func(sub func(events.Event)) {
+		eb.subscribeFunc = func(sub func(context.Context, events.Event)) {
 			called = true
 		}
-		f.Subscribe(func(e events.Event) {})
+		f.Subscribe(func(ctx context.Context, e events.Event) {})
 		if !called {
 			t.Error("Subscribe not delegated")
 		}

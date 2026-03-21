@@ -265,7 +265,7 @@ type costCapturer struct {
 
 func newCostCapturer(bus events.EventBus) *costCapturer {
 	c := &costCapturer{bus: bus}
-	bus.Subscribe(func(ev events.Event) {
+	bus.Subscribe(func(ctx context.Context, ev events.Event) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if um, ok := ev.(events.UsageMetricsEvent); ok {

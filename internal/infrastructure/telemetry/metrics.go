@@ -836,9 +836,16 @@ func generateSessionID(mode, logFile string) string {
 }
 
 // logTrace writes a TurnTrace to a trace log file.
-func logTrace(logFile string, trace *domain_telemetry.TurnTrace) {
+func logTrace(ctx context.Context, logFile string, trace *domain_telemetry.TurnTrace) {
 	if logFile == "" || trace == nil {
 		return
+	}
+
+	// 1. Immediate context check
+	select {
+	case <-ctx.Done():
+		return
+	default:
 	}
 
 	traceFile := strings.TrimSuffix(logFile, filepath.Ext(logFile)) + ".trace.jsonl"
@@ -848,6 +855,7 @@ func logTrace(logFile string, trace *domain_telemetry.TurnTrace) {
 		return
 	}
 
+	// 2. Use context-aware AtomicWrite if available or at least check context before I/O
 	f, err := os.OpenFile(traceFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Printf("Warning: Failed to open trace file %s: %v", traceFile, err)
@@ -869,9 +877,9 @@ func RegisterTraceSubscriber(bus events.EventBus, logFile string) {
 	if bus == nil {
 		return
 	}
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if te, ok := e.(events.TraceEvent); ok {
-			logTrace(logFile, te.Trace)
+			logTrace(ctx, logFile, te.Trace)
 		}
 	})
 }

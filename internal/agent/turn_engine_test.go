@@ -92,7 +92,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
 	}()
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		switch e.(type) {
@@ -290,7 +290,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 
 	var mu sync.Mutex
 	var retryMsgs []string
-	bus.Subscribe(func(ev events.Event) {
+	bus.Subscribe(func(ctx context.Context, ev events.Event) {
 		if sme, ok := ev.(events.SystemMessageEvent); ok {
 			mu.Lock()
 			retryMsgs = append(retryMsgs, sme.Message)
@@ -349,7 +349,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 
 	var mu sync.Mutex
 	var retryMsgs []string
-	bus.Subscribe(func(ev events.Event) {
+	bus.Subscribe(func(ctx context.Context, ev events.Event) {
 		if sme, ok := ev.(events.SystemMessageEvent); ok {
 			mu.Lock()
 			retryMsgs = append(retryMsgs, sme.Message)
@@ -480,7 +480,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
 	}()
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if st, ok := e.(events.TurnStatusEvent); ok {
 			mu.Lock()
 			capturedTime = st.Status.Timestamp

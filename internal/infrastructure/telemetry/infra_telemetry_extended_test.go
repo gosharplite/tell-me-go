@@ -200,7 +200,7 @@ func TestTraceTelemetry(t *testing.T) {
 		FinalStatus: "success",
 	}
 
-	logTrace(logFile, trace)
+	logTrace(context.Background(), logFile, trace)
 
 	traceFile := filepath.Join(tempDir, "test.trace.jsonl")
 	if _, err := os.Stat(traceFile); os.IsNotExist(err) {

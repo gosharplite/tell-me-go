@@ -194,7 +194,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 
 	received := false
 	var mu sync.Mutex
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if _, ok := e.(events.SystemMessageEvent); ok {
 			mu.Lock()
 			received = true

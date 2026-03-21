@@ -65,7 +65,7 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 	}
 
 	if bus != nil {
-		bus.Subscribe(func(e events.Event) {
+		bus.Subscribe(func(ctx context.Context, e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cm.mu.Lock()
 				defer cm.mu.Unlock()

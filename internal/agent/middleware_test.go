@@ -30,7 +30,7 @@ func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
 	return nil
 }
 
-func (m *mockEventBus) Subscribe(f func(events.Event)) {}
+func (m *mockEventBus) Subscribe(f func(context.Context, events.Event)) {}
 
 func (m *mockEventBus) Shutdown(ctx context.Context) error { return nil }
 

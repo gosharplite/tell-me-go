@@ -40,7 +40,7 @@ func (m *mockEventBus) Publish(ctx context.Context, event events.Event) error {
 	return args.Error(0)
 }
 
-func (m *mockEventBus) Subscribe(sub func(events.Event)) {
+func (m *mockEventBus) Subscribe(sub func(context.Context, events.Event)) {
 	m.Called(sub)
 }
 

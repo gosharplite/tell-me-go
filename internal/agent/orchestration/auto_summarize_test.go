@@ -131,7 +131,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 
 	// Channel to capture the log event
 	logReceived := make(chan string, 1)
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if msg, ok := e.(events.SystemMessageEvent); ok {
 			if strings.Contains(msg.Message, "Auto-summarizing") {
 				logReceived <- msg.Message

@@ -614,7 +614,7 @@ func TestApplyThinkingBudget(t *testing.T) {
 
 		var mu sync.Mutex
 		var publishedEvents []events.Event
-		localBus.Subscribe(func(e events.Event) {
+		localBus.Subscribe(func(ctx context.Context, e events.Event) {
 			mu.Lock()
 			defer mu.Unlock()
 			publishedEvents = append(publishedEvents, e)

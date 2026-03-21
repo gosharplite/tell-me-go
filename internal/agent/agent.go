@@ -145,7 +145,7 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	return nil
 }
 
-func (a *agent) Subscribe(sub func(events.Event)) {
+func (a *agent) Subscribe(sub func(context.Context, events.Event)) {
 	a.events.Subscribe(sub)
 }
 
