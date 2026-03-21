@@ -25,7 +25,7 @@ Every ADR must include the following sections:
 - **Consequences:** Both positive and negative trade-offs resulting from the decision.
 
 ### 4. Workflow
-1. **Drafting:** The Architect drafts the ADR in a temporary scratchpad or discussion.
+1. **Drafting:** The Architect drafts the ADR in a temporary file or discussion.
 2. **Review:** The decision is reviewed against existing SOPs (e.g., Security, Testing).
 3. **Commitment:** Once accepted, the Coder creates the file in `docs/adr/` and updates any relevant cross-references in the SOPs.
 4. **Superseding:** If a decision is changed later, the old ADR's status is updated to "Superseded" with a link to the new ADR.

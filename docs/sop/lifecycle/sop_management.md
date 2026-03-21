@@ -56,7 +56,7 @@ Every SOP should follow a consistent Markdown structure:
 ### 3. Maintenance & Revision
 - **Mandatory State Management**: For any SOP involving 3+ steps or destructive actions, the instructions **MUST** include a "Task Initialization" step as per [CLI Standards](../standards/cli_standards.md):
     - **Anchor Tasking**: The first task MUST be named "SOP Compliance: [filename.md]".
-    - **Atomic Turns**: Technical milestones and state updates (Tasks/Scratchpad) must occur in separate turns.
+    - **Atomic Turns**: Technical milestones and state updates (Tasks) must occur in separate turns.
     - **Verification**: The agent must read back the state after updates.
 - **Evolution**: When a codebase change (e.g., a Go module update or refactor) breaks a documented procedure, the corresponding SOP **must** be updated immediately.
 - **Versioning**: Use Git commit messages to track the "why" behind SOP revisions.
@@ -72,7 +72,7 @@ Every SOP should follow a consistent Markdown structure:
 - [ ] Are there Go code examples or command templates?
 - [ ] Is the file saved in `docs/sop/` or a sub-folder?
 - [ ] Has the quality been verified? (Run `go test ./...` and `go mod tidy` before committing)
-- [ ] Are there logic gaps? If no unit test exists for a new package, add it to the technical debt list in the scratchpad.
+- [ ] Are there logic gaps? If no unit test exists for a new package, add it to the technical debt task list.
 - [ ] Does this impact **Testing Standards**?
 - [ ] Is the commit message structured according to [Git Workflow](../standards/git_workflow.md)?
 - [ ] Has the file been committed and pushed to the repository?

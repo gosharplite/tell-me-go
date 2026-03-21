@@ -42,7 +42,7 @@ The tool manages session state through history and log files.
 - **New Session**: When the `-new` flag is used, the tool must start a fresh conversation.
 - **Automatic Archiving**: To prevent data loss, instead of deleting old session files, the tool **MUST** move them to a timestamped backup directory: `output/backups/YYYYMMDD_HHMMSS/`. 
 - **Files to Archive**: This includes history (`_history.json`), token logs (`_tokens.log`), and command logs (`_commands.log`). 
-- **Persistent Files**: Safety settings (`_safepaths.json`), scratchpads (`_scratchpad.md`), tasks (`_tasks.json`), and the bypass state (`_bypass.log`) are **not** archived to ensure persistent environment state and project context across sessions.
+- **Persistent Files**: Safety settings (`_safepaths.json`), tasks (`_tasks.json`), and the bypass state (`_bypass.log`) are **not** archived to ensure persistent environment state and project context across sessions.
 ```bash
 alias b='tell-me-go'
 ```
@@ -100,9 +100,9 @@ fmt.Fprintf(os.Stderr, "[0;32m[%s] > %s[0m
 To prevent "Agentic Amnesia" and ensure the reliability of long-running or multi-turn tasks:
 
 - **Atomic Turns**: Major technical actions (e.g., `git push`, `write_file`, `go test`) **MUST** be executed in their own turn. 
-- **Immediate State Sync**: The turn immediately following a milestone action **MUST** be used to update the Task Manager (`manage_tasks`) and Scratchpad (`manage_scratchpad`). 
+- **Immediate State Sync**: The turn immediately following a milestone action **MUST** be used to update the Task Manager (`manage_tasks`). 
 - **No Batching**: Do not batch technical milestones with administrative completion (e.g., don't perform a `git push` and then immediately say "I'm done" in the same response).
-- **Mandatory Verification**: After updating the state, the agent **MUST** list the tasks or read the scratchpad to verify the write was successful and the state is consistent.
+- **Mandatory Verification**: After updating the state, the agent **MUST** list the tasks to verify the write was successful and the state is consistent.
 - **Tool Error Handling**: If a state-management tool (Task/Scratchpad) returns an error (e.g., "failed to parse"), this MUST be treated as a **blocking failure**. The agent must stop and fix the underlying file corruption before proceeding.
 
 ---

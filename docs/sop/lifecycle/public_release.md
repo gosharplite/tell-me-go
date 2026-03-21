@@ -15,12 +15,12 @@ This SOP defines the automated workflow for publishing a new public release of t
 ### Step-by-Step Instructions
 
 #### 1. Task Initialization
-1.  **Clear Workspace State**: Use `manage_tasks` (action: clear) and `manage_scratchpad` (action: clear) to ensure a fresh environment.
+1.  **Clear Workspace State**: Use `manage_tasks` (action: clear) to ensure a fresh environment.
 2.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
 3.  **Enable Automation**: Execute `bypass_confirmation`.
 4.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release vX.Y.Z Readiness"`.
 5.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
-6.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `1.1.0`). Store this in the `manage_scratchpad`.
+6.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `1.1.0`). Store this in the `manage_tasks`.
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
@@ -66,4 +66,4 @@ verify_release_readiness
 #### 5. Cleanup and Security Restoration
 1.  **Verify Sync**: Run `git status` to ensure all branches are clean and synced.
 2.  **Finalize Task**: Use `manage_tasks` (action: update) to mark the release task as `completed`.
-3.  **Final Cleanup**: Execute `manage_scratchpad` (action: clear) and `manage_tasks` (action: clear) to leave a clean environment for the next session.
+3.  **Final Cleanup**: Execute `manage_tasks` (action: clear) to leave a clean environment for the next session.

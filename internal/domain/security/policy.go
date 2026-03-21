@@ -153,7 +153,6 @@ func DefaultPolicy() *Policy {
 
 			// Session & Management Tools
 			"get_session_info":         true,
-			"manage_config":            true,
 			"manage_tasks":             true,
 			"ask_user":                 true,
 			"bypass_confirmation":      true,

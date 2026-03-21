@@ -25,7 +25,7 @@ To define the standards for managing conversation history in `tell-me-go`, ensur
 History must be stored as a slice of `Content` structs, mirroring the Gemini API's `contents` field.
 - **File Format**: Standard JSON.
 - **Locality**: History files are saved in mode-specific subdirectories under `output/` (e.g., `output/<MODE>/history.json`).
-- **Auxiliary State**: Persistent state files (Tasks and Scratchpad) must also be scoped to the mode directory (e.g., `output/<MODE>/tasks.json`, `output/<MODE>/scratchpad.md`) to ensure context isolation between different configuration environments.
+- **Auxiliary State**: Persistent state files (Tasks) must also be scoped to the mode directory (e.g., `output/<MODE>/tasks.json`) to ensure context isolation between different configuration environments.
 - **Log Files**: Logs are saved as `tokens.log` within the mode directory for organizational clarity.
 - **Serialization**: The `Role` field in the JSON payload must **never** be omitted. Strict providers like Vertex AI will reject payloads where the `role` key is missing. Ensure the struct tag does not use `omitempty` for this field.
 
@@ -48,7 +48,7 @@ To prevent context overflow and stay within the model's high-performance/low-cos
 - **Pinning (`manage_history`)**: Users or the agent can **pin** critical instructions or key conversation turns to protect them from summarization or pruning.
 - **Turn-Limit Pruning**: If the number of turns exceeds `MAX_HISTORY_TURNS`, the oldest unpinned turns are removed to maintain performance.
 - **Consistent Alternation**: Maintenance logic must always ensure the resulting history maintains the `user` -> `model` role alternation.
-- **System Notice**: If maintenance cannot reduce the context size sufficiently (due to too many pinned turns), an **URGENT SYSTEM NOTICE** is injected, instructing the model to persist state to the scratchpad and stop before a hard rollback occurs.
+- **System Notice**: If maintenance cannot reduce the context size sufficiently (due to too many pinned turns), an **URGENT SYSTEM NOTICE** is injected, instructing the model to persist state to the task list and stop before a hard rollback occurs.
 
 #### 5. Volatile vs. Persistent Context
 The history manager must distinguish between data that belongs in the permanent session record and data that is temporary for safety.
