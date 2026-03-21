@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 
@@ -528,13 +527,3 @@ func (e SystemMessageEvent) Type() string     { return "SystemMessageEvent" }
 func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" }
 func (e SummarizationRequired) Type() string  { return "SummarizationRequired" }
 func (e TraceEvent) Type() string             { return "TraceEvent" }
-
-// isQueueFull returns true if the error is errQueueFull.
-func isQueueFull(err error) bool {
-	return errors.Is(err, errQueueFull)
-}
-
-// isTimeout returns true if the error is context.DeadlineExceeded or a publish failure.
-func isTimeout(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded) || (err != nil && strings.Contains(err.Error(), "publish failure"))
-}
