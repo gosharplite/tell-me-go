@@ -67,10 +67,11 @@ func (f *mockFile) Name() string {
 
 // mockFileSystem implements the local FileSystem interface for testing.
 type mockFileSystem struct {
-	mu     sync.Mutex
-	files  map[string]*bytes.Buffer
-	dirs   map[string]bool
-	failOn map[string]error
+	mu           sync.Mutex
+	files        map[string]*bytes.Buffer
+	dirs         map[string]bool
+	failOn       map[string]error
+	removedFiles []string
 
 	// Custom behavior
 	CreateTempFunc func(dir, pattern string) (File, error)
@@ -133,6 +134,7 @@ func (m *mockFileSystem) Remove(name string) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.removedFiles = append(m.removedFiles, name)
 	delete(m.files, name)
 	return nil
 }
@@ -141,6 +143,9 @@ func (m *mockFileSystem) RemoveAll(path string) error {
 	if err := m.failOn["RemoveAll"]; err != nil {
 		return err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removedFiles = append(m.removedFiles, path)
 	return nil
 }
 
