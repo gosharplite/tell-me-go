@@ -64,7 +64,8 @@ type SimpleEventBus struct {
 	eventQueue   chan Event
 	numWorkers   int
 	subSemaphore chan struct{}
-	wg           sync.WaitGroup // Tracks active workers
+	wg           sync.WaitGroup // Tracks active subscriber dispatches
+	workerWG     sync.WaitGroup // Tracks active workers
 	pendingWG    sync.WaitGroup // Tracks pending events for Flush
 }
 
@@ -195,14 +196,14 @@ func (b *SimpleEventBus) startWorkers() {
 	if b.numWorkers <= 0 {
 		return
 	}
-	b.wg.Add(b.numWorkers)
+	b.workerWG.Add(b.numWorkers)
 	for i := 0; i < b.numWorkers; i++ {
 		go b.workerLoop()
 	}
 }
 
 func (b *SimpleEventBus) workerLoop() {
-	defer b.wg.Done()
+	defer b.workerWG.Done()
 	for {
 		select {
 		case <-b.ctx.Done():
@@ -229,42 +230,35 @@ func (b *SimpleEventBus) dispatch(event Event) {
 	b.mu.RUnlock()
 
 	for _, sub := range subs {
+		b.wg.Add(1)
+		b.pendingWG.Add(1)
+
+		// Acquire semaphore slot (blocks if at max concurrency)
 		select {
 		case b.subSemaphore <- struct{}{}:
-			b.pendingWG.Add(1)
-			// Fire-and-forget but bounded by subSemaphore
-			go func(s Subscriber, e Event) {
-				defer func() {
-					<-b.subSemaphore
-					b.pendingWG.Done()
-				}()
-				// Use a fixed timeout per subscriber to avoid worker starvation
-				subCtx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
-				defer cancel()
-
-				if err := b.notifySubscriber(subCtx, s, e); err != nil {
-					if errors.Is(err, context.DeadlineExceeded) {
-						b.getLogger().WarnContext(b.ctx, "Subscriber handling timed out",
-							slog.String("event_type", e.Type()),
-							slog.String("subscriber_type", fmt.Sprintf("%T", s)),
-						)
-					} else {
-						// Log general subscriber errors in async mode
-						b.getLogger().ErrorContext(b.ctx, "Subscriber failed to handle event",
-							slog.String("event_type", e.Type()),
-							slog.String("subscriber_type", fmt.Sprintf("%T", s)),
-							slog.String("error", err.Error()),
-						)
-					}
-				}
-			}(sub, event)
-		default:
-			// "Sever" the uncooperative or overloaded subscriber
-			b.getLogger().WarnContext(b.ctx, "Subscriber dropped due to concurrency limit",
-				slog.String("event_type", event.Type()),
-				slog.String("subscriber_type", fmt.Sprintf("%T", sub)),
-			)
+		case <-b.ctx.Done():
+			b.wg.Done()
+			b.pendingWG.Done()
+			return
 		}
+
+		go func(s Subscriber, e Event) {
+			defer b.wg.Done()
+			defer b.pendingWG.Done()
+			defer func() { <-b.subSemaphore }()
+
+			// Hard timeout prevents a subscriber from holding the semaphore token forever
+			timeoutCtx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+			defer cancel()
+
+			if err := b.notifySubscriber(timeoutCtx, s, e); err != nil {
+				b.getLogger().ErrorContext(timeoutCtx, "subscriber failed",
+					slog.String("event_type", e.Type()),
+					slog.String("subscriber_type", fmt.Sprintf("%T", s)),
+					slog.Any("error", err),
+				)
+			}
+		}(sub, event)
 	}
 }
 
@@ -368,21 +362,11 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 
 	// Drain queue if possible? No, we stop processing to avoid further leaks.
 
-	// Wait for workers to finish
+	// Wait for workers and active dispatches to finish
 	done := make(chan struct{})
 	go func() {
+		b.workerWG.Wait()
 		b.wg.Wait()
-		// Wait for all active subscriber goroutines to exit (within reason)
-		// Since we canceled b.ctx, they SHOULD exit soon if they respect it.
-		// If they don't, we'll hit the shutdown context timeout.
-		limit := cap(b.subSemaphore)
-		for i := 0; i < limit; i++ {
-			b.subSemaphore <- struct{}{}
-		}
-		// Clear it out for any late arrivals (shouldn't happen)
-		for i := 0; i < limit; i++ {
-			<-b.subSemaphore
-		}
 		close(done)
 	}()
 
