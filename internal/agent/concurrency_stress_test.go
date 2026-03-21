@@ -208,7 +208,7 @@ func TestContextManager_Race(t *testing.T) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := events.NewSimpleEventBus(context.Background())
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil), bus)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil))
 	factory := &orchestration.PipelineFactory{
 		Estimator: strategy,
 		Events:    bus,
@@ -300,7 +300,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	}
 
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	cm := orchestration.NewContextManager(strategy, h, bus, nil)
 	cm.Pipeline = orchestration.NewContextPipeline()
 

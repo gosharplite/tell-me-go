@@ -119,7 +119,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	}
 
 	reg := &mockToolRegistry{}
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -200,7 +200,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 				},
 			}
 			reg := &mockToolRegistry{}
-			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 			hManager := &mockHistoryManager{}
 			tt.setup(mockGw, hManager)
 
@@ -257,7 +257,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	}
 
 	reg := &mockToolRegistry{}
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -284,7 +284,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
 	}()
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -343,7 +343,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
 	}()
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -440,7 +440,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineMiddleware(m1, m2))
 
 	// We only want to test one phase to see order
@@ -501,7 +501,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, withEngineClock(mockClock))
 
 	err := e.Run(context.Background(), fixedTime)
@@ -579,7 +579,7 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -614,7 +614,7 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -669,7 +669,7 @@ func TestTurnEngine_withEngineProcessor(t *testing.T) {
 		return processResult{NextPhase: phaseInference}, nil
 	})
 
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineProcessor(phaseRefining, customRefiner))
 
 	err := e.Run(context.Background(), time.Now())
@@ -698,7 +698,7 @@ func TestTurnEngine_Hooks(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	hook := &mockHook{}
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineHook(hook))
 
 	err := e.Run(context.Background(), time.Now())
@@ -734,7 +734,7 @@ func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	policy := &mockRetryPolicy{retry: false} // Don't actually retry to keep test fast
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineRetryPolicy(policy))
 
 	_ = e.Run(context.Background(), time.Now())
@@ -764,7 +764,7 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	})
 
 	// Override Inference with a processor that returns Stop: true
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineProcessor(phaseInference, stopProcessor))
 
 	err := e.Run(context.Background(), time.Now())
@@ -848,7 +848,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -1024,7 +1024,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 			t.Parallel()
 			bus := events.NewSimpleEventBus(context.Background())
 			reg := &mockToolRegistry{}
-			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
+			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 			hManager := &mockHistoryManager{}
 			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
@@ -1059,7 +1059,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background())
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 
 	persistedContents := []*llm.Content{}
@@ -1119,7 +1119,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	tracker := &mockEngineCostTracker{}
 	reg := &mockToolRegistry{}
 	hManager := &mockHistoryManager{}
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	cm := newTestContextManager(strategy, hManager, bus)
 
 	e := newTurnEngine(&mockGateway{}, &mockExecutor{}, cm, reg, bus, strategy, withEngineCostTracker(tracker))

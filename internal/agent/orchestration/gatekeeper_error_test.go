@@ -68,7 +68,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 	}
 
 	tc := &mockTokenCounter{tokens: 95}
-	cs := NewContextStrategy(tc, nil)
+	cs := NewContextStrategy(tc)
 	cs.setTieredThreshold(10)
 
 	gatekeeper2 := &tokenGatekeeper{
@@ -85,7 +85,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 
 func TestContextManager_FirstMessageRoleError(t *testing.T) {
 	tc := &mockTokenCounter{tokens: 10}
-	cs := NewContextStrategy(tc, nil)
+	cs := NewContextStrategy(tc)
 	hm := &mockHistoryManager{}
 	cm := NewContextManager(cs, hm, nil, nil)
 
@@ -106,7 +106,7 @@ func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 
 func TestInternalTools_Errors(t *testing.T) {
 	tc := &mockTokenCounter{tokens: 10}
-	cs := NewContextStrategy(tc, nil)
+	cs := NewContextStrategy(tc)
 	hm := &mockHistoryManager{}
 	cm := NewContextManager(cs, hm, nil, nil)
 
@@ -194,7 +194,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 
 	// Create a strategy that will trigger warnings to force event publishing
 	counter := &mockTokenCounter{tokens: 200}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setTieredThreshold(100) // Trigger tiered threshold
 
 	gatekeeper := &tokenGatekeeper{
@@ -222,7 +222,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 
 	gatekeeper := &tokenGatekeeper{
 		MaxTokens: 10,

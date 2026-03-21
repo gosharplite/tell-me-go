@@ -34,7 +34,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 
 	reg := &mockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background())
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	strategy.SetLimits(1000, 5, 20) // turn 3/5 (remaining 2) -> Triggers warning
 
 	cm := NewContextManager(strategy, hManager, bus, nil)
@@ -134,7 +134,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	}
 
 	bus := inframock.NewCountingEventBus()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 
 	cm := NewContextManager(strategy, hManager, bus, nil)
 
@@ -191,7 +191,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	ctx := context.Background()
 
 	counter := &mockTokenCounter{}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	cm := NewContextManager(strategy, hManager, nil, nil)
 
 	// Add 4 messages (2 turns)
@@ -246,7 +246,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "hi"}}})
 
 	counter := &mockTokenCounter{tokens: 100}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.SetLimits(1000, 10, 20)
 
 	cm := NewContextManager(strategy, hManager, nil, nil)
@@ -299,7 +299,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 
-	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100})
 	cm := NewContextManager(strategy, hManager, nil, nil)
 
 	// Case 1: Safe Concurrent Append
@@ -392,7 +392,7 @@ func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Conte
 		},
 	}
 	bus := events.NewSimpleEventBus(context.Background())
-	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, bus, nil)
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{})), hManager, bus, nil)
 	cm.Summarizer = llm.NewSummarizer(g, bus)
 	return cm, capturedInput
 }
@@ -492,7 +492,7 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "initial"}}})
 
 	bus := events.NewSimpleEventBus(context.Background())
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	cm := NewContextManager(strategy, hManager, bus, nil)
 
 	// Custom transformer that blocks mid-execution
@@ -572,7 +572,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 			},
 			getWindowErr: simulatedErr,
 		}
-		strategy := NewContextStrategy(&mockTokenCounter{tokens: 10}, nil)
+		strategy := NewContextStrategy(&mockTokenCounter{tokens: 10})
 		cm := NewContextManager(strategy, hMock, nil, nil)
 		cm.Summarizer = &mockSummarizer{}
 
@@ -591,7 +591,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 				{Role: "model", Parts: []*domain_llm.Part{{Text: "msg4"}}},
 			},
 		}
-		strategy := NewContextStrategy(&mockTokenCounter{tokens: 10}, nil)
+		strategy := NewContextStrategy(&mockTokenCounter{tokens: 10})
 		cm := NewContextManager(strategy, hMock, nil, nil)
 		cm.Summarizer = &mockSummarizer{
 			summarizeFn: func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {

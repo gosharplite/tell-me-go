@@ -90,7 +90,7 @@ func TestContextManager_GroupTurnsErrorPropagation(t *testing.T) {
 	}
 	mockHistory := &mockHistoryManager{contents: history}
 
-	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, nil), mockHistory, nil, nil)
+	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), mockHistory, nil, nil)
 	cm.Summarizer = &mockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")
@@ -151,7 +151,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(mockCounter, nil), mockHistory, nil, nil)
+	cm := NewContextManager(NewContextStrategy(mockCounter), mockHistory, nil, nil)
 	cm.Summarizer = &mockSummarizer{}
 
 	subset, _, _, err := cm.prepareSummarizationMetadata(ctx, 2)
@@ -185,7 +185,7 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, nil), mockHistory, nil, nil)
+	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), mockHistory, nil, nil)
 	cm.Summarizer = mockSumm
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")

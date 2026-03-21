@@ -4,12 +4,10 @@
 package orchestration
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
@@ -30,7 +28,7 @@ type ContextStrategy struct {
 }
 
 // NewContextStrategy creates a new context strategy.
-func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
+func NewContextStrategy(counter llm.TokenCounter) *ContextStrategy {
 	defaultThreshold := config.DefaultTieredThreshold
 	defaultWindow := 1000000 // Default to 1M if unknown
 	if dp := config.DefaultPricing(); dp.Models != nil {
@@ -49,16 +47,6 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 		maxHistoryTurns:  config.DefaultMaxHistoryTurns,
 		tieredThreshold:  defaultThreshold,
 		contextWindow:    defaultWindow,
-	}
-
-	if bus != nil {
-		bus.Subscribe(func(ctx context.Context, e events.Event) {
-			if cfg, ok := e.(events.ConfigUpdated); ok {
-				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
-				cs.setTieredThreshold(cfg.Limits.TieredThreshold)
-				cs.setContextWindow(cfg.Limits.ContextWindow)
-			}
-		})
 	}
 
 	return cs

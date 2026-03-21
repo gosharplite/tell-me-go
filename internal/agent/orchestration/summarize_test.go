@@ -160,7 +160,7 @@ func setupInternalTools(client *gemini.Client, h ports.HistoryManager) *Internal
 	bus := events.NewSimpleEventBus(context.Background())
 	reg := registry.New()
 	gw := llm.NewResilientClient(client, true)
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    h,
@@ -203,7 +203,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
 
 	mockCounter := &mockTokenCounter{tokens: 950000} // Above 90% of 1M
-	strategy := NewContextStrategy(mockCounter, nil)
+	strategy := NewContextStrategy(mockCounter)
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile, historyFile+".archive")
 
 	ctx := context.Background()
@@ -243,7 +243,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 
 	tokenCount := 1234
 	mockCounter := &mockTokenCounter{tokens: tokenCount}
-	strategy := NewContextStrategy(mockCounter, nil)
+	strategy := NewContextStrategy(mockCounter)
 	bus := &inframock.TestEventBus{}
 
 	// Use real summarizer but mock gateway
@@ -301,7 +301,7 @@ func TestSummarizeHistory_ContextCancellation(t *testing.T) {
 		_ = hManager.AddContent(context.Background(), &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 
-	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil), hManager, nil, nil)
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{})), hManager, nil, nil)
 	cm.Summarizer = &mockSummarizer{}
 	it := NewInternalTools(cm)
 

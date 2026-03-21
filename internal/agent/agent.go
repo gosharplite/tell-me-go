@@ -53,7 +53,7 @@ func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		opt(cfg)
 	}
 
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry), bus)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry))
 	exec, err := executor.NewToolExecutor(registry, sm, bus, nil, &executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)

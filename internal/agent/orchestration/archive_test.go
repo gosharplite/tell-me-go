@@ -29,7 +29,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Turn 2 User"}}})
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Turn 2 Model"}}})
 
-	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100})
 
 	cm := NewContextManager(strategy, hManager, nil, nil)
 	cm.Summarizer = &mockSummarizer{

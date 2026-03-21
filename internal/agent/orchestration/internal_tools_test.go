@@ -158,7 +158,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 	}
 	factory := &PipelineFactory{
 		Summarizer: mockSumm,
-		Estimator:  NewContextStrategy(&mockTokenCounter{}, &mockEventBus{}),
+		Estimator:  NewContextStrategy(&mockTokenCounter{}),
 		Events:     &mockEventBus{},
 	}
 	hManager := &mockHistoryManager{
@@ -169,7 +169,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 			{Role: "model", Parts: []*llm.Part{{Text: "M2"}}},
 		},
 	}
-	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, &mockEventBus{}), hManager, &mockEventBus{}, factory)
+	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), hManager, &mockEventBus{}, factory)
 	it := NewInternalTools(cm)
 
 	ctx := context.Background()

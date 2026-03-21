@@ -14,7 +14,7 @@ import (
 )
 
 func TestPipelineFactory_PreciseProfile(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	factory := &PipelineFactory{
 		Estimator: strategy,
 		Profile:   profilePrecise,

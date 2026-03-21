@@ -102,7 +102,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
 		counter := &dynamicMockCounter{}
-		strategy := orchestration.NewContextStrategy(counter, bus)
+		strategy := orchestration.NewContextStrategy(counter)
 		const maxTokens = 10000
 		strategy.SetLimits(maxTokens, 10, 10)
 
@@ -178,7 +178,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
 		counter := &dynamicMockCounter{}
-		strategy := orchestration.NewContextStrategy(counter, bus)
+		strategy := orchestration.NewContextStrategy(counter)
 		const maxTokens = 10000
 		strategy.SetLimits(maxTokens, 10, 10)
 
@@ -293,7 +293,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	require.NoError(t, regErr)
 
 	counter := &orchestration.HeuristicTokenCounter{}
-	strategy := orchestration.NewContextStrategy(counter, bus)
+	strategy := orchestration.NewContextStrategy(counter)
 	const maxTokens = 10000
 	strategy.SetLimits(maxTokens, 10, 10)
 

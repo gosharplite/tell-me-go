@@ -19,7 +19,7 @@ import (
 )
 
 func TestContextManager_PipelineMethods(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	history := &mockHistoryManager{}
 	factory := &PipelineFactory{Estimator: strategy}
 	cm := NewContextManager(strategy, history, nil, factory)
@@ -31,7 +31,7 @@ func TestContextManager_PipelineMethods(t *testing.T) {
 }
 
 func TestContextManager_GetLimits(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	strategy.SetLimits(1000, 20, 30)
 	strategy.setTieredThreshold(500)
 	cm := NewContextManager(strategy, &mockHistoryManager{}, nil, nil)
@@ -44,7 +44,7 @@ func TestContextManager_GetLimits(t *testing.T) {
 }
 
 func TestContextManager_Summarize(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	history := &mockHistoryManager{}
 	cm := NewContextManager(strategy, history, nil, nil)
 
@@ -73,7 +73,7 @@ func TestContextManager_Summarize(t *testing.T) {
 
 func TestContextManager_SummarizeRange(t *testing.T) {
 	counter := &mockTokenCounter{}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	history := &mockHistoryManager{
 		contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
@@ -232,7 +232,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 }
 
 func TestContextManager_Prepare_ClonesContent(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	originalContent := &llm.Content{
 		Role:  "user",
 		Parts: []*llm.Part{{Text: "original"}},
@@ -256,7 +256,7 @@ func TestContextManager_Prepare_ClonesContent(t *testing.T) {
 func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
 	registry := &mockToolRegistry{}
 	bus := &mockEventBus{}
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(registry), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(registry))
 	factory := &PipelineFactory{Estimator: strategy}
 	cm := NewContextManager(strategy, nil, bus, factory)
 
@@ -287,7 +287,7 @@ func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 		_ = bus.Shutdown(ctx)
 	}()
 
-	strategy := NewContextStrategy(&mockTokenCounter{}, bus)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	factory := &PipelineFactory{Estimator: strategy, Events: bus}
 	cm := NewContextManager(strategy, &mockHistoryManager{}, bus, factory)
 
@@ -329,7 +329,7 @@ func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 
 func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 	counter := &mockTokenCounter{}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setContextWindow(10000)
 
 	// totalEntries = 25, numTurns = 5.
@@ -396,7 +396,7 @@ func TestContextManager_SummarizeRange_ContextCancellation(t *testing.T) {
 
 func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	history := &mockHistoryManager{}
 	cm := NewContextManager(strategy, history, nil, nil)
 
@@ -419,7 +419,7 @@ func TestContextManager_CheckContext_Cancellation(t *testing.T) {
 }
 
 func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 
 	t.Run("fails on nil message in history", func(t *testing.T) {
 		history := &mockHistoryManager{
@@ -455,7 +455,7 @@ func TestContextManager_WithLogger(t *testing.T) {
 	// Set level to DEBUG to capture the "failed to emit summarization event" log.
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	// Add 2 turns to history so that SummarizeRange(ctx, 1, "") can proceed.
 	// Summarization requires at least (requestedTurns + 1) turns to preserve the last turn.
 	history := &mockHistoryManager{

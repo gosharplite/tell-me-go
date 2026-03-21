@@ -291,7 +291,7 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 		},
 	)
 
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	cm := NewContextManager(strategy, hm, nil, nil)
 	cm.Factory = factory
 	cm.SetPipeline(pipeline)

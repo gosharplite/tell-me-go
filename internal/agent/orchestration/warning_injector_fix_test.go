@@ -13,7 +13,7 @@ import (
 
 func TestWarningInjector_SequenceBreak(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &warningInjector{Strategy: strategy}
@@ -62,7 +62,7 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 
 func TestWarningInjector_Idempotency(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	strategy.SetLimits(100, 10, 10) // 100 token limit
 	injector := &warningInjector{Strategy: strategy}
 

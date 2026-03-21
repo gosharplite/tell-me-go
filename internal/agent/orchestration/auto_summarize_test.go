@@ -61,7 +61,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client, true)
 	factory := &PipelineFactory{
 		Registry:   reg,
@@ -169,7 +169,7 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus, 5*time.Second)
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client, true)
 	factory := &PipelineFactory{
 		Registry:   reg,
@@ -230,7 +230,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	// Set initial system instructions
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false, bus, 5*time.Second)
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client, true)
 	factory := &PipelineFactory{
 		Registry:   reg,
@@ -314,7 +314,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus, 5*time.Second)
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client, true)
 	factory := &PipelineFactory{
 		Registry:   reg,

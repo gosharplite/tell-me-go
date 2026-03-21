@@ -317,7 +317,7 @@ func TestConfigWatcher_SyncToStrategy(t *testing.T) {
 	cw.tieredThreshold = 3000
 
 	t.Run("ValidStrategy", func(t *testing.T) {
-		cs := NewContextStrategy(NewHeuristicTokenCounter(nil), nil)
+		cs := NewContextStrategy(NewHeuristicTokenCounter(nil))
 		cw.SyncToStrategy(cs)
 		assert.Equal(t, 500000, cs.contextWindow)
 		assert.Equal(t, 3000, cs.GetTieredThreshold())

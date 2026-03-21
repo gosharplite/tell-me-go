@@ -310,13 +310,11 @@ func TestAgent_PinningFlow(t *testing.T) {
 	it := orchestration.NewInternalTools(a.(*agent).ctxManager)
 
 	t.Run("PinTurn", func(t *testing.T) {
-		t.Parallel()
 		verifyPinAction(t, it, h, ctx, "pin", 0)
 	})
 
 	t.Run("UnpinTurn", func(t *testing.T) {
-		t.Parallel()
-		verifyPinAction(t, it, h, ctx, "unpin", 0)
+		verifyPinAction(t, it, h, ctx, "unpin", 1)
 	})
 }
 

@@ -39,7 +39,7 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	}
 	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills
 
-	strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(deps.GetRegistry()), deps.GetEventBus())
+	strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(deps.GetRegistry()))
 	factory := &agent_orchestration.PipelineFactory{
 		Registry:      deps.GetRegistry(),
 		History:       deps.GetHistoryManager(),

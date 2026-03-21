@@ -4,15 +4,12 @@
 package orchestration
 
 import (
-	"context"
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func contains(s, substr string) bool {
@@ -21,7 +18,7 @@ func contains(s, substr string) bool {
 
 func TestContextStrategy_estimateTokens(t *testing.T) {
 	registry := &mockToolRegistry{}
-	cs := NewContextStrategy(NewHeuristicTokenCounter(registry), nil)
+	cs := NewContextStrategy(NewHeuristicTokenCounter(registry))
 
 	t.Run("Base overhead", func(t *testing.T) {
 		registry.declarations = nil
@@ -97,7 +94,7 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 }
 
 func setupWarningTest() *ContextStrategy {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	cs.SetLimits(1000, 10, 100)
 	return cs
 }
@@ -169,7 +166,7 @@ func TestContextStrategy_Warnings_TurnCountLimits(t *testing.T) {
 }
 
 func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
@@ -233,7 +230,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 }
 
 func TestContextStrategy_setTieredThresholdZero(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 
 	// First set to a non-zero value
 	cs.setTieredThreshold(100)
@@ -426,38 +423,10 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 	}
 }
 
-func TestContextStrategy_ConfigUpdatedEvent(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
-	ctx := context.Background()
-	defer func() {
-		_ = bus.Shutdown(ctx)
-	}()
-
-	cs := NewContextStrategy(&mockTokenCounter{}, bus)
-
-	newLimits := events.Limits{
-		MaxHistoryTokens: 7777,
-		MaxToolTurns:     77,
-		MaxHistoryTurns:  7,
-		TieredThreshold:  5555,
-		ContextWindow:    4444,
-	}
-
-	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
-	err := bus.Flush(ctx)
-	assert.NoError(t, err)
-
-	h, tool, hist := cs.getLimits()
-	assert.Equal(t, 7777, h)
-	assert.Equal(t, 77, tool)
-	assert.Equal(t, 7, hist)
-	assert.Equal(t, 5555, cs.GetTieredThreshold())
-	assert.Equal(t, 4444, cs.getContextWindow())
-}
 
 func TestContextStrategy_Count(t *testing.T) {
 	mockCounter := &mockTokenCounter{tokens: 42}
-	cs := NewContextStrategy(mockCounter, nil)
+	cs := NewContextStrategy(mockCounter)
 
 	contents := []*llm.Content{{Parts: []*llm.Part{{Text: "hello"}}}}
 	got := cs.Count(contents)
