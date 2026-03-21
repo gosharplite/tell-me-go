@@ -37,14 +37,6 @@ func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 
 func createTables(ctx context.Context, db *sql.DB) error {
 	queries := []string{
-		`CREATE TABLE IF NOT EXISTS config (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL
-		);`,
-		`CREATE TABLE IF NOT EXISTS scratchpad (
-			id INTEGER PRIMARY KEY,
-			content TEXT NOT NULL
-		);`,
 		`CREATE TABLE IF NOT EXISTS tasks (
 			id INTEGER PRIMARY KEY,
 			content TEXT NOT NULL,
@@ -62,58 +54,19 @@ func createTables(ctx context.Context, db *sql.DB) error {
 }
 
 // migrateFromJSON migrates data from the old JSON/MD files into the new SQLite DB if the DB is empty.
-func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath, configPath, scratchPath string) error {
+func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string) error {
 	var count int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM config").Scan(&count); err != nil {
-		return fmt.Errorf("checking config table: %w", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count); err != nil {
+		return fmt.Errorf("checking tasks table: %w", err)
 	}
 	if count > 0 {
 		return nil // Already migrated or populated
-	}
-
-	if err := migrateConfig(ctx, db, fs, configPath); err != nil {
-		log.Printf("Failed to migrate config: %v", err)
 	}
 
 	if err := migrateTasks(ctx, db, fs, tasksPath); err != nil {
 		log.Printf("Failed to migrate tasks: %v", err)
 	}
 
-	if err := migrateScratchpad(ctx, db, fs, scratchPath); err != nil {
-		log.Printf("Failed to migrate scratchpad: %v", err)
-	}
-
-	return nil
-}
-
-func migrateConfig(ctx context.Context, db *sql.DB, fs persistence.FileSystem, configPath string) error {
-	if stat, _ := fs.Stat(ctx, configPath); stat == nil {
-		return nil
-	}
-	oldConfig := newConfigRepository(fs, configPath)
-	configs, err := oldConfig.GetAll(ctx)
-	if err != nil {
-		return fmt.Errorf("reading legacy config: %w", err)
-	}
-	if len(configs) == 0 {
-		return nil
-	}
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("starting config migration transaction: %w", err)
-	}
-
-	for k, v := range configs {
-		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", k, v); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("inserting legacy config key %s: %w", k, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing config migration: %w", err)
-	}
 	return nil
 }
 
@@ -145,26 +98,6 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing tasks migration: %w", err)
-	}
-	return nil
-}
-
-func migrateScratchpad(ctx context.Context, db *sql.DB, fs persistence.FileSystem, scratchPath string) error {
-	if stat, _ := fs.Stat(ctx, scratchPath); stat == nil {
-		return nil
-	}
-	oldScratch := newScratchpadRepository(fs, scratchPath)
-	scratch, err := oldScratch.Get(ctx, "content")
-	if err != nil {
-		return fmt.Errorf("reading legacy scratchpad: %w", err)
-	}
-	if scratch == "" {
-		return nil
-	}
-
-	_, err = db.ExecContext(ctx, "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)", scratch)
-	if err != nil {
-		return fmt.Errorf("inserting legacy scratchpad: %w", err)
 	}
 	return nil
 }

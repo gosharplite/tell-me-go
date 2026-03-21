@@ -21,11 +21,10 @@ func TestContextManager_FindSummarizationBoundary_Cancelled(t *testing.T) {
 	// but we can at least verify it returns the context error.
 	cancel()
 
-	cm := &ContextManager{
-		History: &mockHistoryManager{contents: []*llm.Content{
-			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
-		}},
-	}
+	hm := &mockHistoryManager{contents: []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
+	}}
+	cm := NewContextManager(nil, hm, nil, nil)
 
 	_, _, err := cm.findSummarizationBoundary(ctx, 1, 1)
 	require.ErrorIs(t, err, context.Canceled)
@@ -35,7 +34,7 @@ func TestContextManager_ValidateSubset_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cm := &ContextManager{}
+	cm := NewContextManager(nil, nil, nil, nil)
 	subset := make([]*llm.Content, 200) // Need > 100 to trigger the check
 	for i := range subset {
 		subset[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
@@ -80,9 +79,9 @@ type mockFailingEventBus struct {
 func (m *mockFailingEventBus) Publish(ctx context.Context, e events.Event) error {
 	return m.err
 }
-func (m *mockFailingEventBus) Subscribe(f func(events.Event))     {}
-func (m *mockFailingEventBus) Shutdown(ctx context.Context) error { return nil }
-func (m *mockFailingEventBus) Flush(ctx context.Context) error    { return nil }
+func (m *mockFailingEventBus) Subscribe(f func(context.Context, events.Event)) {}
+func (m *mockFailingEventBus) Shutdown(ctx context.Context) error              { return nil }
+func (m *mockFailingEventBus) Flush(ctx context.Context) error                 { return nil }
 
 func TestHistoryPruner_EventPublishError(t *testing.T) {
 	pruner := &historyPruner{
@@ -140,9 +139,7 @@ func TestContextManager_FinalizeSummarization_ArchiveError(t *testing.T) {
 	// Use a wrapper to inject Archive error since mockHistoryManager doesn't support it easily
 	failingHM := &archiveFailingHM{mockHistoryManager: hm, err: errors.New("archive failed")}
 
-	cm := &ContextManager{
-		History: failingHM,
-	}
+	cm := NewContextManager(nil, failingHM, nil, nil)
 
 	subset := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
@@ -172,9 +169,7 @@ func TestContextManager_FinalizeSummarization_SetContentsError(t *testing.T) {
 		setContentsErr: errors.New("set contents failed"),
 	}
 
-	cm := &ContextManager{
-		History: hm,
-	}
+	cm := NewContextManager(nil, hm, nil, nil)
 
 	subset := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
@@ -193,9 +188,7 @@ func TestContextManager_FinalizeSummarization_PrunedError(t *testing.T) {
 		},
 	}
 
-	cm := &ContextManager{
-		History: hm,
-	}
+	cm := NewContextManager(nil, hm, nil, nil)
 
 	subset := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
@@ -254,7 +247,7 @@ func TestContextManager_Prepare_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cm := &ContextManager{}
+	cm := NewContextManager(nil, nil, nil, nil)
 	_, _, err := cm.Prepare(ctx, 1)
 	require.ErrorIs(t, err, context.Canceled)
 }
@@ -263,15 +256,14 @@ func TestContextManager_AddContent_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cm := &ContextManager{}
+	cm := NewContextManager(nil, nil, nil, nil)
 	err := cm.AddContent(ctx, &llm.Content{})
 	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestContextManager_UpdateCache_VersionMismatch(t *testing.T) {
-	cm := &ContextManager{
-		version: 2,
-	}
+	cm := NewContextManager(nil, nil, nil, nil)
+	cm.version = 2
 
 	req := &request{
 		History:  []*llm.Content{},
@@ -299,12 +291,10 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 		},
 	)
 
-	cm := &ContextManager{
-		History:  hm,
-		Pipeline: pipeline,
-		Factory:  factory,
-		Strategy: NewContextStrategy(&mockTokenCounter{}, nil),
-	}
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	cm := NewContextManager(strategy, hm, nil, nil)
+	cm.Factory = factory
+	cm.SetPipeline(pipeline)
 
 	_, _, err := cm.Prepare(context.Background(), 1)
 	require.Error(t, err)
@@ -319,9 +309,7 @@ func TestContextManager_AddContent_GetWindowError(t *testing.T) {
 		getWindowErr: errors.New("get window error"),
 	}
 
-	cm := &ContextManager{
-		History: hm,
-	}
+	cm := NewContextManager(nil, hm, nil, nil)
 
 	err := cm.AddContent(context.Background(), &llm.Content{Role: "user"})
 	require.Error(t, err)
@@ -333,9 +321,7 @@ func TestContextManager_Prepare_HistoryGetWindowError(t *testing.T) {
 		getWindowErr: errors.New("get window error"),
 	}
 
-	cm := &ContextManager{
-		History: hm,
-	}
+	cm := NewContextManager(nil, hm, nil, nil)
 
 	_, _, err := cm.Prepare(context.Background(), 1)
 	require.Error(t, err)
@@ -345,9 +331,7 @@ func TestContextManager_Prepare_HistoryGetWindowError(t *testing.T) {
 func TestContextManager_EmitSummarizationEvent_Error(t *testing.T) {
 	// We want to hit the err != nil branch in emitSummarizationEvent
 	mockBus := &mockFailingEventBus{err: errors.New("event error")}
-	cm := &ContextManager{
-		Events: mockBus,
-	}
+	cm := NewContextManager(nil, nil, mockBus, nil)
 	// This function doesn't return the error, so we just call it.
 	cm.emitSummarizationEvent(context.Background(), 1, 1)
 }
@@ -367,9 +351,9 @@ func TestTokenGatekeeper_GetStrategy_Coverage(t *testing.T) {
 	require.NotNil(t, strategy)
 }
 
-func TestTokenGatekeeper_TriggerSummarization_BufferOverflow(t *testing.T) {
-	// We want to hit the ErrBufferOverflow branch in triggerSummarization
-	mockBus := &mockFailingEventBus{err: events.ErrBufferOverflow}
+func TestTokenGatekeeper_TriggerSummarization_EventError_Swallowed(t *testing.T) {
+	// We want to verify that other errors from SafePublish are NOT swallowed.
+	mockBus := &mockFailingEventBus{err: errors.New("publish error")}
 	tg := &tokenGatekeeper{
 		Events:    mockBus,
 		Estimator: &mockEstimator{},
@@ -395,7 +379,8 @@ func TestTokenGatekeeper_TriggerSummarization_BufferOverflow(t *testing.T) {
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
-	require.NoError(t, err, "Buffer overflow should be swallowed")
+	require.Error(t, err, "Event publish error should not be swallowed anymore")
+	require.Equal(t, "publish error", err.Error())
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {

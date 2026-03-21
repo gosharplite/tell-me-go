@@ -6,17 +6,21 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 )
 
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
 // This ensures that the target file is either fully updated or not updated at all.
 // It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
-func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode) error {
+func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
-	f, err := prepareTempFile(dir, filepath.Base(path)+".*.tmp", perm)
+	f, err := prepareTempFile(fs, dir, filepath.Base(path)+".*.tmp", perm)
 	if err != nil {
 		return err
 	}
@@ -24,9 +28,10 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 	tmp := f.Name()
 	cleanup := true
 	defer func() {
+		// Attempt to close; ignore error if already closed
 		_ = f.Close()
 		if cleanup {
-			_ = os.Remove(tmp)
+			_ = fs.Remove(tmp)
 		}
 	}()
 
@@ -48,46 +53,97 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 	default:
 	}
 
-	if err := commitTempFile(f, tmp, path); err != nil {
+	if err := commitTempFile(fs, f, tmp, path, perm); err != nil {
 		return err
 	}
 
-	cleanup = false // Rename succeeded, no need to remove
+	cleanup = false // Rename or fallback succeeded, no need to remove temp file
 	return nil
 }
 
-func prepareTempFile(dir, pattern string, perm os.FileMode) (*os.File, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+func prepareTempFile(fs FileSystem, dir, pattern string, perm os.FileMode) (File, error) {
+	if err := fs.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	f, err := os.CreateTemp(dir, pattern)
+	f, err := fs.CreateTemp(dir, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	if err := f.Chmod(perm); err != nil {
 		_ = f.Close()
-		_ = os.Remove(f.Name())
+		_ = fs.Remove(f.Name())
 		return nil, fmt.Errorf("failed to chmod temp file: %w", err)
 	}
 
 	return f, nil
 }
 
-func commitTempFile(f *os.File, tmpPath, targetPath string) error {
+func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string, perm os.FileMode) error {
 	// Force flush to disk to prevent stale reads or zero-byte files on power loss
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
 
+	// Windows strictly enforces file locks. Explicitly close before renaming.
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, targetPath); err != nil {
+	if err := fs.Rename(tmpPath, targetPath); err != nil {
+		// Implement fallback for EXDEV (cross-device link) errors
+		if isCrossDeviceError(err) {
+			return fallbackCopy(fs, tmpPath, targetPath, perm)
+		}
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
+	return nil
+}
+
+func isCrossDeviceError(err error) bool {
+	// Check for syscall.EXDEV
+	if errors.Is(err, syscall.EXDEV) {
+		return true
+	}
+	// Fallback to string check as requested
+	return strings.Contains(err.Error(), "cross-device link")
+}
+
+func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) (err error) {
+	src, err := fs.OpenFile(srcPath, os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("fallback: failed to open source: %w", err)
+	}
+	defer func() { _ = src.Close() }()
+
+	// Open destination for writing, truncating if it already exists
+	dst, err := fs.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return fmt.Errorf("fallback: failed to open destination: %w", err)
+	}
+
+	success := false
+	defer func() {
+		if closeErr := dst.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+		if !success {
+			_ = fs.Remove(dstPath)
+		}
+	}()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("fallback: failed to copy data: %w", err)
+	}
+
+	if err := dst.Sync(); err != nil {
+		return fmt.Errorf("fallback: failed to sync destination: %w", err)
+	}
+
+	success = true
+	// Cleanup the source file after successful copy
+	_ = fs.Remove(srcPath)
 	return nil
 }

@@ -16,7 +16,7 @@ import (
 type TestEventBus struct {
 	mu         sync.RWMutex
 	events     []events.Event
-	subs       []func(events.Event)
+	subs       []func(context.Context, events.Event)
 	publishErr error
 }
 
@@ -42,18 +42,18 @@ func (b *TestEventBus) Publish(ctx context.Context, e events.Event) error {
 
 	b.mu.Lock()
 	b.events = append(b.events, e)
-	subs := make([]func(events.Event), len(b.subs))
+	subs := make([]func(context.Context, events.Event), len(b.subs))
 	copy(subs, b.subs)
 	b.mu.Unlock()
 
 	for _, sub := range subs {
-		sub(e)
+		sub(ctx, e)
 	}
 	return nil
 }
 
 // Subscribe adds a new listener.
-func (b *TestEventBus) Subscribe(sub func(events.Event)) {
+func (b *TestEventBus) Subscribe(sub func(context.Context, events.Event)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.subs = append(b.subs, sub)
@@ -120,7 +120,9 @@ type countingEventBus struct {
 
 // NewCountingEventBus creates a new CountingEventBus.
 func NewCountingEventBus() *countingEventBus {
-	cb := &countingEventBus{}
+	cb := &countingEventBus{
+		SimpleEventBus: *events.NewSimpleEventBus(context.Background()),
+	}
 	cb.cond = sync.NewCond(&cb.mu)
 	return cb
 }

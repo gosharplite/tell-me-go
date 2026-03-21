@@ -4,6 +4,7 @@
 package orchestration
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -51,7 +52,7 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 	}
 
 	if bus != nil {
-		bus.Subscribe(func(e events.Event) {
+		bus.Subscribe(func(ctx context.Context, e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
 				cs.setTieredThreshold(cfg.Limits.TieredThreshold)
@@ -168,7 +169,7 @@ func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {
 	case 3:
 		return "[SYSTEM NOTICE: You are approaching the operational turn limit (3 turns remaining). Please begin finalizing your current task and use this turn to perform any final state checks or file reads needed for your summary.]"
 	case 2:
-		return "[URGENT SYSTEM NOTICE: Only 2 turns remain. You MUST now use 'manage_scratchpad' and 'manage_tasks' to document the distilled state, or use 'manage_history' (pin) to pin critical conversation turns to protect them from pruning. This ensures context efficiency and continuity for the user in future sessions, as conversation history may be pruned.]"
+		return "[URGENT SYSTEM NOTICE: Only 2 turns remain. You MUST now use 'manage_tasks' to document the distilled state, or use 'manage_history' (pin) to pin critical conversation turns to protect them from pruning. This ensures context efficiency and continuity for the user in future sessions, as conversation history may be pruned.]"
 	case 1:
 		return "[FINAL SYSTEM WARNING: This is your absolute final turn. You are forbidden from using any more tools. Provide a concise final conclusion or progress summary to the user now. Execution will terminate immediately after this response.]"
 	default:
@@ -179,9 +180,9 @@ func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {
 func (cs *ContextStrategy) getTokenWarningLocked(tokens int) string {
 	ratio := float64(tokens) / float64(cs.maxHistoryTokens)
 	if ratio > 0.95 {
-		return "[CRITICAL SYSTEM NOTICE: Conversation history is at 95% capacity. Immediate risk of session rollback. You must use 'manage_scratchpad', 'manage_tasks', or 'manage_history' (pin) to save a summary of your work and plans NOW. Keep your response extremely brief.]"
+		return "[CRITICAL SYSTEM NOTICE: Conversation history is at 95% capacity. Immediate risk of session rollback. You must use 'manage_tasks' or 'manage_history' (pin) to save a summary of your work and plans NOW. Keep your response extremely brief.]"
 	} else if ratio > 0.90 {
-		return "[SYSTEM NOTICE: The conversation history is at 90% capacity. To avoid a session crash, please minimize large file reads. Use 'manage_scratchpad', 'manage_tasks', or 'manage_history' (pin) to preserve critical context and architectural notes now, in case a rollback occurs.]"
+		return "[SYSTEM NOTICE: The conversation history is at 90% capacity. To avoid a session crash, please minimize large file reads. Use 'manage_tasks' or 'manage_history' (pin) to preserve critical context and architectural notes now, in case a rollback occurs.]"
 	}
 	return ""
 }
@@ -192,22 +193,22 @@ func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns, prunedTurns
 	}
 
 	if prunedTurns > 5 {
-		msg := fmt.Sprintf("[URGENT SYSTEM NOTICE: A major history cleanup has occurred. To maintain performance and cache efficiency, the oldest %d turns of this conversation have been removed. You have lost significant recent context. You MUST refer to the 'manage_scratchpad' and read 'manage_tasks' to continue unfinished tasks and re-synchronize your internal state.]", prunedTurns)
+		msg := fmt.Sprintf("[URGENT SYSTEM NOTICE: A major history cleanup has occurred. To maintain performance and cache efficiency, the oldest %d turns of this conversation have been removed. You have lost significant recent context. You MUST refer to 'manage_tasks' to continue unfinished tasks and re-synchronize your internal state.]", prunedTurns)
 		return msg
 	}
 
 	ratio := float64(currentTurns) / float64(cs.maxHistoryTurns)
 	if ratio >= 1.0 {
-		return "[SYSTEM NOTICE: The history turn limit has been reached and the oldest messages in this conversation have been deleted. If you are missing previous context or architectural details, please refer to 'manage_scratchpad', 'manage_tasks', or pinned turns for the latest status and pending tasks.]"
+		return "[SYSTEM NOTICE: The history turn limit has been reached and the oldest messages in this conversation have been deleted. If you are missing previous context or architectural details, please refer to 'manage_tasks' or pinned turns for the latest status and pending tasks.]"
 	} else if ratio > 0.95 {
-		return "[URGENT SYSTEM NOTICE: Conversation history is at 95% of the turn limit. Pruning is imminent. The oldest messages in this thread will be DELETED after this turn. Move all essential long-term memory to the scratchpad, task list, or pinned via 'manage_history' (pin) immediately.]"
+		return "[URGENT SYSTEM NOTICE: Conversation history is at 95% of the turn limit. Pruning is imminent. The oldest messages in this thread will be DELETED after this turn. Move all essential long-term memory to the task list, or pinned via 'manage_history' (pin) immediately.]"
 	} else if ratio > 0.90 {
-		return "[SYSTEM NOTICE: Conversation history is at 90% of the turn limit. To prevent loss of context during upcoming pruning, ensure critical architectural decisions and progress are documented in the scratchpad, 'manage_tasks', or pinned via 'manage_history' (pin).]"
+		return "[SYSTEM NOTICE: Conversation history is at 90% of the turn limit. To prevent loss of context during upcoming pruning, ensure critical architectural decisions and progress are documented in 'manage_tasks', or pinned via 'manage_history' (pin).]"
 	}
 	return ""
 }
 
 // getCloggedWarning returns a warning message for when summarization fails to reduce context.
 func (cs *ContextStrategy) getCloggedWarning() string {
-	return "[CRITICAL SYSTEM NOTICE: A recent summarization failed to significantly reduce context size. This is likely due to too many 'Pinned' turns or massive active file buffers. You MUST unpin non-essential turns using 'manage_history' (unpin) or move architectural findings to the 'manage_scratchpad' immediately to avoid a session crash.]"
+	return "[CRITICAL SYSTEM NOTICE: A recent summarization failed to significantly reduce context size. This is likely due to too many 'Pinned' turns or massive active file buffers. You MUST unpin non-essential turns using 'manage_history' (unpin) or move architectural findings to 'manage_tasks' immediately to avoid a session crash.]"
 }

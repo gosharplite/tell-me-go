@@ -11,8 +11,7 @@ import (
 
 // Sentinel errors for repository operations.
 var (
-	ErrConfigKeyNotFound = errors.New("config key not found")
-	ErrTaskNotFound      = errors.New("task not found")
+	ErrTaskNotFound = errors.New("task not found")
 )
 
 // KVStore defines a generic key-value storage interface.
@@ -42,7 +41,6 @@ type Task struct {
 
 // SessionInfo holds metadata about the current execution environment.
 type SessionInfo struct {
-	Config   map[string]string `json:"config"`
 	Env      map[string]string `json:"env"`
 	Paths    map[string]string `json:"paths"`
 	Model    string            `json:"model,omitempty"`
@@ -62,56 +60,20 @@ type TaskWriter interface {
 	ClearTasks(ctx context.Context) error
 }
 
-// TaskService defines the interface for task management.
-type TaskService interface {
+// TaskStore defines the interface for task management.
+type TaskStore interface {
 	TaskReader
 	TaskWriter
-	Initialize(ctx context.Context) error
 }
 
-// ConfigReader defines the interface for reading configuration.
-type ConfigReader interface {
-	Get(key string) (string, error)
-	GetAll() map[string]string
-}
-
-// ConfigWriter defines the interface for modifying configuration.
-type ConfigWriter interface {
-	Set(ctx context.Context, key, val string) error
-	Delete(ctx context.Context, key string) error
-}
-
-// ConfigService defines the interface for configuration management.
-type ConfigService interface {
-	ConfigReader
-	ConfigWriter
-	Initialize(ctx context.Context) error
-}
-
-// ScratchpadReader defines the interface for reading from the scratchpad.
-type ScratchpadReader interface {
-	Read() string
-}
-
-// ScratchpadWriter defines the interface for writing to the scratchpad.
-type ScratchpadWriter interface {
-	Write(ctx context.Context, content string) error
-	Append(ctx context.Context, content string) error
-	Clear(ctx context.Context) error
-}
-
-// ScratchpadService defines the interface for scratchpad management.
-type ScratchpadService interface {
-	ScratchpadReader
-	ScratchpadWriter
+// Initializer defines an interface for components requiring lifecycle initialization.
+type Initializer interface {
 	Initialize(ctx context.Context) error
 }
 
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
-	GetTasks() TaskService
-	GetConfig() ConfigService
-	GetScratchpad() ScratchpadService
+	GetTasks() TaskStore
 }
 
 // SessionStateProvider manages session-level metadata and state.

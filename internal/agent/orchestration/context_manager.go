@@ -30,15 +30,31 @@ type ContextManager struct {
 	Pipeline   *ContextPipeline
 	Factory    *PipelineFactory
 	Summarizer ports.Summarizer
+	logger     *slog.Logger
+}
+
+// ContextManagerOption defines a functional option for configuring the ContextManager.
+type ContextManagerOption func(*ContextManager)
+
+// WithLogger sets the logger for the ContextManager.
+func WithLogger(l *slog.Logger) ContextManagerOption {
+	return func(cm *ContextManager) {
+		cm.logger = l
+	}
 }
 
 // NewContextManager creates a new context manager.
-func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory) *ContextManager {
+func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory, opts ...ContextManagerOption) *ContextManager {
 	cm := &ContextManager{
 		Strategy: strategy,
 		History:  history,
 		Events:   bus,
 		Factory:  factory,
+		logger:   slog.Default(),
+	}
+
+	for _, opt := range opts {
+		opt(cm)
 	}
 
 	if factory != nil {
@@ -49,7 +65,7 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 	}
 
 	if bus != nil {
-		bus.Subscribe(func(e events.Event) {
+		bus.Subscribe(func(ctx context.Context, e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cm.mu.Lock()
 				defer cm.mu.Unlock()
@@ -309,10 +325,10 @@ func (cm *ContextManager) wrapSummarizationError(err error) error {
 
 func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tokens int) {
 	if cm.Events != nil {
-		if err := cm.Events.Publish(ctx, events.SystemMessageEvent{
+		if err := events.SafePublish(ctx, cm.Events, events.SystemMessageEvent{
 			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokens),
 		}); err != nil {
-			slog.Debug("failed to emit summarization event", slog.Any("error", err))
+			cm.logger.Debug("failed to emit summarization event", slog.Any("error", err))
 		}
 	}
 }

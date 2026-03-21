@@ -61,7 +61,7 @@ func (m *mockTaskRepo) Append(ctx context.Context, task ports.Task) error {
 	return nil
 }
 
-func setupTaskService(t *testing.T) (ports.TaskService, *mockTaskRepo) {
+func setupTaskService(t *testing.T) (ports.TaskStore, *mockTaskRepo) {
 	t.Helper()
 	repo := &mockTaskRepo{}
 	s := NewTaskService(repo)

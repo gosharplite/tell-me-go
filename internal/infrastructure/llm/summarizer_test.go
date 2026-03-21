@@ -4,9 +4,11 @@
 package llm
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -38,7 +40,7 @@ func (m *mockEventBus) Publish(ctx context.Context, event events.Event) error {
 	return args.Error(0)
 }
 
-func (m *mockEventBus) Subscribe(sub func(events.Event)) {
+func (m *mockEventBus) Subscribe(sub func(context.Context, events.Event)) {
 	m.Called(sub)
 }
 
@@ -77,9 +79,14 @@ func TestSummarizer_Summarize(t *testing.T) {
 	}
 
 	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
+
+		var buf bytes.Buffer
+		testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+
 		gw := new(mockGateway)
 		bus := new(mockEventBus)
-		s := NewSummarizer(gw, bus)
+		s := NewSummarizer(gw, bus, WithLogger(testLogger))
 
 		respCh := make(chan *llm.Content)
 		close(respCh)
@@ -115,6 +122,10 @@ func TestSummarizer_Summarize(t *testing.T) {
 		assert.Equal(t, "Summary content", summary)
 		assert.Equal(t, metrics, m)
 
+		output := buf.String()
+		assert.Contains(t, output, `"level":"INFO"`)
+		assert.Contains(t, output, "Summarization turn completed successfully")
+
 		gw.AssertExpectations(t)
 		bus.AssertExpectations(t)
 	})
@@ -136,8 +147,13 @@ func TestSummarizer_Summarize(t *testing.T) {
 	})
 
 	t.Run("Transient error", func(t *testing.T) {
+		t.Parallel()
+
+		var buf bytes.Buffer
+		testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+
 		gw := new(mockGateway)
-		s := NewSummarizer(gw, nil)
+		s := NewSummarizer(gw, nil, WithLogger(testLogger))
 
 		respCh := make(chan *llm.Content)
 		close(respCh)
@@ -151,6 +167,11 @@ func TestSummarizer_Summarize(t *testing.T) {
 		_, _, err := s.Summarize(ctx, subset, "")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, llm.ErrTransient))
+
+		output := buf.String()
+		assert.Contains(t, output, `"level":"ERROR"`)
+		assert.Contains(t, output, "Summarization turn failed")
+		assert.Contains(t, output, "quota exceeded")
 	})
 }
 

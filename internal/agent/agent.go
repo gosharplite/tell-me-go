@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
@@ -133,7 +132,7 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	tracker := a.tracker
 	a.mu.Unlock()
 
-	if err := a.events.Publish(ctx, events.ConfigUpdated{Limits: cfg.Limits}); err != nil {
+	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: cfg.Limits}); err != nil {
 		return err
 	}
 
@@ -146,7 +145,7 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	return nil
 }
 
-func (a *agent) Subscribe(sub func(events.Event)) {
+func (a *agent) Subscribe(sub func(context.Context, events.Event)) {
 	a.events.Subscribe(sub)
 }
 
@@ -154,7 +153,7 @@ func (a *agent) emit(ctx context.Context, e events.Event) {
 	if a.events != nil {
 		// [SCALABILITY FIX] Always use a bounded context for publishing events
 		// to prevent cascading system deadlocks if a subscriber stalls.
-		_ = events.SafePublish(ctx, a.events, e, 2*time.Second)
+		_ = events.SafePublish(ctx, a.events, e)
 	}
 }
 

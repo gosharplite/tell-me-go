@@ -46,7 +46,7 @@ type ChatConfigurator interface {
 
 // ChatEventSource defines the interface for subscribing to chat events.
 type ChatEventSource interface {
-	Subscribe(sub func(events.Event))
+	Subscribe(sub func(context.Context, events.Event))
 }
 
 // Chatter defines the full interface for the AI agent orchestration.

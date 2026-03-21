@@ -373,7 +373,7 @@ func (e *turnEngine) executeTurn(parentCtx context.Context, turn *turn) error {
 
 	e.finalizeTurnTrace(trace, err)
 	if e.events != nil {
-		_ = events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace}, 2*time.Second)
+		_ = events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace})
 	}
 
 	e.notifyAfterTurn(turn, err)
@@ -461,7 +461,7 @@ func (p *guardStep) process(ctx context.Context, turn *turn) (processResult, err
 	}
 
 	if turn.Events != nil {
-		if err := turn.Events.Publish(ctx, events.TurnStarted{Turn: turn.Index, MaxTurns: maxTurns}); err != nil {
+		if err := events.SafePublish(ctx, turn.Events, events.TurnStarted{Turn: turn.Index, MaxTurns: maxTurns}); err != nil {
 			return processResult{}, err
 		}
 	}
@@ -696,7 +696,7 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	if turn.Events != nil {
 		msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
 			turn.State.LastError, delay.Round(time.Millisecond), turn.State.RetryCount)
-		if err := turn.Events.Publish(ctx, events.SystemMessageEvent{
+		if err := events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
 			Message: msg,
 			Level:   "warn",
 		}); err != nil {
@@ -753,7 +753,7 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn) {
 		truncateOversizedResponse(toolResponse, toolTokens, instruction)
 
 		if turn.Events != nil {
-			_ = turn.Events.Publish(ctx, events.SystemMessageEvent{
+			_ = events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
 				Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
 				Level:   "error",
 			})

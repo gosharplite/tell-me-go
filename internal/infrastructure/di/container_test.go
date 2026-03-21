@@ -22,6 +22,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
@@ -443,7 +444,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	assert.NotNil(t, factory)
 
 	// Execute the factory
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	client := new(mockLLMClient)
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
@@ -555,7 +556,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	gw := client
 	reg := registry.New()
 	sm := new(mockConfigurableSecurityManager)
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	tracker := &mockTracker{}
 	pData := pricing.PricingData{}
 
@@ -586,9 +587,7 @@ type mockSessionProvider struct {
 	mock.Mock
 }
 
-func (m *mockSessionProvider) GetTasks() ports.TaskService            { return nil }
-func (m *mockSessionProvider) GetConfig() ports.ConfigService         { return nil }
-func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadService { return nil }
+func (m *mockSessionProvider) GetTasks() ports.TaskStore { return nil }
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
 	args := m.Called()
 	return args.Get(0).(ports.SessionInfo)
@@ -639,7 +638,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "SessionRotationFails",
 			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RotateSession = func(stdout io.Writer, paths persistence.Paths, retentionDays int) error {
+				b.RotateSession = func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
 					return simulatedErr
 				}
 				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()

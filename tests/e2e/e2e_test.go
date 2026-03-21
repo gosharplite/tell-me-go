@@ -230,7 +230,6 @@ func TestEnvironmentPersistence(t *testing.T) {
 	persistentFiles := map[string]string{
 		"safepaths.json": "[]",
 		"readpaths.json": "[]",
-		"scratchpad.md":  "persistent content",
 		"tasks.json":     "[]",
 		"bypass.log":     "false",
 	}
@@ -572,47 +571,6 @@ func TestManageTasks(t *testing.T) {
 		if err != nil || count == 0 {
 			t.Errorf("Task not found in sqlite database")
 		}
-	}
-}
-
-func TestManageScratchpad(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping slow E2E test in short mode")
-	}
-	provider := "google"
-	server, _ := setupProviderMockServer(t, provider, "manage_scratchpad", map[string]interface{}{
-		"action":  "write",
-		"content": "# E2E Scratchpad",
-	}, nil)
-	defer server.Close()
-
-	homeDir := t.TempDir()
-	configPath := createTempConfig(t, provider, server.URL)
-	env := []string{
-		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL,
-		"TELL_ME_NO_STREAM=true",
-	}
-
-	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "update scratchpad", []string{"Done."}, "-c", configPath)
-
-	// Check if database exists and has content
-	dbFile := filepath.Join(homeDir, "output", "assistant", "tellmego.db")
-	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
-		t.Fatalf("SQLite database missing at %s", dbFile)
-	}
-
-	db, err := sql.Open("sqlite", dbFile)
-	if err != nil {
-		t.Fatalf("Failed to open sqlite db: %v", err)
-	}
-	defer func() { _ = db.Close() }()
-	var contentStr string
-	err = db.QueryRow("SELECT content FROM scratchpad WHERE id = 1").Scan(&contentStr)
-	if err != nil || !strings.Contains(contentStr, "# E2E Scratchpad") {
-		t.Errorf("Scratchpad mismatch. Got: %v (err: %v)", contentStr, err)
 	}
 }
 

@@ -22,7 +22,7 @@ func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 
 	// Create a cancelled context to force applyConfig to fail
 	ctx, cancel := context.WithCancel(context.Background())
@@ -30,7 +30,7 @@ func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 
 	var warningEmitted bool
 	var mu sync.Mutex
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if su, ok := e.(events.StatusUpdate); ok {
 			mu.Lock()
 			if su.Level == "warning" && su.Message == "failed to apply initial configuration" {

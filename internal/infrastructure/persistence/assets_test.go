@@ -20,7 +20,8 @@ func TestAssetStore(t *testing.T) {
 }
 
 func testSaveAndLoad(t *testing.T) {
-	store := NewAssetStore(t.TempDir())
+	fs := NewOSFileSystem()
+	store := NewAssetStore(fs, t.TempDir())
 	ctx := context.Background()
 
 	assertContent := func(t *testing.T, got, want []byte) {
@@ -65,7 +66,8 @@ func testSaveAndLoad(t *testing.T) {
 }
 
 func testMetadata(t *testing.T) {
-	store := NewAssetStore(t.TempDir())
+	fs := NewOSFileSystem()
+	store := NewAssetStore(fs, t.TempDir())
 	ctx := context.Background()
 	content := []byte("metadata test content")
 	id := createTestAsset(t, store, content)
@@ -90,7 +92,8 @@ func testMetadata(t *testing.T) {
 }
 
 func testPathSanitization(t *testing.T) {
-	store := NewAssetStore(t.TempDir())
+	fs := NewOSFileSystem()
+	store := NewAssetStore(fs, t.TempDir())
 
 	t.Run("ShortID", func(t *testing.T) {
 		path := store.getPath("a")
@@ -111,7 +114,8 @@ func testPathSanitization(t *testing.T) {
 }
 
 func testMissingAssets(t *testing.T) {
-	store := NewAssetStore(t.TempDir())
+	fs := NewOSFileSystem()
+	store := NewAssetStore(fs, t.TempDir())
 	ctx := context.Background()
 
 	assertNil := func(t *testing.T, got []byte) {
@@ -139,7 +143,8 @@ func testMissingAssets(t *testing.T) {
 }
 
 func testContext(t *testing.T) {
-	store := NewAssetStore(t.TempDir())
+	fs := NewOSFileSystem()
+	store := NewAssetStore(fs, t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -165,14 +170,4 @@ func createTestAsset(t *testing.T, store *AssetStore, content []byte) string {
 		t.Fatalf("failed to create test asset: %v", err)
 	}
 	return id
-}
-
-func TestAssetStore_WithFileSystem(t *testing.T) {
-	t.Parallel()
-	tmpDir := t.TempDir()
-	fs := NewOSFileSystem()
-	store := NewAssetStore(tmpDir).WithFileSystem(fs)
-	if store.fs != fs {
-		t.Error("WithFileSystem failed to set filesystem")
-	}
 }

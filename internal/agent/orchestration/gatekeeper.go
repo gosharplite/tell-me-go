@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -90,7 +89,7 @@ func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 			Tokens:   tokens,
 			MaxLimit: limit,
 			Reason:   reason,
-		}, 2*time.Second); err != nil && !errors.Is(err, events.ErrBufferOverflow) {
+		}); err != nil {
 			return tokens, err
 		}
 	}
@@ -136,12 +135,12 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 			_ = events.SafePublish(ctx, t.Events, events.TokenLimitReachedEvent{
 				Tokens:   tokens,
 				MaxLimit: t.MaxTokens,
-			}, 2*time.Second)
+			})
 
 			_ = events.SafePublish(ctx, t.Events, events.SystemMessageEvent{
 				Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
 				Level:   "error",
-			}, 2*time.Second)
+			})
 		}
 		return llm.ErrContextLimitExceeded
 	}
@@ -170,7 +169,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 		_ = events.SafePublish(ctx, t.Events, events.SystemMessageEvent{
 			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens),
 			Level:   "info",
-		}, 2*time.Second)
+		})
 	}
 
 	// 3. Service Call
@@ -189,7 +188,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 		_ = events.SafePublish(ctx, t.Events, events.SystemMessageEvent{
 			Message: "Auto-summarization complete. Context successfully compressed.",
 			Level:   "info",
-		}, 2*time.Second)
+		})
 	}
 
 	// 4. State Mutation

@@ -134,8 +134,8 @@ type mockFailingChatter struct {
 func (m *mockFailingChatter) Chat(ctx context.Context, session *ports.Session, prompt string) error {
 	return nil
 }
-func (m *mockFailingChatter) Shutdown(ctx context.Context) error   { return nil }
-func (m *mockFailingChatter) Subscribe(handler func(events.Event)) {}
+func (m *mockFailingChatter) Shutdown(ctx context.Context) error                    { return nil }
+func (m *mockFailingChatter) Subscribe(handler func(context.Context, events.Event)) {}
 func (m *mockFailingChatter) SetLimits(ctx context.Context, maxToolTurns, contextWindow, maxHistoryTurns int) error {
 	return m.err
 }

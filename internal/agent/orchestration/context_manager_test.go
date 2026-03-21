@@ -4,9 +4,11 @@
 package orchestration
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"testing"
 
@@ -178,16 +180,21 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	assert.Error(t, err)
 
 	// Case 9: Event publishing
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	defer func() {
 		if err := bus.Shutdown(ctx); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
 	}()
+
+	var logBuf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	cm.logger = testLogger
 	cm.Events = bus
+
 	received := false
 	var mu sync.Mutex
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if _, ok := e.(events.SystemMessageEvent); ok {
 			mu.Lock()
 			received = true
@@ -203,6 +210,13 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	mu.Lock()
 	assert.True(t, received)
 	mu.Unlock()
+
+	// Verify log if bus was closed during emitSummarizationEvent
+	_ = bus.Shutdown(ctx)
+	_, _, _ = cm.SummarizeRange(ctx, 1, "")
+	output := logBuf.String()
+	assert.Contains(t, output, "failed to emit summarization event")
+	assert.Contains(t, output, `"level":"DEBUG"`)
 
 	// Case 10: finalizeSummarization fails
 	history.setContentsErr = fmt.Errorf("persist fail")
@@ -267,7 +281,7 @@ func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
 }
 
 func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	ctx := context.Background()
 	defer func() {
 		_ = bus.Shutdown(ctx)

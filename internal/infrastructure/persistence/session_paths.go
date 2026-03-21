@@ -20,9 +20,9 @@ import (
 type paths = persistence.Paths
 
 // InitializePaths creates the necessary directories and returns the Paths for the session.
-func InitializePaths(homeDir string, mode string) (*persistence.Paths, error) {
+func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
 	modeDir := filepath.Join(homeDir, "output", mode)
-	if err := os.MkdirAll(modeDir, 0755); err != nil {
+	if err := fs.MkdirAll(modeDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create session directory [%s]: %w", modeDir, err)
 	}
 
@@ -40,7 +40,7 @@ func InitializePaths(homeDir string, mode string) (*persistence.Paths, error) {
 }
 
 // RotateSession archives existing session files and cleans up old backups.
-func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) error {
+func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentionDays int) error {
 	timestamp := time.Now().Format("20060102_150405")
 	outputDir := filepath.Dir(paths.ModeDir)
 
@@ -51,9 +51,9 @@ func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) erro
 	var errs []error
 	backupCreated := false
 	for _, f := range filesToMove {
-		if _, err := os.Stat(f); err == nil {
+		if _, err := fs.Stat(f); err == nil {
 			if !backupCreated {
-				if err := os.MkdirAll(backupDir, 0755); err != nil {
+				if err := fs.MkdirAll(backupDir, 0755); err != nil {
 					return fmt.Errorf("error creating backup directory: %w", err)
 				}
 				if w != nil {
@@ -62,14 +62,14 @@ func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) erro
 				backupCreated = true
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))
-			if err := os.Rename(f, dest); err != nil {
+			if err := fs.Rename(f, dest); err != nil {
 				errs = append(errs, fmt.Errorf("error archiving %s: %w", f, err))
 			}
 		}
 	}
 
 	// Always execute cleanup regardless of previous file archiving failures
-	if cleanupErr := cleanupOldBackups(paths, retentionDays); cleanupErr != nil {
+	if cleanupErr := cleanupOldBackups(fs, paths, retentionDays); cleanupErr != nil {
 		errs = append(errs, cleanupErr)
 	}
 
@@ -80,14 +80,14 @@ func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) erro
 }
 
 // cleanupOldBackups removes backups older than the specified retention days.
-func cleanupOldBackups(paths persistence.Paths, retentionDays int) error {
+func cleanupOldBackups(fs FileSystem, paths persistence.Paths, retentionDays int) error {
 	if retentionDays <= 0 {
 		return nil
 	}
 
 	outputDir := filepath.Dir(paths.ModeDir)
 	backupBaseDir := filepath.Join(outputDir, "backups")
-	entries, err := os.ReadDir(backupBaseDir)
+	entries, err := fs.ReadDir(backupBaseDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -107,7 +107,7 @@ func cleanupOldBackups(paths persistence.Paths, retentionDays int) error {
 		}
 
 		path := filepath.Join(backupBaseDir, entry.Name())
-		if err := os.RemoveAll(path); err != nil {
+		if err := fs.RemoveAll(path); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
 		}
 	}
@@ -116,9 +116,9 @@ func cleanupOldBackups(paths persistence.Paths, retentionDays int) error {
 }
 
 // LoadBackupRetentionDays loads the retention days from the persistent config.
-func LoadBackupRetentionDays(paths persistence.Paths) int {
+func LoadBackupRetentionDays(fs FileSystem, paths persistence.Paths) int {
 	retentionDays := 30
-	data, err := os.ReadFile(paths.PersistentConfigPath)
+	data, err := fs.ReadFile(paths.PersistentConfigPath)
 	if err != nil {
 		return retentionDays
 	}

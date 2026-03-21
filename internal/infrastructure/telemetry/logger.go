@@ -9,25 +9,31 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-type slogLogger struct{}
+type slogLogger struct {
+	logger *slog.Logger
+}
 
-// NewSlogLogger creates a new ports.Logger using the default slog handler.
-func NewSlogLogger() ports.Logger {
-	return &slogLogger{}
+// NewSlogLogger creates a new ports.Logger using the provided slog.Logger.
+// If logger is nil, it falls back to slog.Default().
+func NewSlogLogger(l *slog.Logger) ports.Logger {
+	if l == nil {
+		l = slog.Default()
+	}
+	return &slogLogger{logger: l}
 }
 
 func (l *slogLogger) Error(msg string, args ...any) {
-	slog.Error(msg, args...)
+	l.logger.Error(msg, args...)
 }
 
 func (l *slogLogger) Warn(msg string, args ...any) {
-	slog.Warn(msg, args...)
+	l.logger.Warn(msg, args...)
 }
 
 func (l *slogLogger) Info(msg string, args ...any) {
-	slog.Info(msg, args...)
+	l.logger.Info(msg, args...)
 }
 
 func (l *slogLogger) Debug(msg string, args ...any) {
-	slog.Debug(msg, args...)
+	l.logger.Debug(msg, args...)
 }

@@ -238,17 +238,23 @@ func newUIBridge(renderer ports.UIRenderer, showThoughts, showTools, rawOutput, 
 }
 
 // handleEvent processes a domain event and updates the UI.
-func (b *uiBridge) handleEvent(e events.Event) {
+func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.renderer.LogTurnStatus(ev.Status)
 	case events.ResponseStreamEvent:
 		ctx := b.ensureContext(ev.Context, "ResponseStreamEvent")
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		uiCh, uiFinalize := b.renderer.StreamResponse(ctx, b.showThoughts, b.rawOutput)
 		b.relayStream(ctx, ev.Stream, uiCh)
 		_ = uiFinalize()
 	case events.UsageMetricsEvent:
 		ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		b.renderer.LogUsage(ctx, ev.Metrics, b.logFile, ev.StartTime)
 	case events.ToolCallEvent:
 		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)

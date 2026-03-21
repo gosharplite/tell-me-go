@@ -71,7 +71,7 @@ func TestAtomicWrite(t *testing.T) {
 				}
 			}
 
-			err := AtomicWrite(ctx, tt.path, tt.data, tt.perm)
+			err := AtomicWrite(ctx, &OSFileSystem{}, tt.path, tt.data, tt.perm)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("AtomicWrite() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -112,7 +112,7 @@ func TestAtomicWrite_CancellationCleanup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	err := AtomicWrite(ctx, path, []byte("data"), 0644)
+	err := AtomicWrite(ctx, &OSFileSystem{}, path, []byte("data"), 0644)
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
 	}
@@ -137,7 +137,7 @@ func TestAtomicWrite_RenameFailure(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	err = AtomicWrite(ctx, path, []byte("data"), 0644)
+	err = AtomicWrite(ctx, &OSFileSystem{}, path, []byte("data"), 0644)
 	if err == nil {
 		t.Fatal("expected error when renaming to a directory")
 	}
@@ -175,7 +175,7 @@ func TestAtomicWrite_OpenFileFailure(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	err := AtomicWrite(ctx, path, []byte("data"), 0644)
+	err := AtomicWrite(ctx, &OSFileSystem{}, path, []byte("data"), 0644)
 	if err == nil {
 		t.Fatal("expected error when directory is not writable")
 	}
@@ -188,7 +188,7 @@ func TestAtomicWrite_Cancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	err := AtomicWrite(ctx, path, []byte("data"), 0644)
+	err := AtomicWrite(ctx, &OSFileSystem{}, path, []byte("data"), 0644)
 	if err == nil {
 		t.Error("Expected error for cancelled context, got nil")
 	}

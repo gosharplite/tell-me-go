@@ -27,9 +27,9 @@ func (s *spyEventBus) Publish(ctx context.Context, e events.Event) error {
 	return nil
 }
 
-func (s *spyEventBus) Subscribe(sub func(events.Event))   {}
-func (s *spyEventBus) Shutdown(ctx context.Context) error { return nil }
-func (s *spyEventBus) Flush(ctx context.Context) error    { return nil }
+func (s *spyEventBus) Subscribe(sub func(context.Context, events.Event)) {}
+func (s *spyEventBus) Shutdown(ctx context.Context) error                { return nil }
+func (s *spyEventBus) Flush(ctx context.Context) error                   { return nil }
 
 // Mock implementations for the facade's domain dependencies.
 

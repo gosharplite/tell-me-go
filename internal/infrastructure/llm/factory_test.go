@@ -140,7 +140,7 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 		SelectedProvider: "default",
 	}
 
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() {
 		_ = bus.Shutdown(context.Background())
 	})

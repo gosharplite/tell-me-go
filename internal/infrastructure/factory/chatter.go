@@ -48,7 +48,7 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	}
 	ctxManager := agent_orchestration.NewContextManager(strategy, deps.GetHistoryManager(), deps.GetEventBus(), factory)
 
-	toolExec, err := agent_executor.NewToolExecutor(deps.GetRegistry(), deps.GetSecurityManager(), deps.GetEventBus(), telemetry.NewSlogLogger(), &agent_executor.TelemetryLogger{})
+	toolExec, err := agent_executor.NewToolExecutor(deps.GetRegistry(), deps.GetSecurityManager(), deps.GetEventBus(), telemetry.NewSlogLogger(nil), &agent_executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}

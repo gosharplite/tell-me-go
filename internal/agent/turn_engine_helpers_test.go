@@ -236,7 +236,7 @@ type testTurnEnv struct {
 func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	t.Helper()
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	hManager := &mockHistoryManager{}
@@ -265,7 +265,7 @@ type costCapturer struct {
 
 func newCostCapturer(bus events.EventBus) *costCapturer {
 	c := &costCapturer{bus: bus}
-	bus.Subscribe(func(ev events.Event) {
+	bus.Subscribe(func(ctx context.Context, ev events.Event) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if um, ok := ev.(events.UsageMetricsEvent); ok {

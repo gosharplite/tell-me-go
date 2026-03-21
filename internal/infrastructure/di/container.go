@@ -62,7 +62,7 @@ type bootstrapper struct {
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
-	RotateSession    func(stdout io.Writer, paths persistence.Paths, retentionDays int) error
+	RotateSession    func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
@@ -87,7 +87,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
 func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
-	paths, err := infra_persistence.InitializePaths(b.HomeDir, cfg.Mode)
+	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -112,11 +112,11 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(ctx)
 
 	pricingData := telemetry.GetPricing(ctx, b.SM, filepath.Join(b.HomeDir, "output"))
 
-	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger())
+	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(nil))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
@@ -315,8 +315,8 @@ func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 	}
 
 	// Critical path: always attempt to rotate the session
-	retentionDays := infra_persistence.LoadBackupRetentionDays(*paths)
-	if err := b.RotateSession(b.Stdout, *paths, retentionDays); err != nil {
+	retentionDays := infra_persistence.LoadBackupRetentionDays(&infra_persistence.OSFileSystem{}, *paths)
+	if err := b.RotateSession(&infra_persistence.OSFileSystem{}, b.Stdout, *paths, retentionDays); err != nil {
 		return fmt.Errorf("session rotation failed: %w", err)
 	}
 	return nil

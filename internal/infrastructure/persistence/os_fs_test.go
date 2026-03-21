@@ -14,7 +14,7 @@ import (
 
 func TestOSFileSystem(t *testing.T) {
 	t.Parallel()
-	fs := &osFileSystem{}
+	fs := NewOSFileSystem()
 	ctx := context.Background()
 
 	t.Run("WriteAndRead", func(t *testing.T) {
@@ -170,7 +170,7 @@ func TestIsBinary(t *testing.T) {
 
 func TestOSFileSystem_ContextCancellation(t *testing.T) {
 	t.Parallel()
-	fs := &osFileSystem{}
+	fs := NewOSFileSystem()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.txt")
 	_ = os.WriteFile(path, []byte("data"), 0644)
@@ -238,7 +238,7 @@ func TestOSFileSystem_ContextCancellation(t *testing.T) {
 
 func TestOSFileSystem_OpenFile(t *testing.T) {
 	t.Parallel()
-	fs := &osFileSystem{}
+	fs := NewOSFileSystem()
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "openfile.txt")
 	ctx := context.Background()

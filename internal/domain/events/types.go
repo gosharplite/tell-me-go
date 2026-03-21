@@ -47,3 +47,6 @@ type TurnStatus struct {
 type TurnStatusEvent struct {
 	Status TurnStatus
 }
+
+func (e ConfigUpdated) Type() string   { return "ConfigUpdated" }
+func (e TurnStatusEvent) Type() string { return "TurnStatusEvent" }

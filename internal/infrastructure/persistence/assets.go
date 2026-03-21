@@ -8,28 +8,24 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // AssetStore manages binary blobs in a content-addressable storage.
 type AssetStore struct {
+	mu      sync.RWMutex
 	baseDir string
 	fs      persistence.FileSystem
 }
 
 // NewAssetStore creates a new AssetStore.
-func NewAssetStore(baseDir string) *AssetStore {
+func NewAssetStore(fs persistence.FileSystem, baseDir string) *AssetStore {
 	return &AssetStore{
 		baseDir: baseDir,
-		fs:      NewOSFileSystem(),
+		fs:      fs,
 	}
-}
-
-// WithFileSystem sets the filesystem implementation.
-func (s *AssetStore) WithFileSystem(fs persistence.FileSystem) *AssetStore {
-	s.fs = fs
-	return s
 }
 
 // Put saves the data and returns its SHA-256 hash as the ID.
@@ -38,16 +34,24 @@ func (s *AssetStore) Put(ctx context.Context, data []byte) (string, error) {
 		return "", nil
 	}
 
+	hash := sha256.Sum256(data)
+	id := fmt.Sprintf("%x", hash)
+
+	path := s.getPath(id)
+
+	// Acquire write lock to ensure that the file creation is synchronized.
+	// Since assets are content-addressable (ID is based on data hash),
+	// this primarily protects against concurrent attempts to write the EXACT same asset
+	// to the same path, which could lead to file locking issues on some OSs.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
 	default:
 	}
 
-	hash := sha256.Sum256(data)
-	id := fmt.Sprintf("%x", hash)
-
-	path := s.getPath(id)
 	if _, err := s.fs.Stat(ctx, path); err == nil {
 		return id, nil // Already exists
 	}
@@ -69,6 +73,9 @@ func (s *AssetStore) Get(ctx context.Context, id string) ([]byte, error) {
 		return nil, nil
 	}
 
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -86,4 +93,9 @@ func (s *AssetStore) getPath(id string) string {
 		return filepath.Join(s.baseDir, id)
 	}
 	return filepath.Join(s.baseDir, id[:2], id)
+}
+
+// GetBaseDir returns the base directory of the asset store.
+func (s *AssetStore) GetBaseDir() string {
+	return s.baseDir
 }

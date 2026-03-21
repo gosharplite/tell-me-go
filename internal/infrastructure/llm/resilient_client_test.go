@@ -111,7 +111,7 @@ func TestNewClient(t *testing.T) {
 				HTTPTimeoutSeconds: tt.timeoutSeconds,
 			}
 			pData := pricing.PricingData{}
-			bus := events.NewSimpleEventBus()
+			bus := events.NewSimpleEventBus(context.Background())
 
 			client, err := NewClient(cfg, pData, bus, nil)
 

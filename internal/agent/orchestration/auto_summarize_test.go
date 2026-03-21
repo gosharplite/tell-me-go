@@ -40,7 +40,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to register tool: %v", err)
 	}
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 
 	// Mock server for summarization
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +131,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 
 	// Channel to capture the log event
 	logReceived := make(chan string, 1)
-	bus.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if msg, ok := e.(events.SystemMessageEvent); ok {
 			if strings.Contains(msg.Message, "Auto-summarizing") {
 				logReceived <- msg.Message
@@ -155,7 +155,7 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -212,7 +212,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -285,7 +285,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	historyPath := filepath.Join(tmpDir, "tool_pressure_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 
 	// 1. Register many tools to create a large schema (approx 2000 tokens)
 	for i := 0; i < 20; i++ {

@@ -144,7 +144,7 @@ type mockServiceEventBus struct {
 func (m *mockServiceEventBus) Publish(ctx context.Context, e events.Event) error {
 	return m.Called(ctx, e).Error(0)
 }
-func (m *mockServiceEventBus) Subscribe(sub func(events.Event)) {
+func (m *mockServiceEventBus) Subscribe(sub func(context.Context, events.Event)) {
 	m.Called(sub)
 }
 func (m *mockServiceEventBus) Shutdown(ctx context.Context) error { return m.Called(ctx).Error(0) }
@@ -164,8 +164,8 @@ func (m *mockServiceAgent) SetLimits(ctx context.Context, maxTurns, contextWindo
 func (m *mockServiceAgent) SetTieredThreshold(ctx context.Context, threshold int) error {
 	return m.Called(ctx, threshold).Error(0)
 }
-func (m *mockServiceAgent) Subscribe(handler func(events.Event)) { m.Called(handler) }
-func (m *mockServiceAgent) Shutdown(ctx context.Context) error   { return m.Called(ctx).Error(0) }
+func (m *mockServiceAgent) Subscribe(handler func(context.Context, events.Event)) { m.Called(handler) }
+func (m *mockServiceAgent) Shutdown(ctx context.Context) error                    { return m.Called(ctx).Error(0) }
 
 // mockServiceCapturer is a mock of Capturer.
 type mockServiceCapturer struct {

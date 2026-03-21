@@ -154,7 +154,7 @@ func (sm *SecurityManager) saveBypassState(ctx context.Context) {
 	if active {
 		val = "true"
 	}
-	_ = persistence.AtomicWrite(ctx, file, []byte(val), 0644)
+	_ = persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, file, []byte(val), 0644)
 }
 
 // SetBypassActive sets the bypass state.

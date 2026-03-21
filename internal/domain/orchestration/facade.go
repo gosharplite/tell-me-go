@@ -315,7 +315,7 @@ func (f *chatterFacade) SetTieredThreshold(ctx context.Context, threshold int) e
 	return nil
 }
 
-func (f *chatterFacade) Subscribe(sub func(events.Event)) {
+func (f *chatterFacade) Subscribe(sub func(context.Context, events.Event)) {
 	if f.bus != nil {
 		f.bus.Subscribe(sub)
 	}

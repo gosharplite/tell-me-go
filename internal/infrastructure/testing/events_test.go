@@ -13,31 +13,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type myEvent struct{ ID int }
+type otherEvent struct{}
+
+func (e myEvent) Type() string    { return "myEvent" }
+func (e otherEvent) Type() string { return "otherEvent" }
+
 func TestTestEventBus(t *testing.T) {
 	t.Parallel()
 	bus := &TestEventBus{}
 	ctx := context.Background()
 
-	type MyEvent struct{ ID int }
-	type OtherEvent struct{}
-
-	require.NoError(t, bus.Publish(ctx, MyEvent{ID: 1}))
-	require.NoError(t, bus.Publish(ctx, OtherEvent{}))
+	require.NoError(t, bus.Publish(ctx, myEvent{ID: 1}))
+	require.NoError(t, bus.Publish(ctx, otherEvent{}))
 
 	if len(bus.getEvents()) != 2 {
 		t.Errorf("Expected 2 events, got %d", len(bus.getEvents()))
 	}
 
-	if !bus.AssertEventPublished(reflect.TypeOf(MyEvent{})) {
-		t.Error("MyEvent should be published")
+	if !bus.AssertEventPublished(reflect.TypeOf(myEvent{})) {
+		t.Error("myEvent should be published")
 	}
 
-	if !bus.AssertEventPublished(reflect.TypeOf(OtherEvent{})) {
-		t.Error("OtherEvent should be published")
+	if !bus.AssertEventPublished(reflect.TypeOf(otherEvent{})) {
+		t.Error("otherEvent should be published")
 	}
 
-	filtered := bus.FilterEvents(reflect.TypeOf(MyEvent{}))
-	if len(filtered) != 1 || filtered[0].(MyEvent).ID != 1 {
+	filtered := bus.FilterEvents(reflect.TypeOf(myEvent{}))
+	if len(filtered) != 1 || filtered[0].(myEvent).ID != 1 {
 		t.Errorf("FilterEvents failed: %v", filtered)
 	}
 
@@ -50,16 +53,15 @@ func TestTestEventBus(t *testing.T) {
 func TestTestEventBus_Subscribe(t *testing.T) {
 	t.Parallel()
 	bus := &TestEventBus{}
-	type MyEvent struct{ ID int }
 
 	var receivedID int
-	bus.Subscribe(func(e events.Event) {
-		if ev, ok := e.(MyEvent); ok {
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
+		if ev, ok := e.(myEvent); ok {
 			receivedID = ev.ID
 		}
 	})
 
-	err := bus.Publish(context.Background(), MyEvent{ID: 42})
+	err := bus.Publish(context.Background(), myEvent{ID: 42})
 	require.NoError(t, err)
 	assert.Equal(t, 42, receivedID, "Subscriber should have received the event with correct ID")
 }
@@ -76,11 +78,10 @@ func TestTestEventBus_NoOps(t *testing.T) {
 func TestCountingEventBus(t *testing.T) {
 	t.Parallel()
 	bus := NewCountingEventBus()
-	type MyEvent struct{}
 	ctx := context.Background()
 
-	require.NoError(t, bus.Publish(ctx, MyEvent{}))
-	require.NoError(t, bus.Publish(ctx, MyEvent{}))
+	require.NoError(t, bus.Publish(ctx, myEvent{}))
+	require.NoError(t, bus.Publish(ctx, myEvent{}))
 
 	assert.Equal(t, 2, bus.GetCount())
 }

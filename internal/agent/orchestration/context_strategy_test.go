@@ -427,7 +427,7 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 }
 
 func TestContextStrategy_ConfigUpdatedEvent(t *testing.T) {
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	ctx := context.Background()
 	defer func() {
 		_ = bus.Shutdown(ctx)
