@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package events_test
+package events
 
 import (
 	"bytes"
@@ -13,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
 
 type testEvent struct {
@@ -33,7 +31,7 @@ type errSubscriber struct {
 	err error
 }
 
-func (s *errSubscriber) Handle(ctx context.Context, e events.Event) error {
+func (s *errSubscriber) Handle(ctx context.Context, e Event) error {
 	return s.err
 }
 
@@ -41,7 +39,7 @@ type panicSubscriber struct {
 	msg string
 }
 
-func (s *panicSubscriber) Handle(ctx context.Context, e events.Event) error {
+func (s *panicSubscriber) Handle(ctx context.Context, e Event) error {
 	panic(s.msg)
 }
 
@@ -50,26 +48,26 @@ type blockingSubscriber struct {
 	block chan struct{}
 }
 
-func (s *blockingSubscriber) Handle(ctx context.Context, e events.Event) error {
+func (s *blockingSubscriber) Handle(ctx context.Context, e Event) error {
 	close(s.ready)
 	<-s.block
 	return nil
 }
 
 type funcSubscriberWithErr struct {
-	f func(context.Context, events.Event) error
+	f func(context.Context, Event) error
 }
 
-func (s *funcSubscriberWithErr) Handle(ctx context.Context, e events.Event) error {
+func (s *funcSubscriberWithErr) Handle(ctx context.Context, e Event) error {
 	return s.f(ctx, e)
 }
 
 func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	received := make(chan events.Event, 1)
+	bus := NewSimpleEventBus(context.Background())
+	received := make(chan Event, 1)
 
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e Event) {
 		received <- e
 	})
 
@@ -94,7 +92,7 @@ func TestSimpleEventBus_ErrorAggregation(t *testing.T) {
 
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
-	bus := events.NewSimpleEventBus(context.Background(), events.WithLogger(testLogger))
+	bus := NewSimpleEventBus(context.Background(), withLogger(testLogger))
 
 	err1 := errors.New("err 1")
 	err2 := errors.New("err 2")
@@ -139,13 +137,13 @@ func TestSimpleEventBus_PanicRecovery(t *testing.T) {
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 	// 2. Inject the logger into the component
-	bus := events.NewSimpleEventBus(context.Background(), events.WithLogger(testLogger))
+	bus := NewSimpleEventBus(context.Background(), withLogger(testLogger))
 
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e Event) {
 		panic("boom")
 	})
 
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e Event) {
 		// Normal subscriber
 	})
 
@@ -179,18 +177,18 @@ func TestSimpleEventBus_PanicResilience(t *testing.T) {
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 	// 2. Inject the logger into the component
-	bus := events.NewSimpleEventBus(context.Background(), events.WithLogger(testLogger))
+	bus := NewSimpleEventBus(context.Background(), withLogger(testLogger))
 
 	results := make([]bool, 3)
 
-	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
 		results[0] = true
 		return nil
 	}})
 
 	bus.SubscribeSubscriber("testEvent", &panicSubscriber{msg: "simulated UI crash"})
 
-	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
 		results[2] = true
 		return nil
 	}})
@@ -216,7 +214,7 @@ func TestSimpleEventBus_PanicResilience(t *testing.T) {
 	if !strings.Contains(output, `"level":"ERROR"`) {
 		t.Errorf("Expected ERROR log, got: %s", output)
 	}
-	if !strings.Contains(output, `"subscriber_type":"*events_test.panicSubscriber"`) {
+	if !strings.Contains(output, `"subscriber_type":"*events.panicSubscriber"`) {
 		t.Errorf("Missing subscriber_type key in log: %s", output)
 	}
 	if !strings.Contains(output, `"panic_reason":"simulated UI crash"`) {
@@ -235,7 +233,7 @@ func TestSafePublish_Timeout(t *testing.T) {
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 	// 2. Inject the logger into the component
-	bus := events.NewSimpleEventBus(context.Background(), events.WithLogger(testLogger))
+	bus := NewSimpleEventBus(context.Background(), withLogger(testLogger))
 	sub := &blockingSubscriber{
 		ready: make(chan struct{}),
 		block: make(chan struct{}),
@@ -245,7 +243,7 @@ func TestSafePublish_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	err := events.SafePublish(ctx, bus, testEvent{typeName: "test_timeout"})
+	err := SafePublish(ctx, bus, testEvent{typeName: "test_timeout"})
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
@@ -272,7 +270,7 @@ func TestSafePublish_Timeout(t *testing.T) {
 
 func TestSimpleEventBus_FlushAndShutdown(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 
 	if err := bus.Flush(context.Background()); err != nil {
 		t.Errorf("Flush failed: %v", err)
@@ -282,13 +280,13 @@ func TestSimpleEventBus_FlushAndShutdown(t *testing.T) {
 		t.Errorf("Shutdown failed: %v", err)
 	}
 
-	if err := bus.Publish(context.Background(), testEvent{}); !errors.Is(err, events.ErrBusClosed) {
+	if err := bus.Publish(context.Background(), testEvent{}); !errors.Is(err, ErrBusClosed) {
 		t.Errorf("expected ErrBusClosed, got %v", err)
 	}
 }
 
 func TestSimpleEventBus_ContextCancellation(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -303,10 +301,10 @@ type unknownEvent struct{}
 func (e unknownEvent) Type() string { return "UnknownEvent" }
 
 func TestGlobalSubscriber_NewEventType(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
-	received := make(chan events.Event, 1)
+	bus := NewSimpleEventBus(context.Background())
+	received := make(chan Event, 1)
 
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e Event) {
 		received <- e
 	})
 
@@ -328,7 +326,7 @@ func TestGlobalSubscriber_NewEventType(t *testing.T) {
 }
 
 func TestSimpleEventBus_Race(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
@@ -343,7 +341,7 @@ func TestSimpleEventBus_Race(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				_ = bus.Publish(ctx, events.StatusUpdate{Message: "test"})
+				_ = bus.Publish(ctx, StatusUpdate{Message: "test"})
 			}
 		}
 	}()
@@ -353,7 +351,7 @@ func TestSimpleEventBus_Race(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
-			bus.Subscribe(func(ctx context.Context, e events.Event) {})
+			bus.Subscribe(func(ctx context.Context, e Event) {})
 			time.Sleep(time.Microsecond)
 		}
 	}()
@@ -365,19 +363,19 @@ func TestSimpleEventBus_Race(t *testing.T) {
 }
 
 type deadlockSubscriber struct {
-	bus events.EventBus
+	bus EventBus
 }
 
-func (s *deadlockSubscriber) Handle(ctx context.Context, e events.Event) error {
+func (s *deadlockSubscriber) Handle(ctx context.Context, e Event) error {
 	if e.Type() == "StatusUpdate" {
 		// Publish a DIFFERENT event type to avoid infinite recursion
-		return s.bus.Publish(ctx, events.TurnStarted{})
+		return s.bus.Publish(ctx, TurnStarted{})
 	}
 	return nil
 }
 
 func TestSimpleEventBus_Deadlock(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 	ctx := context.Background()
 
 	sub := &deadlockSubscriber{bus: bus}
@@ -387,7 +385,7 @@ func TestSimpleEventBus_Deadlock(t *testing.T) {
 	// and waiting for the recursive Publish (RLock) which will be blocked by this writer.
 	go func() {
 		for i := 0; i < 100; i++ {
-			bus.Subscribe(func(ctx context.Context, e events.Event) {})
+			bus.Subscribe(func(ctx context.Context, e Event) {})
 			time.Sleep(time.Microsecond)
 		}
 	}()
@@ -395,7 +393,7 @@ func TestSimpleEventBus_Deadlock(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		// Start publishing. It will hit the deadlockSubscriber.
-		done <- bus.Publish(ctx, events.StatusUpdate{Message: "test"})
+		done <- bus.Publish(ctx, StatusUpdate{Message: "test"})
 	}()
 
 	select {
@@ -409,20 +407,20 @@ func TestSimpleEventBus_Deadlock(t *testing.T) {
 }
 
 func TestSafePublish_NilBus(t *testing.T) {
-	err := events.SafePublish(context.Background(), nil, testEvent{})
+	err := SafePublish(context.Background(), nil, testEvent{})
 	if !strings.Contains(err.Error(), "event bus is nil") {
 		t.Errorf("expected error for nil bus, got %v", err)
 	}
 }
 
 func TestSafePublish_Success(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
-	received := make(chan events.Event, 1)
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
+	bus := NewSimpleEventBus(context.Background())
+	received := make(chan Event, 1)
+	bus.Subscribe(func(ctx context.Context, e Event) {
 		received <- e
 	})
 
-	err := events.SafePublish(context.Background(), bus, testEvent{val: "ok"})
+	err := SafePublish(context.Background(), bus, testEvent{val: "ok"})
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
@@ -438,7 +436,7 @@ func TestSafePublish_Success(t *testing.T) {
 }
 
 func TestSimpleEventBus_NilBusMethods(t *testing.T) {
-	var b *events.SimpleEventBus
+	var b *SimpleEventBus
 	if err := b.Publish(context.Background(), testEvent{}); err == nil {
 		t.Error("expected error for nil bus Publish")
 	}
@@ -449,37 +447,37 @@ func TestSimpleEventBus_NilBusMethods(t *testing.T) {
 		t.Error("expected error for nil bus Flush")
 	}
 	// Should not panic
-	b.Subscribe(func(ctx context.Context, e events.Event) {})
+	b.Subscribe(func(ctx context.Context, e Event) {})
 	b.SubscribeGlobal(&errSubscriber{})
 	b.SubscribeSubscriber("test", &errSubscriber{})
 }
 
 func TestSimpleEventBus_SubscribeClosed(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 	_ = bus.Shutdown(context.Background())
 
 	// Should not panic or register
-	bus.Subscribe(func(ctx context.Context, e events.Event) {})
+	bus.Subscribe(func(ctx context.Context, e Event) {})
 	bus.SubscribeGlobal(&errSubscriber{})
 	bus.SubscribeSubscriber("test", &errSubscriber{})
 }
 
 func TestSimpleEventBus_FlushClosed(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 	_ = bus.Shutdown(context.Background())
-	if err := bus.Flush(context.Background()); !errors.Is(err, events.ErrBusClosed) {
+	if err := bus.Flush(context.Background()); !errors.Is(err, ErrBusClosed) {
 		t.Errorf("expected ErrBusClosed, got %v", err)
 	}
 }
 
 func TestEventBus_GlobalRouting(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 
 	var aCount, bCount, globalCount int
 	var mu sync.Mutex
 
 	// Register specific subscriber for EventTypeA
-	bus.SubscribeSubscriber("EventTypeA", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+	bus.SubscribeSubscriber("EventTypeA", &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
 		mu.Lock()
 		aCount++
 		mu.Unlock()
@@ -487,7 +485,7 @@ func TestEventBus_GlobalRouting(t *testing.T) {
 	}})
 
 	// Register specific subscriber for EventTypeB
-	bus.SubscribeSubscriber("EventTypeB", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+	bus.SubscribeSubscriber("EventTypeB", &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
 		mu.Lock()
 		bCount++
 		mu.Unlock()
@@ -495,7 +493,7 @@ func TestEventBus_GlobalRouting(t *testing.T) {
 	}})
 
 	// Register global subscriber
-	bus.Subscribe(func(ctx context.Context, e events.Event) {
+	bus.Subscribe(func(ctx context.Context, e Event) {
 		mu.Lock()
 		globalCount++
 		mu.Unlock()
@@ -529,7 +527,7 @@ func TestEventBus_GlobalRouting(t *testing.T) {
 }
 
 func TestEventBus_RoutingErrorIsolation(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 
 	errGlobal := errors.New("global error")
 	errSpecific := errors.New("specific error")
@@ -538,7 +536,7 @@ func TestEventBus_RoutingErrorIsolation(t *testing.T) {
 	var mu sync.Mutex
 
 	// 1. Global subscriber that intentionally returns an error
-	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
 		mu.Lock()
 		globalCalled = true
 		mu.Unlock()
@@ -546,7 +544,7 @@ func TestEventBus_RoutingErrorIsolation(t *testing.T) {
 	}})
 
 	// 2. Specific subscriber that intentionally returns an error
-	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
 		mu.Lock()
 		specific1Called = true
 		mu.Unlock()
@@ -554,7 +552,7 @@ func TestEventBus_RoutingErrorIsolation(t *testing.T) {
 	}})
 
 	// 3. Second specific subscriber that succeeds
-	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(ctx context.Context, e Event) error {
 		mu.Lock()
 		specific2Called = true
 		mu.Unlock()
@@ -597,7 +595,7 @@ func TestEventBus_RoutingErrorIsolation(t *testing.T) {
 }
 
 func TestSimpleEventBus_SubscribeNil(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 	// Should not panic or register
 	bus.Subscribe(nil)
 	bus.SubscribeGlobal(nil)
@@ -605,19 +603,19 @@ func TestSimpleEventBus_SubscribeNil(t *testing.T) {
 }
 
 func TestEventTypes(t *testing.T) {
-	events_list := []events.Event{
-		events.StatusUpdate{},
-		events.TurnStarted{},
-		events.ResponseStreamEvent{},
-		events.ToolCallEvent{},
-		events.ToolResultEvent{},
-		events.UsageMetricsEvent{},
-		events.SystemMessageEvent{},
-		events.TokenLimitReachedEvent{},
-		events.SummarizationRequired{},
-		events.TraceEvent{},
-		events.ConfigUpdated{},
-		events.TurnStatusEvent{},
+	events_list := []Event{
+		StatusUpdate{},
+		TurnStarted{},
+		ResponseStreamEvent{},
+		ToolCallEvent{},
+		ToolResultEvent{},
+		UsageMetricsEvent{},
+		SystemMessageEvent{},
+		TokenLimitReachedEvent{},
+		SummarizationRequired{},
+		TraceEvent{},
+		ConfigUpdated{},
+		TurnStatusEvent{},
 	}
 
 	for _, e := range events_list {
@@ -630,7 +628,7 @@ func TestEventTypes(t *testing.T) {
 func TestSafePublish_InternalTimeout(t *testing.T) {
 	t.Parallel()
 
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 	sub := &blockingSubscriber{
 		ready: make(chan struct{}),
 		block: make(chan struct{}),
@@ -639,7 +637,7 @@ func TestSafePublish_InternalTimeout(t *testing.T) {
 
 	// SafePublish with context.Background() should NOT block forever due to internal 2s timeout
 	start := time.Now()
-	err := events.SafePublish(context.Background(), bus, testEvent{typeName: "test_internal_timeout"})
+	err := SafePublish(context.Background(), bus, testEvent{typeName: "test_internal_timeout"})
 	duration := time.Since(start)
 
 	if err == nil {
@@ -661,7 +659,7 @@ func TestSafePublish_InternalTimeout(t *testing.T) {
 
 type respectfulSubscriber struct{}
 
-func (s *respectfulSubscriber) Handle(ctx context.Context, e events.Event) error {
+func (s *respectfulSubscriber) Handle(ctx context.Context, e Event) error {
 	select {
 	case <-time.After(1 * time.Hour):
 		return nil
@@ -674,7 +672,7 @@ func TestSafePublish_NoGoroutineLeak(t *testing.T) {
 	// 1. Capture the initial number of goroutines
 	initial := runtime.NumGoroutine()
 
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := NewSimpleEventBus(context.Background())
 
 	// 2. Create a mock subscriber that simulates a long-running task but respects ctx.Done()
 	sub := &respectfulSubscriber{}
@@ -684,7 +682,7 @@ func TestSafePublish_NoGoroutineLeak(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	err := events.SafePublish(ctx, bus, testEvent{typeName: "leak_test"})
+	err := SafePublish(ctx, bus, testEvent{typeName: "leak_test"})
 
 	// 4. Assert that SafePublish returns a timeout error
 	if err == nil {

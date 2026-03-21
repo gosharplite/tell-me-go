@@ -54,18 +54,18 @@ type SimpleEventBus struct {
 	log               *slog.Logger
 }
 
-// BusOption defines a functional option for configuring the SimpleEventBus.
-type BusOption func(*SimpleEventBus)
+// busOption defines a functional option for configuring the SimpleEventBus.
+type busOption func(*SimpleEventBus)
 
-// WithLogger sets the logger for the SimpleEventBus.
-func WithLogger(l *slog.Logger) BusOption {
+// withLogger sets the logger for the SimpleEventBus.
+func withLogger(l *slog.Logger) busOption {
 	return func(b *SimpleEventBus) {
 		b.log = l
 	}
 }
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus.
-func NewSimpleEventBus(ctx context.Context, opts ...BusOption) *SimpleEventBus {
+func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 	ctx, cancel := context.WithCancel(ctx)
 	b := &SimpleEventBus{
 		subscribers: make(map[string][]Subscriber),
