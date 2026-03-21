@@ -625,3 +625,35 @@ func TestEventTypes(t *testing.T) {
 		}
 	}
 }
+
+func TestSafePublish_InternalTimeout(t *testing.T) {
+	t.Parallel()
+
+	bus := events.NewSimpleEventBus(context.Background())
+	sub := &blockingSubscriber{
+		ready: make(chan struct{}),
+		block: make(chan struct{}),
+	}
+	bus.SubscribeSubscriber("test_internal_timeout", sub)
+
+	// SafePublish with context.Background() should NOT block forever due to internal 2s timeout
+	start := time.Now()
+	err := events.SafePublish(context.Background(), bus, testEvent{typeName: "test_internal_timeout"})
+	duration := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected internal timeout error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "publish timeout") {
+		t.Errorf("expected timeout error message, got %v", err)
+	}
+
+	// We expect roughly 2s, give it some slack for slow CI
+	if duration < 1900*time.Millisecond || duration > 3000*time.Millisecond {
+		t.Errorf("expected ~2s timeout, got %v", duration)
+	}
+
+	// Cleanup
+	close(sub.block)
+}

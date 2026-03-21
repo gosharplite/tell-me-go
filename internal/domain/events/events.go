@@ -304,6 +304,11 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 	if bus == nil {
 		return errBusNotInitialized
 	}
+
+	// Enforce a strict timeout limit internally to prevent deadlocks from stalled subscribers
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
 	ch := make(chan error, 1) // Buffered to prevent leak
 	go func() {
 		ch <- bus.Publish(ctx, event)
