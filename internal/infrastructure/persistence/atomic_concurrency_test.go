@@ -83,18 +83,19 @@ func TestAtomicWrite_EXDEV_Fallback(t *testing.T) {
 		mockFS.files[tempPath] = buf
 		mockFS.mu.Unlock()
 		return &mockFile{
-			name:   tempPath,
-			data:   buf,
-			failOn: make(map[string]error),
+			name: tempPath,
+			data: buf,
 		}, nil
 	}
 
 	// Configure the mock's Rename function to return an explicit cross-device link error
-	mockFS.failOn["Rename"] = &os.LinkError{
-		Op:  "rename",
-		Old: tempPath,
-		New: targetPath,
-		Err: syscall.EXDEV,
+	mockFS.RenameFunc = func(oldpath, newpath string) error {
+		return &os.LinkError{
+			Op:  "rename",
+			Old: tempPath,
+			New: targetPath,
+			Err: syscall.EXDEV,
+		}
 	}
 
 	// Execute an atomic write

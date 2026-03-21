@@ -22,54 +22,96 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		setupMock  func(m *mockFileSystem)
+		setupMock  func() *mockFileSystem
 		wantErr    bool
 		errPattern string
 	}{
 		{
 			name: "MkdirAll fails",
-			setupMock: func(m *mockFileSystem) {
-				m.failOn["MkdirAll"] = errors.New("disk full")
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
+				m.MkdirAllFunc = func(path string, perm os.FileMode) error {
+					return errors.New("disk full")
+				}
+				return m
 			},
 			wantErr:    true,
 			errPattern: "failed to create directory: disk full",
 		},
 		{
 			name: "CreateTemp fails",
-			setupMock: func(m *mockFileSystem) {
-				m.failOn["CreateTemp"] = errors.New("permission denied")
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
+				m.CreateTempFunc = func(dir, pattern string) (File, error) {
+					return nil, errors.New("permission denied")
+				}
+				return m
 			},
 			wantErr:    true,
 			errPattern: "failed to create temp file: permission denied",
 		},
 		{
 			name: "Sync fails",
-			setupMock: func(m *mockFileSystem) {
-				m.failOn["Sync"] = errors.New("I/O error during sync")
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
+				m.CreateTempFunc = func(dir, pattern string) (File, error) {
+					return &mockFile{
+						name: dir + "/temp123",
+						data: new(bytes.Buffer),
+						SyncFunc: func() error {
+							return errors.New("I/O error during sync")
+						},
+					}, nil
+				}
+				return m
 			},
 			wantErr:    true,
 			errPattern: "failed to sync temp file: I/O error during sync",
 		},
 		{
 			name: "Chmod fails",
-			setupMock: func(m *mockFileSystem) {
-				m.failOn["Chmod"] = errors.New("chmod not supported")
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
+				m.CreateTempFunc = func(dir, pattern string) (File, error) {
+					return &mockFile{
+						name: dir + "/temp123",
+						data: new(bytes.Buffer),
+						ChmodFunc: func(mode os.FileMode) error {
+							return errors.New("chmod not supported")
+						},
+					}, nil
+				}
+				return m
 			},
 			wantErr:    true,
 			errPattern: "failed to chmod temp file: chmod not supported",
 		},
 		{
 			name: "Close fails after sync",
-			setupMock: func(m *mockFileSystem) {
-				m.failOn["Close"] = errors.New("close failed")
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
+				m.CreateTempFunc = func(dir, pattern string) (File, error) {
+					return &mockFile{
+						name: dir + "/temp123",
+						data: new(bytes.Buffer),
+						CloseFunc: func() error {
+							return errors.New("close failed")
+						},
+					}, nil
+				}
+				return m
 			},
 			wantErr:    true,
 			errPattern: "failed to close temp file: close failed",
 		},
 		{
 			name: "Rename fails (not EXDEV)",
-			setupMock: func(m *mockFileSystem) {
-				m.failOn["Rename"] = errors.New("rename denied")
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
+				m.RenameFunc = func(oldpath, newpath string) error {
+					return errors.New("rename denied")
+				}
+				return m
 			},
 			wantErr:    true,
 			errPattern: "failed to rename temp file: rename denied",
@@ -78,39 +120,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := newMockFS()
-			if tt.setupMock != nil {
-				tt.setupMock(m)
-			}
-
-			// Special handling for my mock: inject sync/chmod errors into CreateTemp files
-			m.CreateTempFunc = func(dir, pattern string) (File, error) {
-				if err := m.failOn["CreateTemp"]; err != nil {
-					return nil, err
-				}
-				name := dir + "/temp123"
-				mf := &mockFile{
-					name:   name,
-					data:   new(bytes.Buffer),
-					failOn: make(map[string]error),
-				}
-				if err := m.failOn["Sync"]; err != nil {
-					mf.failOn["Sync"] = err
-				}
-				if err := m.failOn["Chmod"]; err != nil {
-					mf.failOn["Chmod"] = err
-				}
-				if err := m.failOn["Close"]; err != nil {
-					mf.failOn["Close"] = err
-				}
-
-				// Ensure the file is added to the mock fs files map
-				m.mu.Lock()
-				m.files[name] = mf.data
-				m.mu.Unlock()
-
-				return mf, nil
-			}
+			m := tt.setupMock()
 
 			err := AtomicWrite(ctx, m, path, data, 0644)
 
@@ -136,8 +146,8 @@ func TestAtomicWrite_DiskFull(t *testing.T) {
 		mf := &mockFile{
 			name: dir + "/temp123",
 			data: new(bytes.Buffer),
-			failOn: map[string]error{
-				"Write": syscall.ENOSPC,
+			WriteFunc: func(p []byte) (n int, err error) {
+				return 0, syscall.ENOSPC
 			},
 		}
 		return mf, nil
@@ -193,15 +203,16 @@ func TestAtomicWrite_EXDEVFallback(t *testing.T) {
 	targetPath := "/mnt/external/file.txt"
 
 	// Configure Rename to return EXDEV
-	m.failOn["Rename"] = syscall.EXDEV
+	m.RenameFunc = func(oldpath, newpath string) error {
+		return syscall.EXDEV
+	}
 
 	// We need to make sure CreateTemp works and adds to files map for OpenFile to find it
 	m.CreateTempFunc = func(dir, pattern string) (File, error) {
 		name := dir + "/temp123"
 		mf := &mockFile{
-			name:   name,
-			data:   new(bytes.Buffer),
-			failOn: make(map[string]error),
+			name: name,
+			data: new(bytes.Buffer),
 		}
 		m.mu.Lock()
 		m.files[name] = mf.data
@@ -231,58 +242,65 @@ func TestAtomicWrite_EXDEVFallback(t *testing.T) {
 func TestFallbackCopy_Errors(t *testing.T) {
 	tests := []struct {
 		name          string
-		setupMock     func(m *mockFileSystem)
+		setupMock     func() *mockFileSystem
 		wantErr       bool
 		errContains   string
 		expectRemoved string
 	}{
 		{
 			name: "OpenFile source fails",
-			setupMock: func(m *mockFileSystem) {
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
 				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
 					if name == "/src" {
 						return nil, errors.New("open source failed")
 					}
 					return nil, os.ErrNotExist
 				}
+				return m
 			},
 			wantErr:     true,
 			errContains: "fallback: failed to open source",
 		},
 		{
 			name: "OpenFile destination fails",
-			setupMock: func(m *mockFileSystem) {
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
 				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
 					if name == "/src" {
-						return &mockFile{name: name, data: new(bytes.Buffer), failOn: make(map[string]error)}, nil
+						return &mockFile{name: name, data: new(bytes.Buffer)}, nil
 					}
 					if name == "/dst" {
 						return nil, errors.New("open destination failed")
 					}
 					return nil, os.ErrNotExist
 				}
+				return m
 			},
 			wantErr:     true,
 			errContains: "fallback: failed to open destination",
 		},
 		{
 			name: "io.Copy fails",
-			setupMock: func(m *mockFileSystem) {
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
 				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
 					data := new(bytes.Buffer)
 					if name == "/src" {
 						data.Write([]byte("some data"))
 					}
 					mf := &mockFile{
-						name:   name,
-						data:   data,
-						failOn: make(map[string]error),
+						name: name,
+						data: data,
 					}
 					if name == "/dst" {
-						mf.failOn["Write"] = errors.New("copy failed")
+						mf.WriteFunc = func(p []byte) (n int, err error) {
+							return 0, errors.New("copy failed")
+						}
 					}
 					return mf, nil
 				}
+				return m
 			},
 			wantErr:       true,
 			errContains:   "fallback: failed to copy data",
@@ -290,18 +308,21 @@ func TestFallbackCopy_Errors(t *testing.T) {
 		},
 		{
 			name: "Sync fails",
-			setupMock: func(m *mockFileSystem) {
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
 				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
 					mf := &mockFile{
-						name:   name,
-						data:   new(bytes.Buffer),
-						failOn: make(map[string]error),
+						name: name,
+						data: new(bytes.Buffer),
 					}
 					if name == "/dst" {
-						mf.failOn["Sync"] = errors.New("sync failed")
+						mf.SyncFunc = func() error {
+							return errors.New("sync failed")
+						}
 					}
 					return mf, nil
 				}
+				return m
 			},
 			wantErr:       true,
 			errContains:   "fallback: failed to sync destination",
@@ -309,21 +330,24 @@ func TestFallbackCopy_Errors(t *testing.T) {
 		},
 		{
 			name: "Close fails on success",
-			setupMock: func(m *mockFileSystem) {
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
 				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
 					mf := &mockFile{
-						name:   name,
-						data:   new(bytes.Buffer),
-						failOn: make(map[string]error),
+						name: name,
+						data: new(bytes.Buffer),
 					}
 					if name == "/src" {
 						mf.data.Write([]byte("data"))
 					}
 					if name == "/dst" {
-						mf.failOn["Close"] = errors.New("close failed")
+						mf.CloseFunc = func() error {
+							return errors.New("close failed")
+						}
 					}
 					return mf, nil
 				}
+				return m
 			},
 			wantErr:     true,
 			errContains: "close failed",
@@ -332,10 +356,7 @@ func TestFallbackCopy_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := newMockFS()
-			if tt.setupMock != nil {
-				tt.setupMock(m)
-			}
+			m := tt.setupMock()
 
 			err := fallbackCopy(m, "/src", "/dst", 0644)
 

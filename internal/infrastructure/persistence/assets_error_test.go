@@ -15,26 +15,28 @@ import (
 // mockAssetFS implements domain.FileSystem for testing AssetStore error paths.
 type mockAssetFS struct {
 	domain.FileSystem
-	failOn map[string]error
+	MkdirAllFunc  func(ctx context.Context, path string, perm os.FileMode) error
+	WriteFileFunc func(ctx context.Context, name string, data []byte, perm os.FileMode) error
+	StatFunc      func(ctx context.Context, name string) (os.FileInfo, error)
 }
 
 func (m *mockAssetFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
-	if err := m.failOn["MkdirAll"]; err != nil {
-		return err
+	if m.MkdirAllFunc != nil {
+		return m.MkdirAllFunc(ctx, path, perm)
 	}
 	return nil
 }
 
 func (m *mockAssetFS) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
-	if err := m.failOn["WriteFile"]; err != nil {
-		return err
+	if m.WriteFileFunc != nil {
+		return m.WriteFileFunc(ctx, name, data, perm)
 	}
 	return nil
 }
 
 func (m *mockAssetFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
-	if err := m.failOn["Stat"]; err != nil {
-		return nil, err
+	if m.StatFunc != nil {
+		return m.StatFunc(ctx, name)
 	}
 	return nil, os.ErrNotExist
 }
@@ -45,22 +47,30 @@ func TestAssetStore_ErrorHandling(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		failOn    map[string]error
+		setupMock func() *mockAssetFS
 		wantErr   bool
 		errString string
 	}{
 		{
 			name: "MkdirAll fails",
-			failOn: map[string]error{
-				"MkdirAll": errors.New("mkdir failed"),
+			setupMock: func() *mockAssetFS {
+				return &mockAssetFS{
+					MkdirAllFunc: func(ctx context.Context, path string, perm os.FileMode) error {
+						return errors.New("mkdir failed")
+					},
+				}
 			},
 			wantErr:   true,
 			errString: "mkdir failed",
 		},
 		{
 			name: "WriteFile fails",
-			failOn: map[string]error{
-				"WriteFile": errors.New("write failed"),
+			setupMock: func() *mockAssetFS {
+				return &mockAssetFS{
+					WriteFileFunc: func(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+						return errors.New("write failed")
+					},
+				}
 			},
 			wantErr:   true,
 			errString: "write failed",
@@ -69,9 +79,7 @@ func TestAssetStore_ErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &mockAssetFS{
-				failOn: tt.failOn,
-			}
+			m := tt.setupMock()
 			store := NewAssetStore(m, "/tmp/assets")
 
 			_, err := store.Put(ctx, data)
