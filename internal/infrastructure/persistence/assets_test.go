@@ -171,13 +171,3 @@ func createTestAsset(t *testing.T, store *AssetStore, content []byte) string {
 	}
 	return id
 }
-
-func TestAssetStore_WithFileSystem(t *testing.T) {
-	t.Parallel()
-	tmpDir := t.TempDir()
-	fs := NewOSFileSystem()
-	store := NewAssetStore(fs, tmpDir).WithFileSystem(fs)
-	if store.fs != fs {
-		t.Error("WithFileSystem failed to set filesystem")
-	}
-}

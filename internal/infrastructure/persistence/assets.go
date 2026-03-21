@@ -28,12 +28,6 @@ func NewAssetStore(fs persistence.FileSystem, baseDir string) *AssetStore {
 	}
 }
 
-// WithFileSystem sets the filesystem implementation.
-func (s *AssetStore) WithFileSystem(fs persistence.FileSystem) *AssetStore {
-	s.fs = fs
-	return s
-}
-
 // Put saves the data and returns its SHA-256 hash as the ID.
 func (s *AssetStore) Put(ctx context.Context, data []byte) (string, error) {
 	if len(data) == 0 {
