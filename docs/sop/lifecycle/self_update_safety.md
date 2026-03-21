@@ -31,11 +31,11 @@ When modifying a Core Entry Point:
 0.  **Initialize Tasks**: Use `manage_tasks` to add a "SOP Compliance: self_update_safety.md" anchor task.
 1.  **Read and Analyze**: Perform a full read of the file and its dependencies using `read_file` and `get_package_graph`.
 2.  **Incremental Changes**: Apply changes using `replace_text` for precision. Avoid overwriting entire files if possible.
-3.  **State Sync (Atomic Turn)**: After the modification, immediately tick the corresponding checklist item in the `scratchpad`.
+3.  **State Sync (Atomic Turn)**: After the modification, immediately tick the corresponding checklist item in the `task list`.
 4.  **Syntax Validation**: Immediately run `go fmt` and `go vet` on the package.
 5.  **Compilation Check**: Run `go build ./...`. **If build fails, the agent MUST immediately rollback the change using `git checkout` or by manually reverting the text.**
 6.  **Test Verification**: Run `go test -race ./internal/agent/...` (or relevant package).
-7.  **Final State Verification**: Read the task list and scratchpad to confirm all safety steps were completed and verified.
+7.  **Final State Verification**: Read the task list to confirm all safety steps were completed and verified.
 
 #### 3. Protection Against Infinite Loops
 If modifying the orchestration loop in `internal/agent/turn_engine.go` or `internal/agent/orchestration`:

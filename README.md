@@ -23,7 +23,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Deep Analysis**: High-level tools for `verify_architecture` (Hexagonal/Clean Architecture checks), `get_code_health`, and `analyze_sequence_flow` (Mermaid sequence diagrams).
     *   **Enterprise**: Deep integration with **Jira** (search/get), **Confluence** (search/read/write), **Azure DevOps** (PRs, Repos, Pipeline creation/runs/logs), and **Teams**.
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
-    *   **State & History**: Scratchpad, task tracking, `summarize_history`, and `manage_history` (pinning/unpinning turns to protect them from pruning).
+    *   **State & History**: Task tracking, `summarize_history`, and `manage_history` (pinning/unpinning turns to protect them from pruning).
     *   **Media**: Imagen 3 image generation and Vision analysis.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
@@ -32,7 +32,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Resilience**: Real-time USD cost auditing, deterministic budgets, and descriptive API error handling.
 *   **Persistence & Recovery**: 
     *   **Durability**: Automatic history saving with built-in **Auto-Repair** for crash resilience and session continuity.
-    *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks, scratchpads, and authorized paths).
+    *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks and authorized paths).
 
 ## 📋 Prerequisites
 *   **Go**: 1.26 or higher.

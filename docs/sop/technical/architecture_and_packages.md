@@ -123,7 +123,6 @@ To prevent context leakage between different environments, the application imple
     - `output/<MODE>/config.json`: Persistent key-value settings.
     - `output/<MODE>/safepaths.json`: Authorized directory permissions.
     - `output/<MODE>/tasks.json`: Persistent task list.
-    - `output/<MODE>/scratchpad.md`: Working memory.
 
 ---
 

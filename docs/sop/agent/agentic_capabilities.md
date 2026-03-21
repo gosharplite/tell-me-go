@@ -28,7 +28,7 @@ Every tool must be defined using a standard JSON schema that matches the Gemini 
     - **Analysis** (`internal/tools/analysis`): `find_usages`, `get_type_info`, `get_semantic_diff`, `rename_symbol`, `generate_mermaid_diagram`, etc.
     - **Developer** (`internal/tools/developer`): `run_tests`, `run_linter`, `go_tidy`, `get_coverage`, `check_vulnerabilities`, `verify_architecture`, etc.
     - **Integrations** (`internal/tools/integrations`): `send_teams_message`, Atlassian Stack (`jira_search_issues`, `confluence_read`, etc.), Azure DevOps (`ado_list_pull_requests`, etc.), and Network tools (`http_request`, `read_external_docs`).
-    - **State/System**: `get_session_info`, `manage_scratchpad`, `manage_tasks`, `manage_config`, `summarize_history`, `manage_history`, and security tools (`register_safepath`, `bypass_confirmation`).
+    - **State/System**: `get_session_info`, `manage_tasks`, `summarize_history`, `manage_history`, and security tools (`register_safepath`, `bypass_confirmation`).
 - **Validation**: Every tool must have a `description` and a clear `parameters` schema using `genai.FunctionDeclaration`.
 
 #### 2. The Orchestration Loop
@@ -58,11 +58,11 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
 The agent must monitor resource limits during the orchestration loop to allow the AI to fail gracefully.
 - **Turn Limits**: When the current turn count is close to `MAX_TURNS` (e.g., 3, 2, or 1 turns remaining), the agent must inject escalating **System Notices** into the model's volatile history.
 - **Token Limits**: When the payload estimate exceeds **90%** or **95%** of `MAX_HISTORY_TOKENS`, the agent must inject an urgent warning.
-- **Persistence Request**: These warnings should explicitly instruct the AI to use `manage_scratchpad` and `manage_tasks` to save its work before execution is cut off. Note that these tools are **scoped to the current configuration MODE** (e.g., `output/<MODE>/tasks.json`), allowing for context isolation.
+- **Persistence Request**: These warnings should explicitly instruct the AI to use `manage_tasks` or `manage_history` (pin) to save its work before execution is cut off. Note that these tools are **scoped to the current configuration MODE** (e.g., `output/<MODE>/tasks.json`), allowing for context isolation.
 - **Volatile Injection**: Injected warnings must only exist in the API payload and **must not** be saved to the persistent history file on disk to prevent "context rot."
 
 #### 4. Security and Safety
-- **Thread Safety**: Since tools are executed in parallel, any tool that modifies shared state (e.g., `manage_tasks`, `manage_scratchpad`) MUST use synchronization primitives like `sync.Mutex` to prevent race conditions.
+- **Thread Safety**: Since tools are executed in parallel, any tool that modifies shared state (e.g., `manage_tasks`) MUST use synchronization primitives like `sync.Mutex` to prevent race conditions.
 - **Atomic Writes**: Tools that update files MUST use an atomic write pattern (writing to a temporary file and then renaming it) to ensure file integrity in case of crashes or concurrent access.
 - **Robust Parsing**: Tools that load persistent state (JSON, YAML) MUST handle corruption gracefully, typically by resetting to a clean state or attempting partial recovery, to prevent the agent from becoming stuck due to a malformed file.
 - **Path Sanitization**: Every tool accessing the filesystem MUST call `tools.IsPathSafe(path)`. This function MUST:
