@@ -69,9 +69,8 @@ func TestZombieTool_Monitor(t *testing.T) {
 		start := time.Now()
 		timeout := 100 * time.Millisecond
 
-		// Send value to outCh after a short delay
+		// Send value to outCh immediately
 		go func() {
-			time.Sleep(10 * time.Millisecond)
 			outCh <- ToolOutput{}
 		}()
 

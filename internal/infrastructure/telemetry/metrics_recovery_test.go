@@ -127,19 +127,11 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 	// Since it's in background, we might need to wait a bit
 	historyPath := filepath.Join(tempDir, "global_costs.json")
 
-	// Poll for file existence
-	success := false
-	for i := 0; i < 50; i++ {
-		if _, err := os.Stat(historyPath); err == nil {
-			success = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	if !success {
-		t.Errorf("global_costs.json should have been created by background recovery despite cancelled parent context")
-	}
+	// Wait for background recovery to create the global_costs.json file
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(historyPath)
+		return err == nil
+	}, 1*time.Second, 10*time.Millisecond, "global_costs.json should have been created by background recovery")
 }
 
 func TestRecoverLedger_TableDriven(t *testing.T) {

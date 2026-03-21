@@ -199,32 +199,25 @@ func TestSimpleEventBus_Race(t *testing.T) {
 	defer func() { _ = bus.Shutdown(ctx) }()
 
 	var wg sync.WaitGroup
-	stop := make(chan struct{})
 
+	// Publisher loop
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-				_ = bus.Publish(ctx, events.StatusUpdate{Message: "test"})
-			}
+		for i := 0; i < 1000; i++ {
+			_ = bus.Publish(ctx, events.StatusUpdate{Message: "test"})
 		}
 	}()
 
+	// Subscriber loop
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 100; i++ {
 			bus.Subscribe(func(ctx context.Context, e events.Event) {})
-			time.Sleep(time.Microsecond)
 		}
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-	close(stop)
 	wg.Wait()
 }
 
@@ -238,9 +231,8 @@ func TestSimpleEventBus_Deadlock(t *testing.T) {
 	bus.SubscribeSubscriber("StatusUpdate", sub)
 
 	go func() {
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 100; i++ {
 			bus.Subscribe(func(ctx context.Context, e events.Event) {})
-			time.Sleep(time.Microsecond)
 		}
 	}()
 

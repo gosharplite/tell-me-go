@@ -594,7 +594,10 @@ func TestSendChat_Errors(t *testing.T) {
 
 func TestSendChat_Timeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(500 * time.Millisecond):
+		}
 	}))
 	defer server.Close()
 

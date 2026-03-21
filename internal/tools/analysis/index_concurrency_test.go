@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestIndexer_Concurrency(t *testing.T) {
@@ -96,6 +95,5 @@ func runRefreshLoop(ctx context.Context, idx *indexer, iterations int, t *testin
 		if err := idx.Refresh(ctx); err != nil {
 			t.Errorf("Refresh error: %v", err)
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }

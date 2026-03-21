@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -144,11 +145,19 @@ func TestServiceAccountAuth(t *testing.T) {
 
 func TestVertexAuth_Concurrency(t *testing.T) {
 	ctx := context.Background()
+	var calls int32
+	inFunc := make(chan struct{})
+	release := make(chan struct{})
+
 	auth := &VertexAuth{
 		CacheDir: t.TempDir(),
 		tokenCmdFunc: func() ([]byte, error) {
-			// Simulate some work
-			time.Sleep(10 * time.Millisecond)
+			atomic.AddInt32(&calls, 1)
+			select {
+			case inFunc <- struct{}{}:
+			default:
+			}
+			<-release
 			return []byte("concurrent-token"), nil
 		},
 	}
@@ -167,10 +176,17 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 		}()
 	}
 
+	<-inFunc
+	close(release)
+
 	for i := 0; i < n; i++ {
 		if err := <-errChan; err != nil {
 			t.Errorf("concurrency error: %v", err)
 		}
+	}
+
+	if atomic.LoadInt32(&calls) != 1 {
+		t.Errorf("expected only 1 call, got %d", calls)
 	}
 }
 
@@ -265,11 +281,18 @@ func testSA_ErrorHandling(t *testing.T) {
 
 func testSA_ThreadSafety(t *testing.T) {
 	ctx := context.Background()
-	callCount := 0
+	var calls int32
+	inFunc := make(chan struct{})
+	release := make(chan struct{})
+
 	auth := &ServiceAccountAuth{
 		tokenSourceFunc: func() (*oauth2.Token, error) {
-			time.Sleep(10 * time.Millisecond) // Ensure overlap
-			callCount++
+			atomic.AddInt32(&calls, 1)
+			select {
+			case inFunc <- struct{}{}:
+			default:
+			}
+			<-release
 			return &oauth2.Token{
 				AccessToken: "concurrent-token",
 				Expiry:      time.Now().Add(1 * time.Hour),
@@ -286,10 +309,13 @@ func testSA_ThreadSafety(t *testing.T) {
 			_, _ = auth.getToken(ctx)
 		}()
 	}
+
+	<-inFunc
+	close(release)
 	wg.Wait()
 
-	if callCount != 1 {
-		t.Errorf("expected only 1 call to tokenSourceFunc, got %d", callCount)
+	if atomic.LoadInt32(&calls) != 1 {
+		t.Errorf("expected only 1 call to tokenSourceFunc, got %d", calls)
 	}
 }
 
