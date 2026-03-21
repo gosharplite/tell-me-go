@@ -248,10 +248,10 @@ func TestToolExecutor_SafetyLimits(t *testing.T) {
 	t.Run("Tool Timeout", func(t *testing.T) {
 		t.Parallel()
 		toolsMap := map[string]toolBehavior{
-			"slow": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "too late"}},
+			"slow": {delay: 500 * time.Millisecond, result: tools.ToolResult{Text: "too late"}},
 		}
 		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(0, 10*time.Millisecond)
+		exec.SetConcurrency(0, 50*time.Millisecond)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "slow"}},
@@ -287,7 +287,7 @@ func TestToolExecutor_SafetyLimits(t *testing.T) {
 			"long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "finally finished"}, long: true},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(0, 10*time.Millisecond)
+		exec.SetConcurrency(0, 50*time.Millisecond)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "long_tool"}},
@@ -364,9 +364,9 @@ func TestToolExecutor_Concurrency(t *testing.T) {
 	t.Run("Concurrency Limit", func(t *testing.T) {
 		t.Parallel()
 		toolsMap := map[string]toolBehavior{
-			"t1": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r1"}},
-			"t2": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r2"}},
-			"t3": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r3"}},
+			"t1": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "r1"}},
+			"t2": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "r2"}},
+			"t3": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "r3"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		exec.SetConcurrency(1, 0)
@@ -982,10 +982,10 @@ func TestToolExecutor_ContextCancellation_Parallel(t *testing.T) {
 					close(toolStarted)
 				}
 			},
-			delay: 50 * time.Millisecond,
+			delay: 100 * time.Millisecond,
 		},
-		"tool2": {delay: 50 * time.Millisecond},
-		"tool3": {delay: 50 * time.Millisecond},
+		"tool2": {delay: 100 * time.Millisecond},
+		"tool3": {delay: 100 * time.Millisecond},
 	}
 	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 	// Limit concurrency so tool3 is queued and picked up after context is cancelled
@@ -1022,7 +1022,7 @@ func TestToolExecutor_ContextCancellation_Parallel(t *testing.T) {
 func TestToolExecutor_ContextCancellation_Direct(t *testing.T) {
 	t.Parallel()
 	toolsMap := map[string]toolBehavior{
-		"tool1": {delay: 50 * time.Millisecond},
+		"tool1": {delay: 100 * time.Millisecond},
 	}
 	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 	exec.SetConcurrency(1, 0)
@@ -1107,9 +1107,9 @@ func TestToolExecutor_LongRunningTimeout(t *testing.T) {
 	t.Run("Long Running Tool - Timeout Exceeded", func(t *testing.T) {
 		t.Parallel()
 		toolsMap := map[string]toolBehavior{
-			"very_long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "too late"}, long: true},
+			"very_long_tool": {delay: 500 * time.Millisecond, result: tools.ToolResult{Text: "too late"}, long: true},
 		}
-		exec, _, _ := setupTestExecutor(t, toolsMap, nil, WithLongRunningTimeout(10*time.Millisecond))
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil, WithLongRunningTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "very_long_tool"}},
@@ -1119,7 +1119,7 @@ func TestToolExecutor_LongRunningTimeout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		verifyErrorResponse(t, resp, "Tool execution timed out after 10ms")
+		verifyErrorResponse(t, resp, "Tool execution timed out after 50ms")
 	})
 }
 
@@ -1134,7 +1134,7 @@ func TestToolExecutor_ZombieTool(t *testing.T) {
 	}, registry.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(10*time.Millisecond))
+	exec, err := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)
@@ -1149,7 +1149,7 @@ func TestToolExecutor_ZombieTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	verifyErrorResponse(t, resp, "Tool execution timed out after 10ms")
+	verifyErrorResponse(t, resp, "Tool execution timed out after 50ms")
 
 	// The stubborn tool is still running in the background...
 	// We can't easily wait for it without some signaling mechanism in the tool,

@@ -58,7 +58,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 	// mock the toolTimeout since NewToolExecutor sets it to default
-	exec.toolTimeout = 5 * time.Millisecond
+	exec.toolTimeout = 50 * time.Millisecond
 
 	ctx := context.Background()
 
@@ -94,11 +94,11 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 
 	// Use very short zombie timeout
 	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
-		withZombieTimeout(1*time.Millisecond),
+		withZombieTimeout(50*time.Millisecond),
 	)
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
-	exec.toolTimeout = 1 * time.Millisecond
+	exec.toolTimeout = 50 * time.Millisecond
 
 	hangingTool := &domaintools.ToolDeclaration{Name: "hanging_tool"}
 
