@@ -111,12 +111,12 @@ func isCrossDeviceError(err error) bool {
 	return strings.Contains(err.Error(), "cross-device link")
 }
 
-func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) error {
+func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) (err error) {
 	src, err := fs.OpenFile(srcPath, os.O_RDONLY, 0)
 	if err != nil {
 		return fmt.Errorf("fallback: failed to open source: %w", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	// Open destination for writing, truncating if it already exists
 	dst, err := fs.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
@@ -126,7 +126,9 @@ func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) erro
 
 	success := false
 	defer func() {
-		_ = dst.Close()
+		if closeErr := dst.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
 		if !success {
 			_ = fs.Remove(dstPath)
 		}
@@ -138,10 +140,6 @@ func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) erro
 
 	if err := dst.Sync(); err != nil {
 		return fmt.Errorf("fallback: failed to sync destination: %w", err)
-	}
-
-	if err := dst.Close(); err != nil {
-		return fmt.Errorf("fallback: failed to close destination: %w", err)
 	}
 
 	success = true

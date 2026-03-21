@@ -58,7 +58,7 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 			// Return multiple tool calls in parallel. 
 			// manage_tasks and manage_config are registered as non-serial,
 			// so they will execute concurrently in the ToolExecutor.
-			resp := fmt.Sprintf(`{
+			resp := `{
 				"candidates": [{
 					"content": {
 						"role": "model",
@@ -70,7 +70,7 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 						]
 					}
 				}]
-			}`)
+			}`
 			_, _ = fmt.Fprint(w, resp)
 		}
 	}))

@@ -143,7 +143,7 @@ func TestAtomicWrite_OSPermissionDenied(t *testing.T) {
 	if err := os.Chmod(targetDir, 0555); err != nil {
 		t.Fatalf("failed to chmod target dir: %v", err)
 	}
-	defer os.Chmod(targetDir, 0755) // Clean up permissions so TempDir can be removed
+	defer func() { _ = os.Chmod(targetDir, 0755) }() // Clean up permissions so TempDir can be removed
 
 	fs := &OSFileSystem{}
 	err := AtomicWrite(context.Background(), fs, targetDir+"/test.txt", []byte("data"), 0644)
