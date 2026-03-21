@@ -30,8 +30,8 @@ type Subscriber interface {
 }
 
 var (
-	errBusClosed         = errors.New("event bus is closed")
-	errBusNotInitialized = errors.New("event bus is nil or uninitialized")
+	ErrBusClosed         = errors.New("event bus is closed")
+	ErrBusNotInitialized = errors.New("event bus is nil or uninitialized")
 )
 
 // EventBus defines the interface for publishing and subscribing to events.
@@ -54,18 +54,18 @@ type SimpleEventBus struct {
 	log               *slog.Logger
 }
 
-// busOption defines a functional option for configuring the SimpleEventBus.
-type busOption func(*SimpleEventBus)
+// BusOption defines a functional option for configuring the SimpleEventBus.
+type BusOption func(*SimpleEventBus)
 
-// withLogger sets the logger for the SimpleEventBus.
-func withLogger(l *slog.Logger) busOption {
+// WithLogger sets the logger for the SimpleEventBus.
+func WithLogger(l *slog.Logger) BusOption {
 	return func(b *SimpleEventBus) {
 		b.log = l
 	}
 }
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus.
-func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
+func NewSimpleEventBus(ctx context.Context, opts ...BusOption) *SimpleEventBus {
 	ctx, cancel := context.WithCancel(ctx)
 	b := &SimpleEventBus{
 		subscribers: make(map[string][]Subscriber),
@@ -82,7 +82,7 @@ func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 	return b
 }
 
-func (b *SimpleEventBus) logger() *slog.Logger {
+func (b *SimpleEventBus) Logger() *slog.Logger {
 	if b == nil || b.log == nil {
 		return slog.Default()
 	}
@@ -91,7 +91,7 @@ func (b *SimpleEventBus) logger() *slog.Logger {
 
 func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	if b == nil {
-		return errBusNotInitialized
+		return ErrBusNotInitialized
 	}
 
 	select {
@@ -103,7 +103,7 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
-		return errBusClosed
+		return ErrBusClosed
 	}
 
 	// 1. Safely copy the subscriber slices while holding the read lock.
@@ -136,7 +136,7 @@ func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, e
 			stack := string(debug.Stack())
 
 			// 1. Emit structured log with context
-			b.logger().ErrorContext(ctx, "Subscriber panicked during event handling",
+			b.Logger().ErrorContext(ctx, "Subscriber panicked during event handling",
 				slog.String("subscriber_type", subType),
 				slog.String("event_type", eventType),
 				slog.Any("panic_reason", r),
@@ -176,8 +176,8 @@ func (b *SimpleEventBus) Subscribe(sub func(context.Context, Event)) {
 	b.globalSubscribers = append(b.globalSubscribers, &funcSubscriber{f: sub})
 }
 
-// subscribeGlobal registers a Subscriber that receives all events.
-func (b *SimpleEventBus) subscribeGlobal(sub Subscriber) {
+// SubscribeGlobal registers a Subscriber that receives all events.
+func (b *SimpleEventBus) SubscribeGlobal(sub Subscriber) {
 	if b == nil || sub == nil {
 		return
 	}
@@ -192,8 +192,8 @@ func (b *SimpleEventBus) subscribeGlobal(sub Subscriber) {
 	b.globalSubscribers = append(b.globalSubscribers, sub)
 }
 
-// subscribeSubscriber registers a Subscriber for a specific event type.
-func (b *SimpleEventBus) subscribeSubscriber(eventType string, sub Subscriber) {
+// SubscribeSubscriber registers a Subscriber for a specific event type.
+func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 	if b == nil || sub == nil {
 		return
 	}
@@ -211,7 +211,7 @@ func (b *SimpleEventBus) subscribeSubscriber(eventType string, sub Subscriber) {
 // Shutdown gracefully stops the event bus.
 func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	if b == nil {
-		return errBusNotInitialized
+		return ErrBusNotInitialized
 	}
 
 	b.mu.Lock()
@@ -226,12 +226,12 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 // Flush is a no-op as this implementation is synchronous.
 func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	if b == nil {
-		return errBusNotInitialized
+		return ErrBusNotInitialized
 	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	if b.closed {
-		return errBusClosed
+		return ErrBusClosed
 	}
 	return nil
 }
@@ -303,7 +303,7 @@ type TraceEvent struct {
 // It returns an error if the context is cancelled or the publication fails (e.g., buffer overflow).
 func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 	if bus == nil {
-		return errBusNotInitialized
+		return ErrBusNotInitialized
 	}
 
 	// Enforce a strict timeout limit internally to prevent deadlocks from stalled subscribers
@@ -322,8 +322,8 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 		err := fmt.Errorf("publish timeout for event %s: %w", event.Type(), ctx.Err())
 
 		logger := slog.Default()
-		if l, ok := bus.(interface{ logger() *slog.Logger }); ok {
-			logger = l.logger()
+		if l, ok := bus.(interface{ Logger() *slog.Logger }); ok {
+			logger = l.Logger()
 		}
 
 		// 1. Emit structured log with context ensuring visibility even if caller drops the error

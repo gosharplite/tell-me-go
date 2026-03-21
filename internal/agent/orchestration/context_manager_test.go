@@ -448,3 +448,14 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 		require.Contains(t, err.Error(), "invalid content at index 0")
 	})
 }
+
+func TestContextManager_WithLogger(t *testing.T) {
+	var buf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	history := &mockHistoryManager{}
+
+	cm := NewContextManager(strategy, history, nil, nil, WithLogger(testLogger))
+
+	assert.Equal(t, testLogger, cm.logger)
+}

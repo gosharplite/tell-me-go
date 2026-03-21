@@ -86,7 +86,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 
 		gw := new(mockGateway)
 		bus := new(mockEventBus)
-		s := NewSummarizer(gw, bus, withLogger(testLogger))
+		s := NewSummarizer(gw, bus, WithLogger(testLogger))
 
 		respCh := make(chan *llm.Content)
 		close(respCh)
@@ -153,7 +153,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 		testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 		gw := new(mockGateway)
-		s := NewSummarizer(gw, nil, withLogger(testLogger))
+		s := NewSummarizer(gw, nil, WithLogger(testLogger))
 
 		respCh := make(chan *llm.Content)
 		close(respCh)
@@ -227,4 +227,17 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "empty content")
 	})
+}
+
+func TestSummarizer_WithLogger(t *testing.T) {
+	var buf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+	gw := new(mockGateway)
+	bus := new(mockEventBus)
+
+	// NewSummarizer returns ports.Summarizer, which is an interface.
+	// We can cast it back to the underlying *summarizer for testing.
+	s := NewSummarizer(gw, bus, WithLogger(testLogger)).(*summarizer)
+
+	assert.Equal(t, testLogger, s.logger)
 }

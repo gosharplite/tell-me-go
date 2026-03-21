@@ -22,7 +22,7 @@ type summarizer struct {
 }
 
 // NewSummarizer creates a new summarization service.
-func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...summarizerOption) ports.Summarizer {
+func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...SummarizerOption) ports.Summarizer {
 	s := &summarizer{
 		gateway: g,
 		events:  bus,
@@ -36,11 +36,11 @@ func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...summarizerOpti
 	return s
 }
 
-// summarizerOption defines a functional option for configuring the summarizer.
-type summarizerOption func(*summarizer)
+// SummarizerOption defines a functional option for configuring the summarizer.
+type SummarizerOption func(*summarizer)
 
-// withLogger sets the logger for the summarizer.
-func withLogger(l *slog.Logger) summarizerOption {
+// WithLogger sets the logger for the summarizer.
+func WithLogger(l *slog.Logger) SummarizerOption {
 	return func(s *summarizer) {
 		s.logger = l
 	}
