@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -103,7 +104,7 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, event Event) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("subscriber panicked: %v", r)
+			err = fmt.Errorf("subscriber panicked: %v\n%s", r, debug.Stack())
 		}
 	}()
 
@@ -244,13 +245,21 @@ type TraceEvent struct {
 
 // SafePublish attempts to publish an event with a forced timeout.
 // It returns an error if the context is cancelled or the publication fails (e.g., buffer overflow).
-func SafePublish(ctx context.Context, bus EventBus, e Event, timeout time.Duration) error {
+func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 	if bus == nil {
 		return errBusNotInitialized
 	}
-	pubCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	return bus.Publish(pubCtx, e)
+	ch := make(chan error, 1) // Buffered to prevent leak
+	go func() {
+		ch <- bus.Publish(ctx, event)
+	}()
+
+	select {
+	case err := <-ch:
+		return err
+	case <-ctx.Done():
+		return fmt.Errorf("publish timeout for event %s: %w", event.Type(), ctx.Err())
+	}
 }
 
 func (e StatusUpdate) Type() string { return "StatusUpdate" }

@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -22,7 +21,7 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			if turn.State.Phase == phaseInference && e.events != nil {
 				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
-					_ = events.SafePublish(ctx, e.events, events.ResponseStreamEvent{Context: ctx, Stream: stream}, 2*time.Second)
+					_ = events.SafePublish(ctx, e.events, events.ResponseStreamEvent{Context: ctx, Stream: stream})
 				}
 			}
 			return next.process(ctx, turn)
@@ -76,7 +75,7 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 						TotalH:           totalH,
 						TotalO:           totalO,
 					},
-				}, 2*time.Second)
+				})
 			}
 			return res, nil
 		})
@@ -102,7 +101,7 @@ func (e *turnEngine) WithMetrics() turnMiddleware {
 					Context:   ctx,
 					Metrics:   turn.State.Metrics,
 					StartTime: turn.StartTime,
-				}, 2*time.Second)
+				})
 			}
 			return res, err
 		})

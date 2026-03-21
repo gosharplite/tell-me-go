@@ -42,6 +42,25 @@ func (s *panicSubscriber) Handle(ctx context.Context, e events.Event) error {
 	panic(s.msg)
 }
 
+type blockingSubscriber struct {
+	ready chan struct{}
+	block chan struct{}
+}
+
+func (s *blockingSubscriber) Handle(ctx context.Context, e events.Event) error {
+	close(s.ready)
+	<-s.block
+	return nil
+}
+
+type funcSubscriberWithErr struct {
+	f func(events.Event) error
+}
+
+func (s *funcSubscriberWithErr) Handle(ctx context.Context, e events.Event) error {
+	return s.f(e)
+}
+
 func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background())
 	received := make(chan events.Event, 1)
@@ -114,6 +133,68 @@ func TestSimpleEventBus_PanicRecovery(t *testing.T) {
 	if !strings.Contains(err.Error(), "subscriber panicked: boom") {
 		t.Errorf("expected panic message in error, got %v", err)
 	}
+}
+
+func TestSimpleEventBus_PanicResilience(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+
+	results := make([]bool, 3)
+
+	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(e events.Event) error {
+		results[0] = true
+		return nil
+	}})
+
+	bus.SubscribeSubscriber("testEvent", &panicSubscriber{msg: "simulated UI crash"})
+
+	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(e events.Event) error {
+		results[2] = true
+		return nil
+	}})
+
+	err := bus.Publish(context.Background(), testEvent{})
+	if err == nil {
+		t.Fatal("expected error from panic, got nil")
+	}
+
+	if !results[0] {
+		t.Error("Subscriber 1 did not execute")
+	}
+	if !results[2] {
+		t.Error("Subscriber 3 did not execute")
+	}
+
+	if !strings.Contains(err.Error(), "simulated UI crash") {
+		t.Errorf("expected panic message in error, got %v", err)
+	}
+	// Verify stack trace is present
+	if !strings.Contains(err.Error(), "goroutine") {
+		t.Error("expected stack trace in error message")
+	}
+}
+
+func TestSafePublish_Timeout(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+	sub := &blockingSubscriber{
+		ready: make(chan struct{}),
+		block: make(chan struct{}),
+	}
+	bus.SubscribeSubscriber("testEvent", sub)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	err := events.SafePublish(ctx, bus, testEvent{})
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "publish timeout") {
+		t.Errorf("expected timeout error message, got %v", err)
+	}
+
+	// Cleanup the blocking subscriber so the goroutine can finish
+	close(sub.block)
 }
 
 func TestSimpleEventBus_FlushAndShutdown(t *testing.T) {
@@ -250,5 +331,67 @@ func TestSimpleEventBus_Deadlock(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Deadlock detected in Publish")
+	}
+}
+
+func TestSafePublish_NilBus(t *testing.T) {
+	err := events.SafePublish(context.Background(), nil, testEvent{})
+	if !strings.Contains(err.Error(), "event bus is nil") {
+		t.Errorf("expected error for nil bus, got %v", err)
+	}
+}
+
+func TestSafePublish_Success(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+	received := make(chan events.Event, 1)
+	bus.Subscribe(func(e events.Event) {
+		received <- e
+	})
+
+	err := events.SafePublish(context.Background(), bus, testEvent{val: "ok"})
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+
+	select {
+	case got := <-received:
+		if got.(testEvent).val != "ok" {
+			t.Errorf("expected ok, got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+}
+
+func TestSimpleEventBus_NilBusMethods(t *testing.T) {
+	var b *events.SimpleEventBus
+	if err := b.Publish(context.Background(), testEvent{}); err == nil {
+		t.Error("expected error for nil bus Publish")
+	}
+	if err := b.Shutdown(context.Background()); err == nil {
+		t.Error("expected error for nil bus Shutdown")
+	}
+	if err := b.Flush(context.Background()); err == nil {
+		t.Error("expected error for nil bus Flush")
+	}
+	// Should not panic
+	b.Subscribe(func(e events.Event) {})
+	b.SubscribeSubscriber("test", &errSubscriber{})
+}
+
+func TestSimpleEventBus_SubscribeClosed(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+	_ = bus.Shutdown(context.Background())
+	
+	// Should not panic or register
+	bus.Subscribe(func(e events.Event) {})
+	bus.SubscribeSubscriber("test", &errSubscriber{})
+}
+
+func TestSimpleEventBus_FlushClosed(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+	_ = bus.Shutdown(context.Background())
+	if err := bus.Flush(context.Background()); !errors.Is(err, events.ErrBusClosed) {
+		t.Errorf("expected ErrBusClosed, got %v", err)
 	}
 }

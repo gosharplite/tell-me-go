@@ -373,7 +373,7 @@ func (e *turnEngine) executeTurn(parentCtx context.Context, turn *turn) error {
 
 	e.finalizeTurnTrace(trace, err)
 	if e.events != nil {
-		_ = events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace}, 2*time.Second)
+		_ = events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace})
 	}
 
 	e.notifyAfterTurn(turn, err)
@@ -461,7 +461,7 @@ func (p *guardStep) process(ctx context.Context, turn *turn) (processResult, err
 	}
 
 	if turn.Events != nil {
-		if err := events.SafePublish(ctx, turn.Events, events.TurnStarted{Turn: turn.Index, MaxTurns: maxTurns}, 2*time.Second); err != nil {
+		if err := events.SafePublish(ctx, turn.Events, events.TurnStarted{Turn: turn.Index, MaxTurns: maxTurns}); err != nil {
 			return processResult{}, err
 		}
 	}
@@ -699,7 +699,7 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 		if err := events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
 			Message: msg,
 			Level:   "warn",
-		}, 2*time.Second); err != nil {
+		}); err != nil {
 			return processResult{}, err
 		}
 	}
@@ -756,7 +756,7 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn) {
 			_ = events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
 				Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
 				Level:   "error",
-			}, 2*time.Second)
+			})
 		}
 	}
 }

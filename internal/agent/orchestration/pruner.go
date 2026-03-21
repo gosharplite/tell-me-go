@@ -6,7 +6,6 @@ package orchestration
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -55,7 +54,7 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 			if err := events.SafePublish(ctx, t.Events, events.SystemMessageEvent{
 				Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, len(newHistory)/2),
 				Level:   "info",
-			}, 2*time.Second); err != nil {
+			}); err != nil {
 				return err
 			}
 		}

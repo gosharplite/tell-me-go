@@ -207,7 +207,7 @@ func (c *resultCollector) Wait(ctx context.Context) ([]domaintools.ToolResult, e
 				c.trs[res.index] = res.tr
 				isCompleted[res.index] = true
 				if c.bus != nil {
-					_ = events.SafePublish(ctx, c.bus, events.ToolResultEvent{Name: res.name, Result: res.tr}, 2*time.Second)
+					_ = events.SafePublish(ctx, c.bus, events.ToolResultEvent{Name: res.name, Result: res.tr})
 				}
 				completedCount++
 			}
@@ -279,7 +279,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 				_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
 					Message: tr.Text,
 					Level:   "warn",
-				}, 2*time.Second)
+				})
 			}
 		}
 	}
@@ -305,7 +305,7 @@ func (e *ToolExecutor) publishLimitError(ctx context.Context, maxToolTurns int) 
 		_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
 			Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
 			Level:   "error",
-		}, 2*time.Second)
+		})
 	}
 }
 
@@ -318,7 +318,7 @@ func (e *ToolExecutor) publishCallEvent(ctx context.Context, calls []*llm.Functi
 			Calls:    calls,
 			Turn:     turn,
 			MaxTurns: maxToolTurns,
-		}, 2*time.Second)
+		})
 	}
 }
 
@@ -560,7 +560,7 @@ func (e *ToolExecutor) handlePanic(ctx context.Context, r interface{}, toolName 
 		_ = events.SafePublish(ctx, bus, events.SystemMessageEvent{
 			Message: msg,
 			Level:   "error",
-		}, 2*time.Second)
+		})
 	}
 
 	return domaintools.ToolResult{
