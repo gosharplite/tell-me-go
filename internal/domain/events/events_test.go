@@ -141,3 +141,32 @@ func TestSimpleEventBus_ContextCancellation(t *testing.T) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }
+
+type unknownEvent struct{}
+
+func (e unknownEvent) Type() string { return "UnknownEvent" }
+
+func TestGlobalSubscriber_NewEventType(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+	received := make(chan events.Event, 1)
+
+	bus.Subscribe(func(e events.Event) {
+		received <- e
+	})
+
+	// This event type was NOT in the previous hardcoded allKnownTypes list
+	ev := unknownEvent{}
+	err := bus.Publish(context.Background(), ev)
+	if err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
+
+	select {
+	case got := <-received:
+		if got.Type() != "UnknownEvent" {
+			t.Errorf("expected UnknownEvent, got %s", got.Type())
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Global subscriber did NOT receive UnknownEvent")
+	}
+}

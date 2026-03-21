@@ -41,12 +41,13 @@ type EventBus interface {
 
 // SimpleEventBus is an implementation of EventBus.
 type SimpleEventBus struct {
-	mu          sync.RWMutex
-	subscribers map[string][]Subscriber
-	closed      bool
-	closing     chan struct{}
-	ctx         context.Context
-	cancel      context.CancelFunc
+	mu                sync.RWMutex
+	subscribers       map[string][]Subscriber
+	globalSubscribers []Subscriber
+	closed            bool
+	closing           chan struct{}
+	ctx               context.Context
+	cancel            context.CancelFunc
 }
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus.
@@ -76,8 +77,11 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 		b.mu.RUnlock()
 		return ErrBusClosed
 	}
-	// Copy the slice to avoid race conditions after releasing the lock
-	subs := append([]Subscriber(nil), b.subscribers[event.Type()]...)
+
+	// Combine specific and global subscribers
+	var subs []Subscriber
+	subs = append(subs, b.subscribers[event.Type()]...)
+	subs = append(subs, b.globalSubscribers...)
 	b.mu.RUnlock() // Release lock early to prevent deadlocks
 
 	var errs []error
@@ -110,22 +114,6 @@ func (s *funcSubscriber) Handle(ctx context.Context, e Event) error {
 	return nil
 }
 
-var allKnownTypes = []string{
-	"StatusUpdate",
-	"TurnStarted",
-	"ResponseStreamEvent",
-	"ToolCallEvent",
-	"ToolResultEvent",
-	"UsageMetricsEvent",
-	"SystemMessageEvent",
-	"TokenLimitReachedEvent",
-	"SummarizationRequired",
-	"TraceEvent",
-	"ConfigUpdated",
-	"TurnStatusEvent",
-	"testEvent",
-}
-
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	if b == nil || sub == nil {
 		return
@@ -138,10 +126,7 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 		return
 	}
 
-	s := &funcSubscriber{f: sub}
-	for _, t := range allKnownTypes {
-		b.subscribers[t] = append(b.subscribers[t], s)
-	}
+	b.globalSubscribers = append(b.globalSubscribers, &funcSubscriber{f: sub})
 }
 
 // SubscribeSubscriber registers a Subscriber for a specific event type.
