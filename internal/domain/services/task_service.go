@@ -13,21 +13,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// Ensure TaskService strictly implements the ports.TaskStore interface.
+// Ensure taskService strictly implements the ports.TaskStore interface.
 // This explicit binding also resolves false positives in dead-code AST analysis.
-var _ ports.TaskStore = (*TaskService)(nil)
+var _ ports.TaskStore = (*taskService)(nil)
 
-// TaskService handles the logic for managing tasks.
-type TaskService struct {
+// taskService handles the logic for managing tasks.
+type taskService struct {
 	mu     sync.RWMutex
 	store  ports.ListStore[ports.Task]
 	tasks  map[float64]ports.Task
 	nextID float64
 }
 
-// NewTaskService creates a new TaskService.
-func NewTaskService(store ports.ListStore[ports.Task]) *TaskService {
-	return &TaskService{
+// NewTaskService creates a new taskService.
+func NewTaskService(store ports.ListStore[ports.Task]) *taskService {
+	return &taskService{
 		store:  store,
 		tasks:  make(map[float64]ports.Task),
 		nextID: 1,
@@ -35,7 +35,7 @@ func NewTaskService(store ports.ListStore[ports.Task]) *TaskService {
 }
 
 // Initialize loads tasks from the repository.
-func (s *TaskService) Initialize(ctx context.Context) error {
+func (s *taskService) Initialize(ctx context.Context) error {
 	tasks, err := s.store.ReadAll(ctx)
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func (s *TaskService) Initialize(ctx context.Context) error {
 }
 
 // AddTask adds a new task.
-func (s *TaskService) AddTask(ctx context.Context, content string) (ports.Task, error) {
+func (s *taskService) AddTask(ctx context.Context, content string) (ports.Task, error) {
 	if content == "" {
 		return ports.Task{}, fmt.Errorf("content is required for add")
 	}
@@ -78,7 +78,7 @@ func (s *TaskService) AddTask(ctx context.Context, content string) (ports.Task, 
 }
 
 // UpdateTask updates an existing task.
-func (s *TaskService) UpdateTask(ctx context.Context, id float64, content, status string) (ports.Task, error) {
+func (s *taskService) UpdateTask(ctx context.Context, id float64, content, status string) (ports.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -103,7 +103,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id float64, content, statu
 }
 
 // DeleteTask removes a task.
-func (s *TaskService) DeleteTask(ctx context.Context, id float64) error {
+func (s *taskService) DeleteTask(ctx context.Context, id float64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -120,7 +120,7 @@ func (s *TaskService) DeleteTask(ctx context.Context, id float64) error {
 }
 
 // ListTasks returns all tasks, optionally filtered by status.
-func (s *TaskService) ListTasks(status string) []ports.Task {
+func (s *taskService) ListTasks(status string) []ports.Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -140,7 +140,7 @@ func (s *TaskService) ListTasks(status string) []ports.Task {
 }
 
 // ClearTasks removes all tasks.
-func (s *TaskService) ClearTasks(ctx context.Context) error {
+func (s *taskService) ClearTasks(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
