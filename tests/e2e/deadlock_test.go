@@ -59,6 +59,7 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 	}
 
 	done := make(chan struct{})
+	errs := make(chan error, len(actions))
 
 	// 4. Execute rapidly
 	go func() {
@@ -66,7 +67,7 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 			// Run the built binary via the runCommandWithEnv helper from e2e_test.go
 			_, _, err := runCommandWithEnv(env, "", "-c", configPath, action)
 			if err != nil {
-				t.Logf("Action %q finished with error: %v", action, err)
+				errs <- fmt.Errorf("Action %q error: %v", action, err)
 			}
 		}
 		close(done)
@@ -76,6 +77,10 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 	select {
 	case <-done:
 		// PASS: All actions completed within the timeout.
+		close(errs)
+		for err := range errs {
+			t.Logf("%v", err)
+		}
 	case <-ctx.Done():
 		t.Fatal("DEADLOCK DETECTED: Application hung during rapid user actions. Likely a sync.RWMutex contention issue.")
 	}

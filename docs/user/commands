@@ -1,5 +1,5 @@
 Do not do it yourself, instead clearly tell Coder what to do with details.
-One task at a time, since Coder will start a new session for each of your task.
+Output one task at a time, since Coder will start a new session for each of your task.
 Coder don't have previous memory, be as clear as possible.
 
 Is dev branch good enough to be merged into main branch?
