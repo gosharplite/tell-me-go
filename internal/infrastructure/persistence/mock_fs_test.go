@@ -44,6 +44,9 @@ func (f *mockFile) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (f *mockFile) Close() error {
+	if f.closed {
+		return os.ErrClosed
+	}
 	f.closed = true
 	return f.failOn["Close"]
 }
@@ -71,6 +74,7 @@ type mockFileSystem struct {
 
 	// Custom behavior
 	CreateTempFunc func(dir, pattern string) (File, error)
+	OpenFileFunc   func(name string, flag int, perm os.FileMode) (File, error)
 }
 
 func newMockFS() *mockFileSystem {
@@ -115,6 +119,11 @@ func (m *mockFileSystem) Rename(oldpath, newpath string) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Simulate move
+	if data, ok := m.files[oldpath]; ok {
+		m.files[newpath] = data
+		delete(m.files, oldpath)
+	}
 	return nil
 }
 
@@ -139,8 +148,25 @@ func (m *mockFileSystem) Stat(name string) (os.FileInfo, error) {
 	if err := m.failOn["Stat"]; err != nil {
 		return nil, err
 	}
-	return nil, os.ErrNotExist // Default for mock
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.files[name]; ok {
+		return &mockFileInfo{name: name}, nil
+	}
+	if _, ok := m.dirs[name]; ok {
+		return &mockFileInfo{name: name, isDir: true}, nil
+	}
+	return nil, os.ErrNotExist
 }
+
+type mockFileInfo struct {
+	os.FileInfo
+	name  string
+	isDir bool
+}
+
+func (m *mockFileInfo) Name() string { return m.name }
+func (m *mockFileInfo) IsDir() bool  { return m.isDir }
 
 func (m *mockFileSystem) ReadDir(name string) ([]os.DirEntry, error) {
 	if err := m.failOn["ReadDir"]; err != nil {
@@ -162,8 +188,30 @@ func (m *mockFileSystem) ReadFile(name string) ([]byte, error) {
 }
 
 func (m *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	if m.OpenFileFunc != nil {
+		return m.OpenFileFunc(name, flag, perm)
+	}
 	if err := m.failOn["OpenFile"]; err != nil {
 		return nil, err
 	}
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	data, ok := m.files[name]
+	if !ok {
+		if flag&os.O_CREATE != 0 {
+			data = new(bytes.Buffer)
+			m.files[name] = data
+		} else {
+			return nil, os.ErrNotExist
+		}
+	} else if flag&os.O_TRUNC != 0 {
+		data.Reset()
+	}
+
+	return &mockFile{
+		name:   name,
+		data:   data,
+		failOn: make(map[string]error),
+	}, nil
 }

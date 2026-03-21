@@ -6,9 +6,13 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 )
 
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
@@ -24,6 +28,7 @@ func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, p
 	tmp := f.Name()
 	cleanup := true
 	defer func() {
+		// Attempt to close; ignore error if already closed
 		_ = f.Close()
 		if cleanup {
 			_ = fs.Remove(tmp)
@@ -48,11 +53,11 @@ func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, p
 	default:
 	}
 
-	if err := commitTempFile(fs, f, tmp, path); err != nil {
+	if err := commitTempFile(fs, f, tmp, path, perm); err != nil {
 		return err
 	}
 
-	cleanup = false // Rename succeeded, no need to remove
+	cleanup = false // Rename or fallback succeeded, no need to remove temp file
 	return nil
 }
 
@@ -75,19 +80,72 @@ func prepareTempFile(fs FileSystem, dir, pattern string, perm os.FileMode) (File
 	return f, nil
 }
 
-func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string) error {
+func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string, perm os.FileMode) error {
 	// Force flush to disk to prevent stale reads or zero-byte files on power loss
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
 
+	// Windows strictly enforces file locks. Explicitly close before renaming.
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
 	if err := fs.Rename(tmpPath, targetPath); err != nil {
+		// Implement fallback for EXDEV (cross-device link) errors
+		if isCrossDeviceError(err) {
+			return fallbackCopy(fs, tmpPath, targetPath, perm)
+		}
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
+	return nil
+}
+
+func isCrossDeviceError(err error) bool {
+	// Check for syscall.EXDEV
+	if errors.Is(err, syscall.EXDEV) {
+		return true
+	}
+	// Fallback to string check as requested
+	return strings.Contains(err.Error(), "cross-device link")
+}
+
+func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) error {
+	src, err := fs.OpenFile(srcPath, os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("fallback: failed to open source: %w", err)
+	}
+	defer src.Close()
+
+	// Open destination for writing, truncating if it already exists
+	dst, err := fs.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return fmt.Errorf("fallback: failed to open destination: %w", err)
+	}
+
+	success := false
+	defer func() {
+		_ = dst.Close()
+		if !success {
+			_ = fs.Remove(dstPath)
+		}
+	}()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("fallback: failed to copy data: %w", err)
+	}
+
+	if err := dst.Sync(); err != nil {
+		return fmt.Errorf("fallback: failed to sync destination: %w", err)
+	}
+
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("fallback: failed to close destination: %w", err)
+	}
+
+	success = true
+	// Cleanup the source file after successful copy
+	_ = fs.Remove(srcPath)
 	return nil
 }

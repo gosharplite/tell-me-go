@@ -7,6 +7,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"runtime"
+	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -45,14 +50,6 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			wantErr:    true,
 			errPattern: "failed to sync temp file: I/O error during sync",
 		},
-		{
-			name: "Rename fails",
-			setupMock: func(m *mockFileSystem) {
-				m.failOn["Rename"] = errors.New("cross-device link")
-			},
-			wantErr:    true,
-			errPattern: "failed to rename temp file: cross-device link",
-		},
 	}
 
 	for _, tt := range tests {
@@ -67,8 +64,9 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 				if err := m.failOn["CreateTemp"]; err != nil {
 					return nil, err
 				}
+				name := dir + "/temp123"
 				mf := &mockFile{
-					name:   dir + "/temp123",
+					name:   name,
 					data:   new(bytes.Buffer),
 					failOn: make(map[string]error),
 				}
@@ -78,6 +76,12 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 				if err := m.failOn["Chmod"]; err != nil {
 					mf.failOn["Chmod"] = err
 				}
+				
+				// Ensure the file is added to the mock fs files map
+				m.mu.Lock()
+				m.files[name] = mf.data
+				m.mu.Unlock()
+				
 				return mf, nil
 			}
 
@@ -93,5 +97,106 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Test A: Simulated "Disk Full" (Mock Injection)
+func TestAtomicWrite_DiskFull(t *testing.T) {
+	ctx := context.Background()
+	m := newMockFS()
+	
+	m.CreateTempFunc = func(dir, pattern string) (File, error) {
+		mf := &mockFile{
+			name:   dir + "/temp123",
+			data:   new(bytes.Buffer),
+			failOn: map[string]error{
+				"Write": syscall.ENOSPC,
+			},
+		}
+		return mf, nil
+	}
+
+	err := AtomicWrite(ctx, m, "/any/path", []byte("data"), 0644)
+	if err == nil {
+		t.Fatal("expected error for disk full (ENOSPC), got nil")
+	}
+
+	if !errors.Is(err, syscall.ENOSPC) && !strings.Contains(err.Error(), "no space left on device") {
+		t.Errorf("expected ENOSPC error, got: %v", err)
+	}
+}
+
+// Test B: Real OS Permission Denied (Integration Test)
+func TestAtomicWrite_OSPermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping OS permission test on Windows due to ACL flakiness")
+	}
+
+	tempDir := t.TempDir()
+	// Create a subdirectory that we will make read-only
+	targetDir := fmt.Sprintf("%s/readonly", tempDir)
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("failed to create target dir: %v", err)
+	}
+
+	// Remove write permissions from the directory
+	if err := os.Chmod(targetDir, 0555); err != nil {
+		t.Fatalf("failed to chmod target dir: %v", err)
+	}
+	defer os.Chmod(targetDir, 0755) // Clean up permissions so TempDir can be removed
+
+	fs := &OSFileSystem{}
+	err := AtomicWrite(context.Background(), fs, targetDir+"/test.txt", []byte("data"), 0644)
+
+	if err == nil {
+		t.Fatal("expected error when writing to read-only directory, got nil")
+	}
+
+	if !errors.Is(err, os.ErrPermission) && !errors.Is(err, syscall.EACCES) {
+		t.Errorf("expected permission denied error, got: %v", err)
+	}
+}
+
+// Test C: EXDEV Fallback Success (Mock Injection)
+func TestAtomicWrite_EXDEVFallback(t *testing.T) {
+	ctx := context.Background()
+	m := newMockFS()
+	
+	data := []byte("important data")
+	targetPath := "/mnt/external/file.txt"
+	
+	// Configure Rename to return EXDEV
+	m.failOn["Rename"] = syscall.EXDEV
+	
+	// We need to make sure CreateTemp works and adds to files map for OpenFile to find it
+	m.CreateTempFunc = func(dir, pattern string) (File, error) {
+		name := dir + "/temp123"
+		mf := &mockFile{
+			name:   name,
+			data:   new(bytes.Buffer),
+			failOn: make(map[string]error),
+		}
+		m.mu.Lock()
+		m.files[name] = mf.data
+		m.mu.Unlock()
+		return mf, nil
+	}
+
+	err := AtomicWrite(ctx, m, targetPath, data, 0644)
+	if err != nil {
+		t.Fatalf("expected success with EXDEV fallback, got error: %v", err)
+	}
+
+	// Verify the data was "copied" to the target path in the mock filesystem
+	m.mu.Lock()
+	savedData, ok := m.files[targetPath]
+	m.mu.Unlock()
+	
+	if !ok {
+		t.Fatal("target file does not exist in mock filesystem after fallback")
+	}
+	
+	if !bytes.Equal(savedData.Bytes(), data) {
+		t.Errorf("saved data mismatch: got %q, want %q", savedData.Bytes(), data)
 	}
 }
