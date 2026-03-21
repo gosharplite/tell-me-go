@@ -12,21 +12,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 )
-
-var fileLocks sync.Map // map[string]*sync.RWMutex
 
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
 // This ensures that the target file is either fully updated or not updated at all.
 // It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
 func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, perm os.FileMode) error {
-	// Protect against concurrent renames to the same target path
-	lock := getFileLock(path)
-	lock.Lock()
-	defer lock.Unlock()
-
 	dir := filepath.Dir(path)
 	f, err := prepareTempFile(fs, dir, filepath.Base(path)+".*.tmp", perm)
 	if err != nil {
@@ -156,17 +148,4 @@ func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) erro
 	// Cleanup the source file after successful copy
 	_ = fs.Remove(srcPath)
 	return nil
-}
-
-// getFileLock returns an RWMutex for the given file path to synchronize concurrent operations.
-func getFileLock(path string) *sync.RWMutex {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		absPath = path // fallback to relative path if absolute resolution fails
-	}
-	
-	// Load or create a new mutex for this specific path.
-	// sync.Map is optimized for high-read, low-write scenarios.
-	l, _ := fileLocks.LoadOrStore(absPath, &sync.RWMutex{})
-	return l.(*sync.RWMutex)
 }

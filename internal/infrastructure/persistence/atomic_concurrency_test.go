@@ -14,12 +14,31 @@ import (
 	"testing"
 )
 
+// mockFileStore is a simple repository used to test concurrent saves using AtomicWrite.
+type mockFileStore struct {
+	mu   sync.RWMutex
+	fs   FileSystem
+	path string
+}
+
+func (s *mockFileStore) Save(ctx context.Context, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return AtomicWrite(ctx, s.fs, s.path, data, 0644)
+}
+
 func TestOSFileSystem_RapidConcurrentSaves(t *testing.T) {
 	// Use t.TempDir() to create a safe test directory.
 	tmpDir := t.TempDir()
 	fs := &OSFileSystem{}
 	targetFile := filepath.Join(tmpDir, "stress_test.json")
 	ctx := context.Background()
+
+	// Use a repository-like wrapper to handle synchronization as directed.
+	store := &mockFileStore{
+		fs:   fs,
+		path: targetFile,
+	}
 
 	const numGoroutines = 100
 	var wg sync.WaitGroup
@@ -31,7 +50,7 @@ func TestOSFileSystem_RapidConcurrentSaves(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			payload := []byte(fmt.Sprintf(`{"id": %d, "data": "some random data for stress testing"}`, id))
-			if err := AtomicWrite(ctx, fs, targetFile, payload, 0644); err != nil {
+			if err := store.Save(ctx, payload); err != nil {
 				errors <- fmt.Errorf("goroutine %d failed: %w", id, err)
 			}
 		}(i)

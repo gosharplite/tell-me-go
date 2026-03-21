@@ -56,3 +56,20 @@ func (r *scratchpadRepository) GetAll(ctx context.Context) (map[string]string, e
 	}
 	return map[string]string{"content": val}, nil
 }
+
+// Set saves a key. Only "content" is supported for raw text storage.
+func (r *scratchpadRepository) Set(ctx context.Context, key string, val string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if key != "content" {
+		return nil
+	}
+
+	return r.fs.AtomicWrite(ctx, r.filePath, []byte(val), 0644)
+}
+
+// Delete clears the scratchpad.
+func (r *scratchpadRepository) Delete(ctx context.Context, key string) error {
+	return r.Set(ctx, key, "")
+}

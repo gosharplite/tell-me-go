@@ -62,3 +62,63 @@ func (r *configRepository) Get(ctx context.Context, key string) (string, error) 
 	}
 	return config[key], nil
 }
+
+// Set saves a configuration key.
+func (r *configRepository) Set(ctx context.Context, key string, val string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	config, err := r.getAllInternal(ctx)
+	if err != nil {
+		return err
+	}
+
+	config[key] = val
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return r.fs.AtomicWrite(ctx, r.filePath, data, 0644)
+}
+
+// Delete removes a configuration key.
+func (r *configRepository) Delete(ctx context.Context, key string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	config, err := r.getAllInternal(ctx)
+	if err != nil {
+		return err
+	}
+
+	delete(config, key)
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return r.fs.AtomicWrite(ctx, r.filePath, data, 0644)
+}
+
+// getAllInternal is a non-locking version of GetAll.
+func (r *configRepository) getAllInternal(ctx context.Context) (map[string]string, error) {
+	if _, err := r.fs.Stat(ctx, r.filePath); err != nil {
+		return make(map[string]string), nil
+	}
+
+	data, err := r.fs.ReadFile(ctx, r.filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(data) == 0 {
+		return make(map[string]string), nil
+	}
+
+	config := make(map[string]string)
+	if err := json.Unmarshal(data, &config); err != nil {
+		return make(map[string]string), nil
+	}
+	return config, nil
+}

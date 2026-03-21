@@ -8,12 +8,14 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // AssetStore manages binary blobs in a content-addressable storage.
 type AssetStore struct {
+	mu      sync.RWMutex
 	baseDir string
 	fs      persistence.FileSystem
 }
@@ -38,16 +40,24 @@ func (s *AssetStore) Put(ctx context.Context, data []byte) (string, error) {
 		return "", nil
 	}
 
+	hash := sha256.Sum256(data)
+	id := fmt.Sprintf("%x", hash)
+
+	path := s.getPath(id)
+
+	// Acquire write lock to ensure that the file creation is synchronized.
+	// Since assets are content-addressable (ID is based on data hash),
+	// this primarily protects against concurrent attempts to write the EXACT same asset
+	// to the same path, which could lead to file locking issues on some OSs.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
 	default:
 	}
 
-	hash := sha256.Sum256(data)
-	id := fmt.Sprintf("%x", hash)
-
-	path := s.getPath(id)
 	if _, err := s.fs.Stat(ctx, path); err == nil {
 		return id, nil // Already exists
 	}
@@ -68,6 +78,9 @@ func (s *AssetStore) Get(ctx context.Context, id string) ([]byte, error) {
 	if id == "" {
 		return nil, nil
 	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	select {
 	case <-ctx.Done():
