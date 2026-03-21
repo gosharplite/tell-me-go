@@ -33,7 +33,7 @@ type Subscriber interface {
 var (
 	ErrBusClosed         = errors.New("event bus is closed")
 	ErrBusNotInitialized = errors.New("event bus is nil or uninitialized")
-	ErrQueueFull         = errors.New("event bus queue is full")
+	errQueueFull         = errors.New("event bus queue is full")
 )
 
 const (
@@ -170,7 +170,7 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 		return ctx.Err()
 	default:
 		b.pendingWG.Done()
-		return ErrQueueFull
+		return errQueueFull
 	}
 }
 
@@ -529,12 +529,12 @@ func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" 
 func (e SummarizationRequired) Type() string  { return "SummarizationRequired" }
 func (e TraceEvent) Type() string             { return "TraceEvent" }
 
-// IsQueueFull returns true if the error is ErrQueueFull.
-func IsQueueFull(err error) bool {
-	return errors.Is(err, ErrQueueFull)
+// isQueueFull returns true if the error is errQueueFull.
+func isQueueFull(err error) bool {
+	return errors.Is(err, errQueueFull)
 }
 
-// IsTimeout returns true if the error is context.DeadlineExceeded or a publish failure.
-func IsTimeout(err error) bool {
+// isTimeout returns true if the error is context.DeadlineExceeded or a publish failure.
+func isTimeout(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) || (err != nil && strings.Contains(err.Error(), "publish failure"))
 }
