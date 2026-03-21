@@ -239,122 +239,138 @@ func TestAtomicWrite_EXDEVFallback(t *testing.T) {
 	}
 }
 
-func TestFallbackCopy_Errors(t *testing.T) {
-	tests := []struct {
-		name          string
-		setupMock     func() *mockFileSystem
-		wantErr       bool
-		errContains   string
-		expectRemoved string
-	}{
+type fallbackTestCase struct {
+	name          string
+	setupMock     func() *mockFileSystem
+	wantErr       bool
+	errContains   string
+	expectRemoved string
+}
+
+func setupMockOpenFileSourceFails() *mockFileSystem {
+	m := newMockFS()
+	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+		if name == "/src" {
+			return nil, errors.New("open source failed")
+		}
+		return nil, os.ErrNotExist
+	}
+	return m
+}
+
+func setupMockOpenFileDestinationFails() *mockFileSystem {
+	m := newMockFS()
+	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+		if name == "/src" {
+			return &mockFile{name: name, data: new(bytes.Buffer)}, nil
+		}
+		if name == "/dst" {
+			return nil, errors.New("open destination failed")
+		}
+		return nil, os.ErrNotExist
+	}
+	return m
+}
+
+func setupMockIoCopyFails() *mockFileSystem {
+	m := newMockFS()
+	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+		data := new(bytes.Buffer)
+		if name == "/src" {
+			data.Write([]byte("some data"))
+		}
+		mf := &mockFile{
+			name: name,
+			data: data,
+		}
+		if name == "/dst" {
+			mf.WriteFunc = func(p []byte) (n int, err error) {
+				return 0, errors.New("copy failed")
+			}
+		}
+		return mf, nil
+	}
+	return m
+}
+
+func setupMockSyncFails() *mockFileSystem {
+	m := newMockFS()
+	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+		mf := &mockFile{
+			name: name,
+			data: new(bytes.Buffer),
+		}
+		if name == "/dst" {
+			mf.SyncFunc = func() error {
+				return errors.New("sync failed")
+			}
+		}
+		return mf, nil
+	}
+	return m
+}
+
+func setupMockCloseFails() *mockFileSystem {
+	m := newMockFS()
+	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+		mf := &mockFile{
+			name: name,
+			data: new(bytes.Buffer),
+		}
+		if name == "/src" {
+			mf.data.Write([]byte("data"))
+		}
+		if name == "/dst" {
+			mf.CloseFunc = func() error {
+				return errors.New("close failed")
+			}
+		}
+		return mf, nil
+	}
+	return m
+}
+
+func buildFallbackTestCases() []fallbackTestCase {
+	return []fallbackTestCase{
 		{
-			name: "OpenFile source fails",
-			setupMock: func() *mockFileSystem {
-				m := newMockFS()
-				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
-					if name == "/src" {
-						return nil, errors.New("open source failed")
-					}
-					return nil, os.ErrNotExist
-				}
-				return m
-			},
+			name:        "OpenFile source fails",
+			setupMock:   setupMockOpenFileSourceFails,
 			wantErr:     true,
 			errContains: "fallback: failed to open source",
 		},
 		{
-			name: "OpenFile destination fails",
-			setupMock: func() *mockFileSystem {
-				m := newMockFS()
-				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
-					if name == "/src" {
-						return &mockFile{name: name, data: new(bytes.Buffer)}, nil
-					}
-					if name == "/dst" {
-						return nil, errors.New("open destination failed")
-					}
-					return nil, os.ErrNotExist
-				}
-				return m
-			},
+			name:        "OpenFile destination fails",
+			setupMock:   setupMockOpenFileDestinationFails,
 			wantErr:     true,
 			errContains: "fallback: failed to open destination",
 		},
 		{
-			name: "io.Copy fails",
-			setupMock: func() *mockFileSystem {
-				m := newMockFS()
-				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
-					data := new(bytes.Buffer)
-					if name == "/src" {
-						data.Write([]byte("some data"))
-					}
-					mf := &mockFile{
-						name: name,
-						data: data,
-					}
-					if name == "/dst" {
-						mf.WriteFunc = func(p []byte) (n int, err error) {
-							return 0, errors.New("copy failed")
-						}
-					}
-					return mf, nil
-				}
-				return m
-			},
+			name:          "io.Copy fails",
+			setupMock:     setupMockIoCopyFails,
 			wantErr:       true,
 			errContains:   "fallback: failed to copy data",
 			expectRemoved: "/dst",
 		},
 		{
-			name: "Sync fails",
-			setupMock: func() *mockFileSystem {
-				m := newMockFS()
-				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
-					mf := &mockFile{
-						name: name,
-						data: new(bytes.Buffer),
-					}
-					if name == "/dst" {
-						mf.SyncFunc = func() error {
-							return errors.New("sync failed")
-						}
-					}
-					return mf, nil
-				}
-				return m
-			},
+			name:          "Sync fails",
+			setupMock:     setupMockSyncFails,
 			wantErr:       true,
 			errContains:   "fallback: failed to sync destination",
 			expectRemoved: "/dst",
 		},
 		{
-			name: "Close fails on success",
-			setupMock: func() *mockFileSystem {
-				m := newMockFS()
-				m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
-					mf := &mockFile{
-						name: name,
-						data: new(bytes.Buffer),
-					}
-					if name == "/src" {
-						mf.data.Write([]byte("data"))
-					}
-					if name == "/dst" {
-						mf.CloseFunc = func() error {
-							return errors.New("close failed")
-						}
-					}
-					return mf, nil
-				}
-				return m
-			},
+			name:        "Close fails on success",
+			setupMock:   setupMockCloseFails,
 			wantErr:     true,
 			errContains: "close failed",
 		},
 	}
+}
 
-	for _, tt := range tests {
+func TestFallbackCopy_Errors(t *testing.T) {
+	cases := buildFallbackTestCases()
+
+	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			m := tt.setupMock()
 
