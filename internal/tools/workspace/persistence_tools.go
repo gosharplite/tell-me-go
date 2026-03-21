@@ -16,9 +16,8 @@ import (
 
 // persistenceTools provides tool wrappers for persistence services.
 type persistenceTools struct {
-	tasks      ports.TaskStore
-	scratchpad ports.ScratchpadStore
-	state      ports.SessionProvider
+	tasks ports.TaskStore
+	state ports.SessionProvider
 }
 
 // newpersistenceTools creates a new persistenceTools instance.
@@ -34,9 +33,8 @@ func newpersistenceTools(state ports.SessionProvider) *persistenceTools {
 	}
 
 	return &persistenceTools{
-		tasks:      state.GetTasks(),
-		scratchpad: state.GetScratchpad(),
-		state:      state,
+		tasks: state.GetTasks(),
+		state: state,
 	}
 }
 
@@ -61,28 +59,6 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
 	}, t.GetSessionInfo); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "manage_scratchpad",
-		Description: "Read, write, or update the persistent scratchpad (scoped to current mode).",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"action": {
-					Type:        "STRING",
-					Description: "The operation to perform: 'read', 'write' (overwrite), 'append', or 'clear'.",
-					Enum:        []string{"read", "write", "append", "clear"},
-				},
-				"content": {
-					Type:        "STRING",
-					Description: "The text content to write or append. Required for 'write' and 'append' actions.",
-				},
-			},
-			Required: []string{"action"},
-		},
-	}, t.ManageScratchpad, tools.ToolOptions{Serial: false}); err != nil {
 		return err
 	}
 
@@ -190,57 +166,4 @@ func (t *persistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, er
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: "All tasks cleared."}, nil
-}
-
-// ManageScratchpad handles the manage_scratchpad tool.
-func (t *persistenceTools) ManageScratchpad(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		Action  string `json:"action"`
-		Content string `json:"content"`
-	}
-	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	switch params.Action {
-	case "read":
-		return t.readScratchpad()
-	case "write":
-		return t.writeScratchpad(ctx, params.Content)
-	case "append":
-		return t.appendScratchpad(ctx, params.Content)
-	case "clear":
-		return t.clearScratchpad(ctx)
-	default:
-		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
-	}
-}
-
-func (t *persistenceTools) readScratchpad() (tools.ToolResult, error) {
-	content := t.scratchpad.Read()
-	if content == "" {
-		return tools.ToolResult{Text: "(Scratchpad is empty)"}, nil
-	}
-	return tools.ToolResult{Text: content}, nil
-}
-
-func (t *persistenceTools) writeScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
-	if err := t.scratchpad.Write(ctx, content); err != nil {
-		return tools.ToolResult{}, err
-	}
-	return tools.ToolResult{Text: "Scratchpad updated."}, nil
-}
-
-func (t *persistenceTools) appendScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
-	if err := t.scratchpad.Append(ctx, content); err != nil {
-		return tools.ToolResult{}, err
-	}
-	return tools.ToolResult{Text: "Content appended to scratchpad."}, nil
-}
-
-func (t *persistenceTools) clearScratchpad(ctx context.Context) (tools.ToolResult, error) {
-	if err := t.scratchpad.Clear(ctx); err != nil {
-		return tools.ToolResult{}, err
-	}
-	return tools.ToolResult{Text: "Scratchpad cleared."}, nil
 }

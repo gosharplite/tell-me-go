@@ -12,7 +12,7 @@ import (
 
 func verifyStateInitialization(t *testing.T, state ports.SessionProvider) {
 	t.Helper()
-	if state.GetTasks() == nil || state.GetScratchpad() == nil {
+	if state.GetTasks() == nil {
 		t.Error("expected all services to be initialized")
 	}
 }

@@ -37,10 +37,6 @@ func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 
 func createTables(ctx context.Context, db *sql.DB) error {
 	queries := []string{
-		`CREATE TABLE IF NOT EXISTS scratchpad (
-			id INTEGER PRIMARY KEY,
-			content TEXT NOT NULL
-		);`,
 		`CREATE TABLE IF NOT EXISTS tasks (
 			id INTEGER PRIMARY KEY,
 			content TEXT NOT NULL,
@@ -58,7 +54,7 @@ func createTables(ctx context.Context, db *sql.DB) error {
 }
 
 // migrateFromJSON migrates data from the old JSON/MD files into the new SQLite DB if the DB is empty.
-func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath, scratchPath string) error {
+func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string) error {
 	var count int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count); err != nil {
 		return fmt.Errorf("checking tasks table: %w", err)
@@ -69,10 +65,6 @@ func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem,
 
 	if err := migrateTasks(ctx, db, fs, tasksPath); err != nil {
 		log.Printf("Failed to migrate tasks: %v", err)
-	}
-
-	if err := migrateScratchpad(ctx, db, fs, scratchPath); err != nil {
-		log.Printf("Failed to migrate scratchpad: %v", err)
 	}
 
 	return nil
@@ -106,26 +98,6 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing tasks migration: %w", err)
-	}
-	return nil
-}
-
-func migrateScratchpad(ctx context.Context, db *sql.DB, fs persistence.FileSystem, scratchPath string) error {
-	if stat, _ := fs.Stat(ctx, scratchPath); stat == nil {
-		return nil
-	}
-	oldScratch := newScratchpadRepository(fs, scratchPath)
-	scratch, err := oldScratch.Get(ctx, "content")
-	if err != nil {
-		return fmt.Errorf("reading legacy scratchpad: %w", err)
-	}
-	if scratch == "" {
-		return nil
-	}
-
-	_, err = db.ExecContext(ctx, "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)", scratch)
-	if err != nil {
-		return fmt.Errorf("inserting legacy scratchpad: %w", err)
 	}
 	return nil
 }

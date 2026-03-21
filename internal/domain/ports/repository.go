@@ -71,28 +71,9 @@ type Initializer interface {
 	Initialize(ctx context.Context) error
 }
 
-// ScratchpadReader defines the interface for reading from the scratchpad.
-type ScratchpadReader interface {
-	Read() string
-}
-
-// ScratchpadWriter defines the interface for writing to the scratchpad.
-type ScratchpadWriter interface {
-	Write(ctx context.Context, content string) error
-	Append(ctx context.Context, content string) error
-	Clear(ctx context.Context) error
-}
-
-// ScratchpadStore defines the interface for scratchpad management.
-type ScratchpadStore interface {
-	ScratchpadReader
-	ScratchpadWriter
-}
-
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
 	GetTasks() TaskStore
-	GetScratchpad() ScratchpadStore
 }
 
 // SessionStateProvider manages session-level metadata and state.

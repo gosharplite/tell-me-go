@@ -13,63 +13,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// sqliteScratchpadStore implements KVStore for the scratchpad singleton using SQLite.
-type sqliteScratchpadStore struct {
-	db *sql.DB
-}
-
-func newSQLiteScratchpadStore(db *sql.DB) *sqliteScratchpadStore {
-	return &sqliteScratchpadStore{db: db}
-}
-
-func (s *sqliteScratchpadStore) Get(ctx context.Context, key string) (string, error) {
-	if key != "content" {
-		return "", nil
-	}
-	var val string
-	err := s.db.QueryRowContext(ctx, "SELECT content FROM scratchpad WHERE id = 1").Scan(&val)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", nil
-		}
-		return "", fmt.Errorf("getting scratchpad: %w", err)
-	}
-	return val, nil
-}
-
-func (s *sqliteScratchpadStore) Set(ctx context.Context, key string, val string) error {
-	if key != "content" {
-		return nil
-	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO scratchpad (id, content) VALUES (1, ?)
-		ON CONFLICT(id) DO UPDATE SET content = excluded.content
-	`, val)
-	if err != nil {
-		return fmt.Errorf("setting scratchpad: %w", err)
-	}
-	return nil
-}
-
-func (s *sqliteScratchpadStore) Delete(ctx context.Context, key string) error {
-	if key != "content" {
-		return nil
-	}
-	_, err := s.db.ExecContext(ctx, "UPDATE scratchpad SET content = '' WHERE id = 1")
-	if err != nil {
-		return fmt.Errorf("deleting scratchpad content: %w", err)
-	}
-	return nil
-}
-
-func (s *sqliteScratchpadStore) GetAll(ctx context.Context) (map[string]string, error) {
-	val, err := s.Get(ctx, "content")
-	if err != nil {
-		return nil, err
-	}
-	return map[string]string{"content": val}, nil
-}
-
 // sqliteTaskStore implements ListStore[Task] using SQLite.
 type sqliteTaskStore struct {
 	db *sql.DB

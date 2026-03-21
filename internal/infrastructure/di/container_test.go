@@ -587,8 +587,7 @@ type mockSessionProvider struct {
 	mock.Mock
 }
 
-func (m *mockSessionProvider) GetTasks() ports.TaskStore            { return nil }
-func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadStore { return nil }
+func (m *mockSessionProvider) GetTasks() ports.TaskStore { return nil }
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
 	args := m.Called()
 	return args.Get(0).(ports.SessionInfo)

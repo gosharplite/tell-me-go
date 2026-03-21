@@ -141,7 +141,7 @@ Preserve the following critical context:
 2. **Bug Contexts & Fixes**: Specifics of bugs encountered (e.g., memory optimizations in monitoring, deadlocks in llmcoord) and how they were resolved.
 3. **Key Resolution Steps**: Significant file modifications and the logical rationale (e.g., "mutating the original pointer" strategy).
 4. **Verification Results**: Outcomes of tests (unit, E2E), benchmarks, and health checks.
-5. **Session State**: Successfully executed commands, pending tasks (from scratchpad), and unresolved issues.
+5. **Session State**: Successfully executed commands, pending tasks (from task list), and unresolved issues.
 
 Discard:
 1. Verbatim file contents, boilerplate code, or redundant tool logs.

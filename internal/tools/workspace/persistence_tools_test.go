@@ -16,49 +16,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
-// mockKVStore implements ports.KVStore
-type mockKVStore struct {
-	kv  map[string]string
-	err error
-}
-
-func (m *mockKVStore) Get(ctx context.Context, key string) (string, error) {
-	if m.err != nil {
-		return "", m.err
-	}
-	if v, ok := m.kv[key]; ok {
-		return v, nil
-	}
-	return "", nil
-}
-
-func (m *mockKVStore) Set(ctx context.Context, key string, val string) error {
-	if m.err != nil {
-		return m.err
-	}
-	m.kv[key] = val
-	return nil
-}
-
-func (m *mockKVStore) Delete(ctx context.Context, key string) error {
-	if m.err != nil {
-		return m.err
-	}
-	delete(m.kv, key)
-	return nil
-}
-
-func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	res := make(map[string]string)
-	for k, v := range m.kv {
-		res[k] = v
-	}
-	return res, nil
-}
-
 // mockListStore implements ports.ListStore[ports.Task]
 type mockListStore struct {
 	tasks []ports.Task
@@ -115,30 +72,23 @@ func (m *mockListStore) DeleteAll(ctx context.Context) error {
 }
 
 type mockSessionProvider struct {
-	tasks      ports.TaskStore
-	scratchpad ports.ScratchpadStore
-	info       ports.SessionInfo
-	kvStore    *mockKVStore
-	listStore  *mockListStore
+	tasks     ports.TaskStore
+	info      ports.SessionInfo
+	listStore *mockListStore
 }
 
-func (m *mockSessionProvider) GetTasks() ports.TaskStore            { return m.tasks }
-func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadStore { return m.scratchpad }
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo           { return m.info }
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)       { m.info = info }
-func (m *mockSessionProvider) Close() error                         { return nil }
+func (m *mockSessionProvider) GetTasks() ports.TaskStore      { return m.tasks }
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo     { return m.info }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) { m.info = info }
+func (m *mockSessionProvider) Close() error                   { return nil }
 
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
-	kv := &mockKVStore{kv: make(map[string]string)}
 	lt := &mockListStore{}
 	ts := services.NewTaskService(lt)
-	ss := services.NewScratchpadService(kv)
 
 	provider := &mockSessionProvider{
-		tasks:      ts,
-		scratchpad: ss,
-		kvStore:    kv,
-		listStore:  lt,
+		tasks:     ts,
+		listStore: lt,
 		info: ports.SessionInfo{
 			Env:   make(map[string]string),
 			Paths: make(map[string]string),
@@ -283,53 +233,21 @@ func assertManageTasksResult(t *testing.T, res tools.ToolResult, err error, expe
 	}
 }
 
-func TestPersistenceTools_ManageScratchpad(t *testing.T) {
-	pt, _ := setupPersistenceTools()
+func TestPersistenceTools_StoreErrors(t *testing.T) {
+	pt, provider := setupPersistenceTools()
 	ctx := context.Background()
 
-	// Write
-	_, err := pt.ManageScratchpad(ctx, map[string]interface{}{"action": "write", "content": "hello"})
-	if err != nil {
-		t.Fatalf("Write scratchpad failed: %v", err)
+	// Inject error into list store
+	provider.listStore.err = fmt.Errorf("list store error")
+
+	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": "task"})
+	if err == nil {
+		t.Error("Expected error from addTask")
 	}
 
-	// Read
-	res, err := pt.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
-	if err != nil {
-		t.Fatalf("Read scratchpad failed: %v", err)
-	}
-	if res.Text != "hello" {
-		t.Errorf("Expected hello, got %s", res.Text)
-	}
-
-	// Append
-	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "append", "content": "world"})
-	if err != nil {
-		t.Fatalf("Append scratchpad failed: %v", err)
-	}
-
-	// Read again
-	res, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
-	if err != nil {
-		t.Fatalf("Read scratchpad failed: %v", err)
-	}
-	if res.Text != "hello\nworld" {
-		t.Errorf("Expected hello\nworld, got %s", res.Text)
-	}
-
-	// Clear
-	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "clear"})
-	if err != nil {
-		t.Fatalf("Clear scratchpad failed: %v", err)
-	}
-
-	// Read empty
-	res, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
-	if err != nil {
-		t.Fatalf("Read empty scratchpad failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "empty") {
-		t.Errorf("Expected empty message, got %s", res.Text)
+	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "clear"})
+	if err == nil {
+		t.Error("Expected error from clearTasks")
 	}
 }
 
@@ -346,7 +264,7 @@ func TestPersistenceTools_Register(t *testing.T) {
 		found[d.Name] = true
 	}
 
-	expected := []string{"get_session_info", "manage_scratchpad", "manage_tasks"}
+	expected := []string{"get_session_info", "manage_tasks"}
 	for _, name := range expected {
 		if !found[name] {
 			t.Errorf("Tool %s not registered", name)
@@ -402,41 +320,5 @@ func TestPersistenceTools_Errors(t *testing.T) {
 	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "delete", "task_id": 999.0})
 	if err == nil {
 		t.Error("Expected error for non-existent task in deleteTask")
-	}
-}
-
-func TestPersistenceTools_StoreErrors(t *testing.T) {
-	pt, provider := setupPersistenceTools()
-	ctx := context.Background()
-
-	// Inject error into list store
-	provider.listStore.err = fmt.Errorf("list store error")
-
-	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": "task"})
-	if err == nil {
-		t.Error("Expected error from addTask")
-	}
-
-	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "clear"})
-	if err == nil {
-		t.Error("Expected error from clearTasks")
-	}
-
-	// Inject error into KV store
-	provider.kvStore.err = fmt.Errorf("kv store error")
-
-	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "write", "content": "hello"})
-	if err == nil {
-		t.Error("Expected error from writeScratchpad")
-	}
-
-	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "append", "content": "world"})
-	if err == nil {
-		t.Error("Expected error from appendScratchpad")
-	}
-
-	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "clear"})
-	if err == nil {
-		t.Error("Expected error from clearScratchpad")
 	}
 }

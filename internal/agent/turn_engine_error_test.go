@@ -44,7 +44,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 }
 
 func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus(context.Background())
 	reg := &mockToolRegistry{}
 
 	tmpDir := t.TempDir()

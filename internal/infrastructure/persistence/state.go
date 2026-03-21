@@ -15,15 +15,13 @@ import (
 
 // sessionState manages all persistent services and session metadata.
 type sessionState struct {
-	Tasks      ports.TaskStore
-	Scratchpad ports.ScratchpadStore
-	Info       ports.SessionInfo
-	db         *sql.DB
+	Tasks ports.TaskStore
+	Info  ports.SessionInfo
+	db    *sql.DB
 }
 
-func (s *sessionState) GetTasks() ports.TaskStore            { return s.Tasks }
-func (s *sessionState) GetScratchpad() ports.ScratchpadStore { return s.Scratchpad }
-func (s *sessionState) GetInfo() ports.SessionInfo           { return s.Info }
+func (s *sessionState) GetTasks() ports.TaskStore  { return s.Tasks }
+func (s *sessionState) GetInfo() ports.SessionInfo { return s.Info }
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	s.Info = info
@@ -43,20 +41,19 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 		storageType = "sqlite" // Set sqlite as default storage
 	}
 
-	taskStore, scratchStore, db, paths, err := initRepositories(ctx, configDir, storageType)
+	taskStore, db, paths, err := initRepositories(ctx, configDir, storageType)
 	if err != nil {
 		return nil, err
 	}
 
-	tasks, scratch, err := initServices(ctx, taskStore, scratchStore)
+	tasks, err := initServices(ctx, taskStore)
 	if err != nil {
 		return nil, err
 	}
 
 	state := &sessionState{
-		Tasks:      tasks,
-		Scratchpad: scratch,
-		db:         db,
+		Tasks: tasks,
+		db:    db,
 	}
 
 	state.Info = ports.SessionInfo{
@@ -70,16 +67,15 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 	return state, nil
 }
 
-func initRepositories(ctx context.Context, configDir, storageType string) (ports.ListStore[ports.Task], ports.KVStore, *sql.DB, map[string]string, error) {
+func initRepositories(ctx context.Context, configDir, storageType string) (ports.ListStore[ports.Task], *sql.DB, map[string]string, error) {
 	paths := map[string]string{"config_dir": configDir}
 
 	if storageType == "memory" {
-		return newMemoryListStore[ports.Task](), newMemoryKVStore(), nil, paths, nil
+		return newMemoryListStore[ports.Task](), nil, paths, nil
 	}
 
 	fs := NewOSFileSystem()
 	tasksPath := filepath.Join(configDir, "tasks.json")
-	scratchPath := filepath.Join(configDir, "scratchpad.md")
 
 	// Legacy flat file storage is completely obsolete for active use.
 	// Only SQLite and Memory are supported for full operations.
@@ -89,30 +85,25 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 
 	db, err := initSQLiteDB(ctx, dbPath) // We will pass ctx here!
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Perform migration if needed
-	err = migrateFromJSON(ctx, db, fs, tasksPath, scratchPath)
+	err = migrateFromJSON(ctx, db, fs, tasksPath)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	return newSQLiteTaskStore(db),
-		newSQLiteScratchpadStore(db),
 		db,
 		paths, nil
 }
 
-func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], scratchStore ports.KVStore) (ports.TaskStore, ports.ScratchpadStore, error) {
+func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task]) (ports.TaskStore, error) {
 	tasks := services.NewTaskService(taskStore)
-	scratch := services.NewScratchpadService(scratchStore)
 
 	if err := tasks.Initialize(ctx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if err := scratch.Initialize(ctx); err != nil {
-		return nil, nil, err
-	}
-	return tasks, scratch, nil
+	return tasks, nil
 }
