@@ -450,12 +450,39 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 }
 
 func TestContextManager_WithLogger(t *testing.T) {
+	ctx := context.Background()
 	var buf bytes.Buffer
-	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+	// Set level to DEBUG to capture the "failed to emit summarization event" log.
+	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
 	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
-	history := &mockHistoryManager{}
+	// Add 2 turns to history so that SummarizeRange(ctx, 1, "") can proceed.
+	// Summarization requires at least (requestedTurns + 1) turns to preserve the last turn.
+	history := &mockHistoryManager{
+		contents: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+		},
+	}
 
-	cm := NewContextManager(strategy, history, nil, nil, WithLogger(testLogger))
+	// Use a bus that is shut down to trigger a log in emitSummarizationEvent.
+	bus := events.NewSimpleEventBus(ctx)
+	_ = bus.Shutdown(ctx)
 
-	assert.Equal(t, testLogger, cm.logger)
+	cm := NewContextManager(strategy, history, bus, nil, WithLogger(testLogger))
+	cm.Summarizer = &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			return "summary", nil, nil
+		},
+	}
+
+	// Trigger a condition that causes a log entry.
+	// SummarizeRange calls emitSummarizationEvent, which logs a DEBUG message if the event bus is closed.
+	_, _, _ = cm.SummarizeRange(ctx, 1, "")
+
+	output := buf.String()
+	assert.Contains(t, output, `"level":"DEBUG"`)
+	assert.Contains(t, output, "failed to emit summarization event")
 }

@@ -230,14 +230,27 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 }
 
 func TestSummarizer_WithLogger(t *testing.T) {
+	ctx := context.Background()
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 	gw := new(mockGateway)
 	bus := new(mockEventBus)
 
-	// NewSummarizer returns ports.Summarizer, which is an interface.
-	// We can cast it back to the underlying *summarizer for testing.
-	s := NewSummarizer(gw, bus, WithLogger(testLogger)).(*summarizer)
+	s := NewSummarizer(gw, bus, WithLogger(testLogger))
 
-	assert.Equal(t, testLogger, s.logger)
+	// Trigger an error condition using the public API to verify the logger is used.
+	respCh := make(chan *llm.Content)
+	close(respCh)
+
+	gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
+		return nil, nil, errors.New("simulated logger test error")
+	})
+
+	_, _, err := s.Summarize(ctx, nil, "")
+	assert.Error(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, `"level":"ERROR"`)
+	assert.Contains(t, output, "Summarization turn failed")
+	assert.Contains(t, output, "simulated logger test error")
 }
