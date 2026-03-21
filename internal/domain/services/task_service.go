@@ -13,6 +13,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
+// Ensure TaskService strictly implements the ports.TaskStore interface.
+// This explicit binding also resolves false positives in dead-code AST analysis.
+var _ ports.TaskStore = (*TaskService)(nil)
+
 // TaskService handles the logic for managing tasks.
 type TaskService struct {
 	mu     sync.RWMutex
