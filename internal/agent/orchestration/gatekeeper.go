@@ -186,20 +186,9 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	}
 
 	// 2. Logging
-	if t.Events != nil {
-		subsetTokens := t.Estimator.estimateTokens(req.History[start:end])
-		evt := events.SystemMessageEvent{
-			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens),
-			Level:   "info",
-		}
-		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
-			if !errors.Is(err, events.ErrBusNotInitialized) {
-				t.getLogger().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
-			}
-		}
-	}
+	subsetTokens := t.Estimator.estimateTokens(req.History[start:end])
+	msg := fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens)
+	t.publishSystemEvent(ctx, msg, "info")
 
 	// 3. Service Call
 	if t.Summarizer == nil {
@@ -213,25 +202,30 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	}
 
 	// Signal completion to the UI
-	if t.Events != nil {
-		evt := events.SystemMessageEvent{
-			Message: "Auto-summarization complete. Context successfully compressed.",
-			Level:   "info",
-		}
-		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
-			if !errors.Is(err, events.ErrBusNotInitialized) {
-				t.getLogger().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
-			}
-		}
-	}
+	t.publishSystemEvent(ctx, "Auto-summarization complete. Context successfully compressed.", "info")
 
 	// 4. State Mutation
 	req.History = applySummaryToHistory(req.History, start, end, summary)
 	req.Metadata.SummarizationAttempted = true
 	req.PersistHistory = true
 	return numTurns, nil
+}
+
+func (t *tokenGatekeeper) publishSystemEvent(ctx context.Context, message, level string) {
+	if t.Events == nil {
+		return
+	}
+	evt := events.SystemMessageEvent{
+		Message: message,
+		Level:   level,
+	}
+	if err := events.SafePublish(ctx, t.Events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.getLogger().Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
+		}
+	}
 }
 
 func (t *tokenGatekeeper) findSummarizableRange(ctx context.Context, history []*llm.Content) (int, int, int, error) {
