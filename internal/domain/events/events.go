@@ -336,13 +336,13 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 	}
 }
 
-func (e StatusUpdate) Type() string { return "StatusUpdate" }
-func (e TurnStarted) Type() string { return "TurnStarted" }
-func (e ResponseStreamEvent) Type() string { return "ResponseStreamEvent" }
-func (e ToolCallEvent) Type() string { return "ToolCallEvent" }
-func (e ToolResultEvent) Type() string { return "ToolResultEvent" }
-func (e UsageMetricsEvent) Type() string { return "UsageMetricsEvent" }
-func (e SystemMessageEvent) Type() string { return "SystemMessageEvent" }
+func (e StatusUpdate) Type() string           { return "StatusUpdate" }
+func (e TurnStarted) Type() string            { return "TurnStarted" }
+func (e ResponseStreamEvent) Type() string    { return "ResponseStreamEvent" }
+func (e ToolCallEvent) Type() string          { return "ToolCallEvent" }
+func (e ToolResultEvent) Type() string        { return "ToolResultEvent" }
+func (e UsageMetricsEvent) Type() string      { return "UsageMetricsEvent" }
+func (e SystemMessageEvent) Type() string     { return "SystemMessageEvent" }
 func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" }
-func (e SummarizationRequired) Type() string { return "SummarizationRequired" }
-func (e TraceEvent) Type() string { return "TraceEvent" }
+func (e SummarizationRequired) Type() string  { return "SummarizationRequired" }
+func (e TraceEvent) Type() string             { return "TraceEvent" }

@@ -101,9 +101,9 @@ func (m *mockExpEventBus) Publish(ctx context.Context, e events.Event) error {
 	m.events = append(m.events, e)
 	return nil
 }
-func (m *mockExpEventBus) Subscribe(sub func(context.Context, events.Event))   {}
-func (m *mockExpEventBus) Shutdown(ctx context.Context) error { return nil }
-func (m *mockExpEventBus) Flush(ctx context.Context) error    { return nil }
+func (m *mockExpEventBus) Subscribe(sub func(context.Context, events.Event)) {}
+func (m *mockExpEventBus) Shutdown(ctx context.Context) error                { return nil }
+func (m *mockExpEventBus) Flush(ctx context.Context) error                   { return nil }
 
 func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 	bus := &mockExpEventBus{}

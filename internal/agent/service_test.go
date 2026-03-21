@@ -165,7 +165,7 @@ func (m *mockServiceAgent) SetTieredThreshold(ctx context.Context, threshold int
 	return m.Called(ctx, threshold).Error(0)
 }
 func (m *mockServiceAgent) Subscribe(handler func(context.Context, events.Event)) { m.Called(handler) }
-func (m *mockServiceAgent) Shutdown(ctx context.Context) error   { return m.Called(ctx).Error(0) }
+func (m *mockServiceAgent) Shutdown(ctx context.Context) error                    { return m.Called(ctx).Error(0) }
 
 // mockServiceCapturer is a mock of Capturer.
 type mockServiceCapturer struct {
