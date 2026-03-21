@@ -27,7 +27,7 @@ func TestAgent_ConfigFailure(t *testing.T) {
 	}
 
 	a := &agent{
-		events: events.NewSimpleEventBus(),
+		events: events.NewSimpleEventBus(context.Background()),
 		ctxManager: &orchestration.ContextManager{
 			History: hm,
 		},

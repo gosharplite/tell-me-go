@@ -491,7 +491,7 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	// Initial message
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "initial"}}})
 
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
 	cm := NewContextManager(strategy, hManager, bus, nil)
 

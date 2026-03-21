@@ -178,7 +178,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	assert.Error(t, err)
 
 	// Case 9: Event publishing
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	defer func() {
 		if err := bus.Shutdown(ctx); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -267,7 +267,7 @@ func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
 }
 
 func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	ctx := context.Background()
 	defer func() {
 		_ = bus.Shutdown(ctx)

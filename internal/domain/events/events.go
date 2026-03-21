@@ -18,8 +18,9 @@ import (
 type Event interface{}
 
 var (
-	ErrBufferOverflow = errors.New("event buffer overflowed, events were dropped")
-	ErrBusClosed      = errors.New("event bus is closed")
+	ErrBufferOverflow    = errors.New("event buffer overflowed, events were dropped")
+	ErrBusClosed         = errors.New("event bus is closed")
+	ErrBusNotInitialized = errors.New("event bus is nil or uninitialized")
 )
 
 // EventBus defines the interface for publishing and subscribing to events.
@@ -52,16 +53,16 @@ type flushEvent struct {
 }
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus with the default capacity.
-func NewSimpleEventBus() *SimpleEventBus {
-	return NewSimpleEventBusWithCapacity(defaultMaxQueueSize)
+func NewSimpleEventBus(ctx context.Context) *SimpleEventBus {
+	return NewSimpleEventBusWithCapacity(ctx, defaultMaxQueueSize)
 }
 
 // NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
-func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
+func NewSimpleEventBusWithCapacity(ctx context.Context, capacity int) *SimpleEventBus {
 	if capacity <= 0 {
 		capacity = defaultMaxQueueSize
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	return &SimpleEventBus{
 		capacity: capacity,
 		closing:  make(chan struct{}),
@@ -71,6 +72,10 @@ func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
 }
 
 func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
+	if b == nil || b.closing == nil {
+		return ErrBusNotInitialized
+	}
+
 	// 1. Immediate context check
 	select {
 	case <-ctx.Done():
@@ -101,6 +106,10 @@ func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
 }
 
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {
+	if b == nil || b.closing == nil || sub == nil {
+		return
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -295,6 +304,10 @@ func (r *eventRingBuffer) len() int {
 
 // Shutdown gracefully stops the event bus, flushing pending events.
 func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
+	if b == nil || b.closing == nil {
+		return ErrBusNotInitialized
+	}
+
 	b.once.Do(func() {
 		// 1. Mark as closed and signal pending producers (Flush) to abort
 		b.mu.Lock()
@@ -346,6 +359,10 @@ func (b *SimpleEventBus) abort() {
 
 // Flush waits for all currently queued events to be dispatched.
 func (b *SimpleEventBus) Flush(ctx context.Context) error {
+	if b == nil || b.closing == nil {
+		return ErrBusNotInitialized
+	}
+
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
@@ -482,7 +499,7 @@ type TraceEvent struct {
 // It returns an error if the context is cancelled or the publication fails (e.g., buffer overflow).
 func SafePublish(ctx context.Context, bus EventBus, e Event, timeout time.Duration) error {
 	if bus == nil {
-		return nil
+		return ErrBusNotInitialized
 	}
 	pubCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

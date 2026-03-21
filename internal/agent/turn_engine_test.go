@@ -86,7 +86,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	t.Parallel()
 	var capturedEvents []string
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	defer func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -278,7 +278,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	defer func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -337,7 +337,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	defer func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -474,7 +474,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 
 	var capturedTime time.Time
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	defer func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)

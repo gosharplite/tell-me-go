@@ -87,7 +87,7 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			bus := NewSimpleEventBusWithCapacity(tt.capacity)
+			bus := NewSimpleEventBusWithCapacity(context.Background(), tt.capacity)
 			if bus.capacity != defaultMaxQueueSize {
 				t.Errorf("expected capacity %d, got %d", defaultMaxQueueSize, bus.capacity)
 			}
@@ -105,7 +105,7 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 
 func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 	t.Parallel()
-	bus := NewSimpleEventBus()
+	bus := NewSimpleEventBus(context.Background())
 
 	blockSub := make(chan struct{})
 	flushStarted := make(chan struct{})
@@ -156,7 +156,7 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 
 func TestPumpEvents_ContextCancellation_LeakCheck(t *testing.T) {
 	t.Parallel()
-	bus := NewSimpleEventBus()
+	bus := NewSimpleEventBus(context.Background())
 	in := make(chan Event)
 	out := make(chan Event)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -186,7 +186,7 @@ func TestPumpEvents_ContextCancellation_LeakCheck(t *testing.T) {
 
 func TestPumpEvents_GracefulExit_OnInputClose(t *testing.T) {
 	t.Parallel()
-	bus := NewSimpleEventBus()
+	bus := NewSimpleEventBus(context.Background())
 	in := make(chan Event)
 	out := make(chan Event)
 	ctx := context.Background()
@@ -217,7 +217,7 @@ func TestPumpEvents_GracefulExit_OnInputClose(t *testing.T) {
 
 func TestPumpEvents_BlockedOnOut_ContextCancellation(t *testing.T) {
 	t.Parallel()
-	bus := NewSimpleEventBusWithCapacity(1)
+	bus := NewSimpleEventBusWithCapacity(context.Background(), 1)
 	in := make(chan Event)
 	out := make(chan Event) // Unbuffered, no one reading
 	ctx, cancel := context.WithCancel(context.Background())

@@ -236,7 +236,7 @@ type testTurnEnv struct {
 func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	t.Helper()
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	hManager := &mockHistoryManager{}

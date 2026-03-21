@@ -6,6 +6,7 @@ package events_test
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 func TestSimpleEventBus_Race(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -52,7 +53,7 @@ func TestSimpleEventBus_Race(t *testing.T) {
 
 func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	count := 0
 	mu := sync.Mutex{}
 
@@ -83,7 +84,7 @@ func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
 
 func TestSimpleEventBus_Flush(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -120,7 +121,7 @@ func TestSimpleEventBus_Flush(t *testing.T) {
 
 func TestSimpleEventBus_Shutdown_ContextCancelled(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	block := make(chan struct{})
 	ready := make(chan struct{})
 	bus.Subscribe(func(e events.Event) {
@@ -144,7 +145,7 @@ func TestSimpleEventBus_Shutdown_ContextCancelled(t *testing.T) {
 
 func TestSimpleEventBus_Flush_ClosedBus(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	_ = bus.Shutdown(context.Background())
 
 	err := bus.Flush(context.Background())
@@ -155,7 +156,7 @@ func TestSimpleEventBus_Flush_ClosedBus(t *testing.T) {
 
 func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	block := make(chan struct{})
 	ready := make(chan struct{})
 	bus.Subscribe(func(e events.Event) {
@@ -182,7 +183,7 @@ func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
 
 func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
 	block := make(chan struct{})
@@ -213,7 +214,7 @@ func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
 
 func TestSimpleEventBus_Subscribe_ClosedBus(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	_ = bus.Shutdown(context.Background())
 
 	bus.Subscribe(func(e events.Event) {
@@ -227,7 +228,7 @@ func TestSimpleEventBus_Subscribe_ClosedBus(t *testing.T) {
 
 func TestSimpleEventBus_Publish_ClosedBus(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	_ = bus.Shutdown(context.Background())
 
 	// Should return ErrBusClosed and not panic or block indefinitely
@@ -238,7 +239,7 @@ func TestSimpleEventBus_Publish_ClosedBus(t *testing.T) {
 
 func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	err := bus.Flush(context.Background())
 	if err != nil {
 		t.Errorf("expected nil error when flushing with no subscribers, got %v", err)
@@ -247,7 +248,7 @@ func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
 
 func TestSimpleEventBus_BufferEviction(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
 	block := make(chan struct{})
@@ -300,7 +301,7 @@ func TestSimpleEventBus_BufferEviction(t *testing.T) {
 
 func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
 	block := make(chan struct{})
@@ -340,7 +341,7 @@ func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
 
 func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	block := make(chan struct{})
 
 	// defer 1: Will execute LAST. Triggers graceful shutdown.
@@ -362,9 +363,9 @@ func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
 
 func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 	t.Parallel()
-	// Initialize a bus using NewSimpleEventBusWithCapacity(1).
+	// Initialize a bus using NewSimpleEventBusWithCapacity(context.Background(), 1).
 
-	bus := events.NewSimpleEventBusWithCapacity(1)
+	bus := events.NewSimpleEventBusWithCapacity(context.Background(), 1)
 
 	// Create a subscriber that blocks intentionally (so events queue up).
 	block := make(chan struct{})
@@ -418,7 +419,7 @@ func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 
 func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 
 	// Block processing to ensure Flush blocks.
 	block := make(chan struct{})
@@ -463,7 +464,7 @@ func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
 
 func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBusWithCapacity(10)
+	bus := events.NewSimpleEventBusWithCapacity(context.Background(), 10)
 	defer func() { _ = bus.Shutdown(context.Background()) }()
 
 	var completed int32
@@ -509,7 +510,7 @@ func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
 
 func TestEventBus_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -523,7 +524,7 @@ func TestEventBus_ContextCancellation_PreventsLeak(t *testing.T) {
 
 func TestEventBus_Publish_ClosedBus_ReturnsError(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	_ = bus.Shutdown(context.Background())
 
 	err := bus.Publish(context.Background(), "test-event")
@@ -535,7 +536,7 @@ func TestEventBus_Publish_ClosedBus_ReturnsError(t *testing.T) {
 func TestEventBus_Subscribe_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
 	// Create a bus with a small capacity to trigger blocking if needed.
-	bus := events.NewSimpleEventBusWithCapacity(1)
+	bus := events.NewSimpleEventBusWithCapacity(context.Background(), 1)
 
 	// Create a subscriber that blocks.
 	block := make(chan struct{})
@@ -558,7 +559,7 @@ func TestEventBus_Subscribe_ContextCancellation_PreventsLeak(t *testing.T) {
 }
 
 func TestEventBus_Publish_ContextCancellation(t *testing.T) {
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Cancel the context immediately BEFORE calling Publish
@@ -575,7 +576,7 @@ func TestEventBus_Publish_ContextCancellation(t *testing.T) {
 
 func TestSimpleEventBus_Publish_ContextCancellation_Internal(t *testing.T) {
 	// Create a bus
-	bus := events.NewSimpleEventBus()
+	bus := events.NewSimpleEventBus(context.Background())
 	defer func() { _ = bus.Shutdown(context.Background()) }()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -591,5 +592,80 @@ func TestSimpleEventBus_Publish_ContextCancellation_Internal(t *testing.T) {
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error, got: %v", err)
+	}
+}
+
+func TestSimpleEventBus_NilSafety(t *testing.T) {
+	t.Run("Nil bus Publish", func(t *testing.T) {
+		var bus *events.SimpleEventBus
+		err := bus.Publish(context.Background(), "event")
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.Errorf("expected ErrBusNotInitialized for nil bus, got %v", err)
+		}
+	})
+
+	t.Run("Nil bus Subscribe", func(t *testing.T) {
+		var bus *events.SimpleEventBus
+		// Should not panic
+		bus.Subscribe(func(e events.Event) {})
+	})
+
+	t.Run("Nil bus Shutdown", func(t *testing.T) {
+		var bus *events.SimpleEventBus
+		err := bus.Shutdown(context.Background())
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.Errorf("expected ErrBusNotInitialized for nil bus, got %v", err)
+		}
+	})
+
+	t.Run("Nil bus Flush", func(t *testing.T) {
+		var bus *events.SimpleEventBus
+		err := bus.Flush(context.Background())
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.Errorf("expected ErrBusNotInitialized for nil bus, got %v", err)
+		}
+	})
+
+	t.Run("SafePublish with nil bus", func(t *testing.T) {
+		err := events.SafePublish(context.Background(), nil, "event", time.Second)
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.Errorf("expected ErrBusNotInitialized for nil bus in SafePublish, got %v", err)
+		}
+	})
+
+	t.Run("Uninitialized bus Publish", func(t *testing.T) {
+		bus := &events.SimpleEventBus{}
+		err := bus.Publish(context.Background(), "event")
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.Errorf("expected ErrBusNotInitialized for uninitialized bus, got %v", err)
+		}
+	})
+}
+
+func TestSimpleEventBus_ContextLeak(t *testing.T) {
+	baseGoroutines := runtime.NumGoroutine()
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	bus := events.NewSimpleEventBus(ctx) 
+	
+	bus.Subscribe(func(e events.Event) {})
+	
+	// Wait for workers to start
+	time.Sleep(10 * time.Millisecond)
+	
+	afterSubscribe := runtime.NumGoroutine()
+	if afterSubscribe <= baseGoroutines {
+		t.Errorf("Expected more goroutines after subscribe, got %d <= %d", afterSubscribe, baseGoroutines)
+	}
+	
+	cancel() // Trigger cancellation
+	
+	// Wait for goroutines to exit
+	time.Sleep(50 * time.Millisecond)
+	
+	afterCancel := runtime.NumGoroutine()
+	if afterCancel >= afterSubscribe {
+		t.Errorf("Expected fewer goroutines after cancel, got %d >= %d", afterCancel, afterSubscribe)
 	}
 }

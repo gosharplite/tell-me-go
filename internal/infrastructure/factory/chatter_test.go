@@ -108,7 +108,7 @@ func TestNewChatter(t *testing.T) {
 		hManager: &mockHistoryManager{},
 		reg:      &mockRegistry{},
 		sm:       &mockSecurityManager{},
-		bus:      events.NewSimpleEventBus(),
+		bus:      events.NewSimpleEventBus(context.Background()),
 		paths: &persistence.Paths{
 			ModeDir: modeDir,
 		},
