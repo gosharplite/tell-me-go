@@ -50,17 +50,42 @@ type SimpleEventBus struct {
 	closing           chan struct{}
 	ctx               context.Context
 	cancel            context.CancelFunc
+	logger            *slog.Logger
+}
+
+// BusOption defines a functional option for configuring the SimpleEventBus.
+type BusOption func(*SimpleEventBus)
+
+// WithLogger sets the logger for the SimpleEventBus.
+func WithLogger(l *slog.Logger) BusOption {
+	return func(b *SimpleEventBus) {
+		b.logger = l
+	}
 }
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus.
-func NewSimpleEventBus(ctx context.Context) *SimpleEventBus {
+func NewSimpleEventBus(ctx context.Context, opts ...BusOption) *SimpleEventBus {
 	ctx, cancel := context.WithCancel(ctx)
-	return &SimpleEventBus{
+	b := &SimpleEventBus{
 		subscribers: make(map[string][]Subscriber),
 		closing:     make(chan struct{}),
 		ctx:         ctx,
 		cancel:      cancel,
+		logger:      slog.Default(),
 	}
+
+	for _, opt := range opts {
+		opt(b)
+	}
+
+	return b
+}
+
+func (b *SimpleEventBus) Logger() *slog.Logger {
+	if b == nil || b.logger == nil {
+		return slog.Default()
+	}
+	return b.logger
 }
 
 func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
@@ -110,7 +135,7 @@ func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, e
 			stack := string(debug.Stack())
 
 			// 1. Emit structured log with context
-			slog.ErrorContext(ctx, "Subscriber panicked during event handling",
+			b.Logger().ErrorContext(ctx, "Subscriber panicked during event handling",
 				slog.String("subscriber_type", subType),
 				slog.String("event_type", eventType),
 				slog.Any("panic_reason", r),
@@ -290,8 +315,13 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 	case <-ctx.Done():
 		err := fmt.Errorf("publish timeout for event %s: %w", event.Type(), ctx.Err())
 
+		logger := slog.Default()
+		if l, ok := bus.(interface{ Logger() *slog.Logger }); ok {
+			logger = l.Logger()
+		}
+
 		// 1. Emit structured log with context ensuring visibility even if caller drops the error
-		slog.WarnContext(ctx, "Event dropped due to publish timeout",
+		logger.WarnContext(ctx, "Event dropped due to publish timeout",
 			slog.String("event_type", event.Type()),
 			slog.String("error", err.Error()),
 		)

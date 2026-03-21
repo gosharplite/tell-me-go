@@ -4,9 +4,11 @@
 package orchestration
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"testing"
 
@@ -184,7 +186,12 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
 	}()
+
+	var logBuf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	cm.logger = testLogger
 	cm.Events = bus
+
 	received := false
 	var mu sync.Mutex
 	bus.Subscribe(func(e events.Event) {
@@ -203,6 +210,13 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	mu.Lock()
 	assert.True(t, received)
 	mu.Unlock()
+
+	// Verify log if bus was closed during emitSummarizationEvent
+	_ = bus.Shutdown(ctx)
+	_, _, _ = cm.SummarizeRange(ctx, 1, "")
+	output := logBuf.String()
+	assert.Contains(t, output, "failed to emit summarization event")
+	assert.Contains(t, output, `"level":"DEBUG"`)
 
 	// Case 10: finalizeSummarization fails
 	history.setContentsErr = fmt.Errorf("persist fail")

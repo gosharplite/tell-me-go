@@ -18,11 +18,32 @@ import (
 type summarizer struct {
 	gateway llm.LLMGateway
 	events  events.EventBus
+	logger  *slog.Logger
 }
 
 // NewSummarizer creates a new summarization service.
-func NewSummarizer(g llm.LLMGateway, bus events.EventBus) ports.Summarizer {
-	return &summarizer{gateway: g, events: bus}
+func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...SummarizerOption) ports.Summarizer {
+	s := &summarizer{
+		gateway: g,
+		events:  bus,
+		logger:  slog.Default(),
+	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	return s
+}
+
+// SummarizerOption defines a functional option for configuring the summarizer.
+type SummarizerOption func(*summarizer)
+
+// WithLogger sets the logger for the summarizer.
+func WithLogger(l *slog.Logger) SummarizerOption {
+	return func(s *summarizer) {
+		s.logger = l
+	}
 }
 
 // Summarize uses the LLM to compress a subset of history.
@@ -41,7 +62,7 @@ func (s *summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	duration := time.Since(startTime)
 
 	if err != nil {
-		slog.Error("Summarization turn failed",
+		s.logger.Error("Summarization turn failed",
 			slog.Int("turns_summarized", len(subset)),
 			slog.Int64("duration_ms", duration.Milliseconds()),
 			slog.String("error", err.Error()),
@@ -52,7 +73,7 @@ func (s *summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 		return "", nil, fmt.Errorf("%w: summarization failed permanently", err)
 	}
 
-	slog.Info("Summarization turn completed successfully",
+	s.logger.Info("Summarization turn completed successfully",
 		slog.Int("turns_summarized", len(subset)),
 		slog.Int64("duration_ms", duration.Milliseconds()),
 	)

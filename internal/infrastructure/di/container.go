@@ -116,7 +116,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	pricingData := telemetry.GetPricing(ctx, b.SM, filepath.Join(b.HomeDir, "output"))
 
-	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger())
+	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(nil))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}

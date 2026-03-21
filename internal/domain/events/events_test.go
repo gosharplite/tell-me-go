@@ -4,8 +4,10 @@
 package events_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -62,6 +64,7 @@ func (s *funcSubscriberWithErr) Handle(ctx context.Context, e events.Event) erro
 }
 
 func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background())
 	received := make(chan events.Event, 1)
 
@@ -86,7 +89,11 @@ func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
 }
 
 func TestSimpleEventBus_ErrorAggregation(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	t.Parallel()
+
+	var buf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithLogger(testLogger))
 
 	err1 := errors.New("err 1")
 	err2 := errors.New("err 2")
@@ -95,7 +102,7 @@ func TestSimpleEventBus_ErrorAggregation(t *testing.T) {
 	bus.SubscribeSubscriber("testEvent", &errSubscriber{err: err2})
 	bus.SubscribeSubscriber("testEvent", &panicSubscriber{msg: "panic 1"})
 
-	err := bus.Publish(context.Background(), testEvent{})
+	err := bus.Publish(context.Background(), testEvent{typeName: "testEvent"})
 	if err == nil {
 		t.Fatal("expected aggregated error, got nil")
 	}
@@ -112,10 +119,26 @@ func TestSimpleEventBus_ErrorAggregation(t *testing.T) {
 	} else if len(joined.Unwrap()) != 3 {
 		t.Errorf("expected 3 joined errors, got %d", len(joined.Unwrap()))
 	}
+
+	// Assert the structured log output for the panic
+	output := buf.String()
+	if !strings.Contains(output, `"level":"ERROR"`) {
+		t.Errorf("Expected ERROR log, got: %s", output)
+	}
+	if !strings.Contains(output, `"panic_reason":"panic 1"`) {
+		t.Errorf("Missing panic_reason key in log: %s", output)
+	}
 }
 
 func TestSimpleEventBus_PanicRecovery(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	t.Parallel()
+
+	// 1. Create an isolated, buffer-backed logger for this specific test
+	var buf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	// 2. Inject the logger into the component
+	bus := events.NewSimpleEventBus(context.Background(), events.WithLogger(testLogger))
 
 	bus.Subscribe(func(e events.Event) {
 		panic("boom")
@@ -125,7 +148,7 @@ func TestSimpleEventBus_PanicRecovery(t *testing.T) {
 		// Normal subscriber
 	})
 
-	err := bus.Publish(context.Background(), testEvent{})
+	err := bus.Publish(context.Background(), testEvent{typeName: "test_panic"})
 	if err == nil {
 		t.Fatal("expected error from panic, got nil")
 	}
@@ -133,10 +156,29 @@ func TestSimpleEventBus_PanicRecovery(t *testing.T) {
 	if !strings.Contains(err.Error(), "subscriber panicked: boom") {
 		t.Errorf("expected panic message in error, got %v", err)
 	}
+
+	// 4. Assert the structured log output
+	output := buf.String()
+	if !strings.Contains(output, `"level":"ERROR"`) {
+		t.Errorf("Expected ERROR log, got: %s", output)
+	}
+	if !strings.Contains(output, `"event_type":"test_panic"`) {
+		t.Errorf("Missing event_type key in log: %s", output)
+	}
+	if !strings.Contains(output, `"stack_trace"`) {
+		t.Errorf("Missing stack_trace in log: %s", output)
+	}
 }
 
 func TestSimpleEventBus_PanicResilience(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	t.Parallel()
+
+	// 1. Create an isolated, buffer-backed logger for this specific test
+	var buf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	// 2. Inject the logger into the component
+	bus := events.NewSimpleEventBus(context.Background(), events.WithLogger(testLogger))
 
 	results := make([]bool, 3)
 
@@ -152,7 +194,7 @@ func TestSimpleEventBus_PanicResilience(t *testing.T) {
 		return nil
 	}})
 
-	err := bus.Publish(context.Background(), testEvent{})
+	err := bus.Publish(context.Background(), testEvent{typeName: "testEvent"})
 	if err == nil {
 		t.Fatal("expected error from panic, got nil")
 	}
@@ -167,24 +209,42 @@ func TestSimpleEventBus_PanicResilience(t *testing.T) {
 	if !strings.Contains(err.Error(), "simulated UI crash") {
 		t.Errorf("expected panic message in error, got %v", err)
 	}
-	// Verify stack trace is present
-	if !strings.Contains(err.Error(), "goroutine") {
-		t.Error("expected stack trace in error message")
+
+	// 4. Assert the structured log output
+	output := buf.String()
+	if !strings.Contains(output, `"level":"ERROR"`) {
+		t.Errorf("Expected ERROR log, got: %s", output)
+	}
+	if !strings.Contains(output, `"subscriber_type":"*events_test.panicSubscriber"`) {
+		t.Errorf("Missing subscriber_type key in log: %s", output)
+	}
+	if !strings.Contains(output, `"panic_reason":"simulated UI crash"`) {
+		t.Errorf("Missing panic_reason key in log: %s", output)
+	}
+	if !strings.Contains(output, `"stack_trace"`) {
+		t.Errorf("Missing stack_trace in log: %s", output)
 	}
 }
 
 func TestSafePublish_Timeout(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
+	t.Parallel()
+
+	// 1. Create an isolated, buffer-backed logger
+	var buf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	// 2. Inject the logger into the component
+	bus := events.NewSimpleEventBus(context.Background(), events.WithLogger(testLogger))
 	sub := &blockingSubscriber{
 		ready: make(chan struct{}),
 		block: make(chan struct{}),
 	}
-	bus.SubscribeSubscriber("testEvent", sub)
+	bus.SubscribeSubscriber("test_timeout", sub)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	err := events.SafePublish(ctx, bus, testEvent{})
+	err := events.SafePublish(ctx, bus, testEvent{typeName: "test_timeout"})
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
@@ -193,11 +253,24 @@ func TestSafePublish_Timeout(t *testing.T) {
 		t.Errorf("expected timeout error message, got %v", err)
 	}
 
+	// 4. Assert the structured log output
+	output := buf.String()
+	if !strings.Contains(output, `"level":"WARN"`) {
+		t.Errorf("Expected WARN log, got: %s", output)
+	}
+	if !strings.Contains(output, `"event_type":"test_timeout"`) {
+		t.Errorf("Missing event_type key in log: %s", output)
+	}
+	if !strings.Contains(output, `"Event dropped due to publish timeout"`) {
+		t.Errorf("Missing main log message: %s", output)
+	}
+
 	// Cleanup the blocking subscriber so the goroutine can finish
 	close(sub.block)
 }
 
 func TestSimpleEventBus_FlushAndShutdown(t *testing.T) {
+	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background())
 
 	if err := bus.Flush(context.Background()); err != nil {
