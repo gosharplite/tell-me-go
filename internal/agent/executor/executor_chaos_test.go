@@ -157,9 +157,9 @@ func TestZombieToolTimeout(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
-	// Set very short timeouts for testing
-	exec.toolTimeout = 50 * time.Millisecond
-	exec.zombieTimeout = 100 * time.Millisecond
+	// Set generous timeouts for CI/race mode
+	exec.toolTimeout = 200 * time.Millisecond
+	exec.zombieTimeout = 300 * time.Millisecond
 
 	ctx := context.Background()
 
@@ -170,7 +170,7 @@ func TestZombieToolTimeout(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Error(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "timed out")
-	assert.True(t, duration >= 50*time.Millisecond)
+	assert.True(t, duration >= 200*time.Millisecond)
 
 	timer := time.NewTimer(ciSafeTimeout)
 	defer timer.Stop()
