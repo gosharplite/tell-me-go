@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -168,5 +169,86 @@ func TestGlobalSubscriber_NewEventType(t *testing.T) {
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Global subscriber did NOT receive UnknownEvent")
+	}
+}
+
+func TestSimpleEventBus_Race(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Goroutine publishing events
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = bus.Publish(ctx, events.StatusUpdate{Message: "test"})
+			}
+		}
+	}()
+
+	// Goroutine subscribing to events
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			bus.Subscribe(func(e events.Event) {})
+			time.Sleep(time.Microsecond)
+		}
+	}()
+
+	// Wait a bit to let them race
+	time.Sleep(100 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+}
+
+type deadlockSubscriber struct {
+	bus events.EventBus
+}
+
+func (s *deadlockSubscriber) Handle(ctx context.Context, e events.Event) error {
+	if e.Type() == "StatusUpdate" {
+		// Publish a DIFFERENT event type to avoid infinite recursion
+		return s.bus.Publish(ctx, events.TurnStarted{})
+	}
+	return nil
+}
+
+func TestSimpleEventBus_Deadlock(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+	ctx := context.Background()
+
+	sub := &deadlockSubscriber{bus: bus}
+	bus.SubscribeSubscriber("StatusUpdate", sub)
+
+	// This goroutine will try to get a Write lock while the Publish (RLock) is active
+	// and waiting for the recursive Publish (RLock) which will be blocked by this writer.
+	go func() {
+		for i := 0; i < 100; i++ {
+			bus.Subscribe(func(e events.Event) {})
+			time.Sleep(time.Microsecond)
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		// Start publishing. It will hit the deadlockSubscriber.
+		done <- bus.Publish(ctx, events.StatusUpdate{Message: "test"})
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Logf("Publish returned: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Deadlock detected in Publish")
 	}
 }

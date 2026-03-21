@@ -78,12 +78,18 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 		return ErrBusClosed
 	}
 
-	// Combine specific and global subscribers
-	var subs []Subscriber
-	subs = append(subs, b.subscribers[event.Type()]...)
-	subs = append(subs, b.globalSubscribers...)
-	b.mu.RUnlock() // Release lock early to prevent deadlocks
+	// 1. Safely copy the subscriber slices while holding the read lock.
+	// This prevents data races when subscribers are added/removed during iteration,
+	// and avoids deadlocks if a subscriber tries to publish/subscribe recursively.
+	specificSubs := b.subscribers[event.Type()]
+	globalSubs := b.globalSubscribers
 
+	subs := make([]Subscriber, 0, len(specificSubs)+len(globalSubs))
+	subs = append(subs, specificSubs...)
+	subs = append(subs, globalSubs...)
+	b.mu.RUnlock()
+
+	// 2. Iterate over the local copy outside the lock.
 	var errs []error
 	for _, sub := range subs {
 		if err := b.notifySubscriber(ctx, sub, event); err != nil {
