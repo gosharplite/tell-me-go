@@ -201,7 +201,7 @@ func (m *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	data, ok := m.files[name]
 	if !ok {
 		if flag&os.O_CREATE != 0 {

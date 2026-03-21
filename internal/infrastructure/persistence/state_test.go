@@ -12,7 +12,7 @@ import (
 
 func verifyStateInitialization(t *testing.T, state ports.SessionProvider) {
 	t.Helper()
-	if state.GetTasks() == nil || state.GetConfig() == nil || state.GetScratchpad() == nil {
+	if state.GetTasks() == nil || state.GetScratchpad() == nil {
 		t.Error("expected all services to be initialized")
 	}
 }
@@ -54,14 +54,5 @@ func TestNewSessionState_MemoryStorage(t *testing.T) {
 	info := state.GetInfo()
 	if info.Env["STORAGE_TYPE"] != "memory" {
 		t.Errorf("expected STORAGE_TYPE to be memory, got %s", info.Env["STORAGE_TYPE"])
-	}
-
-	// Should work without actual files
-	if err := state.GetConfig().Set(ctx, "mem_key", "mem_val"); err != nil {
-		t.Fatal(err)
-	}
-	val, _ := state.GetConfig().Get("mem_key")
-	if val != "mem_val" {
-		t.Errorf("expected mem_val, got %s", val)
 	}
 }

@@ -13,69 +13,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// sqliteConfigStore implements KVStore for config using SQLite.
-type sqliteConfigStore struct {
-	db *sql.DB
-}
-
-func newSQLiteConfigStore(db *sql.DB) *sqliteConfigStore {
-	return &sqliteConfigStore{db: db}
-}
-
-func (s *sqliteConfigStore) Get(ctx context.Context, key string) (string, error) {
-	var val string
-	err := s.db.QueryRowContext(ctx, "SELECT value FROM config WHERE key = ?", key).Scan(&val)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", nil
-		}
-		return "", fmt.Errorf("getting config key %s: %w", key, err)
-	}
-	return val, nil
-}
-
-func (s *sqliteConfigStore) Set(ctx context.Context, key string, val string) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO config (key, value) VALUES (?, ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value
-	`, key, val)
-	if err != nil {
-		return fmt.Errorf("setting config key %s: %w", key, err)
-	}
-	return nil
-}
-
-func (s *sqliteConfigStore) Delete(ctx context.Context, key string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM config WHERE key = ?", key)
-	if err != nil {
-		return fmt.Errorf("deleting config key %s: %w", key, err)
-	}
-	return nil
-}
-
-func (s *sqliteConfigStore) GetAll(ctx context.Context) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT key, value FROM config")
-	if err != nil {
-		return nil, fmt.Errorf("querying all config: %w", err)
-	}
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	res := make(map[string]string)
-	for rows.Next() {
-		var k, v string
-		if err := rows.Scan(&k, &v); err != nil {
-			return nil, fmt.Errorf("scanning config row: %w", err)
-		}
-		res[k] = v
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("config rows iteration error: %w", err)
-	}
-	return res, nil
-}
-
 // sqliteScratchpadStore implements KVStore for the scratchpad singleton using SQLite.
 type sqliteScratchpadStore struct {
 	db *sql.DB

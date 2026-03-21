@@ -18,7 +18,6 @@ import (
 type persistenceTools struct {
 	tasks      ports.TaskStore
 	scratchpad ports.ScratchpadStore
-	config     ports.ConfigStore
 	state      ports.SessionProvider
 }
 
@@ -37,7 +36,6 @@ func newpersistenceTools(state ports.SessionProvider) *persistenceTools {
 	return &persistenceTools{
 		tasks:      state.GetTasks(),
 		scratchpad: state.GetScratchpad(),
-		config:     state.GetConfig(),
 		state:      state,
 	}
 }
@@ -85,32 +83,6 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 			Required: []string{"action"},
 		},
 	}, t.ManageScratchpad, tools.ToolOptions{Serial: false}); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "manage_config",
-		Description: "Manages persistent key-value configuration/settings scoped by mode.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"action": {
-					Type:        "STRING",
-					Description: "The operation to perform: 'set', 'get', 'list', 'delete'.",
-					Enum:        []string{"set", "get", "list", "delete"},
-				},
-				"key": {
-					Type:        "STRING",
-					Description: "The configuration key (e.g., 'teams_webhook_url').",
-				},
-				"value": {
-					Type:        "STRING",
-					Description: "The value to store (required for 'set').",
-				},
-			},
-			Required: []string{"action"},
-		},
-	}, t.ManageConfig, tools.ToolOptions{Serial: false}); err != nil {
 		return err
 	}
 
@@ -271,63 +243,4 @@ func (t *persistenceTools) clearScratchpad(ctx context.Context) (tools.ToolResul
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: "Scratchpad cleared."}, nil
-}
-
-// ManageConfig handles the manage_config tool.
-func (t *persistenceTools) ManageConfig(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		Action string `json:"action"`
-		Key    string `json:"key"`
-		Value  string `json:"value"`
-	}
-	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	switch params.Action {
-	case "set":
-		return t.setConfig(ctx, params.Key, params.Value)
-	case "get":
-		return t.getConfig(params.Key)
-	case "delete":
-		return t.deleteConfig(ctx, params.Key)
-	case "list":
-		return t.listConfig()
-	default:
-		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
-	}
-}
-
-func (t *persistenceTools) setConfig(ctx context.Context, key, value string) (tools.ToolResult, error) {
-	if err := t.config.Set(ctx, key, value); err != nil {
-		return tools.ToolResult{}, err
-	}
-	return tools.ToolResult{Text: fmt.Sprintf("Config set: %s = %s", key, value)}, nil
-}
-
-func (t *persistenceTools) getConfig(key string) (tools.ToolResult, error) {
-	val, err := t.config.Get(key)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	return tools.ToolResult{Text: val}, nil
-}
-
-func (t *persistenceTools) deleteConfig(ctx context.Context, key string) (tools.ToolResult, error) {
-	if err := t.config.Delete(ctx, key); err != nil {
-		return tools.ToolResult{}, err
-	}
-	return tools.ToolResult{Text: fmt.Sprintf("Config deleted: %s", key)}, nil
-}
-
-func (t *persistenceTools) listConfig() (tools.ToolResult, error) {
-	config := t.config.GetAll()
-	if len(config) == 0 {
-		return tools.ToolResult{Text: "Configuration is empty."}, nil
-	}
-	var sb strings.Builder
-	for k, v := range config {
-		_, _ = fmt.Fprintf(&sb, "%s = %s\n", k, v)
-	}
-	return tools.ToolResult{Text: sb.String()}, nil
 }

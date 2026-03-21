@@ -116,37 +116,32 @@ func (m *mockListStore) DeleteAll(ctx context.Context) error {
 
 type mockSessionProvider struct {
 	tasks      ports.TaskStore
-	config     ports.ConfigStore
 	scratchpad ports.ScratchpadStore
 	info       ports.SessionInfo
 	kvStore    *mockKVStore
 	listStore  *mockListStore
 }
 
-func (m *mockSessionProvider) GetTasks() ports.TaskStore              { return m.tasks }
-func (m *mockSessionProvider) GetConfig() ports.ConfigStore           { return m.config }
-func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadStore   { return m.scratchpad }
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo             { return m.info }
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)         { m.info = info }
-func (m *mockSessionProvider) Close() error                           { return nil }
+func (m *mockSessionProvider) GetTasks() ports.TaskStore            { return m.tasks }
+func (m *mockSessionProvider) GetScratchpad() ports.ScratchpadStore { return m.scratchpad }
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo           { return m.info }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)       { m.info = info }
+func (m *mockSessionProvider) Close() error                         { return nil }
 
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 	kv := &mockKVStore{kv: make(map[string]string)}
 	lt := &mockListStore{}
 	ts := services.NewTaskService(lt)
-	cs := services.NewConfigService(kv)
 	ss := services.NewScratchpadService(kv)
 
 	provider := &mockSessionProvider{
 		tasks:      ts,
-		config:     cs,
 		scratchpad: ss,
 		kvStore:    kv,
 		listStore:  lt,
 		info: ports.SessionInfo{
-			Config: make(map[string]string),
-			Env:    make(map[string]string),
-			Paths:  make(map[string]string),
+			Env:   make(map[string]string),
+			Paths: make(map[string]string),
 		},
 	}
 
@@ -338,50 +333,6 @@ func TestPersistenceTools_ManageScratchpad(t *testing.T) {
 	}
 }
 
-func TestPersistenceTools_ManageConfig(t *testing.T) {
-	pt, _ := setupPersistenceTools()
-	ctx := context.Background()
-
-	// Set
-	_, err := pt.ManageConfig(ctx, map[string]interface{}{"action": "set", "key": "foo", "value": "bar"})
-	if err != nil {
-		t.Fatalf("Set config failed: %v", err)
-	}
-
-	// Get
-	res, err := pt.ManageConfig(ctx, map[string]interface{}{"action": "get", "key": "foo"})
-	if err != nil {
-		t.Fatalf("Get config failed: %v", err)
-	}
-	if res.Text != "bar" {
-		t.Errorf("Expected bar, got %s", res.Text)
-	}
-
-	// List
-	res, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "list"})
-	if err != nil {
-		t.Fatalf("List config failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "foo = bar") {
-		t.Errorf("Expected foo = bar in list, got %s", res.Text)
-	}
-
-	// Delete
-	_, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "delete", "key": "foo"})
-	if err != nil {
-		t.Fatalf("Delete config failed: %v", err)
-	}
-
-	// List empty
-	res, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "list"})
-	if err != nil {
-		t.Fatalf("List empty config failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "empty") {
-		t.Errorf("Expected empty message, got %s", res.Text)
-	}
-}
-
 func TestPersistenceTools_Register(t *testing.T) {
 	pt, _ := setupPersistenceTools()
 	reg := registry.New()
@@ -395,7 +346,7 @@ func TestPersistenceTools_Register(t *testing.T) {
 		found[d.Name] = true
 	}
 
-	expected := []string{"get_session_info", "manage_scratchpad", "manage_config", "manage_tasks"}
+	expected := []string{"get_session_info", "manage_scratchpad", "manage_tasks"}
 	for _, name := range expected {
 		if !found[name] {
 			t.Errorf("Tool %s not registered", name)
@@ -452,12 +403,6 @@ func TestPersistenceTools_Errors(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for non-existent task in deleteTask")
 	}
-
-	// getConfig error (not found)
-	_, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "get", "key": "nonexistent"})
-	if err == nil {
-		t.Error("Expected error for non-existent config key")
-	}
 }
 
 func TestPersistenceTools_StoreErrors(t *testing.T) {
@@ -478,8 +423,6 @@ func TestPersistenceTools_StoreErrors(t *testing.T) {
 	}
 
 	// Inject error into KV store
-	provider.kvStore.err = nil
-	_, _ = pt.ManageConfig(ctx, map[string]interface{}{"action": "set", "key": "k", "value": "v"})
 	provider.kvStore.err = fmt.Errorf("kv store error")
 
 	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "write", "content": "hello"})
@@ -495,15 +438,5 @@ func TestPersistenceTools_StoreErrors(t *testing.T) {
 	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "clear"})
 	if err == nil {
 		t.Error("Expected error from clearScratchpad")
-	}
-
-	_, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "set", "key": "k2", "value": "v"})
-	if err == nil {
-		t.Error("Expected error from setConfig")
-	}
-
-	_, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "delete", "key": "k"})
-	if err == nil {
-		t.Error("Expected error from deleteConfig")
 	}
 }

@@ -103,12 +103,12 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 				if err := m.failOn["Close"]; err != nil {
 					mf.failOn["Close"] = err
 				}
-				
+
 				// Ensure the file is added to the mock fs files map
 				m.mu.Lock()
 				m.files[name] = mf.data
 				m.mu.Unlock()
-				
+
 				return mf, nil
 			}
 
@@ -131,11 +131,11 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 func TestAtomicWrite_DiskFull(t *testing.T) {
 	ctx := context.Background()
 	m := newMockFS()
-	
+
 	m.CreateTempFunc = func(dir, pattern string) (File, error) {
 		mf := &mockFile{
-			name:   dir + "/temp123",
-			data:   new(bytes.Buffer),
+			name: dir + "/temp123",
+			data: new(bytes.Buffer),
 			failOn: map[string]error{
 				"Write": syscall.ENOSPC,
 			},
@@ -188,13 +188,13 @@ func TestAtomicWrite_OSPermissionDenied(t *testing.T) {
 func TestAtomicWrite_EXDEVFallback(t *testing.T) {
 	ctx := context.Background()
 	m := newMockFS()
-	
+
 	data := []byte("important data")
 	targetPath := "/mnt/external/file.txt"
-	
+
 	// Configure Rename to return EXDEV
 	m.failOn["Rename"] = syscall.EXDEV
-	
+
 	// We need to make sure CreateTemp works and adds to files map for OpenFile to find it
 	m.CreateTempFunc = func(dir, pattern string) (File, error) {
 		name := dir + "/temp123"
@@ -218,11 +218,11 @@ func TestAtomicWrite_EXDEVFallback(t *testing.T) {
 	m.mu.Lock()
 	savedData, ok := m.files[targetPath]
 	m.mu.Unlock()
-	
+
 	if !ok {
 		t.Fatal("target file does not exist in mock filesystem after fallback")
 	}
-	
+
 	if !bytes.Equal(savedData.Bytes(), data) {
 		t.Errorf("saved data mismatch: got %q, want %q", savedData.Bytes(), data)
 	}

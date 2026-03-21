@@ -28,108 +28,6 @@ func setupTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func TestSQLiteConfigStore(t *testing.T) {
-	t.Parallel()
-	t.Run("Get Non-Existent Key", testConfigStoreGetNonExistent)
-	t.Run("Set and Get Key", testConfigStoreSetAndGet)
-	t.Run("Update Existing Key", testConfigStoreUpdateExisting)
-	t.Run("Get All Keys", testConfigStoreGetAll)
-	t.Run("Delete Key", testConfigStoreDelete)
-}
-
-func testConfigStoreGetNonExistent(t *testing.T) {
-	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
-	store := newSQLiteConfigStore(db)
-	ctx := context.Background()
-
-	val, err := store.Get(ctx, "nonexistent")
-	if err != nil {
-		t.Errorf("Expected nil error for nonexistent key, got %v", err)
-	}
-	if val != "" {
-		t.Errorf("Expected empty string for nonexistent key, got %q", val)
-	}
-}
-
-func testConfigStoreSetAndGet(t *testing.T) {
-	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
-	store := newSQLiteConfigStore(db)
-	ctx := context.Background()
-
-	if err := store.Set(ctx, "key1", "value1"); err != nil {
-		t.Errorf("Failed to set key1: %v", err)
-	}
-	val, err := store.Get(ctx, "key1")
-	if err != nil {
-		t.Errorf("Failed to get key1: %v", err)
-	}
-	if val != "value1" {
-		t.Errorf("Expected 'value1', got %q", val)
-	}
-}
-
-func testConfigStoreUpdateExisting(t *testing.T) {
-	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
-	store := newSQLiteConfigStore(db)
-	ctx := context.Background()
-
-	_ = store.Set(ctx, "key1", "value1") // initial setup
-	if err := store.Set(ctx, "key1", "value2"); err != nil {
-		t.Errorf("Failed to update key1: %v", err)
-	}
-	val, err := store.Get(ctx, "key1")
-	if err != nil {
-		t.Errorf("Failed to get key1 after update: %v", err)
-	}
-	if val != "value2" {
-		t.Errorf("Expected 'value2' after update, got %q", val)
-	}
-}
-
-func testConfigStoreGetAll(t *testing.T) {
-	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
-	store := newSQLiteConfigStore(db)
-	ctx := context.Background()
-
-	_ = store.Set(ctx, "key1", "value2") // initial setup
-	if err := store.Set(ctx, "key2", "value3"); err != nil {
-		t.Errorf("Failed to set key2: %v", err)
-	}
-	all, err := store.GetAll(ctx)
-	if err != nil {
-		t.Errorf("Failed to get all configs: %v", err)
-	}
-	if len(all) != 2 {
-		t.Errorf("Expected 2 configs, got %d", len(all))
-	}
-	if all["key1"] != "value2" || all["key2"] != "value3" {
-		t.Errorf("GetAll returned unexpected map: %v", all)
-	}
-}
-
-func testConfigStoreDelete(t *testing.T) {
-	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
-	store := newSQLiteConfigStore(db)
-	ctx := context.Background()
-
-	_ = store.Set(ctx, "key1", "value1") // initial setup
-	if err := store.Delete(ctx, "key1"); err != nil {
-		t.Errorf("Failed to delete key1: %v", err)
-	}
-	val, err := store.Get(ctx, "key1")
-	if err != nil {
-		t.Errorf("Expected nil error after delete, got %v", err)
-	}
-	if val != "" {
-		t.Errorf("Expected empty string after delete, got %q", val)
-	}
-}
-
 func TestSQLiteScratchpadStore(t *testing.T) {
 	t.Parallel()
 	t.Run("Get Empty Scratchpad", testScratchpadGetEmpty)
@@ -400,15 +298,6 @@ func TestStoreErrors(t *testing.T) {
 	_ = db.Close() // Close DB to force errors
 
 	ctx := context.Background()
-
-	// Config Store Errors
-	configStore := newSQLiteConfigStore(db)
-	if _, err := configStore.Get(ctx, "key"); err == nil {
-		t.Errorf("Expected error on closed db Get")
-	}
-	if _, err := configStore.GetAll(ctx); err == nil {
-		t.Errorf("Expected error on closed db GetAll")
-	}
 
 	// Scratchpad Store Errors
 	scratchStore := newSQLiteScratchpadStore(db)

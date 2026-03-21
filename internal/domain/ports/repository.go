@@ -11,8 +11,7 @@ import (
 
 // Sentinel errors for repository operations.
 var (
-	ErrConfigKeyNotFound = errors.New("config key not found")
-	ErrTaskNotFound      = errors.New("task not found")
+	ErrTaskNotFound = errors.New("task not found")
 )
 
 // KVStore defines a generic key-value storage interface.
@@ -42,7 +41,6 @@ type Task struct {
 
 // SessionInfo holds metadata about the current execution environment.
 type SessionInfo struct {
-	Config   map[string]string `json:"config"`
 	Env      map[string]string `json:"env"`
 	Paths    map[string]string `json:"paths"`
 	Model    string            `json:"model,omitempty"`
@@ -68,32 +66,9 @@ type TaskStore interface {
 	TaskWriter
 }
 
-// ConfigGetter defines the interface for reading configuration.
-type ConfigGetter interface {
-	Get(key string) (string, error)
-	GetAll() map[string]string
-}
-
-// ConfigWriter defines the interface for modifying configuration.
-type ConfigWriter interface {
-	Set(ctx context.Context, key, val string) error
-	Delete(ctx context.Context, key string) error
-}
-
 // Initializer defines an interface for components requiring lifecycle initialization.
 type Initializer interface {
 	Initialize(ctx context.Context) error
-}
-
-// ConfigReader defines the interface for reading configuration.
-type ConfigReader interface {
-	ConfigGetter
-}
-
-// ConfigStore defines the interface for configuration management.
-type ConfigStore interface {
-	ConfigReader
-	ConfigWriter
 }
 
 // ScratchpadReader defines the interface for reading from the scratchpad.
@@ -117,7 +92,6 @@ type ScratchpadStore interface {
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
 	GetTasks() TaskStore
-	GetConfig() ConfigStore
 	GetScratchpad() ScratchpadStore
 }
 

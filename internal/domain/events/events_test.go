@@ -644,26 +644,26 @@ func TestSimpleEventBus_NilSafety(t *testing.T) {
 
 func TestSimpleEventBus_ContextLeak(t *testing.T) {
 	baseGoroutines := runtime.NumGoroutine()
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
-	
-	bus := events.NewSimpleEventBus(ctx) 
-	
+
+	bus := events.NewSimpleEventBus(ctx)
+
 	bus.Subscribe(func(e events.Event) {})
-	
+
 	// Wait for workers to start
 	time.Sleep(10 * time.Millisecond)
-	
+
 	afterSubscribe := runtime.NumGoroutine()
 	if afterSubscribe <= baseGoroutines {
 		t.Errorf("Expected more goroutines after subscribe, got %d <= %d", afterSubscribe, baseGoroutines)
 	}
-	
+
 	cancel() // Trigger cancellation
-	
+
 	// Wait for goroutines to exit
 	time.Sleep(50 * time.Millisecond)
-	
+
 	afterCancel := runtime.NumGoroutine()
 	if afterCancel >= afterSubscribe {
 		t.Errorf("Expected fewer goroutines after cancel, got %d >= %d", afterCancel, afterSubscribe)

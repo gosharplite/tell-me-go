@@ -29,7 +29,7 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 	homeDir := t.TempDir()
 
 	// Setup mock provider server to simulate LLM responses triggering tools.
-	// We'll return MULTIPLE parallel tool calls per turn to stress-test the RWMutex locks 
+	// We'll return MULTIPLE parallel tool calls per turn to stress-test the RWMutex locks
 	// added to the persistence layer.
 	provider := "google"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
