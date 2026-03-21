@@ -626,7 +626,7 @@ func TestResultCollector(t *testing.T) {
 
 	t.Run("Ordering", func(t *testing.T) {
 		t.Parallel()
-		collector := newResultCollector(calls, nil)
+		collector := newResultCollector(calls, nil, &ports.NoOpLogger{})
 		collector.ch <- toolExecResult{index: 2, name: "tool2", tr: tools.ToolResult{Text: "res2"}}
 		collector.ch <- toolExecResult{index: 0, name: "tool0", tr: tools.ToolResult{Text: "res0"}}
 		collector.ch <- toolExecResult{index: 1, name: "tool1", tr: tools.ToolResult{Text: "res1"}}
@@ -647,7 +647,7 @@ func TestResultCollector(t *testing.T) {
 	t.Run("Context Cancellation", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithCancel(context.Background())
-		collector := newResultCollector(calls, nil)
+		collector := newResultCollector(calls, nil, &ports.NoOpLogger{})
 		cancel()
 
 		_, err := collector.Wait(ctx)

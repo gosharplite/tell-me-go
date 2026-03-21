@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -21,6 +22,7 @@ type agentConfig struct {
 	loader           domain_config.ConfigLoader
 	tracker          domain_pricing.CostTracker
 	initCtx          context.Context
+	logger           *slog.Logger
 }
 
 // option defines a functional option for configuring an Agent.

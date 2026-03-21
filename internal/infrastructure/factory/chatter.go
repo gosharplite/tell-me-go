@@ -4,8 +4,10 @@
 package factory
 
 import (
-	stdctx "context"
+	"errors"
 	"fmt"
+	"log/slog"
+	stdctx "context"
 	"path/filepath"
 
 	agent_executor "github.com/gosharplite/tell-me-go/internal/agent/executor"
@@ -60,13 +62,21 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	llmCoord := llmcoord.NewService(
 		llmcoord.WithGateway(deps.GetGateway()),
 		llmcoord.WithStreamHandler(func(ctx stdctx.Context, stream <-chan *llm.Content) {
-			_ = deps.GetEventBus().Publish(ctx, events.ResponseStreamEvent{Context: ctx, Stream: stream})
+			e := events.ResponseStreamEvent{Context: ctx, Stream: stream}
+			if err := events.SafePublish(ctx, deps.GetEventBus(), e); err != nil {
+				if !errors.Is(err, events.ErrBusNotInitialized) {
+					deps.GetLogger().Error("event_publish_failed",
+						slog.String("event_type", e.Type()),
+						slog.Any("error", err))
+				}
+			}
 		}),
 	)
 
 	monitor := monitoring.NewService(
 		monitoring.WithTracker(deps.GetTracker()),
 		monitoring.WithEventBus(deps.GetEventBus()),
+		monitoring.WithLogger(deps.GetLogger()),
 	)
 
 	// 3. Register internal tools (e.g., summarize_history)
@@ -85,5 +95,6 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		domain_orchestration.WithHistory(deps.GetHistoryManager()),
 		domain_orchestration.WithProvider(cfg.ProviderName),
 		domain_orchestration.WithModel(cfg.Model),
+		domain_orchestration.WithLogger(deps.GetLogger()),
 	), nil
 }

@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -138,11 +139,18 @@ func (s *summarizer) transformPartToText(content *llm.Content, p *llm.Part) {
 func (s *summarizer) emitSummarizationMetrics(ctx context.Context, metrics *llm.Metrics, start time.Time) {
 	if s.events != nil && metrics != nil {
 		metrics.IsSummary = true
-		_ = s.events.Publish(ctx, events.UsageMetricsEvent{
+		evt := events.UsageMetricsEvent{
 			Context:   ctx,
 			Metrics:   metrics,
 			StartTime: start,
-		})
+		}
+		if err := events.SafePublish(ctx, s.events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				s.logger.Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+			}
+		}
 	}
 }
 

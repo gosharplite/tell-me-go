@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -27,6 +28,7 @@ type tokenGatekeeper struct {
 	Events      events.EventBus
 	Strategies  map[string]ThresholdStrategy
 	DefaultTier string
+	Logger      *slog.Logger
 }
 
 func (t *tokenGatekeeper) getStrategy() ThresholdStrategy {
@@ -85,12 +87,18 @@ func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.C
 
 func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.ContextRequest, tokens, limit int, reason string) (int, error) {
 	if t.Events != nil {
-		if err := events.SafePublish(ctx, t.Events, events.SummarizationRequired{
+		evt := events.SummarizationRequired{
 			Tokens:   tokens,
 			MaxLimit: limit,
 			Reason:   reason,
-		}); err != nil {
-			return tokens, err
+		}
+		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				t.getLogger().Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+				return tokens, err
+			}
 		}
 	}
 
@@ -132,15 +140,29 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 
 	if tokens > limit {
 		if t.Events != nil {
-			_ = events.SafePublish(ctx, t.Events, events.TokenLimitReachedEvent{
+			e1 := events.TokenLimitReachedEvent{
 				Tokens:   tokens,
 				MaxLimit: t.MaxTokens,
-			})
+			}
+			if err := events.SafePublish(ctx, t.Events, e1); err != nil {
+				if !errors.Is(err, events.ErrBusNotInitialized) {
+					t.getLogger().Error("event_publish_failed",
+						slog.String("event_type", string(e1.Type())),
+						slog.Any("error", err))
+				}
+			}
 
-			_ = events.SafePublish(ctx, t.Events, events.SystemMessageEvent{
+			e2 := events.SystemMessageEvent{
 				Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
 				Level:   "error",
-			})
+			}
+			if err := events.SafePublish(ctx, t.Events, e2); err != nil {
+				if !errors.Is(err, events.ErrBusNotInitialized) {
+					t.getLogger().Error("event_publish_failed",
+						slog.String("event_type", string(e2.Type())),
+						slog.Any("error", err))
+				}
+			}
 		}
 		return llm.ErrContextLimitExceeded
 	}
@@ -166,10 +188,17 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	// 2. Logging
 	if t.Events != nil {
 		subsetTokens := t.Estimator.estimateTokens(req.History[start:end])
-		_ = events.SafePublish(ctx, t.Events, events.SystemMessageEvent{
+		evt := events.SystemMessageEvent{
 			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens),
 			Level:   "info",
-		})
+		}
+		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				t.getLogger().Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+			}
+		}
 	}
 
 	// 3. Service Call
@@ -185,10 +214,17 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 
 	// Signal completion to the UI
 	if t.Events != nil {
-		_ = events.SafePublish(ctx, t.Events, events.SystemMessageEvent{
+		evt := events.SystemMessageEvent{
 			Message: "Auto-summarization complete. Context successfully compressed.",
 			Level:   "info",
-		})
+		}
+		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				t.getLogger().Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+			}
+		}
 	}
 
 	// 4. State Mutation
@@ -317,4 +353,11 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 	}
 
 	return updated
+}
+
+func (t *tokenGatekeeper) getLogger() *slog.Logger {
+	if t.Logger != nil {
+		return t.Logger
+	}
+	return slog.Default()
 }

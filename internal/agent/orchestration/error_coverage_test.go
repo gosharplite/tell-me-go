@@ -103,7 +103,7 @@ func TestHistoryPruner_EventPublishError(t *testing.T) {
 
 	err := pruner.Transform(context.Background(), req)
 	require.Error(t, err)
-	require.Equal(t, "publish failed", err.Error())
+	require.Contains(t, err.Error(), "publish failed")
 }
 
 type mockFailingSkillSelector struct {
@@ -214,7 +214,7 @@ func TestTokenGatekeeper_TriggerSummarization_EventError(t *testing.T) {
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
 	require.Error(t, err)
-	require.Equal(t, "event error", err.Error())
+	require.Contains(t, err.Error(), "event error")
 }
 
 func TestTokenGatekeeper_TriggerSummarization_MaintenanceBlocked(t *testing.T) {
@@ -380,7 +380,7 @@ func TestTokenGatekeeper_TriggerSummarization_EventError_Swallowed(t *testing.T)
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
 	require.Error(t, err, "Event publish error should not be swallowed anymore")
-	require.Equal(t, "publish error", err.Error())
+	require.Contains(t, err.Error(), "publish error")
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {

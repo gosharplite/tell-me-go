@@ -59,6 +59,7 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 	}
 
 	if factory != nil {
+		factory.Logger = cm.logger
 		if factory.Summarizer != nil {
 			cm.Summarizer = factory.Summarizer
 		}
@@ -333,7 +334,9 @@ func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tok
 			cm.logger.Debug("skipping summarization event: event bus not initialized")
 			return
 		}
-		cm.logger.Debug("failed to emit summarization event", slog.Any("error", err))
+		cm.logger.Error("event_publish_failed",
+			slog.String("event_type", "SystemMessageEvent"),
+			slog.Any("error", err))
 	}
 }
 

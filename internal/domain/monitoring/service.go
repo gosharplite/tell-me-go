@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -20,6 +21,7 @@ var _ orchestration.MonitoringTracker = (*service)(nil)
 type service struct {
 	tracker pricing.CostTracker
 	bus     events.EventBus
+	logger  *slog.Logger
 }
 
 // option defines a functional option for initializing the service.
@@ -39,9 +41,18 @@ func WithEventBus(bus events.EventBus) option {
 	}
 }
 
+// WithLogger sets the logger for the service.
+func WithLogger(l *slog.Logger) option {
+	return func(s *service) {
+		s.logger = l
+	}
+}
+
 // NewService creates a new MonitoringTracker service with functional options.
 func NewService(opts ...option) orchestration.MonitoringTracker {
-	s := &service{}
+	s := &service{
+		logger: slog.Default(),
+	}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -65,6 +76,9 @@ func (s *service) TrackUsage(ctx context.Context, metrics *llm.Metrics) (float64
 		Metrics: metrics,
 	})
 	if err != nil && !errors.Is(err, events.ErrBusNotInitialized) {
+		s.logger.Error("event_publish_failed",
+			slog.String("event_type", "UsageMetricsEvent"),
+			slog.Any("error", err))
 		return turnCost, fmt.Errorf("failed to publish metrics event: %w", err)
 	}
 
@@ -92,8 +106,15 @@ func (s *service) RecordError(ctx context.Context, err error) {
 
 	level := "error"
 	// Simplified logic for now, could be more sophisticated
-	_ = events.SafePublish(ctx, s.bus, events.SystemMessageEvent{
+	evt := events.SystemMessageEvent{
 		Message: err.Error(),
 		Level:   level,
-	})
+	}
+	if err := events.SafePublish(ctx, s.bus, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			s.logger.Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
+		}
+	}
 }

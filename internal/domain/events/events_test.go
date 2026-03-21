@@ -46,19 +46,6 @@ func (s *panicSubscriber) Handle(ctx context.Context, e events.Event) error {
 	panic(s.msg)
 }
 
-type blockingSubscriber struct {
-	ready chan struct{}
-	block chan struct{}
-}
-
-func (s *blockingSubscriber) Handle(ctx context.Context, e events.Event) error {
-	if s.ready != nil {
-		close(s.ready)
-	}
-	<-s.block
-	return nil
-}
-
 type funcSubscriberWithErr struct {
 	f func(context.Context, events.Event) error
 }
@@ -397,7 +384,7 @@ func TestSafePublish_UncooperativeSubscriber(t *testing.T) {
 		events.WithQueueSize(200),
 		events.WithMaxConcurrentSubscribers(2),
 	)
-	defer bus.Shutdown(ctx)
+	defer func() { _ = bus.Shutdown(ctx) }()
 
 	initialGoroutines := runtime.NumGoroutine()
 

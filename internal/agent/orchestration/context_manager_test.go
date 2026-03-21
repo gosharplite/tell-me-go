@@ -215,8 +215,8 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	_ = bus.Shutdown(ctx)
 	_, _, _ = cm.SummarizeRange(ctx, 1, "")
 	output := logBuf.String()
-	assert.Contains(t, output, "failed to emit summarization event")
-	assert.Contains(t, output, `"level":"DEBUG"`)
+	assert.Contains(t, output, "event_publish_failed")
+	assert.Contains(t, output, `"level":"ERROR"`)
 
 	// Case 10: finalizeSummarization fails
 	history.setContentsErr = fmt.Errorf("persist fail")
@@ -479,10 +479,10 @@ func TestContextManager_WithLogger(t *testing.T) {
 	}
 
 	// Trigger a condition that causes a log entry.
-	// SummarizeRange calls emitSummarizationEvent, which logs a DEBUG message if the event bus is closed.
+	// SummarizeRange calls emitSummarizationEvent, which logs a ERROR message if the event bus is closed.
 	_, _, _ = cm.SummarizeRange(ctx, 1, "")
 
 	output := buf.String()
-	assert.Contains(t, output, `"level":"DEBUG"`)
-	assert.Contains(t, output, "failed to emit summarization event")
+	assert.Contains(t, output, `"level":"ERROR"`)
+	assert.Contains(t, output, "event_publish_failed")
 }

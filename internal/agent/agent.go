@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
@@ -40,6 +41,7 @@ type agent struct {
 	executor      *executor.ToolExecutor
 	events        events.EventBus
 	tracker       domain_pricing.CostTracker
+	logger        *slog.Logger
 
 	config runtimeConfig
 }
@@ -64,6 +66,7 @@ func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		executor:      exec,
 		events:        bus,
 		tracker:       cfg.tracker,
+		logger:        cfg.logger,
 		config: runtimeConfig{
 			ProviderName:     providerName,
 			Model:            cfg.model,
@@ -90,8 +93,9 @@ func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 
 	// Initialize engine
 	a.engine = newTurnEngine(client, exec, ctxManager, registry, bus, strategy,
-		withConfig(sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
-		withCostTracker(a.tracker),
+		withEngineConfig(sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
+		withEngineCostTracker(a.tracker),
+		withEngineLogger(a.logger),
 	)
 
 	if cfg.registerInternal {
@@ -134,7 +138,12 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	a.mu.Unlock()
 
 	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: cfg.Limits}); err != nil {
-		return err
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			a.getLogger().Error("event_publish_failed",
+				slog.String("event_type", "ConfigUpdated"),
+				slog.Any("error", err))
+			return err
+		}
 	}
 
 	if a.engine != nil {
@@ -154,11 +163,11 @@ func (a *agent) emit(ctx context.Context, e events.Event) {
 	// [SCALABILITY FIX] Always use a bounded context for publishing events
 	// to prevent cascading system deadlocks if a subscriber stalls.
 	if err := events.SafePublish(ctx, a.events, e); err != nil {
-		if errors.Is(err, events.ErrBusNotInitialized) {
-			// Silent skip if bus is missing
-			return
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			a.getLogger().Error("event_publish_failed",
+				slog.String("event_type", string(e.Type())),
+				slog.Any("error", err))
 		}
-		// Other errors could be logged if we had a logger in agent struct
 	}
 }
 
@@ -209,4 +218,11 @@ func (a *agent) Shutdown(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (a *agent) getLogger() *slog.Logger {
+	if a.logger != nil {
+		return a.logger
+	}
+	return slog.Default()
 }

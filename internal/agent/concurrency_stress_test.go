@@ -306,7 +306,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 
 	tracker := &mockEngineCostTracker{} // Returns 0.05 per call
 
-	e := newTurnEngine(gw, executor, cm, reg, bus, strategy, withCostTracker(tracker))
+	e := newTurnEngine(gw, executor, cm, reg, bus, strategy, withEngineCostTracker(tracker))
 	strategy.SetLimits(10000, 10, 10)
 
 	var wg sync.WaitGroup
