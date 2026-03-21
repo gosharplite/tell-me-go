@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,13 @@ type Subscriber interface {
 var (
 	ErrBusClosed         = errors.New("event bus is closed")
 	ErrBusNotInitialized = errors.New("event bus is nil or uninitialized")
+	ErrQueueFull         = errors.New("event bus queue is full")
+)
+
+const (
+	defaultQueueSize          = 1024
+	defaultWorkers            = 8
+	defaultMaxConcurrentSubs = 1024
 )
 
 // EventBus defines the interface for publishing and subscribing to events.
@@ -52,6 +60,13 @@ type SimpleEventBus struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	log               *slog.Logger
+
+	// Bounded worker pool fields
+	eventQueue   chan Event
+	numWorkers   int
+	subSemaphore chan struct{}
+	wg           sync.WaitGroup // Tracks active workers
+	pendingWG    sync.WaitGroup // Tracks pending events for Flush
 }
 
 // busOption defines a functional option for configuring the SimpleEventBus.
@@ -64,6 +79,28 @@ func WithLogger(l *slog.Logger) busOption {
 	}
 }
 
+// WithQueueSize sets the size of the internal event queue.
+func WithQueueSize(size int) busOption {
+	return func(b *SimpleEventBus) {
+		b.eventQueue = make(chan Event, size)
+	}
+}
+
+// WithWorkers sets the number of worker goroutines.
+// If n is <= 0, the event bus becomes synchronous (useful for testing).
+func WithWorkers(n int) busOption {
+	return func(b *SimpleEventBus) {
+		b.numWorkers = n
+	}
+}
+
+// WithMaxConcurrentSubscribers sets the maximum number of concurrent subscriber executions.
+func WithMaxConcurrentSubscribers(n int) busOption {
+	return func(b *SimpleEventBus) {
+		b.subSemaphore = make(chan struct{}, n)
+	}
+}
+
 // NewSimpleEventBus creates and initializes a new SimpleEventBus.
 func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 	ctx, cancel := context.WithCancel(ctx)
@@ -73,11 +110,22 @@ func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 		ctx:         ctx,
 		cancel:      cancel,
 		log:         slog.Default(),
+		numWorkers:  defaultWorkers,
 	}
 
 	for _, opt := range opts {
 		opt(b)
 	}
+
+	if b.eventQueue == nil {
+		b.eventQueue = make(chan Event, defaultQueueSize)
+	}
+
+	if b.subSemaphore == nil {
+		b.subSemaphore = make(chan struct{}, defaultMaxConcurrentSubs)
+	}
+
+	b.startWorkers()
 
 	return b
 }
@@ -94,6 +142,7 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 		return ErrBusNotInitialized
 	}
 
+	// Always check context first
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -101,31 +150,123 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	}
 
 	b.mu.RLock()
-	if b.closed {
-		b.mu.RUnlock()
+	closed := b.closed
+	b.mu.RUnlock()
+	if closed {
 		return ErrBusClosed
 	}
 
-	// 1. Safely copy the subscriber slices while holding the read lock.
-	// This prevents data races when subscribers are added/removed during iteration,
-	// and avoids deadlocks if a subscriber tries to publish/subscribe recursively.
+	// Synchronous mode for testing/specific use cases
+	if b.numWorkers <= 0 {
+		return b.dispatchSync(ctx, event)
+	}
+
+	b.pendingWG.Add(1)
+	select {
+	case b.eventQueue <- event:
+		return nil
+	case <-ctx.Done():
+		b.pendingWG.Done()
+		return ctx.Err()
+	default:
+		b.pendingWG.Done()
+		return ErrQueueFull
+	}
+}
+
+func (b *SimpleEventBus) dispatchSync(ctx context.Context, event Event) error {
+	b.mu.RLock()
 	specificSubs := b.subscribers[event.Type()]
 	globalSubs := b.globalSubscribers
-
 	subs := make([]Subscriber, 0, len(specificSubs)+len(globalSubs))
 	subs = append(subs, specificSubs...)
 	subs = append(subs, globalSubs...)
 	b.mu.RUnlock()
 
-	// 2. Iterate over the local copy outside the lock.
 	var errs []error
 	for _, sub := range subs {
 		if err := b.notifySubscriber(ctx, sub, event); err != nil {
 			errs = append(errs, err)
 		}
 	}
-
 	return errors.Join(errs...)
+}
+
+func (b *SimpleEventBus) startWorkers() {
+	if b.numWorkers <= 0 {
+		return
+	}
+	b.wg.Add(b.numWorkers)
+	for i := 0; i < b.numWorkers; i++ {
+		go b.workerLoop()
+	}
+}
+
+func (b *SimpleEventBus) workerLoop() {
+	defer b.wg.Done()
+	for {
+		select {
+		case <-b.ctx.Done():
+			// Attempt to drain the queue before exiting if context is cancelled?
+			// The current policy is to stop processing immediately to avoid leaks.
+			return
+		case event, ok := <-b.eventQueue:
+			if !ok {
+				return
+			}
+			b.dispatch(event)
+			b.pendingWG.Done()
+		}
+	}
+}
+
+func (b *SimpleEventBus) dispatch(event Event) {
+	b.mu.RLock()
+	specificSubs := b.subscribers[event.Type()]
+	globalSubs := b.globalSubscribers
+	subs := make([]Subscriber, 0, len(specificSubs)+len(globalSubs))
+	subs = append(subs, specificSubs...)
+	subs = append(subs, globalSubs...)
+	b.mu.RUnlock()
+
+	for _, sub := range subs {
+		select {
+		case b.subSemaphore <- struct{}{}:
+			b.pendingWG.Add(1)
+			// Fire-and-forget but bounded by subSemaphore
+			go func(s Subscriber, e Event) {
+				defer func() {
+					<-b.subSemaphore
+					b.pendingWG.Done()
+				}()
+				// Use a fixed timeout per subscriber to avoid worker starvation
+				subCtx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+				defer cancel()
+
+				if err := b.notifySubscriber(subCtx, s, e); err != nil {
+					if errors.Is(err, context.DeadlineExceeded) {
+						b.getLogger().WarnContext(b.ctx, "Subscriber handling timed out",
+							slog.String("event_type", e.Type()),
+							slog.String("subscriber_type", fmt.Sprintf("%T", s)),
+						)
+					} else {
+						// Log general subscriber errors in async mode
+						b.getLogger().ErrorContext(b.ctx, "Subscriber failed to handle event",
+							slog.String("event_type", e.Type()),
+							slog.String("subscriber_type", fmt.Sprintf("%T", s)),
+							slog.String("error", err.Error()),
+						)
+					}
+				}
+			}(sub, event)
+		default:
+			// "Sever" the uncooperative or overloaded subscriber
+			b.getLogger().WarnContext(b.ctx, "Subscriber dropped due to concurrency limit",
+				slog.String("event_type", event.Type()),
+				slog.String("subscriber_type", fmt.Sprintf("%T", sub)),
+			)
+		}
+	}
 }
 
 func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, event Event) (err error) {
@@ -215,26 +356,72 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	}
 
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	if b.closed {
+		b.mu.Unlock()
+		return nil
+	}
 	b.closed = true
+	b.mu.Unlock()
+
 	if b.cancel != nil {
 		b.cancel()
 	}
-	return nil
+
+	// Drain queue if possible? No, we stop processing to avoid further leaks.
+
+	// Wait for workers to finish
+	done := make(chan struct{})
+	go func() {
+		b.wg.Wait()
+		// Wait for all active subscriber goroutines to exit (within reason)
+		// Since we canceled b.ctx, they SHOULD exit soon if they respect it.
+		// If they don't, we'll hit the shutdown context timeout.
+		limit := cap(b.subSemaphore)
+		for i := 0; i < limit; i++ {
+			b.subSemaphore <- struct{}{}
+		}
+		// Clear it out for any late arrivals (shouldn't happen)
+		for i := 0; i < limit; i++ {
+			<-b.subSemaphore
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-// Flush is a no-op as this implementation is synchronous.
+// Flush waits for all currently queued events to be processed or context timeout.
 func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	if b == nil {
 		return ErrBusNotInitialized
 	}
 	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if b.closed {
+	closed := b.closed
+	b.mu.RUnlock()
+	if closed {
 		return ErrBusClosed
 	}
-	return nil
+
+	done := make(chan struct{})
+	go func() {
+		b.pendingWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
+
+// ... (event types omitted for brevity in thought, but I must keep them)
 
 // StatusUpdate signals a change in the agent's internal state or progress.
 type StatusUpdate struct {
@@ -300,40 +487,35 @@ type TraceEvent struct {
 }
 
 // SafePublish attempts to publish an event with a forced timeout.
-// It returns an error if the context is cancelled or the publication fails (e.g., buffer overflow).
+// It returns an error if the context is cancelled, the queue is full, or the publication fails.
 func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 	if bus == nil {
 		return ErrBusNotInitialized
 	}
 
-	// Enforce a strict timeout limit internally to prevent deadlocks from stalled subscribers
+	// Now bus.Publish is asynchronous and non-blocking (up to queue size).
+	// We still apply a strict 2s limit to prevent the publisher from hanging if the queue is full.
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	ch := make(chan error, 1) // Buffered to prevent leak
-	go func() {
-		ch <- bus.Publish(ctx, event)
-	}()
-
-	select {
-	case err := <-ch:
-		return err
-	case <-ctx.Done():
-		err := fmt.Errorf("publish timeout for event %s: %w", event.Type(), ctx.Err())
-
-		logger := slog.Default()
-		if l, ok := bus.(interface{ getLogger() *slog.Logger }); ok {
-			logger = l.getLogger()
-		}
-
-		// 1. Emit structured log with context ensuring visibility even if caller drops the error
-		logger.WarnContext(ctx, "Event dropped due to publish timeout",
-			slog.String("event_type", event.Type()),
-			slog.String("error", err.Error()),
-		)
-
-		return err
+	err := bus.Publish(ctx, event)
+	if err == nil {
+		return nil
 	}
+
+	// Handle publish failures (mostly context timeout/cancellation)
+	wrappedErr := fmt.Errorf("publish failure for event %s: %w", event.Type(), err)
+
+	logger := slog.Default()
+	if l, ok := bus.(interface{ getLogger() *slog.Logger }); ok {
+		logger = l.getLogger()
+	}
+
+	logger.WarnContext(ctx, "Event dropped due to publish failure",
+		slog.String("event_type", event.Type()),
+		slog.String("error", wrappedErr.Error()),
+	)
+	return wrappedErr
 }
 
 func (e StatusUpdate) Type() string           { return "StatusUpdate" }
@@ -346,3 +528,13 @@ func (e SystemMessageEvent) Type() string     { return "SystemMessageEvent" }
 func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" }
 func (e SummarizationRequired) Type() string  { return "SummarizationRequired" }
 func (e TraceEvent) Type() string             { return "TraceEvent" }
+
+// IsQueueFull returns true if the error is ErrQueueFull.
+func IsQueueFull(err error) bool {
+	return errors.Is(err, ErrQueueFull)
+}
+
+// IsTimeout returns true if the error is context.DeadlineExceeded or a publish failure.
+func IsTimeout(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || (err != nil && strings.Contains(err.Error(), "publish failure"))
+}
