@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -104,7 +105,20 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, event Event) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("subscriber panicked: %v\n%s", r, debug.Stack())
+			subType := fmt.Sprintf("%T", sub)
+			eventType := event.Type()
+			stack := string(debug.Stack())
+
+			// 1. Emit structured log with context
+			slog.ErrorContext(ctx, "Subscriber panicked during event handling",
+				slog.String("subscriber_type", subType),
+				slog.String("event_type", eventType),
+				slog.Any("panic_reason", r),
+				slog.String("stack_trace", stack),
+			)
+
+			// 2. Format the error to be returned to the caller
+			err = fmt.Errorf("subscriber panicked: %v\n%s", r, stack)
 		}
 	}()
 
