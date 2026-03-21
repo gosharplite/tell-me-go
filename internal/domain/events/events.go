@@ -82,7 +82,7 @@ func NewSimpleEventBus(ctx context.Context, opts ...BusOption) *SimpleEventBus {
 	return b
 }
 
-func (b *SimpleEventBus) Logger() *slog.Logger {
+func (b *SimpleEventBus) getLogger() *slog.Logger {
 	if b == nil || b.log == nil {
 		return slog.Default()
 	}
@@ -136,7 +136,7 @@ func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, e
 			stack := string(debug.Stack())
 
 			// 1. Emit structured log with context
-			b.Logger().ErrorContext(ctx, "Subscriber panicked during event handling",
+			b.getLogger().ErrorContext(ctx, "Subscriber panicked during event handling",
 				slog.String("subscriber_type", subType),
 				slog.String("event_type", eventType),
 				slog.Any("panic_reason", r),
@@ -322,8 +322,8 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 		err := fmt.Errorf("publish timeout for event %s: %w", event.Type(), ctx.Err())
 
 		logger := slog.Default()
-		if l, ok := bus.(interface{ Logger() *slog.Logger }); ok {
-			logger = l.Logger()
+		if l, ok := bus.(interface{ getLogger() *slog.Logger }); ok {
+			logger = l.getLogger()
 		}
 
 		// 1. Emit structured log with context ensuring visibility even if caller drops the error
