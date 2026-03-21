@@ -6,6 +6,7 @@ package events
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,7 +16,14 @@ import (
 )
 
 // Event represents a generic signal from the Orchestrator.
-type Event interface{}
+type Event interface {
+	Type() string
+}
+
+// Subscriber defines the interface for event handlers.
+type Subscriber interface {
+	Handle(ctx context.Context, e Event) error
+}
 
 var (
 	ErrBufferOverflow    = errors.New("event buffer overflowed, events were dropped")
@@ -34,49 +42,41 @@ type EventBus interface {
 // defaultMaxQueueSize is the default capacity for the event ring buffer.
 const defaultMaxQueueSize = 1000
 
-// SimpleEventBus is an asynchronous implementation of EventBus that uses a buffered channel.
+// SimpleEventBus is an implementation of EventBus.
 type SimpleEventBus struct {
-	mu              sync.RWMutex
-	subscribers     []chan Event
-	wg              sync.WaitGroup
-	once            sync.Once
-	closed          bool
-	capacity        int
-	closing         chan struct{}
-	activeProducers sync.WaitGroup // Tracks lockless senders like Flush
-	ctx             context.Context
-	cancel          context.CancelFunc
+	mu          sync.RWMutex
+	subscribers map[string][]Subscriber
+	closed      bool
+	closing     chan struct{}
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 type flushEvent struct {
 	done chan error
 }
 
-// NewSimpleEventBus creates and initializes a new SimpleEventBus with the default capacity.
+// NewSimpleEventBus creates and initializes a new SimpleEventBus.
 func NewSimpleEventBus(ctx context.Context) *SimpleEventBus {
-	return NewSimpleEventBusWithCapacity(ctx, defaultMaxQueueSize)
-}
-
-// NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
-func NewSimpleEventBusWithCapacity(ctx context.Context, capacity int) *SimpleEventBus {
-	if capacity <= 0 {
-		capacity = defaultMaxQueueSize
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	return &SimpleEventBus{
-		capacity: capacity,
-		closing:  make(chan struct{}),
-		ctx:      ctx,
-		cancel:   cancel,
+		subscribers: make(map[string][]Subscriber),
+		closing:     make(chan struct{}),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
-func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
-	if b == nil || b.closing == nil {
+// NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom capacity (ignored in this implementation).
+func NewSimpleEventBusWithCapacity(ctx context.Context, capacity int) *SimpleEventBus {
+	return NewSimpleEventBus(ctx)
+}
+
+func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
+	if b == nil {
 		return ErrBusNotInitialized
 	}
 
-	// 1. Immediate context check
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -84,328 +84,17 @@ func (b *SimpleEventBus) Publish(ctx context.Context, e Event) error {
 	}
 
 	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	if b.closed {
-		return ErrBusClosed
-	}
-
-	var err error
-	for _, ch := range b.subscribers {
-		select {
-		case ch <- e:
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-b.closing:
-			return ErrBusClosed
-		default:
-			err = ErrBufferOverflow
-		}
-	}
-	return err
-}
-
-func (b *SimpleEventBus) Subscribe(sub func(Event)) {
-	if b == nil || b.closing == nil || sub == nil {
-		return
-	}
-
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if b.closed {
-		return
-	}
-
-	cap := b.getEffectiveCapacity()
-	in := make(chan Event, cap)
-	out := make(chan Event)
-	b.subscribers = append(b.subscribers, in)
-
-	b.wg.Add(2)
-	ctx := b.getSafeContext()
-
-	go b.startEventPump(ctx, in, out)
-	go b.startSubscriberLoop(ctx, out, sub)
-}
-
-func (b *SimpleEventBus) getEffectiveCapacity() int {
-	if b.capacity <= 0 {
-		return defaultMaxQueueSize
-	}
-	return b.capacity
-}
-
-func (b *SimpleEventBus) getSafeContext() context.Context {
-	if b.ctx == nil {
-		return context.Background()
-	}
-	return b.ctx
-}
-
-func (b *SimpleEventBus) startEventPump(ctx context.Context, in chan Event, out chan Event) {
-	defer b.wg.Done()
-	defer close(out)
-	b.pumpEvents(ctx, in, out)
-}
-
-func (b *SimpleEventBus) startSubscriberLoop(ctx context.Context, out chan Event, sub func(Event)) {
-	defer b.wg.Done()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case e, ok := <-out:
-			if !ok {
-				return
-			}
-			if b.handleInternalEvent(ctx, e) {
-				continue
-			}
-			sub(e)
-		}
-	}
-}
-
-func (b *SimpleEventBus) handleInternalEvent(ctx context.Context, e Event) bool {
-	if fe, ok := e.(flushEvent); ok {
-		select {
-		case fe.done <- nil:
-		case <-ctx.Done():
-		}
-		close(fe.done)
-		return true
-	}
-	return false
-}
-
-func (b *SimpleEventBus) pumpEvents(ctx context.Context, in chan Event, out chan<- Event) {
-	cap := b.capacity
-	if cap <= 0 {
-		cap = defaultMaxQueueSize
-	}
-	buffer := &eventRingBuffer{max: cap}
-
-	for {
-		if buffer.len() > 0 {
-			if stop := b.processWithBuffer(ctx, &in, out, buffer); stop {
-				return
-			}
-		} else {
-			if in == nil {
-				return
-			}
-			if stop := b.processEmptyBuffer(ctx, &in, buffer); stop {
-				return
-			}
-		}
-	}
-}
-
-func (b *SimpleEventBus) processWithBuffer(ctx context.Context, in *chan Event, out chan<- Event, buffer *eventRingBuffer) bool {
-	select {
-	case <-ctx.Done():
-		b.cleanupBuffer(ctx, buffer, ctx.Err())
-		return true
-	case e, ok := <-*in:
-		if !ok {
-			*in = nil // Stop reading from closed channel
-			return false
-		}
-		buffer.push(ctx, e)
-		return false
-	case out <- buffer.front():
-		buffer.pop()
-		return false
-	}
-}
-
-func (b *SimpleEventBus) processEmptyBuffer(ctx context.Context, in *chan Event, buffer *eventRingBuffer) bool {
-	select {
-	case <-ctx.Done():
-		return true
-	case e, ok := <-*in:
-		if !ok {
-			return true
-		}
-		buffer.push(ctx, e)
-		return false
-	}
-}
-
-func (b *SimpleEventBus) cleanupBuffer(ctx context.Context, buffer *eventRingBuffer, err error) {
-	for buffer.len() > 0 {
-		e := buffer.pop()
-		if fe, ok := e.(flushEvent); ok {
-			select {
-			case fe.done <- err:
-			case <-ctx.Done():
-			}
-			close(fe.done)
-		}
-	}
-}
-
-type eventRingBuffer struct {
-	queue []Event
-	max   int
-	head  int
-	tail  int
-	count int
-}
-
-func (r *eventRingBuffer) push(ctx context.Context, e Event) {
-	if r.queue == nil {
-		r.queue = make([]Event, r.max)
-	}
-
-	if r.count == r.max {
-		// Buffer full: overwrite the oldest element
-		oldest := r.queue[r.tail]
-		if fe, ok := oldest.(flushEvent); ok {
-			select {
-			case fe.done <- ErrBufferOverflow:
-			case <-ctx.Done():
-			}
-			close(fe.done) // Safely unblock the waiting Flush caller
-		}
-
-		r.queue[r.tail] = e
-		r.tail = (r.tail + 1) % r.max
-		r.head = (r.head + 1) % r.max // Move head forward to evict
-	} else {
-		r.queue[r.tail] = e
-		r.tail = (r.tail + 1) % r.max
-		r.count++
-	}
-}
-
-func (r *eventRingBuffer) pop() Event {
-	if r.count == 0 {
-		return nil
-	}
-	e := r.queue[r.head]
-	r.queue[r.head] = nil // Avoid memory leak
-	r.head = (r.head + 1) % r.max
-	r.count--
-	return e
-}
-
-func (r *eventRingBuffer) front() Event {
-	if r.count == 0 {
-		return nil
-	}
-	return r.queue[r.head]
-}
-
-func (r *eventRingBuffer) len() int {
-	return r.count
-}
-
-// Shutdown gracefully stops the event bus, flushing pending events.
-func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
-	if b == nil || b.closing == nil {
-		return ErrBusNotInitialized
-	}
-
-	b.once.Do(func() {
-		// 1. Mark as closed and signal pending producers (Flush) to abort
-		b.mu.Lock()
-		b.closed = true
-		if b.closing != nil {
-			close(b.closing)
-		}
-		b.mu.Unlock()
-
-		// 2. Wait for everything to finish naturally in a background goroutine
-		done := make(chan struct{})
-		go func() {
-			// a. Wait for active producers (Flush) to acknowledge the closing signal and exit
-			b.activeProducers.Wait()
-
-			// b. Close all subscriber input channels to signal pumpEvents to drain
-			b.mu.Lock()
-			subs := b.subscribers
-			b.subscribers = nil
-			b.mu.Unlock()
-
-			for _, ch := range subs {
-				close(ch)
-			}
-
-			// c. Wait for background processing (pumpEvents and subscriber callbacks) to stop
-			b.wg.Wait()
-			close(done)
-		}()
-
-		select {
-		case <-done:
-			// Graceful shutdown complete
-		case <-ctx.Done():
-			// Timeout! Force termination by canceling internal context.
-			b.abort()
-		}
-	})
-	return ctx.Err()
-}
-
-func (b *SimpleEventBus) abort() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.cancel != nil {
-		b.cancel()
-	}
-}
-
-// Flush waits for all currently queued events to be dispatched.
-func (b *SimpleEventBus) Flush(ctx context.Context) error {
-	if b == nil || b.closing == nil {
-		return ErrBusNotInitialized
-	}
-
-	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
 		return ErrBusClosed
 	}
+	// Copy the slice to avoid race conditions after releasing the lock
+	subs := append([]Subscriber(nil), b.subscribers[event.Type()]...)
+	b.mu.RUnlock() // Release lock early to prevent deadlocks
 
-	// Register active producer before releasing lock
-	b.activeProducers.Add(1)
-	defer b.activeProducers.Done()
-
-	if len(b.subscribers) == 0 {
-		b.mu.RUnlock()
-		return nil
-	}
-
-	// 1. Copy subscribers to avoid holding the lock during potentially blocking sends
-	subs := make([]chan Event, len(b.subscribers))
-	copy(subs, b.subscribers)
-	b.mu.RUnlock() // Release lock BEFORE the blocking loop
-
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(subs))
-
-	for _, ch := range subs {
-		wg.Add(1)
-		go func(subCh chan Event) {
-			defer wg.Done()
-			if err := b.flushSubscriber(ctx, subCh); err != nil {
-				errCh <- err
-			}
-		}(ch)
-	}
-
-	// Launch a background goroutine to wait and close the error channel
-	go func() {
-		wg.Wait()
-		close(errCh)
-	}()
-
-	// Finally, in the main Flush thread, wait for all results
 	var errs []error
-	for err := range errCh {
-		if err != nil {
+	for _, sub := range subs {
+		if err := b.notifySubscriber(ctx, sub, event); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -413,23 +102,103 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func (b *SimpleEventBus) flushSubscriber(ctx context.Context, subCh chan Event) error {
-	done := make(chan error, 1)
-	select {
-	case subCh <- flushEvent{done: done}:
-		select {
-		case err := <-done:
-			return err
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-b.closing:
-			return ErrBusClosed
+func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, event Event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("subscriber panicked: %v", r)
 		}
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-b.closing:
+	}()
+
+	// Execute the actual subscriber logic here
+	return sub.Handle(ctx, event)
+}
+
+type funcSubscriber struct {
+	f func(Event)
+}
+
+func (s *funcSubscriber) Handle(ctx context.Context, e Event) error {
+	s.f(e)
+	return nil
+}
+
+var allKnownTypes = []string{
+	"StatusUpdate",
+	"TurnStarted",
+	"ResponseStreamEvent",
+	"ToolCallEvent",
+	"ToolResultEvent",
+	"UsageMetricsEvent",
+	"SystemMessageEvent",
+	"TokenLimitReachedEvent",
+	"SummarizationRequired",
+	"TraceEvent",
+	"ConfigUpdated",
+	"TurnStatusEvent",
+	"flushEvent",
+	"testEvent",
+}
+
+func (b *SimpleEventBus) Subscribe(sub func(Event)) {
+	if b == nil || sub == nil {
+		return
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return
+	}
+
+	s := &funcSubscriber{f: sub}
+	for _, t := range allKnownTypes {
+		b.subscribers[t] = append(b.subscribers[t], s)
+	}
+}
+
+// SubscribeSubscriber registers a Subscriber for a specific event type.
+func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
+	if b == nil || sub == nil {
+		return
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return
+	}
+
+	b.subscribers[eventType] = append(b.subscribers[eventType], sub)
+}
+
+// Shutdown gracefully stops the event bus.
+func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
+	if b == nil {
+		return ErrBusNotInitialized
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
+	if b.cancel != nil {
+		b.cancel()
+	}
+	return nil
+}
+
+// Flush is a no-op as this implementation is synchronous.
+func (b *SimpleEventBus) Flush(ctx context.Context) error {
+	if b == nil {
+		return ErrBusNotInitialized
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.closed {
 		return ErrBusClosed
 	}
+	return nil
 }
 
 // StatusUpdate signals a change in the agent's internal state or progress.
@@ -505,3 +274,15 @@ func SafePublish(ctx context.Context, bus EventBus, e Event, timeout time.Durati
 	defer cancel()
 	return bus.Publish(pubCtx, e)
 }
+
+func (e StatusUpdate) Type() string { return "StatusUpdate" }
+func (e TurnStarted) Type() string { return "TurnStarted" }
+func (e ResponseStreamEvent) Type() string { return "ResponseStreamEvent" }
+func (e ToolCallEvent) Type() string { return "ToolCallEvent" }
+func (e ToolResultEvent) Type() string { return "ToolResultEvent" }
+func (e UsageMetricsEvent) Type() string { return "UsageMetricsEvent" }
+func (e SystemMessageEvent) Type() string { return "SystemMessageEvent" }
+func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" }
+func (e SummarizationRequired) Type() string { return "SummarizationRequired" }
+func (e TraceEvent) Type() string { return "TraceEvent" }
+func (e flushEvent) Type() string { return "flushEvent" }

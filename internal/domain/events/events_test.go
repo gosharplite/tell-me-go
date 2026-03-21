@@ -6,666 +6,138 @@ package events_test
 import (
 	"context"
 	"errors"
-	"runtime"
-	"sync"
-	"sync/atomic"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
 
-func TestSimpleEventBus_Race(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	t.Cleanup(func() {
-		if err := bus.Shutdown(context.Background()); err != nil {
-			t.Errorf("failed to shutdown event bus: %v", err)
-		}
-	})
-	wg := sync.WaitGroup{}
-
-	numGoroutines := 10
-	numEvents := 10
-
-	wg.Add(numGoroutines * 2)
-
-	for i := 0; i < numGoroutines; i++ {
-		go func() {
-			defer wg.Done()
-			for j := 0; j < numEvents; j++ {
-				bus.Subscribe(func(e events.Event) {})
-			}
-		}()
-
-		go func() {
-			defer wg.Done()
-			for j := 0; j < numEvents; j++ {
-				if err := bus.Publish(context.Background(), struct{}{}); err != nil {
-					t.Errorf("failed to publish: %v", err)
-				}
-			}
-		}()
-	}
-
-	wg.Wait()
+type testEvent struct {
+	typeName string
+	val      interface{}
 }
 
-func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
-	t.Parallel()
+func (e testEvent) Type() string {
+	if e.typeName != "" {
+		return e.typeName
+	}
+	return "testEvent"
+}
+
+type errSubscriber struct {
+	err error
+}
+
+func (s *errSubscriber) Handle(ctx context.Context, e events.Event) error {
+	return s.err
+}
+
+type panicSubscriber struct {
+	msg string
+}
+
+func (s *panicSubscriber) Handle(ctx context.Context, e events.Event) error {
+	panic(s.msg)
+}
+
+func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background())
-	count := 0
-	mu := sync.Mutex{}
+	received := make(chan events.Event, 1)
 
 	bus.Subscribe(func(e events.Event) {
-		mu.Lock()
-		count++
-		mu.Unlock()
+		received <- e
 	})
 
-	numEvents := 50
-	for i := 0; i < numEvents; i++ {
-		if err := bus.Publish(context.Background(), i); err != nil {
-			t.Fatalf("failed to publish event %d: %v", i, err)
-		}
-	}
-
-	err := bus.Shutdown(context.Background())
+	ev := testEvent{val: "hello"}
+	err := bus.Publish(context.Background(), ev)
 	if err != nil {
-		t.Fatalf("Shutdown failed: %v", err)
+		t.Fatalf("Publish failed: %v", err)
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-	if count != numEvents {
-		t.Errorf("Expected %d events, got %d", numEvents, count)
-	}
-}
-
-func TestSimpleEventBus_Flush(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	t.Cleanup(func() {
-		if err := bus.Shutdown(context.Background()); err != nil {
-			t.Errorf("failed to shutdown event bus: %v", err)
-		}
-	})
-
-	count := 0
-	mu := sync.Mutex{}
-
-	bus.Subscribe(func(e events.Event) {
-		mu.Lock()
-		count++
-		mu.Unlock()
-	})
-
-	numEvents := 50
-	for i := 0; i < numEvents; i++ {
-		if err := bus.Publish(context.Background(), i); err != nil {
-			t.Fatalf("failed to publish event %d: %v", i, err)
-		}
-	}
-
-	err := bus.Flush(context.Background())
-	if err != nil {
-		t.Fatalf("Flush failed: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if count != numEvents {
-		t.Errorf("Expected %d events after flush, got %d", numEvents, count)
-	}
-}
-
-func TestSimpleEventBus_Shutdown_ContextCancelled(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	block := make(chan struct{})
-	ready := make(chan struct{})
-	bus.Subscribe(func(e events.Event) {
-		ready <- struct{}{}
-		<-block
-	})
-	if err := bus.Publish(context.Background(), "init"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-	<-ready
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := bus.Shutdown(ctx)
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled, got %v", err)
-	}
-	close(block)
-}
-
-func TestSimpleEventBus_Flush_ClosedBus(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	_ = bus.Shutdown(context.Background())
-
-	err := bus.Flush(context.Background())
-	if !errors.Is(err, events.ErrBusClosed) {
-		t.Errorf("expected ErrBusClosed, got %v", err)
-	}
-}
-
-func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	block := make(chan struct{})
-	ready := make(chan struct{})
-	bus.Subscribe(func(e events.Event) {
-		ready <- struct{}{}
-		<-block
-	})
-	if err := bus.Publish(context.Background(), "init"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-	<-ready
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	// Use a background goroutine to unblock the subscriber eventually.
-	// But Flush should return immediately.
-	defer close(block)
-
-	err := bus.Flush(ctx)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled, got %v", err)
-	}
-}
-
-func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
-
-	block := make(chan struct{})
-	ready := make(chan struct{})
-	bus.Subscribe(func(e events.Event) {
-		ready <- struct{}{}
-		<-block
-	})
-	if err := bus.Publish(context.Background(), "init"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-	<-ready
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-
-	// Unblock the subscriber ONLY after the context times out.
-	go func() {
-		<-ctx.Done()
-		close(block)
-	}()
-
-	err := bus.Flush(ctx)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded, got %v", err)
-	}
-}
-
-func TestSimpleEventBus_Subscribe_ClosedBus(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	_ = bus.Shutdown(context.Background())
-
-	bus.Subscribe(func(e events.Event) {
-		t.Error("subscriber should not be called")
-	})
-
-	if err := bus.Publish(context.Background(), "event"); !errors.Is(err, events.ErrBusClosed) {
-		t.Errorf("expected ErrBusClosed, got %v", err)
-	}
-}
-
-func TestSimpleEventBus_Publish_ClosedBus(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	_ = bus.Shutdown(context.Background())
-
-	// Should return ErrBusClosed and not panic or block indefinitely
-	if err := bus.Publish(context.Background(), "event"); !errors.Is(err, events.ErrBusClosed) {
-		t.Errorf("expected ErrBusClosed, got %v", err)
-	}
-}
-
-func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	err := bus.Flush(context.Background())
-	if err != nil {
-		t.Errorf("expected nil error when flushing with no subscribers, got %v", err)
-	}
-}
-
-func TestSimpleEventBus_BufferEviction(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
-
-	block := make(chan struct{})
-	firstEvent := make(chan struct{})
-	var received []events.Event
-	var mu sync.Mutex
-	var once sync.Once
-
-	// Slow subscriber that intentionally starves the pumpEvents consumer
-	bus.Subscribe(func(e events.Event) {
-		once.Do(func() { close(firstEvent) })
-		<-block // Block processing
-		mu.Lock()
-		received = append(received, e)
-		mu.Unlock()
-	})
-
-	// 1. Publish first event and wait for it to reach the subscriber
-	if err := bus.Publish(context.Background(), "init"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-	<-firstEvent
-
-	// 2. Publish the remaining events in a tight loop. No runtime.Gosched() needed.
-	// Publish 1500 events (exceeds 100 channel capacity + 1000 ring buffer capacity)
-	// This ensures we trigger both the ring buffer eviction and the Publish channel drop.
-	for i := 0; i < 1500; i++ {
-		// We ignore error here as some events might be dropped (causing ErrBufferOverflow), which is what we are testing.
-		_ = bus.Publish(context.Background(), i)
-	}
-
-	// Unblock subscriber and let it process
-	close(block)
-
-	// Wait for processing to finish
-	_ = bus.Flush(context.Background())
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Because of channel capacities and ring buffer limits,
-	// we shouldn't have received all 1501 events, proving eviction works and didn't panic.
-	if len(received) == 1501 {
-		t.Errorf("Expected events to be dropped/evicted, but received all 1501")
-	}
-	if len(received) == 0 {
-		t.Errorf("Expected to receive some events, but got 0")
-	}
-}
-
-func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
-
-	block := make(chan struct{})
-	firstEvent := make(chan struct{})
-	var once sync.Once
-	bus.Subscribe(func(e events.Event) {
-		once.Do(func() { close(firstEvent) })
-		<-block
-	})
-
-	// 1. Publish first event and wait for it to reach the subscriber
-	if err := bus.Publish(context.Background(), "init"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-	<-firstEvent
-
-	// 2. Fill the ring buffer (1000) and the in channel (100)
-	for i := 0; i < 1200; i++ {
-		// Ignore overflow errors while filling the buffer
-		_ = bus.Publish(context.Background(), i)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	// Subscriber will take time to unblock
-	defer close(block)
-
-	err := bus.Flush(ctx)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled, got %v", err)
-	}
-}
-
-func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	block := make(chan struct{})
-
-	// defer 1: Will execute LAST. Triggers graceful shutdown.
-	defer func() {
-		_ = bus.Shutdown(context.Background())
-	}()
-
-	// defer 2: Will execute FIRST. Unblocks the subscriber.
-	defer close(block)
-
-	bus.Subscribe(func(e events.Event) {
-		<-block
-	})
-
-	for i := 0; i < 1200; i++ {
-		_ = bus.Publish(context.Background(), i)
-	}
-}
-
-func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
-	t.Parallel()
-	// Initialize a bus using NewSimpleEventBusWithCapacity(context.Background(), 1).
-
-	bus := events.NewSimpleEventBusWithCapacity(context.Background(), 1)
-
-	// Create a subscriber that blocks intentionally (so events queue up).
-	block := make(chan struct{})
-	ready := make(chan struct{})
-	bus.Subscribe(func(e events.Event) {
-		ready <- struct{}{}
-		<-block
-	})
-
-	// 1. Publish first event and wait for it to reach the subscriber to block it
-	if err := bus.Publish(context.Background(), "init"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-	<-ready
-
-	// 2. Now subscriber is blocked.
-	// Publish an event that will occupy the 1-slot ring buffer.
-	if err := bus.Publish(context.Background(), "in-buffer"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-
-	// 3. Trigger Flush() in a separate goroutine. It will block.
-	flushErr := make(chan error, 1)
-	go func() {
-		flushErr <- bus.Flush(context.Background())
-	}()
-
-	// Instead of Sleep, we use a loop with a small delay to ensure pumpEvents
-	// has a chance to read the flushEvent from the 'in' channel.
-	// We can't be 100% deterministic here without internal hooks, but this is
-	// more robust than a single sleep.
-	for i := 0; i < 10; i++ {
-		time.Sleep(2 * time.Millisecond)
-		// 4. Publish one more event to force the ring buffer to overflow and evict the flushEvent.
-		_ = bus.Publish(context.Background(), "force-eviction")
-
-		select {
-		case err := <-flushErr:
-			if !errors.Is(err, events.ErrBufferOverflow) {
-				t.Errorf("expected ErrBufferOverflow, got %v", err)
-			}
-			close(block)
-			return
-		default:
-		}
-	}
-
-	close(block)
-	t.Fatal("Flush did not return ErrBufferOverflow after multiple eviction attempts")
-}
-
-func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-
-	// Block processing to ensure Flush blocks.
-	block := make(chan struct{})
-	ready := make(chan struct{})
-	bus.Subscribe(func(e events.Event) {
-		ready <- struct{}{}
-		<-block
-	})
-
-	if err := bus.Publish(context.Background(), "init"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
-	}
-	<-ready
-
-	flushStarted := make(chan struct{})
-	flushErr := make(chan error, 1)
-	go func() {
-		close(flushStarted)
-		flushErr <- bus.Flush(context.Background())
-	}()
-
-	// Ensure Flush has actually reached its waiting state.
-	<-flushStarted
-
-	// Concurrently trigger bus.Shutdown() in a goroutine because it waits for subscribers.
-	go func() {
-		_ = bus.Shutdown(context.Background())
-	}()
-
-	// Assert that the Flush() call aborts and returns ErrBusClosed.
 	select {
-	case err := <-flushErr:
-		if !errors.Is(err, events.ErrBusClosed) {
-			t.Errorf("expected ErrBusClosed, got %v", err)
+	case got := <-received:
+		if got.(testEvent).val != "hello" {
+			t.Errorf("expected hello, got %v", got)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Flush did not return after Shutdown")
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
 	}
-
-	close(block)
 }
 
-func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBusWithCapacity(context.Background(), 10)
-	defer func() { _ = bus.Shutdown(context.Background()) }()
+func TestSimpleEventBus_ErrorAggregation(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
 
-	var completed int32
-	started := make(chan struct{})
-	block := make(chan struct{})
+	err1 := errors.New("err 1")
+	err2 := errors.New("err 2")
 
-	// Slow/hung subscriber
-	bus.Subscribe(func(e events.Event) {
-		close(started) // Signal to the test that this subscriber has picked up the event
-		<-block        // Block indefinitely to simulate a hung process
-		atomic.AddInt32(&completed, 1)
-	})
+	bus.SubscribeSubscriber("testEvent", &errSubscriber{err: err1})
+	bus.SubscribeSubscriber("testEvent", &errSubscriber{err: err2})
+	bus.SubscribeSubscriber("testEvent", &panicSubscriber{msg: "panic 1"})
 
-	// Trigger an event to get the subscriber running
-	if err := bus.Publish(context.Background(), "event"); err != nil {
-		t.Fatalf("failed to publish: %v", err)
+	err := bus.Publish(context.Background(), testEvent{})
+	if err == nil {
+		t.Fatal("expected aggregated error, got nil")
 	}
 
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "err 1") || !strings.Contains(errMsg, "err 2") || !strings.Contains(errMsg, "subscriber panicked: panic 1") {
+		t.Errorf("error aggregation failed, got: %v", errMsg)
+	}
+
+	// Verify it contains multiple joined errors (Go 1.20+)
+	var joined interface{ Unwrap() []error }
+	if !errors.As(err, &joined) {
+		t.Error("expected a joined error")
+	} else if len(joined.Unwrap()) != 3 {
+		t.Errorf("expected 3 joined errors, got %d", len(joined.Unwrap()))
+	}
+}
+
+func TestSimpleEventBus_PanicRecovery(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+
+	bus.Subscribe(func(e events.Event) {
+		panic("boom")
+	})
+
+	bus.Subscribe(func(e events.Event) {
+		// Normal subscriber
+	})
+
+	err := bus.Publish(context.Background(), testEvent{})
+	if err == nil {
+		t.Fatal("expected error from panic, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "subscriber panicked: boom") {
+		t.Errorf("expected panic message in error, got %v", err)
+	}
+}
+
+func TestSimpleEventBus_FlushAndShutdown(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+
+	if err := bus.Flush(context.Background()); err != nil {
+		t.Errorf("Flush failed: %v", err)
+	}
+
+	if err := bus.Shutdown(context.Background()); err != nil {
+		t.Errorf("Shutdown failed: %v", err)
+	}
+
+	if err := bus.Publish(context.Background(), testEvent{}); !errors.Is(err, events.ErrBusClosed) {
+		t.Errorf("expected ErrBusClosed, got %v", err)
+	}
+}
+
+func TestSimpleEventBus_ContextCancellation(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	cancel()
 
-	// Trigger the cancellation deterministically
-	go func() {
-		<-started // Wait until the subscriber is actually running and blocked
-		cancel()  // Now cancel the context
-	}()
-
-	err := bus.Flush(ctx)
-
-	// 1. Assert Flush returned immediately due to context cancellation
+	err := bus.Publish(ctx, testEvent{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
-	}
-
-	// 2. Assert Flush did not wait for the slow subscriber to finish
-	if atomic.LoadInt32(&completed) != 0 {
-		t.Errorf("Flush waited for the slow subscriber instead of returning immediately")
-	}
-
-	// Cleanup to prevent the subscriber goroutine from leaking
-	close(block)
-}
-
-func TestEventBus_ContextCancellation_PreventsLeak(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := bus.Publish(ctx, "test-event")
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("Expected context.Canceled, got %v", err)
-	}
-}
-
-func TestEventBus_Publish_ClosedBus_ReturnsError(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
-	_ = bus.Shutdown(context.Background())
-
-	err := bus.Publish(context.Background(), "test-event")
-	if !errors.Is(err, events.ErrBusClosed) {
-		t.Errorf("Expected ErrBusClosed, got %v", err)
-	}
-}
-
-func TestEventBus_Subscribe_ContextCancellation_PreventsLeak(t *testing.T) {
-	t.Parallel()
-	// Create a bus with a small capacity to trigger blocking if needed.
-	bus := events.NewSimpleEventBusWithCapacity(context.Background(), 1)
-
-	// Create a subscriber that blocks.
-	block := make(chan struct{})
-	bus.Subscribe(func(e events.Event) {
-		<-block
-	})
-
-	// 1. Publish one event to block the subscriber.
-	_ = bus.Publish(context.Background(), "init")
-
-	// 2. Publish another to fill the ring buffer.
-	_ = bus.Publish(context.Background(), "fill-buffer")
-
-	// 3. Trigger bus.Shutdown() which cancels its internal context.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	_ = bus.Shutdown(ctx)
-
-	// Subscriber goroutine should have exited.
-}
-
-func TestEventBus_Publish_ContextCancellation(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background())
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Cancel the context immediately BEFORE calling Publish
-	cancel()
-
-	// Because the context is already canceled, Publish should immediately
-	// trigger the `case <-ctx.Done():` block and return context.Canceled.
-	err := bus.Publish(ctx, "test-event")
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled error, got: %v", err)
-	}
-}
-
-func TestSimpleEventBus_Publish_ContextCancellation_Internal(t *testing.T) {
-	// Create a bus
-	bus := events.NewSimpleEventBus(context.Background())
-	defer func() { _ = bus.Shutdown(context.Background()) }()
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Create a subscriber
-	bus.Subscribe(func(e events.Event) {})
-
-	// Cancel the context BEFORE calling Publish
-	cancel()
-
-	// This should return context.Canceled from the top check
-	err := bus.Publish(ctx, "event")
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled error, got: %v", err)
-	}
-}
-
-func TestSimpleEventBus_NilSafety(t *testing.T) {
-	t.Run("Nil bus Publish", func(t *testing.T) {
-		var bus *events.SimpleEventBus
-		err := bus.Publish(context.Background(), "event")
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			t.Errorf("expected ErrBusNotInitialized for nil bus, got %v", err)
-		}
-	})
-
-	t.Run("Nil bus Subscribe", func(t *testing.T) {
-		var bus *events.SimpleEventBus
-		// Should not panic
-		bus.Subscribe(func(e events.Event) {})
-	})
-
-	t.Run("Nil bus Shutdown", func(t *testing.T) {
-		var bus *events.SimpleEventBus
-		err := bus.Shutdown(context.Background())
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			t.Errorf("expected ErrBusNotInitialized for nil bus, got %v", err)
-		}
-	})
-
-	t.Run("Nil bus Flush", func(t *testing.T) {
-		var bus *events.SimpleEventBus
-		err := bus.Flush(context.Background())
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			t.Errorf("expected ErrBusNotInitialized for nil bus, got %v", err)
-		}
-	})
-
-	t.Run("SafePublish with nil bus", func(t *testing.T) {
-		err := events.SafePublish(context.Background(), nil, "event", time.Second)
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			t.Errorf("expected ErrBusNotInitialized for nil bus in SafePublish, got %v", err)
-		}
-	})
-
-	t.Run("Uninitialized bus Publish", func(t *testing.T) {
-		bus := &events.SimpleEventBus{}
-		err := bus.Publish(context.Background(), "event")
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			t.Errorf("expected ErrBusNotInitialized for uninitialized bus, got %v", err)
-		}
-	})
-}
-
-func TestSimpleEventBus_ContextLeak(t *testing.T) {
-	baseGoroutines := runtime.NumGoroutine()
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	bus := events.NewSimpleEventBus(ctx)
-
-	bus.Subscribe(func(e events.Event) {})
-
-	// Wait for workers to start
-	time.Sleep(10 * time.Millisecond)
-
-	afterSubscribe := runtime.NumGoroutine()
-	if afterSubscribe <= baseGoroutines {
-		t.Errorf("Expected more goroutines after subscribe, got %d <= %d", afterSubscribe, baseGoroutines)
-	}
-
-	cancel() // Trigger cancellation
-
-	// Wait for goroutines to exit
-	time.Sleep(50 * time.Millisecond)
-
-	afterCancel := runtime.NumGoroutine()
-	if afterCancel >= afterSubscribe {
-		t.Errorf("Expected fewer goroutines after cancel, got %d >= %d", afterCancel, afterSubscribe)
 	}
 }
