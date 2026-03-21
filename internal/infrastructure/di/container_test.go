@@ -22,6 +22,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
@@ -639,7 +640,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "SessionRotationFails",
 			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RotateSession = func(stdout io.Writer, paths persistence.Paths, retentionDays int) error {
+				b.RotateSession = func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
 					return simulatedErr
 				}
 				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()

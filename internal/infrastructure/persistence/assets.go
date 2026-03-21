@@ -19,10 +19,10 @@ type AssetStore struct {
 }
 
 // NewAssetStore creates a new AssetStore.
-func NewAssetStore(baseDir string) *AssetStore {
+func NewAssetStore(fs persistence.FileSystem, baseDir string) *AssetStore {
 	return &AssetStore{
 		baseDir: baseDir,
-		fs:      NewOSFileSystem(),
+		fs:      fs,
 	}
 }
 
@@ -86,4 +86,9 @@ func (s *AssetStore) getPath(id string) string {
 		return filepath.Join(s.baseDir, id)
 	}
 	return filepath.Join(s.baseDir, id[:2], id)
+}
+
+// GetBaseDir returns the base directory of the asset store.
+func (s *AssetStore) GetBaseDir() string {
+	return s.baseDir
 }

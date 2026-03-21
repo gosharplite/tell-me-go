@@ -14,9 +14,9 @@ import (
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
 // This ensures that the target file is either fully updated or not updated at all.
 // It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
-func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode) error {
+func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
-	f, err := prepareTempFile(dir, filepath.Base(path)+".*.tmp", perm)
+	f, err := prepareTempFile(fs, dir, filepath.Base(path)+".*.tmp", perm)
 	if err != nil {
 		return err
 	}
@@ -26,7 +26,7 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 	defer func() {
 		_ = f.Close()
 		if cleanup {
-			_ = os.Remove(tmp)
+			_ = fs.Remove(tmp)
 		}
 	}()
 
@@ -48,7 +48,7 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 	default:
 	}
 
-	if err := commitTempFile(f, tmp, path); err != nil {
+	if err := commitTempFile(fs, f, tmp, path); err != nil {
 		return err
 	}
 
@@ -56,26 +56,26 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 	return nil
 }
 
-func prepareTempFile(dir, pattern string, perm os.FileMode) (*os.File, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+func prepareTempFile(fs FileSystem, dir, pattern string, perm os.FileMode) (File, error) {
+	if err := fs.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	f, err := os.CreateTemp(dir, pattern)
+	f, err := fs.CreateTemp(dir, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	if err := f.Chmod(perm); err != nil {
 		_ = f.Close()
-		_ = os.Remove(f.Name())
+		_ = fs.Remove(f.Name())
 		return nil, fmt.Errorf("failed to chmod temp file: %w", err)
 	}
 
 	return f, nil
 }
 
-func commitTempFile(f *os.File, tmpPath, targetPath string) error {
+func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string) error {
 	// Force flush to disk to prevent stale reads or zero-byte files on power loss
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("failed to sync temp file: %w", err)
@@ -85,7 +85,7 @@ func commitTempFile(f *os.File, tmpPath, targetPath string) error {
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, targetPath); err != nil {
+	if err := fs.Rename(tmpPath, targetPath); err != nil {
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 

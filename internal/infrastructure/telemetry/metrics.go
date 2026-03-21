@@ -461,7 +461,7 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
 		return
 	}
-	if err := persistence.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+	if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, historyPath, bytes, 0644); err != nil {
 		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
 	}
 }

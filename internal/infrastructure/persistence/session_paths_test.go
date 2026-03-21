@@ -15,7 +15,7 @@ func TestInitializePaths(t *testing.T) {
 	tmp := t.TempDir()
 	mode := "test-mode"
 
-	paths, err := InitializePaths(tmp, mode)
+	paths, err := InitializePaths(&OSFileSystem{}, tmp, mode)
 	if err != nil {
 		t.Fatalf("InitializePaths failed: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestRotateSession(t *testing.T) {
 	homeDir := tmp
 	mode := "test-mode"
 
-	paths, err := InitializePaths(homeDir, mode)
+	paths, err := InitializePaths(&OSFileSystem{}, homeDir, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestRotateSession(t *testing.T) {
 	}
 
 	// Rotate
-	err = RotateSession(nil, *paths, 30)
+	err = RotateSession(&OSFileSystem{}, nil, *paths, 30)
 	if err != nil {
 		t.Fatalf("RotateSession failed: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestCleanupOldBackups(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	mode := "test-mode"
-	paths, err := InitializePaths(tmp, mode)
+	paths, err := InitializePaths(&OSFileSystem{}, tmp, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestCleanupOldBackups(t *testing.T) {
 	}
 
 	// Cleanup with 30 day retention
-	err = cleanupOldBackups(*paths, 30)
+	err = cleanupOldBackups(&OSFileSystem{}, *paths, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestLoadBackupRetentionDays(t *testing.T) {
 	}
 
 	// Test default
-	if days := LoadBackupRetentionDays(paths); days != 30 {
+	if days := LoadBackupRetentionDays(&OSFileSystem{}, paths); days != 30 {
 		t.Errorf("expected default 30, got %d", days)
 	}
 
@@ -128,14 +128,14 @@ func TestLoadBackupRetentionDays(t *testing.T) {
 	if err := os.WriteFile(paths.PersistentConfigPath, []byte(`{"backup_retention_days": "15"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if days := LoadBackupRetentionDays(paths); days != 15 {
+	if days := LoadBackupRetentionDays(&OSFileSystem{}, paths); days != 15 {
 		t.Errorf("expected overridden 15, got %d", days)
 	}
 }
 
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
 	t.Parallel()
-	err := cleanupOldBackups(paths{}, 0)
+	err := cleanupOldBackups(&OSFileSystem{}, paths{}, 0)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with 0 retention should not error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestCleanupOldBackups_NoDir(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	paths := paths{ModeDir: filepath.Join(tmp, "nonexistent")}
-	err := cleanupOldBackups(paths, 30)
+	err := cleanupOldBackups(&OSFileSystem{}, paths, 30)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with nonexistent dir should not error: %v", err)
 	}

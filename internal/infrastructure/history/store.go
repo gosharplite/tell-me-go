@@ -50,7 +50,7 @@ func newJSONLStore(fs persistence.FileSystem, filePath string, archivePath strin
 	return &jsonlStore{
 		filePath:    filePath,
 		archivePath: archivePath,
-		assetStore:  infrapersistence.NewAssetStore(assetDir).WithFileSystem(fs),
+		assetStore:  infrapersistence.NewAssetStore(fs, assetDir),
 		fs:          fs,
 	}
 }
@@ -58,7 +58,7 @@ func newJSONLStore(fs persistence.FileSystem, filePath string, archivePath strin
 // withFileSystem sets the filesystem implementation.
 func (s *jsonlStore) withFileSystem(fs persistence.FileSystem) *jsonlStore {
 	s.fs = fs
-	s.assetStore.WithFileSystem(fs)
+	s.assetStore = infrapersistence.NewAssetStore(fs, s.assetStore.GetBaseDir())
 	return s
 }
 

@@ -102,7 +102,7 @@ func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
 	// 3. Save to cache
 	cacheDir := filepath.Dir(cacheFile)
 	if err := os.MkdirAll(cacheDir, 0700); err == nil {
-		if writeErr := persistence.AtomicWrite(ctx, cacheFile, []byte(token), 0600); writeErr != nil {
+		if writeErr := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, cacheFile, []byte(token), 0600); writeErr != nil {
 			log.Printf("failed to write auth cache: %v", writeErr)
 		}
 	} else {

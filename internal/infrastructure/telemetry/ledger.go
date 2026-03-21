@@ -236,7 +236,7 @@ func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	merged := ls.mergeRecords(history, newRecords)
 
 	if bytes, err := json.Marshal(merged); err == nil {
-		if err := persistence.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+		if err := persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, historyPath, bytes, 0644); err != nil {
 			log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
 		}
 	}

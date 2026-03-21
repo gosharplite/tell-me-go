@@ -319,7 +319,7 @@ func (p *pathPolicy) SavePaths(ctx context.Context, writable bool) error {
 		return fmt.Errorf("failed to marshal paths: %w", err)
 	}
 
-	return persistence.AtomicWrite(ctx, file, data, 0644)
+	return persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, file, data, 0644)
 }
 
 func (p *pathPolicy) checkBoundary(target, boundary string) (bool, error) {
