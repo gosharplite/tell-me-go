@@ -33,46 +33,12 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 	// added to the persistence layer.
 	provider := "google"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bodyBytes, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
+		body := parseMockRequest(t, r)
 
-		var body map[string]interface{}
-		_ = json.Unmarshal(bodyBytes, &body)
-
-		isToolResult := false
-		// Check if it's a tool result turn
-		if contents, ok := body["contents"].([]interface{}); ok && len(contents) > 0 {
-			lastTurn := contents[len(contents)-1].(map[string]interface{})
-			if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-				part := parts[0].(map[string]interface{})
-				if _, ok := part["functionResponse"]; ok {
-					isToolResult = true
-				}
-			}
-		}
-
-		if isToolResult {
-			// Final response after tool execution
-			_, _ = fmt.Fprint(w, createTextResponse(provider, "Storm turn processed successfully."))
-		} else {
-			// Return multiple tool calls in parallel. 
-			// manage_tasks and manage_config are registered as non-serial,
-			// so they will execute concurrently in the ToolExecutor.
-			resp := `{
-				"candidates": [{
-					"content": {
-						"role": "model",
-						"parts": [
-							{"functionCall": {"name": "manage_tasks", "args": {"action": "add", "content": "Parallel Task A"}}},
-							{"functionCall": {"name": "manage_tasks", "args": {"action": "add", "content": "Parallel Task B"}}},
-							{"functionCall": {"name": "manage_config", "args": {"action": "set", "key": "c1", "value": "v1"}}},
-							{"functionCall": {"name": "manage_config", "args": {"action": "set", "key": "c2", "value": "v2"}}}
-						]
-					}
-				}]
-			}`
-			_, _ = fmt.Fprint(w, resp)
-		}
+		isToolResult := isToolResultTurn(t, body)
+		resp := generateMockResponse(t, isToolResult, provider)
+		_, _ = fmt.Fprint(w, resp)
 	}))
 	defer server.Close()
 
@@ -113,4 +79,60 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("DEADLOCK DETECTED: Application hung during rapid user actions. Likely a sync.RWMutex contention issue.")
 	}
+}
+
+func parseMockRequest(t *testing.T, r *http.Request) map[string]interface{} {
+	t.Helper()
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("failed to read request body: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		t.Fatalf("failed to unmarshal request body: %v", err)
+	}
+	return body
+}
+
+func isToolResultTurn(t *testing.T, body map[string]interface{}) bool {
+	t.Helper()
+	contents, ok := body["contents"].([]interface{})
+	if !ok || len(contents) == 0 {
+		return false
+	}
+	lastTurn, ok := contents[len(contents)-1].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	parts, ok := lastTurn["parts"].([]interface{})
+	if !ok || len(parts) == 0 {
+		return false
+	}
+	part, ok := parts[0].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, ok = part["functionResponse"]
+	return ok
+}
+
+func generateMockResponse(t *testing.T, isToolResult bool, provider string) string {
+	t.Helper()
+	if isToolResult {
+		return createTextResponse(provider, "Storm turn processed successfully.")
+	}
+	// Return multiple tool calls in parallel.
+	return `{
+		"candidates": [{
+			"content": {
+				"role": "model",
+				"parts": [
+					{"functionCall": {"name": "manage_tasks", "args": {"action": "add", "content": "Parallel Task A"}}},
+					{"functionCall": {"name": "manage_tasks", "args": {"action": "add", "content": "Parallel Task B"}}},
+					{"functionCall": {"name": "manage_config", "args": {"action": "set", "key": "c1", "value": "v1"}}},
+					{"functionCall": {"name": "manage_config", "args": {"action": "set", "key": "c2", "value": "v2"}}}
+				]
+			}
+		}]
+	}`
 }
