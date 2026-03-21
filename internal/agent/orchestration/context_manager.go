@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -309,9 +310,9 @@ func (cm *ContextManager) wrapSummarizationError(err error) error {
 
 func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tokens int) {
 	if cm.Events != nil {
-		if err := cm.Events.Publish(ctx, events.SystemMessageEvent{
+		if err := events.SafePublish(ctx, cm.Events, events.SystemMessageEvent{
 			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokens),
-		}); err != nil {
+		}, 2*time.Second); err != nil {
 			slog.Debug("failed to emit summarization event", slog.Any("error", err))
 		}
 	}

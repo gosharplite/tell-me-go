@@ -133,7 +133,7 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	tracker := a.tracker
 	a.mu.Unlock()
 
-	if err := a.events.Publish(ctx, events.ConfigUpdated{Limits: cfg.Limits}); err != nil {
+	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: cfg.Limits}, 2*time.Second); err != nil {
 		return err
 	}
 
