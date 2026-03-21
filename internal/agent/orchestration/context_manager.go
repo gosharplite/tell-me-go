@@ -33,28 +33,14 @@ type ContextManager struct {
 	logger     *slog.Logger
 }
 
-// ContextManagerOption defines a functional option for configuring the ContextManager.
-type ContextManagerOption func(*ContextManager)
-
-// WithLogger sets the logger for the ContextManager.
-func WithLogger(l *slog.Logger) ContextManagerOption {
-	return func(cm *ContextManager) {
-		cm.logger = l
-	}
-}
-
 // NewContextManager creates a new context manager.
-func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory, opts ...ContextManagerOption) *ContextManager {
+func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory) *ContextManager {
 	cm := &ContextManager{
 		Strategy: strategy,
 		History:  history,
 		Events:   bus,
 		Factory:  factory,
 		logger:   slog.Default(),
-	}
-
-	for _, opt := range opts {
-		opt(cm)
 	}
 
 	if factory != nil {
