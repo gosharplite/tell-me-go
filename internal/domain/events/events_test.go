@@ -376,15 +376,17 @@ func TestSimpleEventBus_NilBusMethods(t *testing.T) {
 	}
 	// Should not panic
 	b.Subscribe(func(e events.Event) {})
+	b.SubscribeGlobal(&errSubscriber{})
 	b.SubscribeSubscriber("test", &errSubscriber{})
 }
 
 func TestSimpleEventBus_SubscribeClosed(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background())
 	_ = bus.Shutdown(context.Background())
-	
+
 	// Should not panic or register
 	bus.Subscribe(func(e events.Event) {})
+	bus.SubscribeGlobal(&errSubscriber{})
 	bus.SubscribeSubscriber("test", &errSubscriber{})
 }
 
@@ -393,5 +395,160 @@ func TestSimpleEventBus_FlushClosed(t *testing.T) {
 	_ = bus.Shutdown(context.Background())
 	if err := bus.Flush(context.Background()); !errors.Is(err, events.ErrBusClosed) {
 		t.Errorf("expected ErrBusClosed, got %v", err)
+	}
+}
+
+func TestEventBus_GlobalRouting(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+
+	var aCount, bCount, globalCount int
+	var mu sync.Mutex
+
+	// Register specific subscriber for EventTypeA
+	bus.SubscribeSubscriber("EventTypeA", &funcSubscriberWithErr{f: func(e events.Event) error {
+		mu.Lock()
+		aCount++
+		mu.Unlock()
+		return nil
+	}})
+
+	// Register specific subscriber for EventTypeB
+	bus.SubscribeSubscriber("EventTypeB", &funcSubscriberWithErr{f: func(e events.Event) error {
+		mu.Lock()
+		bCount++
+		mu.Unlock()
+		return nil
+	}})
+
+	// Register global subscriber
+	bus.Subscribe(func(e events.Event) {
+		mu.Lock()
+		globalCount++
+		mu.Unlock()
+	})
+
+	ctx := context.Background()
+
+	// Publish EventTypeA
+	err := bus.Publish(ctx, testEvent{typeName: "EventTypeA"})
+	if err != nil {
+		t.Errorf("Publish A failed: %v", err)
+	}
+
+	// Publish EventTypeB
+	err = bus.Publish(ctx, testEvent{typeName: "EventTypeB"})
+	if err != nil {
+		t.Errorf("Publish B failed: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if aCount != 1 {
+		t.Errorf("expected EventTypeA subscriber to be called exactly once, got %d", aCount)
+	}
+	if bCount != 1 {
+		t.Errorf("expected EventTypeB subscriber to be called exactly once, got %d", bCount)
+	}
+	if globalCount != 2 {
+		t.Errorf("expected global subscriber to be called exactly twice, got %d", globalCount)
+	}
+}
+
+func TestEventBus_RoutingErrorIsolation(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+
+	errGlobal := errors.New("global error")
+	errSpecific := errors.New("specific error")
+
+	var globalCalled, specific1Called, specific2Called bool
+	var mu sync.Mutex
+
+	// 1. Global subscriber that intentionally returns an error
+	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(e events.Event) error {
+		mu.Lock()
+		globalCalled = true
+		mu.Unlock()
+		return errGlobal
+	}})
+
+	// 2. Specific subscriber that intentionally returns an error
+	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(e events.Event) error {
+		mu.Lock()
+		specific1Called = true
+		mu.Unlock()
+		return errSpecific
+	}})
+
+	// 3. Second specific subscriber that succeeds
+	bus.SubscribeSubscriber("testEvent", &funcSubscriberWithErr{f: func(e events.Event) error {
+		mu.Lock()
+		specific2Called = true
+		mu.Unlock()
+		return nil
+	}})
+
+	err := bus.Publish(context.Background(), testEvent{typeName: "testEvent"})
+
+	if err == nil {
+		t.Fatal("expected aggregated error, got nil")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !globalCalled {
+		t.Error("global subscriber was not called")
+	}
+	if !specific1Called {
+		t.Error("specific subscriber 1 was not called")
+	}
+	if !specific2Called {
+		t.Error("specific subscriber 2 was not called")
+	}
+
+	if !errors.Is(err, errGlobal) {
+		t.Errorf("expected error to contain global error, got: %v", err)
+	}
+	if !errors.Is(err, errSpecific) {
+		t.Errorf("expected error to contain specific error, got: %v", err)
+	}
+
+	// Verify it contains multiple joined errors
+	var joined interface{ Unwrap() []error }
+	if !errors.As(err, &joined) {
+		t.Error("expected a joined error")
+	} else if len(joined.Unwrap()) != 2 {
+		t.Errorf("expected 2 joined errors, got %d", len(joined.Unwrap()))
+	}
+}
+
+func TestSimpleEventBus_SubscribeNil(t *testing.T) {
+	bus := events.NewSimpleEventBus(context.Background())
+	// Should not panic or register
+	bus.Subscribe(nil)
+	bus.SubscribeGlobal(nil)
+	bus.SubscribeSubscriber("test", nil)
+}
+
+func TestEventTypes(t *testing.T) {
+	events_list := []events.Event{
+		events.StatusUpdate{},
+		events.TurnStarted{},
+		events.ResponseStreamEvent{},
+		events.ToolCallEvent{},
+		events.ToolResultEvent{},
+		events.UsageMetricsEvent{},
+		events.SystemMessageEvent{},
+		events.TokenLimitReachedEvent{},
+		events.SummarizationRequired{},
+		events.TraceEvent{},
+		events.ConfigUpdated{},
+		events.TurnStatusEvent{},
+	}
+
+	for _, e := range events_list {
+		if e.Type() == "" {
+			t.Errorf("empty type for %T", e)
+		}
 	}
 }

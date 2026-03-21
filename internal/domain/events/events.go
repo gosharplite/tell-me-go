@@ -136,6 +136,22 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	b.globalSubscribers = append(b.globalSubscribers, &funcSubscriber{f: sub})
 }
 
+// SubscribeGlobal registers a Subscriber that receives all events.
+func (b *SimpleEventBus) SubscribeGlobal(sub Subscriber) {
+	if b == nil || sub == nil {
+		return
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return
+	}
+
+	b.globalSubscribers = append(b.globalSubscribers, sub)
+}
+
 // SubscribeSubscriber registers a Subscriber for a specific event type.
 func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 	if b == nil || sub == nil {
