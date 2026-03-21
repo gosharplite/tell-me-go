@@ -86,7 +86,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 
 		gw := new(mockGateway)
 		bus := new(mockEventBus)
-		s := NewSummarizer(gw, bus, WithLogger(testLogger))
+		s := NewSummarizer(gw, bus, withLogger(testLogger))
 
 		respCh := make(chan *llm.Content)
 		close(respCh)
@@ -153,7 +153,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 		testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 		gw := new(mockGateway)
-		s := NewSummarizer(gw, nil, WithLogger(testLogger))
+		s := NewSummarizer(gw, nil, withLogger(testLogger))
 
 		respCh := make(chan *llm.Content)
 		close(respCh)
