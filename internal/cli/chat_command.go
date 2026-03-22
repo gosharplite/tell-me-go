@@ -43,6 +43,7 @@ type cliOptions struct {
 	lastN       int
 	backN       int
 	rawOutput   bool
+	retry       bool
 }
 
 // newChatCommand creates a new Chat Command with default factories.
@@ -80,7 +81,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	var captureOpts []orchestration.CaptureOption
-	if opts.lastN > 0 || opts.backN > 0 {
+	if opts.lastN > 0 || opts.backN > 0 || opts.retry {
 		captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
 	}
 	if opts.rawOutput {
@@ -103,6 +104,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		LastN:      opts.lastN,
 		BackN:      opts.backN,
 		RawOutput:  opts.rawOutput,
+		Retry:      opts.retry,
 		Prompt:     prompt,
 	}, capturer)
 }
@@ -123,6 +125,7 @@ func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.Flag
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
 	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
 	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
+	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return nil, nil, err

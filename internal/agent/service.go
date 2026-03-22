@@ -56,6 +56,40 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 	defer cleanup()
 
+	if opts.Retry {
+		total := hManager.GetTotalEntries()
+		window, err := hManager.GetWindow(ctx, 0, total)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve history for retry: %w", err)
+		}
+
+		var lastMsgText string
+		for i := len(window) - 1; i >= 0; i-- {
+			if window[i].Role == "user" && len(window[i].Parts) > 0 {
+				lastMsgText = window[i].Parts[0].Text
+				break
+			}
+		}
+
+		if lastMsgText == "" {
+			return errors.New("no previous user message found to retry")
+		}
+
+		confirmed, err := capturer.(domain_security.UserInteractor).Confirm(ctx, fmt.Sprintf("Retry last message: %q?", lastMsgText))
+		if err != nil {
+			return fmt.Errorf("failed to prompt for retry confirmation: %w", err)
+		}
+		if !confirmed {
+			return nil
+		}
+
+		if _, _, _, err := hManager.RollbackTurns(ctx, 1); err != nil {
+			return fmt.Errorf("failed to rollback history: %w", err)
+		}
+
+		opts.Prompt = lastMsgText
+	}
+
 	defer func() {
 		if err := deps.GetEventBus().Shutdown(ctx); err != nil {
 			if errors.Is(err, events.ErrBusNotInitialized) {

@@ -16,6 +16,7 @@ type ChatOptions struct {
 	LastN      int
 	BackN      int
 	RawOutput  bool
+	Retry      bool
 	Prompt     string
 }
 
