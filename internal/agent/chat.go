@@ -25,7 +25,7 @@ type ChatService interface {
 	// ProcessMessage handles the entire business flow of a chat turn, including
 	// dependency management, history loading, and session finalization.
 	ProcessMessage(ctx context.Context, opts ChatOptions, capturer orchestration.Capturer) error
-	
+
 	// GetLastUserMessage retrieves the last message sent by the user and the number
 	// of turns to go back to retry it.
 	GetLastUserMessage(ctx context.Context, configPath string) (string, int, error)

@@ -451,6 +451,9 @@ func TestManager_RollbackTurns(t *testing.T) {
 		{"Empty Rollback", emptyState, 1, nil, 0, 0, 0, false},
 		{"Negative Rollback (Should be No-Op)", threeTurns, -1, nil, 0, 3, 6, false},
 		{"Zero Rollback (Should be No-Op)", threeTurns, 0, nil, 0, 3, 6, false},
+		{"Odd length rollback 1 turn", threeTurns[:3], 1, nil, 1, 1, 2, false},
+		{"Odd length rollback 2 turns", threeTurns[:3], 2, nil, 2, 0, 0, false},
+		{"Odd length rollback out-of-bounds", threeTurns[:3], 5, nil, 2, 0, 0, false},
 		{
 			name:          "Save Error",
 			initialState:  threeTurns,
@@ -534,47 +537,147 @@ func FuzzManager_RollbackTurns(f *testing.F) {
 
 	// 2. Fuzz Target
 	f.Fuzz(func(t *testing.T, turns int) {
-		// Setup dummy state: 10 messages (5 turns)
-		m := &Manager{
-			Contents: make([]*llm.Content, 10),
-			store:    &mockStore{},
-		}
-		for i := range m.Contents {
-			m.Contents[i] = &llm.Content{}
-		}
-		initialLen := len(m.Contents)
-		ctx := context.Background()
+		// Test with both even and odd initial lengths
+		for initialLen := 9; initialLen <= 10; initialLen++ {
+			m := &Manager{
+				Contents: make([]*llm.Content, initialLen),
+				store:    &mockStore{},
+			}
+			for i := range m.Contents {
+				m.Contents[i] = &llm.Content{}
+			}
 
-		// Execute
-		actualRemoved, remainingTurns, remainingMsgs, err := m.RollbackTurns(ctx, turns)
+			ctx := context.Background()
 
-		// Assert Invariants
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+			// Execute
+			actualRemoved, remainingTurns, remainingMsgs, err := m.RollbackTurns(ctx, turns)
 
-		finalLen := len(m.Contents)
+			// Assert Invariants
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-		if finalLen < 0 {
-			t.Errorf("invariant violation: final length %d is negative (input turns: %d)", finalLen, turns)
-		}
+			finalLen := len(m.Contents)
 
-		if finalLen > initialLen {
-			t.Errorf("invariant violation: final length %d exceeds initial length %d (input turns: %d)", finalLen, initialLen, turns)
-		}
+			if finalLen < 0 {
+				t.Errorf("invariant violation: final length %d is negative (input turns: %d)", finalLen, turns)
+			}
 
-		if actualRemoved < 0 {
-			t.Errorf("invariant violation: actualRemoved %d is negative (input turns: %d)", actualRemoved, turns)
-		}
+			if finalLen > initialLen {
+				t.Errorf("invariant violation: final length %d exceeds initial length %d (input turns: %d)", finalLen, initialLen, turns)
+			}
 
-		// Ensure calculated remaining aligns with actual slice length
-		if remainingMsgs != finalLen {
-			t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
-		}
+			if finalLen%2 != 0 {
+				t.Errorf("invariant violation: final length %d is odd (input turns: %d). Rollback must leave complete pairs.", finalLen, turns)
+			}
 
-		expectedRemainingTurns := finalLen / 2
-		if remainingTurns != expectedRemainingTurns {
-			t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)
+			if actualRemoved < 0 {
+				t.Errorf("invariant violation: actualRemoved %d is negative (input turns: %d)", actualRemoved, turns)
+			}
+
+			// Ensure calculated remaining aligns with actual slice length
+			if remainingMsgs != finalLen {
+				t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
+			}
+
+			expectedRemainingTurns := finalLen / 2
+			if remainingTurns != expectedRemainingTurns {
+				t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)
+			}
 		}
 	})
+}
+
+func TestManager_GetLastUserMessage(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name              string
+		contents          []*llm.Content
+		wantMsg           string
+		wantTurnsRollback int
+		wantErr           bool
+	}{
+		{
+			name: "even length, simple pair",
+			contents: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
+			},
+			wantMsg:           "hello",
+			wantTurnsRollback: 1, // (2 - 0 + 1) / 2 = 1
+			wantErr:           false,
+		},
+		{
+			name: "odd length, last is user",
+			contents: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "first"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "response"}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "second"}}},
+			},
+			wantMsg:           "second",
+			wantTurnsRollback: 1, // (3 - 2 + 1) / 2 = 1
+			wantErr:           false,
+		},
+		{
+			name: "even length, multiple pairs",
+			contents: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "first"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "response 1"}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "second"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "response 2"}}},
+			},
+			wantMsg:           "second",
+			wantTurnsRollback: 1, // (4 - 2 + 1) / 2 = 1
+			wantErr:           false,
+		},
+		{
+			name: "user message is not the last one in odd array",
+			contents: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "first"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "response 1"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "response 2"}}},
+			},
+			wantMsg:           "first",
+			wantTurnsRollback: 2, // (3 - 0 + 1) / 2 = 2
+			wantErr:           false,
+		},
+		{
+			name: "no user messages",
+			contents: []*llm.Content{
+				{Role: "model", Parts: []*llm.Part{{Text: "response 1"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "response 2"}}},
+			},
+			wantMsg:           "",
+			wantTurnsRollback: 0,
+			wantErr:           true,
+		},
+		{
+			name:              "empty history",
+			contents:          []*llm.Content{},
+			wantMsg:           "",
+			wantTurnsRollback: 0,
+			wantErr:           true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := infrapersistence.NewOSFileSystem()
+			mgr := NewManager(fs, "test.jsonl", "archive.jsonl")
+			mgr.Contents = tt.contents
+
+			msg, turns, err := mgr.GetLastUserMessage(ctx)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetLastUserMessage() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if msg != tt.wantMsg {
+				t.Errorf("GetLastUserMessage() msg = %v, want %v", msg, tt.wantMsg)
+			}
+			if turns != tt.wantTurnsRollback {
+				t.Errorf("GetLastUserMessage() turns = %v, want %v", turns, tt.wantTurnsRollback)
+			}
+		})
+	}
 }

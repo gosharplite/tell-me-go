@@ -227,19 +227,40 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	defer m.mu.Unlock()
 
 	originalLen := len(m.Contents)
+
 	if originalLen == 0 || turns <= 0 {
-		return 0, originalLen / 2, originalLen, nil
+		// Even if turns <= 0, ensure we return an even length array by dropping any dangling message
+		if originalLen > 0 && originalLen%2 != 0 {
+			m.Contents[originalLen-1] = nil // Prevent memory leak of the truncated pointer
+			m.Contents = m.Contents[:originalLen-1]
+			if err := m.store.Save(ctx, m.Contents); err != nil {
+				return 0, 0, 0, err
+			}
+		}
+		return 0, len(m.Contents) / 2, len(m.Contents), nil
 	}
 
 	originalContents := m.Contents
 
-	// Prevent overflow and handle out-of-bounds turns
-	if turns > originalLen/2 {
-		actualRemoved = originalLen / 2
+	// Prevent overflow for very large turns
+	currentTurns := (originalLen + 1) / 2
+	if turns > currentTurns {
+		turns = currentTurns
+	}
+
+	// Calculate how many messages to drop
+	droppedMsgs := turns * 2
+	if originalLen%2 != 0 {
+		// If length is odd, the last "turn" to rollback is actually an incomplete pair (1 message)
+		droppedMsgs -= 1
+	}
+
+	if droppedMsgs >= originalLen {
+		actualRemoved = currentTurns
 		m.Contents = nil
 	} else {
 		actualRemoved = turns
-		newLen := originalLen - (turns * 2)
+		newLen := originalLen - droppedMsgs
 
 		// Nil out the truncated pointers to prevent memory leaks
 		for i := newLen; i < originalLen; i++ {
@@ -267,10 +288,10 @@ func (m *Manager) GetLastUserMessage(ctx context.Context) (string, int, error) {
 	defer m.mu.RUnlock()
 
 	var lastMsgText string
-	var humanTurnIndex int
-	
+	var humanMsgAbsoluteIndex int = -1
+
 	total := len(m.Contents)
-	
+
 	for i := total - 1; i >= 0; i-- {
 		if m.Contents[i].Role == "user" {
 			var textBuilder string
@@ -279,21 +300,20 @@ func (m *Manager) GetLastUserMessage(ctx context.Context) (string, int, error) {
 					textBuilder += part.Text
 				}
 			}
-			
+
 			if textBuilder != "" {
 				lastMsgText = textBuilder
-				humanTurnIndex = i / 2 
+				humanMsgAbsoluteIndex = i
 				break
 			}
 		}
 	}
 
-	if lastMsgText == "" {
+	if humanMsgAbsoluteIndex == -1 {
 		return "", 0, errors.New("no previous user message found to retry")
 	}
 
-	totalTurns := total / 2
-	turnsToRollback := totalTurns - humanTurnIndex
+	turnsToRollback := (total - humanMsgAbsoluteIndex + 1) / 2
 
 	return lastMsgText, turnsToRollback, nil
 }

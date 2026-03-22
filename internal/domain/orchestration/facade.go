@@ -185,7 +185,7 @@ func (f *chatterFacade) invokeLLM(ctx context.Context, history []*llm.Content, t
 	startInference := time.Now()
 
 	response, metrics, err := f.llmCoord.Generate(ctx, history, f.registry.GetDeclarations(), f.history.GetResolver())
-	
+
 	trace.InferenceDuration = time.Since(startInference)
 
 	if metrics != nil {

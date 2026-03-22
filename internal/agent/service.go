@@ -111,7 +111,6 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	return err
 }
 
-
 // GetLastUserMessage retrieves the last message sent by the user and the number of turns to go back to retry it.
 func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string) (string, int, error) {
 	cfg, err := s.Loader.Load(configPath)
