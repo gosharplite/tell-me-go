@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
@@ -74,6 +75,26 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return nil
 	}
 
+	var prompt string
+	if opts.retry {
+		lastMsg, turns, err := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
+		if err != nil {
+			return fmt.Errorf("failed to get last user message for retry: %w", err)
+		}
+		if lastMsg == "" {
+			return errors.New("no previous user message found to retry")
+		}
+
+		fmt.Fprintf(c.Stdout, "Are you sure you want to retry the following message?\n\n%s\n\nRetry? [y/N]: ", lastMsg)
+		var response string
+		fmt.Fscanln(c.Stdin, &response)
+		if strings.ToLower(strings.TrimSpace(response)) != "y" {
+			return nil // User aborted
+		}
+		prompt = lastMsg
+		opts.backN = turns
+	}
+
 	// 2. Invoking a Use Case / Service interface
 	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
 	if sm, ok := c.SM.(interface {
@@ -82,47 +103,23 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		sm.SetInteractor(capturer.(domain_security.UserInteractor))
 	}
 
-	var captureOpts []orchestration.CaptureOption
-	if opts.lastN > 0 || opts.backN > 0 || opts.retry {
-		captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
-	}
-	if opts.rawOutput {
-		captureOpts = append(captureOpts, orchestration.WithRaw(true))
-	}
-
-	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
-	if err != nil {
-		if !errors.Is(err, ui.ErrNoInput) {
-			return err
+	if !opts.retry {
+		var captureOpts []orchestration.CaptureOption
+		if opts.lastN > 0 || opts.backN > 0 {
+			captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
 		}
-		// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
-		prompt = ""
-	}
+		if opts.rawOutput {
+			captureOpts = append(captureOpts, orchestration.WithRaw(true))
+		}
 
-	if opts.retry {
-		lastMsg, turns, err := c.ChatService.GetLastUserMessage(ctx, opts.configPath, capturer)
+		prompt, err = capturer.CapturePrompt(ctx, fs, captureOpts...)
 		if err != nil {
-			return fmt.Errorf("failed to get last user message for retry: %w", err)
+			if !errors.Is(err, ui.ErrNoInput) {
+				return err
+			}
+			// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
+			prompt = ""
 		}
-		if lastMsg == "" {
-			return errors.New("no previous user message found to retry")
-		}
-
-		interactor, ok := capturer.(domain_security.UserInteractor)
-		if !ok {
-			return errors.New("the provided terminal capturer does not support user interaction prompts")
-		}
-
-		retryPrompt := fmt.Sprintf("Are you sure you want to retry the following message?\n\n%s\n\nRetry?", lastMsg)
-		confirmed, err := interactor.Confirm(ctx, retryPrompt)
-		if err != nil {
-			return fmt.Errorf("failed to prompt for retry confirmation: %w", err)
-		}
-		if !confirmed {
-			return nil
-		}
-		prompt = lastMsg
-		opts.backN = turns
 	}
 
 	// Delegate all business logic and orchestration to the ChatService

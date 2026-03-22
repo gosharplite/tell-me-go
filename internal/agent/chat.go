@@ -27,5 +27,5 @@ type ChatService interface {
 
 	// GetLastUserMessage retrieves the last user message and the number of turns
 	// to rollback to reach that point in history.
-	GetLastUserMessage(ctx context.Context, configPath string, capturer orchestration.Capturer) (msg string, turnsToRollback int, err error)
+	GetLastUserMessage(ctx context.Context, configPath string) (msg string, turnsToRollback int, err error)
 }

@@ -9,6 +9,8 @@ import (
 	"flag"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
@@ -326,4 +328,41 @@ func TestProcessMessage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetLastUserMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "assistant.yaml")
+	
+	// Create a dummy history file
+	modeDir := filepath.Join(tmpDir, "output", "assistant")
+	err := os.MkdirAll(modeDir, 0755)
+	assert.NoError(t, err)
+	
+	historyPath := filepath.Join(modeDir, "history.jsonl")
+	// JSONL format: {"role":"user","parts":[{"text":"last message"}]}
+	historyContent := `{"role":"user","parts":[{"text":"first message"}]}
+{"role":"model","parts":[{"text":"response"}]}
+{"role":"user","parts":[{"text":"last message"}]}
+`
+	err = os.WriteFile(historyPath, []byte(historyContent), 0644)
+	assert.NoError(t, err)
+
+	ctx := context.Background()
+	loader := &mockServiceConfigLoader{}
+	container := &mockServiceContainer{}
+	sm := &mockServiceSecurityManager{}
+
+	cfg := &config.Config{Mode: "assistant"}
+	loader.On("Load", configPath).Return(cfg, nil)
+
+	service := NewChatService(tmpDir, "v1", io.Discard, io.Discard, sm, loader, container)
+
+	msg, turns, err := service.GetLastUserMessage(ctx, configPath)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "last message", msg)
+	assert.Equal(t, 1, turns) // 1 turn to rollback (the last user message and anything after it, which is nothing here)
+	
+	loader.AssertExpectations(t)
 }

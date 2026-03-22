@@ -24,7 +24,7 @@ func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOpti
 	return nil
 }
 
-func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, configPath string, capturer orchestration.Capturer) (string, int, error) {
+func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, configPath string) (string, int, error) {
 	return "retry test", 1, nil
 }
 
@@ -134,5 +134,79 @@ func TestChatCommand_Execute_BackN(t *testing.T) {
 
 	if mService.lastParams.BackN != 2 {
 		t.Errorf("expected BackN 2, got %d", mService.lastParams.BackN)
+	}
+}
+
+func TestChatCommand_Execute_Retry(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mService := &mockChatService{}
+
+	cmd := &chatCommand{
+		Version:     "1.0.0",
+		Stdin:       strings.NewReader("y\n"),
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		SM:          sm,
+		ChatService: mService,
+	}
+
+	ctx := stdctx.Background()
+	args := []string{"chat", "-retry"}
+
+	err := cmd.Execute(ctx, args)
+	if err != nil {
+		t.Errorf("Execute failed: %v", err)
+	}
+
+	if !mService.chatCalled {
+		t.Error("expected chat service to be called")
+	}
+
+	if mService.lastParams.Prompt != "retry test" {
+		t.Errorf("expected prompt 'retry test', got %q", mService.lastParams.Prompt)
+	}
+
+	if mService.lastParams.BackN != 1 {
+		t.Errorf("expected BackN 1, got %d", mService.lastParams.BackN)
+	}
+
+	if !strings.Contains(stdout.String(), "Are you sure you want to retry") {
+		t.Errorf("expected stdout to contain retry message, got %q", stdout.String())
+	}
+}
+
+func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mService := &mockChatService{}
+
+	cmd := &chatCommand{
+		Version:     "1.0.0",
+		Stdin:       strings.NewReader("n\n"),
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		SM:          sm,
+		ChatService: mService,
+	}
+
+	ctx := stdctx.Background()
+	args := []string{"chat", "-retry"}
+
+	err := cmd.Execute(ctx, args)
+	if err != nil {
+		t.Errorf("Execute failed: %v", err)
+	}
+
+	if mService.chatCalled {
+		t.Error("expected chat service NOT to be called")
+	}
+
+	if !strings.Contains(stdout.String(), "Are you sure you want to retry") {
+		t.Errorf("expected stdout to contain retry message, got %q", stdout.String())
 	}
 }

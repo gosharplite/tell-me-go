@@ -14,6 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
@@ -42,17 +44,21 @@ func NewChatService(homeDir, version string, stdout, stderr io.Writer, sm domain
 }
 
 // GetLastUserMessage implements ChatService.
-func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string, capturer orchestration.Capturer) (string, int, error) {
+func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string) (string, int, error) {
 	cfg, err := s.Loader.Load(configPath)
 	if err != nil {
 		return "", 0, fmt.Errorf("error loading config [%s]: %w", configPath, err)
 	}
 
-	_, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, configPath, false, capturer.(domain_security.UserInteractor))
+	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, s.HomeDir, cfg.Mode)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to build session dependencies: %w", err)
+		return "", 0, fmt.Errorf("failed to initialize session paths: %w", err)
 	}
-	defer cleanup()
+
+	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
+	if err := hManager.Load(ctx); err != nil {
+		return "", 0, fmt.Errorf("failed to load history: %w", err)
+	}
 
 	msg, turns, err := hManager.GetLastUserMessage(ctx)
 	if err != nil {
