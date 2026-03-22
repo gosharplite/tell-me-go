@@ -32,13 +32,13 @@ func TestTurnEngine_EventPublishFailure(t *testing.T) {
 		State:      &turnState{LastError: errors.New("dummy error")},
 		Clock:      clock.RealClock{},
 	}
-	
+
 	// Test Recovery Step (simulating a transient error so it attempts a retry)
 	transientErr := newAgentError(llm.ErrTransient, "transient issue", nil)
 	turn.State.LastError = transientErr
 	rs := &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Millisecond}}
 	_, _ = rs.process(context.Background(), turn)
-	
+
 	if !strings.Contains(buf.String(), "event_publish_failed") {
 		t.Errorf("RecoveryStep expected event_publish_failed log, got: %s", buf.String())
 	}
@@ -48,7 +48,7 @@ func TestTurnEngine_EventPublishFailure(t *testing.T) {
 	// Test Guard Step
 	gs := &guardStep{}
 	_, _ = gs.process(context.Background(), turn)
-	
+
 	if !strings.Contains(buf.String(), "event_publish_failed") {
 		t.Errorf("GuardStep expected event_publish_failed log, got: %s", buf.String())
 	}
