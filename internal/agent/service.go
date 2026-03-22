@@ -14,6 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
@@ -107,4 +109,25 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 
 	return err
+}
+
+
+// GetLastUserMessage retrieves the last message sent by the user and the number of turns to go back to retry it.
+func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string) (string, int, error) {
+	cfg, err := s.Loader.Load(configPath)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to load config for retry: %w", err)
+	}
+
+	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, s.HomeDir, cfg.Mode)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to initialize paths: %w", err)
+	}
+
+	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
+	if err := hManager.Load(ctx); err != nil {
+		return "", 0, fmt.Errorf("failed to load history: %w", err)
+	}
+
+	return hManager.GetLastUserMessage(ctx)
 }

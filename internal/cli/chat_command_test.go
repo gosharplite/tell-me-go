@@ -24,6 +24,10 @@ func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOpti
 	return nil
 }
 
+func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, configPath string) (string, int, error) {
+	return "", 0, nil
+}
+
 type mockSM struct {
 	domain_security.Manager
 }
