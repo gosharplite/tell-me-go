@@ -18,7 +18,24 @@ type warningInjector struct {
 
 func (t *warningInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	tokens := req.Metadata.FinalTokenCount
-	currentTurns := len(req.History) / 2
+	// Count logical conversational turns by counting messages with RoleUser.
+	// This prevents tool-call loops from artificially inflating the turn count.
+	currentTurns := 0
+	for _, msg := range req.History {
+		if msg.Role == "user" {
+			// A true conversational user turn does not have a FunctionResponse
+			isToolResponse := false
+			for _, p := range msg.Parts {
+				if p.FunctionResponse != nil {
+					isToolResponse = true
+					break
+				}
+			}
+			if !isToolResponse {
+				currentTurns++
+			}
+		}
+	}
 
 	combined, list := t.gatherWarnings(req, tokens, currentTurns)
 	if combined == "" {

@@ -12,7 +12,7 @@ import (
 // Default limits for history and tools.
 const (
 	DefaultMaxToolTurns       = 10
-	DefaultMaxHistoryTurns    = 20
+	DefaultMaxHistoryTurns    = 0
 	DefaultMaxHistoryTokens   = 120000
 	DefaultMaxConcurrentTools = 5
 	DefaultToolTimeoutSeconds = 30

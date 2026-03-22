@@ -185,9 +185,15 @@ func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns, prunedTurns
 		return msg
 	}
 
+	// Steady-state sliding window: no warning needed for routine single-turn pruning
+	if prunedTurns > 0 {
+		return ""
+	}
+
 	ratio := float64(currentTurns) / float64(cs.maxHistoryTurns)
 	if ratio >= 1.0 {
-		return "[SYSTEM NOTICE: The history turn limit has been reached and the oldest messages in this conversation have been deleted. If you are missing previous context or architectural details, please refer to 'manage_tasks' or pinned turns for the latest status and pending tasks.]"
+		// Steady state reached. We already warned at 95%.
+		return ""
 	} else if ratio > 0.95 {
 		return "[URGENT SYSTEM NOTICE: Conversation history is at 95% of the turn limit. Pruning is imminent. The oldest messages in this thread will be DELETED after this turn. Move all essential long-term memory to the task list, or pinned via 'manage_history' (pin) immediately.]"
 	} else if ratio > 0.90 {

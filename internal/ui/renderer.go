@@ -287,7 +287,13 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	if !status.IsPostCall {
 		_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
-		_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, ui.c(colorGray))
+
+		if status.MaxHistoryTurns > 0 {
+			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, ui.c(colorGray))
+		} else {
+			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sSession: %d turns%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, ui.c(colorGray))
+		}
+
 		printSystemLine(status.Tokens, false)
 		_, _ = fmt.Fprintln(stderr) // Ensure visual gap before response
 	} else if status.Metrics != nil {

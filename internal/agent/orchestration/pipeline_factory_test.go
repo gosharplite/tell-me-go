@@ -13,26 +13,44 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPipelineFactory_PreciseProfile(t *testing.T) {
+func TestPipelineFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
 	strategy := NewContextStrategy(&mockTokenCounter{})
 	factory := &PipelineFactory{
 		Estimator: strategy,
 		Profile:   profilePrecise,
 	}
 
-	// Test Prepare under precise profile
-	ctx := context.Background()
-	req := &ports.ContextRequest{
-		Turn:    1,
-		History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
+	tests := []struct {
+		name         string
+		limits       events.Limits
+		expectPruner bool
+	}{
+		{"Turn Pruning Enabled", events.Limits{MaxHistoryTurns: 10, MaxHistoryTokens: 1000}, true},
+		{"Turn Pruning Disabled", events.Limits{MaxHistoryTurns: 0, MaxHistoryTokens: 1000}, false},
 	}
 
-	limits := events.Limits{MaxHistoryTurns: 10, MaxHistoryTokens: 1000}
-	pipeline := factory.BuildStandardPipeline(limits)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pipeline := factory.BuildStandardPipeline(tt.limits)
+			assert.NotNil(t, pipeline)
 
-	// Verify that the pipeline was built (no panic)
-	assert.NotNil(t, pipeline)
+			hasPruner := false
+			for _, tr := range pipeline.transformers {
+				if _, ok := tr.(*historyPruner); ok {
+					hasPruner = true
+					break
+				}
+			}
+			assert.Equal(t, tt.expectPruner, hasPruner, "historyPruner inclusion state mismatch")
 
-	err := pipeline.executeWithPersistence(ctx, req, nil)
-	assert.NoError(t, err)
+			// Ensure the constructed pipeline is valid and executable
+			ctx := context.Background()
+			req := &ports.ContextRequest{
+				Turn:    1,
+				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
+			}
+			err := pipeline.executeWithPersistence(ctx, req, nil)
+			assert.NoError(t, err)
+		})
+	}
 }

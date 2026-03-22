@@ -171,8 +171,8 @@ func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
 		h, tool, hTurns := cs.getLimits()
-		if h <= 0 || tool <= 0 || hTurns <= 0 {
-			t.Errorf("expected limits to remain positive defaults, got %d, %d, %d", h, tool, hTurns)
+		if h <= 0 || tool <= 0 || hTurns < 0 {
+			t.Errorf("expected limits to remain positive/zero defaults, got %d, %d, %d", h, tool, hTurns)
 		}
 	})
 }
@@ -188,10 +188,21 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 			{91, "90%"},
 			{91, "manage_history"},
 			{96, "95%"},
-			{100, "limit has been reached"},
+			{100, ""},
 		}
 		for _, tt := range tests {
 			warnings := cs.getWarnings(0, 0, tt.turns, 0)
+			if tt.expected == "" {
+				if len(warnings) > 0 {
+					for _, w := range warnings {
+						if contains(w.Message, "limit has been reached") {
+							t.Errorf("expected no warning for %d turns, got %v", tt.turns, w.Message)
+						}
+					}
+				}
+				continue
+			}
+
 			found := false
 			for _, w := range warnings {
 				if contains(w.Message, tt.expected) {
@@ -374,13 +385,13 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 			name:         "At limit (100%)",
 			maxTurns:     100,
 			currentTurns: 100,
-			wantContains: "limit has been reached",
+			wantContains: "",
 		},
 		{
 			name:         "Over limit",
 			maxTurns:     100,
 			currentTurns: 105,
-			wantContains: "limit has been reached",
+			wantContains: "",
 		},
 		{
 			name:         "Major cleanup (pruned > 5)",

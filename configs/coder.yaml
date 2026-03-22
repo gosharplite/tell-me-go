@@ -47,7 +47,6 @@ TOOL_TIMEOUT: 300
 
 # --- Safety & History ---
 MAX_TURNS: 500
-MAX_HISTORY_TURNS: 500
 MAX_HISTORY_TOKENS: 180000
 
 # Model's hardcoded physical limits
