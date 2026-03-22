@@ -164,13 +164,20 @@ func TestWorkerPool_Concurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numTasks)
 	counter := make(chan int, numTasks)
+	taskStarted := make(chan struct{}, numTasks)
 
 	for i := 0; i < numTasks; i++ {
 		for !p.Submit(func(ctx context.Context) {
 			defer wg.Done()
+			taskStarted <- struct{}{}
 			counter <- 1
 		}) {
-			time.Sleep(10 * time.Millisecond)
+			// Wait for at least one task to start processing and free up space in the queue
+			select {
+			case <-taskStarted:
+			case <-time.After(time.Second):
+				t.Fatalf("Timeout waiting for task to start at iteration %d", i)
+			}
 		}
 	}
 

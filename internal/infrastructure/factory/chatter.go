@@ -5,7 +5,9 @@ package factory
 
 import (
 	stdctx "context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	agent_executor "github.com/gosharplite/tell-me-go/internal/agent/executor"
@@ -26,7 +28,7 @@ import (
 func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 	telemetry.RegisterTraceSubscriber(deps.GetEventBus(), cfg.LogPath)
 
-	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus())
+	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus(), infra_llm.WithLogger(deps.GetLogger()))
 
 	// 1. Prepare specialized domain service dependencies.
 	homeDir := filepath.Dir(filepath.Dir(deps.GetPaths().ModeDir))
@@ -37,7 +39,7 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	}
 	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills
 
-	strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(deps.GetRegistry()), deps.GetEventBus())
+	strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(deps.GetRegistry()))
 	factory := &agent_orchestration.PipelineFactory{
 		Registry:      deps.GetRegistry(),
 		History:       deps.GetHistoryManager(),
@@ -46,9 +48,9 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		SkillSelector: skillSelector,
 		Events:        deps.GetEventBus(),
 	}
-	ctxManager := agent_orchestration.NewContextManager(strategy, deps.GetHistoryManager(), deps.GetEventBus(), factory)
+	ctxManager := agent_orchestration.NewContextManager(strategy, deps.GetHistoryManager(), deps.GetEventBus(), factory, agent_orchestration.WithLogger(deps.GetLogger()))
 
-	toolExec, err := agent_executor.NewToolExecutor(deps.GetRegistry(), deps.GetSecurityManager(), deps.GetEventBus(), telemetry.NewSlogLogger(nil), &agent_executor.TelemetryLogger{})
+	toolExec, err := agent_executor.NewToolExecutor(deps.GetRegistry(), deps.GetSecurityManager(), deps.GetEventBus(), telemetry.NewSlogLogger(deps.GetLogger()), &agent_executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
@@ -60,13 +62,21 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	llmCoord := llmcoord.NewService(
 		llmcoord.WithGateway(deps.GetGateway()),
 		llmcoord.WithStreamHandler(func(ctx stdctx.Context, stream <-chan *llm.Content) {
-			_ = deps.GetEventBus().Publish(ctx, events.ResponseStreamEvent{Context: ctx, Stream: stream})
+			e := events.ResponseStreamEvent{Context: ctx, Stream: stream}
+			if err := events.SafePublish(ctx, deps.GetEventBus(), e); err != nil {
+				if !errors.Is(err, events.ErrBusNotInitialized) {
+					deps.GetLogger().Error("event_publish_failed",
+						slog.String("event_type", e.Type()),
+						slog.Any("error", err))
+				}
+			}
 		}),
 	)
 
 	monitor := monitoring.NewService(
 		monitoring.WithTracker(deps.GetTracker()),
 		monitoring.WithEventBus(deps.GetEventBus()),
+		monitoring.WithLogger(deps.GetLogger()),
 	)
 
 	// 3. Register internal tools (e.g., summarize_history)
@@ -85,5 +95,6 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		domain_orchestration.WithHistory(deps.GetHistoryManager()),
 		domain_orchestration.WithProvider(cfg.ProviderName),
 		domain_orchestration.WithModel(cfg.Model),
+		domain_orchestration.WithLogger(deps.GetLogger()),
 	), nil
 }

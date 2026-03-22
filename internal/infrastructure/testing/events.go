@@ -112,7 +112,7 @@ func (b *TestEventBus) FilterEvents(t reflect.Type) []events.Event {
 
 // CountingEventBus records the number of events published and allows waiting for a target count.
 type countingEventBus struct {
-	events.SimpleEventBus
+	*events.SimpleEventBus
 	mu    sync.RWMutex
 	count int
 	cond  *sync.Cond
@@ -121,7 +121,7 @@ type countingEventBus struct {
 // NewCountingEventBus creates a new CountingEventBus.
 func NewCountingEventBus() *countingEventBus {
 	cb := &countingEventBus{
-		SimpleEventBus: *events.NewSimpleEventBus(context.Background()),
+		SimpleEventBus: events.NewSimpleEventBus(context.Background()),
 	}
 	cb.cond = sync.NewCond(&cb.mu)
 	return cb

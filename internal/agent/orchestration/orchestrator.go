@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -76,6 +77,7 @@ type sessionDependencies struct {
 	PricingData      domain_pricing.PricingData
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	EventBus         events.EventBus
+	Logger           *slog.Logger
 }
 
 func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gateway }
@@ -87,6 +89,7 @@ func (d *sessionDependencies) GetSecurityManager() domain_security.Manager {
 	return d.SecurityManager
 }
 func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
+func (d *sessionDependencies) GetLogger() *slog.Logger      { return d.Logger }
 func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
 func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
 	return d.PricingOverrides
@@ -97,7 +100,7 @@ func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 }
 
 // newSessionDependencies creates a new sessionDependencies with all required components.
-func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) ports.SessionDependencies {
+func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger *slog.Logger) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -109,6 +112,7 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 		PricingData:      pData,
 		PricingOverrides: overrides,
 		EventBus:         bus,
+		Logger:           logger,
 	}
 }
 

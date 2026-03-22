@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -143,8 +142,26 @@ func TestAgent_TieredThreshold(t *testing.T) {
 
 	a, err := newAgent(client, bus, h, "test-provider", reg, sm)
 	require.NoError(t, err)
+
+	// Subscribe to track updates
+	updated := make(chan struct{}, 10)
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
+		if cfg, ok := e.(events.ConfigUpdated); ok && cfg.Limits.TieredThreshold == 100000 {
+			select {
+			case updated <- struct{}{}:
+			default:
+			}
+		}
+	})
+
 	_ = a.SetTieredThreshold(context.Background(), 100000)
-	_ = a.(*agent).events.Flush(context.Background())
+
+	// Wait for the update to propagate through the event bus to the strategy
+	select {
+	case <-updated:
+	case <-time.After(2 * time.Second):
+		t.Errorf("Timeout waiting for TieredThreshold update event")
+	}
 
 	if a.(*agent).ctxManager.Strategy.GetTieredThreshold() != 100000 {
 		t.Errorf("expected TieredThreshold 100000, got %d", a.(*agent).ctxManager.Strategy.GetTieredThreshold())
@@ -293,13 +310,11 @@ func TestAgent_PinningFlow(t *testing.T) {
 	it := orchestration.NewInternalTools(a.(*agent).ctxManager)
 
 	t.Run("PinTurn", func(t *testing.T) {
-		t.Parallel()
 		verifyPinAction(t, it, h, ctx, "pin", 0)
 	})
 
 	t.Run("UnpinTurn", func(t *testing.T) {
-		t.Parallel()
-		verifyPinAction(t, it, h, ctx, "unpin", 0)
+		verifyPinAction(t, it, h, ctx, "unpin", 1)
 	})
 }
 
@@ -496,32 +511,43 @@ func TestAgent_Subscribe(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background())
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history_sub.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
-	a, err := newAgent(client, bus, h, "test-provider", reg, sm)
-	require.NoError(t, err)
 
-	var eventReceived events.Event
-	var mu sync.Mutex
-	a.Subscribe(func(ctx context.Context, e events.Event) {
-		mu.Lock()
-		defer mu.Unlock()
-		if _, ok := e.(events.ConfigUpdated); ok {
-			eventReceived = e
+	// Subscribe BEFORE creating the agent to capture all events
+	eventsChan := make(chan events.ConfigUpdated, 5)
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
+		if cfg, ok := e.(events.ConfigUpdated); ok {
+			eventsChan <- cfg
 		}
 	})
 
+	a, err := newAgent(client, bus, h, "test-provider", reg, sm)
+	require.NoError(t, err)
+
+	// Trigger limits update
 	_ = a.SetLimits(context.Background(), 15, 2000, 20)
 
-	_ = a.(*agent).events.Flush(context.Background())
+	// Wait for the expected event (the second one, or the one with specific values)
+	var lastEvent events.ConfigUpdated
+	timeout := time.After(2 * time.Second)
+	found := false
 
-	mu.Lock()
-	defer mu.Unlock()
-	if eventReceived == nil {
-		t.Fatal("ConfigUpdated event was not received")
+loop:
+	for {
+		select {
+		case ev := <-eventsChan:
+			if ev.Limits.MaxToolTurns == 15 && ev.Limits.MaxHistoryTokens == 2000 {
+				lastEvent = ev
+				found = true
+				break loop
+			}
+			lastEvent = ev
+		case <-timeout:
+			break loop
+		}
 	}
 
-	cfgEvent := eventReceived.(events.ConfigUpdated)
-	if cfgEvent.Limits.MaxToolTurns != 15 || cfgEvent.Limits.MaxHistoryTokens != 2000 || cfgEvent.Limits.MaxHistoryTurns != 20 {
-		t.Errorf("unexpected limits in event: %+v", cfgEvent.Limits)
+	if !found {
+		t.Fatalf("Expected ConfigUpdated event with limits (15, 2000, 20) not received. Last event received: %+v", lastEvent.Limits)
 	}
 }
 
@@ -550,7 +576,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	tracker2 := &mockCostTracker{}
 	a.(*agent).tracker = tracker2
 	if a.(*agent).engine != nil {
-		a.(*agent).engine.ApplyOptions(withCostTracker(tracker2))
+		a.(*agent).engine.ApplyOptions(withEngineCostTracker(tracker2))
 	}
 
 	if a.(*agent).tracker != tracker2 {

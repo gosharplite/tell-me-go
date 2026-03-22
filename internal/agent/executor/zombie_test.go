@@ -58,21 +58,34 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 	// mock the toolTimeout since NewToolExecutor sets it to default
-	exec.toolTimeout = 5 * time.Millisecond
+	exec.toolTimeout = 200 * time.Millisecond
 
 	ctx := context.Background()
 
-	result, err := exec.runWithTimeout(ctx, hangingTool, nil)
-	if err != nil {
-		t.Fatalf("expected transient err embedded in result, got %v", err)
-	}
+	doneCh := make(chan struct{})
+	var result domaintools.ToolResult
+	var timeoutErr error
 
-	if result.Error == nil {
-		t.Fatalf("expected error inside result but got nil")
-	}
+	go func() {
+		defer close(doneCh)
+		result, timeoutErr = exec.runWithTimeout(ctx, hangingTool, nil)
+	}()
 
-	if !strings.Contains(result.Error.Error(), "timed out") && !strings.Contains(result.Error.Error(), "canceled") && !strings.Contains(result.Error.Error(), llm.ErrTransient.Error()) {
-		t.Fatalf("expected timeout or transient error, got %v", result.Error)
+	select {
+	case <-doneCh:
+		if timeoutErr != nil {
+			t.Fatalf("expected transient err embedded in result, got %v", timeoutErr)
+		}
+
+		if result.Error == nil {
+			t.Fatalf("expected error inside result but got nil")
+		}
+
+		if !strings.Contains(result.Error.Error(), "timed out") && !strings.Contains(result.Error.Error(), "canceled") && !strings.Contains(result.Error.Error(), llm.ErrTransient.Error()) {
+			t.Fatalf("expected timeout or transient error, got %v", result.Error)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test deadlocked on runWithTimeout")
 	}
 }
 
@@ -92,18 +105,28 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 		},
 	}
 
-	// Use very short zombie timeout
+	// Use short zombie timeout, but generous enough for -race
 	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
-		withZombieTimeout(1*time.Millisecond),
+		withZombieTimeout(200*time.Millisecond),
 	)
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
-	exec.toolTimeout = 1 * time.Millisecond
+	exec.toolTimeout = 200 * time.Millisecond
 
 	hangingTool := &domaintools.ToolDeclaration{Name: "hanging_tool"}
 
 	// Should timeout
-	_, _ = exec.runWithTimeout(context.Background(), hangingTool, nil)
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		_, _ = exec.runWithTimeout(context.Background(), hangingTool, nil)
+	}()
+
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test deadlocked on runWithTimeout")
+	}
 
 	// Blocks exactly until the log occurs, or times out cleanly
 	timer := time.NewTimer(ciSafeTimeout)

@@ -177,19 +177,49 @@ const C = 3
 
 func TestASTCache(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.go")
-	content := "package main\nfunc main() {}\n"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
 
-	t.Run("Get", func(t *testing.T) { t.Parallel(); testASTCacheGet(t, path) })
-	t.Run("Hit", func(t *testing.T) { t.Parallel(); testASTCacheHit(t, path) })
-	t.Run("Invalidation", func(t *testing.T) { t.Parallel(); testASTCacheInvalidation(t, path) })
-	t.Run("NonExistent", func(t *testing.T) { t.Parallel(); testASTCacheNonExistent(t) })
-	t.Run("SyntaxError", func(t *testing.T) { t.Parallel(); testASTCacheSyntaxError(t, tmpDir) })
-	t.Run("Eviction", func(t *testing.T) { t.Parallel(); testASTCacheEviction(t, tmpDir) })
+	t.Run("Get", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		content := "package main\nfunc main() {}\n"
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		testASTCacheGet(t, path)
+	})
+	t.Run("Hit", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		content := "package main\nfunc main() {}\n"
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		testASTCacheHit(t, path)
+	})
+	t.Run("Invalidation", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		content := "package main\nfunc main() {}\n"
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		testASTCacheInvalidation(t, path)
+	})
+	t.Run("NonExistent", func(t *testing.T) {
+		t.Parallel()
+		testASTCacheNonExistent(t)
+	})
+	t.Run("SyntaxError", func(t *testing.T) {
+		t.Parallel()
+		testASTCacheSyntaxError(t, t.TempDir())
+	})
+	t.Run("Eviction", func(t *testing.T) {
+		t.Parallel()
+		testASTCacheEviction(t, t.TempDir())
+	})
 }
 
 func testASTCacheGet(t *testing.T, path string) {
@@ -220,19 +250,30 @@ func testASTCacheHit(t *testing.T, path string) {
 
 func testASTCacheInvalidation(t *testing.T, path string) {
 	cache := newASTCache()
-	f1, _, err := cache.Get(path)
-	if err != nil {
+
+	// Set initial time
+	t1 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, t1, t1); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(10 * time.Millisecond) // Ensure modTime changes
+	f1, _, err := cache.Get(path)
+	if err != nil {
+		t.Fatalf("first Get failed: %v", err)
+	}
+
+	// Set DIFFERENT time and update content
+	t2 := time.Date(2020, 1, 1, 0, 0, 1, 0, time.UTC)
 	if err := os.WriteFile(path, []byte("package main\nfunc main() { _ = 1 }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, t2, t2); err != nil {
 		t.Fatal(err)
 	}
 
 	f2, _, err := cache.Get(path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("second Get failed: %v", err)
 	}
 	if f1 == f2 {
 		t.Error("expected cache invalidation after file update")
@@ -351,10 +392,16 @@ func TestGetCachedLineCount(t *testing.T) {
 	}
 
 	cache := newASTCache()
-	info, _ := os.Stat(path)
 
-	// 1. Initially not in cache
-	count, ok := cache.GetCachedLineCount(path, info)
+	// 1. Set specific time
+	t1 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, t1, t1); err != nil {
+		t.Fatal(err)
+	}
+	info1, _ := os.Stat(path)
+
+	// Initially not in cache
+	count, ok := cache.GetCachedLineCount(path, info1)
 	if ok {
 		t.Errorf("expected not in cache, but got count %d", count)
 	}
@@ -366,7 +413,7 @@ func TestGetCachedLineCount(t *testing.T) {
 	}
 
 	// 3. Now it should be in cache
-	count, ok = cache.GetCachedLineCount(path, info)
+	count, ok = cache.GetCachedLineCount(path, info1)
 	if !ok {
 		t.Error("expected to be in cache")
 	}
@@ -375,8 +422,11 @@ func TestGetCachedLineCount(t *testing.T) {
 	}
 
 	// 4. Invalidation check
-	time.Sleep(10 * time.Millisecond)
+	t2 := time.Date(2020, 1, 1, 0, 0, 1, 0, time.UTC)
 	if err := os.WriteFile(path, []byte(content+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, t2, t2); err != nil {
 		t.Fatal(err)
 	}
 	newInfo, _ := os.Stat(path)

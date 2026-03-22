@@ -5,7 +5,9 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -30,6 +32,7 @@ type chatterFacade struct {
 	bus      events.EventBus
 	registry tools.Registry
 	history  ports.HistoryManager
+	logger   *slog.Logger
 
 	// Internal state/config
 	maxToolTurns     int
@@ -79,10 +82,16 @@ func WithHistory(h ports.HistoryManager) facadeOption {
 	return func(f *chatterFacade) { f.history = h }
 }
 
+// WithLogger sets the logger for the facade.
+func WithLogger(l *slog.Logger) facadeOption {
+	return func(f *chatterFacade) { f.logger = l }
+}
+
 // NewChatterFacade creates a new Chatter implementation using the facade pattern.
 func NewChatterFacade(opts ...facadeOption) ports.Chatter {
 	f := &chatterFacade{
 		maxToolTurns: 10, // Defaults
+		logger:       slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(f)
@@ -316,21 +325,24 @@ func (f *chatterFacade) SetTieredThreshold(ctx context.Context, threshold int) e
 }
 
 func (f *chatterFacade) Subscribe(sub func(context.Context, events.Event)) {
-	if f.bus != nil {
-		f.bus.Subscribe(sub)
-	}
+	f.bus.Subscribe(sub)
 }
 
 func (f *chatterFacade) Shutdown(ctx context.Context) error {
-	if f.bus != nil {
-		return f.bus.Shutdown(ctx)
+	err := f.bus.Shutdown(ctx)
+	if errors.Is(err, events.ErrBusNotInitialized) {
+		return nil
 	}
-	return nil
+	return err
 }
 
 func (f *chatterFacade) emit(ctx context.Context, e events.Event) {
-	if f.bus != nil {
-		_ = f.bus.Publish(ctx, e)
+	if err := events.SafePublish(ctx, f.bus, e); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			f.logger.Error("event_publish_failed",
+				slog.String("event_type", e.Type()),
+				slog.Any("error", err))
+		}
 	}
 }
 

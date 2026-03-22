@@ -26,6 +26,7 @@ type app struct {
 	Stderr     io.Writer
 	homeDir    string
 	sm         *security.SecurityManager
+	logger     *slog.Logger
 	mockPrompt string
 	mockAnswer string
 }
@@ -67,6 +68,7 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer) (*app, *slog
 		Stderr:     stderr,
 		homeDir:    homeDir,
 		sm:         sm,
+		logger:     logger,
 		mockPrompt: os.Getenv("TELL_ME_MOCK_PROMPT"),
 		mockAnswer: os.Getenv("TELL_ME_MOCK_ANSWER"),
 	}, logger
@@ -99,7 +101,7 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	}
 
 	// Assembly root: wire dependencies for orchestration
-	container := di.NewBootstrapper(a.homeDir, a.sm, a.Version, a.Stdout, a.Stderr, nil)
+	container := di.NewBootstrapper(a.homeDir, a.sm, a.Version, a.Stdout, a.Stderr, a.logger, nil)
 	loader := &config.YAMLConfigLoader{}
 	chatService := agent.NewChatService(a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm, loader, container)
 

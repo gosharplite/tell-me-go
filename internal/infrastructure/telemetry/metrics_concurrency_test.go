@@ -65,11 +65,9 @@ func TestGetDailyCost_Concurrency(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 20; i++ {
+		for i := 0; i < 1000; i++ {
 			recoveryInProgress.Store(historyPath, true)
-			time.Sleep(1 * time.Millisecond)
 			recoveryInProgress.Delete(historyPath)
-			time.Sleep(1 * time.Millisecond)
 		}
 	}()
 

@@ -264,7 +264,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 
 func TestWarningInjector_Transform(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &warningInjector{Strategy: strategy}
@@ -342,7 +342,7 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 
 func TestWarningInjector_Transform_Clogged(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &warningInjector{Strategy: strategy}
@@ -421,7 +421,7 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 
 func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &warningInjector{Strategy: strategy}
@@ -673,7 +673,7 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 
 func TestFinalContextValidator_Transform(t *testing.T) {
 	counter := &mockTokenCounter{}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	validator := &finalContextValidator{Strategy: strategy}
 
 	tests := []struct {
@@ -948,7 +948,7 @@ func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setTieredThreshold(0)
 	tg := &tokenGatekeeper{Estimator: strategy}
 	req := &request{History: []*llm.Content{{Role: "user"}}}
@@ -962,7 +962,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setTieredThreshold(2000)
 	tg := &tokenGatekeeper{Estimator: strategy}
 	req := &request{History: []*llm.Content{{Role: "user"}}}
@@ -975,7 +975,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setTieredThreshold(500)
 
 	summarizerCalled := false
@@ -1004,7 +1004,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
 func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setTieredThreshold(500)
 
 	t.Run("Not enough history", func(t *testing.T) {
@@ -1057,7 +1057,7 @@ func (m *mockTransformerEventBus) Flush(ctx context.Context) error { return nil 
 func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setTieredThreshold(500)
 
 	var publishedEvents []events.Event
@@ -1102,7 +1102,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setTieredThreshold(500)
 
 	tg := &tokenGatekeeper{
@@ -1127,7 +1127,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 
 func setupTestPipeline(maxTokens int) (*ContextPipeline, *ContextStrategy) {
 	counter := NewHeuristicTokenCounter(&mockToolRegistry{})
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.SetLimits(maxTokens, 10, 20)
 
 	pipeline := NewContextPipeline(

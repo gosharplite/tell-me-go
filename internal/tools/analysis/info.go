@@ -7,12 +7,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"errors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -154,10 +156,17 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 
 	symbol := params.Symbol
 	if m.Events != nil {
-		_ = m.Events.Publish(ctx, events.SystemMessageEvent{
+		evt := events.SystemMessageEvent{
 			Message: fmt.Sprintf("[Tool Action] Running go doc %s", symbol),
 			Level:   "info",
-		})
+		}
+		if err := events.SafePublish(ctx, m.Events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				slog.Default().Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+			}
+		}
 	}
 
 	out, err := m.Exec.CombinedOutput(ctx, "go", "doc", symbol)

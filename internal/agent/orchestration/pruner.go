@@ -5,7 +5,9 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -16,6 +18,14 @@ import (
 type historyPruner struct {
 	Policy ports.PruningPolicy
 	Events events.EventBus
+	Logger *slog.Logger
+}
+
+func (t *historyPruner) getLogger() *slog.Logger {
+	if t.Logger != nil {
+		return t.Logger
+	}
+	return slog.Default()
 }
 
 func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -51,11 +61,17 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 		req.Metadata.TotalTurnsKept += keptCount
 
 		if t.Events != nil {
-			if err := events.SafePublish(ctx, t.Events, events.SystemMessageEvent{
+			evt := events.SystemMessageEvent{
 				Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, len(newHistory)/2),
 				Level:   "info",
-			}); err != nil {
-				return err
+			}
+			if err := events.SafePublish(ctx, t.Events, evt); err != nil {
+				if !errors.Is(err, events.ErrBusNotInitialized) {
+					t.getLogger().Error("event_publish_failed",
+						slog.String("event_type", string(evt.Type())),
+						slog.Any("error", err))
+					return err
+				}
 			}
 		}
 	}

@@ -228,3 +228,29 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 		assert.Contains(t, err.Error(), "empty content")
 	})
 }
+
+func TestSummarizer_WithLogger(t *testing.T) {
+	ctx := context.Background()
+	var buf bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+	gw := new(mockGateway)
+	bus := new(mockEventBus)
+
+	s := NewSummarizer(gw, bus, WithLogger(testLogger))
+
+	// Trigger an error condition using the public API to verify the logger is used.
+	respCh := make(chan *llm.Content)
+	close(respCh)
+
+	gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
+		return nil, nil, errors.New("simulated logger test error")
+	})
+
+	_, _, err := s.Summarize(ctx, nil, "")
+	assert.Error(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, `"level":"ERROR"`)
+	assert.Contains(t, output, "Summarization turn failed")
+	assert.Contains(t, output, "simulated logger test error")
+}

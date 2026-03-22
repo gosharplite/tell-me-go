@@ -160,7 +160,7 @@ func setupInternalTools(client *gemini.Client, h ports.HistoryManager) *Internal
 	bus := events.NewSimpleEventBus(context.Background())
 	reg := registry.New()
 	gw := llm.NewResilientClient(client, true)
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    h,
@@ -203,7 +203,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
 
 	mockCounter := &mockTokenCounter{tokens: 950000} // Above 90% of 1M
-	strategy := NewContextStrategy(mockCounter, nil)
+	strategy := NewContextStrategy(mockCounter)
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile, historyFile+".archive")
 
 	ctx := context.Background()
@@ -213,11 +213,8 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "3"}}})
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
-	cm := &ContextManager{
-		Strategy:   strategy,
-		History:    hManager,
-		Summarizer: &mockSummarizer{},
-	}
+	cm := NewContextManager(strategy, hManager, nil, nil)
+	cm.Summarizer = &mockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err == nil {
@@ -246,19 +243,15 @@ func TestSummarizeRange_Logging(t *testing.T) {
 
 	tokenCount := 1234
 	mockCounter := &mockTokenCounter{tokens: tokenCount}
-	strategy := NewContextStrategy(mockCounter, nil)
+	strategy := NewContextStrategy(mockCounter)
 	bus := &inframock.TestEventBus{}
 
 	// Use real summarizer but mock gateway
 	mockG := &mockGateway{}
 	summarizerImpl := llm.NewSummarizer(mockG, bus)
 
-	cm := &ContextManager{
-		Strategy:   strategy,
-		History:    hManager,
-		Summarizer: summarizerImpl,
-		Events:     bus,
-	}
+	cm := NewContextManager(strategy, hManager, bus, nil)
+	cm.Summarizer = summarizerImpl
 
 	turns := 1
 	_, _, err := cm.SummarizeRange(ctx, turns, "")
@@ -308,11 +301,8 @@ func TestSummarizeHistory_ContextCancellation(t *testing.T) {
 		_ = hManager.AddContent(context.Background(), &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 
-	cm := &ContextManager{
-		History:    hManager,
-		Summarizer: &mockSummarizer{},
-		Strategy:   NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil),
-	}
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{})), hManager, nil, nil)
+	cm.Summarizer = &mockSummarizer{}
 	it := NewInternalTools(cm)
 
 	// Call the tool with the cancelled context

@@ -369,9 +369,20 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 		return fmt.Errorf("failed to marshal cost summary: %w", err)
 	}
 
-	fAppend, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
+	fAppend, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
+		// Ensure directory exists if we are meant to create it
+		if os.IsNotExist(err) {
+			if mkdirErr := os.MkdirAll(filepath.Dir(logPath), 0755); mkdirErr != nil {
+				return fmt.Errorf("failed to open log file %q for summary append (also failed to create dir: %v): %w", logPath, mkdirErr, err)
+			}
+			fAppend, err = os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to open log file %q for summary append after mkdir: %w", logPath, err)
+			}
+		} else {
+			return fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
+		}
 	}
 	defer func() {
 		_ = fAppend.Close()
@@ -874,9 +885,6 @@ func logTrace(ctx context.Context, logFile string, trace *domain_telemetry.TurnT
 
 // RegisterTraceSubscriber subscribes a listener to TraceEvents.
 func RegisterTraceSubscriber(bus events.EventBus, logFile string) {
-	if bus == nil {
-		return
-	}
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if te, ok := e.(events.TraceEvent); ok {
 			logTrace(ctx, logFile, te.Trace)

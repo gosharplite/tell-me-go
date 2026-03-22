@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/require"
+	"log/slog"
 )
 
 type mockFailingSummarizer struct{}
@@ -67,7 +68,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 	}
 
 	tc := &mockTokenCounter{tokens: 95}
-	cs := NewContextStrategy(tc, nil)
+	cs := NewContextStrategy(tc)
 	cs.setTieredThreshold(10)
 
 	gatekeeper2 := &tokenGatekeeper{
@@ -84,7 +85,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 
 func TestContextManager_FirstMessageRoleError(t *testing.T) {
 	tc := &mockTokenCounter{tokens: 10}
-	cs := NewContextStrategy(tc, nil)
+	cs := NewContextStrategy(tc)
 	hm := &mockHistoryManager{}
 	cm := NewContextManager(cs, hm, nil, nil)
 
@@ -105,7 +106,7 @@ func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 
 func TestInternalTools_Errors(t *testing.T) {
 	tc := &mockTokenCounter{tokens: 10}
-	cs := NewContextStrategy(tc, nil)
+	cs := NewContextStrategy(tc)
 	hm := &mockHistoryManager{}
 	cm := NewContextManager(cs, hm, nil, nil)
 
@@ -178,7 +179,7 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 	sc := newSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := newSessionDependencies(&persistence.Paths{}, &mockHistoryManager{}, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil)
+	sd := newSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default())
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
@@ -193,7 +194,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 
 	// Create a strategy that will trigger warnings to force event publishing
 	counter := &mockTokenCounter{tokens: 200}
-	strategy := NewContextStrategy(counter, nil)
+	strategy := NewContextStrategy(counter)
 	strategy.setTieredThreshold(100) // Trigger tiered threshold
 
 	gatekeeper := &tokenGatekeeper{
@@ -221,7 +222,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 
 	gatekeeper := &tokenGatekeeper{
 		MaxTokens: 10,

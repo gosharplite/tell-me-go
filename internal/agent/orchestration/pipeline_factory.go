@@ -4,6 +4,8 @@
 package orchestration
 
 import (
+	"log/slog"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -28,6 +30,7 @@ type PipelineFactory struct {
 	SkillSelector skills.SkillSelector
 	Events        events.EventBus
 	Profile       optimizationProfile
+	Logger        *slog.Logger
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.
@@ -60,6 +63,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 				},
 			},
 			Events: f.Events,
+			Logger: f.Logger,
 		},
 	}
 
@@ -69,6 +73,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 			Estimator:  f.Estimator.(tokenEstimator),
 			Summarizer: f.Summarizer,
 			Events:     f.Events,
+			Logger:     f.Logger,
 		},
 		&emptyTurnFilter{},
 		&warningInjector{

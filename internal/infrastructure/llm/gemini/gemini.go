@@ -6,6 +6,7 @@ package gemini
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
@@ -36,10 +38,11 @@ type Client struct {
 	systemInstruction *llm.Content
 	backend           genai.Backend
 	eventBus          events.EventBus
+	logger            ports.Logger
 }
 
 // NewClient returns a new Gemini API client.
-func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration) (*Client, error) {
+func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration, opts ...geminiOption) (*Client, error) {
 	// Baseline defense against hung connections
 	if timeout == 0 {
 		timeout = 60 * time.Second
@@ -54,6 +57,11 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 		maxThinkingBudget: maxThinkingBudget,
 		useSearch:         useSearch,
 		eventBus:          bus,
+		logger:            &ports.NoOpLogger{},
+	}
+
+	for _, opt := range opts {
+		opt(c)
 	}
 
 	if systemInstruction != "" {
@@ -68,6 +76,16 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 	}
 
 	return c, nil
+}
+
+// geminiOption defines a functional option for configuring the Gemini Client.
+type geminiOption func(*Client)
+
+// WithLogger sets the logger for the Gemini Client.
+func WithLogger(l ports.Logger) geminiOption {
+	return func(c *Client) {
+		c.logger = l
+	}
 }
 
 func (c *Client) initSDK(timeout time.Duration) error {
@@ -340,11 +358,16 @@ func (c *Client) configureThinking(ctx context.Context, config *genai.GenerateCo
 func (c *Client) applyThinkingBudget(ctx context.Context, config *genai.ThinkingConfig, budget, maxBudget int, model string) {
 	actualBudget := budget
 	if maxBudget > 0 && actualBudget > maxBudget {
-		if c.eventBus != nil {
-			_ = c.eventBus.Publish(ctx, events.SystemMessageEvent{
-				Message: fmt.Sprintf("Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.", actualBudget, model, maxBudget, maxBudget),
-				Level:   "warning",
-			})
+		evt := events.SystemMessageEvent{
+			Message: fmt.Sprintf("Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.", actualBudget, model, maxBudget, maxBudget),
+			Level:   "warning",
+		}
+		if err := events.SafePublish(ctx, c.eventBus, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				c.logger.Error("event_publish_failed",
+					"event_type", string(evt.Type()),
+					"error", err)
+			}
 		}
 		actualBudget = maxBudget
 	}

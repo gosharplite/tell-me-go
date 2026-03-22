@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -22,7 +23,7 @@ type summarizer struct {
 }
 
 // NewSummarizer creates a new summarization service.
-func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...SummarizerOption) ports.Summarizer {
+func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...summarizerOption) ports.Summarizer {
 	s := &summarizer{
 		gateway: g,
 		events:  bus,
@@ -36,11 +37,11 @@ func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...SummarizerOpti
 	return s
 }
 
-// SummarizerOption defines a functional option for configuring the summarizer.
-type SummarizerOption func(*summarizer)
+// summarizerOption defines a functional option for configuring the summarizer.
+type summarizerOption func(*summarizer)
 
 // WithLogger sets the logger for the summarizer.
-func WithLogger(l *slog.Logger) SummarizerOption {
+func WithLogger(l *slog.Logger) summarizerOption {
 	return func(s *summarizer) {
 		s.logger = l
 	}
@@ -138,11 +139,18 @@ func (s *summarizer) transformPartToText(content *llm.Content, p *llm.Part) {
 func (s *summarizer) emitSummarizationMetrics(ctx context.Context, metrics *llm.Metrics, start time.Time) {
 	if s.events != nil && metrics != nil {
 		metrics.IsSummary = true
-		_ = s.events.Publish(ctx, events.UsageMetricsEvent{
+		evt := events.UsageMetricsEvent{
 			Context:   ctx,
 			Metrics:   metrics,
 			StartTime: start,
-		})
+		}
+		if err := events.SafePublish(ctx, s.events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				s.logger.Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+			}
+		}
 	}
 }
 

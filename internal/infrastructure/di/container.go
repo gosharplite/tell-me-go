@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"time"
 
@@ -59,6 +60,7 @@ type bootstrapper struct {
 	Version          string
 	Stdout           io.Writer
 	Stderr           io.Writer
+	Logger           *slog.Logger
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
@@ -67,9 +69,12 @@ type bootstrapper struct {
 }
 
 // NewBootstrapper creates a new Container instance.
-func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) Container {
+func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, logger *slog.Logger, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) Container {
 	if clientFactory == nil {
 		clientFactory = infra_llm.NewClient
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 	return &bootstrapper{
 		HomeDir:          homeDir,
@@ -77,6 +82,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 		Version:          version,
 		Stdout:           stdout,
 		Stderr:           stderr,
+		Logger:           logger,
 		ClientFactory:    clientFactory,
 		RegisterAllTools: infra_tools.RegisterAll,
 		RegisterMetrics:  telemetry.RegisterMetrics,
@@ -112,11 +118,11 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	bus := events.NewSimpleEventBus(ctx)
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger))
 
 	pricingData := telemetry.GetPricing(ctx, b.SM, filepath.Join(b.HomeDir, "output"))
 
-	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(nil))
+	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.Logger))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
@@ -145,7 +151,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg)
+	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger)
 
 	return deps, hManager, cleanup, nil
 }
@@ -211,6 +217,7 @@ func (b *bootstrapper) buildAgentOrchestrator(
 	pricingOverrides map[string]pricing.ModelPricing,
 	bus events.EventBus,
 	cfg *config.Config,
+	logger *slog.Logger,
 ) ports.SessionDependencies {
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
 	tracker := telemetry.NewSessionCostTracker(b.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
@@ -227,6 +234,7 @@ func (b *bootstrapper) buildAgentOrchestrator(
 		pricingData:      pricingData,
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
+		logger:           logger,
 	}
 }
 
@@ -241,6 +249,7 @@ type sessionDeps struct {
 	pricingData      pricing.PricingData
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
+	logger           *slog.Logger
 }
 
 func (d *sessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
@@ -248,6 +257,7 @@ func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManag
 func (d *sessionDeps) GetRegistry() tools.Registry             { return d.reg }
 func (d *sessionDeps) GetSecurityManager() security.Manager    { return d.sm }
 func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
+func (d *sessionDeps) GetLogger() *slog.Logger                 { return d.logger }
 func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
 func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides

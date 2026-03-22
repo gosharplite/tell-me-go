@@ -2,7 +2,9 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -27,10 +29,17 @@ func newDependencyAnalyzer(exec tools.CommandExecutor, sp domain_security.Policy
 
 func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if a.Events != nil {
-		_ = a.Events.Publish(ctx, events.SystemMessageEvent{
+		evt := events.SystemMessageEvent{
 			Message: "[Tool Action] Analyzing package dependencies",
 			Level:   "info",
-		})
+		}
+		if err := events.SafePublish(ctx, a.Events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				slog.Default().Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+			}
+		}
 	}
 
 	format, _ := args["format"].(string)

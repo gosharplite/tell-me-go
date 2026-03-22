@@ -90,11 +90,8 @@ func TestContextManager_GroupTurnsErrorPropagation(t *testing.T) {
 	}
 	mockHistory := &mockHistoryManager{contents: history}
 
-	cm := &ContextManager{
-		History:    mockHistory,
-		Summarizer: &mockSummarizer{},
-		Strategy:   NewContextStrategy(&mockTokenCounter{}, nil),
-	}
+	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), mockHistory, nil, nil)
+	cm.Summarizer = &mockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")
 	require.Error(t, err)
@@ -154,11 +151,8 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 		},
 	}
 
-	cm := &ContextManager{
-		History:    mockHistory,
-		Summarizer: &mockSummarizer{},
-		Strategy:   NewContextStrategy(mockCounter, nil),
-	}
+	cm := NewContextManager(NewContextStrategy(mockCounter), mockHistory, nil, nil)
+	cm.Summarizer = &mockSummarizer{}
 
 	subset, _, _, err := cm.prepareSummarizationMetadata(ctx, 2)
 	require.NoError(t, err)
@@ -191,11 +185,8 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 		},
 	}
 
-	cm := &ContextManager{
-		History:    mockHistory,
-		Summarizer: mockSumm,
-		Strategy:   NewContextStrategy(&mockTokenCounter{}, nil),
-	}
+	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), mockHistory, nil, nil)
+	cm.Summarizer = mockSumm
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")
 	require.Error(t, err)

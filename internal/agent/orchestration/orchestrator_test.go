@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -128,7 +129,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default())
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -326,7 +327,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default())
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -368,7 +369,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 		Prompt:          "",
 		LastN:           5,
 		Config:          &config.Config{},
-		Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+		Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default()),
 		Capturer:        mCapturer,
 	}
 
@@ -569,7 +570,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 			Mode:             "mode",
 			SelectedProvider: "provider",
 		},
-		Deps:     newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+		Deps:     newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default()),
 		Capturer: mCapturer,
 	}
 
@@ -622,6 +623,7 @@ func TestSessionDependencies_Accessors(t *testing.T) {
 	require.Nil(t, deps.GetTracker())
 	require.Equal(t, domain_pricing.PricingData{}, deps.GetPricingData())
 	require.Nil(t, deps.GetHistoryManager())
+	require.Nil(t, deps.GetLogger())
 }
 
 func TestOrchestrator_AgentFactory_Error(t *testing.T) {
@@ -725,7 +727,7 @@ func TestRun_Routing(t *testing.T) {
 			AgentFactory:    factory(mChatter),
 			HistoryRenderer: mHistoryRenderer,
 			UIRenderer:      mUIRenderer,
-			Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus),
+			Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default()),
 			Capturer:        mCapturer,
 			Config: &config.Config{
 				Model: "model",

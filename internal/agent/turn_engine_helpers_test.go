@@ -236,9 +236,10 @@ type testTurnEnv struct {
 func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	t.Helper()
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background())
+	// Use synchronous event bus for deterministic test results
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	cm := newTestContextManager(strategy, hManager, bus)
 	gw := &mockGateway{}
@@ -365,7 +366,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 		},
 		CtxManager: &orchestration.ContextManager{
 			History:  &mockHistoryManager{},
-			Strategy: orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil),
+			Strategy: orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg)),
 		},
 		Gateway: mockGw,
 		executor: &mockExecutor{

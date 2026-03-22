@@ -18,7 +18,7 @@ func TestContextPrepAdapter_Prepare(t *testing.T) {
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 		},
 	}
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	cm := NewContextManager(strategy, history, nil, nil)
 
 	adapter := NewContextPrepAdapter(cm)
@@ -43,7 +43,7 @@ func TestContextPrepAdapter_Prepare(t *testing.T) {
 
 func TestContextPrepAdapter_AddContent(t *testing.T) {
 	history := &mockHistoryManager{}
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy := NewContextStrategy(&mockTokenCounter{})
 	cm := NewContextManager(strategy, history, nil, nil)
 
 	adapter := NewContextPrepAdapter(cm)

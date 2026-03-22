@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,7 +137,7 @@ func TestBuildSessionDependencies(t *testing.T) {
 
 	client := new(mockLLMClient)
 
-	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
 	})
 
@@ -166,7 +167,7 @@ func TestGetAgentFactory(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil)
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
 
 	factory := bootstrapper.GetAgentFactory()
 	assert.NotNil(t, factory)
@@ -307,7 +308,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 					return new(mockLLMClient), nil
 				}
 			}
-			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, cf)
+			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, nil, cf)
 			newSession := strings.Contains(tt.name, "TriggerNewSession")
 			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
 			assert.Error(t, err)
@@ -344,7 +345,7 @@ func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
 	sm.On("IsPathSafe", mock.Anything).Return("", simulatedErr)
 
 	var stderr bytes.Buffer
-	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
 	})
 
@@ -384,7 +385,7 @@ func TestFinalizeSession(t *testing.T) {
 	}
 
 	client := new(mockLLMClient)
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
 	})
 
@@ -438,7 +439,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil)
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
 
 	factory := bootstrapper.GetAgentFactory()
 	assert.NotNil(t, factory)
@@ -504,6 +505,7 @@ func (m *mockSessionDeps) GetTracker() pricing.CostTracker {
 }
 func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
 func (m *mockSessionDeps) GetClient() llm.LLMClient                             { return m.client }
+func (m *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
 
 type mockTracker struct {
 	pricing.CostTracker
@@ -526,7 +528,7 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 
 	client := new(mockLLMClient)
 
-	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
 	})
 
@@ -670,7 +672,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 			sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
 
 			var stderr bytes.Buffer
-			b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+			b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 				return new(mockLLMClient), nil
 			}).(*bootstrapper)
 

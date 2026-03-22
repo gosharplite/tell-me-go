@@ -8,7 +8,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -21,7 +23,14 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			if turn.State.Phase == phaseInference && e.events != nil {
 				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
-					_ = events.SafePublish(ctx, e.events, events.ResponseStreamEvent{Context: ctx, Stream: stream})
+					evt := events.ResponseStreamEvent{Context: ctx, Stream: stream}
+					if err := events.SafePublish(ctx, e.events, evt); err != nil {
+						if !errors.Is(err, events.ErrBusNotInitialized) {
+							e.getLogger().Error("event_publish_failed",
+								slog.String("event_type", string(evt.Type())),
+								slog.Any("error", err))
+						}
+					}
 				}
 			}
 			return next.process(ctx, turn)
@@ -56,7 +65,7 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 					totalO = stats.ResponseTokens + stats.ThinkingTokens
 				}
 
-				_ = events.SafePublish(ctx, e.events, events.TurnStatusEvent{
+				evt := events.TurnStatusEvent{
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
 						CurrentTurns:     turn.Index,
@@ -75,7 +84,14 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 						TotalH:           totalH,
 						TotalO:           totalO,
 					},
-				})
+				}
+				if err := events.SafePublish(ctx, e.events, evt); err != nil {
+					if !errors.Is(err, events.ErrBusNotInitialized) {
+						e.getLogger().Error("event_publish_failed",
+							slog.String("event_type", string(evt.Type())),
+							slog.Any("error", err))
+					}
+				}
 			}
 			return res, nil
 		})
@@ -97,11 +113,18 @@ func (e *turnEngine) WithMetrics() turnMiddleware {
 					turn.State.TaskCost += turnCost
 				}
 
-				_ = events.SafePublish(ctx, e.events, events.UsageMetricsEvent{
+				evt := events.UsageMetricsEvent{
 					Context:   ctx,
 					Metrics:   turn.State.Metrics,
 					StartTime: turn.StartTime,
-				})
+				}
+				if err := events.SafePublish(ctx, e.events, evt); err != nil {
+					if !errors.Is(err, events.ErrBusNotInitialized) {
+						e.getLogger().Error("event_publish_failed",
+							slog.String("event_type", string(evt.Type())),
+							slog.Any("error", err))
+					}
+				}
 			}
 			return res, err
 		})

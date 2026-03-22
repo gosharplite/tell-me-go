@@ -50,7 +50,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tr
 	tmpDir := t.TempDir()
 	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
-	strategy := orchestration.NewContextStrategy(&mockTokenCounter{}, bus)
+	strategy := orchestration.NewContextStrategy(&mockTokenCounter{})
 	factory := &orchestration.PipelineFactory{
 		History:   hManager,
 		Events:    bus,
@@ -60,7 +60,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tr
 
 	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
-	engine := newTurnEngine(gw, exec, cm, reg, bus, strategy, withRetryPolicy(policy), withHook(tracker), withClock(&mockClock{}))
+	engine := newTurnEngine(gw, exec, cm, reg, bus, strategy, withEngineRetryPolicy(policy), withEngineHook(tracker), withEngineClock(&mockClock{}))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})

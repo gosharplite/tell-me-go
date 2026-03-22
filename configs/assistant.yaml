@@ -49,3 +49,10 @@ TOOL_TIMEOUT: 300
 MAX_TURNS: 200
 MAX_HISTORY_TURNS: 500
 MAX_HISTORY_TOKENS: 180000
+
+# Model's hardcoded physical limits
+MODELS:
+  "gemini-3-flash-preview":
+    CONTEXT_WINDOW: 200000
+  "gemini-3.1-pro-preview":
+    CONTEXT_WINDOW: 200000

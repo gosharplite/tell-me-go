@@ -69,7 +69,7 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
 	counter := &orchestration.HeuristicTokenCounter{}
-	strategy := orchestration.NewContextStrategy(counter, bus)
+	strategy := orchestration.NewContextStrategy(counter)
 	strategy.SetLimits(1000, 2, 10) // Limit to 2 tool turns
 
 	gw := &limitMockLLMGateway{}
@@ -176,7 +176,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			counter := &mockTokenCounter{tokens: tt.toolTokens}
-			strategy := orchestration.NewContextStrategy(counter, nil)
+			strategy := orchestration.NewContextStrategy(counter)
 			strategy.SetLimits(tt.maxTokens, 10, 10)
 
 			cm := orchestration.NewContextManager(strategy, nil, nil, nil)

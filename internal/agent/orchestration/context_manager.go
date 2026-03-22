@@ -6,6 +6,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -33,18 +34,18 @@ type ContextManager struct {
 	logger     *slog.Logger
 }
 
-// ContextManagerOption defines a functional option for configuring the ContextManager.
-type ContextManagerOption func(*ContextManager)
+// contextManagerOption defines a functional option for configuring the ContextManager.
+type contextManagerOption func(*ContextManager)
 
 // WithLogger sets the logger for the ContextManager.
-func WithLogger(l *slog.Logger) ContextManagerOption {
+func WithLogger(l *slog.Logger) contextManagerOption {
 	return func(cm *ContextManager) {
 		cm.logger = l
 	}
 }
 
 // NewContextManager creates a new context manager.
-func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory, opts ...ContextManagerOption) *ContextManager {
+func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory, opts ...contextManagerOption) *ContextManager {
 	cm := &ContextManager{
 		Strategy: strategy,
 		History:  history,
@@ -58,6 +59,7 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 	}
 
 	if factory != nil {
+		factory.Logger = cm.logger
 		if factory.Summarizer != nil {
 			cm.Summarizer = factory.Summarizer
 		}
@@ -324,12 +326,17 @@ func (cm *ContextManager) wrapSummarizationError(err error) error {
 }
 
 func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tokens int) {
-	if cm.Events != nil {
-		if err := events.SafePublish(ctx, cm.Events, events.SystemMessageEvent{
-			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokens),
-		}); err != nil {
-			cm.logger.Debug("failed to emit summarization event", slog.Any("error", err))
+	err := events.SafePublish(ctx, cm.Events, events.SystemMessageEvent{
+		Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokens),
+	})
+	if err != nil {
+		if errors.Is(err, events.ErrBusNotInitialized) {
+			cm.logger.Debug("skipping summarization event: event bus not initialized")
+			return
 		}
+		cm.logger.Error("event_publish_failed",
+			slog.String("event_type", "SystemMessageEvent"),
+			slog.Any("error", err))
 	}
 }
 

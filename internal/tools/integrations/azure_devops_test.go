@@ -1970,7 +1970,10 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 		{
 			name: "Error - Context Cancellation",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				time.Sleep(100 * time.Millisecond)
+				select {
+				case <-r.Context().Done():
+				case <-time.After(200 * time.Millisecond):
+				}
 				w.WriteHeader(http.StatusOK)
 			},
 			call: func(m *adoManager) (tools.ToolResult, error) {

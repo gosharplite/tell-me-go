@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -158,6 +159,7 @@ type turn struct {
 	CostTracker  domain_pricing.CostTracker
 	ProviderName string
 	Model        string
+	Logger       *slog.Logger
 
 	// StreamHandler allows external handling of LLM response streams.
 	StreamHandler func(context.Context, <-chan *llm.Content)
@@ -185,10 +187,11 @@ type turnEngine struct {
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	costTracker      domain_pricing.CostTracker
+	logger           *slog.Logger
 }
 
-// withClock sets a custom clock implementation.
-func withClock(c clock.Clock) engineOption {
+// withEngineClock sets a custom clock implementation.
+func withEngineClock(c clock.Clock) engineOption {
 	return func(e *turnEngine) {
 		e.clock = c
 	}
@@ -197,15 +200,15 @@ func withClock(c clock.Clock) engineOption {
 // engineOption allows configuring the turnEngine.
 type engineOption func(*turnEngine)
 
-// withCostTracker sets the cost tracker for the engine.
-func withCostTracker(tracker domain_pricing.CostTracker) engineOption {
+// withEngineCostTracker sets the cost tracker for the engine.
+func withEngineCostTracker(tracker domain_pricing.CostTracker) engineOption {
 	return func(e *turnEngine) {
 		e.costTracker = tracker
 	}
 }
 
-// withConfig sets the security and usage configuration for the engine.
-func withConfig(sm domain_security.Manager, providerName, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
+// withEngineConfig sets the security and usage configuration for the engine.
+func withEngineConfig(sm domain_security.Manager, providerName, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
 	return func(e *turnEngine) {
 		e.sm = sm
 		e.providerName = providerName
@@ -323,6 +326,7 @@ func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 	providerName := e.providerName
 	model := e.model
 	counter := e.tokenCounter
+	logger := e.getLogger()
 	e.mu.RUnlock()
 
 	turn := &turn{
@@ -339,6 +343,7 @@ func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 		CostTracker:  tracker,
 		ProviderName: providerName,
 		Model:        model,
+		Logger:       logger,
 	}
 	turn.MaxToolTurns = e.ctxManager.GetLimits().MaxToolTurns
 	return turn
@@ -372,8 +377,12 @@ func (e *turnEngine) executeTurn(parentCtx context.Context, turn *turn) error {
 	err := e.runPhaseLoop(ctxWithTrace, turn)
 
 	e.finalizeTurnTrace(trace, err)
-	if e.events != nil {
-		_ = events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace})
+	if err := events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace}); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			e.getLogger().Error("event_publish_failed",
+				slog.String("event_type", "TraceEvent"),
+				slog.Any("error", err))
+		}
 	}
 
 	e.notifyAfterTurn(turn, err)
@@ -460,10 +469,15 @@ func (p *guardStep) process(ctx context.Context, turn *turn) (processResult, err
 		return processResult{}, newAgentError(llm.ErrTerminal, fmt.Sprintf("turn %d exceeds limit %d", turn.Index, maxTurns), llm.ErrMaxTurnsReached)
 	}
 
-	if turn.Events != nil {
-		if err := events.SafePublish(ctx, turn.Events, events.TurnStarted{Turn: turn.Index, MaxTurns: maxTurns}); err != nil {
-			return processResult{}, err
+	evt := events.TurnStarted{Turn: turn.Index, MaxTurns: maxTurns}
+	if err := events.SafePublish(ctx, turn.Events, evt); err != nil {
+		if errors.Is(err, events.ErrBusNotInitialized) {
+			return processResult{NextPhase: phaseRefining}, nil
 		}
+		turn.getLogger().Error("event_publish_failed",
+			slog.String("event_type", string(evt.Type())),
+			slog.Any("error", err))
+		return processResult{}, err
 	}
 	return processResult{NextPhase: phaseRefining}, nil
 }
@@ -693,13 +707,17 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	turn.State.RetryCount++
 
 	// Publish retry notification to the UI/EventBus
-	if turn.Events != nil {
-		msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
-			turn.State.LastError, delay.Round(time.Millisecond), turn.State.RetryCount)
-		if err := events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
-			Message: msg,
-			Level:   "warn",
-		}); err != nil {
+	msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
+		turn.State.LastError, delay.Round(time.Millisecond), turn.State.RetryCount)
+	evt := events.SystemMessageEvent{
+		Message: msg,
+		Level:   "warn",
+	}
+	if err := events.SafePublish(ctx, turn.Events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			turn.getLogger().Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
 			return processResult{}, err
 		}
 	}
@@ -752,11 +770,37 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn) {
 		// Delegate mutation to the utility with context-aware instruction
 		truncateOversizedResponse(toolResponse, toolTokens, instruction)
 
-		if turn.Events != nil {
-			_ = events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
-				Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
-				Level:   "error",
-			})
+		evt := events.SystemMessageEvent{
+			Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
+			Level:   "error",
 		}
+		if err := events.SafePublish(ctx, turn.Events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				turn.getLogger().Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+			}
+		}
+	}
+}
+
+func (e *turnEngine) getLogger() *slog.Logger {
+	if e.logger != nil {
+		return e.logger
+	}
+	return slog.Default()
+}
+
+func (t *turn) getLogger() *slog.Logger {
+	if t.Logger != nil {
+		return t.Logger
+	}
+	return slog.Default()
+}
+
+// withEngineLogger sets the logger for the engine.
+func withEngineLogger(l *slog.Logger) engineOption {
+	return func(e *turnEngine) {
+		e.logger = l
 	}
 }
