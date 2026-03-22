@@ -58,7 +58,6 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 
 	state.Info = ports.SessionInfo{
 		Env: map[string]string{
-			"TELL_ME_MODE": os.Getenv("TELL_ME_MODE"),
 			"STORAGE_TYPE": storageType,
 		},
 		Paths: paths,
