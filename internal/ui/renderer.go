@@ -45,6 +45,7 @@ type streamState struct {
 	lineCount       int
 	hasScrolled     bool
 	scrollThreshold int
+	isTerm          bool
 }
 
 // NewRenderer creates a new ports.UIRenderer.
@@ -384,9 +385,11 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	ch := make(chan *llm.Content, 100)
 	ui := r.getUIState()
 
+	isTerm := false
 	threshold := 25
 	if f, ok := ui.stdout.(*os.File); ok {
 		if term.IsTerminal(int(f.Fd())) {
+			isTerm = true
 			if _, h, err := term.GetSize(int(f.Fd())); err == nil && h > 0 {
 				threshold = h - 2
 			}
@@ -398,6 +401,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		showThoughts:    showThoughts,
 		rawOutput:       rawOutput,
 		scrollThreshold: threshold,
+		isTerm:          isTerm,
 	}
 
 	if !rawOutput && ui.c(termSaveCursor) != "" {
@@ -432,14 +436,45 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 }
 
 func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState, ui uiState) {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	frameIdx := 0
+	firstChunkReceived := false
+
+	// Initial indicator if it's a terminal
+	if state.isTerm {
+		r.drawLoadingIndicator(ui, frames[0])
+		frameIdx = 1
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
+			if !firstChunkReceived && state.isTerm {
+				r.clearLoadingIndicator(ui, state.rawOutput)
+			}
 			return
+		case <-ticker.C:
+			if !firstChunkReceived && state.isTerm {
+				r.drawLoadingIndicator(ui, frames[frameIdx])
+				frameIdx = (frameIdx + 1) % len(frames)
+			}
 		case content, ok := <-ch:
 			if !ok {
+				if !firstChunkReceived && state.isTerm {
+					r.clearLoadingIndicator(ui, state.rawOutput)
+				}
 				r.closeThinking(state, ui)
 				return
+			}
+			if !firstChunkReceived {
+				if state.isTerm {
+					r.clearLoadingIndicator(ui, state.rawOutput)
+				}
+				firstChunkReceived = true
+				ticker.Stop()
 			}
 			for _, part := range content.Parts {
 				state.aggregated.AddPart(part)
@@ -523,6 +558,35 @@ func (r *stdUIRenderer) safePrintStderr(msg string, ui uiState) {
 		defer r.locker.TerminalUnlock()
 	}
 	_, _ = fmt.Fprint(ui.stderr, msg)
+}
+
+func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string) {
+	if r.locker != nil {
+		r.locker.TerminalLock()
+		defer r.locker.TerminalUnlock()
+	}
+	// We use carriage return to stay on the same line.
+	// We use colorGray for the indicator.
+	_, _ = fmt.Fprintf(ui.stdout, "\r%s%s Thinking...%s", ui.c(colorGray), frame, ui.c(colorReset))
+}
+
+func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
+	if r.locker != nil {
+		r.locker.TerminalLock()
+		defer r.locker.TerminalUnlock()
+	}
+
+	// If !rawOutput and we have cursor sequences, we can use restore/clearForward
+	// otherwise use carriage return + clear line.
+	restore := ui.c(termRestoreCursor)
+	clear := ui.c(termClearForward)
+
+	if !rawOutput && restore != "" && clear != "" {
+		_, _ = fmt.Fprint(ui.stdout, restore+clear)
+	} else {
+		// \r followed by clear line escape
+		_, _ = fmt.Fprint(ui.stdout, "\r"+ui.c(termClearLine))
+	}
 }
 
 func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {

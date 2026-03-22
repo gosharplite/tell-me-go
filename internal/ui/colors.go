@@ -17,4 +17,5 @@ const (
 	termSaveCursor    = "\0337"
 	termRestoreCursor = "\0338"
 	termClearForward  = "\033[J"
+	termClearLine     = "\033[2K"
 )
