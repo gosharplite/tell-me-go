@@ -88,6 +88,22 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 		}
 	})
 
+	t.Run("LogTurnStatus_NoMaxHistoryTurns", func(t *testing.T) {
+		stderr.Reset()
+		r.LogTurnStatus(events.TurnStatus{
+			Timestamp:        mc.Now(),
+			CurrentTurns:     0,
+			SessionTurns:     0,
+			MaxHistoryTurns:  0,
+			Tokens:           100,
+			MaxHistoryTokens: 1000,
+		})
+		output := stderr.String()
+		if !strings.Contains(output, "Session: 1 turns") {
+			t.Errorf("expected stderr to contain 'Session: 1 turns', got %q", output)
+		}
+	})
+
 	t.Run("LogUsage", func(t *testing.T) {
 		// LogUsage writes to a file
 
