@@ -177,19 +177,49 @@ const C = 3
 
 func TestASTCache(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.go")
-	content := "package main\nfunc main() {}\n"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
 
-	t.Run("Get", func(t *testing.T) { t.Parallel(); testASTCacheGet(t, path) })
-	t.Run("Hit", func(t *testing.T) { t.Parallel(); testASTCacheHit(t, path) })
-	t.Run("Invalidation", func(t *testing.T) { t.Parallel(); testASTCacheInvalidation(t, path) })
-	t.Run("NonExistent", func(t *testing.T) { t.Parallel(); testASTCacheNonExistent(t) })
-	t.Run("SyntaxError", func(t *testing.T) { t.Parallel(); testASTCacheSyntaxError(t, tmpDir) })
-	t.Run("Eviction", func(t *testing.T) { t.Parallel(); testASTCacheEviction(t, tmpDir) })
+	t.Run("Get", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		content := "package main\nfunc main() {}\n"
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		testASTCacheGet(t, path)
+	})
+	t.Run("Hit", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		content := "package main\nfunc main() {}\n"
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		testASTCacheHit(t, path)
+	})
+	t.Run("Invalidation", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test.go")
+		content := "package main\nfunc main() {}\n"
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		testASTCacheInvalidation(t, path)
+	})
+	t.Run("NonExistent", func(t *testing.T) {
+		t.Parallel()
+		testASTCacheNonExistent(t)
+	})
+	t.Run("SyntaxError", func(t *testing.T) {
+		t.Parallel()
+		testASTCacheSyntaxError(t, t.TempDir())
+	})
+	t.Run("Eviction", func(t *testing.T) {
+		t.Parallel()
+		testASTCacheEviction(t, t.TempDir())
+	})
 }
 
 func testASTCacheGet(t *testing.T, path string) {
