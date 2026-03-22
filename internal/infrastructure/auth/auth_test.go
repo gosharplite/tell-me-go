@@ -153,10 +153,7 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 		CacheDir: t.TempDir(),
 		tokenCmdFunc: func() ([]byte, error) {
 			atomic.AddInt32(&calls, 1)
-			select {
-			case inFunc <- struct{}{}:
-			default:
-			}
+			inFunc <- struct{}{}
 			<-release
 			return []byte("concurrent-token"), nil
 		},
@@ -288,10 +285,7 @@ func testSA_ThreadSafety(t *testing.T) {
 	auth := &ServiceAccountAuth{
 		tokenSourceFunc: func() (*oauth2.Token, error) {
 			atomic.AddInt32(&calls, 1)
-			select {
-			case inFunc <- struct{}{}:
-			default:
-			}
+			inFunc <- struct{}{}
 			<-release
 			return &oauth2.Token{
 				AccessToken: "concurrent-token",
