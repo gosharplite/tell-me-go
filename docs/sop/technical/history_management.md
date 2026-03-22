@@ -46,7 +46,6 @@ To prevent context overflow and stay within the model's high-performance/low-cos
 - **Token-Triggered Maintenance**: When the estimated payload exceeds **90%** of `MAX_HISTORY_TOKENS`, the system triggers an automated "Self-Healing" maintenance cycle.
 - **Summarization (`summarize_history`)**: Instead of aggressive deletion, the system identifies the oldest **unpinned** turns and uses the model to generate a concise semantic summary. This summary is then injected as a `user` role message, replacing the original turns.
 - **Pinning (`manage_history`)**: Users or the agent can **pin** critical instructions or key conversation turns to protect them from summarization or pruning.
-- **Turn-Limit Pruning**: If the number of turns exceeds `MAX_HISTORY_TURNS`, the oldest unpinned turns are removed to maintain performance.
 - **Consistent Alternation**: Maintenance logic must always ensure the resulting history maintains the `user` -> `model` role alternation.
 - **System Notice**: If maintenance cannot reduce the context size sufficiently (due to too many pinned turns), an **URGENT SYSTEM NOTICE** is injected, instructing the model to persist state to the task list and stop before a hard rollback occurs.
 
