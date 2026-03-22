@@ -56,6 +56,31 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 	defer cleanup()
 
+	if opts.Retry {
+		lastMsg, turns, err := hManager.GetLastUserMessage(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get last user message for retry: %w", err)
+		}
+		if lastMsg == "" {
+			return errors.New("no previous user message found to retry")
+		}
+
+		interactor, ok := capturer.(domain_security.UserInteractor)
+		if !ok {
+			return errors.New("the provided terminal capturer does not support user interaction prompts")
+		}
+
+		confirmed, err := interactor.Confirm(ctx, fmt.Sprintf("Retry: %q?", lastMsg))
+		if err != nil {
+			return fmt.Errorf("failed to prompt for retry confirmation: %w", err)
+		}
+		if !confirmed {
+			return nil
+		}
+		opts.Prompt = lastMsg
+		opts.BackN = turns
+	}
+
 	defer func() {
 		if err := deps.GetEventBus().Shutdown(ctx); err != nil {
 			if errors.Is(err, events.ErrBusNotInitialized) {
@@ -99,19 +124,4 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 
 	return err
-}
-
-// GetLastUserMessage retrieves the last message sent by the user and the number of turns to go back to retry it.
-func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string) (string, int, error) {
-	cfg, err := s.Loader.Load(configPath)
-	if err != nil {
-		return "", 0, fmt.Errorf("failed to load config for retry: %w", err)
-	}
-
-	hManager, err := s.Container.BuildHistoryManager(ctx, cfg)
-	if err != nil {
-		return "", 0, err
-	}
-
-	return hManager.GetLastUserMessage(ctx)
 }
