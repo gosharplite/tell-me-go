@@ -56,6 +56,13 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 	}
 
 	if prunedCount > 0 {
+		t.getLogger().Info("History pruning triggered",
+			slog.Int("initial_turns", len(turns)),
+			slog.Int("pruned_turns", prunedCount),
+			slog.Int("remaining_turns", keptCount),
+			slog.Any("policy_breakdown", req.Metadata.KeptByPolicy),
+		)
+
 		req.History = newHistory
 		req.Metadata.PrunedTurns += prunedCount
 		req.Metadata.TotalTurnsKept += keptCount
