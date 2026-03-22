@@ -288,7 +288,7 @@ func (m *Manager) GetLastUserMessage(ctx context.Context) (string, int, error) {
 	defer m.mu.RUnlock()
 
 	var lastMsgText string
-	var humanMsgAbsoluteIndex int = -1
+	humanMsgAbsoluteIndex := -1
 
 	total := len(m.Contents)
 
