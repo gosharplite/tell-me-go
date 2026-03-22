@@ -51,6 +51,7 @@ type Container interface {
 	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error)
 	GetAgentFactory() ports.ChatterFactory
 	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error
+	BuildHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error)
 }
 
 // bootstrapper handles the instantiation and wiring of system components.
@@ -154,6 +155,14 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger)
 
 	return deps, hManager, cleanup, nil
+}
+
+func (b *bootstrapper) BuildHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize paths: %w", err)
+	}
+	return b.buildHistoryManager(ctx, paths)
 }
 
 func (b *bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistence.Paths) (*history.Manager, error) {
