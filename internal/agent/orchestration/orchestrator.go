@@ -282,6 +282,7 @@ func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Conte
 func (b *uiBridge) relayStream(ctx context.Context, stream <-chan *domain_llm.Content, uiCh chan<- *domain_llm.Content) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+	tickCh := ticker.C
 	startTime := time.Now()
 	waiting := true
 
@@ -289,7 +290,7 @@ func (b *uiBridge) relayStream(ctx context.Context, stream <-chan *domain_llm.Co
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-tickCh:
 			if waiting {
 				elapsed := time.Since(startTime).Round(time.Second)
 				b.renderer.LogSystemMessage(fmt.Sprintf("Waiting for AI response... (%v elapsed)", elapsed), "info")
@@ -302,6 +303,7 @@ func (b *uiBridge) relayStream(ctx context.Context, stream <-chan *domain_llm.Co
 			if waiting {
 				waiting = false
 				ticker.Stop()
+				tickCh = nil
 			}
 			select {
 			case uiCh <- c:
