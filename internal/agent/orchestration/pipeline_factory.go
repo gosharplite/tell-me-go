@@ -53,7 +53,12 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 		&emptyMessagePruner{},  // Explicitly drop messages with 0 parts
 		&contentCleaner{},
 		&thoughtSignaturePropagator{},
-		&historyPruner{
+	}
+
+	// Only add the historyPruner if turn limits are actually configured.
+	// If limits.MaxHistoryTurns <= 0, turn-based pruning is disabled entirely.
+	if limits.MaxHistoryTurns > 0 {
+		transformers = append(transformers, &historyPruner{
 			Policy: &compositePruningPolicy{
 				Policies: []ports.PruningPolicy{
 					// 2. Use the profile-adjusted window size
@@ -64,7 +69,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 			},
 			Events: f.Events,
 			Logger: f.Logger,
-		},
+		})
 	}
 
 	transformers = append(transformers,
