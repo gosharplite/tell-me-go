@@ -413,7 +413,7 @@ func TestConfigWatcher_SetPaths(t *testing.T) {
 
 func TestConfigWatcher_SessionAllFields(t *testing.T) {
 	cw, _, sessionPath := setupConfigWatcherTest(t)
-	content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TOOL_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
+	content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
 	if err := os.WriteFile(sessionPath, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}

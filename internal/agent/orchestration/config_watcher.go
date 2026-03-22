@@ -148,7 +148,9 @@ func (cw *ConfigWatcher) loadSessionConfig() {
 	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
 		cw.maxHistoryTokens = toInt(val, cw.maxHistoryTokens)
 	}
-	if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
+	if val, ok := pCfg["MAX_TURNS"]; ok {
+		cw.maxToolTurns = toInt(val, cw.maxToolTurns)
+	} else if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
 		cw.maxToolTurns = toInt(val, cw.maxToolTurns)
 	}
 	if val, ok := pCfg["MAX_HISTORY_TURNS"]; ok {
