@@ -56,14 +56,6 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 	defer cleanup()
 
-	if opts.Retry {
-		if opts.BackN > 0 {
-			if _, _, _, err := hManager.RollbackTurns(ctx, opts.BackN); err != nil {
-				return fmt.Errorf("failed to rollback history: %w", err)
-			}
-		}
-	}
-
 	defer func() {
 		if err := deps.GetEventBus().Shutdown(ctx); err != nil {
 			if errors.Is(err, events.ErrBusNotInitialized) {
