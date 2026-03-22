@@ -260,3 +260,40 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 
 	return actualRemoved, remainingTurns, remainingMsgs, nil
 }
+
+// GetLastUserMessage finds the text of the last user message and the number of turns to rollback to remove it and everything after it.
+func (m *Manager) GetLastUserMessage(ctx context.Context) (string, int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var lastMsgText string
+	var humanTurnIndex int
+	
+	total := len(m.Contents)
+	
+	for i := total - 1; i >= 0; i-- {
+		if m.Contents[i].Role == "user" {
+			var textBuilder string
+			for _, part := range m.Contents[i].Parts {
+				if part.Text != "" {
+					textBuilder += part.Text
+				}
+			}
+			
+			if textBuilder != "" {
+				lastMsgText = textBuilder
+				humanTurnIndex = i / 2 
+				break
+			}
+		}
+	}
+
+	if lastMsgText == "" {
+		return "", 0, errors.New("no previous user message found to retry")
+	}
+
+	totalTurns := total / 2
+	turnsToRollback := totalTurns - humanTurnIndex
+
+	return lastMsgText, turnsToRollback, nil
+}

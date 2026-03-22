@@ -14,6 +14,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
@@ -27,6 +30,7 @@ func init() {
 // chatCommand implements the main chat command.
 type chatCommand struct {
 	Version     string
+	HomeDir     string
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
@@ -50,6 +54,7 @@ type cliOptions struct {
 func newChatCommand(ctx *context) *chatCommand {
 	return &chatCommand{
 		Version:     ctx.Version,
+		HomeDir:     ctx.HomeDir,
 		Stdin:       ctx.Stdin,
 		Stdout:      ctx.Stdout,
 		Stderr:      ctx.Stderr,
@@ -95,6 +100,38 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		}
 		// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
 		prompt = ""
+	}
+
+	// 3. Handle Retry Confirmation (UI Layer)
+	if opts.retry {
+		// Create a temporary history manager just to read the last message
+		loader := &config.YAMLConfigLoader{}
+		cfg, err := loader.Load(opts.configPath)
+		if err == nil {
+			paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, c.HomeDir, cfg.Mode)
+			if err == nil {
+				hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
+				_ = hManager.Load(ctx) // Ignoring load error, will just be empty
+
+				lastMsg, turns, err := hManager.GetLastUserMessage(ctx)
+				if err == nil && lastMsg != "" {
+					interactor := capturer.(domain_security.UserInteractor)
+					confirmed, err := interactor.Confirm(ctx, fmt.Sprintf("Retry: %q?", lastMsg))
+					if err != nil {
+						return fmt.Errorf("failed to prompt for retry confirmation: %w", err)
+					}
+					if !confirmed {
+						return nil
+					}
+					prompt = lastMsg
+					opts.backN = turns
+				} else {
+					return errors.New("no previous user message found to retry")
+				}
+			}
+		} else {
+			return fmt.Errorf("failed to load config for retry: %w", err)
+		}
 	}
 
 	// Delegate all business logic and orchestration to the ChatService

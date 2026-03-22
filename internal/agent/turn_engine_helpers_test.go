@@ -45,6 +45,10 @@ func (m *mockHistoryManager) GetTotalEntries() int {
 	return len(m.Contents)
 }
 
+func (m *mockHistoryManager) GetLastUserMessage(ctx context.Context) (string, int, error) {
+	return "", 0, nil
+}
+
 func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

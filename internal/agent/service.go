@@ -57,60 +57,11 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	defer cleanup()
 
 	if opts.Retry {
-		total := hManager.GetTotalEntries()
-		window, err := hManager.GetWindow(ctx, 0, total)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve history for retry: %w", err)
-		}
-
-		var lastMsgText string
-		var humanTurnIndex int
-		
-		// Reverse search the history window
-		for i := len(window) - 1; i >= 0; i-- {
-			if window[i].Role == "user" {
-				// We must find a user message that has actual text (not just tool responses)
-				var textBuilder string
-				for _, part := range window[i].Parts {
-					if part.Text != "" {
-						textBuilder += part.Text
-					}
-				}
-				
-				if textBuilder != "" {
-					lastMsgText = textBuilder
-					// Calculate how many messages to rollback.
-					// If we are at index i, the number of messages after it is len(window) - i
-					// We want to rollback everything AFTER this message, AND this message itself.
-					// Since rollback is in "turns" (pairs of 2), we calculate based on the index.
-					humanTurnIndex = i / 2 
-					break
-				}
-			}
-		}
-
-		if lastMsgText == "" {
-			return errors.New("no previous user message found to retry")
-		}
-
-		confirmed, err := capturer.(domain_security.UserInteractor).Confirm(ctx, fmt.Sprintf("Retry last message: %q?", lastMsgText))
-		if err != nil {
-			return fmt.Errorf("failed to prompt for retry confirmation: %w", err)
-		}
-		if !confirmed {
-			return nil
-		}
-
-		totalTurns := total / 2
-		turnsToRollback := totalTurns - humanTurnIndex
-
-		if turnsToRollback > 0 {
-			if _, _, _, err := hManager.RollbackTurns(ctx, turnsToRollback); err != nil {
+		if opts.BackN > 0 {
+			if _, _, _, err := hManager.RollbackTurns(ctx, opts.BackN); err != nil {
 				return fmt.Errorf("failed to rollback history: %w", err)
 			}
 		}
-
-		opts.Prompt = lastMsgText
 	}
 
 	defer func() {
