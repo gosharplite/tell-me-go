@@ -184,35 +184,8 @@ func (f *chatterFacade) executeTurn(parentCtx context.Context, turn int, startTi
 func (f *chatterFacade) invokeLLM(ctx context.Context, history []*llm.Content, trace *telemetry.TurnTrace) (*llm.Content, *llm.Metrics, bool, error) {
 	startInference := time.Now()
 
-	// 1. Channel to signal the ticker to stop
-	done := make(chan struct{})
-
-	// 2. Background goroutine for the 10s wait indicator
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-done:
-				return
-			case <-ticker.C:
-				elapsed := time.Since(startInference).Round(time.Second)
-				f.emit(ctx, events.StatusUpdate{
-					Message: fmt.Sprintf("Waiting for AI response... (%v elapsed)", elapsed),
-					Level:   "info",
-				})
-			}
-		}
-	}()
-
-	// 3. Execute the blocking LLM call
 	response, metrics, err := f.llmCoord.Generate(ctx, history, f.registry.GetDeclarations(), f.history.GetResolver())
 	
-	// 4. Signal the background goroutine to stop
-	close(done)
-
 	trace.InferenceDuration = time.Since(startInference)
 
 	if metrics != nil {
