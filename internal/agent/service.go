@@ -41,6 +41,26 @@ func NewChatService(homeDir, version string, stdout, stderr io.Writer, sm domain
 	}
 }
 
+// GetLastUserMessage implements ChatService.
+func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string, capturer orchestration.Capturer) (string, int, error) {
+	cfg, err := s.Loader.Load(configPath)
+	if err != nil {
+		return "", 0, fmt.Errorf("error loading config [%s]: %w", configPath, err)
+	}
+
+	_, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, configPath, false, capturer.(domain_security.UserInteractor))
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to build session dependencies: %w", err)
+	}
+	defer cleanup()
+
+	msg, turns, err := hManager.GetLastUserMessage(ctx)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to get last user message: %w", err)
+	}
+	return msg, turns, nil
+}
+
 // ProcessMessage implements ChatService.
 func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capturer orchestration.Capturer) error {
 	// 1. Load configuration
@@ -55,31 +75,6 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 		return err
 	}
 	defer cleanup()
-
-	if opts.Retry {
-		lastMsg, turns, err := hManager.GetLastUserMessage(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get last user message for retry: %w", err)
-		}
-		if lastMsg == "" {
-			return errors.New("no previous user message found to retry")
-		}
-
-		interactor, ok := capturer.(domain_security.UserInteractor)
-		if !ok {
-			return errors.New("the provided terminal capturer does not support user interaction prompts")
-		}
-
-		confirmed, err := interactor.Confirm(ctx, fmt.Sprintf("Retry: %q?", lastMsg))
-		if err != nil {
-			return fmt.Errorf("failed to prompt for retry confirmation: %w", err)
-		}
-		if !confirmed {
-			return nil
-		}
-		opts.Prompt = lastMsg
-		opts.BackN = turns
-	}
 
 	defer func() {
 		if err := deps.GetEventBus().Shutdown(ctx); err != nil {

@@ -99,6 +99,31 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		prompt = ""
 	}
 
+	if opts.retry {
+		lastMsg, turns, err := c.ChatService.GetLastUserMessage(ctx, opts.configPath, capturer)
+		if err != nil {
+			return fmt.Errorf("failed to get last user message for retry: %w", err)
+		}
+		if lastMsg == "" {
+			return errors.New("no previous user message found to retry")
+		}
+
+		interactor, ok := capturer.(domain_security.UserInteractor)
+		if !ok {
+			return errors.New("the provided terminal capturer does not support user interaction prompts")
+		}
+
+		confirmed, err := interactor.Confirm(ctx, fmt.Sprintf("Retry: %q?", lastMsg))
+		if err != nil {
+			return fmt.Errorf("failed to prompt for retry confirmation: %w", err)
+		}
+		if !confirmed {
+			return nil
+		}
+		prompt = lastMsg
+		opts.backN = turns
+	}
+
 	// Delegate all business logic and orchestration to the ChatService
 	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
 		ConfigPath: opts.configPath,
@@ -106,7 +131,6 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		LastN:      opts.lastN,
 		BackN:      opts.backN,
 		RawOutput:  opts.rawOutput,
-		Retry:      opts.retry,
 		Prompt:     prompt,
 	}, capturer)
 }
