@@ -23,7 +23,17 @@ func (t *warningInjector) Transform(ctx context.Context, req *ports.ContextReque
 	currentTurns := 0
 	for _, msg := range req.History {
 		if msg.Role == "user" {
-			currentTurns++
+			// A true conversational user turn does not have a FunctionResponse
+			isToolResponse := false
+			for _, p := range msg.Parts {
+				if p.FunctionResponse != nil {
+					isToolResponse = true
+					break
+				}
+			}
+			if !isToolResponse {
+				currentTurns++
+			}
 		}
 	}
 
