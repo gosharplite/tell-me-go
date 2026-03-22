@@ -163,14 +163,26 @@ func TestZombieToolTimeout(t *testing.T) {
 
 	ctx := context.Background()
 
-	start := time.Now()
-	result, err := exec.runWithTimeout(ctx, hangingTool, nil)
-	duration := time.Since(start)
+	doneCh := make(chan struct{})
+	var result tools.ToolResult
+	var timeoutErr error
 
-	assert.NoError(t, err)
-	assert.Error(t, result.Error)
-	assert.Contains(t, result.Error.Error(), "timed out")
-	assert.True(t, duration >= 200*time.Millisecond)
+	start := time.Now()
+	go func() {
+		defer close(doneCh)
+		result, timeoutErr = exec.runWithTimeout(ctx, hangingTool, nil)
+	}()
+
+	select {
+	case <-doneCh:
+		duration := time.Since(start)
+		assert.NoError(t, timeoutErr)
+		assert.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "timed out")
+		assert.True(t, duration >= 200*time.Millisecond)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test deadlocked on runWithTimeout")
+	}
 
 	timer := time.NewTimer(ciSafeTimeout)
 	defer timer.Stop()

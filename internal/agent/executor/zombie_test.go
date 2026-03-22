@@ -62,17 +62,30 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 
 	ctx := context.Background()
 
-	result, err := exec.runWithTimeout(ctx, hangingTool, nil)
-	if err != nil {
-		t.Fatalf("expected transient err embedded in result, got %v", err)
-	}
+	doneCh := make(chan struct{})
+	var result domaintools.ToolResult
+	var timeoutErr error
 
-	if result.Error == nil {
-		t.Fatalf("expected error inside result but got nil")
-	}
+	go func() {
+		defer close(doneCh)
+		result, timeoutErr = exec.runWithTimeout(ctx, hangingTool, nil)
+	}()
 
-	if !strings.Contains(result.Error.Error(), "timed out") && !strings.Contains(result.Error.Error(), "canceled") && !strings.Contains(result.Error.Error(), llm.ErrTransient.Error()) {
-		t.Fatalf("expected timeout or transient error, got %v", result.Error)
+	select {
+	case <-doneCh:
+		if timeoutErr != nil {
+			t.Fatalf("expected transient err embedded in result, got %v", timeoutErr)
+		}
+
+		if result.Error == nil {
+			t.Fatalf("expected error inside result but got nil")
+		}
+
+		if !strings.Contains(result.Error.Error(), "timed out") && !strings.Contains(result.Error.Error(), "canceled") && !strings.Contains(result.Error.Error(), llm.ErrTransient.Error()) {
+			t.Fatalf("expected timeout or transient error, got %v", result.Error)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test deadlocked on runWithTimeout")
 	}
 }
 
@@ -103,7 +116,17 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 	hangingTool := &domaintools.ToolDeclaration{Name: "hanging_tool"}
 
 	// Should timeout
-	_, _ = exec.runWithTimeout(context.Background(), hangingTool, nil)
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		_, _ = exec.runWithTimeout(context.Background(), hangingTool, nil)
+	}()
+
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test deadlocked on runWithTimeout")
+	}
 
 	// Blocks exactly until the log occurs, or times out cleanly
 	timer := time.NewTimer(ciSafeTimeout)
