@@ -161,15 +161,25 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 		return b.dispatchSync(ctx, event)
 	}
 
+	// For async mode, re-acquire RLock to ensure atomicity with Shutdown
+	b.mu.RLock()
+	if b.closed {
+		b.mu.RUnlock()
+		return ErrBusClosed
+	}
+
 	b.pendingWG.Add(1)
 	select {
 	case b.eventQueue <- event:
+		b.mu.RUnlock()
 		return nil
 	case <-ctx.Done():
 		b.pendingWG.Done()
+		b.mu.RUnlock()
 		return ctx.Err()
 	default:
 		b.pendingWG.Done()
+		b.mu.RUnlock()
 		return errQueueFull
 	}
 }
@@ -207,9 +217,17 @@ func (b *SimpleEventBus) workerLoop() {
 	for {
 		select {
 		case <-b.ctx.Done():
-			// Attempt to drain the queue before exiting if context is cancelled?
-			// The current policy is to stop processing immediately to avoid leaks.
-			return
+			// Drain the queue to decrement pendingWG for unhandled events.
+			// Since b.ctx is done, Publish will also start rejecting new events.
+			// We just loop until the queue is empty.
+			for {
+				select {
+				case <-b.eventQueue:
+					b.pendingWG.Done()
+				default:
+					return
+				}
+			}
 		case event, ok := <-b.eventQueue:
 			if !ok {
 				return
@@ -401,6 +419,8 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-b.ctx.Done():
+		return ErrBusClosed
 	}
 }
 
