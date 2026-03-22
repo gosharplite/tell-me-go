@@ -113,7 +113,8 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 			return errors.New("the provided terminal capturer does not support user interaction prompts")
 		}
 
-		confirmed, err := interactor.Confirm(ctx, fmt.Sprintf("Retry: %q?", lastMsg))
+		retryPrompt := fmt.Sprintf("Are you sure you want to retry the following message?\n\n%s\n\nRetry?", lastMsg)
+		confirmed, err := interactor.Confirm(ctx, retryPrompt)
 		if err != nil {
 			return fmt.Errorf("failed to prompt for retry confirmation: %w", err)
 		}
