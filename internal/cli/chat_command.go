@@ -77,48 +77,23 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 
 	var prompt string
 	if opts.retry {
-		lastMsg, turns, err := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
+		var abort bool
+		prompt, opts.backN, abort, err = c.handleRetryFlow(ctx, opts)
 		if err != nil {
-			return fmt.Errorf("failed to get last user message for retry: %w", err)
+			return err
 		}
-		if lastMsg == "" {
-			return errors.New("no previous user message found to retry")
+		if abort {
+			return nil
 		}
-
-		_, _ = fmt.Fprintf(c.Stdout, "Are you sure you want to retry the following message?\n\n%s\n\nRetry? [y/N]: ", lastMsg)
-		var response string
-		_, _ = fmt.Fscanln(c.Stdin, &response)
-		if strings.ToLower(strings.TrimSpace(response)) != "y" {
-			return nil // User aborted
-		}
-		prompt = lastMsg
-		opts.backN = turns
 	}
 
 	// 2. Invoking a Use Case / Service interface
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
-	if sm, ok := c.SM.(interface {
-		SetInteractor(domain_security.UserInteractor)
-	}); ok {
-		sm.SetInteractor(capturer.(domain_security.UserInteractor))
-	}
+	capturer := c.setupCapturer()
 
 	if !opts.retry {
-		var captureOpts []orchestration.CaptureOption
-		if opts.lastN > 0 || opts.backN > 0 {
-			captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
-		}
-		if opts.rawOutput {
-			captureOpts = append(captureOpts, orchestration.WithRaw(true))
-		}
-
-		prompt, err = capturer.CapturePrompt(ctx, fs, captureOpts...)
+		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
 		if err != nil {
-			if !errors.Is(err, ui.ErrNoInput) {
-				return err
-			}
-			// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
-			prompt = ""
+			return err
 		}
 	}
 
@@ -131,6 +106,58 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		RawOutput:  opts.rawOutput,
 		Prompt:     prompt,
 	}, capturer)
+}
+
+func (c *chatCommand) setupCapturer() orchestration.Capturer {
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
+	if sm, ok := c.SM.(interface {
+		SetInteractor(domain_security.UserInteractor)
+	}); ok {
+		sm.SetInteractor(capturer.(domain_security.UserInteractor))
+	}
+	return capturer
+}
+
+func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer orchestration.Capturer) (string, error) {
+	captureOpts := c.prepareCaptureOptions(opts)
+	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
+	if err != nil {
+		if !errors.Is(err, ui.ErrNoInput) {
+			return "", err
+		}
+		// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
+		return "", nil
+	}
+	return prompt, nil
+}
+
+func (c *chatCommand) handleRetryFlow(ctx stdctx.Context, opts *cliOptions) (prompt string, backN int, abort bool, err error) {
+	lastMsg, turns, err := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("failed to get last user message for retry: %w", err)
+	}
+	if lastMsg == "" {
+		return "", 0, false, errors.New("no previous user message found to retry")
+	}
+
+	_, _ = fmt.Fprintf(c.Stdout, "Are you sure you want to retry the following message?\n\n%s\n\nRetry? [y/N]: ", lastMsg)
+	var response string
+	_, _ = fmt.Fscanln(c.Stdin, &response)
+	if strings.ToLower(strings.TrimSpace(response)) != "y" {
+		return "", 0, true, nil // User aborted
+	}
+	return lastMsg, turns, false, nil
+}
+
+func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []orchestration.CaptureOption {
+	var captureOpts []orchestration.CaptureOption
+	if opts.lastN > 0 || opts.backN > 0 {
+		captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
+	}
+	if opts.rawOutput {
+		captureOpts = append(captureOpts, orchestration.WithRaw(true))
+	}
+	return captureOpts
 }
 
 func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.FlagSet, error) {

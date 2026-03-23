@@ -227,46 +227,22 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	defer m.mu.Unlock()
 
 	originalLen := len(m.Contents)
+	actualRemoved, newLen := calculateRollbackBounds(originalLen, turns)
 
-	if originalLen == 0 || turns <= 0 {
-		// Even if turns <= 0, ensure we return an even length array by dropping any dangling message
-		if originalLen > 0 && originalLen%2 != 0 {
-			m.Contents[originalLen-1] = nil // Prevent memory leak of the truncated pointer
-			m.Contents = m.Contents[:originalLen-1]
-			if err := m.store.Save(ctx, m.Contents); err != nil {
-				return 0, 0, 0, err
-			}
-		}
+	if newLen == originalLen && actualRemoved == 0 {
 		return 0, len(m.Contents) / 2, len(m.Contents), nil
 	}
 
 	originalContents := m.Contents
 
-	// Prevent overflow for very large turns
-	currentTurns := (originalLen + 1) / 2
-	if turns > currentTurns {
-		turns = currentTurns
+	// Nil out the truncated pointers to prevent memory leaks
+	for i := newLen; i < originalLen; i++ {
+		m.Contents[i] = nil
 	}
 
-	// Calculate how many messages to drop
-	droppedMsgs := turns * 2
-	if originalLen%2 != 0 {
-		// If length is odd, the last "turn" to rollback is actually an incomplete pair (1 message)
-		droppedMsgs -= 1
-	}
-
-	if droppedMsgs >= originalLen {
-		actualRemoved = currentTurns
+	if newLen == 0 {
 		m.Contents = nil
 	} else {
-		actualRemoved = turns
-		newLen := originalLen - droppedMsgs
-
-		// Nil out the truncated pointers to prevent memory leaks
-		for i := newLen; i < originalLen; i++ {
-			m.Contents[i] = nil
-		}
-
 		m.Contents = m.Contents[:newLen]
 	}
 
@@ -280,6 +256,34 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	remainingTurns = remainingMsgs / 2
 
 	return actualRemoved, remainingTurns, remainingMsgs, nil
+}
+
+func calculateRollbackBounds(originalLen int, turns int) (actualRemoved, newLen int) {
+	if originalLen == 0 {
+		return 0, 0
+	}
+
+	if turns <= 0 {
+		if originalLen%2 != 0 {
+			return 0, originalLen - 1
+		}
+		return 0, originalLen
+	}
+
+	currentTurns := (originalLen + 1) / 2
+	if turns > currentTurns {
+		turns = currentTurns
+	}
+
+	droppedMsgs := turns * 2
+	if originalLen%2 != 0 {
+		droppedMsgs -= 1
+	}
+
+	if droppedMsgs >= originalLen {
+		return currentTurns, 0
+	}
+	return turns, originalLen - droppedMsgs
 }
 
 // GetLastUserMessage finds the text of the last user message and the number of turns to rollback to remove it and everything after it.
