@@ -88,149 +88,120 @@ func TestStreamResponse(t *testing.T) {
 	})
 }
 
-func TestProcessStream_LoadingIndicator(t *testing.T) {
+func setupLoadingIndicatorTest(t *testing.T) (*stdUIRenderer, *bytes.Buffer, *mockLocker) {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	return r, &stdout, locker
+}
 
-	// Helper to safely read stdout
-	readStdout := func() string {
-		locker.TerminalLock()
-		defer locker.TerminalUnlock()
-		return stdout.String()
+func readStdout(locker *mockLocker, stdout *bytes.Buffer) string {
+	locker.TerminalLock()
+	defer locker.TerminalUnlock()
+	return stdout.String()
+}
+
+func waitForOutput(t *testing.T, locker *mockLocker, stdout *bytes.Buffer, expected string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(readStdout(locker, stdout), expected) {
+			return // Success
+		}
+		time.Sleep(10 * time.Millisecond) // Short poll interval
 	}
+	t.Errorf("timeout waiting for %q in stdout, got: %q", expected, readStdout(locker, stdout))
+}
 
-	waitForOutput := func(t *testing.T, expected string, timeout time.Duration) {
-		t.Helper()
-		deadline := time.Now().Add(timeout)
-		for time.Now().Before(deadline) {
-			if strings.Contains(readStdout(), expected) {
-				return // Success
-			}
-			time.Sleep(10 * time.Millisecond) // Short poll interval
-		}
-		t.Errorf("timeout waiting for %q in stdout, got: %q", expected, readStdout())
+func TestProcessStream_LoadingIndicator(t *testing.T) {
+	t.Run("Shows and clears indicator", testLoadingIndicator_Normal)
+	t.Run("Shows and clears indicator in raw mode", testLoadingIndicator_RawMode)
+	t.Run("Clears indicator on context cancellation", testLoadingIndicator_Cancellation)
+}
+
+func testLoadingIndicator_Normal(t *testing.T) {
+	r, stdout, locker := setupLoadingIndicatorTest(t)
+	ch := make(chan *llm.Content)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	state := &streamState{aggregated: &llm.Content{Role: "model"}, isTerm: true}
+	ui := r.getUIState()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.processStream(ctx, ch, state, ui)
+	}()
+
+	waitForOutput(t, locker, stdout, "Thinking...", 1*time.Second)
+	ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
+	close(ch)
+	wg.Wait()
+
+	out := readStdout(locker, stdout)
+	if !strings.Contains(out, "Done") {
+		t.Errorf("expected stdout to contain 'Done', got %q", out)
 	}
+	if !strings.Contains(out, "\x1b8") && !strings.Contains(out, "\0338") && !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
+		t.Errorf("expected stdout to contain clear sequence, got %q", out)
+	}
+}
 
-	t.Run("Shows and clears indicator", func(t *testing.T) {
-		locker.TerminalLock()
-		stdout.Reset()
-		locker.TerminalUnlock()
+func testLoadingIndicator_RawMode(t *testing.T) {
+	r, stdout, locker := setupLoadingIndicatorTest(t)
+	ch := make(chan *llm.Content)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-		ch := make(chan *llm.Content)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	state := &streamState{aggregated: &llm.Content{Role: "model"}, isTerm: true, rawOutput: true}
+	ui := r.getUIState()
 
-		state := &streamState{
-			aggregated: &llm.Content{Role: "model"},
-			isTerm:     true,
-			rawOutput:  false,
-		}
-		ui := r.getUIState()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.processStream(ctx, ch, state, ui)
+	}()
 
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			r.processStream(ctx, ch, state, ui)
-		}()
+	waitForOutput(t, locker, stdout, "Thinking...", 1*time.Second)
+	ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
+	close(ch)
+	wg.Wait()
 
-		// Wait for initial draw
-		waitForOutput(t, "Thinking...", 1*time.Second)
+	out := readStdout(locker, stdout)
+	if !strings.Contains(out, "Done") {
+		t.Errorf("expected stdout to contain 'Done', got %q", out)
+	}
+	if !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
+		t.Errorf("expected stdout to contain clear line escape (\\033[2K), got %q", out)
+	}
+}
 
-		// Send content
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
-		close(ch)
-		wg.Wait()
+func testLoadingIndicator_Cancellation(t *testing.T) {
+	r, stdout, locker := setupLoadingIndicatorTest(t)
+	ch := make(chan *llm.Content)
+	ctx, cancel := context.WithCancel(context.Background())
 
-		// Should contain Done
-		out := readStdout()
-		if !strings.Contains(out, "Done") {
-			t.Errorf("expected stdout to contain 'Done', got %q", out)
-		}
+	state := &streamState{aggregated: &llm.Content{Role: "model"}, isTerm: true}
+	ui := r.getUIState()
 
-		// Should contain clear sequence (either restore cursor + clear forward or clear line)
-		hasRestore := strings.Contains(out, "\x1b8") || strings.Contains(out, "\0338")
-		hasClearLine := strings.Contains(out, "\x1b[2K") || strings.Contains(out, "\033[2K")
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.processStream(ctx, ch, state, ui)
+	}()
 
-		if !hasRestore && !hasClearLine {
-			t.Errorf("expected stdout to contain clear sequence, got %q", out)
-		}
-	})
+	waitForOutput(t, locker, stdout, "Thinking...", 1*time.Second)
+	cancel()
+	wg.Wait()
 
-	t.Run("Shows and clears indicator in raw mode", func(t *testing.T) {
-		locker.TerminalLock()
-		stdout.Reset()
-		locker.TerminalUnlock()
-
-		ch := make(chan *llm.Content)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		state := &streamState{
-			aggregated: &llm.Content{Role: "model"},
-			isTerm:     true,
-			rawOutput:  true,
-		}
-		ui := r.getUIState()
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			r.processStream(ctx, ch, state, ui)
-		}()
-
-		waitForOutput(t, "Thinking...", 1*time.Second)
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
-		close(ch)
-		wg.Wait()
-
-		out := readStdout()
-		if !strings.Contains(out, "Done") {
-			t.Errorf("expected stdout to contain 'Done', got %q", out)
-		}
-
-		// In raw mode it should use clear line escape
-		if !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
-			t.Errorf("expected stdout to contain clear line escape (\\033[2K), got %q", out)
-		}
-	})
-
-	t.Run("Clears indicator on context cancellation", func(t *testing.T) {
-		locker.TerminalLock()
-		stdout.Reset()
-		locker.TerminalUnlock()
-
-		ch := make(chan *llm.Content)
-		ctx, cancel := context.WithCancel(context.Background())
-
-		state := &streamState{
-			aggregated: &llm.Content{Role: "model"},
-			isTerm:     true,
-			rawOutput:  false,
-		}
-		ui := r.getUIState()
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			r.processStream(ctx, ch, state, ui)
-		}()
-
-		waitForOutput(t, "Thinking...", 1*time.Second)
-		cancel() // Cancel context
-		wg.Wait()
-
-		// Should contain clear sequence
-		out := readStdout()
-		hasRestore := strings.Contains(out, "\x1b8") || strings.Contains(out, "\0338")
-		hasClearLine := strings.Contains(out, "\x1b[2K") || strings.Contains(out, "\033[2K")
-
-		if !hasRestore && !hasClearLine {
-			t.Errorf("expected stdout to contain clear sequence on cancel, got %q", out)
-		}
-	})
+	out := readStdout(locker, stdout)
+	if !strings.Contains(out, "\x1b8") && !strings.Contains(out, "\0338") && !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
+		t.Errorf("expected stdout to contain clear sequence on cancel, got %q", out)
+	}
 }
