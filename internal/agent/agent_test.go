@@ -117,7 +117,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus(context.Background())
 
-	a, err := NewAgent(client, bus, h, "test-provider", reg, sm, WithLoader(&config.YAMLConfigLoader{}), WithSessionLoader(&config.JSONSessionLoader{}))
+	a, err := NewAgent(client, bus, h, "test-provider", reg, sm, withLoader(&config.YAMLConfigLoader{}), withSessionLoader(&config.JSONSessionLoader{}))
 	require.NoError(t, err)
 
 	// Re-injecting path configuration for integration test

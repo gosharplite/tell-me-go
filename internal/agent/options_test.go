@@ -22,7 +22,7 @@ func TestAgentOptions(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		option   Option
+		option   option
 		validate func(t *testing.T, cfg *agentConfig)
 	}{
 		{
@@ -50,14 +50,14 @@ func TestAgentOptions(t *testing.T) {
 		},
 		{
 			name:   "WithLoader",
-			option: WithLoader(mockLoader),
+			option: withLoader(mockLoader),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockLoader, cfg.loader)
 			},
 		},
 		{
 			name:   "WithSessionLoader",
-			option: WithSessionLoader(mockSessionLoader),
+			option: withSessionLoader(mockSessionLoader),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockSessionLoader, cfg.sessionLoader)
 			},

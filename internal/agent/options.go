@@ -28,32 +28,32 @@ type agentConfig struct {
 	logger           *slog.Logger
 }
 
-// Option defines a functional option for configuring an Agent.
-type Option func(*agentConfig)
+// option defines a functional option for configuring an Agent.
+type option func(*agentConfig)
 
-// WithInitContext sets the context for the agent initialization.
-func WithInitContext(ctx context.Context) Option {
+// withInitContext sets the context for the agent initialization.
+func withInitContext(ctx context.Context) option {
 	return func(c *agentConfig) {
 		c.initCtx = ctx
 	}
 }
 
 // WithSummarizer sets the summarizer service for the agent.
-func WithSummarizer(s ports.Summarizer) Option {
+func WithSummarizer(s ports.Summarizer) option {
 	return func(c *agentConfig) {
 		c.summarizer = s
 	}
 }
 
 // WithInternalTools enables the registration of internal agent tools.
-func WithInternalTools() Option {
+func WithInternalTools() option {
 	return func(c *agentConfig) {
 		c.registerInternal = true
 	}
 }
 
 // WithPricing sets the pricing configuration for cost estimation.
-func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) Option {
+func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) option {
 	return func(c *agentConfig) {
 		c.model = model
 		c.mode = mode
@@ -61,36 +61,36 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// WithLoader sets the configuration loader for the agent.
-func WithLoader(loader domain_config.ConfigLoader) Option {
+// withLoader sets the configuration loader for the agent.
+func withLoader(loader domain_config.ConfigLoader) option {
 	return func(c *agentConfig) {
 		c.loader = loader
 	}
 }
 
 // WithSessionCostTracker sets the cost tracker for the agent.
-func WithSessionCostTracker(tracker domain_pricing.CostTracker) Option {
+func WithSessionCostTracker(tracker domain_pricing.CostTracker) option {
 	return func(c *agentConfig) {
 		c.tracker = tracker
 	}
 }
 
-// WithSessionLoader sets the session configuration loader for the agent.
-func WithSessionLoader(loader domain_config.SessionLoader) Option {
+// withSessionLoader sets the session configuration loader for the agent.
+func withSessionLoader(loader domain_config.SessionLoader) option {
 	return func(c *agentConfig) {
 		c.sessionLoader = loader
 	}
 }
 
 // WithLogger sets the logger for the agent.
-func WithLogger(l *slog.Logger) Option {
+func WithLogger(l *slog.Logger) option {
 	return func(c *agentConfig) {
 		c.logger = l
 	}
 }
 
 // WithSkillSelector sets the skill selector for the agent.
-func WithSkillSelector(s skills.SkillSelector) Option {
+func WithSkillSelector(s skills.SkillSelector) option {
 	return func(c *agentConfig) {
 		c.skillSelector = s
 	}
