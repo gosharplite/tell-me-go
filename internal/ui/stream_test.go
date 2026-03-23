@@ -101,6 +101,18 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 		return stdout.String()
 	}
 
+	waitForOutput := func(t *testing.T, expected string, timeout time.Duration) {
+		t.Helper()
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if strings.Contains(readStdout(), expected) {
+				return // Success
+			}
+			time.Sleep(10 * time.Millisecond) // Short poll interval
+		}
+		t.Errorf("timeout waiting for %q in stdout, got: %q", expected, readStdout())
+	}
+
 	t.Run("Shows and clears indicator", func(t *testing.T) {
 		locker.TerminalLock()
 		stdout.Reset()
@@ -125,10 +137,7 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 		}()
 
 		// Wait for initial draw
-		time.Sleep(250 * time.Millisecond)
-		if !strings.Contains(readStdout(), "Thinking...") {
-			t.Error("expected stdout to contain 'Thinking...'")
-		}
+		waitForOutput(t, "Thinking...", 1*time.Second)
 
 		// Send content
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
@@ -173,7 +182,7 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 			r.processStream(ctx, ch, state, ui)
 		}()
 
-		time.Sleep(250 * time.Millisecond)
+		waitForOutput(t, "Thinking...", 1*time.Second)
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
 		close(ch)
 		wg.Wait()
@@ -211,7 +220,7 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 			r.processStream(ctx, ch, state, ui)
 		}()
 
-		time.Sleep(250 * time.Millisecond)
+		waitForOutput(t, "Thinking...", 1*time.Second)
 		cancel() // Cancel context
 		wg.Wait()
 
