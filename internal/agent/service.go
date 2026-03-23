@@ -13,10 +13,19 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
+
+// Container defines the interface for building session dependencies and provides factories.
+// This interface is defined here to break the import cycle with internal/infrastructure/di.
+type Container interface {
+	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(), error)
+	GetAgentFactory() ports.ChatterFactory
+	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
+	GetHistoryManager(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
+}
 
 type chatService struct {
 	HomeDir   string
@@ -25,11 +34,11 @@ type chatService struct {
 	Stderr    io.Writer
 	SM        domain_security.Manager
 	Loader    domain_config.ConfigLoader
-	Container di.Container
+	Container Container
 }
 
 // NewChatService creates a new concrete implementation of ChatService.
-func NewChatService(homeDir, version string, stdout, stderr io.Writer, sm domain_security.Manager, loader domain_config.ConfigLoader, container di.Container) ChatService {
+func NewChatService(homeDir, version string, stdout, stderr io.Writer, sm domain_security.Manager, loader domain_config.ConfigLoader, container Container) ChatService {
 	return &chatService{
 		HomeDir:   homeDir,
 		Version:   version,

@@ -22,26 +22,26 @@ func TestAgentOptions(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		option   option
+		option   Option
 		validate func(t *testing.T, cfg *agentConfig)
 	}{
 		{
 			name:   "WithSummarizer",
-			option: withSummarizer(mockSummarizer),
+			option: WithSummarizer(mockSummarizer),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockSummarizer, cfg.summarizer)
 			},
 		},
 		{
 			name:   "WithInternalTools",
-			option: withInternalTools(),
+			option: WithInternalTools(),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.True(t, cfg.registerInternal)
 			},
 		},
 		{
 			name:   "WithPricing",
-			option: withPricing("model-a", "mode-b", overrides),
+			option: WithPricing("model-a", "mode-b", overrides),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, "model-a", cfg.model)
 				require.Equal(t, "mode-b", cfg.mode)
@@ -50,21 +50,21 @@ func TestAgentOptions(t *testing.T) {
 		},
 		{
 			name:   "WithLoader",
-			option: withLoader(mockLoader),
+			option: WithLoader(mockLoader),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockLoader, cfg.loader)
 			},
 		},
 		{
 			name:   "WithSessionLoader",
-			option: withSessionLoader(mockSessionLoader),
+			option: WithSessionLoader(mockSessionLoader),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockSessionLoader, cfg.sessionLoader)
 			},
 		},
 		{
 			name:   "WithSessionCostTracker",
-			option: withSessionCostTracker(mockTracker),
+			option: WithSessionCostTracker(mockTracker),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockTracker, cfg.tracker)
 			},
