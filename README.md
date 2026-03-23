@@ -63,6 +63,10 @@ Undo the last 3 turns from history:
 ```bash
 tell-me-go -b 3
 ```
+Retry the last user message (automatically rolls back the last attempt):
+```bash
+tell-me-go --retry
+```
 
 **Raw Output Mode:**
 Skip Markdown rendering (useful for piping to other scripts):
