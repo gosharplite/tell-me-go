@@ -111,6 +111,14 @@ func (m *mockServiceContainer) FinalizeSession(ctx context.Context, hManager por
 	return args.Error(0)
 }
 
+func (m *mockServiceContainer) GetHistoryManager(ctx context.Context, cfg *config.Config) (ports.HistoryManager, error) {
+	args := m.Called(ctx, cfg)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.HistoryManager), args.Error(1)
+}
+
 
 // mockServiceSessionDependencies is a mock of SessionDependencies.
 type mockServiceSessionDependencies struct {
