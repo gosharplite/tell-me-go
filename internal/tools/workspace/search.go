@@ -50,7 +50,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 	if params.IsRegex {
 		re, err := regexp.Compile(params.Query)
 		if err != nil {
-			return tools.ToolResult{}, fmt.Errorf("invalid regex: %w. If you intended a literal text search, set 'is_regex' to false.", err)
+			return tools.ToolResult{}, fmt.Errorf("invalid regex: %w (if you intended a literal text search, set 'is_regex' to false)", err)
 		}
 		matcher = func(_, line string) (string, bool) {
 			return "", re.MatchString(line)
