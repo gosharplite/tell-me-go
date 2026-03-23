@@ -225,4 +225,3 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 		}
 	})
 }
-
