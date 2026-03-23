@@ -60,7 +60,7 @@ func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
 
-	var cw orchestration.ConfigWatcher = orchestration.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
+	cw := orchestration.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
 
 	if cfg.loader != nil || cfg.sessionLoader != nil {
 		cw = orchestration.NewFileConfigWatcher(cfg.loader, cfg.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, cfg.logger)

@@ -126,7 +126,7 @@ func TestConfigWatcher_MissingFile(t *testing.T) {
 	}
 }
 
-func setupConfigWatcherTest(t *testing.T) (*FileConfigWatcher, string, string) {
+func setupConfigWatcherTest(t *testing.T) (ConfigWatcher, string, string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	mainPath := filepath.Join(tmpDir, "main.yaml")
@@ -146,7 +146,8 @@ func TestConfigWatcher_MainConfigAndPrecedence(t *testing.T) {
 }
 
 func testYamlLoading(t *testing.T) {
-	cw, mainPath, _ := setupConfigWatcherTest(t)
+	fcw, mainPath, _ := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(mockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -175,7 +176,8 @@ MAX_TURNS: 5
 }
 
 func testModelIsolation(t *testing.T) {
-	cw, mainPath, _ := setupConfigWatcherTest(t)
+	fcw, mainPath, _ := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(mockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -220,7 +222,8 @@ MODELS:
 }
 
 func testPrecedenceRules(t *testing.T) {
-	cw, mainPath, sessionPath := setupConfigWatcherTest(t)
+	fcw, mainPath, sessionPath := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(mockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -252,7 +255,8 @@ MAX_TURNS: 5
 }
 
 func testDeletionRobustness(t *testing.T) {
-	cw, mainPath, _ := setupConfigWatcherTest(t)
+	fcw, mainPath, _ := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(mockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -333,7 +337,7 @@ func TestConfigWatcher_ApplyLimits(t *testing.T) {
 	})
 
 	t.Run("PartialUpdate", func(t *testing.T) {
-		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil).(*fileConfigWatcher)
 		cw.tieredThreshold = 1000
 		limits := events.Limits{
 			MaxHistoryTokens: 0,
@@ -352,7 +356,7 @@ func TestConfigWatcher_ApplyLimits(t *testing.T) {
 }
 
 func TestConfigWatcher_SyncToStrategy(t *testing.T) {
-	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil).(*fileConfigWatcher)
 	cw.contextWindow = 500000
 	cw.tieredThreshold = 3000
 
@@ -371,7 +375,8 @@ func TestConfigWatcher_SyncToStrategy(t *testing.T) {
 }
 
 func TestConfigWatcher_GetContextWindow_Refresh(t *testing.T) {
-	cw, mainPath, _ := setupConfigWatcherTest(t)
+	fcw, mainPath, _ := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(mockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -415,7 +420,8 @@ func TestConfigWatcher_SessionReadFileError(t *testing.T) {
 }
 
 func TestConfigWatcher_UpdateFromMain_NoChange(t *testing.T) {
-	cw, mainPath, _ := setupConfigWatcherTest(t)
+	fcw, mainPath, _ := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(mockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -437,14 +443,15 @@ func TestConfigWatcher_UpdateFromMain_NoChange(t *testing.T) {
 }
 
 func TestConfigWatcher_SetPaths(t *testing.T) {
-	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
+	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil).(*fileConfigWatcher)
 	cw.SetPaths("main", "session")
 	assert.Equal(t, "main", cw.mainPath)
 	assert.Equal(t, "session", cw.sessionPath)
 }
 
 func TestConfigWatcher_SessionAllFields(t *testing.T) {
-	cw, _, sessionPath := setupConfigWatcherTest(t)
+	fcw, _, sessionPath := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
 	if err := os.WriteFile(sessionPath, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -457,7 +464,8 @@ func TestConfigWatcher_SessionAllFields(t *testing.T) {
 }
 
 func TestConfigWatcher_MalformedYAML(t *testing.T) {
-	cw, mainPath, _ := setupConfigWatcherTest(t)
+	fcw, mainPath, _ := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(mockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -474,7 +482,8 @@ func TestConfigWatcher_MalformedYAML(t *testing.T) {
 }
 
 func TestConfigWatcher_ModelConfigZeroContext(t *testing.T) {
-	cw, mainPath, _ := setupConfigWatcherTest(t)
+	fcw, mainPath, _ := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	mockLoader := new(mockConfigLoader)
 	cw.Loader = mockLoader
 
@@ -498,7 +507,8 @@ MODELS:
 }
 
 func TestConfigWatcher_UpdateFromSession_NoChange(t *testing.T) {
-	cw, _, sessionPath := setupConfigWatcherTest(t)
+	fcw, _, sessionPath := setupConfigWatcherTest(t)
+	cw := fcw.(*fileConfigWatcher)
 	if err := os.WriteFile(sessionPath, []byte(`{}`), 0644); err != nil {
 		t.Fatal(err)
 	}
