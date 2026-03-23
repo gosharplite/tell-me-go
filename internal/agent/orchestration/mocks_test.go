@@ -260,3 +260,15 @@ func (m *mockPruningPolicy) Name() string {
 	}
 	return "MockPolicy"
 }
+
+type mockSessionLoader struct {
+	mock.Mock
+}
+
+func (m *mockSessionLoader) LoadSession(path string) (*config.SessionConfig, error) {
+	args := m.Called(path)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*config.SessionConfig), args.Error(1)
+}

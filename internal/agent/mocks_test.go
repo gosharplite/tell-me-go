@@ -113,3 +113,7 @@ type mockLoader struct {
 type mockTracker struct {
 	domain_pricing.CostTracker
 }
+
+type mockSessionLoader struct {
+	domain_config.SessionLoader
+}

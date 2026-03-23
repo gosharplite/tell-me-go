@@ -14,6 +14,7 @@ func TestAgentOptions(t *testing.T) {
 	t.Parallel()
 	mockSummarizer := &mockSummarizer{}
 	mockLoader := &mockLoader{}
+	mockSessionLoader := &mockSessionLoader{}
 	mockTracker := &mockTracker{}
 	overrides := map[string]domain_pricing.ModelPricing{
 		"test": {Miss: 1.0},
@@ -52,6 +53,13 @@ func TestAgentOptions(t *testing.T) {
 			option: withLoader(mockLoader),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockLoader, cfg.loader)
+			},
+		},
+		{
+			name:   "WithSessionLoader",
+			option: withSessionLoader(mockSessionLoader),
+			validate: func(t *testing.T, cfg *agentConfig) {
+				require.Equal(t, mockSessionLoader, cfg.sessionLoader)
 			},
 		},
 		{

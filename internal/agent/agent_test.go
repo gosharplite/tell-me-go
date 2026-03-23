@@ -117,8 +117,10 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus(context.Background())
 
-	a, err := newAgent(client, bus, h, "test-provider", reg, sm, withLoader(&config.YAMLConfigLoader{}))
+	a, err := newAgent(client, bus, h, "test-provider", reg, sm, withLoader(&config.YAMLConfigLoader{}), withSessionLoader(&config.JSONSessionLoader{}))
 	require.NoError(t, err)
+
+	// Re-injecting path configuration for integration test
 	a.(*agent).configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
@@ -714,7 +716,7 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	// Create an agent with mock dependencies
 	a := &agent{
 		events:        events.NewSimpleEventBus(context.Background()),
-		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
+		configWatcher: orchestration.NewNoOpConfigWatcher(1000, 5, 10),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -735,7 +737,7 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 
 	a := &agent{
 		events:        mockBus,
-		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
+		configWatcher: orchestration.NewNoOpConfigWatcher(1000, 5, 10),
 	}
 
 	err := a.applyConfig(context.Background())

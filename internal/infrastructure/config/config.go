@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -90,4 +91,40 @@ func syncLegacyFields(cfg *domain_config.Config) {
 // DefaultPricing returns the hardcoded fallback pricing data.
 func DefaultPricing() pricing.PricingData {
 	return domain_config.DefaultPricing()
+}
+
+// JSONSessionLoader implements domain_config.SessionLoader.
+type JSONSessionLoader struct{}
+
+type sessionDTO struct {
+	MaxHistoryTokens *int `json:"MAX_HISTORY_TOKENS"`
+	MaxToolTurns     *int `json:"MAX_TURNS"` // Standardized to match YAML
+	LegacyToolTurns  *int `json:"MAX_TOOL_TURNS"`
+	MaxHistoryTurns  *int `json:"MAX_HISTORY_TURNS"`
+}
+
+// LoadSession reads and parses a session override JSON file.
+func (l *JSONSessionLoader) LoadSession(path string) (*domain_config.SessionConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var dto sessionDTO
+	if err := json.Unmarshal(data, &dto); err != nil {
+		return nil, fmt.Errorf("parse session config: %w", err)
+	}
+
+	// Fallback for legacy key
+	if dto.MaxToolTurns == nil && dto.LegacyToolTurns != nil {
+		dto.MaxToolTurns = dto.LegacyToolTurns
+	}
+
+	cfg := &domain_config.SessionConfig{
+		MaxHistoryTokens: dto.MaxHistoryTokens,
+		MaxToolTurns:     dto.MaxToolTurns,
+		MaxHistoryTurns:  dto.MaxHistoryTurns,
+	}
+
+	return cfg, nil
 }
