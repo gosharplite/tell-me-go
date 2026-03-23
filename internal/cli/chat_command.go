@@ -85,9 +85,9 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 			return errors.New("no previous user message found to retry")
 		}
 
-		fmt.Fprintf(c.Stdout, "Are you sure you want to retry the following message?\n\n%s\n\nRetry? [y/N]: ", lastMsg)
+		_, _ = fmt.Fprintf(c.Stdout, "Are you sure you want to retry the following message?\n\n%s\n\nRetry? [y/N]: ", lastMsg)
 		var response string
-		fmt.Fscanln(c.Stdin, &response)
+		_, _ = fmt.Fscanln(c.Stdin, &response)
 		if strings.ToLower(strings.TrimSpace(response)) != "y" {
 			return nil // User aborted
 		}

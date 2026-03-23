@@ -436,51 +436,53 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 }
 
 func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState, ui uiState) {
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	frameIdx := 0
 	firstChunkReceived := false
 
-	// Initial indicator if it's a terminal
-	if state.isTerm {
-		r.drawLoadingIndicator(ui, frames[0])
-		frameIdx = 1
+	tickerC, frameIdx, stopTicker := r.setupIndicator(state, ui, frames)
+	defer stopTicker()
+
+	stopIndicator := func() {
+		if !firstChunkReceived && state.isTerm {
+			r.clearLoadingIndicator(ui, state.rawOutput)
+			firstChunkReceived = true // Mark as handled
+			stopTicker()
+			tickerC = nil
+		}
 	}
+	defer stopIndicator() // Catch-all for early exits
 
 	for {
 		select {
 		case <-ctx.Done():
-			if !firstChunkReceived && state.isTerm {
-				r.clearLoadingIndicator(ui, state.rawOutput)
-			}
 			return
-		case <-ticker.C:
-			if !firstChunkReceived && state.isTerm {
-				r.drawLoadingIndicator(ui, frames[frameIdx])
-				frameIdx = (frameIdx + 1) % len(frames)
-			}
+		case <-tickerC:
+			r.updateIndicatorFrame(ui, frames, &frameIdx)
 		case content, ok := <-ch:
 			if !ok {
-				if !firstChunkReceived && state.isTerm {
-					r.clearLoadingIndicator(ui, state.rawOutput)
-				}
 				r.closeThinking(state, ui)
 				return
 			}
-			if !firstChunkReceived {
-				if state.isTerm {
-					r.clearLoadingIndicator(ui, state.rawOutput)
-				}
-				firstChunkReceived = true
-				ticker.Stop()
-			}
-			for _, part := range content.Parts {
-				state.aggregated.AddPart(part)
-				r.renderStreamPart(state, part, ui)
-			}
+
+			stopIndicator() // Clear before rendering first chunk
+			r.handleStreamContent(state, content, ui)
 		}
+	}
+}
+
+func (r *stdUIRenderer) setupIndicator(state *streamState, ui uiState, frames []string) (<-chan time.Time, int, func()) {
+	if !state.isTerm {
+		return nil, 0, func() {}
+	}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	r.drawLoadingIndicator(ui, frames[0])
+	return ticker.C, 1, ticker.Stop
+}
+
+func (r *stdUIRenderer) handleStreamContent(state *streamState, content *llm.Content, ui uiState) {
+	for _, part := range content.Parts {
+		state.aggregated.AddPart(part)
+		r.renderStreamPart(state, part, ui)
 	}
 }
 
@@ -733,4 +735,9 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 
 	_, _ = fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
+}
+
+func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int) {
+	r.drawLoadingIndicator(ui, frames[*idx])
+	*idx = (*idx + 1) % len(frames)
 }
