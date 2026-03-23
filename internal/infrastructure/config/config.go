@@ -98,8 +98,7 @@ type JSONSessionLoader struct{}
 
 type sessionDTO struct {
 	MaxHistoryTokens *int `json:"MAX_HISTORY_TOKENS"`
-	MaxToolTurns     *int `json:"MAX_TOOL_TURNS"`
-	MaxTurns         *int `json:"MAX_TURNS"` // Legacy fallback
+	MaxToolTurns     *int `json:"MAX_TURNS"` // Standardized to match YAML
 	MaxHistoryTurns  *int `json:"MAX_HISTORY_TURNS"`
 }
 
@@ -117,14 +116,8 @@ func (l *JSONSessionLoader) LoadSession(path string) (*domain_config.SessionConf
 
 	cfg := &domain_config.SessionConfig{
 		MaxHistoryTokens: dto.MaxHistoryTokens,
+		MaxToolTurns:     dto.MaxToolTurns,
 		MaxHistoryTurns:  dto.MaxHistoryTurns,
-	}
-
-	// Support legacy fallback for MaxToolTurns
-	if dto.MaxToolTurns != nil {
-		cfg.MaxToolTurns = dto.MaxToolTurns
-	} else if dto.MaxTurns != nil {
-		cfg.MaxToolTurns = dto.MaxTurns
 	}
 
 	return cfg, nil

@@ -181,7 +181,7 @@ func TestJSONSessionLoader_LoadSession(t *testing.T) {
 	t.Run("ValidAllFields", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "session.json")
-		content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TOOL_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
+		content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
 		_ = os.WriteFile(path, []byte(content), 0644)
 
 		cfg, err := loader.LoadSession(path)
@@ -197,22 +197,6 @@ func TestJSONSessionLoader_LoadSession(t *testing.T) {
 		}
 		if cfg.MaxHistoryTurns == nil || *cfg.MaxHistoryTurns != 25 {
 			t.Errorf("expected 25 history turns, got %v", cfg.MaxHistoryTurns)
-		}
-	})
-
-	t.Run("LegacyFallback", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "session_legacy.json")
-		content := `{"MAX_TURNS": 10}`
-		_ = os.WriteFile(path, []byte(content), 0644)
-
-		cfg, err := loader.LoadSession(path)
-		if err != nil {
-			t.Fatalf("LoadSession failed: %v", err)
-		}
-
-		if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 10 {
-			t.Errorf("expected 10 tool turns (fallback), got %v", cfg.MaxToolTurns)
 		}
 	})
 

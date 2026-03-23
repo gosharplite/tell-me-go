@@ -34,8 +34,6 @@ func (l *testSessionLoader) LoadSession(path string) (*config.SessionConfig, err
 	}
 	if val, ok := pCfg["MAX_TURNS"]; ok {
 		cfg.MaxToolTurns = l.toIntPtr(val)
-	} else if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
-		cfg.MaxToolTurns = l.toIntPtr(val)
 	}
 	if val, ok := pCfg["MAX_HISTORY_TURNS"]; ok {
 		cfg.MaxHistoryTurns = l.toIntPtr(val)
