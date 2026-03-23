@@ -34,8 +34,9 @@ var defPatterns = []string{
 
 func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
-		Path  string `json:"path"`
-		Query string `json:"query"`
+		Path    string `json:"path"`
+		Query   string `json:"query"`
+		IsRegex bool   `json:"is_regex"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -45,17 +46,25 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("query argument is required")
 	}
 
-	re, err := regexp.Compile(params.Query)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
+	var matcher func(string, string) (string, bool)
+	if params.IsRegex {
+		re, err := regexp.Compile(params.Query)
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("invalid regex: %w. If you intended a literal text search, set 'is_regex' to false.", err)
+		}
+		matcher = func(_, line string) (string, bool) {
+			return "", re.MatchString(line)
+		}
+	} else {
+		matcher = func(_, line string) (string, bool) {
+			return "", strings.Contains(line, params.Query)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, params.Path, func(_, line string) (string, bool) {
-		return "", re.MatchString(line)
-	})
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, params.Path, matcher)
 
 	var results []string
 	limit := 100

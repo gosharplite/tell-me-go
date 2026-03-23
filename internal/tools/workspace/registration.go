@@ -93,8 +93,9 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
-						"path":  {Type: "STRING", Description: "The directory to search (defaults to '.')"},
-						"query": {Type: "STRING", Description: "The string or regex to search for."},
+						"path":     {Type: "STRING", Description: "The directory to search (defaults to '.')"},
+						"query":    {Type: "STRING", Description: "The text or regex to search for."},
+						"is_regex": {Type: "BOOLEAN", Description: "If true, treats query as a regex. Default is false (literal string search)."},
 					},
 					Required: []string{"query"},
 				},

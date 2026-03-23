@@ -156,7 +156,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	}
 
 	// Test invalid regex
-	_, err = m.SearchUsagesGlobally(ctx, map[string]interface{}{"query": "["})
+	_, err = m.SearchUsagesGlobally(ctx, map[string]interface{}{"query": "[", "is_regex": true})
 	if err == nil {
 		t.Error("expected error for invalid regex")
 	}
