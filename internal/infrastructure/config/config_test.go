@@ -37,8 +37,8 @@ AIURL: "http://test.url"
 			t.Errorf("expected Model 'test-model', got '%s'", cfg.Model)
 		}
 		// Verify defaults
-		if cfg.MaxToolTurns != 10 {
-			t.Errorf("expected default MaxToolTurns 10, got %d", cfg.MaxToolTurns)
+		if cfg.MaxToolTurns != 200 {
+			t.Errorf("expected default MaxToolTurns 200, got %d", cfg.MaxToolTurns)
 		}
 	})
 

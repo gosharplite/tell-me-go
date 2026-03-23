@@ -41,6 +41,25 @@ func NewChatService(homeDir, version string, stdout, stderr io.Writer, sm domain
 	}
 }
 
+// GetLastUserMessage implements ChatService.
+func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string) (string, int, error) {
+	cfg, err := s.Loader.Load(configPath)
+	if err != nil {
+		return "", 0, fmt.Errorf("error loading config [%s]: %w", configPath, err)
+	}
+
+	hManager, err := s.Container.GetHistoryManager(ctx, cfg)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to load history manager: %w", err)
+	}
+
+	msg, turns, err := hManager.GetLastUserMessage(ctx)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to get last user message: %w", err)
+	}
+	return msg, turns, nil
+}
+
 // ProcessMessage implements ChatService.
 func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capturer orchestration.Capturer) error {
 	// 1. Load configuration

@@ -20,7 +20,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -86,15 +85,15 @@ type mockServiceContainer struct {
 	mock.Mock
 }
 
-func (m *mockServiceContainer) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
+func (m *mockServiceContainer) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(), error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
 	var deps ports.SessionDependencies
 	if args.Get(0) != nil {
 		deps = args.Get(0).(ports.SessionDependencies)
 	}
-	var hManager *history.Manager
+	var hManager ports.HistoryManager
 	if args.Get(1) != nil {
-		hManager = args.Get(1).(*history.Manager)
+		hManager = args.Get(1).(ports.HistoryManager)
 	}
 	return deps, hManager, args.Get(2).(func()), args.Error(3)
 }
@@ -107,6 +106,14 @@ func (m *mockServiceContainer) GetAgentFactory() ports.ChatterFactory {
 func (m *mockServiceContainer) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
 	args := m.Called(ctx, hManager, deps, cfg)
 	return args.Error(0)
+}
+
+func (m *mockServiceContainer) GetHistoryManager(ctx context.Context, cfg *config.Config) (ports.HistoryManager, error) {
+	args := m.Called(ctx, cfg)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.HistoryManager), args.Error(1)
 }
 
 // mockServiceSessionDependencies is a mock of SessionDependencies.
@@ -229,7 +236,8 @@ func TestProcessMessage(t *testing.T) {
 				cleanupCalled := false
 				cleanup := func() { cleanupCalled = true }
 
-				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, &history.Manager{}, cleanup, nil)
+				mockHM := &mockHistoryManagerForRetry{}
+				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
 				c.On("GetAgentFactory").Return(ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
 					return agent, nil
 				}))
@@ -237,7 +245,7 @@ func TestProcessMessage(t *testing.T) {
 
 				deps.On("GetEventBus").Return(bus)
 				deps.On("GetPaths").Return(&persistence.Paths{})
-				deps.On("GetHistoryManager").Return(&history.Manager{})
+				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
 
 				bus.On("Shutdown", mock.Anything).Return(nil)
@@ -325,4 +333,64 @@ func TestProcessMessage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetLastUserMessage(t *testing.T) {
+	configPath := "assistant.yaml"
+
+	ctx := context.Background()
+	loader := &mockServiceConfigLoader{}
+	container := &mockServiceContainer{}
+	sm := &mockServiceSecurityManager{}
+
+	cfg := &config.Config{Mode: "assistant"}
+	loader.On("Load", configPath).Return(cfg, nil)
+
+	mockHM := &mockHistoryManagerForRetry{msg: "last message", turns: 1}
+	container.On("GetHistoryManager", ctx, cfg).Return(mockHM, nil)
+
+	service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
+
+	msg, turns, err := service.GetLastUserMessage(ctx, configPath)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "last message", msg)
+	assert.Equal(t, 1, turns)
+
+	loader.AssertExpectations(t)
+	container.AssertExpectations(t)
+}
+
+type mockHistoryManagerForRetry struct {
+	msg   string
+	turns int
+	err   error
+}
+
+func (m *mockHistoryManagerForRetry) GetTotalEntries() int { return 0 }
+func (m *mockHistoryManagerForRetry) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	return nil, nil
+}
+func (m *mockHistoryManagerForRetry) GetLastUserMessage(ctx context.Context) (string, int, error) {
+	return m.msg, m.turns, m.err
+}
+func (m *mockHistoryManagerForRetry) GetResolver() llm.AssetResolver { return nil }
+func (m *mockHistoryManagerForRetry) SetContents(ctx context.Context, contents []*llm.Content) error {
+	return nil
+}
+func (m *mockHistoryManagerForRetry) AddContent(ctx context.Context, content *llm.Content) error {
+	return nil
+}
+func (m *mockHistoryManagerForRetry) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	return nil
+}
+func (m *mockHistoryManagerForRetry) Save(ctx context.Context) error { return nil }
+func (m *mockHistoryManagerForRetry) Archive(ctx context.Context, contents []*llm.Content) error {
+	return nil
+}
+func (m *mockHistoryManagerForRetry) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+	return nil
+}
+func (m *mockHistoryManagerForRetry) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+	return 0, 0, 0, nil
 }

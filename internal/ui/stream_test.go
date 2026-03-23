@@ -6,7 +6,10 @@ package ui
 import (
 	"bytes"
 	"context"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -81,6 +84,144 @@ func TestStreamResponse(t *testing.T) {
 
 		if !bytes.Contains(stderr.Bytes(), []byte("[Media] image/png")) {
 			t.Errorf("expected stderr to contain '[Media] image/png', got %q", stderr.String())
+		}
+	})
+}
+
+func TestProcessStream_LoadingIndicator(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	locker := &mockLocker{}
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+
+	// Helper to safely read stdout
+	readStdout := func() string {
+		locker.TerminalLock()
+		defer locker.TerminalUnlock()
+		return stdout.String()
+	}
+
+	t.Run("Shows and clears indicator", func(t *testing.T) {
+		locker.TerminalLock()
+		stdout.Reset()
+		locker.TerminalUnlock()
+
+		ch := make(chan *llm.Content)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		state := &streamState{
+			aggregated: &llm.Content{Role: "model"},
+			isTerm:     true,
+			rawOutput:  false,
+		}
+		ui := r.getUIState()
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.processStream(ctx, ch, state, ui)
+		}()
+
+		// Wait for initial draw
+		time.Sleep(250 * time.Millisecond)
+		if !strings.Contains(readStdout(), "Thinking...") {
+			t.Error("expected stdout to contain 'Thinking...'")
+		}
+
+		// Send content
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
+		close(ch)
+		wg.Wait()
+
+		// Should contain Done
+		out := readStdout()
+		if !strings.Contains(out, "Done") {
+			t.Errorf("expected stdout to contain 'Done', got %q", out)
+		}
+
+		// Should contain clear sequence (either restore cursor + clear forward or clear line)
+		hasRestore := strings.Contains(out, "\x1b8") || strings.Contains(out, "\0338")
+		hasClearLine := strings.Contains(out, "\x1b[2K") || strings.Contains(out, "\033[2K")
+
+		if !hasRestore && !hasClearLine {
+			t.Errorf("expected stdout to contain clear sequence, got %q", out)
+		}
+	})
+
+	t.Run("Shows and clears indicator in raw mode", func(t *testing.T) {
+		locker.TerminalLock()
+		stdout.Reset()
+		locker.TerminalUnlock()
+
+		ch := make(chan *llm.Content)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		state := &streamState{
+			aggregated: &llm.Content{Role: "model"},
+			isTerm:     true,
+			rawOutput:  true,
+		}
+		ui := r.getUIState()
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.processStream(ctx, ch, state, ui)
+		}()
+
+		time.Sleep(250 * time.Millisecond)
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
+		close(ch)
+		wg.Wait()
+
+		out := readStdout()
+		if !strings.Contains(out, "Done") {
+			t.Errorf("expected stdout to contain 'Done', got %q", out)
+		}
+
+		// In raw mode it should use clear line escape
+		if !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
+			t.Errorf("expected stdout to contain clear line escape (\\033[2K), got %q", out)
+		}
+	})
+
+	t.Run("Clears indicator on context cancellation", func(t *testing.T) {
+		locker.TerminalLock()
+		stdout.Reset()
+		locker.TerminalUnlock()
+
+		ch := make(chan *llm.Content)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		state := &streamState{
+			aggregated: &llm.Content{Role: "model"},
+			isTerm:     true,
+			rawOutput:  false,
+		}
+		ui := r.getUIState()
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.processStream(ctx, ch, state, ui)
+		}()
+
+		time.Sleep(250 * time.Millisecond)
+		cancel() // Cancel context
+		wg.Wait()
+
+		// Should contain clear sequence
+		out := readStdout()
+		hasRestore := strings.Contains(out, "\x1b8") || strings.Contains(out, "\0338")
+		hasClearLine := strings.Contains(out, "\x1b[2K") || strings.Contains(out, "\033[2K")
+
+		if !hasRestore && !hasClearLine {
+			t.Errorf("expected stdout to contain clear sequence on cancel, got %q", out)
 		}
 	})
 }

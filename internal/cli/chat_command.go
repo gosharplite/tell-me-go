@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
@@ -27,6 +28,7 @@ func init() {
 // chatCommand implements the main chat command.
 type chatCommand struct {
 	Version     string
+	HomeDir     string
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
@@ -43,12 +45,14 @@ type cliOptions struct {
 	lastN       int
 	backN       int
 	rawOutput   bool
+	retry       bool
 }
 
 // newChatCommand creates a new Chat Command with default factories.
 func newChatCommand(ctx *context) *chatCommand {
 	return &chatCommand{
 		Version:     ctx.Version,
+		HomeDir:     ctx.HomeDir,
 		Stdin:       ctx.Stdin,
 		Stdout:      ctx.Stdout,
 		Stderr:      ctx.Stderr,
@@ -71,29 +75,26 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return nil
 	}
 
-	// 2. Invoking a Use Case / Service interface
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
-	if sm, ok := c.SM.(interface {
-		SetInteractor(domain_security.UserInteractor)
-	}); ok {
-		sm.SetInteractor(capturer.(domain_security.UserInteractor))
-	}
-
-	var captureOpts []orchestration.CaptureOption
-	if opts.lastN > 0 || opts.backN > 0 {
-		captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
-	}
-	if opts.rawOutput {
-		captureOpts = append(captureOpts, orchestration.WithRaw(true))
-	}
-
-	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
-	if err != nil {
-		if !errors.Is(err, ui.ErrNoInput) {
+	var prompt string
+	if opts.retry {
+		var abort bool
+		prompt, opts.backN, abort, err = c.handleRetryFlow(ctx, opts)
+		if err != nil {
 			return err
 		}
-		// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
-		prompt = ""
+		if abort {
+			return nil
+		}
+	}
+
+	// 2. Invoking a Use Case / Service interface
+	capturer := c.setupCapturer()
+
+	if !opts.retry {
+		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Delegate all business logic and orchestration to the ChatService
@@ -105,6 +106,58 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		RawOutput:  opts.rawOutput,
 		Prompt:     prompt,
 	}, capturer)
+}
+
+func (c *chatCommand) setupCapturer() orchestration.Capturer {
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
+	if sm, ok := c.SM.(interface {
+		SetInteractor(domain_security.UserInteractor)
+	}); ok {
+		sm.SetInteractor(capturer.(domain_security.UserInteractor))
+	}
+	return capturer
+}
+
+func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer orchestration.Capturer) (string, error) {
+	captureOpts := c.prepareCaptureOptions(opts)
+	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
+	if err != nil {
+		if !errors.Is(err, ui.ErrNoInput) {
+			return "", err
+		}
+		// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
+		return "", nil
+	}
+	return prompt, nil
+}
+
+func (c *chatCommand) handleRetryFlow(ctx stdctx.Context, opts *cliOptions) (prompt string, backN int, abort bool, err error) {
+	lastMsg, turns, err := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("failed to get last user message for retry: %w", err)
+	}
+	if lastMsg == "" {
+		return "", 0, false, errors.New("no previous user message found to retry")
+	}
+
+	_, _ = fmt.Fprintf(c.Stdout, "Are you sure you want to retry the following message?\n\n%s\n\nRetry? [y/N]: ", lastMsg)
+	var response string
+	_, _ = fmt.Fscanln(c.Stdin, &response)
+	if strings.ToLower(strings.TrimSpace(response)) != "y" {
+		return "", 0, true, nil // User aborted
+	}
+	return lastMsg, turns, false, nil
+}
+
+func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []orchestration.CaptureOption {
+	var captureOpts []orchestration.CaptureOption
+	if opts.lastN > 0 || opts.backN > 0 {
+		captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
+	}
+	if opts.rawOutput {
+		captureOpts = append(captureOpts, orchestration.WithRaw(true))
+	}
+	return captureOpts
 }
 
 func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.FlagSet, error) {
@@ -123,6 +176,7 @@ func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.Flag
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
 	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
 	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
+	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
 
 	if err := fs.Parse(flagArgs); err != nil {
 		return nil, nil, err

@@ -86,6 +86,9 @@ type mockHistoryManager struct {
 }
 
 func (m *mockHistoryManager) GetTotalEntries() int { return len(m.contents) }
+func (m *mockHistoryManager) GetLastUserMessage(ctx context.Context) (string, int, error) {
+	return "", 0, nil
+}
 func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 	if m.getWindowErr != nil {
 		return nil, m.getWindowErr

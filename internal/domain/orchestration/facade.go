@@ -183,7 +183,9 @@ func (f *chatterFacade) executeTurn(parentCtx context.Context, turn int, startTi
 
 func (f *chatterFacade) invokeLLM(ctx context.Context, history []*llm.Content, trace *telemetry.TurnTrace) (*llm.Content, *llm.Metrics, bool, error) {
 	startInference := time.Now()
+
 	response, metrics, err := f.llmCoord.Generate(ctx, history, f.registry.GetDeclarations(), f.history.GetResolver())
+
 	trace.InferenceDuration = time.Since(startInference)
 
 	if metrics != nil {

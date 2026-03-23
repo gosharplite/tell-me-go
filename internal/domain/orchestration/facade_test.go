@@ -127,6 +127,7 @@ func (m *mockHistory) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*l
 	return nil, nil
 }
 func (m *mockHistory) GetTotalEntries() int                                           { return 0 }
+func (m *mockHistory) GetLastUserMessage(ctx context.Context) (string, int, error)    { return "", 0, nil }
 func (m *mockHistory) SetContents(ctx context.Context, contents []*llm.Content) error { return nil }
 func (m *mockHistory) Archive(ctx context.Context, contents []*llm.Content) error     { return nil }
 func (m *mockHistory) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {

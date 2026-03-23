@@ -24,6 +24,9 @@ type HistoryReader interface {
 	// GetTotalEntries returns the total number of content entries currently stored.
 	GetTotalEntries() int
 
+	// GetLastUserMessage finds the text of the last user message and the number of turns to rollback.
+	GetLastUserMessage(ctx context.Context) (msg string, turnsToRollback int, err error)
+
 	GetResolver() llm.AssetResolver
 }
 

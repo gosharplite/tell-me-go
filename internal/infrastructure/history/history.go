@@ -227,25 +227,22 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	defer m.mu.Unlock()
 
 	originalLen := len(m.Contents)
-	if originalLen == 0 || turns <= 0 {
-		return 0, originalLen / 2, originalLen, nil
+	actualRemoved, newLen := calculateRollbackBounds(originalLen, turns)
+
+	if newLen == originalLen && actualRemoved == 0 {
+		return 0, len(m.Contents) / 2, len(m.Contents), nil
 	}
 
 	originalContents := m.Contents
 
-	// Prevent overflow and handle out-of-bounds turns
-	if turns > originalLen/2 {
-		actualRemoved = originalLen / 2
+	// Nil out the truncated pointers to prevent memory leaks
+	for i := newLen; i < originalLen; i++ {
+		m.Contents[i] = nil
+	}
+
+	if newLen == 0 {
 		m.Contents = nil
 	} else {
-		actualRemoved = turns
-		newLen := originalLen - (turns * 2)
-
-		// Nil out the truncated pointers to prevent memory leaks
-		for i := newLen; i < originalLen; i++ {
-			m.Contents[i] = nil
-		}
-
 		m.Contents = m.Contents[:newLen]
 	}
 
@@ -259,4 +256,68 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	remainingTurns = remainingMsgs / 2
 
 	return actualRemoved, remainingTurns, remainingMsgs, nil
+}
+
+func calculateRollbackBounds(originalLen int, turns int) (actualRemoved, newLen int) {
+	if originalLen == 0 {
+		return 0, 0
+	}
+
+	if turns <= 0 {
+		if originalLen%2 != 0 {
+			return 0, originalLen - 1
+		}
+		return 0, originalLen
+	}
+
+	currentTurns := (originalLen + 1) / 2
+	if turns > currentTurns {
+		turns = currentTurns
+	}
+
+	droppedMsgs := turns * 2
+	if originalLen%2 != 0 {
+		droppedMsgs -= 1
+	}
+
+	if droppedMsgs >= originalLen {
+		return currentTurns, 0
+	}
+	return turns, originalLen - droppedMsgs
+}
+
+// GetLastUserMessage finds the text of the last user message and the number of turns to rollback to remove it and everything after it.
+func (m *Manager) GetLastUserMessage(ctx context.Context) (string, int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var lastMsgText string
+	humanMsgAbsoluteIndex := -1
+
+	total := len(m.Contents)
+
+	for i := total - 1; i >= 0; i-- {
+		if m.Contents[i].Role == "user" {
+			var textBuilder string
+			for _, part := range m.Contents[i].Parts {
+				if part.Text != "" {
+					textBuilder += part.Text
+				}
+			}
+
+			if textBuilder != "" {
+				lastMsgText = textBuilder
+				humanMsgAbsoluteIndex = i
+				break
+			}
+		}
+	}
+
+	if humanMsgAbsoluteIndex == -1 {
+		return "", 0, errors.New("no previous user message found to retry")
+	}
+
+	turnsToRollback := (total - humanMsgAbsoluteIndex + 1) / 2
+
+	return lastMsgText, turnsToRollback, nil
 }

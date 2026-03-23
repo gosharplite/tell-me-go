@@ -45,6 +45,7 @@ type streamState struct {
 	lineCount       int
 	hasScrolled     bool
 	scrollThreshold int
+	isTerm          bool
 }
 
 // NewRenderer creates a new ports.UIRenderer.
@@ -384,9 +385,11 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	ch := make(chan *llm.Content, 100)
 	ui := r.getUIState()
 
+	isTerm := false
 	threshold := 25
 	if f, ok := ui.stdout.(*os.File); ok {
 		if term.IsTerminal(int(f.Fd())) {
+			isTerm = true
 			if _, h, err := term.GetSize(int(f.Fd())); err == nil && h > 0 {
 				threshold = h - 2
 			}
@@ -398,6 +401,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		showThoughts:    showThoughts,
 		rawOutput:       rawOutput,
 		scrollThreshold: threshold,
+		isTerm:          isTerm,
 	}
 
 	if !rawOutput && ui.c(termSaveCursor) != "" {
@@ -432,20 +436,57 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 }
 
 func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState, ui uiState) {
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	firstChunkReceived := false
+	indicatorDrawn := false
+	startTime := time.Now()
+
+	tickerC, frameIdx, stopTicker := r.setupIndicator(state, ui, frames, startTime)
+	defer stopTicker()
+
+	stopIndicator := func() {
+		if !firstChunkReceived && state.isTerm {
+			if indicatorDrawn {
+				r.clearLoadingIndicator(ui, state.rawOutput)
+			}
+			firstChunkReceived = true // Mark as handled
+			stopTicker()
+			tickerC = nil
+		}
+	}
+	defer stopIndicator() // Catch-all for early exits
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-tickerC:
+			indicatorDrawn = true
+			r.updateIndicatorFrame(ui, frames, &frameIdx, startTime)
 		case content, ok := <-ch:
 			if !ok {
 				r.closeThinking(state, ui)
 				return
 			}
-			for _, part := range content.Parts {
-				state.aggregated.AddPart(part)
-				r.renderStreamPart(state, part, ui)
-			}
+
+			stopIndicator() // Clear before rendering first chunk
+			r.handleStreamContent(state, content, ui)
 		}
+	}
+}
+
+func (r *stdUIRenderer) setupIndicator(state *streamState, ui uiState, frames []string, startTime time.Time) (<-chan time.Time, int, func()) {
+	if !state.isTerm {
+		return nil, 0, func() {}
+	}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	return ticker.C, 0, ticker.Stop
+}
+
+func (r *stdUIRenderer) handleStreamContent(state *streamState, content *llm.Content, ui uiState) {
+	for _, part := range content.Parts {
+		state.aggregated.AddPart(part)
+		r.renderStreamPart(state, part, ui)
 	}
 }
 
@@ -523,6 +564,42 @@ func (r *stdUIRenderer) safePrintStderr(msg string, ui uiState) {
 		defer r.locker.TerminalUnlock()
 	}
 	_, _ = fmt.Fprint(ui.stderr, msg)
+}
+
+func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time) {
+	if r.locker != nil {
+		r.locker.TerminalLock()
+		defer r.locker.TerminalUnlock()
+	}
+
+	msg := " Thinking..."
+	if !startTime.IsZero() {
+		elapsed := int(time.Since(startTime).Seconds())
+		msg = fmt.Sprintf(" Thinking... (%ds)", elapsed)
+	}
+
+	// We use carriage return to stay on the same line.
+	// We use colorGray for the indicator.
+	_, _ = fmt.Fprintf(ui.stdout, "\r%s%s%s%s", ui.c(colorGray), frame, msg, ui.c(colorReset))
+}
+
+func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
+	if r.locker != nil {
+		r.locker.TerminalLock()
+		defer r.locker.TerminalUnlock()
+	}
+
+	// If !rawOutput and we have cursor sequences, we can use restore/clearForward
+	// otherwise use carriage return + clear line.
+	restore := ui.c(termRestoreCursor)
+	clear := ui.c(termClearForward)
+
+	if !rawOutput && restore != "" && clear != "" {
+		_, _ = fmt.Fprint(ui.stdout, restore+clear)
+	} else {
+		// \r followed by clear line escape
+		_, _ = fmt.Fprint(ui.stdout, "\r"+ui.c(termClearLine))
+	}
 }
 
 func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
@@ -669,4 +746,9 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 
 	_, _ = fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
+}
+
+func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time) {
+	r.drawLoadingIndicator(ui, frames[*idx], startTime)
+	*idx = (*idx + 1) % len(frames)
 }
