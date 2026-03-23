@@ -119,6 +119,9 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 
 	a, err := newAgent(client, bus, h, "test-provider", reg, sm, withLoader(&config.YAMLConfigLoader{}))
 	require.NoError(t, err)
+
+	// Re-inject a FileConfigWatcher to test file integration
+	a.(*agent).configWatcher = orchestration.NewFileConfigWatcher(&config.YAMLConfigLoader{}, 1000, 5, 10)
 	a.(*agent).configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
@@ -714,7 +717,7 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	// Create an agent with mock dependencies
 	a := &agent{
 		events:        events.NewSimpleEventBus(context.Background()),
-		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
+		configWatcher: orchestration.NewNoOpConfigWatcher(1000, 5, 10),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -735,7 +738,7 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 
 	a := &agent{
 		events:        mockBus,
-		configWatcher: orchestration.NewConfigWatcher(nil, 1000, 5, 10),
+		configWatcher: orchestration.NewNoOpConfigWatcher(1000, 5, 10),
 	}
 
 	err := a.applyConfig(context.Background())

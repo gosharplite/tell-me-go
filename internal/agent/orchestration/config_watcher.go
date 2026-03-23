@@ -14,8 +14,18 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
 
-// ConfigWatcher monitors configuration files for changes and caches values.
-type ConfigWatcher struct {
+// ConfigWatcher defines the interface for monitoring configuration.
+type ConfigWatcher interface {
+	SetPaths(main, session string)
+	Refresh(model string)
+	SetLimits(tokens, toolTurns, historyTurns int)
+	GetLimits() (tokens, toolTurns, historyTurns, threshold int)
+	ApplyLimits(l events.Limits)
+	SyncToStrategy(cs *ContextStrategy)
+}
+
+// FileConfigWatcher monitors configuration files for changes and caches values.
+type FileConfigWatcher struct {
 	mu                   sync.RWMutex
 	Loader               config.ConfigLoader
 	mainPath             string
@@ -35,8 +45,8 @@ type ConfigWatcher struct {
 	defaultWindow        int
 }
 
-// NewConfigWatcher creates a new ConfigWatcher with default values.
-func NewConfigWatcher(loader config.ConfigLoader, tokens, toolTurns, historyTurns int) *ConfigWatcher {
+// NewFileConfigWatcher creates a new FileConfigWatcher with default values.
+func NewFileConfigWatcher(loader config.ConfigLoader, tokens, toolTurns, historyTurns int) *FileConfigWatcher {
 	defaultThreshold := config.DefaultTieredThreshold
 	defaultWindow := 1000000
 	if dp := config.DefaultPricing(); dp.Models != nil {
@@ -47,7 +57,7 @@ func NewConfigWatcher(loader config.ConfigLoader, tokens, toolTurns, historyTurn
 		}
 	}
 
-	return &ConfigWatcher{
+	return &FileConfigWatcher{
 		Loader:               loader,
 		maxHistoryTokens:     tokens,
 		maxToolTurns:         toolTurns,
@@ -63,7 +73,7 @@ func NewConfigWatcher(loader config.ConfigLoader, tokens, toolTurns, historyTurn
 }
 
 // SetPaths sets the configuration file paths.
-func (cw *ConfigWatcher) SetPaths(main, session string) {
+func (cw *FileConfigWatcher) SetPaths(main, session string) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	cw.mainPath = main
@@ -71,7 +81,7 @@ func (cw *ConfigWatcher) SetPaths(main, session string) {
 }
 
 // Refresh checks for file changes and updates cached values if necessary.
-func (cw *ConfigWatcher) Refresh(model string) {
+func (cw *FileConfigWatcher) Refresh(model string) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 
@@ -79,7 +89,7 @@ func (cw *ConfigWatcher) Refresh(model string) {
 	cw.updateFromSession(changed)
 }
 
-func (cw *ConfigWatcher) updateFromMain(model string) bool {
+func (cw *FileConfigWatcher) updateFromMain(model string) bool {
 	if cw.mainPath == "" {
 		return false
 	}
@@ -118,7 +128,7 @@ func (cw *ConfigWatcher) updateFromMain(model string) bool {
 	return true
 }
 
-func (cw *ConfigWatcher) updateFromSession(forceUpdate bool) {
+func (cw *FileConfigWatcher) updateFromSession(forceUpdate bool) {
 	if cw.sessionPath == "" {
 		return
 	}
@@ -134,7 +144,7 @@ func (cw *ConfigWatcher) updateFromSession(forceUpdate bool) {
 	}
 }
 
-func (cw *ConfigWatcher) loadSessionConfig() {
+func (cw *FileConfigWatcher) loadSessionConfig() {
 	data, err := os.ReadFile(cw.sessionPath)
 	if err != nil {
 		return
@@ -171,7 +181,7 @@ func toInt(val interface{}, defaultVal int) int {
 }
 
 // SetLimits updates the cached limits manually.
-func (cw *ConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
+func (cw *FileConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	if tokens > 0 {
@@ -186,14 +196,14 @@ func (cw *ConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 }
 
 // GetLimits returns the current cached limits.
-func (cw *ConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns, threshold int) {
+func (cw *FileConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns, threshold int) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns, cw.tieredThreshold
 }
 
 // ApplyLimits updates the cached limits from an events.Limits struct.
-func (cw *ConfigWatcher) ApplyLimits(l events.Limits) {
+func (cw *FileConfigWatcher) ApplyLimits(l events.Limits) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	if l.MaxHistoryTokens > 0 {
@@ -211,7 +221,94 @@ func (cw *ConfigWatcher) ApplyLimits(l events.Limits) {
 }
 
 // SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
-func (cw *ConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
+func (cw *FileConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	if cs != nil {
+		cs.SetLimits(cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns)
+		cs.setContextWindow(cw.contextWindow)
+		cs.setTieredThreshold(cw.tieredThreshold)
+	}
+}
+
+// NoOpConfigWatcher implements ConfigWatcher but performs no file operations.
+type NoOpConfigWatcher struct {
+	mu               sync.RWMutex
+	maxHistoryTokens int
+	maxToolTurns     int
+	maxHistoryTurns  int
+	tieredThreshold  int
+	contextWindow    int
+}
+
+// NewNoOpConfigWatcher creates a new NoOpConfigWatcher with default values.
+func NewNoOpConfigWatcher(tokens, toolTurns, historyTurns int) *NoOpConfigWatcher {
+	defaultThreshold := config.DefaultTieredThreshold
+	if dp := config.DefaultPricing(); dp.Models != nil {
+		if m, ok := dp.Models["default"]; ok {
+			if m.TieredThreshold > 0 {
+				defaultThreshold = int(m.TieredThreshold)
+			}
+		}
+	}
+
+	return &NoOpConfigWatcher{
+		maxHistoryTokens: tokens,
+		maxToolTurns:     toolTurns,
+		maxHistoryTurns:  historyTurns,
+		tieredThreshold:  defaultThreshold,
+		contextWindow:    1000000, // Matches defaultWindow in NewFileConfigWatcher
+	}
+}
+
+// SetPaths is a no-op.
+func (cw *NoOpConfigWatcher) SetPaths(main, session string) {}
+
+// Refresh is a no-op.
+func (cw *NoOpConfigWatcher) Refresh(model string) {}
+
+// SetLimits updates the cached limits manually.
+func (cw *NoOpConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	if tokens > 0 {
+		cw.maxHistoryTokens = tokens
+	}
+	if toolTurns > 0 {
+		cw.maxToolTurns = toolTurns
+	}
+	if historyTurns > 0 {
+		cw.maxHistoryTurns = historyTurns
+	}
+}
+
+// GetLimits returns the current cached limits.
+func (cw *NoOpConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns, threshold int) {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns, cw.tieredThreshold
+}
+
+// ApplyLimits updates the cached limits from an events.Limits struct.
+func (cw *NoOpConfigWatcher) ApplyLimits(l events.Limits) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	if l.MaxHistoryTokens > 0 {
+		cw.maxHistoryTokens = l.MaxHistoryTokens
+	}
+	if l.MaxToolTurns > 0 {
+		cw.maxToolTurns = l.MaxToolTurns
+	}
+	if l.MaxHistoryTurns > 0 {
+		cw.maxHistoryTurns = l.MaxHistoryTurns
+	}
+	if l.TieredThreshold > 0 {
+		cw.tieredThreshold = l.TieredThreshold
+	}
+}
+
+// SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
+func (cw *NoOpConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	if cs != nil {

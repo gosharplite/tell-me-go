@@ -37,7 +37,7 @@ type agent struct {
 	gateway       domain_llm.LLMGateway
 	engine        *turnEngine
 	ctxManager    *orchestration.ContextManager
-	configWatcher *orchestration.ConfigWatcher
+	configWatcher orchestration.ConfigWatcher
 	strategy      *orchestration.ContextStrategy
 	executor      *executor.ToolExecutor
 	events        events.EventBus
@@ -62,7 +62,7 @@ func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 
 	a := &agent{
 		gateway:       client,
-		configWatcher: orchestration.NewConfigWatcher(cfg.loader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
+		configWatcher: orchestration.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
