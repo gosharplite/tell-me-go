@@ -115,7 +115,7 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 		}()
 
 		// Wait for initial draw
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 		if !strings.Contains(stdout.String(), "Thinking...") {
 			t.Error("expected stdout to contain 'Thinking...'")
 		}
@@ -159,7 +159,7 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 			r.processStream(ctx, ch, state, ui)
 		}()
 
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Done"}}}
 		close(ch)
 		wg.Wait()
@@ -193,7 +193,7 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 			r.processStream(ctx, ch, state, ui)
 		}()
 
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 		cancel() // Cancel context
 		wg.Wait()
 

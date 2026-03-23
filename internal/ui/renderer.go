@@ -438,6 +438,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState, ui uiState) {
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	firstChunkReceived := false
+	indicatorDrawn := false
 	startTime := time.Now()
 
 	tickerC, frameIdx, stopTicker := r.setupIndicator(state, ui, frames, startTime)
@@ -445,7 +446,9 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 
 	stopIndicator := func() {
 		if !firstChunkReceived && state.isTerm {
-			r.clearLoadingIndicator(ui, state.rawOutput)
+			if indicatorDrawn {
+				r.clearLoadingIndicator(ui, state.rawOutput)
+			}
 			firstChunkReceived = true // Mark as handled
 			stopTicker()
 			tickerC = nil
@@ -458,6 +461,7 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 		case <-ctx.Done():
 			return
 		case <-tickerC:
+			indicatorDrawn = true
 			r.updateIndicatorFrame(ui, frames, &frameIdx, startTime)
 		case content, ok := <-ch:
 			if !ok {
@@ -476,8 +480,7 @@ func (r *stdUIRenderer) setupIndicator(state *streamState, ui uiState, frames []
 		return nil, 0, func() {}
 	}
 	ticker := time.NewTicker(200 * time.Millisecond)
-	r.drawLoadingIndicator(ui, frames[0], startTime)
-	return ticker.C, 1, ticker.Stop
+	return ticker.C, 0, ticker.Stop
 }
 
 func (r *stdUIRenderer) handleStreamContent(state *streamState, content *llm.Content, ui uiState) {
