@@ -43,6 +43,7 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		agent.WithSummarizer(summarizer),
 		agent.WithSkillSelector(skillSelector),
 		agent.WithInternalTools(),
-		agent.WithModel(cfg.Model),
+		agent.WithSessionCostTracker(deps.GetTracker()),
+		agent.WithPricing(cfg.Model, cfg.Mode, deps.GetPricingOverrides()),
 	)
 }
