@@ -438,8 +438,9 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState, ui uiState) {
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	firstChunkReceived := false
+	startTime := time.Now()
 
-	tickerC, frameIdx, stopTicker := r.setupIndicator(state, ui, frames)
+	tickerC, frameIdx, stopTicker := r.setupIndicator(state, ui, frames, startTime)
 	defer stopTicker()
 
 	stopIndicator := func() {
@@ -457,7 +458,7 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 		case <-ctx.Done():
 			return
 		case <-tickerC:
-			r.updateIndicatorFrame(ui, frames, &frameIdx)
+			r.updateIndicatorFrame(ui, frames, &frameIdx, startTime)
 		case content, ok := <-ch:
 			if !ok {
 				r.closeThinking(state, ui)
@@ -470,12 +471,12 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 	}
 }
 
-func (r *stdUIRenderer) setupIndicator(state *streamState, ui uiState, frames []string) (<-chan time.Time, int, func()) {
+func (r *stdUIRenderer) setupIndicator(state *streamState, ui uiState, frames []string, startTime time.Time) (<-chan time.Time, int, func()) {
 	if !state.isTerm {
 		return nil, 0, func() {}
 	}
 	ticker := time.NewTicker(200 * time.Millisecond)
-	r.drawLoadingIndicator(ui, frames[0])
+	r.drawLoadingIndicator(ui, frames[0], startTime)
 	return ticker.C, 1, ticker.Stop
 }
 
@@ -562,14 +563,21 @@ func (r *stdUIRenderer) safePrintStderr(msg string, ui uiState) {
 	_, _ = fmt.Fprint(ui.stderr, msg)
 }
 
-func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string) {
+func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time) {
 	if r.locker != nil {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
 	}
+
+	msg := " Thinking..."
+	if !startTime.IsZero() {
+		elapsed := int(time.Since(startTime).Seconds())
+		msg = fmt.Sprintf(" Thinking... (%ds)", elapsed)
+	}
+
 	// We use carriage return to stay on the same line.
 	// We use colorGray for the indicator.
-	_, _ = fmt.Fprintf(ui.stdout, "\r%s%s Thinking...%s", ui.c(colorGray), frame, ui.c(colorReset))
+	_, _ = fmt.Fprintf(ui.stdout, "\r%s%s%s%s", ui.c(colorGray), frame, msg, ui.c(colorReset))
 }
 
 func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
@@ -737,7 +745,7 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
 }
 
-func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int) {
-	r.drawLoadingIndicator(ui, frames[*idx])
+func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time) {
+	r.drawLoadingIndicator(ui, frames[*idx], startTime)
 	*idx = (*idx + 1) % len(frames)
 }
