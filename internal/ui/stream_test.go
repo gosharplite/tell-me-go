@@ -94,8 +94,18 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
+	// Helper to safely read stdout
+	readStdout := func() string {
+		locker.TerminalLock()
+		defer locker.TerminalUnlock()
+		return stdout.String()
+	}
+
 	t.Run("Shows and clears indicator", func(t *testing.T) {
+		locker.TerminalLock()
 		stdout.Reset()
+		locker.TerminalUnlock()
+
 		ch := make(chan *llm.Content)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -116,7 +126,7 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 
 		// Wait for initial draw
 		time.Sleep(250 * time.Millisecond)
-		if !strings.Contains(stdout.String(), "Thinking...") {
+		if !strings.Contains(readStdout(), "Thinking...") {
 			t.Error("expected stdout to contain 'Thinking...'")
 		}
 
@@ -126,21 +136,25 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 		wg.Wait()
 
 		// Should contain Done
-		if !strings.Contains(stdout.String(), "Done") {
-			t.Errorf("expected stdout to contain 'Done', got %q", stdout.String())
+		out := readStdout()
+		if !strings.Contains(out, "Done") {
+			t.Errorf("expected stdout to contain 'Done', got %q", out)
 		}
 
 		// Should contain clear sequence (either restore cursor + clear forward or clear line)
-		hasRestore := strings.Contains(stdout.String(), "\x1b8") || strings.Contains(stdout.String(), "\0338")
-		hasClearLine := strings.Contains(stdout.String(), "\x1b[2K") || strings.Contains(stdout.String(), "\033[2K")
+		hasRestore := strings.Contains(out, "\x1b8") || strings.Contains(out, "\0338")
+		hasClearLine := strings.Contains(out, "\x1b[2K") || strings.Contains(out, "\033[2K")
 
 		if !hasRestore && !hasClearLine {
-			t.Errorf("expected stdout to contain clear sequence, got %q", stdout.String())
+			t.Errorf("expected stdout to contain clear sequence, got %q", out)
 		}
 	})
 
 	t.Run("Shows and clears indicator in raw mode", func(t *testing.T) {
+		locker.TerminalLock()
 		stdout.Reset()
+		locker.TerminalUnlock()
+
 		ch := make(chan *llm.Content)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -164,18 +178,22 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 		close(ch)
 		wg.Wait()
 
-		if !strings.Contains(stdout.String(), "Done") {
-			t.Errorf("expected stdout to contain 'Done', got %q", stdout.String())
+		out := readStdout()
+		if !strings.Contains(out, "Done") {
+			t.Errorf("expected stdout to contain 'Done', got %q", out)
 		}
 
 		// In raw mode it should use clear line escape
-		if !strings.Contains(stdout.String(), "\x1b[2K") && !strings.Contains(stdout.String(), "\033[2K") {
-			t.Errorf("expected stdout to contain clear line escape (\\033[2K), got %q", stdout.String())
+		if !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
+			t.Errorf("expected stdout to contain clear line escape (\\033[2K), got %q", out)
 		}
 	})
 
 	t.Run("Clears indicator on context cancellation", func(t *testing.T) {
+		locker.TerminalLock()
 		stdout.Reset()
+		locker.TerminalUnlock()
+
 		ch := make(chan *llm.Content)
 		ctx, cancel := context.WithCancel(context.Background())
 
@@ -198,11 +216,13 @@ func TestProcessStream_LoadingIndicator(t *testing.T) {
 		wg.Wait()
 
 		// Should contain clear sequence
-		hasRestore := strings.Contains(stdout.String(), "\x1b8") || strings.Contains(stdout.String(), "\0338")
-		hasClearLine := strings.Contains(stdout.String(), "\x1b[2K") || strings.Contains(stdout.String(), "\033[2K")
+		out := readStdout()
+		hasRestore := strings.Contains(out, "\x1b8") || strings.Contains(out, "\0338")
+		hasClearLine := strings.Contains(out, "\x1b[2K") || strings.Contains(out, "\033[2K")
 
 		if !hasRestore && !hasClearLine {
-			t.Errorf("expected stdout to contain clear sequence on cancel, got %q", stdout.String())
+			t.Errorf("expected stdout to contain clear sequence on cancel, got %q", out)
 		}
 	})
 }
+
