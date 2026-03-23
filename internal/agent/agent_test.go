@@ -117,11 +117,10 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus(context.Background())
 
-	a, err := newAgent(client, bus, h, "test-provider", reg, sm, withLoader(&config.YAMLConfigLoader{}))
+	a, err := newAgent(client, bus, h, "test-provider", reg, sm, withLoader(&config.YAMLConfigLoader{}), withSessionLoader(&config.JSONSessionLoader{}))
 	require.NoError(t, err)
 
-	// Re-inject a FileConfigWatcher to test file integration
-	a.(*agent).configWatcher = orchestration.NewFileConfigWatcher(&config.YAMLConfigLoader{}, &config.JSONSessionLoader{}, 1000, 5, 10)
+	// Re-injecting path configuration for integration test
 	a.(*agent).configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
