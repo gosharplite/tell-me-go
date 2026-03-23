@@ -99,6 +99,7 @@ type JSONSessionLoader struct{}
 type sessionDTO struct {
 	MaxHistoryTokens *int `json:"MAX_HISTORY_TOKENS"`
 	MaxToolTurns     *int `json:"MAX_TURNS"` // Standardized to match YAML
+	LegacyToolTurns  *int `json:"MAX_TOOL_TURNS"`
 	MaxHistoryTurns  *int `json:"MAX_HISTORY_TURNS"`
 }
 
@@ -112,6 +113,11 @@ func (l *JSONSessionLoader) LoadSession(path string) (*domain_config.SessionConf
 	var dto sessionDTO
 	if err := json.Unmarshal(data, &dto); err != nil {
 		return nil, fmt.Errorf("parse session config: %w", err)
+	}
+
+	// Fallback for legacy key
+	if dto.MaxToolTurns == nil && dto.LegacyToolTurns != nil {
+		dto.MaxToolTurns = dto.LegacyToolTurns
 	}
 
 	cfg := &domain_config.SessionConfig{

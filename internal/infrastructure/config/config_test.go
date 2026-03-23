@@ -232,4 +232,20 @@ func TestJSONSessionLoader_LoadSession(t *testing.T) {
 			t.Error("expected error for non-existent file, got nil")
 		}
 	})
+
+	t.Run("LegacyToolTurns", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "legacy.json")
+		content := `{"MAX_TOOL_TURNS": 10}`
+		_ = os.WriteFile(path, []byte(content), 0644)
+
+		cfg, err := loader.LoadSession(path)
+		if err != nil {
+			t.Fatalf("LoadSession failed: %v", err)
+		}
+
+		if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 10 {
+			t.Errorf("expected 10 tool turns from legacy key, got %v", cfg.MaxToolTurns)
+		}
+	})
 }
