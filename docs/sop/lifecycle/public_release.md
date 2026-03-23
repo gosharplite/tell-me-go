@@ -12,15 +12,27 @@ This SOP defines the automated workflow for publishing a new public release of t
 
 ---
 
+### Prerequisites
+- Go toolchain 1.26+.
+- Git CLI (configured with appropriate remote access).
+- Clean working directory (verified by `git status`).
+- Active session with `bypass_confirmation` enabled.
+
+---
+
 ### Step-by-Step Instructions
 
 #### 1. Task Initialization
-1.  **Clear Workspace State**: Use `manage_tasks` (action: clear) to ensure a fresh environment.
-2.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
-3.  **Enable Automation**: Execute `bypass_confirmation`.
-4.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release vX.Y.Z Readiness"`.
-5.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
-6.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `1.1.0`). Store this in the `manage_tasks`.
+1.  **Anchor Tasking**: Use `manage_tasks` (action: add) to set the anchor: `"SOP Compliance: public_release.md"`.
+2.  **Clear Workspace State**: Use `manage_tasks` (action: clear) to ensure a fresh environment.
+3.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
+4.  **Enable Automation**: Execute `bypass_confirmation`.
+5.  **Initialize Milestone**: Use `manage_tasks` (action: add) to track the release: `"Public Release vX.Y.Z Readiness"`.
+6.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: 
+    ```bash
+    git fetch origin && git checkout dev && git pull origin dev
+    ```
+7.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `v1.1.0`). Store this in the `manage_tasks`.
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
@@ -31,8 +43,8 @@ verify_release_readiness
 
 #### 3. Preparation
 1.  **Note**: This project relies on Git tags as the single source of truth for versioning. The version is injected at build time using Go linker flags (`ldflags`).
-2.  Run `go mod tidy`.
-3.  Ensure your code is thoroughly tested.
+2.  Run `go mod tidy` to ensure `go.sum` is up-to-date.
+3.  **Final Build Check**: Run `make build VERSION=vX.Y.Z` (using your target version) to ensure everything compiles with the version flag.
 
 #### 4. Git Tagging and Remote Synchronization
 1.  **Sync and Merge into main**:
@@ -40,20 +52,17 @@ verify_release_readiness
     git checkout main
     git fetch origin
     git reset --hard origin/main  # Safety: Ensure main matches remote truth
-    git merge dev --no-ff -m "Release version v1.1.0" # Avoid interactive editor pop-up
+    git merge dev --no-ff -m "Release version vX.Y.Z"
     ```
 2.  **Tag the release**:
     ```bash
-    git tag -a v1.1.0 -m "Release version 1.1.0"
+    git tag -a vX.Y.Z -m "Release version vX.Y.Z"
     ```
-3.  **Build and Verify Binary**: 
-    Inject the version flag manually or via `make`:
+3.  **Build and Verify Binary**:
     ```bash
-    go build -ldflags="-X 'main.version=1.1.0'" -o tell-me-go ./cmd/tell-me-go
-    # OR
-    make build VERSION=1.1.0
+    make build VERSION=vX.Y.Z
     ```
-    Verify the binary reports the correct version: `./tell-me-go version` (if a version command exists).
+    Verify the binary reports the correct version: `./tell-me-go --version` (or relevant version command).
 4.  **Push Everything**:
     ```bash
     git push origin main dev --tags
@@ -67,3 +76,43 @@ verify_release_readiness
 1.  **Verify Sync**: Run `git status` to ensure all branches are clean and synced.
 2.  **Finalize Task**: Use `manage_tasks` (action: update) to mark the release task as `completed`.
 3.  **Final Cleanup**: Execute `manage_tasks` (action: clear) to leave a clean environment for the next session.
+4.  **Revoke Automation**: Execute `revoke_bypass` to restore security prompts.
+
+---
+
+### Code Templates
+
+#### Version Injection (ldflags)
+If the `Makefile` is unavailable, use this template:
+```bash
+go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
+```
+
+---
+
+### Verification/Testing
+1.  **Tag Existence**: `git tag -l vX.Y.Z` must return the new tag.
+2.  **Binary Integrity**: `./tell-me-go --version` must output exactly `vX.Y.Z`.
+3.  **Remote State**: Check the remote repository (e.g., GitHub/Azure DevOps) to ensure tags and branch updates are visible.
+4.  **Readiness Audit**: The `verify_release_readiness` report must be attached or noted in the release task.
+
+---
+
+### Best Practices
+- **Never Re-tag**: If a release fails after tagging, increment the patch version (e.g., `v1.1.0` -> `v1.1.1`) instead of moving the tag.
+- **Fast-Forward Forbidden**: Always use `--no-ff` when merging to `main` to preserve release history.
+- **Atomic Release**: Do not commit any other changes to `main` during the release process except the merge from `dev`.
+- **Pre-tag Sync**: Always run `git fetch origin` before tagging to avoid conflicts with tags created by others.
+
+---
+
+### Implementation Checklist
+- [x] Workspace is clean and `bypass_confirmation` is active.
+- [x] Target version `vX.Y.Z` is confirmed by user.
+- [x] `verify_release_readiness` returned all **[OK]**.
+- [x] `go mod tidy` executed.
+- [x] `dev` merged into `main` with `--no-ff`.
+- [x] Git tag `vX.Y.Z` created and verified locally.
+- [x] Binary built with correct `ldflags` and version verified.
+- [x] Changes and tags pushed to remote origin.
+- [x] `revoke_bypass` executed.
