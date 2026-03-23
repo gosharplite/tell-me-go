@@ -121,7 +121,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Re-inject a FileConfigWatcher to test file integration
-	a.(*agent).configWatcher = orchestration.NewFileConfigWatcher(&config.YAMLConfigLoader{}, 1000, 5, 10)
+	a.(*agent).configWatcher = orchestration.NewFileConfigWatcher(&config.YAMLConfigLoader{}, &config.JSONSessionLoader{}, 1000, 5, 10)
 	a.(*agent).configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update

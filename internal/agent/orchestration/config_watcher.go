@@ -4,9 +4,7 @@
 package orchestration
 
 import (
-	"encoding/json"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -28,6 +26,7 @@ type ConfigWatcher interface {
 type FileConfigWatcher struct {
 	mu                   sync.RWMutex
 	Loader               config.ConfigLoader
+	SessionLoader        config.SessionLoader
 	mainPath             string
 	sessionPath          string
 	lastMainMod          time.Time
@@ -46,7 +45,7 @@ type FileConfigWatcher struct {
 }
 
 // NewFileConfigWatcher creates a new FileConfigWatcher with default values.
-func NewFileConfigWatcher(loader config.ConfigLoader, tokens, toolTurns, historyTurns int) *FileConfigWatcher {
+func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.SessionLoader, tokens, toolTurns, historyTurns int) *FileConfigWatcher {
 	defaultThreshold := config.DefaultTieredThreshold
 	defaultWindow := 1000000
 	if dp := config.DefaultPricing(); dp.Models != nil {
@@ -58,7 +57,8 @@ func NewFileConfigWatcher(loader config.ConfigLoader, tokens, toolTurns, history
 	}
 
 	return &FileConfigWatcher{
-		Loader:               loader,
+		Loader:               mainLoader,
+		SessionLoader:        sessionLoader,
 		maxHistoryTokens:     tokens,
 		maxToolTurns:         toolTurns,
 		maxHistoryTurns:      historyTurns,
@@ -145,39 +145,22 @@ func (cw *FileConfigWatcher) updateFromSession(forceUpdate bool) {
 }
 
 func (cw *FileConfigWatcher) loadSessionConfig() {
-	data, err := os.ReadFile(cw.sessionPath)
-	if err != nil {
+	if cw.SessionLoader == nil {
 		return
 	}
-
-	var pCfg map[string]interface{}
-	if err := json.Unmarshal(data, &pCfg); err != nil {
+	sessCfg, err := cw.SessionLoader.LoadSession(cw.sessionPath)
+	if err != nil || sessCfg == nil {
 		return
 	}
-
-	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
-		cw.maxHistoryTokens = toInt(val, cw.maxHistoryTokens)
+	if sessCfg.MaxHistoryTokens != nil {
+		cw.maxHistoryTokens = *sessCfg.MaxHistoryTokens
 	}
-	if val, ok := pCfg["MAX_TURNS"]; ok {
-		cw.maxToolTurns = toInt(val, cw.maxToolTurns)
-	} else if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
-		cw.maxToolTurns = toInt(val, cw.maxToolTurns)
+	if sessCfg.MaxToolTurns != nil {
+		cw.maxToolTurns = *sessCfg.MaxToolTurns
 	}
-	if val, ok := pCfg["MAX_HISTORY_TURNS"]; ok {
-		cw.maxHistoryTurns = toInt(val, cw.maxHistoryTurns)
+	if sessCfg.MaxHistoryTurns != nil {
+		cw.maxHistoryTurns = *sessCfg.MaxHistoryTurns
 	}
-}
-
-func toInt(val interface{}, defaultVal int) int {
-	switch v := val.(type) {
-	case float64:
-		return int(v)
-	case string:
-		if i, err := strconv.Atoi(v); err == nil && i > 0 {
-			return i
-		}
-	}
-	return defaultVal
 }
 
 // SetLimits updates the cached limits manually.
