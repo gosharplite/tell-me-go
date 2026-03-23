@@ -175,77 +175,78 @@ PROVIDERS:
 	}
 }
 
-func TestJSONSessionLoader_LoadSession(t *testing.T) {
+func TestJSONSessionLoader_LoadSession_ValidAllFields(t *testing.T) {
 	loader := &JSONSessionLoader{}
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "session.json")
+	content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
+	_ = os.WriteFile(path, []byte(content), 0644)
 
-	t.Run("ValidAllFields", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "session.json")
-		content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
-		_ = os.WriteFile(path, []byte(content), 0644)
+	cfg, err := loader.LoadSession(path)
+	if err != nil {
+		t.Fatalf("LoadSession failed: %v", err)
+	}
 
-		cfg, err := loader.LoadSession(path)
-		if err != nil {
-			t.Fatalf("LoadSession failed: %v", err)
-		}
+	if cfg.MaxHistoryTokens == nil || *cfg.MaxHistoryTokens != 500 {
+		t.Errorf("expected 500 tokens, got %v", cfg.MaxHistoryTokens)
+	}
+	if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 15 {
+		t.Errorf("expected 15 tool turns, got %v", cfg.MaxToolTurns)
+	}
+	if cfg.MaxHistoryTurns == nil || *cfg.MaxHistoryTurns != 25 {
+		t.Errorf("expected 25 history turns, got %v", cfg.MaxHistoryTurns)
+	}
+}
 
-		if cfg.MaxHistoryTokens == nil || *cfg.MaxHistoryTokens != 500 {
-			t.Errorf("expected 500 tokens, got %v", cfg.MaxHistoryTokens)
-		}
-		if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 15 {
-			t.Errorf("expected 15 tool turns, got %v", cfg.MaxToolTurns)
-		}
-		if cfg.MaxHistoryTurns == nil || *cfg.MaxHistoryTurns != 25 {
-			t.Errorf("expected 25 history turns, got %v", cfg.MaxHistoryTurns)
-		}
-	})
+func TestJSONSessionLoader_LoadSession_EmptyJSON(t *testing.T) {
+	loader := &JSONSessionLoader{}
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "empty.json")
+	_ = os.WriteFile(path, []byte("{}"), 0644)
 
-	t.Run("EmptyJSON", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "empty.json")
-		_ = os.WriteFile(path, []byte("{}"), 0644)
+	cfg, err := loader.LoadSession(path)
+	if err != nil {
+		t.Fatalf("LoadSession failed: %v", err)
+	}
 
-		cfg, err := loader.LoadSession(path)
-		if err != nil {
-			t.Fatalf("LoadSession failed: %v", err)
-		}
+	if cfg.MaxHistoryTokens != nil || cfg.MaxToolTurns != nil || cfg.MaxHistoryTurns != nil {
+		t.Error("expected all fields to be nil for empty JSON")
+	}
+}
 
-		if cfg.MaxHistoryTokens != nil || cfg.MaxToolTurns != nil || cfg.MaxHistoryTurns != nil {
-			t.Error("expected all fields to be nil for empty JSON")
-		}
-	})
+func TestJSONSessionLoader_LoadSession_InvalidJSON(t *testing.T) {
+	loader := &JSONSessionLoader{}
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "invalid.json")
+	_ = os.WriteFile(path, []byte("{invalid}"), 0644)
 
-	t.Run("InvalidJSON", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "invalid.json")
-		_ = os.WriteFile(path, []byte("{invalid}"), 0644)
+	_, err := loader.LoadSession(path)
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
 
-		_, err := loader.LoadSession(path)
-		if err == nil {
-			t.Error("expected error for invalid JSON, got nil")
-		}
-	})
+func TestJSONSessionLoader_LoadSession_FileNotFound(t *testing.T) {
+	loader := &JSONSessionLoader{}
+	_, err := loader.LoadSession("non-existent.json")
+	if err == nil {
+		t.Error("expected error for non-existent file, got nil")
+	}
+}
 
-	t.Run("FileNotFound", func(t *testing.T) {
-		_, err := loader.LoadSession("non-existent.json")
-		if err == nil {
-			t.Error("expected error for non-existent file, got nil")
-		}
-	})
+func TestJSONSessionLoader_LoadSession_LegacyToolTurns(t *testing.T) {
+	loader := &JSONSessionLoader{}
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "legacy.json")
+	content := `{"MAX_TOOL_TURNS": 10}`
+	_ = os.WriteFile(path, []byte(content), 0644)
 
-	t.Run("LegacyToolTurns", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "legacy.json")
-		content := `{"MAX_TOOL_TURNS": 10}`
-		_ = os.WriteFile(path, []byte(content), 0644)
+	cfg, err := loader.LoadSession(path)
+	if err != nil {
+		t.Fatalf("LoadSession failed: %v", err)
+	}
 
-		cfg, err := loader.LoadSession(path)
-		if err != nil {
-			t.Fatalf("LoadSession failed: %v", err)
-		}
-
-		if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 10 {
-			t.Errorf("expected 10 tool turns from legacy key, got %v", cfg.MaxToolTurns)
-		}
-	})
+	if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 10 {
+		t.Errorf("expected 10 tool turns from legacy key, got %v", cfg.MaxToolTurns)
+	}
 }

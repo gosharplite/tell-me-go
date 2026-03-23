@@ -95,10 +95,3 @@ func WithSkillSelector(s skills.SkillSelector) Option {
 		c.skillSelector = s
 	}
 }
-
-// WithModel sets the target LLM model for the agent.
-func WithModel(model string) Option {
-	return func(c *agentConfig) {
-		c.model = model
-	}
-}
