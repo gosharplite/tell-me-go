@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -97,6 +96,13 @@ func DefaultPricing() pricing.PricingData {
 // JSONSessionLoader implements domain_config.SessionLoader.
 type JSONSessionLoader struct{}
 
+type sessionDTO struct {
+	MaxHistoryTokens *int `json:"MAX_HISTORY_TOKENS"`
+	MaxToolTurns     *int `json:"MAX_TOOL_TURNS"`
+	MaxTurns         *int `json:"MAX_TURNS"` // Legacy fallback
+	MaxHistoryTurns  *int `json:"MAX_HISTORY_TURNS"`
+}
+
 // LoadSession reads and parses a session override JSON file.
 func (l *JSONSessionLoader) LoadSession(path string) (*domain_config.SessionConfig, error) {
 	data, err := os.ReadFile(path)
@@ -104,46 +110,22 @@ func (l *JSONSessionLoader) LoadSession(path string) (*domain_config.SessionConf
 		return nil, err
 	}
 
-	var pCfg map[string]interface{}
-	if err := json.Unmarshal(data, &pCfg); err != nil {
-		return nil, err
+	var dto sessionDTO
+	if err := json.Unmarshal(data, &dto); err != nil {
+		return nil, fmt.Errorf("parse session config: %w", err)
 	}
 
-	cfg := &domain_config.SessionConfig{}
+	cfg := &domain_config.SessionConfig{
+		MaxHistoryTokens: dto.MaxHistoryTokens,
+		MaxHistoryTurns:  dto.MaxHistoryTurns,
+	}
 
-	// Implement the safe extraction logic
-	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
-		if v := toInt(val); v != nil {
-			cfg.MaxHistoryTokens = v
-		}
-	}
-	if val, ok := pCfg["MAX_TURNS"]; ok {
-		if v := toInt(val); v != nil {
-			cfg.MaxToolTurns = v
-		}
-	} else if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
-		if v := toInt(val); v != nil {
-			cfg.MaxToolTurns = v
-		}
-	}
-	if val, ok := pCfg["MAX_HISTORY_TURNS"]; ok {
-		if v := toInt(val); v != nil {
-			cfg.MaxHistoryTurns = v
-		}
+	// Support legacy fallback for MaxToolTurns
+	if dto.MaxToolTurns != nil {
+		cfg.MaxToolTurns = dto.MaxToolTurns
+	} else if dto.MaxTurns != nil {
+		cfg.MaxToolTurns = dto.MaxTurns
 	}
 
 	return cfg, nil
-}
-
-func toInt(val interface{}) *int {
-	switch v := val.(type) {
-	case float64:
-		i := int(v)
-		return &i
-	case string:
-		if i, err := strconv.Atoi(v); err == nil && i > 0 {
-			return &i
-		}
-	}
-	return nil
 }

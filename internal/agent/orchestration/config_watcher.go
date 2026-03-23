@@ -4,6 +4,7 @@
 package orchestration
 
 import (
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -27,6 +28,7 @@ type FileConfigWatcher struct {
 	mu                   sync.RWMutex
 	Loader               config.ConfigLoader
 	SessionLoader        config.SessionLoader
+	logger               *slog.Logger
 	mainPath             string
 	sessionPath          string
 	lastMainMod          time.Time
@@ -45,7 +47,7 @@ type FileConfigWatcher struct {
 }
 
 // NewFileConfigWatcher creates a new FileConfigWatcher with default values.
-func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.SessionLoader, tokens, toolTurns, historyTurns int) *FileConfigWatcher {
+func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.SessionLoader, tokens, toolTurns, historyTurns int, logger *slog.Logger) *FileConfigWatcher {
 	defaultThreshold := config.DefaultTieredThreshold
 	defaultWindow := 1000000
 	if dp := config.DefaultPricing(); dp.Models != nil {
@@ -59,6 +61,7 @@ func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.S
 	return &FileConfigWatcher{
 		Loader:               mainLoader,
 		SessionLoader:        sessionLoader,
+		logger:               logger,
 		maxHistoryTokens:     tokens,
 		maxToolTurns:         toolTurns,
 		maxHistoryTurns:      historyTurns,
@@ -149,7 +152,13 @@ func (cw *FileConfigWatcher) loadSessionConfig() {
 		return
 	}
 	sessCfg, err := cw.SessionLoader.LoadSession(cw.sessionPath)
-	if err != nil || sessCfg == nil {
+	if err != nil {
+		if !os.IsNotExist(err) && cw.logger != nil {
+			cw.logger.Warn("Failed to load session config", "path", cw.sessionPath, "error", err)
+		}
+		return
+	}
+	if sessCfg == nil {
 		return
 	}
 	if sessCfg.MaxHistoryTokens != nil {

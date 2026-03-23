@@ -174,3 +174,78 @@ PROVIDERS:
 		t.Errorf("expected legacy ThinkingLevel to be synced to 'MEDIUM', got '%s'", cfg.ThinkingLevel)
 	}
 }
+
+func TestJSONSessionLoader_LoadSession(t *testing.T) {
+	loader := &JSONSessionLoader{}
+
+	t.Run("ValidAllFields", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "session.json")
+		content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TOOL_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
+		_ = os.WriteFile(path, []byte(content), 0644)
+
+		cfg, err := loader.LoadSession(path)
+		if err != nil {
+			t.Fatalf("LoadSession failed: %v", err)
+		}
+
+		if cfg.MaxHistoryTokens == nil || *cfg.MaxHistoryTokens != 500 {
+			t.Errorf("expected 500 tokens, got %v", cfg.MaxHistoryTokens)
+		}
+		if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 15 {
+			t.Errorf("expected 15 tool turns, got %v", cfg.MaxToolTurns)
+		}
+		if cfg.MaxHistoryTurns == nil || *cfg.MaxHistoryTurns != 25 {
+			t.Errorf("expected 25 history turns, got %v", cfg.MaxHistoryTurns)
+		}
+	})
+
+	t.Run("LegacyFallback", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "session_legacy.json")
+		content := `{"MAX_TURNS": 10}`
+		_ = os.WriteFile(path, []byte(content), 0644)
+
+		cfg, err := loader.LoadSession(path)
+		if err != nil {
+			t.Fatalf("LoadSession failed: %v", err)
+		}
+
+		if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 10 {
+			t.Errorf("expected 10 tool turns (fallback), got %v", cfg.MaxToolTurns)
+		}
+	})
+
+	t.Run("EmptyJSON", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "empty.json")
+		_ = os.WriteFile(path, []byte("{}"), 0644)
+
+		cfg, err := loader.LoadSession(path)
+		if err != nil {
+			t.Fatalf("LoadSession failed: %v", err)
+		}
+
+		if cfg.MaxHistoryTokens != nil || cfg.MaxToolTurns != nil || cfg.MaxHistoryTurns != nil {
+			t.Error("expected all fields to be nil for empty JSON")
+		}
+	})
+
+	t.Run("InvalidJSON", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "invalid.json")
+		_ = os.WriteFile(path, []byte("{invalid}"), 0644)
+
+		_, err := loader.LoadSession(path)
+		if err == nil {
+			t.Error("expected error for invalid JSON, got nil")
+		}
+	})
+
+	t.Run("FileNotFound", func(t *testing.T) {
+		_, err := loader.LoadSession("non-existent.json")
+		if err == nil {
+			t.Error("expected error for non-existent file, got nil")
+		}
+	})
+}

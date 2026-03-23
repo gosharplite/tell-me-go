@@ -60,7 +60,7 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "session.json")
 
-	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths("", sessionPath)
 
 	// 1. Initial defaults
@@ -101,7 +101,7 @@ func TestConfigWatcher_MalformedJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "malformed.json")
 
-	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths("", sessionPath)
 
 	if err := os.WriteFile(sessionPath, []byte(`{invalid}`), 0644); err != nil {
@@ -117,7 +117,7 @@ func TestConfigWatcher_MalformedJSON(t *testing.T) {
 }
 
 func TestConfigWatcher_MissingFile(t *testing.T) {
-	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths("", "non-existent.json")
 
 	// Should not panic
@@ -134,7 +134,7 @@ func setupConfigWatcherTest(t *testing.T) (*FileConfigWatcher, string, string) {
 	mainPath := filepath.Join(tmpDir, "main.yaml")
 	sessionPath := filepath.Join(tmpDir, "session.json")
 
-	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths(mainPath, sessionPath)
 	return cw, mainPath, sessionPath
 }
@@ -295,7 +295,7 @@ MAX_TURNS: 5
 
 func TestConfigWatcher_ManualLimits(t *testing.T) {
 	mockSess := new(mockSessionLoader)
-	cw := NewFileConfigWatcher(nil, mockSess, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, mockSess, 100, 10, 20, nil)
 
 	t.Run("SetLimits_Positive", func(t *testing.T) {
 		cw.SetLimits(200, 15, 25)
@@ -318,7 +318,7 @@ func TestConfigWatcher_ManualLimits(t *testing.T) {
 func TestConfigWatcher_ApplyLimits(t *testing.T) {
 
 	t.Run("FullUpdate", func(t *testing.T) {
-		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20)
+		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
 		limits := events.Limits{
 			MaxHistoryTokens: 500,
 			MaxToolTurns:     30,
@@ -335,7 +335,7 @@ func TestConfigWatcher_ApplyLimits(t *testing.T) {
 	})
 
 	t.Run("PartialUpdate", func(t *testing.T) {
-		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20)
+		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
 		cw.tieredThreshold = 1000
 		limits := events.Limits{
 			MaxHistoryTokens: 0,
@@ -354,7 +354,7 @@ func TestConfigWatcher_ApplyLimits(t *testing.T) {
 }
 
 func TestConfigWatcher_SyncToStrategy(t *testing.T) {
-	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
 	cw.contextWindow = 500000
 	cw.tieredThreshold = 3000
 
@@ -407,7 +407,7 @@ func TestConfigWatcher_SessionReadFileError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, &testSessionLoader{}, 100, 10, 20, nil)
 	cw.SetPaths("", sessionPath)
 
 	// Should not panic and return early
@@ -439,7 +439,7 @@ func TestConfigWatcher_UpdateFromMain_NoChange(t *testing.T) {
 }
 
 func TestConfigWatcher_SetPaths(t *testing.T) {
-	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
 	cw.SetPaths("main", "session")
 	assert.Equal(t, "main", cw.mainPath)
 	assert.Equal(t, "session", cw.sessionPath)
@@ -510,7 +510,7 @@ func TestConfigWatcher_UpdateFromSession_NoChange(t *testing.T) {
 }
 
 func TestConfigWatcher_EmptyPaths(t *testing.T) {
-	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20)
+	cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil)
 	cw.SetPaths("", "")
 	cw.Refresh("default")
 	tokens, _, _, _ := cw.GetLimits()
