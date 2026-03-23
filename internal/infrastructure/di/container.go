@@ -48,7 +48,7 @@ type ConfigurableSecurityManager interface {
 
 // Container defines the interface for building session dependencies and provides factories.
 type Container interface {
-	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error)
+	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(), error)
 	GetAgentFactory() ports.ChatterFactory
 	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error
 	GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error)
@@ -93,7 +93,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
-func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
+func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(), error) {
 	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, nil, nil, err
@@ -156,7 +156,6 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	return deps, hManager, cleanup, nil
 }
-
 
 func (b *bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistence.Paths) (*history.Manager, error) {
 	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
