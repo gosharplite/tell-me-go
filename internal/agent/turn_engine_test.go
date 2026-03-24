@@ -20,6 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTurnEngine_StateTransitions(t *testing.T) {
@@ -77,8 +78,8 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !errors.Is(err, llm.ErrMaxTurnsReached) && !strings.Contains(err.Error(), "infinite loop detected") {
-		t.Errorf("expected ErrMaxTurnsReached or loop detection, got %v", err)
+	if !errors.Is(err, llm.ErrMaxTurnsReached) {
+		t.Errorf("expected ErrMaxTurnsReached, got %v", err)
 	}
 }
 
@@ -923,21 +924,24 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 		toolLimit     int
 		setupGateway  func(gw *mockGateway, turnCount *int)
 		setupExecutor func(ex *mockExecutor, turnIndex *int)
-		wantErr       string
 	}{
 		{
 			name:      "Calls across exactly 2 turns",
-			toolLimit: 5,
+			toolLimit: 10, // Higher than loop threshold to avoid MaxTurnsReached
 			setupGateway: func(gw *mockGateway, turnCount *int) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 					*turnCount++
 					content := &llm.Content{Role: "model"}
-					// Call tool 3 times in turn 1, then 3 times in turn 2 (total 6 > 5)
-					content.Parts = []*llm.Part{
-						{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-						{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-						{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-						{Text: fmt.Sprintf("Turn %d", *turnCount)},
+					if *turnCount <= 2 {
+						// Call tool 3 times in turn 1, then 3 times in turn 2 (total 6 > 5 threshold)
+						content.Parts = []*llm.Part{
+							{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+							{Text: fmt.Sprintf("Turn %d", *turnCount)},
+						}
+					} else {
+						content.Parts = []*llm.Part{{Text: "final response"}}
 					}
 					ch := make(chan *llm.Content)
 					close(ch)
@@ -954,24 +958,25 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 					}, nil
 				}
 			},
-			wantErr: "infinite loop detected: tool 'test_tool' called with same arguments 6 times",
 		},
 		{
 			name:      "Calls hitting limit within a single turn",
-			toolLimit: 5,
+			toolLimit: 10,
 			setupGateway: func(gw *mockGateway, turnCount *int) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 					*turnCount++
-					content := &llm.Content{
-						Role: "model",
-						Parts: []*llm.Part{
+					content := &llm.Content{Role: "model"}
+					if *turnCount == 1 {
+						content.Parts = []*llm.Part{
 							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
 							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
 							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
 							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
 							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
 							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-						},
+						}
+					} else {
+						content.Parts = []*llm.Part{{Text: "final response"}}
 					}
 					ch := make(chan *llm.Content)
 					close(ch)
@@ -980,25 +985,35 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 					}
 				}
 			},
-			wantErr: "infinite loop detected: tool 'loop_tool' called with same arguments 6 times",
 		},
 		{
 			name:      "Different tools sharing session-level counter",
-			toolLimit: 5,
+			toolLimit: 10,
 			setupGateway: func(gw *mockGateway, turnCount *int) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 					*turnCount++
 					content := &llm.Content{Role: "model"}
-					// Tool A called 3 times, Tool B called 3 times. Both should be tracked independently.
-					// This case verifies that calling Tool B doesn't reset or interfere with Tool A's counter.
-					content.Parts = []*llm.Part{
-						{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-						{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-						{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-						{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
-						{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
-						{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
-						{Text: fmt.Sprintf("Turn %d", *turnCount)},
+					if *turnCount == 1 {
+						// Tool A called 3 times, Tool B called 3 times. Both should be tracked independently.
+						// This case verifies that calling Tool B doesn't reset or interfere with Tool A's counter.
+						content.Parts = []*llm.Part{
+							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+							{Text: fmt.Sprintf("Turn %d", *turnCount)},
+						}
+					} else if *turnCount == 2 {
+						// Tool A called 3 more times total 6 > 5. Should trigger loop breaker.
+						content.Parts = []*llm.Part{
+							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+						}
+					} else {
+						content.Parts = []*llm.Part{{Text: "final response"}}
 					}
 					ch := make(chan *llm.Content)
 					close(ch)
@@ -1015,7 +1030,6 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 					}, nil
 				}
 			},
-			wantErr: "infinite loop detected: tool 'tool_A' called with same arguments 6 times",
 		},
 	}
 
@@ -1044,12 +1058,24 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 			strategy.SetLimits(1000, tt.toolLimit, 10)
 
 			err := e.Run(context.Background(), time.Now())
-			if err == nil {
-				t.Fatal("expected error, got nil")
+			assert.NoError(t, err)
+
+			// Check history for the injected warning
+			mu := &sync.Mutex{}
+			hManager.mu.Lock()
+			contents := make([]*llm.Content, len(hManager.Contents))
+			copy(contents, hManager.Contents)
+			hManager.mu.Unlock()
+
+			foundWarning := false
+			for _, msg := range contents {
+				if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
+					foundWarning = true
+					break
+				}
 			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
-			}
+			_ = mu
+			assert.True(t, foundWarning, "Should have injected loop warning")
 		})
 	}
 }

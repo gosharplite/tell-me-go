@@ -70,12 +70,29 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}, &llm.Metrics{}, nil
 	}).Once()
 
+	// turn 3: final response after loop breaker
+	ch3 := make(chan *llm.Content, 1)
+	ch3 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response C"}}}
+	close(ch3)
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch3, func() (*llm.Content, *llm.Metrics, error) {
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response C"}}}, &llm.Metrics{}, nil
+	}).Once()
+
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil)
 
 	err := engine.Run(ctx, time.Now())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "infinite loop detected: model is repeating a previous response")
-	assert.Contains(t, err.Error(), "Response A")
+	assert.NoError(t, err)
+
+	// Check history for the injected warning
+	window, _ := h.GetWindow(ctx, 0, -1)
+	foundWarning := false
+	for _, msg := range window {
+		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
+			foundWarning = true
+			break
+		}
+	}
+	assert.True(t, foundWarning, "Should have injected loop warning")
 }
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
@@ -130,10 +147,27 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}, &llm.Metrics{}, nil
 	}).Once()
 
+	// turn 3: final response after loop breaker
+	ch3 := make(chan *llm.Content, 1)
+	ch3 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response Final"}}}
+	close(ch3)
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch3, func() (*llm.Content, *llm.Metrics, error) {
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response Final"}}}, &llm.Metrics{}, nil
+	}).Once()
+
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil)
 
 	err := engine.Run(ctx, time.Now())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "infinite loop detected: model is repeating a previous response")
-	assert.Contains(t, err.Error(), "tool_a")
+	assert.NoError(t, err)
+
+	// Check history for the injected warning
+	window, _ := h.GetWindow(ctx, 0, -1)
+	foundWarning := false
+	for _, msg := range window {
+		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
+			foundWarning = true
+			break
+		}
+	}
+	assert.True(t, foundWarning, "Should have injected loop warning")
 }
