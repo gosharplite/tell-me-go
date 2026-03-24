@@ -6,6 +6,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -52,7 +53,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	// NEW: Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation)
 	// This prevents the AI from failing on valid shell commands that don't fit the direct-exec model.
 	if t.validator.HasShellFeatures(parts) {
-		wrapped := "sh -c " + quoteShellArg(params.Command)
+		wrapped := wrapWithShell(params.Command)
 		if newParts, err := t.validator.Split(wrapped); err == nil {
 			parts = newParts
 		}
@@ -264,4 +265,12 @@ func (w *warnWriter) Write(p []byte) (n int, err error) {
 // to make it safe for 'sh -c'.
 func quoteShellArg(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// wrapWithShell wraps a command in the appropriate shell interpreter for the host OS.
+func wrapWithShell(command string) string {
+	if runtime.GOOS == "windows" {
+		return "cmd.exe /c " + command
+	}
+	return "sh -c " + quoteShellArg(command)
 }
