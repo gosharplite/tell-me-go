@@ -59,8 +59,8 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 				e.publishTurnStatus(ctx, turn, true, false)
 			}
 
-			// 3. Ready Footer: Trigger boundary footer only after persistence is complete and agent is stopping.
-			if turn.State.Phase == phasePersisting && (!turn.State.HasToolCalls || turn.Stop) {
+			// 3. Ready Footer: Trigger boundary footer only after persistence is complete.
+			if turn.State.Phase == phasePersisting {
 				e.publishTurnStatus(ctx, turn, false, true)
 			}
 			return res, nil
