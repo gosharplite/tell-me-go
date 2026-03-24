@@ -657,7 +657,7 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 		_ = finalize()
 
 		// Should NOT contain Restore Cursor in the finalization phase (it might be there from the start of stream, but let's check the separator)
-		if !strings.Contains(stderr.String(), "── (formatted) ──") {
+		if !strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
 			t.Errorf("expected scroll separator, got %q", stderr.String())
 		}
 	})
@@ -682,7 +682,7 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 
 		_ = finalize()
 
-		if !strings.Contains(stderr.String(), "── (formatted) ──") {
+		if !strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
 			t.Errorf("expected scroll separator after 26 lines, got %q", stderr.String())
 		}
 	})

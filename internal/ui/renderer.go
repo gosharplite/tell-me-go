@@ -37,15 +37,17 @@ type stdUIRenderer struct {
 
 // streamState holds the transient state for a single response stream.
 type streamState struct {
-	aggregated      *llm.Content
-	totalText       strings.Builder
-	thoughtActive   bool
-	showThoughts    bool
-	rawOutput       bool
-	lineCount       int
-	hasScrolled     bool
-	scrollThreshold int
-	isTerm          bool
+	aggregated       *llm.Content
+	totalText        strings.Builder
+	thoughtActive    bool
+	showThoughts     bool
+	rawOutput        bool
+	lineCount        int
+	currentLineWidth int
+	hasScrolled      bool
+	scrollThreshold  int
+	termWidth        int
+	isTerm           bool
 }
 
 // NewRenderer creates a new ports.UIRenderer.
@@ -408,11 +410,17 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 
 	isTerm := false
 	threshold := 25
+	width := 80
 	if f, ok := ui.stdout.(*os.File); ok {
 		if term.IsTerminal(int(f.Fd())) {
 			isTerm = true
-			if _, h, err := term.GetSize(int(f.Fd())); err == nil && h > 0 {
-				threshold = h - 2
+			if w, h, err := term.GetSize(int(f.Fd())); err == nil {
+				if h > 0 {
+					threshold = h - 2
+				}
+				if w > 0 {
+					width = w
+				}
 			}
 		}
 	}
@@ -422,6 +430,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		showThoughts:    showThoughts,
 		rawOutput:       rawOutput,
 		scrollThreshold: threshold,
+		termWidth:       width,
 		isTerm:          isTerm,
 	}
 
@@ -578,7 +587,18 @@ func (r *stdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui ui
 
 	// Track scrolling: If we exceed the threshold (based on terminal height),
 	// we assume the terminal has scrolled, making the saved cursor position invalid.
-	state.lineCount += strings.Count(part.Text, "\n")
+	for i := 0; i < len(part.Text); i++ {
+		if part.Text[i] == '\n' {
+			state.lineCount++
+			state.currentLineWidth = 0
+		} else {
+			state.currentLineWidth++
+			if state.termWidth > 0 && state.currentLineWidth >= state.termWidth {
+				state.lineCount++
+				state.currentLineWidth = 0
+			}
+		}
+	}
 	if state.lineCount > state.scrollThreshold {
 		state.hasScrolled = true
 	}
@@ -658,10 +678,12 @@ func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
 		if fullText != "" {
 			sanitized := sanitizeForTerminal(fullText)
 
-			if state.hasScrolled {
-				// FAIL-SAFE: Terminal scrolled. Redrawing would cause overlap.
+			canRedraw := ui.c(termSaveCursor) != "" && !state.hasScrolled
+
+			if !canRedraw {
+				// FAIL-SAFE: Terminal scrolled, or no terminal. Redrawing would cause overlap.
 				// Just print a separator and append the final formatted text.
-				r.safePrintStderr("\n"+ui.c(colorGray)+"── (formatted) ──"+ui.c(colorReset)+"\n", ui)
+				r.safePrintStderr("\n"+ui.c(colorGray)+"────────────────────────────────────────────────────────────────────────────────"+ui.c(colorReset)+"\n", ui)
 				r.renderMarkdownWithUI(ui, sanitized)
 			} else {
 				// Normal path: Cursor is still valid, do a clean redraw.
