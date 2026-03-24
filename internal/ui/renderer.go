@@ -139,7 +139,11 @@ func (r *stdUIRenderer) renderMarkdownWithUI(ui uiState, text string) {
 	if err != nil {
 		_, _ = fmt.Fprint(stdout, text)
 	} else {
-		_, _ = fmt.Fprint(stdout, out)
+		out = strings.TrimLeft(out, "\n")
+		out = strings.TrimRight(out, "\n")
+		if out != "" {
+			_, _ = fmt.Fprint(stdout, out+"\n\n")
+		}
 	}
 }
 
