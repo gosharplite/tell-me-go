@@ -312,7 +312,6 @@ func (e *turnEngine) prepareNextTurn(turn *turn) {
 	turn.State.CurrentTurns = turn.Index
 	turn.State.Phase = phaseGuard
 	turn.State.RetryCount = 0
-	turn.State.RetryCount = 0
 	turn.State.Response = nil
 	turn.State.ToolResponse = nil
 	turn.State.HasToolCalls = false
@@ -533,9 +532,13 @@ func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Conte
 	history := turn.State.PreparedHistory
 	respContent, metrics, err := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
 
-	if err == nil && respContent != nil {
-		_ = events.SafePublish(ctx, turn.Events, events.ResponseEvent{Content: respContent})
+	// Guarantee the spinner is stopped by publishing the event regardless of error.
+	// If respContent is nil due to failure, supply an empty Content to avoid panics down the chain.
+	safeContent := respContent
+	if safeContent == nil {
+		safeContent = &llm.Content{Role: "model"}
 	}
+	_ = events.SafePublish(ctx, turn.Events, events.ResponseEvent{Content: safeContent})
 
 	if err != nil {
 		return respContent, metrics, err
@@ -653,7 +656,7 @@ func (p *persistenceStep) process(ctx context.Context, turn *turn) (processResul
 		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
 			category := llm.ErrTerminal
 			if isTransient(err) {
-				category = llm.ErrTerminal
+				category = llm.ErrTransient
 			}
 			return processResult{}, newAgentError(category, "history error", err)
 		}
@@ -663,7 +666,7 @@ func (p *persistenceStep) process(ctx context.Context, turn *turn) (processResul
 		if err := turn.CtxManager.AddContent(ctx, turn.State.ToolResponse); err != nil {
 			category := llm.ErrTerminal
 			if isTransient(err) {
-				category = llm.ErrTerminal
+				category = llm.ErrTransient
 			}
 			return processResult{}, newAgentError(category, "failed to persist tool results", err)
 		}

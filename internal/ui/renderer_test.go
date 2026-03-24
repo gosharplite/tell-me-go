@@ -191,12 +191,37 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 		defer cancel()
 
 		// Since we're not in a terminal in CI/Tests, StartSpinner will return an empty stop function.
-		// However, we can mock term.IsTerminal if needed, but the instruction says "basic tests".
 		stop := r.StartSpinner(ctx)
 		if stop == nil {
 			t.Fatal("expected stop function, got nil")
 		}
 		stop()
+	})
+
+	t.Run("drawLoadingIndicator outputs to stderr", func(t *testing.T) {
+		ui := r.getUIState()
+		stdout.Reset()
+		stderr.Reset()
+		r.drawLoadingIndicator(ui, "X", mc.now)
+		if !strings.Contains(stderr.String(), "X Thinking...") {
+			t.Errorf("expected stderr to contain spinner, got %q", stderr.String())
+		}
+		if stdout.Len() > 0 {
+			t.Errorf("expected stdout to be empty, got %q", stdout.String())
+		}
+	})
+
+	t.Run("clearLoadingIndicator outputs to stderr", func(t *testing.T) {
+		ui := r.getUIState()
+		stdout.Reset()
+		stderr.Reset()
+		r.clearLoadingIndicator(ui, false)
+		if stderr.Len() == 0 {
+			t.Error("expected stderr to contain clear sequence")
+		}
+		if stdout.Len() > 0 {
+			t.Errorf("expected stdout to be empty, got %q", stdout.String())
+		}
 	})
 }
 

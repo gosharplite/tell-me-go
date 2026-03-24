@@ -392,7 +392,7 @@ func (r *stdUIRenderer) renderInlineData(ui uiState, part *llm.Part) {
 func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	ui := r.getUIState()
 	isTerm := false
-	if f, ok := ui.stdout.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+	if f, ok := ui.stderr.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		isTerm = true
 	}
 	if !isTerm {
@@ -402,8 +402,11 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	idx := 0
-	startTime := time.Now()
+	startTime := r.nowSafe()
 	done := make(chan struct{})
+
+	// Draw the first frame synchronously to avoid 200ms delay.
+	r.updateIndicatorFrame(ui, frames, &idx, startTime)
 
 	go func() {
 		for {
@@ -437,13 +440,13 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 
 	msg := " Thinking..."
 	if !startTime.IsZero() {
-		elapsed := int(time.Since(startTime).Seconds())
+		elapsed := int(ui.clock.Now().Sub(startTime).Seconds())
 		msg = fmt.Sprintf(" Thinking... (%ds)", elapsed)
 	}
 
 	// We use carriage return to stay on the same line.
 	// We use colorGray for the indicator.
-	_, _ = fmt.Fprintf(ui.stdout, "\r%s%s%s%s", ui.c(colorGray), frame, msg, ui.c(colorReset))
+	_, _ = fmt.Fprintf(ui.stderr, "\r%s%s%s%s", ui.c(colorGray), frame, msg, ui.c(colorReset))
 }
 
 func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
@@ -454,7 +457,7 @@ func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
 
 	// Move to start of line and clear the spinner.
 	// We do NOT add a newline here to allow the answer to start exactly where the spinner was.
-	_, _ = fmt.Fprint(ui.stdout, "\r"+ui.c(termClearLine))
+	_, _ = fmt.Fprint(ui.stderr, "\r"+ui.c(termClearLine))
 }
 
 func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
