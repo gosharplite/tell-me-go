@@ -28,32 +28,32 @@ type agentConfig struct {
 	logger           *slog.Logger
 }
 
-// option defines a functional option for configuring an Agent.
-type option func(*agentConfig)
+// Option defines a functional option for configuring an Agent.
+type Option func(*agentConfig)
 
 // withInitContext sets the context for the agent initialization.
-func withInitContext(ctx context.Context) option {
+func withInitContext(ctx context.Context) Option {
 	return func(c *agentConfig) {
 		c.initCtx = ctx
 	}
 }
 
 // WithSummarizer sets the summarizer service for the agent.
-func WithSummarizer(s ports.Summarizer) option {
+func WithSummarizer(s ports.Summarizer) Option {
 	return func(c *agentConfig) {
 		c.summarizer = s
 	}
 }
 
 // WithInternalTools enables the registration of internal agent tools.
-func WithInternalTools() option {
+func WithInternalTools() Option {
 	return func(c *agentConfig) {
 		c.registerInternal = true
 	}
 }
 
 // WithPricing sets the pricing configuration for cost estimation.
-func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) option {
+func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) Option {
 	return func(c *agentConfig) {
 		c.model = model
 		c.mode = mode
@@ -62,35 +62,35 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 }
 
 // withLoader sets the configuration loader for the agent.
-func withLoader(loader domain_config.ConfigLoader) option {
+func withLoader(loader domain_config.ConfigLoader) Option {
 	return func(c *agentConfig) {
 		c.loader = loader
 	}
 }
 
 // WithSessionCostTracker sets the cost tracker for the agent.
-func WithSessionCostTracker(tracker domain_pricing.CostTracker) option {
+func WithSessionCostTracker(tracker domain_pricing.CostTracker) Option {
 	return func(c *agentConfig) {
 		c.tracker = tracker
 	}
 }
 
 // withSessionLoader sets the session configuration loader for the agent.
-func withSessionLoader(loader domain_config.SessionLoader) option {
+func withSessionLoader(loader domain_config.SessionLoader) Option {
 	return func(c *agentConfig) {
 		c.sessionLoader = loader
 	}
 }
 
 // WithLogger sets the logger for the agent.
-func WithLogger(l *slog.Logger) option {
+func WithLogger(l *slog.Logger) Option {
 	return func(c *agentConfig) {
 		c.logger = l
 	}
 }
 
 // WithSkillSelector sets the skill selector for the agent.
-func WithSkillSelector(s skills.SkillSelector) option {
+func WithSkillSelector(s skills.SkillSelector) Option {
 	return func(c *agentConfig) {
 		c.skillSelector = s
 	}
