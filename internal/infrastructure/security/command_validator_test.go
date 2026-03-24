@@ -322,6 +322,7 @@ func TestCommandValidator_HasShellFeatures(t *testing.T) {
 		cmd  string
 		want bool
 	}{
+		{"", false},
 		{"ls", false},
 		{"ls -la", false},
 		{"ls && echo hi", true},
