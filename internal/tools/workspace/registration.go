@@ -75,7 +75,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "read_file",
-				Description: "[DEPRECATED: Use 'read_files' instead] Reads the full content of a specific file (similar to 'cat').",
+				Description: "[DEPRECATED] Reads the content of a single file. You MUST use 'read_files' instead (even for single files) to maintain consistent batching patterns and minimize LLM roundtrips.",
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
