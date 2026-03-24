@@ -594,9 +594,6 @@ func (r *stdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui ui
 			state.currentLineWidth = 0
 		} else {
 			rw := runewidth.RuneWidth(runeVal)
-			if rw < 0 {
-				rw = 0 // control characters
-			}
 			state.currentLineWidth += rw
 			if state.termWidth > 0 && state.currentLineWidth >= state.termWidth {
 				state.lineCount++
