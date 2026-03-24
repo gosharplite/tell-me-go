@@ -51,10 +51,6 @@ func setDefaults(cfg *domain_config.Config) {
 	cfg.HTTPTimeoutSeconds = domain_config.DefaultHTTPTimeoutSeconds
 	cfg.ShowThoughts = true
 	cfg.ShowTools = true
-
-	if os.Getenv("TELL_ME_NO_STREAM") == "true" {
-		cfg.DisableStreaming = true
-	}
 }
 
 func applyEnvironmentOverrides(cfg *domain_config.Config) {

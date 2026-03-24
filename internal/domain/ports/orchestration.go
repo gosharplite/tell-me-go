@@ -59,11 +59,10 @@ type Chatter interface {
 
 // ChatterConfig encapsulates the primitive configuration for a Chatter instance.
 type ChatterConfig struct {
-	ProviderName     string
-	Model            string
-	Mode             string
-	LogPath          string
-	DisableStreaming bool
+	ProviderName string
+	Model        string
+	Mode         string
+	LogPath      string
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.

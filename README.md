@@ -131,9 +131,8 @@ USE_SEARCH: false
 SHOW_THOUGHTS: false
 SHOW_TOOLS: true
 
-# --- Global Timeouts & Streaming ---
+# --- Global Timeouts ---
 HTTP_TIMEOUT: 300
-DISABLE_STREAMING: false
 
 # --- Concurrent Execution ---
 MAX_CONCURRENT_TOOLS: 5

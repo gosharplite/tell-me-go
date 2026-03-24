@@ -464,11 +464,10 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	}
 
 	cfg := ports.ChatterConfig{
-		ProviderName:     "test-provider",
-		Model:            "test-model",
-		Mode:             "assistant",
-		LogPath:          "tokens.log",
-		DisableStreaming: false,
+		ProviderName: "test-provider",
+		Model:        "test-model",
+		Mode:         "assistant",
+		LogPath:      "tokens.log",
 	}
 	agent, err := factory(context.Background(), mockDeps, cfg)
 	assert.NoError(t, err)

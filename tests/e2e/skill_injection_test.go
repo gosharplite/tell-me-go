@@ -125,7 +125,6 @@ Use idiomatic Go.`, skillName, skillContentSnippet)
 	// 4. Run CLI with Go-related prompt
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_NO_STREAM=true",
 	}
 
 	// We use -new to ensure a clean start and a prompt that matches the skill description/name

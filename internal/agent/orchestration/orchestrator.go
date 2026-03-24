@@ -137,11 +137,10 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
 	chatterCfg := ports.ChatterConfig{
-		ProviderName:     cfg.SelectedProvider,
-		Model:            activeModel,
-		Mode:             cfg.Mode,
-		LogPath:          paths.LogPath,
-		DisableStreaming: cfg.DisableStreaming,
+		ProviderName: cfg.SelectedProvider,
+		Model:        activeModel,
+		Mode:         cfg.Mode,
+		LogPath:      paths.LogPath,
 	}
 	chatAgent, err := o.AgentFactory(ctx, sd, chatterCfg)
 	if err != nil {
