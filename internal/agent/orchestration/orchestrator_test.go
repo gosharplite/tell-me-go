@@ -746,20 +746,29 @@ func TestRun_Routing(t *testing.T) {
 	})
 }
 
-func TestUIBridge_DataRace(t *testing.T) {
+func TestUIBridge_Concurrency(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
 
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() {})
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
+	// Setup mocks with Maybe() to handle concurrent calls safely
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Maybe()
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
+	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	const iterations = 1000
+	start := make(chan struct{})
 
+	// Fire InferenceStartedEvent and ResponseEvent simultaneously
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		<-start
 		for i := 0; i < iterations; i++ {
 			bridge.handleEvent(ctx, events.InferenceStartedEvent{})
 		}
@@ -767,6 +776,7 @@ func TestUIBridge_DataRace(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
+		<-start
 		for i := 0; i < iterations; i++ {
 			bridge.handleEvent(ctx, events.ResponseEvent{
 				Content: &llm.Content{},
@@ -774,6 +784,35 @@ func TestUIBridge_DataRace(t *testing.T) {
 		}
 	}()
 
+	// Fire other events to simulate real event bus behavior and increase noise
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < iterations; i++ {
+			bridge.handleEvent(ctx, events.TurnStarted{})
+			bridge.handleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{}})
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < iterations; i++ {
+			bridge.handleEvent(ctx, events.UsageMetricsEvent{
+				Metrics:   &llm.Metrics{},
+				StartTime: time.Now(),
+				Context:   ctx,
+			})
+			bridge.handleEvent(ctx, events.ToolCallEvent{
+				Calls:    []*llm.FunctionCall{{Name: "test"}},
+				Turn:     0,
+				MaxTurns: 5,
+			})
+		}
+	}()
+
+	close(start)
 	wg.Wait()
 }
 
