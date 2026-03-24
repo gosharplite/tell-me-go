@@ -453,15 +453,23 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 		msg = fmt.Sprintf(" Thinking... (%ds)", elapsed)
 	}
 
+	if r.locker != nil {
+		r.locker.TerminalLock()
+		defer r.locker.TerminalUnlock()
+	}
+
 	// Move to start of line, clear current line, then print the indicator.
-	// We avoid locking here to ensure high-frequency spinner updates aren't blocked by other rendering.
 	_, _ = fmt.Fprintf(ui.stderr, "\r%s%s%s%s%s", ui.c(termClearLine), ui.c(colorGray), frame, msg, ui.c(colorReset))
 }
 
 func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
+	if r.locker != nil {
+		r.locker.TerminalLock()
+		defer r.locker.TerminalUnlock()
+	}
+
 	// Move to start of line and clear the spinner.
 	// We do NOT add a newline here to allow the answer to start exactly where the spinner was.
-	// We avoid locking here to prevent potential deadlocks when stopping the spinner.
 	_, _ = fmt.Fprint(ui.stderr, "\r"+ui.c(termClearLine))
 }
 
