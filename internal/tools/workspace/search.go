@@ -46,6 +46,11 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("query argument is required")
 	}
 
+	path := params.Path
+	if path == "" {
+		path = "."
+	}
+
 	var matcher func(string, string) (string, bool)
 	if params.IsRegex {
 		re, err := regexp.Compile(params.Query)
@@ -64,7 +69,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, params.Path, matcher)
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, matcher)
 
 	var results []string
 	limit := 100
