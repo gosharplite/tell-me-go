@@ -79,8 +79,8 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 			MaxHistoryTokens: 1000,
 		})
 		output := stderr.String()
-		if !strings.Contains(output, "Session: 1/10 turns") {
-			t.Errorf("expected stderr to contain 'Session: 1/10 turns', got %q", output)
+		if !strings.Contains(output, "Turn 1/10") {
+			t.Errorf("expected stderr to contain 'Turn 1/10', got %q", output)
 		}
 		// Check for the trailing newline (visual gap)
 		if !strings.HasSuffix(output, "\n\n") {
@@ -99,8 +99,8 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 			MaxHistoryTokens: 1000,
 		})
 		output := stderr.String()
-		if !strings.Contains(output, "Session: 1 turns") {
-			t.Errorf("expected stderr to contain 'Session: 1 turns', got %q", output)
+		if !strings.Contains(output, "Turn 1") {
+			t.Errorf("expected stderr to contain 'Turn 1', got %q", output)
 		}
 	})
 
