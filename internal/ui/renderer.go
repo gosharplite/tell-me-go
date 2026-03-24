@@ -435,14 +435,13 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 		}
 	}()
 
-	var stopped bool
+	var stopOnce sync.Once
 	return func() {
-		if !stopped {
-			stopped = true
+		stopOnce.Do(func() {
 			ticker.Stop()
 			close(done)
 			r.clearLoadingIndicator(ui, false)
-		}
+		})
 	}
 }
 

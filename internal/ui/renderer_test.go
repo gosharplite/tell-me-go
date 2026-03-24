@@ -203,6 +203,26 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 		}
 	})
 
+	t.Run("StartSpinnerRace", func(t *testing.T) {
+		r.SetForceSpinner(true)
+		stop := r.StartSpinner(context.Background())
+
+		var wg sync.WaitGroup
+		const numGoroutines = 10
+		wg.Add(numGoroutines)
+
+		for i := 0; i < numGoroutines; i++ {
+			go func() {
+				defer wg.Done()
+				// Simulate random arrival of stop calls
+				time.Sleep(time.Millisecond * 10)
+				stop()
+			}()
+		}
+
+		wg.Wait()
+	})
+
 	t.Run("drawLoadingIndicator outputs to stderr", func(t *testing.T) {
 		ui := r.getUIState()
 		stdout.Reset()
