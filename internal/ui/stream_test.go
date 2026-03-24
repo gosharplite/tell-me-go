@@ -127,7 +127,7 @@ func testLoadingIndicator_Normal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	state := &streamState{aggregated: &llm.Content{Role: "model"}, isTerm: true}
+	state := &streamState{aggregated: &llm.Content{Role: "model"}, isTerm: true, rawOutput: false}
 	ui := r.getUIState()
 
 	var wg sync.WaitGroup
@@ -135,6 +135,7 @@ func testLoadingIndicator_Normal(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		r.processStream(ctx, ch, state, ui)
+		r.finalizeOutput(state, ui)
 	}()
 
 	waitForOutput(t, locker, stdout, "Thinking...", 1*time.Second)
@@ -146,7 +147,7 @@ func testLoadingIndicator_Normal(t *testing.T) {
 	if !strings.Contains(out, "Done") {
 		t.Errorf("expected stdout to contain 'Done', got %q", out)
 	}
-	if !strings.Contains(out, "\x1b8") && !strings.Contains(out, "\0338") && !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
+	if !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
 		t.Errorf("expected stdout to contain clear sequence, got %q", out)
 	}
 }
@@ -165,6 +166,7 @@ func testLoadingIndicator_RawMode(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		r.processStream(ctx, ch, state, ui)
+		r.finalizeOutput(state, ui)
 	}()
 
 	waitForOutput(t, locker, stdout, "Thinking...", 1*time.Second)
@@ -186,7 +188,7 @@ func testLoadingIndicator_Cancellation(t *testing.T) {
 	ch := make(chan *llm.Content)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	state := &streamState{aggregated: &llm.Content{Role: "model"}, isTerm: true}
+	state := &streamState{aggregated: &llm.Content{Role: "model"}, isTerm: true, rawOutput: false}
 	ui := r.getUIState()
 
 	var wg sync.WaitGroup
@@ -194,6 +196,7 @@ func testLoadingIndicator_Cancellation(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		r.processStream(ctx, ch, state, ui)
+		r.finalizeOutput(state, ui)
 	}()
 
 	waitForOutput(t, locker, stdout, "Thinking...", 1*time.Second)
@@ -201,7 +204,7 @@ func testLoadingIndicator_Cancellation(t *testing.T) {
 	wg.Wait()
 
 	out := readStdout(locker, stdout)
-	if !strings.Contains(out, "\x1b8") && !strings.Contains(out, "\0338") && !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
+	if !strings.Contains(out, "\x1b[2K") && !strings.Contains(out, "\033[2K") {
 		t.Errorf("expected stdout to contain clear sequence on cancel, got %q", out)
 	}
 }

@@ -21,7 +21,6 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
-	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
 
@@ -38,17 +37,11 @@ type stdUIRenderer struct {
 
 // streamState holds the transient state for a single response stream.
 type streamState struct {
-	aggregated       *llm.Content
-	totalText        strings.Builder
-	thoughtActive    bool
-	showThoughts     bool
-	rawOutput        bool
-	lineCount        int
-	currentLineWidth int
-	hasScrolled      bool
-	scrollThreshold  int
-	termWidth        int
-	isTerm           bool
+	aggregated    *llm.Content
+	thoughtActive bool
+	showThoughts  bool
+	rawOutput     bool
+	isTerm        bool
 }
 
 // NewRenderer creates a new ports.UIRenderer.
@@ -410,39 +403,17 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	ui := r.getUIState()
 
 	isTerm := false
-	threshold := 25
-	width := 80
 	if f, ok := ui.stdout.(*os.File); ok {
 		if term.IsTerminal(int(f.Fd())) {
 			isTerm = true
-			if w, h, err := term.GetSize(int(f.Fd())); err == nil {
-				if h > 0 {
-					threshold = h - 2
-				}
-				if w > 0 {
-					width = w
-				}
-			}
 		}
 	}
 
 	state := &streamState{
-		aggregated:      &llm.Content{Role: "model"},
-		showThoughts:    showThoughts,
-		rawOutput:       rawOutput,
-		scrollThreshold: threshold,
-		termWidth:       width,
-		isTerm:          isTerm,
-	}
-
-	if !rawOutput && ui.c(termSaveCursor) != "" {
-		if r.locker != nil {
-			r.locker.TerminalLock()
-		}
-		_, _ = fmt.Fprint(ui.stderr, termSaveCursor)
-		if r.locker != nil {
-			r.locker.TerminalUnlock()
-		}
+		aggregated:   &llm.Content{Role: "model"},
+		showThoughts: showThoughts,
+		rawOutput:    rawOutput,
+		isTerm:       isTerm,
 	}
 
 	var wg sync.WaitGroup
@@ -502,7 +473,7 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 			}
 
 			if !indicatorStopped {
-				if r.shouldStopIndicator(content, state.showThoughts) {
+				if r.shouldStopIndicator(content, state.showThoughts, state.rawOutput) {
 					stopIndicator()
 				}
 			}
@@ -511,7 +482,7 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 	}
 }
 
-func (r *stdUIRenderer) shouldStopIndicator(content *llm.Content, showThoughts bool) bool {
+func (r *stdUIRenderer) shouldStopIndicator(content *llm.Content, showThoughts, rawOutput bool) bool {
 	for _, part := range content.Parts {
 		if part.IsThought || len(part.ThoughtSignature) > 0 {
 			if showThoughts {
@@ -519,7 +490,10 @@ func (r *stdUIRenderer) shouldStopIndicator(content *llm.Content, showThoughts b
 			}
 			continue
 		}
-		if part.Text != "" || part.InlineData != nil || part.FunctionCall != nil {
+		if part.InlineData != nil || part.FunctionCall != nil {
+			return true
+		}
+		if part.Text != "" && rawOutput {
 			return true
 		}
 	}
@@ -573,39 +547,17 @@ func (r *stdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui ui
 		return
 	}
 	r.closeThinking(state, ui)
-	output := part.Text
-	if !state.rawOutput {
-		output = sanitizeForTerminal(part.Text)
-	}
 
-	if r.locker != nil {
-		r.locker.TerminalLock()
-	}
-	_, _ = fmt.Fprint(ui.stdout, output)
-	if r.locker != nil {
-		r.locker.TerminalUnlock()
-	}
-
-	// Track scrolling: If we exceed the threshold (based on terminal height),
-	// we assume the terminal has scrolled, making the saved cursor position invalid.
-	for _, runeVal := range output {
-		if runeVal == '\n' {
-			state.lineCount++
-			state.currentLineWidth = 0
-		} else {
-			rw := runewidth.RuneWidth(runeVal)
-			state.currentLineWidth += rw
-			if state.termWidth > 0 && state.currentLineWidth >= state.termWidth {
-				state.lineCount++
-				state.currentLineWidth = 0
-			}
+	if state.rawOutput {
+		output := part.Text
+		if r.locker != nil {
+			r.locker.TerminalLock()
+		}
+		_, _ = fmt.Fprint(ui.stdout, output)
+		if r.locker != nil {
+			r.locker.TerminalUnlock()
 		}
 	}
-	if state.lineCount > state.scrollThreshold {
-		state.hasScrolled = true
-	}
-
-	state.totalText.WriteString(part.Text)
 }
 
 func (r *stdUIRenderer) handleInlineDataPart(state *streamState, part *llm.Part, ui uiState) {
@@ -652,23 +604,13 @@ func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
 		defer r.locker.TerminalUnlock()
 	}
 
-	// If !rawOutput and we have cursor sequences, we can use restore/clearForward
-	// otherwise use carriage return + clear line.
-	restore := ui.c(termRestoreCursor)
-	clear := ui.c(termClearForward)
-
-	if !rawOutput && restore != "" && clear != "" {
-		_, _ = fmt.Fprint(ui.stdout, restore+clear)
-	} else {
-		// \r followed by clear line escape
-		_, _ = fmt.Fprint(ui.stdout, "\r"+ui.c(termClearLine))
-	}
+	// Move to start of line and clear the spinner.
+	// We do NOT add a newline here to allow the answer to start exactly where the spinner was.
+	_, _ = fmt.Fprint(ui.stdout, "\r"+ui.c(termClearLine))
 }
 
 func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
 	if !state.rawOutput {
-		// [BUGFIX]: Rebuild final text explicitly ignoring thoughts to prevent
-		// thought-leakage after a Ctrl+C interruption corrupts the transient totalText stream.
 		var cleanText strings.Builder
 		for _, p := range state.aggregated.Parts {
 			if !p.IsThought && p.Text != "" {
@@ -679,29 +621,9 @@ func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
 		fullText := cleanText.String()
 		if fullText != "" {
 			sanitized := sanitizeForTerminal(fullText)
-
-			canRedraw := ui.c(termSaveCursor) != "" && !state.hasScrolled
-
-			if !canRedraw {
-				// FAIL-SAFE: Terminal scrolled, or no terminal. Redrawing would cause overlap.
-				// Just print a separator and append the final formatted text.
-				r.safePrintStderr("\n"+ui.c(colorGray)+"────────────────────────────────────────────────────────────────────────────────"+ui.c(colorReset)+"\n", ui)
-				r.renderMarkdownWithUI(ui, sanitized)
-			} else {
-				// Normal path: Cursor is still valid, do a clean redraw.
-				r.clearAndRenderMarkdown(ui, sanitized)
-			}
+			r.renderMarkdownWithUI(ui, sanitized)
 		}
 	}
-}
-
-func (r *stdUIRenderer) clearAndRenderMarkdown(ui uiState, fullText string) {
-	if r.locker != nil {
-		r.locker.TerminalLock()
-		defer r.locker.TerminalUnlock()
-	}
-	_, _ = fmt.Fprint(ui.stdout, ui.c(termRestoreCursor)+ui.c(termClearForward))
-	r.renderMarkdownWithUI(ui, fullText)
 }
 
 func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {

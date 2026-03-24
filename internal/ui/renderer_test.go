@@ -19,40 +19,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
-type mockLocker struct {
-	locked bool
-	mu     sync.Mutex
-}
-
-func (m *mockLocker) TerminalLock() {
-	m.mu.Lock()
-	m.locked = true
-}
-
-func (m *mockLocker) TerminalUnlock() {
-	m.locked = false
-	m.mu.Unlock()
-}
-
-func (m *mockLocker) IsPathSafe(path string) (string, error)     { return path, nil }
-func (m *mockLocker) IsPathWritable(path string) (string, error) { return path, nil }
-func (m *mockLocker) IsBypassActive() bool                       { return false }
-func (m *mockLocker) IsCommandAllowed(command string) bool       { return true }
-func (m *mockLocker) Prompt(message string)                      {}
-func (m *mockLocker) Warn(message string)                        {}
-func (m *mockLocker) ReadLine(ctx context.Context) (string, error) {
-	return "", nil
-}
-func (m *mockLocker) Confirm(ctx context.Context, message string) (bool, error) {
-	return true, nil
-}
-func (m *mockLocker) LogAudit(action string, args ...any) {}
-func (m *mockLocker) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
-	return true, nil
-}
-
-func (m *mockLocker) Close() error { return nil }
-
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
@@ -368,7 +334,7 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 	locker := &mockLocker{}
 	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
 
-	t.Run("Anchoring enabled when rawOutput is false", func(t *testing.T) {
+	t.Run("Anchoring removed to prevent duplicate output", func(t *testing.T) {
 		stdout.Reset()
 		stderr.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
@@ -378,37 +344,15 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Streaming chunk"}}}
 		_ = finalize()
 
-		// Save Cursor should be on stderr to avoid race with LogTurnStatus
-		if !strings.Contains(stderr.String(), "\0337") {
-			t.Errorf("Expected stderr to contain DEC Save Cursor (\\0337), got %q", stderr.String())
-		}
-
-		output := stdout.String()
-		// Should contain Restore Cursor
-		if !strings.Contains(output, "\0338") {
-			t.Errorf("Expected stdout to contain DEC Restore Cursor (\\0338), got %q", output)
-		}
-		// Should contain Clear to End of Screen
-		if !strings.Contains(output, "\033[J") {
-			t.Errorf("Expected stdout to contain Clear to End of Screen (\\033[J), got %q", output)
-		}
-	})
-
-	t.Run("Anchoring disabled when rawOutput is true", func(t *testing.T) {
-		stdout.Reset()
-		stderr.Reset()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		ch, finalize := r.StreamResponse(ctx, false, true)
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Streaming chunk"}}}
-		_ = finalize()
-
+		// Save Cursor should NOT be present
 		if strings.Contains(stderr.String(), "\0337") {
 			t.Errorf("Expected stderr NOT to contain DEC Save Cursor, got %q", stderr.String())
 		}
-		if strings.Contains(stdout.String(), "\0338") {
-			t.Errorf("Expected stdout NOT to contain DEC Restore Cursor, got %q", stdout.String())
+
+		output := stdout.String()
+		// Should NOT contain Restore Cursor
+		if strings.Contains(output, "\0338") {
+			t.Errorf("Expected stdout NOT to contain DEC Restore Cursor, got %q", output)
 		}
 	})
 }
@@ -623,12 +567,12 @@ func TestStdUIRenderer_NowSafeRace(t *testing.T) {
 	close(stop)
 }
 
-func TestStreamResponse_ScrollAware(t *testing.T) {
+func TestStreamResponse_NoDuplicateOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
 	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
 
-	t.Run("Redraw on no scroll", func(t *testing.T) {
+	t.Run("No final redraw even when not scrolled", func(t *testing.T) {
 		stdout.Reset()
 		stderr.Reset()
 		ctx := context.Background()
@@ -636,16 +580,16 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Small response"}}}
 		_ = finalize()
 
-		// Should contain Restore Cursor
-		if !strings.Contains(stdout.String(), "\0338") {
-			t.Errorf("expected restore cursor code, got %q", stdout.String())
+		// Should NOT contain Restore Cursor
+		if strings.Contains(stdout.String(), "\0338") {
+			t.Errorf("expected no restore cursor code, got %q", stdout.String())
 		}
 		if strings.Contains(stderr.String(), "── (formatted) ──") {
 			t.Errorf("did not expect scroll separator, got %q", stderr.String())
 		}
 	})
 
-	t.Run("Failover on scroll", func(t *testing.T) {
+	t.Run("No separator even on scroll", func(t *testing.T) {
 		stdout.Reset()
 		stderr.Reset()
 		ctx := context.Background()
@@ -656,34 +600,8 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: longText}}}
 		_ = finalize()
 
-		// Should NOT contain Restore Cursor in the finalization phase (it might be there from the start of stream, but let's check the separator)
-		if !strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
-			t.Errorf("expected scroll separator, got %q", stderr.String())
-		}
-	})
-
-	t.Run("Long response scroll detection", func(t *testing.T) {
-		stdout.Reset()
-		stderr.Reset()
-
-		// Set a low threshold for scrolling simulation if possible,
-		// but since it's hardcoded to 25, we just test that it works at that threshold.
-		// The instruction was: "simulates a 'narrow' terminal to verify behavior."
-		// Since the renderer doesn't actually query terminal size yet,
-		// "narrow" in this context means many small increments that hit the line count.
-
-		ctx := context.Background()
-		ch, finalize := r.StreamResponse(ctx, false, false)
-
-		// Simulate many small chunks each containing a newline
-		for i := 0; i < 26; i++ {
-			ch <- &llm.Content{Parts: []*llm.Part{{Text: "chunk\n"}}}
-		}
-
-		_ = finalize()
-
-		if !strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
-			t.Errorf("expected scroll separator after 26 lines, got %q", stderr.String())
+		if strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
+			t.Errorf("did not expect scroll separator, got %q", stderr.String())
 		}
 	})
 }
