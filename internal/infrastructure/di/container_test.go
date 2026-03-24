@@ -40,11 +40,6 @@ func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, to
 	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
 }
 
-func (m *mockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	args := m.Called(ctx, history, toolDecls, resolver, callback)
-	return args.Get(0).(*llm.Metrics), args.Error(1)
-}
-
 func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	args := m.Called(ctx, model, prompt, mimeType)
 	return args.Get(0).([][]byte), args.Error(1)

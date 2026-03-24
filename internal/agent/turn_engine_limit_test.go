@@ -35,10 +35,6 @@ func (m *limitMockLLMGateway) SendChat(ctx context.Context, history []*llm.Conte
 	return nil, nil, nil
 }
 
-func (m *limitMockLLMGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return nil, nil
-}
-
 func (m *limitMockLLMGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
 }

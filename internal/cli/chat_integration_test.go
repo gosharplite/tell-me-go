@@ -185,9 +185,6 @@ func (m *mockClient) Generate(ctx stdctx.Context, input []*domain_llm.Content, t
 func (m *mockClient) SendChat(ctx stdctx.Context, history []*domain_llm.Content, tools []*domain_tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 	return nil, nil, nil
 }
-func (m *mockClient) StreamChat(ctx stdctx.Context, history []*domain_llm.Content, tools []*domain_tools.ToolDeclaration, resolver domain_llm.AssetResolver, callback func(*domain_llm.Content)) (*domain_llm.Metrics, error) {
-	return nil, nil
-}
 func (m *mockClient) RefreshAuth() error {
 	return nil
 }

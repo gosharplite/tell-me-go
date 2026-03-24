@@ -74,11 +74,6 @@ func (m *mockGateway) SendChat(ctx context.Context, history []*llm.Content, tool
 	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
 }
 
-func (m *mockGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	callback(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}})
-	return &llm.Metrics{}, nil
-}
-
 func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return [][]byte{}, nil
 }

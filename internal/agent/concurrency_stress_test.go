@@ -98,14 +98,6 @@ func (m *stressmockLLMClient) SendChat(ctx context.Context, history []*llm.Conte
 	return m.sendChatFn(ctx, history, tools, resolver)
 }
 
-func (m *stressmockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	content, metrics, err := m.sendChatFn(ctx, history, tools, resolver)
-	if err == nil {
-		callback(content)
-	}
-	return metrics, err
-}
-
 func (m *stressmockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
 }
