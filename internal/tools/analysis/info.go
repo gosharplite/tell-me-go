@@ -190,15 +190,27 @@ func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, err
 	}
 
+	var res tools.ToolResult
 	if filepath.Ext(path) == ".go" {
 		skeleton, err := m.Cache.GetFileSkeletonGo(path)
 		if err == nil {
-			return tools.ToolResult{Text: skeleton}, nil
+			res = tools.ToolResult{Text: skeleton}
+		} else {
+			// Fallback to generic if AST parsing fails
+			res, err = m.extractGenericSkeleton(ctx, path)
+			if err != nil {
+				return tools.ToolResult{}, err
+			}
 		}
-		// Fallback to generic if AST parsing fails
+	} else {
+		res, err = m.extractGenericSkeleton(ctx, path)
+		if err != nil {
+			return tools.ToolResult{}, err
+		}
 	}
 
-	return m.extractGenericSkeleton(ctx, path)
+	res.Text += "\n\n// SYSTEM HINT: To view the full function bodies, call 'read_file' on this filepath."
+	return res, nil
 }
 
 func (m *infoManager) extractGenericSkeleton(ctx context.Context, path string) (tools.ToolResult, error) {

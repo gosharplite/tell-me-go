@@ -139,7 +139,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "get_file_skeleton",
-				Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations.",
+				Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations. HINT: This tool ONLY returns signatures. If you need to read the actual code/body of a function, you MUST use the 'read_file' tool.",
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{

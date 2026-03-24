@@ -139,7 +139,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "get_definitions",
-				Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives.",
+				Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives. HINT: Once you find the file containing the definition, use 'read_file' to view the internal logic.",
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
