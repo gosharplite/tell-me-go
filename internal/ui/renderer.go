@@ -26,13 +26,14 @@ import (
 
 // stdUIRenderer implements ports.UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
-	locker   domain_security.Manager
-	stdout   io.Writer
-	stderr   io.Writer
-	clock    clock.Clock
-	renderer *glamour.TermRenderer
-	mu       sync.RWMutex
-	useColor bool
+	locker       domain_security.Manager
+	stdout       io.Writer
+	stderr       io.Writer
+	clock        clock.Clock
+	renderer     *glamour.TermRenderer
+	mu           sync.RWMutex
+	useColor     bool
+	forceSpinner bool
 }
 
 // NewRenderer creates a new ports.UIRenderer.
@@ -83,6 +84,13 @@ func (r *stdUIRenderer) SetUseColor(use bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.useColor = use
+}
+
+// SetForceSpinner enables or disables forcing the spinner even in non-terminal environments (primarily for testing).
+func (r *stdUIRenderer) SetForceSpinner(force bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.forceSpinner = force
 }
 
 // SetWriters allows overriding the output writers (primarily for testing).
@@ -389,13 +397,21 @@ func (r *stdUIRenderer) renderInlineData(ui uiState, part *llm.Part) {
 	}
 }
 
+func (r *stdUIRenderer) isTerminalContext() bool {
+	ui := r.getUIState()
+	if f, ok := ui.stderr.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		return true
+	}
+	return false
+}
+
 func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	ui := r.getUIState()
-	isTerm := false
-	if f, ok := ui.stderr.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		isTerm = true
-	}
-	if !isTerm {
+	r.mu.RLock()
+	force := r.forceSpinner
+	r.mu.RUnlock()
+
+	if !r.isTerminalContext() && !force {
 		return func() {}
 	}
 

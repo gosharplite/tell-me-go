@@ -187,15 +187,20 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 
 	t.Run("StartSpinner", func(t *testing.T) {
 		stdout.Reset()
+		stderr.Reset()
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 
-		// Since we're not in a terminal in CI/Tests, StartSpinner will return an empty stop function.
+		r.SetForceSpinner(true)
 		stop := r.StartSpinner(ctx)
 		if stop == nil {
 			t.Fatal("expected stop function, got nil")
 		}
 		stop()
+
+		if !strings.Contains(stderr.String(), "Thinking...") {
+			t.Errorf("expected stderr to contain 'Thinking...', got %q", stderr.String())
+		}
 	})
 
 	t.Run("drawLoadingIndicator outputs to stderr", func(t *testing.T) {

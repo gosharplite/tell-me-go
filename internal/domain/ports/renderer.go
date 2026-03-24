@@ -39,6 +39,7 @@ type ToolLogger interface {
 // RendererConfigurator defines the interface for configuring renderer behavior.
 type RendererConfigurator interface {
 	SetUseColor(use bool)
+	SetForceSpinner(force bool)
 }
 
 // UIRenderer defines the interface for UI feedback.

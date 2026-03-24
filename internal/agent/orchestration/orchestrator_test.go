@@ -92,6 +92,10 @@ func (m *mockUIRenderer) SetUseColor(use bool) {
 	m.Called(use)
 }
 
+func (m *mockUIRenderer) SetForceSpinner(force bool) {
+	m.Called(force)
+}
+
 type mockHistoryRenderer struct {
 	mock.Mock
 }
@@ -468,6 +472,11 @@ func (m *behaviorMockUIRenderer) LogSystemMessage(msg string, level string) {
 func (m *behaviorMockUIRenderer) SetUseColor(use bool) {
 	m.tracker.record("UIRenderer.SetUseColor")
 	m.Called(use)
+}
+
+func (m *behaviorMockUIRenderer) SetForceSpinner(force bool) {
+	m.tracker.record("UIRenderer.SetForceSpinner")
+	m.Called(force)
 }
 
 type behaviorMockCapturer struct {
