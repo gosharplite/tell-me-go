@@ -62,6 +62,8 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 		{"sh -c \"ls && echo hi\"", false},     // Operator is inside another string
 		{"go test ./$(id)", true},              // $ inside second token (interpolation)
 		{"ls `id` /tmp", true},                 // ` inside token (interpolation)
+		{"sh -c \"echo $HOME\"", false},        // Should be allowed in shell commands
+		{"bash -c \"ls && echo hi\"", false},   // Should be allowed in shell commands
 	}
 
 	for _, tt := range tests {

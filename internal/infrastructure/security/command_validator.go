@@ -90,16 +90,31 @@ func (v *commandValidator) Split(cmd string) ([]string, error) {
 // ValidateStructure ensures the command does not contain standalone shell operators
 // that would be misinterpreted during direct binary execution.
 func (v *commandValidator) ValidateStructure(parts []string) error {
-	if ok, desc := v.safety.HasForbiddenOperators(parts); ok {
-		return fmt.Errorf("standalone shell operator (%s) detected. "+
-			"This tool executes binaries directly and does not support shell features. "+
-			"To use shell features, wrap the command: sh -c \"your command\"", desc)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	// 1. Skip structural syntax limits if the intent is to use a shell.
+	// The shell safely evaluates interpolation and the entire string is still
+	// subject to the IsSafe prompt/authorization flow anyway.
+	isShell := false
+	switch parts[0] {
+	case "sh", "bash", "zsh", "ksh", "csh":
+		isShell = true
+	}
+
+	if !isShell {
+		if ok, desc := v.safety.HasForbiddenOperators(parts); ok {
+			return fmt.Errorf("standalone shell operator (%s) detected. "+
+				"This tool executes binaries directly and does not support shell features. "+
+				"To use shell features, wrap the command: sh -c \"your command\"", desc)
+		}
 	}
 
 	for i, part := range parts {
 		// Check for interpolation characters in any token to prevent shell-like behavior
 		// in binaries that might evaluate their arguments.
-		if v.safety.HasUnsafeInterpolation(part) {
+		if !isShell && v.safety.HasUnsafeInterpolation(part) {
 			return fmt.Errorf("shell interpolation character detected in token '%s'. "+
 				"This tool executes binaries directly and does not support shell expansion. "+
 				"To use shell features, wrap the command: sh -c \"your command\"", part)
@@ -108,7 +123,7 @@ func (v *commandValidator) ValidateStructure(parts []string) error {
 		// Check for attached operators like "ls;echo" or "ls>out"
 		// We only apply this to the first token (the command) to minimize false positives
 		// in arguments (e.g., grep "a;b") while still catching common mistakes.
-		if i == 0 && v.safety.HasForbiddenCharsInCommand(part) {
+		if i == 0 && !isShell && v.safety.HasForbiddenCharsInCommand(part) {
 			return fmt.Errorf("shell operator detected inside command token '%s'. "+
 				"This tool executes binaries directly and does not support shell features. "+
 				"To use shell features, wrap the command: sh -c \"your command\"", part)
