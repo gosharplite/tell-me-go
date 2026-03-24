@@ -382,13 +382,9 @@ func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Conte
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	capturedInput := new([]*domain_llm.Content)
 	g := &mockGateway{
-		generateFn: func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (<-chan *domain_llm.Content, func() (*domain_llm.Content, *domain_llm.Metrics, error)) {
+		generateFn: func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 			*capturedInput = input
-			ch := make(chan *domain_llm.Content)
-			close(ch)
-			return ch, func() (*domain_llm.Content, *domain_llm.Metrics, error) {
-				return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
-			}
+			return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
 		},
 	}
 	bus := events.NewSimpleEventBus(context.Background())

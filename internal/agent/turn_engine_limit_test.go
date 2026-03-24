@@ -23,17 +23,12 @@ type limitMockLLMGateway struct {
 	mock.Mock
 }
 
-func (m *limitMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+func (m *limitMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	args := m.Called(ctx, input, tools, resolver)
-	ch := args.Get(0)
-	if ch == nil {
-		return nil, args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
 	}
-	// Use type assertion to handle both chan and <-chan
-	if c, ok := ch.(chan *llm.Content); ok {
-		return c, args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
-	}
-	return ch.(<-chan *llm.Content), args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
+	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
 }
 
 func (m *limitMockLLMGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -95,12 +90,8 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 
 	// turn 0, 1, 2: Model returns a tool call with unique arguments to avoid loop detector
 	for i := 0; i < 3; i++ {
-		ch := make(chan *llm.Content, 1)
-		ch <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"n": i}}}}}
-		close(ch)
-		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch, func() (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"n": i}}}}}, &llm.Metrics{}, nil
-		}).Once()
+		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"n": i}}}}}
+		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{}, nil).Once()
 	}
 
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, 2).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil).Times(3)

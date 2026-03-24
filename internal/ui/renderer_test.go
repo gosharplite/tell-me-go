@@ -160,86 +160,43 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
-	t.Run("renderResponse_Markdown", func(t *testing.T) {
+	t.Run("RenderResponse_Markdown", func(t *testing.T) {
 		stdout.Reset()
 		content := &llm.Content{Parts: []*llm.Part{{Text: "# Title\nbody"}}}
-		r.renderResponse(content, false, false)
+		r.RenderResponse(content, false, false)
 		if !strings.Contains(stdout.String(), "Title") {
 			t.Errorf("expected stdout to contain 'Title', got %q", stdout.String())
 		}
 	})
 
-	t.Run("renderResponse_Thoughts", func(t *testing.T) {
+	t.Run("RenderResponse_Thoughts", func(t *testing.T) {
 		stderr.Reset()
 		content := &llm.Content{Parts: []*llm.Part{{Text: "I am thinking", IsThought: true}}}
-		r.renderResponse(content, true, false)
+		r.RenderResponse(content, true, false)
 		if !strings.Contains(stderr.String(), "Thinking") || !strings.Contains(stderr.String(), "I am thinking") {
 			t.Errorf("expected stderr to contain 'Thinking', got %q", stderr.String())
 		}
 	})
 }
 
-func TestStdUIRenderer_Streaming(t *testing.T) {
+func TestStdUIRenderer_Spinner(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
 
-	t.Run("StreamResponse_Simple", func(t *testing.T) {
+	t.Run("StartSpinner", func(t *testing.T) {
 		stdout.Reset()
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 
-		ch, finalize := r.StreamResponse(ctx, false, true) // rawOutput=true for simplicity
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Hello"}}}
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: " World"}}}
-
-		agg := finalize()
-		var aggText string
-		for _, p := range agg.Parts {
-			aggText += p.Text
+		// Since we're not in a terminal in CI/Tests, StartSpinner will return an empty stop function.
+		// However, we can mock term.IsTerminal if needed, but the instruction says "basic tests".
+		stop := r.StartSpinner(ctx)
+		if stop == nil {
+			t.Fatal("expected stop function, got nil")
 		}
-		if aggText != "Hello World" {
-			t.Errorf("expected aggregated text 'Hello World', got %q", aggText)
-		}
-		if stdout.String() != "Hello World" {
-			t.Errorf("expected stdout 'Hello World', got %q", stdout.String())
-		}
-	})
-
-	t.Run("StreamResponse_WithThoughts", func(t *testing.T) {
-		stderr.Reset()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		ch, finalize := r.StreamResponse(ctx, true, true)
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Thinking...", IsThought: true}}}
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Result"}}}
-
-		_ = finalize()
-		if !strings.Contains(stderr.String(), "Thinking...") {
-			t.Errorf("expected stderr to contain 'Thinking...', got %q", stderr.String())
-		}
-	})
-
-	t.Run("StreamResponse_WithMedia", func(t *testing.T) {
-		stderr.Reset()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		ch, finalize := r.StreamResponse(ctx, false, true)
-		ch <- &llm.Content{Parts: []*llm.Part{{
-			InlineData: &llm.Blob{
-				MIMEType: "image/png",
-				Data:     []byte("fake-image-data"),
-			},
-		}}}
-
-		_ = finalize()
-		output := stderr.String()
-		if !strings.Contains(output, "[Media]") || !strings.Contains(output, "image/png") {
-			t.Errorf("expected stderr to contain '[Media]' and 'image/png', got %q", output)
-		}
+		stop()
 	})
 }
 
@@ -327,34 +284,6 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	if !strings.Contains(output, "$0.0123 $0.0001") || !strings.Contains(output, "$0.1234") || !strings.Contains(output, "66.7%") {
 		t.Errorf("expected output to contain turn, task and session cost, got %q", output)
 	}
-}
-
-func TestStreamResponseCursorAnchoring(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
-
-	t.Run("Anchoring removed to prevent duplicate output", func(t *testing.T) {
-		stdout.Reset()
-		stderr.Reset()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		ch, finalize := r.StreamResponse(ctx, false, false)
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Streaming chunk"}}}
-		_ = finalize()
-
-		// Save Cursor should NOT be present
-		if strings.Contains(stderr.String(), "\0337") {
-			t.Errorf("Expected stderr NOT to contain DEC Save Cursor, got %q", stderr.String())
-		}
-
-		output := stdout.String()
-		// Should NOT contain Restore Cursor
-		if strings.Contains(output, "\0338") {
-			t.Errorf("Expected stdout NOT to contain DEC Restore Cursor, got %q", output)
-		}
-	})
 }
 
 func TestStdUIRenderer_Colors(t *testing.T) {
@@ -477,8 +406,8 @@ func TestStdUIRenderer_Concurrency(t *testing.T) {
 						{Text: fmt.Sprintf("G%d-I%d-P2\n", id, j)},
 					},
 				}
-				// Test renderResponse (which now locks around both parts)
-				r.renderResponse(content, false, true)
+				// Test RenderResponse
+				r.RenderResponse(content, false, true)
 
 				// Test LogSystemMessage
 				r.LogSystemMessage(fmt.Sprintf("G%d-I%d-Sys", id, j), "info")
@@ -567,45 +496,6 @@ func TestStdUIRenderer_NowSafeRace(t *testing.T) {
 	close(stop)
 }
 
-func TestStreamResponse_NoDuplicateOutput(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
-
-	t.Run("No final redraw even when not scrolled", func(t *testing.T) {
-		stdout.Reset()
-		stderr.Reset()
-		ctx := context.Background()
-		ch, finalize := r.StreamResponse(ctx, false, false)
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Small response"}}}
-		_ = finalize()
-
-		// Should NOT contain Restore Cursor
-		if strings.Contains(stdout.String(), "\0338") {
-			t.Errorf("expected no restore cursor code, got %q", stdout.String())
-		}
-		if strings.Contains(stderr.String(), "── (formatted) ──") {
-			t.Errorf("did not expect scroll separator, got %q", stderr.String())
-		}
-	})
-
-	t.Run("No separator even on scroll", func(t *testing.T) {
-		stdout.Reset()
-		stderr.Reset()
-		ctx := context.Background()
-		ch, finalize := r.StreamResponse(ctx, false, false)
-
-		// Send 30 newlines to trigger hasScrolled
-		longText := strings.Repeat("line\n", 30)
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: longText}}}
-		_ = finalize()
-
-		if strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
-			t.Errorf("did not expect scroll separator, got %q", stderr.String())
-		}
-	})
-}
-
 func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
@@ -646,107 +536,4 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestStreamResponse_IgnoresThoughtsInFinalOutput(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	locker := &mockLocker{}
-	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// [SCENARIO]: User interrupts or completes a stream where thoughts were present.
-	// [EXPECTED]: The final Markdown redraw (finalizeOutput) must NOT include thoughts.
-
-	// showThoughts = false, rawOutput = false (Markdown path)
-	ch, finalize := r.StreamResponse(ctx, false, false)
-
-	// Send a payload with both thought and regular text
-	ch <- &llm.Content{
-		Parts: []*llm.Part{
-			{Text: "I am a hidden thought", IsThought: true},
-			{Text: "I am the actual answer", IsThought: false},
-		},
-	}
-
-	// Finalize the stream (triggers finalizeOutput)
-	_ = finalize()
-
-	output := stdout.String()
-
-	// The output should contain the actual answer (processed via Glamour/Markdown)
-	if !strings.Contains(output, "I am the actual answer") {
-		t.Errorf("expected stdout to contain 'I am the actual answer', got %q", output)
-	}
-
-	// The output should NOT contain the hidden thought
-	if strings.Contains(output, "I am a hidden thought") {
-		t.Errorf("expected stdout NOT to contain 'I am a hidden thought', got %q", output)
-	}
-}
-
-func TestStreamResponse_EmojiWidthCalculation(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
-
-	t.Run("Emoji should not trigger premature scroll", func(t *testing.T) {
-		stdout.Reset()
-		stderr.Reset()
-		ctx := context.Background()
-
-		ch, finalize := r.StreamResponse(ctx, false, false)
-
-		// 'é' is 2 bytes, 1 column.
-		multiByteLine := strings.Repeat("é", 50) + "\n" // 100 bytes, 50 columns.
-		// If byte-based: 100 / 80 = 1 wrapper line + 1 newline = 2 lines per actual line.
-		// If we send 15 such lines:
-		// Actual lines = 15.
-		// Byte-based lines = 30.
-		// 30 > 25 (threshold) -> triggers hasScrolled.
-		// If column-based:
-		// 50 columns < 80. Only newline triggers lineCount++.
-		// 15 lines = 15. 15 <= 25 -> no hasScrolled.
-
-		for i := 0; i < 15; i++ {
-			ch <- &llm.Content{Parts: []*llm.Part{{Text: multiByteLine}}}
-		}
-
-		_ = finalize()
-
-		if strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
-			t.Errorf("Expected NO scroll separator for 15 lines of multi-byte chars, but got one. Byte-based width calculation is likely overestimating lines.")
-		}
-	})
-
-	t.Run("Wide emojis should be counted as 2 columns", func(t *testing.T) {
-		stdout.Reset()
-		stderr.Reset()
-		ctx := context.Background()
-
-		ch, finalize := r.StreamResponse(ctx, false, false)
-
-		// 🚀 (rocket) is 4 bytes and 2 columns in most terminals.
-		// If we send 30 rockets:
-		// Byte-based: 30 * 4 = 120 bytes. 120 / 80 = 1 extra line (Total 2 per line with \n).
-		// Column-based: 30 * 2 = 60 columns. 60 < 80. (Total 1 per line with \n).
-
-		// If we send 15 such lines:
-		// Actual lines = 15.
-		// Byte-based = 30. 30 > 25 -> scroll.
-		// Column-based = 15. 15 <= 25 -> no scroll.
-
-		rocketLine := strings.Repeat("🚀", 30) + "\n"
-		for i := 0; i < 15; i++ {
-			ch <- &llm.Content{Parts: []*llm.Part{{Text: rocketLine}}}
-		}
-
-		_ = finalize()
-
-		if strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
-			t.Errorf("Expected NO scroll separator for 15 lines of rockets (60 columns each), but got one. Byte-based width calculation is likely overestimating lines.")
-		}
-	})
 }

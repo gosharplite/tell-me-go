@@ -58,9 +58,13 @@ type mockUIRenderer struct {
 	mock.Mock
 }
 
-func (m *mockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
-	args := m.Called(ctx, showThoughts, rawOutput)
-	return args.Get(0).(chan<- *llm.Content), args.Get(1).(func() *llm.Content)
+func (m *mockUIRenderer) StartSpinner(ctx context.Context) func() {
+	args := m.Called(ctx)
+	return args.Get(0).(func())
+}
+
+func (m *mockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
+	m.Called(content, showThoughts, rawOutput)
 }
 
 func (m *mockUIRenderer) LogTurnStatus(status events.TurnStatus) {
@@ -217,20 +221,19 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "ResponseStreamEvent",
-			event: events.ResponseStreamEvent{
-				Context: context.Background(),
-				Stream:  make(chan *llm.Content),
+			name:  "InferenceStartedEvent",
+			event: events.InferenceStartedEvent{},
+			setup: func() {
+				mRenderer.On("StartSpinner", mock.Anything).Return(func() {})
+			},
+		},
+		{
+			name: "ResponseEvent",
+			event: events.ResponseEvent{
+				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},
 			},
 			setup: func() {
-				uiCh := make(chan *llm.Content)
-				var uiChSend chan<- *llm.Content = uiCh
-				mRenderer.On("StreamResponse", mock.Anything, true, false).Return(uiChSend, func() *llm.Content { return &llm.Content{} })
-
-				// Close the stream in background to avoid blocking
-				go func() {
-					close(uiCh)
-				}()
+				mRenderer.On("RenderResponse", mock.Anything, true, false).Return()
 			},
 		},
 	}
@@ -239,53 +242,11 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setup()
 
-			// For ResponseStreamEvent, we need to handle the channel closing
-			if ev, ok := tt.event.(events.ResponseStreamEvent); ok {
-				stream := make(chan *llm.Content)
-				ev.Stream = stream
-				close(stream)
-				bridge.handleEvent(context.Background(), ev)
-			} else {
-				bridge.handleEvent(context.Background(), tt.event)
-			}
+			bridge.handleEvent(context.Background(), tt.event)
 
 			mRenderer.AssertExpectations(t)
 		})
 	}
-}
-
-func TestUIBridge_RelayStream(t *testing.T) {
-	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
-
-	t.Run("Relays content", func(t *testing.T) {
-		ctx := context.Background()
-		stream := make(chan *llm.Content, 2)
-		uiCh := make(chan *llm.Content, 2)
-
-		content := &llm.Content{Parts: []*llm.Part{{Text: "hello"}}}
-		stream <- content
-		close(stream)
-
-		bridge.relayStream(ctx, stream, uiCh)
-
-		select {
-		case received := <-uiCh:
-			assert.Equal(t, content, received)
-		case <-time.After(100 * time.Millisecond):
-			t.Fatal("timed out waiting for content")
-		}
-	})
-
-	t.Run("Handles context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		stream := make(chan *llm.Content)
-		uiCh := make(chan *llm.Content)
-
-		cancel()
-		bridge.relayStream(ctx, stream, uiCh)
-		// Should return immediately
-	})
 }
 
 func TestUIBridge_EnsureContext(t *testing.T) {
@@ -408,24 +369,6 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	require.Contains(t, err.Error(), "limits error")
 }
 
-func TestUIBridge_RelayStream_ContextCancelledDuringSend(t *testing.T) {
-	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	stream := make(chan *llm.Content)
-	uiCh := make(chan *llm.Content) // Unbuffered
-
-	// Blocks until the consumer (relayStream) picks it up, guaranteeing state
-	go func() {
-		stream <- &llm.Content{}
-		cancel()
-	}()
-
-	bridge.relayStream(ctx, stream, uiCh)
-	// Should return when context is cancelled
-}
-
 // --- Behavioral Sequence Testing ---
 
 type behaviorTracker struct {
@@ -485,10 +428,15 @@ type behaviorMockUIRenderer struct {
 	tracker *behaviorTracker
 }
 
-func (m *behaviorMockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
-	m.tracker.record("UIRenderer.StreamResponse")
-	args := m.Called(ctx, showThoughts, rawOutput)
-	return args.Get(0).(chan<- *llm.Content), args.Get(1).(func() *llm.Content)
+func (m *behaviorMockUIRenderer) StartSpinner(ctx context.Context) func() {
+	m.tracker.record("UIRenderer.StartSpinner")
+	args := m.Called(ctx)
+	return args.Get(0).(func())
+}
+
+func (m *behaviorMockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
+	m.tracker.record("UIRenderer.RenderResponse")
+	m.Called(content, showThoughts, rawOutput)
 }
 
 func (m *behaviorMockUIRenderer) LogTurnStatus(status events.TurnStatus) {

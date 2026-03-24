@@ -343,7 +343,8 @@ func TestEventTypes(t *testing.T) {
 	events_list := []events.Event{
 		events.StatusUpdate{},
 		events.TurnStarted{},
-		events.ResponseStreamEvent{},
+		events.InferenceStartedEvent{},
+		events.ResponseEvent{},
 		events.ToolCallEvent{},
 		events.ToolResultEvent{},
 		events.UsageMetricsEvent{},

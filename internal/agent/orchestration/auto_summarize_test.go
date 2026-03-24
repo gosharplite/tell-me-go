@@ -62,7 +62,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	}
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
@@ -170,7 +170,7 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
@@ -231,7 +231,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
@@ -315,7 +315,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,

@@ -22,13 +22,17 @@ type mockGateway struct {
 	mock.Mock
 }
 
-func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	args := m.Called(ctx, input, t, resolver)
-	ch := args.Get(0)
-	if ch == nil {
-		return nil, args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
+	var content *llm.Content
+	if args.Get(0) != nil {
+		content = args.Get(0).(*llm.Content)
 	}
-	return ch.(chan *llm.Content), args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
+	var metrics *llm.Metrics
+	if args.Get(1) != nil {
+		metrics = args.Get(1).(*llm.Metrics)
+	}
+	return content, metrics, args.Error(2)
 }
 
 type mockEventBus struct {
@@ -88,9 +92,6 @@ func TestSummarizer_Summarize(t *testing.T) {
 		bus := new(mockEventBus)
 		s := NewSummarizer(gw, bus, WithLogger(testLogger))
 
-		respCh := make(chan *llm.Content)
-		close(respCh)
-
 		metrics := &llm.Metrics{PromptTokens: 10, ResponseTokens: 5}
 		respContent := &llm.Content{
 			Role:  "model",
@@ -108,9 +109,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 				return false
 			}
 			return true
-		}), mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
-			return respContent, metrics, nil
-		})
+		}), mock.Anything, mock.Anything).Return(respContent, metrics, nil)
 
 		bus.On("Publish", mock.Anything, mock.MatchedBy(func(event events.Event) bool {
 			e, ok := event.(events.UsageMetricsEvent)
@@ -134,12 +133,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 		gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
-		respCh := make(chan *llm.Content)
-		close(respCh)
-
-		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Parts: []*llm.Part{}}, nil, nil
-		})
+		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{Parts: []*llm.Part{}}, nil, nil)
 
 		_, _, err := s.Summarize(ctx, subset, "")
 		assert.Error(t, err)
@@ -155,14 +149,9 @@ func TestSummarizer_Summarize(t *testing.T) {
 		gw := new(mockGateway)
 		s := NewSummarizer(gw, nil, WithLogger(testLogger))
 
-		respCh := make(chan *llm.Content)
-		close(respCh)
-
 		transientErr := fmt.Errorf("%w: quota exceeded", llm.ErrTransient)
 
-		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
-			return nil, nil, transientErr
-		})
+		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil, transientErr)
 
 		_, _, err := s.Summarize(ctx, subset, "")
 		assert.Error(t, err)
@@ -182,14 +171,9 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 		gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
-		respCh := make(chan *llm.Content)
-		close(respCh)
-
 		permErr := errors.New("permanent failure")
 
-		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
-			return nil, nil, permErr
-		})
+		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil, permErr)
 
 		_, _, err := s.Summarize(ctx, nil, "")
 		assert.Error(t, err)
@@ -200,12 +184,7 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 		gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
-		respCh := make(chan *llm.Content)
-		close(respCh)
-
-		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
-			return nil, nil, nil
-		})
+		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil, nil)
 
 		_, _, err := s.Summarize(ctx, nil, "")
 		assert.Error(t, err)
@@ -216,12 +195,7 @@ func TestSummarizer_EdgeCases(t *testing.T) {
 		gw := new(mockGateway)
 		s := NewSummarizer(gw, nil)
 
-		respCh := make(chan *llm.Content)
-		close(respCh)
-
-		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Parts: []*llm.Part{{Text: ""}}}, nil, nil
-		})
+		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{Parts: []*llm.Part{{Text: ""}}}, nil, nil)
 
 		_, _, err := s.Summarize(ctx, nil, "")
 		assert.Error(t, err)
@@ -238,13 +212,7 @@ func TestSummarizer_WithLogger(t *testing.T) {
 
 	s := NewSummarizer(gw, bus, WithLogger(testLogger))
 
-	// Trigger an error condition using the public API to verify the logger is used.
-	respCh := make(chan *llm.Content)
-	close(respCh)
-
-	gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
-		return nil, nil, errors.New("simulated logger test error")
-	})
+	gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil, errors.New("simulated logger test error"))
 
 	_, _, err := s.Summarize(ctx, nil, "")
 	assert.Error(t, err)

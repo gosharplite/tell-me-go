@@ -424,8 +424,6 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	}
 }
 
-// ... (event types omitted for brevity in thought, but I must keep them)
-
 // StatusUpdate signals a change in the agent's internal state or progress.
 type StatusUpdate struct {
 	Message string
@@ -438,10 +436,12 @@ type TurnStarted struct {
 	MaxTurns int
 }
 
-// ResponseStreamEvent carries a channel for streaming LLM output.
-type ResponseStreamEvent struct {
-	Context context.Context
-	Stream  <-chan *llm.Content
+// InferenceStartedEvent signals that the agent is starting to generate a response.
+type InferenceStartedEvent struct{}
+
+// ResponseEvent carries the final LLM output.
+type ResponseEvent struct {
+	Content *llm.Content
 }
 
 // ToolCallEvent signals that one or more tools are being invoked.
@@ -523,7 +523,8 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 
 func (e StatusUpdate) Type() string           { return "StatusUpdate" }
 func (e TurnStarted) Type() string            { return "TurnStarted" }
-func (e ResponseStreamEvent) Type() string    { return "ResponseStreamEvent" }
+func (e InferenceStartedEvent) Type() string  { return "InferenceStartedEvent" }
+func (e ResponseEvent) Type() string          { return "ResponseEvent" }
 func (e ToolCallEvent) Type() string          { return "ToolCallEvent" }
 func (e ToolResultEvent) Type() string        { return "ToolResultEvent" }
 func (e UsageMetricsEvent) Type() string      { return "UsageMetricsEvent" }

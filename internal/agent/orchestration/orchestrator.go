@@ -227,6 +227,7 @@ type uiBridge struct {
 	rawOutput    bool
 	useColor     bool
 	logFile      string
+	stopSpinner  func()
 }
 
 // newUIBridge creates a new uiBridge.
@@ -251,14 +252,14 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.renderer.LogTurnStatus(ev.Status)
-	case events.ResponseStreamEvent:
-		ctx := b.ensureContext(ev.Context, "ResponseStreamEvent")
-		if ctx == nil {
-			ctx = context.Background()
+	case events.InferenceStartedEvent:
+		b.stopSpinner = b.renderer.StartSpinner(ctx)
+	case events.ResponseEvent:
+		if b.stopSpinner != nil {
+			b.stopSpinner()
+			b.stopSpinner = nil
 		}
-		uiCh, uiFinalize := b.renderer.StreamResponse(ctx, b.showThoughts, b.rawOutput)
-		b.relayStream(ctx, ev.Stream, uiCh)
-		_ = uiFinalize()
+		b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
 	case events.UsageMetricsEvent:
 		ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
 		if ctx == nil {
@@ -284,24 +285,6 @@ func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Conte
 		return context.Background()
 	}
 	return ctx
-}
-
-func (b *uiBridge) relayStream(ctx context.Context, stream <-chan *domain_llm.Content, uiCh chan<- *domain_llm.Content) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case c, ok := <-stream:
-			if !ok {
-				return
-			}
-			select {
-			case uiCh <- c:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}
 }
 
 // RunParams contains all parameters needed to execute a chat session.

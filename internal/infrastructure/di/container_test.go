@@ -55,8 +55,12 @@ func (m *mockLLMClient) RefreshAuth() error {
 	return args.Error(0)
 }
 
-func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	return nil, nil
+func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	args := m.Called(ctx, input, toolDecls, resolver)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
 }
 
 type mockConfigurableSecurityManager struct {

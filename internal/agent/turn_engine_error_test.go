@@ -74,17 +74,12 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			ch := make(chan *llm.Content)
-			close(ch)
-
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				if callCount == 1 {
-					return nil, nil, newAgentError(llm.ErrTransient, "temporary failure", nil)
-				}
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
+			if callCount == 1 {
+				return nil, nil, newAgentError(llm.ErrTransient, "temporary failure", nil)
 			}
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 		},
 	}
 
@@ -125,17 +120,12 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			ch := make(chan *llm.Content)
-			close(ch)
-
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				if callCount == 1 {
-					return nil, nil, newAgentError(llm.ErrRateLimit, "resource exhausted", nil)
-				}
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
+			if callCount == 1 {
+				return nil, nil, newAgentError(llm.ErrRateLimit, "resource exhausted", nil)
 			}
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 		},
 	}
 
@@ -181,14 +171,9 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			ch := make(chan *llm.Content)
-			close(ch)
-
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, newAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
-			}
+			return nil, nil, newAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
 		},
 	}
 
@@ -240,15 +225,11 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 
 	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{
-					Role:  "model",
-					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "unknown_tool"}}},
-				}, &llm.Metrics{}, nil
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "unknown_tool"}}},
+			}, &llm.Metrics{}, nil
 		},
 	}
 
@@ -289,13 +270,9 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, newAgentError(llm.ErrTransient, "always transient", nil)
-			}
+			return nil, nil, newAgentError(llm.ErrTransient, "always transient", nil)
 		},
 	}
 
@@ -358,12 +335,8 @@ func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	t.Parallel()
 	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, nil // No error, but nil content
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, nil // No error, but nil content
 		},
 	}
 

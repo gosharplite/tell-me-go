@@ -48,12 +48,6 @@ func validateSystemInstructionReq(t *testing.T, r *http.Request) {
 	}
 }
 
-func validateStreamAuth(t *testing.T, r *http.Request) {
-	if r.Header.Get("Authorization") != "Bearer test" {
-		t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
-	}
-}
-
 type sendChatTestCase struct {
 	name                   string
 	mockResponse           genai.GenerateContentResponse
@@ -183,141 +177,6 @@ func runSendChatTest(t *testing.T, tt sendChatTestCase) {
 
 	if content.Parts[0].Text != tt.expectedText {
 		t.Errorf("expected text %q, got %q", tt.expectedText, content.Parts[0].Text)
-	}
-}
-
-type streamChatTestCase struct {
-	name           string
-	mockChunks     []genai.GenerateContentResponse
-	expectedText   string
-	expectedError  string
-	expectedTokens int32
-	validateReq    func(t *testing.T, r *http.Request)
-}
-
-func TestStreamChat_Scenarios(t *testing.T) {
-	tests := []streamChatTestCase{
-		{
-			name: "Success",
-			mockChunks: []genai.GenerateContentResponse{
-				{
-					Candidates: []*genai.Candidate{
-						{
-							Content: &genai.Content{
-								Parts: []*genai.Part{{Text: "Hello "}},
-							},
-						},
-					},
-				},
-				{
-					Candidates: []*genai.Candidate{
-						{
-							Content: &genai.Content{
-								Parts: []*genai.Part{{Text: "World!"}},
-							},
-							FinishReason: genai.FinishReasonStop,
-						},
-					},
-					UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
-						CandidatesTokenCount: 2,
-						PromptTokenCount:     1,
-						TotalTokenCount:      3,
-					},
-				},
-			},
-			expectedText:   "Hello World!",
-			expectedTokens: 2,
-			validateReq:    validateStreamAuth,
-		},
-		{
-			name: "SafetyBlock",
-			mockChunks: []genai.GenerateContentResponse{
-				{
-					PromptFeedback: &genai.GenerateContentResponsePromptFeedback{
-						BlockReason: "SAFETY",
-					},
-				},
-			},
-			expectedError: "blocked by safety filters",
-		},
-		{
-			name: "FinishReasonSafety",
-			mockChunks: []genai.GenerateContentResponse{
-				{
-					Candidates: []*genai.Candidate{
-						{
-							Content: &genai.Content{
-								Parts: []*genai.Part{{Text: "Some text"}},
-							},
-							FinishReason: genai.FinishReasonSafety,
-						},
-					},
-				},
-			},
-			expectedError: "stream interrupted (Finish Reason: SAFETY)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runStreamChatTest(t, tt)
-		})
-	}
-}
-
-func runStreamChatTest(t *testing.T, tt streamChatTestCase) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if tt.validateReq != nil {
-			tt.validateReq(t, r)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		for _, chunk := range tt.mockChunks {
-			data, _ := json.Marshal(chunk)
-			_, _ = fmt.Fprintf(w, "data: %s\r\n\r\n", string(data))
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(context.Background()), 5*time.Second)
-
-	var receivedText string
-	callback := func(c *llm.Content) {
-		for _, p := range c.Parts {
-			receivedText += p.Text
-		}
-	}
-
-	metrics, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, callback)
-	assertStreamResults(t, tt, receivedText, metrics, err)
-}
-
-func assertStreamResults(t *testing.T, tt streamChatTestCase, receivedText string, metrics *llm.Metrics, err error) {
-	if tt.expectedError != "" {
-		if err == nil {
-			t.Fatalf("expected error containing %q, got nil", tt.expectedError)
-		}
-		if !strings.Contains(err.Error(), tt.expectedError) {
-			t.Errorf("expected error containing %q, got %v", tt.expectedError, err)
-		}
-		return
-	}
-
-	if err != nil {
-		t.Fatalf("StreamChat failed: %v", err)
-	}
-
-	if receivedText != tt.expectedText {
-		t.Errorf("expected %q, got %q", tt.expectedText, receivedText)
-	}
-
-	if tt.expectedTokens > 0 {
-		if metrics == nil || metrics.ResponseTokens != tt.expectedTokens {
-			t.Errorf("expected %d response tokens, got %v", tt.expectedTokens, metrics)
-		}
 	}
 }
 
@@ -701,31 +560,6 @@ func TestHandleNoCandidates(t *testing.T) {
 	})
 }
 
-func TestHandleSafetyBlock(t *testing.T) {
-
-	client := &Client{}
-
-	t.Run("With BlockReason", func(t *testing.T) {
-		resp := &genai.GenerateContentResponse{
-			PromptFeedback: &genai.GenerateContentResponsePromptFeedback{
-				BlockReason: "SAFETY",
-			},
-		}
-		err := client.handleSafetyBlock(resp)
-		if err == nil || !strings.Contains(err.Error(), "blocked by safety filters") {
-			t.Errorf("expected blocked error, got %v", err)
-		}
-	})
-
-	t.Run("Without BlockReason", func(t *testing.T) {
-		resp := &genai.GenerateContentResponse{}
-		err := client.handleSafetyBlock(resp)
-		if err != nil {
-			t.Errorf("expected nil error, got %v", err)
-		}
-	})
-}
-
 func TestFormatFinishError(t *testing.T) {
 
 	client := &Client{}
@@ -849,22 +683,5 @@ func TestGemini_EdgeCase_ToSDKContent(t *testing.T) {
 				t.Errorf("text: got %s, want %s", res[0].Parts[0].Text, tt.wantText)
 			}
 		})
-	}
-}
-
-func TestStreamChat_InternalError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprint(w, "internal server error")
-	}))
-	defer server.Close()
-
-	t.Setenv("TELL_ME_MOCK_URL", server.URL)
-	t.Setenv("GOOGLE_API_KEY", "dummy")
-	client, _ := NewClient("http://localhost/v1", "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, nil, 5*time.Second)
-
-	_, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, func(c *llm.Content) {})
-	if err == nil {
-		t.Fatal("expected error, got nil")
 	}
 }

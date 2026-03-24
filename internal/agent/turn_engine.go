@@ -162,9 +162,6 @@ type turn struct {
 	Model        string
 	Logger       *slog.Logger
 
-	// StreamHandler allows external handling of LLM response streams.
-	StreamHandler func(context.Context, <-chan *llm.Content)
-
 	// Results/Outputs
 	Stop bool
 }
@@ -271,7 +268,6 @@ func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.Context
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
 		e.middleware = append(e.middleware,
-			e.WithStreaming(),
 			e.WithMetrics(),
 			e.WithStatusReporter(),
 			withLoopDetector(),
@@ -315,6 +311,7 @@ func (e *turnEngine) prepareNextTurn(turn *turn) {
 	turn.Index++
 	turn.State.CurrentTurns = turn.Index
 	turn.State.Phase = phaseGuard
+	turn.State.RetryCount = 0
 	turn.State.RetryCount = 0
 	turn.State.Response = nil
 	turn.State.ToolResponse = nil
@@ -531,29 +528,16 @@ func (p *inferenceStep) process(ctx context.Context, turn *turn) (processResult,
 }
 
 func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
-	history := turn.State.PreparedHistory
-	respCh, finalize := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
+	_ = events.SafePublish(ctx, turn.Events, events.InferenceStartedEvent{})
 
-	if turn.StreamHandler != nil {
-		turn.StreamHandler(ctx, respCh)
-	} else {
-	drainLoop:
-		for {
-			select {
-			case <-ctx.Done():
-				break drainLoop
-			case _, ok := <-respCh:
-				if !ok {
-					break drainLoop
-				}
-			}
-		}
+	history := turn.State.PreparedHistory
+	respContent, metrics, err := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
+
+	if err == nil && respContent != nil {
+		_ = events.SafePublish(ctx, turn.Events, events.ResponseEvent{Content: respContent})
 	}
 
-	respContent, metrics, err := finalize()
 	if err != nil {
-		// We return what we have (partial content) along with the error
-		// so that the engine can attempt an emergency checkpoint.
 		return respContent, metrics, err
 	}
 	if respContent == nil {
@@ -669,7 +653,7 @@ func (p *persistenceStep) process(ctx context.Context, turn *turn) (processResul
 		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
 			category := llm.ErrTerminal
 			if isTransient(err) {
-				category = llm.ErrTransient
+				category = llm.ErrTerminal
 			}
 			return processResult{}, newAgentError(category, "history error", err)
 		}
@@ -679,7 +663,7 @@ func (p *persistenceStep) process(ctx context.Context, turn *turn) (processResul
 		if err := turn.CtxManager.AddContent(ctx, turn.State.ToolResponse); err != nil {
 			category := llm.ErrTerminal
 			if isTransient(err) {
-				category = llm.ErrTransient
+				category = llm.ErrTerminal
 			}
 			return processResult{}, newAgentError(category, "failed to persist tool results", err)
 		}

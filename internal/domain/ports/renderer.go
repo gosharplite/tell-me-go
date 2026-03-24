@@ -13,9 +13,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// ResponseStreamer defines the interface for streaming responses.
-type ResponseStreamer interface {
-	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content)
+// ResponseRenderer defines the interface for synchronous response rendering.
+type ResponseRenderer interface {
+	StartSpinner(ctx context.Context) (stop func())
+	RenderResponse(content *llm.Content, showThoughts, rawOutput bool)
 }
 
 // StatusLogger defines the interface for logging status and system messages.
@@ -42,7 +43,7 @@ type RendererConfigurator interface {
 
 // UIRenderer defines the interface for UI feedback.
 type UIRenderer interface {
-	ResponseStreamer
+	ResponseRenderer
 	StatusLogger
 	UsageLogger
 	ToolLogger

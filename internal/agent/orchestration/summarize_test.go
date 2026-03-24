@@ -159,7 +159,7 @@ func setupTestClient(t *testing.T, url string) *gemini.Client {
 func setupInternalTools(client *gemini.Client, h ports.HistoryManager) *InternalTools {
 	bus := events.NewSimpleEventBus(context.Background())
 	reg := registry.New()
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	factory := &PipelineFactory{
 		Registry:   reg,

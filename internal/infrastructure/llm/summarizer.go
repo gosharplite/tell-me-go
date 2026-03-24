@@ -54,12 +54,7 @@ func (s *summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	summarizerInput := s.prepareSummarizerInput(subset, focus)
 
 	// We need a resolver for the gateway call, but since we've stripped binary data, it's mostly for satisfying the interface.
-	respCh, finalize := s.gateway.Generate(ctx, summarizerInput, nil, nil)
-	// Drain the channel; we don't stream summarization to the UI.
-	for range respCh {
-	}
-
-	respContent, metrics, err := finalize()
+	respContent, metrics, err := s.gateway.Generate(ctx, summarizerInput, nil, nil)
 	duration := time.Since(startTime)
 
 	if err != nil {

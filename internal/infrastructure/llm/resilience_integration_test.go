@@ -26,10 +26,9 @@ func TestResilientClient_OpenAI_Classification(t *testing.T) {
 
 	innerClient := openai.NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 5*time.Minute, 0, nil)
 	// NewResilientClient is in the same package (llm)
-	client := NewResilientClient(innerClient, true) // disableStreaming=true makes it use SendChat internally
+	client := NewResilientClient(innerClient)
 
-	_, finalize := client.Generate(context.Background(), nil, nil, nil)
-	_, _, err := finalize()
+	_, _, err := client.Generate(context.Background(), nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

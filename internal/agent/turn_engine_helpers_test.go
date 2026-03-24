@@ -318,15 +318,6 @@ func (c *costCapturer) assertTurnCosts(t *testing.T, expected []float64) {
 	}
 }
 
-func closedChan(content *llm.Content) <-chan *llm.Content {
-	ch := make(chan *llm.Content, 1)
-	if content != nil {
-		ch <- content
-	}
-	close(ch)
-	return ch
-}
-
 func createProcessorForPhase(phase turnPhase) turnProcessor {
 	switch phase {
 	case phaseGuard:
@@ -347,14 +338,12 @@ func createProcessorForPhase(phase turnPhase) turnProcessor {
 
 func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			return closedChan(nil), func() (*llm.Content, *llm.Metrics, error) {
-				content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-				if hasTools && phase == phaseInference {
-					content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
-				}
-				return content, &llm.Metrics{}, nil
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+			if hasTools && phase == phaseInference {
+				content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
 			}
+			return content, &llm.Metrics{}, nil
 		},
 	}
 	reg := &mockToolRegistry{}

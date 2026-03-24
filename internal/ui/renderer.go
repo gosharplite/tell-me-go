@@ -35,15 +35,6 @@ type stdUIRenderer struct {
 	useColor bool
 }
 
-// streamState holds the transient state for a single response stream.
-type streamState struct {
-	aggregated    *llm.Content
-	thoughtActive bool
-	showThoughts  bool
-	rawOutput     bool
-	isTerm        bool
-}
-
 // NewRenderer creates a new ports.UIRenderer.
 func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock) ports.UIRenderer {
 	if clk == nil {
@@ -345,7 +336,7 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	}
 }
 
-func (r *stdUIRenderer) renderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
+func (r *stdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
 	if r.locker != nil {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
@@ -398,187 +389,44 @@ func (r *stdUIRenderer) renderInlineData(ui uiState, part *llm.Part) {
 	}
 }
 
-func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
-	ch := make(chan *llm.Content, 100)
+func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	ui := r.getUIState()
-
 	isTerm := false
-	if f, ok := ui.stdout.(*os.File); ok {
-		if term.IsTerminal(int(f.Fd())) {
-			isTerm = true
-		}
+	if f, ok := ui.stdout.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		isTerm = true
+	}
+	if !isTerm {
+		return func() {}
 	}
 
-	state := &streamState{
-		aggregated:   &llm.Content{Role: "model"},
-		showThoughts: showThoughts,
-		rawOutput:    rawOutput,
-		isTerm:       isTerm,
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(1)
+	ticker := time.NewTicker(200 * time.Millisecond)
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	idx := 0
+	startTime := time.Now()
+	done := make(chan struct{})
 
 	go func() {
-		defer wg.Done()
-		r.processStream(ctx, ch, state, ui)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-ticker.C:
+				r.updateIndicatorFrame(ui, frames, &idx, startTime)
+			}
+		}
 	}()
 
-	var once sync.Once
-	finalize := func() *llm.Content {
-		once.Do(func() {
-			close(ch)
-			wg.Wait()
-			r.finalizeOutput(state, ui)
-		})
-		return state.aggregated
-	}
-
-	return ch, finalize
-}
-
-func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState, ui uiState) {
-	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	indicatorStopped := false
-	indicatorDrawn := false
-	startTime := time.Now()
-
-	tickerC, frameIdx, stopTicker := r.setupIndicator(state, ui, frames, startTime)
-	defer stopTicker()
-
-	stopIndicator := func() {
-		if !indicatorStopped && state.isTerm {
-			if indicatorDrawn {
-				r.clearLoadingIndicator(ui, state.rawOutput)
-			}
-			indicatorStopped = true
-			stopTicker()
-			tickerC = nil
+	var stopped bool
+	return func() {
+		if !stopped {
+			stopped = true
+			ticker.Stop()
+			close(done)
+			r.clearLoadingIndicator(ui, false)
 		}
 	}
-	defer stopIndicator() // Catch-all for early exits
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tickerC:
-			indicatorDrawn = true
-			r.updateIndicatorFrame(ui, frames, &frameIdx, startTime)
-		case content, ok := <-ch:
-			if !ok {
-				r.closeThinking(state, ui)
-				stopIndicator()
-				return
-			}
-
-			if !indicatorStopped {
-				if r.shouldStopIndicator(content, state.showThoughts, state.rawOutput) {
-					stopIndicator()
-				}
-			}
-			r.handleStreamContent(state, content, ui)
-		}
-	}
-}
-
-func (r *stdUIRenderer) shouldStopIndicator(content *llm.Content, showThoughts, rawOutput bool) bool {
-	for _, part := range content.Parts {
-		if part.IsThought || len(part.ThoughtSignature) > 0 {
-			if showThoughts {
-				return true
-			}
-			continue
-		}
-		if part.InlineData != nil || part.FunctionCall != nil {
-			return true
-		}
-		if part.Text != "" && rawOutput {
-			return true
-		}
-	}
-	return false
-}
-
-func (r *stdUIRenderer) setupIndicator(state *streamState, ui uiState, frames []string, startTime time.Time) (<-chan time.Time, int, func()) {
-	if !state.isTerm {
-		return nil, 0, func() {}
-	}
-	ticker := time.NewTicker(200 * time.Millisecond)
-	return ticker.C, 0, ticker.Stop
-}
-
-func (r *stdUIRenderer) handleStreamContent(state *streamState, content *llm.Content, ui uiState) {
-	for _, part := range content.Parts {
-		state.aggregated.AddPart(part)
-		r.renderStreamPart(state, part, ui)
-	}
-}
-
-func (r *stdUIRenderer) renderStreamPart(state *streamState, part *llm.Part, ui uiState) {
-	if part.IsThought || len(part.ThoughtSignature) > 0 {
-		r.handleThoughtPart(state, part, ui)
-	}
-	if part.Text != "" {
-		r.handleTextPart(state, part, ui)
-	}
-
-	if part.InlineData != nil {
-		r.handleInlineDataPart(state, part, ui)
-	}
-}
-
-func (r *stdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part, ui uiState) {
-	if !part.IsThought && len(part.ThoughtSignature) == 0 {
-		return
-	}
-	if !state.thoughtActive && state.showThoughts {
-		r.safePrintStderr(fmt.Sprintf("%s[%s] [Thinking]\n", ui.c(colorGray), ui.clock.Now().Format("15:04:05")), ui)
-		state.thoughtActive = true
-	}
-	if state.showThoughts && part.Text != "" {
-		sanitized := sanitizeForTerminal(part.Text)
-		r.safePrintStderr(sanitized, ui)
-	}
-}
-
-func (r *stdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui uiState) {
-	if part.IsThought {
-		return
-	}
-	r.closeThinking(state, ui)
-
-	if state.rawOutput {
-		output := part.Text
-		if r.locker != nil {
-			r.locker.TerminalLock()
-		}
-		_, _ = fmt.Fprint(ui.stdout, output)
-		if r.locker != nil {
-			r.locker.TerminalUnlock()
-		}
-	}
-}
-
-func (r *stdUIRenderer) handleInlineDataPart(state *streamState, part *llm.Part, ui uiState) {
-	r.closeThinking(state, ui)
-	r.safePrintStderr(fmt.Sprintf("\n%s[%s] [Media] %s (%d bytes)%s\n",
-		ui.c(colorGray), ui.getTimestamp(), part.InlineData.MIMEType, len(part.InlineData.Data), ui.c(colorReset)), ui)
-}
-
-func (r *stdUIRenderer) closeThinking(state *streamState, ui uiState) {
-	if state.thoughtActive {
-		r.safePrintStderr(ui.c(colorReset)+"\n", ui)
-		state.thoughtActive = false
-	}
-}
-
-func (r *stdUIRenderer) safePrintStderr(msg string, ui uiState) {
-	if r.locker != nil {
-		r.locker.TerminalLock()
-		defer r.locker.TerminalUnlock()
-	}
-	_, _ = fmt.Fprint(ui.stderr, msg)
 }
 
 func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time) {
@@ -607,23 +455,6 @@ func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
 	// Move to start of line and clear the spinner.
 	// We do NOT add a newline here to allow the answer to start exactly where the spinner was.
 	_, _ = fmt.Fprint(ui.stdout, "\r"+ui.c(termClearLine))
-}
-
-func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
-	if !state.rawOutput {
-		var cleanText strings.Builder
-		for _, p := range state.aggregated.Parts {
-			if !p.IsThought && p.Text != "" {
-				cleanText.WriteString(p.Text)
-			}
-		}
-
-		fullText := cleanText.String()
-		if fullText != "" {
-			sanitized := sanitizeForTerminal(fullText)
-			r.renderMarkdownWithUI(ui, sanitized)
-		}
-	}
 }
 
 func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {

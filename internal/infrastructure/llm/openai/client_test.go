@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -333,51 +332,6 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 	}
 }
 
-func TestStreamChat(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-
-		chunks := []string{
-			`{"choices":[{"delta":{"content":"Hello"}}]}`,
-			`{"choices":[{"delta":{"reasoning_content":"Thinking"}}]}`,
-			`{"choices":[{"delta":{"content":" world"}}], "usage":{"prompt_tokens":5, "completion_tokens":10, "total_tokens":15}}`,
-		}
-
-		for _, chunk := range chunks {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
-		}
-		_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
-
-	var receivedText, receivedThought string
-	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
-		for _, p := range c.Parts {
-			if p.IsThought {
-				receivedThought += p.Text
-			} else {
-				receivedText += p.Text
-			}
-		}
-	})
-
-	if err != nil {
-		t.Fatalf("StreamChat failed: %v", err)
-	}
-
-	if receivedText != "Hello world" {
-		t.Errorf("expected 'Hello world', got %q", receivedText)
-	}
-	if receivedThought != "Thinking" {
-		t.Errorf("expected 'Thinking', got %q", receivedThought)
-	}
-	if metrics == nil || metrics.TotalTokens != 15 {
-		t.Errorf("unexpected metrics: %+v", metrics)
-	}
-}
-
 func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
 	history := []*llm.Content{
@@ -521,39 +475,6 @@ func TestSendChat_Errors(t *testing.T) {
 	}
 }
 
-func TestStreamChat_Errors(t *testing.T) {
-	t.Run("API Error in Chunk", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"error": {"message": "Something went wrong", "type": "api_error"}}`)
-		}))
-		defer server.Close()
-
-		client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
-		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
-
-		if err == nil || !strings.Contains(err.Error(), "Something went wrong") {
-			t.Errorf("expected API error, got %v", err)
-		}
-	})
-
-	t.Run("HTTP Error Status", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte("Internal Server Error"))
-		}))
-		defer server.Close()
-
-		client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
-		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
-
-		var apiErr *llmerr.APIError
-		if !errors.As(err, &apiErr) || apiErr.Status != 500 {
-			t.Errorf("expected APIError with status 500, got %v", err)
-		}
-	})
-}
-
 func TestToOpenAISchema(t *testing.T) {
 	s := &tools.Schema{
 		Type:        "OBJECT",
@@ -588,37 +509,6 @@ func TestInjectPersona(t *testing.T) {
 			t.Errorf("expected system role for persona in DeepSeek, got %+v", messages[0])
 		}
 	})
-}
-
-func TestStreamChat_ToolCalls(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		chunks := []string{
-			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"get_x"}}]}}]}`,
-			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"a\""}}]}}]}`,
-			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":1}"}}]}}]}`,
-			`{"choices":[{"delta":{"content":"done"}}]}`,
-		}
-		for _, chunk := range chunks {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
-		}
-		_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
-	var toolCalls []*llm.FunctionCall
-	_, _ = client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
-		for _, p := range c.Parts {
-			if p.FunctionCall != nil {
-				toolCalls = append(toolCalls, p.FunctionCall)
-			}
-		}
-	})
-
-	if len(toolCalls) != 1 || toolCalls[0].Name != "get_x" {
-		t.Errorf("expected 1 tool call get_x, got %+v", toolCalls)
-	}
 }
 
 func TestGenerateImages_NotImplemented(t *testing.T) {
@@ -871,44 +761,6 @@ func TestOpenAI_EdgeCase_ParseResponseToolCalls(t *testing.T) {
 	}, content)
 	if err == nil || !strings.Contains(err.Error(), "failed to unmarshal tool arguments") {
 		t.Errorf("expected unmarshal error, got %v", err)
-	}
-}
-
-func TestOpenAI_StreamEdgeCases(t *testing.T) {
-	t.Run("processStreamChunk malformed JSON", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
-		metrics, err := c.processStreamChunk([]byte("invalid"), nil, nil)
-		if metrics != nil || err != nil {
-			t.Errorf("expected nil, nil for malformed chunk, got %v, %v", metrics, err)
-		}
-	})
-
-	t.Run("emitToolCalls unmarshal error", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
-		states := map[int]*toolCallState{
-			0: {
-				name: "test",
-				args: func() strings.Builder {
-					var b strings.Builder
-					b.WriteString("{bad}")
-					return b
-				}(),
-			},
-		}
-		err := c.emitToolCalls(states, func(c *llm.Content) {})
-		if err == nil || !strings.Contains(err.Error(), "failed to unmarshal tool arguments") {
-			t.Errorf("expected unmarshal error, got %v", err)
-		}
-	})
-}
-
-func TestOpenAI_StreamRequestFailure(t *testing.T) {
-	// Use a non-existent URL to trigger Do() error
-
-	c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
-	_, err := c.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
-	if err == nil || !strings.Contains(err.Error(), "request failed") {
-		t.Errorf("expected request failure error, got %v", err)
 	}
 }
 

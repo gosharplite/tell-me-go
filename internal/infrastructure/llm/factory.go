@@ -50,7 +50,7 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 		return nil, err
 	}
 
-	return NewResilientClient(baseClient, cfg.DisableStreaming), nil
+	return NewResilientClient(baseClient), nil
 }
 
 func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {

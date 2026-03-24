@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
 )
@@ -94,16 +93,6 @@ func TestSearchToolSelection(t *testing.T) {
 				t.Fatalf("SendChat failed: %v", err)
 			}
 			verifyTools(t, capturer.Get(), tt.expectSearch, "SendChat")
-
-			// Reset capturer
-			capturer.Set(nil)
-
-			// Test StreamChat
-			_, err = client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
-			if err != nil {
-				t.Fatalf("StreamChat failed: %v", err)
-			}
-			verifyTools(t, capturer.Get(), tt.expectSearch, "StreamChat")
 		})
 	}
 }

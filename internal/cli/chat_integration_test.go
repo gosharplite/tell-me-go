@@ -178,13 +178,8 @@ type mockClient struct {
 	domain_llm.LLMClient
 }
 
-func (m *mockClient) Generate(ctx stdctx.Context, input []*domain_llm.Content, tools []*domain_tools.ToolDeclaration, resolver domain_llm.AssetResolver) (<-chan *domain_llm.Content, func() (*domain_llm.Content, *domain_llm.Metrics, error)) {
-	ch := make(chan *domain_llm.Content, 1)
-	ch <- &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "response"}}}
-	close(ch)
-	return ch, func() (*domain_llm.Content, *domain_llm.Metrics, error) {
-		return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "response"}}}, &domain_llm.Metrics{}, nil
-	}
+func (m *mockClient) Generate(ctx stdctx.Context, input []*domain_llm.Content, tools []*domain_tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
+	return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "response"}}}, &domain_llm.Metrics{}, nil
 }
 
 func (m *mockClient) SendChat(ctx stdctx.Context, history []*domain_llm.Content, tools []*domain_tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
