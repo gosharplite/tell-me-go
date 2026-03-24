@@ -383,3 +383,42 @@ func TestReadFiles_UTF8Truncation(t *testing.T) {
 		t.Errorf("result contains invalid UTF-8: %q", finalContent[len(finalContent)-10:])
 	}
 }
+
+func TestReadFile_Directory(t *testing.T) {
+	tempDir := t.TempDir()
+	subDir := filepath.Join(tempDir, "subdir")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := r.readFile(ctx, map[string]interface{}{"filepath": subDir})
+	if err == nil {
+		t.Error("expected error when reading a directory")
+	} else if !strings.Contains(err.Error(), "path is a directory") {
+		t.Errorf("expected error message to contain 'path is a directory', got %q", err.Error())
+	}
+}
+
+func TestReadFiles_Directory(t *testing.T) {
+	tempDir := t.TempDir()
+	subDir := filepath.Join(tempDir, "subdir")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{subDir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "ERROR: path is a directory, use list_files instead") {
+		t.Errorf("expected directory error message, got %q", res.Text)
+	}
+}

@@ -140,6 +140,14 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, err
 	}
 
+	info, err := r.fs.Stat(ctx, resolvedPath)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
+	}
+	if info.IsDir() {
+		return tools.ToolResult{}, fmt.Errorf("path is a directory, use list_files instead")
+	}
+
 	content, err := r.fs.ReadFile(ctx, resolvedPath)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
@@ -171,22 +179,32 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{})
 
 	var sb strings.Builder
 	for _, path := range params.FilePaths {
-		sb.WriteString(fmt.Sprintf("--- File: %s ---\n", path))
+		fmt.Fprintf(&sb, "--- File: %s ---\n", path)
 
 		resolvedPath, err := r.sm.IsPathSafe(path)
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("ERROR: %v\n\n", err))
+			fmt.Fprintf(&sb, "ERROR: %v\n\n", err)
+			continue
+		}
+
+		info, err := r.fs.Stat(ctx, resolvedPath)
+		if err != nil {
+			fmt.Fprintf(&sb, "ERROR: failed to read file: %v\n\n", err)
+			continue
+		}
+		if info.IsDir() {
+			sb.WriteString("ERROR: path is a directory, use list_files instead\n\n")
 			continue
 		}
 
 		content, err := r.fs.ReadFile(ctx, resolvedPath)
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("ERROR: failed to read file: %v\n\n", err))
+			fmt.Fprintf(&sb, "ERROR: failed to read file: %v\n\n", err)
 			continue
 		}
 
 		if persistence.IsBinary(content) {
-			sb.WriteString(fmt.Sprintf("(Binary file, cannot display as text)\n\n"))
+			sb.WriteString("(Binary file, cannot display as text)\n\n")
 			continue
 		}
 
