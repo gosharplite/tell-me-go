@@ -83,7 +83,7 @@ func TestWithStatusReporter(t *testing.T) {
 		phase      turnPhase
 		wantEvents int
 	}{
-		{"Refining phase", phaseRefining, 1},
+		{"Inference phase", phaseInference, 1},
 		{"Persisting phase", phasePersisting, 1},
 		{"Other phase", phaseExecuting, 0},
 	}

@@ -43,59 +43,70 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 func (e *turnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
+			// [FIX] Trigger session boundary header at the absolute start of every LLM generation cycle
+			// (autonomous or user-triggered) to ensure visibility during tool chains.
+			if turn.State.Phase == phaseInference && turn.State.RetryCount == 0 && e.events != nil {
+				e.publishTurnStatus(ctx, turn, false)
+			}
+
 			res, err := next.process(ctx, turn)
 			if e.events == nil || err != nil {
 				return res, err
 			}
 
-			if (turn.State.Phase == phaseRefining && turn.State.RetryCount == 0) || turn.State.Phase == phasePersisting {
-				limits := turn.CtxManager.GetLimits()
-				maxTokens := limits.MaxHistoryTokens
-				maxHistTurns := limits.MaxHistoryTurns
-				threshold := limits.TieredThreshold
-
-				var cost float64
-				var dailyCost float64
-				var totalM, totalH, totalO int64
-				if turn.CostTracker != nil {
-					cost = turn.CostTracker.GetTotalCost(ctx)
-					dailyCost = turn.CostTracker.GetDailyCost(ctx)
-					stats, _ := turn.CostTracker.GetStats(ctx)
-					totalM = stats.PromptTokens - stats.CachedTokens
-					totalH = stats.CachedTokens
-					totalO = stats.ResponseTokens + stats.ThinkingTokens
-				}
-
-				evt := events.TurnStatusEvent{
-					Status: events.TurnStatus{
-						Timestamp:        turn.Clock.Now(),
-						CurrentTurns:     turn.Index,
-						SessionTurns:     turn.CtxManager.History.GetTotalEntries() / 2,
-						MaxHistoryTurns:  maxHistTurns,
-						Tokens:           turn.State.Tokens,
-						MaxHistoryTokens: maxTokens,
-						TieredThreshold:  threshold,
-						Metrics:          turn.State.Metrics,
-						IsPostCall:       turn.State.Phase == phasePersisting,
-						StartTime:        turn.StartTime,
-						SessionCost:      cost,
-						DailyCost:        dailyCost,
-						TaskCost:         turn.State.TaskCost,
-						TotalM:           totalM,
-						TotalH:           totalH,
-						TotalO:           totalO,
-					},
-				}
-				if err := events.SafePublish(ctx, e.events, evt); err != nil {
-					if !errors.Is(err, events.ErrBusNotInitialized) {
-						e.getLogger().Error("event_publish_failed",
-							slog.String("event_type", string(evt.Type())),
-							slog.Any("error", err))
-					}
-				}
+			// Trigger boundary footer/metrics after persistence is complete.
+			if turn.State.Phase == phasePersisting {
+				e.publishTurnStatus(ctx, turn, true)
 			}
 			return res, nil
 		})
+	}
+}
+
+func (e *turnEngine) publishTurnStatus(ctx context.Context, turn *turn, isPostCall bool) {
+	limits := turn.CtxManager.GetLimits()
+	maxTokens := limits.MaxHistoryTokens
+	maxHistTurns := limits.MaxHistoryTurns
+	threshold := limits.TieredThreshold
+
+	var cost float64
+	var dailyCost float64
+	var totalM, totalH, totalO int64
+	if turn.CostTracker != nil {
+		cost = turn.CostTracker.GetTotalCost(ctx)
+		dailyCost = turn.CostTracker.GetDailyCost(ctx)
+		stats, _ := turn.CostTracker.GetStats(ctx)
+		totalM = stats.PromptTokens - stats.CachedTokens
+		totalH = stats.CachedTokens
+		totalO = stats.ResponseTokens + stats.ThinkingTokens
+	}
+
+	evt := events.TurnStatusEvent{
+		Status: events.TurnStatus{
+			Timestamp:        turn.Clock.Now(),
+			CurrentTurns:     turn.Index,
+			SessionTurns:     turn.CtxManager.History.GetTotalEntries() / 2,
+			MaxHistoryTurns:  maxHistTurns,
+			Tokens:           turn.State.Tokens,
+			MaxHistoryTokens: maxTokens,
+			TieredThreshold:  threshold,
+			Metrics:          turn.State.Metrics,
+			IsPostCall:       isPostCall,
+			StartTime:        turn.StartTime,
+			SessionCost:      cost,
+			DailyCost:        dailyCost,
+			TaskCost:         turn.State.TaskCost,
+			TotalM:           totalM,
+			TotalH:           totalH,
+			TotalO:           totalO,
+		},
+	}
+	if err := events.SafePublish(ctx, e.events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			e.getLogger().Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
+		}
 	}
 }
 
