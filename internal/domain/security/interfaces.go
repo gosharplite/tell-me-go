@@ -63,4 +63,5 @@ type CommandValidator interface {
 	Split(cmd string) ([]string, error)
 	ValidateStructure(parts []string) error
 	CheckPathSafety(parts []string) (bool, string)
+	HasShellFeatures(parts []string) bool
 }

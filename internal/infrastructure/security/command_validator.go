@@ -205,6 +205,9 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 		{"<", "input redirection is not allowed"},
 		{"$", "variable expansion is not allowed"},
 		{"`", "command substitution is not allowed"},
+		{"*", "wildcards are not allowed in auto-approvable commands"},
+		{"?", "wildcards are not allowed in auto-approvable commands"},
+		{"[", "wildcards are not allowed in auto-approvable commands"},
 		{"\n", "newlines are not allowed"},
 		{"\r", "carriage returns are not allowed"},
 	}
@@ -231,6 +234,39 @@ func (v *commandValidator) CheckPathSafety(parts []string) (bool, string) {
 		}
 	}
 	return true, ""
+}
+
+// HasShellFeatures checks if the command parts contain any shell operators,
+// wildcards, or interpolation characters that require a shell interpreter.
+func (v *commandValidator) HasShellFeatures(parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+
+	// 1. Skip if already calling a shell explicitly as the primary command
+	switch parts[0] {
+	case "sh", "bash", "zsh", "ksh", "csh":
+		return false
+	}
+
+	// 2. Check for standalone shell operators (e.g. &&, ||, ;, |, >, <)
+	if ok, _ := v.safety.HasForbiddenOperators(parts); ok {
+		return true
+	}
+
+	for i, part := range parts {
+		// 3. Check for shell interpolation ($ or `) and wildcards (*, ?, [])
+		if v.safety.HasUnsafeInterpolation(part) || strings.ContainsAny(part, "*?[]") {
+			return true
+		}
+
+		// 4. Check for attached operators in the command token (e.g. "ls;echo")
+		if i == 0 && v.safety.HasForbiddenCharsInCommand(part) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func cleanPathArgument(arg string) string {

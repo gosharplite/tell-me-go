@@ -258,7 +258,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
-		Description:     "Executes a single binary directly via os/exec (NO shell interpreter). Security: Only whitelisted commands are auto-approved. CRITICAL: Do NOT use shell operators like &&, ||, >, <, or wildcards (*). If you NEED shell features, you MUST explicitly wrap your command: e.g., bash -c 'ls *.go && echo done'. To pipe commands, use the 'pipe_commands' tool instead.",
+		Description:     "Executes a command. Shell features like operators (&&, ||, ;, |, >, <), wildcards (*, ?), and variable expansion ($) are supported and automatically handled via 'sh -c'. Security: Only whitelisted commands are auto-approved. For advanced multi-stage pipes, use the 'pipe_commands' tool.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

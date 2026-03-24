@@ -49,6 +49,15 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("error parsing command: %w", err)
 	}
 
+	// NEW: Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation)
+	// This prevents the AI from failing on valid shell commands that don't fit the direct-exec model.
+	if t.validator.HasShellFeatures(parts) {
+		wrapped := "sh -c " + quoteShellArg(params.Command)
+		if newParts, err := t.validator.Split(wrapped); err == nil {
+			parts = newParts
+		}
+	}
+
 	if err := t.validator.ValidateStructure(parts); err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -249,4 +258,10 @@ func (w *warnWriter) Write(p []byte) (n int, err error) {
 	msg := string(p)
 	w.sm.Warn(strings.TrimSuffix(msg, "\n"))
 	return len(p), nil
+}
+
+// quoteShellArg wraps a string in single quotes and escapes any existing single quotes
+// to make it safe for 'sh -c'.
+func quoteShellArg(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
