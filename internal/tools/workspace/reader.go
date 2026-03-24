@@ -130,7 +130,7 @@ func (r *fileReader) readBoundedContent(ctx context.Context, path string) ([]byt
 	if err != nil {
 		return nil, false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Read up to maxReadSize + 1 to detect truncation
 	content, err := io.ReadAll(io.LimitReader(f, int64(maxReadSize)+1))
