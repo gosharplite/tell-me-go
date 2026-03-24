@@ -53,7 +53,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	// NEW: Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation)
 	// This prevents the AI from failing on valid shell commands that don't fit the direct-exec model.
 	if t.validator.HasShellFeatures(parts) {
-		wrapped := wrapWithShell(params.Command)
+		wrapped := wrapWithShell(params.Command, runtime.GOOS)
 		if newParts, err := t.validator.Split(wrapped); err == nil {
 			parts = newParts
 		}
@@ -267,9 +267,9 @@ func quoteShellArg(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
-// wrapWithShell wraps a command in the appropriate shell interpreter for the host OS.
-func wrapWithShell(command string) string {
-	if runtime.GOOS == "windows" {
+// wrapWithShell wraps a command in the appropriate shell interpreter for the target OS.
+func wrapWithShell(command, goos string) string {
+	if goos == "windows" {
 		return "cmd.exe /c " + command
 	}
 	return "sh -c " + quoteShellArg(command)

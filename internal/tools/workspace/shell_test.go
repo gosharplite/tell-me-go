@@ -508,3 +508,58 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 		}
 	})
 }
+
+func TestWrapWithShell(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  string
+		goos     string
+		expected string
+	}{
+		{
+			name:     "Windows: simple command",
+			command:  "dir",
+			goos:     "windows",
+			expected: "cmd.exe /c dir",
+		},
+		{
+			name:     "Windows: command with spaces",
+			command:  "dir /s",
+			goos:     "windows",
+			expected: "cmd.exe /c dir /s",
+		},
+		{
+			name:     "Linux: simple command",
+			command:  "ls",
+			goos:     "linux",
+			expected: "sh -c 'ls'",
+		},
+		{
+			name:     "Linux: command with spaces",
+			command:  "ls -la",
+			goos:     "linux",
+			expected: "sh -c 'ls -la'",
+		},
+		{
+			name:     "Linux: command with single quotes",
+			command:  "echo 'hello'",
+			goos:     "linux",
+			expected: "sh -c 'echo '\\''hello'\\'''",
+		},
+		{
+			name:     "Darwin: simple command",
+			command:  "ls",
+			goos:     "darwin",
+			expected: "sh -c 'ls'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := wrapWithShell(tt.command, tt.goos)
+			if got != tt.expected {
+				t.Errorf("wrapWithShell(%q, %q) = %q; want %q", tt.command, tt.goos, got, tt.expected)
+			}
+		})
+	}
+}
