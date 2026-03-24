@@ -293,8 +293,6 @@ func TestCommandValidator_WindowsShell(t *testing.T) {
 		wantErr bool
 	}{
 		// Unquoted: shell operators are standalone tokens
-		// This currently FAILS because cmd.exe is not recognized as a shell, 
-		// so standalone operators like '&&' are rejected.
 		{"cmd.exe /c ls && echo hi", false},
 		{"cmd /c ls && echo hi", false},
 		{"powershell -Command ls; echo hi", false},
@@ -331,6 +329,7 @@ func TestCommandValidator_HasShellFeatures(t *testing.T) {
 		{"ls > out.txt", true},
 		{"echo $HOME", true},
 		{"ls *.go", true},
+		{"ls;echo hi", true},
 		{"sh -c \"ls && echo hi\"", false},
 		{"cmd.exe /c \"ls && echo hi\"", false},
 		{"powershell -Command \"ls; echo hi\"", false},
