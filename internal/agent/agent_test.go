@@ -4,9 +4,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -812,4 +814,30 @@ func (m *mockToolRegistryWithExpectations) IsSerial(name string) bool {
 
 func (m *mockToolRegistryWithExpectations) IsLongRunning(name string) bool {
 	return m.Called(name).Bool(0)
+}
+
+func TestAgent_Shutdown_FlushError(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	mockBus := &inframock.TestEventBus{}
+	flushErr := errors.New("flush failed")
+	mockBus.SetFlushErr(flushErr)
+
+	a := &agent{
+		events: mockBus,
+		logger: logger,
+	}
+
+	ctx := context.Background()
+	err := a.Shutdown(ctx)
+
+	require.NoError(t, err)
+
+	// Verify that the error was logged at Debug level
+	output := buf.String()
+	require.Contains(t, output, "event bus flush incomplete during shutdown")
+	require.Contains(t, output, "flush failed")
 }
