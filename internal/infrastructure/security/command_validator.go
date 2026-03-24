@@ -99,7 +99,7 @@ func (v *commandValidator) ValidateStructure(parts []string) error {
 	// subject to the IsSafe prompt/authorization flow anyway.
 	isShell := false
 	switch parts[0] {
-	case "sh", "bash", "zsh", "ksh", "csh":
+	case "sh", "bash", "zsh", "ksh", "csh", "cmd.exe", "cmd", "powershell", "pwsh":
 		isShell = true
 	}
 
@@ -260,7 +260,7 @@ func (v *commandValidator) HasShellFeatures(parts []string) bool {
 
 	// 1. Skip if already calling a shell explicitly as the primary command
 	switch parts[0] {
-	case "sh", "bash", "zsh", "ksh", "csh":
+	case "sh", "bash", "zsh", "ksh", "csh", "cmd.exe", "cmd", "powershell", "pwsh":
 		return false
 	}
 
