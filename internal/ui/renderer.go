@@ -131,7 +131,6 @@ func (r *stdUIRenderer) renderMarkdown(text string) {
 
 func (r *stdUIRenderer) renderMarkdownWithUI(ui uiState, text string) {
 	stdout := ui.stdout
-	_, _ = fmt.Fprintf(stdout, "%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
 	if r.renderer == nil {
 		_, _ = fmt.Fprint(stdout, text)
 		return
@@ -301,7 +300,6 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	if status.IsPostCall && status.Metrics != nil {
 		m := status.Metrics
-		_, _ = fmt.Fprintln(stderr) // Add vertical separation
 		printSystemLine(int(m.PromptTokens), true)
 
 		r.renderMetricsLine(ui, m, status.StartTime)
@@ -657,13 +655,6 @@ func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
 				// Normal path: Cursor is still valid, do a clean redraw.
 				r.clearAndRenderMarkdown(ui, sanitized)
 			}
-		}
-		if r.locker != nil {
-			r.locker.TerminalLock()
-		}
-		_, _ = fmt.Fprintln(ui.stdout)
-		if r.locker != nil {
-			r.locker.TerminalUnlock()
 		}
 	}
 }

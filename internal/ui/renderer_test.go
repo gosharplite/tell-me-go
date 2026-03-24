@@ -149,8 +149,8 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 			StartTime: r.nowSafe().Add(-5 * time.Second),
 		})
 		output := stderr.String()
-		if !strings.HasPrefix(output, "\n") {
-			t.Errorf("expected stderr to start with a newline, got %q", output)
+		if !strings.Contains(output, "Payload:") {
+			t.Errorf("expected stderr to contain 'Payload:', got %q", output)
 		}
 		if !strings.Contains(output, "Ready") {
 			t.Errorf("expected stderr to contain 'Ready', got %q", output)

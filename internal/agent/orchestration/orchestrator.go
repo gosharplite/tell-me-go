@@ -227,22 +227,40 @@ type uiBridge struct {
 	rawOutput    bool
 	useColor     bool
 	logFile      string
+	eventQueue   chan func()
 }
 
 // newUIBridge creates a new uiBridge.
 func newUIBridge(renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
-	return &uiBridge{
+	b := &uiBridge{
 		renderer:     renderer,
 		showThoughts: showThoughts,
 		showTools:    showTools,
 		rawOutput:    rawOutput,
 		useColor:     useColor,
 		logFile:      logFile,
+		eventQueue:   make(chan func(), 1000),
+	}
+	go b.loop()
+	return b
+}
+
+func (b *uiBridge) loop() {
+	for task := range b.eventQueue {
+		task()
 	}
 }
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
+	// Defer event processing to the dedicated UI thread to ensure strict rendering order
+	// and to escape the 5-second timeout imposed by the event bus on subscribers.
+	b.eventQueue <- func() {
+		b.processEvent(ctx, e)
+	}
+}
+
+func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.renderer.LogTurnStatus(ev.Status)

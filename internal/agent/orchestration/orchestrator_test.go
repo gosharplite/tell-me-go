@@ -249,6 +249,11 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				bridge.handleEvent(context.Background(), tt.event)
 			}
 
+			// Ensure the event queue is flushed
+			syncCh := make(chan struct{})
+			bridge.eventQueue <- func() { close(syncCh) }
+			<-syncCh
+
 			mRenderer.AssertExpectations(t)
 		})
 	}
