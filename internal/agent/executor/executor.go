@@ -174,20 +174,20 @@ func (e *ToolExecutor) Shutdown() {
 }
 
 type resultCollector struct {
-	calls  []*llm.FunctionCall
-	bus    events.EventBus
-	logger ports.Logger
-	trs    []domaintools.ToolResult
-	ch     chan toolExecResult
+	executor *ToolExecutor
+	calls    []*llm.FunctionCall
+	bus      events.EventBus
+	trs      []domaintools.ToolResult
+	ch       chan toolExecResult
 }
 
-func newResultCollector(calls []*llm.FunctionCall, bus events.EventBus, logger ports.Logger) *resultCollector {
+func (e *ToolExecutor) newResultCollector(calls []*llm.FunctionCall, bus events.EventBus) *resultCollector {
 	return &resultCollector{
-		calls:  calls,
-		bus:    bus,
-		logger: logger,
-		trs:    make([]domaintools.ToolResult, len(calls)),
-		ch:     make(chan toolExecResult, len(calls)),
+		executor: e,
+		calls:    calls,
+		bus:      bus,
+		trs:      make([]domaintools.ToolResult, len(calls)),
+		ch:       make(chan toolExecResult, len(calls)),
 	}
 }
 
@@ -208,18 +208,23 @@ func (c *resultCollector) Wait(ctx context.Context) ([]domaintools.ToolResult, e
 				c.trs[res.index] = res.tr
 				isCompleted[res.index] = true
 				evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
-				if err := events.SafePublish(ctx, c.bus, evt); err != nil {
-					if !errors.Is(err, events.ErrBusNotInitialized) {
-						c.logger.Error("event_publish_failed",
-							"event_type", string(evt.Type()),
-							"error", err)
-					}
-				}
+				c.executor.emitEvent(ctx, c.bus, evt)
 				completedCount++
 			}
 		}
 	}
 	return c.trs, nil
+}
+
+// emitEvent consolidates error handling for event publishing.
+func (e *ToolExecutor) emitEvent(ctx context.Context, bus events.EventBus, evt events.Event) {
+	if err := events.SafePublish(ctx, bus, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			e.logger.Error("event_publish_failed",
+				"event_type", string(evt.Type()),
+				"error", err)
+		}
+	}
 }
 
 // Execute handles the execution of function calls from the model response.
@@ -244,7 +249,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	declinedMap := auth.RequestBatchConsent(ctx, calls)
 
 	// Orchestrate Execution
-	collector := newResultCollector(calls, bus, e.logger)
+	collector := e.newResultCollector(calls, bus)
 	startTime := time.Now()
 
 	// [SCALABILITY FIX] Bounding the execution plan goroutine to prevent leaks on context cancellation.
@@ -285,13 +290,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 				Message: tr.Text,
 				Level:   "warn",
 			}
-			if err := events.SafePublish(ctx, bus, evt); err != nil {
-				if !errors.Is(err, events.ErrBusNotInitialized) {
-					e.logger.Error("event_publish_failed",
-						"event_type", string(evt.Type()),
-						"error", err)
-				}
-			}
+			e.emitEvent(ctx, bus, evt)
 		}
 	}
 
@@ -316,13 +315,7 @@ func (e *ToolExecutor) publishLimitError(ctx context.Context, maxToolTurns int) 
 		Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
 		Level:   "error",
 	}
-	if err := events.SafePublish(ctx, bus, evt); err != nil {
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			e.logger.Error("event_publish_failed",
-				"event_type", string(evt.Type()),
-				"error", err)
-		}
-	}
+	e.emitEvent(ctx, bus, evt)
 }
 
 func (e *ToolExecutor) publishCallEvent(ctx context.Context, calls []*llm.FunctionCall, turn int, maxToolTurns int) {
@@ -334,13 +327,7 @@ func (e *ToolExecutor) publishCallEvent(ctx context.Context, calls []*llm.Functi
 		Turn:     turn,
 		MaxTurns: maxToolTurns,
 	}
-	if err := events.SafePublish(ctx, bus, evt); err != nil {
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			e.logger.Error("event_publish_failed",
-				"event_type", string(evt.Type()),
-				"error", err)
-		}
-	}
+	e.emitEvent(ctx, bus, evt)
 }
 
 func (e *ToolExecutor) assembleResponse(calls []*llm.FunctionCall, results []domaintools.ToolResult) *llm.Content {
@@ -581,13 +568,7 @@ func (e *ToolExecutor) handlePanic(ctx context.Context, r interface{}, toolName 
 		Message: msg,
 		Level:   "error",
 	}
-	if err := events.SafePublish(ctx, bus, evt); err != nil {
-		if !errors.Is(err, events.ErrBusNotInitialized) {
-			e.logger.Error("event_publish_failed",
-				"event_type", string(evt.Type()),
-				"error", err)
-		}
-	}
+	e.emitEvent(ctx, bus, evt)
 
 	return domaintools.ToolResult{
 		Text:  fmt.Sprintf("Tool %q encountered an internal fatal error (panic) and was terminated.", toolName),
