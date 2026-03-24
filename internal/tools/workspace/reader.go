@@ -199,6 +199,11 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, fmt.Errorf("filepaths argument is required and cannot be empty")
 	}
 
+	const maxFilesPerCall = 50
+	if len(params.FilePaths) > maxFilesPerCall {
+		return tools.ToolResult{}, fmt.Errorf("requested too many files (%d). Maximum allowed per call is %d", len(params.FilePaths), maxFilesPerCall)
+	}
+
 	var sb strings.Builder
 	for _, path := range params.FilePaths {
 		fmt.Fprintf(&sb, "--- File: %s ---\n", path)

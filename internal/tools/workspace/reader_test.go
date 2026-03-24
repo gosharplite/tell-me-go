@@ -422,3 +422,23 @@ func TestReadFiles_Directory(t *testing.T) {
 		t.Errorf("expected directory error message, got %q", res.Text)
 	}
 }
+
+func TestReadFiles_Limit(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	// More than 50 files
+	paths := make([]interface{}, 51)
+	for i := 0; i < 51; i++ {
+		paths[i] = "f" + string(rune(i)) + ".txt"
+	}
+
+	_, err := r.readFiles(ctx, map[string]interface{}{"filepaths": paths})
+	if err == nil {
+		t.Fatal("expected error for exceeding file limit")
+	}
+	if !strings.Contains(err.Error(), "requested too many files") {
+		t.Errorf("expected limit error message, got %q", err.Error())
+	}
+}
