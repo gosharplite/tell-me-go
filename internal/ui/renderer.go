@@ -408,7 +408,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		if r.locker != nil {
 			r.locker.TerminalLock()
 		}
-		_, _ = fmt.Fprint(ui.stdout, termSaveCursor)
+		_, _ = fmt.Fprint(ui.stderr, termSaveCursor)
 		if r.locker != nil {
 			r.locker.TerminalUnlock()
 		}

@@ -139,7 +139,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "get_file_skeleton",
-				Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations.",
+				Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations. HINT: This tool ONLY returns signatures. If you need to read the actual code/body of a function, you MUST use the 'read_file' tool.",
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -157,8 +157,9 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
-						"query": {Type: "STRING", Description: "The string or regex to search for."},
-						"path":  {Type: "STRING", Description: "The directory to search (defaults to '.')"},
+						"query":    {Type: "STRING", Description: "The text or regex to search for."},
+						"path":     {Type: "STRING", Description: "The directory to search (defaults to '.')"},
+						"is_regex": {Type: "BOOLEAN", Description: "If true, treats query as a regex. Default is false (literal string search)."},
 					},
 					Required: []string{"query"},
 				},

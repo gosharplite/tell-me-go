@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -664,8 +665,10 @@ type mockFS struct {
 	persistence.FileSystem
 	mkdirErrFunc func(string) error
 	writeErr     error
+	readErr      error
 	openErr      error
 	closeErr     error
+	removeErr    error
 }
 
 func (m *mockFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
@@ -699,13 +702,23 @@ func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 
 func (m *mockFS) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
 	if m.writeErr != nil {
-		return errors.New("write file failed")
+		return m.writeErr
 	}
 	return m.FileSystem.WriteFile(context.Background(), name, data, perm)
 }
 
 func (m *mockFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	if m.readErr != nil {
+		return nil, m.readErr
+	}
 	return m.FileSystem.ReadFile(context.Background(), name)
+}
+
+func (m *mockFS) Remove(ctx context.Context, name string) error {
+	if m.removeErr != nil {
+		return m.removeErr
+	}
+	return m.FileSystem.Remove(context.Background(), name)
 }
 
 type mockFileWithErr struct {
@@ -1137,5 +1150,301 @@ func TestJSONLStore_NilPartsSanitization(t *testing.T) {
 
 	if contents[0].Parts[0].Text != "first" || contents[0].Parts[1].Text != "third" {
 		t.Errorf("parts content mismatch: got %v and %v", contents[0].Parts[0].Text, contents[0].Parts[1].Text)
+	}
+}
+
+func TestStore_ErrorPaths(t *testing.T) {
+	dummyContent := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}}
+
+	tests := []struct {
+		name   string
+		setup  func(fs *mockFS, filePath string)
+		action func(ctx context.Context, s *jsonlStore) error
+		check  func(t *testing.T, err error)
+	}{
+		{
+			name: "Load history not found (ErrHistoryNotFound)",
+			setup: func(fs *mockFS, filePath string) {
+				// File does not exist, so fs.Stat returns os.ErrNotExist
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				_, err := s.Load(ctx)
+				return err
+			},
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, ports.ErrHistoryNotFound) {
+					t.Errorf("expected ErrHistoryNotFound, got %v", err)
+				}
+			},
+		},
+		{
+			name: "Load legacy JSON unmarshal failure",
+			setup: func(fs *mockFS, filePath string) {
+				// .json exists, .jsonl does not.
+				// s.Load falls back to legacy load if migration fails or .jsonl is not found.
+				// We force migration to fail by having WriteFile return an error.
+				oldPath := filePath[:len(filePath)-1] // .json
+				_ = fs.FileSystem.WriteFile(context.Background(), oldPath, []byte("invalid json"), 0644)
+				fs.writeErr = errors.New("migration failed")
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				_, err := s.Load(ctx)
+				return err
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "failed to decode legacy JSON") {
+					t.Errorf("expected legacy decode error, got %v", err)
+				}
+			},
+		},
+		{
+			name: "OpenFile failure on Archive",
+			setup: func(fs *mockFS, filePath string) {
+				fs.openErr = errors.New("archive open failed")
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Archive(ctx, dummyContent)
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "archive open failed") {
+					t.Errorf("expected archive open failed, got %v", err)
+				}
+			},
+		},
+		{
+			name: "OpenFile failure on AppendParts",
+			setup: func(fs *mockFS, filePath string) {
+				fs.openErr = errors.New("appendparts open failed")
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.AppendParts(ctx, 0, []*llm.Part{{Text: "test"}})
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "appendparts open failed") {
+					t.Errorf("expected appendparts open failed, got %v", err)
+				}
+			},
+		},
+		{
+			name: "Marshal failure in appendSingleContent",
+			setup: func(fs *mockFS, filePath string) {
+				// Handled by TestJSONLStore_MarshalError, but let's add it here for completeness
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				ch := make(chan int)
+				content := &llm.Content{
+					Parts: []*llm.Part{
+						{FunctionResponse: &llm.FunctionResponse{Response: map[string]interface{}{"ch": ch}}},
+					},
+				}
+				return s.Append(ctx, []*llm.Content{content})
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "json: unsupported type") {
+					t.Errorf("expected marshal error, got %v", err)
+				}
+			},
+		},
+		{
+			name: "prepareForStorage failure in AppendParts",
+			setup: func(fs *mockFS, filePath string) {
+				// s.prepareForStorage calls s.assetStore.Put, which calls fs.MkdirAll on "assets" dir
+				fs.mkdirErrFunc = func(path string) error {
+					if strings.Contains(path, "assets") {
+						return errors.New("asset mkdir failed")
+					}
+					return nil
+				}
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				_ = s.fs.MkdirAll(ctx, filepath.Dir(s.filePath), 0755)
+				parts := []*llm.Part{
+					{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("img")}},
+				}
+				return s.AppendParts(ctx, 0, parts)
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "asset mkdir failed") {
+					t.Errorf("expected asset mkdir failed, got %v", err)
+				}
+			},
+		},
+		{
+			name: "Context cancellation in loadJSONL",
+			setup: func(fs *mockFS, filePath string) {
+				// Write multiple lines to ensure the loop runs
+				content := `{"Role":"user"}` + "\n" + `{"Role":"model"}` + "\n"
+				_ = fs.FileSystem.WriteFile(context.Background(), filePath, []byte(content), 0644)
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				ctxCanceled, cancel := context.WithCancel(ctx)
+				cancel()
+				_, err := s.Load(ctxCanceled)
+				return err
+			},
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("expected context canceled, got %v", err)
+				}
+			},
+		},
+		{
+			name: "migrateLegacyJSONFile ReadFile error",
+			setup: func(fs *mockFS, filePath string) {
+				oldPath := filePath[:len(filePath)-1] // .json
+				_ = fs.FileSystem.WriteFile(context.Background(), oldPath, []byte("legacy"), 0644)
+				fs.readErr = errors.New("read legacy failed")
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				// migrateLegacyJSONFile is called inside Load
+				_, err := s.Load(ctx)
+				return err
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !errors.Is(err, ports.ErrHistoryNotFound) {
+					t.Errorf("expected ErrHistoryNotFound because migration failed, got %v", err)
+				}
+			},
+		},
+		{
+			name: "migrateLegacyJSONFile WriteFile error",
+			setup: func(fs *mockFS, filePath string) {
+				oldPath := filePath[:len(filePath)-1] // .json
+				_ = fs.FileSystem.WriteFile(context.Background(), oldPath, []byte("legacy"), 0644)
+				fs.writeErr = errors.New("write jsonl failed")
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				_, err := s.Load(ctx)
+				return err
+			},
+			check: func(t *testing.T, err error) {
+				// migration fails -> Load falls back to legacy JSON -> unmarshal fails because "legacy" is not JSON.
+				if err == nil || !strings.Contains(err.Error(), "failed to decode legacy JSON") {
+					t.Errorf("expected legacy decode error, got %v", err)
+				}
+			},
+		},
+		{
+			name: "Load Stat succeeds but ReadFile returns NotExist",
+			setup: func(fs *mockFS, filePath string) {
+				_ = fs.FileSystem.WriteFile(context.Background(), filePath, []byte("data"), 0644)
+				fs.readErr = os.ErrNotExist
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				_, err := s.Load(ctx)
+				return err
+			},
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, ports.ErrHistoryNotFound) {
+					t.Errorf("expected ErrHistoryNotFound, got %v", err)
+				}
+			},
+		},
+		{
+			name: "Load ReadFile returns other error",
+			setup: func(fs *mockFS, filePath string) {
+				_ = fs.FileSystem.WriteFile(context.Background(), filePath, []byte("data"), 0644)
+				fs.readErr = errors.New("other read error")
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				_, err := s.Load(ctx)
+				return err
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "other read error") {
+					t.Errorf("expected other read error, got %v", err)
+				}
+			},
+		},
+		{
+			name: "Marshal failure in AppendParts",
+			setup: func(fs *mockFS, filePath string) {
+				_ = fs.FileSystem.MkdirAll(context.Background(), filepath.Dir(filePath), 0755)
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				ch := make(chan int)
+				parts := []*llm.Part{
+					{FunctionResponse: &llm.FunctionResponse{Response: map[string]interface{}{"ch": ch}}},
+				}
+				return s.AppendParts(ctx, 0, parts)
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "json: unsupported type") {
+					t.Errorf("expected marshal error, got %v", err)
+				}
+			},
+		},
+		{
+			name: "Context cancellation in AppendParts",
+			setup: func(fs *mockFS, filePath string) {
+				_ = fs.FileSystem.MkdirAll(context.Background(), filepath.Dir(filePath), 0755)
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				ctxCanceled, cancel := context.WithCancel(ctx)
+				cancel()
+				return s.AppendParts(ctxCanceled, 0, []*llm.Part{{Text: "test"}})
+			},
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("expected context canceled, got %v", err)
+				}
+			},
+		},
+		{
+			name: "Context cancellation in UpdateMetadata",
+			setup: func(fs *mockFS, filePath string) {
+				_ = fs.FileSystem.MkdirAll(context.Background(), filepath.Dir(filePath), 0755)
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				ctxCanceled, cancel := context.WithCancel(ctx)
+				cancel()
+				return s.UpdateMetadata(ctxCanceled, 0, map[string]interface{}{})
+			},
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("expected context canceled, got %v", err)
+				}
+			},
+		},
+		{
+			name: "prepareForStorage failure in Archive",
+			setup: func(fs *mockFS, filePath string) {
+				_ = fs.FileSystem.MkdirAll(context.Background(), filepath.Dir(filePath), 0755)
+				fs.mkdirErrFunc = func(path string) error {
+					if strings.Contains(path, "assets") {
+						return errors.New("asset mkdir failed")
+					}
+					return nil
+				}
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				content := []*llm.Content{
+					{Parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("img")}}}},
+				}
+				return s.Archive(ctx, content)
+			},
+			check: func(t *testing.T, err error) {
+				if err == nil || !strings.Contains(err.Error(), "asset mkdir failed") {
+					t.Errorf("expected asset mkdir failed, got %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, "history.jsonl")
+
+			baseFS := infrapersistence.NewOSFileSystem()
+			mfs := &mockFS{FileSystem: baseFS}
+			tt.setup(mfs, filePath)
+
+			store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
+
+			err := tt.action(context.Background(), store)
+			tt.check(t, err)
+		})
 	}
 }

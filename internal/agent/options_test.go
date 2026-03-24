@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"log/slog"
 	"testing"
 
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -16,32 +17,34 @@ func TestAgentOptions(t *testing.T) {
 	mockLoader := &mockLoader{}
 	mockSessionLoader := &mockSessionLoader{}
 	mockTracker := &mockTracker{}
+	mockLogger := slog.Default()
+	mockSkillSelector := &mockSkillSelector{}
 	overrides := map[string]domain_pricing.ModelPricing{
 		"test": {Miss: 1.0},
 	}
 
 	tests := []struct {
 		name     string
-		option   option
+		option   Option
 		validate func(t *testing.T, cfg *agentConfig)
 	}{
 		{
 			name:   "WithSummarizer",
-			option: withSummarizer(mockSummarizer),
+			option: WithSummarizer(mockSummarizer),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockSummarizer, cfg.summarizer)
 			},
 		},
 		{
 			name:   "WithInternalTools",
-			option: withInternalTools(),
+			option: WithInternalTools(),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.True(t, cfg.registerInternal)
 			},
 		},
 		{
 			name:   "WithPricing",
-			option: withPricing("model-a", "mode-b", overrides),
+			option: WithPricing("model-a", "mode-b", overrides),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, "model-a", cfg.model)
 				require.Equal(t, "mode-b", cfg.mode)
@@ -64,9 +67,23 @@ func TestAgentOptions(t *testing.T) {
 		},
 		{
 			name:   "WithSessionCostTracker",
-			option: withSessionCostTracker(mockTracker),
+			option: WithSessionCostTracker(mockTracker),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockTracker, cfg.tracker)
+			},
+		},
+		{
+			name:   "WithLogger",
+			option: WithLogger(mockLogger),
+			validate: func(t *testing.T, cfg *agentConfig) {
+				require.Equal(t, mockLogger, cfg.logger)
+			},
+		},
+		{
+			name:   "WithSkillSelector",
+			option: WithSkillSelector(mockSkillSelector),
+			validate: func(t *testing.T, cfg *agentConfig) {
+				require.Equal(t, mockSkillSelector, cfg.skillSelector)
 			},
 		},
 	}

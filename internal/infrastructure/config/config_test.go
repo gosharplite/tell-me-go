@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
 func TestLoad(t *testing.T) {
@@ -176,76 +178,86 @@ PROVIDERS:
 }
 
 func TestJSONSessionLoader_LoadSession(t *testing.T) {
-	loader := &JSONSessionLoader{}
+	tests := []struct {
+		name        string
+		fileContent string
+		setupFile   bool
+		wantErr     bool
+		validate    func(*testing.T, *domain_config.SessionConfig)
+	}{
+		{
+			name:        "ValidAllFields",
+			fileContent: `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`,
+			setupFile:   true,
+			wantErr:     false,
+			validate: func(t *testing.T, cfg *domain_config.SessionConfig) {
+				if cfg.MaxHistoryTokens == nil || *cfg.MaxHistoryTokens != 500 {
+					t.Errorf("expected 500 tokens, got %v", cfg.MaxHistoryTokens)
+				}
+				if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 15 {
+					t.Errorf("expected 15 tool turns, got %v", cfg.MaxToolTurns)
+				}
+				if cfg.MaxHistoryTurns == nil || *cfg.MaxHistoryTurns != 25 {
+					t.Errorf("expected 25 history turns, got %v", cfg.MaxHistoryTurns)
+				}
+			},
+		},
+		{
+			name:        "EmptyJSON",
+			fileContent: `{}`,
+			setupFile:   true,
+			wantErr:     false,
+			validate: func(t *testing.T, cfg *domain_config.SessionConfig) {
+				if cfg.MaxHistoryTokens != nil || cfg.MaxToolTurns != nil || cfg.MaxHistoryTurns != nil {
+					t.Error("expected all fields to be nil for empty JSON")
+				}
+			},
+		},
+		{
+			name:        "InvalidJSON",
+			fileContent: `{invalid}`,
+			setupFile:   true,
+			wantErr:     true,
+		},
+		{
+			name:      "FileNotFound",
+			setupFile: false,
+			wantErr:   true,
+		},
+		{
+			name:        "LegacyToolTurns",
+			fileContent: `{"MAX_TOOL_TURNS": 10}`,
+			setupFile:   true,
+			wantErr:     false,
+			validate: func(t *testing.T, cfg *domain_config.SessionConfig) {
+				if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 10 {
+					t.Errorf("expected 10 tool turns from legacy key, got %v", cfg.MaxToolTurns)
+				}
+			},
+		},
+	}
 
-	t.Run("ValidAllFields", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "session.json")
-		content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
-		_ = os.WriteFile(path, []byte(content), 0644)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := &JSONSessionLoader{}
+			path := "non-existent.json"
 
-		cfg, err := loader.LoadSession(path)
-		if err != nil {
-			t.Fatalf("LoadSession failed: %v", err)
-		}
+			if tt.setupFile {
+				tmpDir := t.TempDir()
+				path = filepath.Join(tmpDir, "session.json")
+				if err := os.WriteFile(path, []byte(tt.fileContent), 0644); err != nil {
+					t.Fatalf("failed to write test file: %v", err)
+				}
+			}
 
-		if cfg.MaxHistoryTokens == nil || *cfg.MaxHistoryTokens != 500 {
-			t.Errorf("expected 500 tokens, got %v", cfg.MaxHistoryTokens)
-		}
-		if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 15 {
-			t.Errorf("expected 15 tool turns, got %v", cfg.MaxToolTurns)
-		}
-		if cfg.MaxHistoryTurns == nil || *cfg.MaxHistoryTurns != 25 {
-			t.Errorf("expected 25 history turns, got %v", cfg.MaxHistoryTurns)
-		}
-	})
+			cfg, err := loader.LoadSession(path)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("LoadSession() error = %v, wantErr %v", err, tt.wantErr)
+			}
 
-	t.Run("EmptyJSON", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "empty.json")
-		_ = os.WriteFile(path, []byte("{}"), 0644)
-
-		cfg, err := loader.LoadSession(path)
-		if err != nil {
-			t.Fatalf("LoadSession failed: %v", err)
-		}
-
-		if cfg.MaxHistoryTokens != nil || cfg.MaxToolTurns != nil || cfg.MaxHistoryTurns != nil {
-			t.Error("expected all fields to be nil for empty JSON")
-		}
-	})
-
-	t.Run("InvalidJSON", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "invalid.json")
-		_ = os.WriteFile(path, []byte("{invalid}"), 0644)
-
-		_, err := loader.LoadSession(path)
-		if err == nil {
-			t.Error("expected error for invalid JSON, got nil")
-		}
-	})
-
-	t.Run("FileNotFound", func(t *testing.T) {
-		_, err := loader.LoadSession("non-existent.json")
-		if err == nil {
-			t.Error("expected error for non-existent file, got nil")
-		}
-	})
-
-	t.Run("LegacyToolTurns", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		path := filepath.Join(tmpDir, "legacy.json")
-		content := `{"MAX_TOOL_TURNS": 10}`
-		_ = os.WriteFile(path, []byte(content), 0644)
-
-		cfg, err := loader.LoadSession(path)
-		if err != nil {
-			t.Fatalf("LoadSession failed: %v", err)
-		}
-
-		if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 10 {
-			t.Errorf("expected 10 tool turns from legacy key, got %v", cfg.MaxToolTurns)
-		}
-	})
+			if !tt.wantErr && tt.validate != nil {
+				tt.validate(t, cfg)
+			}
+		})
+	}
 }

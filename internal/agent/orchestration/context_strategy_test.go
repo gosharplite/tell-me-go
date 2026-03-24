@@ -181,39 +181,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	cs := setupWarningTest()
 
 	t.Run("History turn Warnings", func(t *testing.T) {
-		tests := []struct {
-			turns    int
-			expected string
-		}{
-			{91, "90%"},
-			{91, "manage_history"},
-			{96, "95%"},
-			{100, ""},
-		}
-		for _, tt := range tests {
-			warnings := cs.getWarnings(0, 0, tt.turns, 0)
-			if tt.expected == "" {
-				if len(warnings) > 0 {
-					for _, w := range warnings {
-						if contains(w.Message, "limit has been reached") {
-							t.Errorf("expected no warning for %d turns, got %v", tt.turns, w.Message)
-						}
-					}
-				}
-				continue
-			}
-
-			found := false
-			for _, w := range warnings {
-				if contains(w.Message, tt.expected) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("expected %d turns warning to contain %q, got %v", tt.turns, tt.expected, warnings)
-			}
-		}
+		checkTurnWarnings(t, cs)
 	})
 
 	t.Run("Pruning Counter Reset", func(t *testing.T) {
@@ -238,6 +206,53 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 			t.Errorf("expected clogged warning, got %q", w)
 		}
 	})
+}
+
+func checkTurnWarnings(t *testing.T, cs *ContextStrategy) {
+	t.Helper()
+	tests := []struct {
+		turns    int
+		expected string
+	}{
+		{91, "90%"},
+		{91, "manage_history"},
+		{96, "95%"},
+		{100, ""},
+	}
+	for _, tt := range tests {
+		warnings := cs.getWarnings(0, 0, tt.turns, 0)
+		if tt.expected == "" {
+			verifyNoLimitReached(t, tt.turns, warnings)
+			continue
+		}
+
+		verifyWarningContains(t, tt.turns, warnings, tt.expected)
+	}
+}
+
+func verifyNoLimitReached(t *testing.T, turns int, warnings []warning) {
+	t.Helper()
+	if len(warnings) > 0 {
+		for _, w := range warnings {
+			if contains(w.Message, "limit has been reached") {
+				t.Errorf("expected no warning for %d turns, got %v", turns, w.Message)
+			}
+		}
+	}
+}
+
+func verifyWarningContains(t *testing.T, turns int, warnings []warning, expected string) {
+	t.Helper()
+	found := false
+	for _, w := range warnings {
+		if contains(w.Message, expected) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %d turns warning to contain %q, got %v", turns, expected, warnings)
+	}
 }
 
 func TestContextStrategy_setTieredThresholdZero(t *testing.T) {

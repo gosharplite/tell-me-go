@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -116,4 +117,8 @@ type mockTracker struct {
 
 type mockSessionLoader struct {
 	domain_config.SessionLoader
+}
+
+type mockSkillSelector struct {
+	skills.SkillSelector
 }

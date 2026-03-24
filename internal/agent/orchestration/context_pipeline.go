@@ -40,24 +40,19 @@ func NewContextPipeline(transformers ...ports.ContextTransformer) *ContextPipeli
 func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
 	canonical, transient := p.partitionTransformers()
 
-	for _, t := range canonical {
-		// SCALABLE: Responsive context cancellation between transformer stages
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if err := t.Transform(ctx, req); err != nil {
-			return err
-		}
-	}
-
-	if err := p.persistIfRequired(ctx, req, persistFn); err != nil {
+	if err := p.executeTransformers(ctx, req, canonical); err != nil {
 		return err
 	}
 
-	for _, t := range transient {
+	if err := p.persistChanges(ctx, req, persistFn); err != nil {
+		return err
+	}
+
+	return p.executeTransformers(ctx, req, transient)
+}
+
+func (p *ContextPipeline) executeTransformers(ctx context.Context, req *request, transformers []ports.ContextTransformer) error {
+	for _, t := range transformers {
 		// SCALABLE: Responsive context cancellation between transformer stages
 		select {
 		case <-ctx.Done():
@@ -69,7 +64,6 @@ func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *reque
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -86,7 +80,7 @@ func (p *ContextPipeline) partitionTransformers() (canonical, transient []ports.
 	return
 }
 
-func (p *ContextPipeline) persistIfRequired(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *ContextPipeline) persistChanges(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
 	if req.PersistHistory && persistFn != nil {
 		return persistFn(ctx, req.History)
 	}

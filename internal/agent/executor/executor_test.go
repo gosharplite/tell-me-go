@@ -5,9 +5,11 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
@@ -354,4 +356,101 @@ func TestNewToolExecutor_NilLogger(t *testing.T) {
 	_, err := NewToolExecutor(reg, nil, nil, nil, observer)
 	require.Error(t, err)
 	assert.Equal(t, "logger is required", err.Error())
+}
+
+type capturingLogger struct {
+	ports.NoOpLogger
+	errorCalled bool
+	lastMsg     string
+	lastArgs    []any
+}
+
+func (l *capturingLogger) Error(msg string, args ...any) {
+	l.errorCalled = true
+	l.lastMsg = msg
+	l.lastArgs = args
+}
+
+type errorEventBus struct {
+	err error
+}
+
+func (m *errorEventBus) Publish(ctx context.Context, e events.Event) error { return m.err }
+func (m *errorEventBus) Subscribe(sub func(context.Context, events.Event)) {}
+func (m *errorEventBus) Shutdown(ctx context.Context) error                { return nil }
+func (m *errorEventBus) Flush(ctx context.Context) error                   { return nil }
+
+func TestToolExecutor_EmitEvent_ErrorLogging(t *testing.T) {
+	// Setup
+	mockLogger := &capturingLogger{}
+	genericErr := errors.New("generic publish error")
+	mockBus := &errorEventBus{err: genericErr}
+
+	exec := &ToolExecutor{
+		logger: mockLogger,
+	}
+
+	ctx := context.Background()
+	evt := events.SystemMessageEvent{Message: "test"}
+
+	// Action: Call emitEvent which should log the error
+	exec.emitEvent(ctx, mockBus, evt)
+
+	// Assert
+	assert.True(t, mockLogger.errorCalled, "Expected Error to be called on logger")
+	assert.Equal(t, "event_publish_failed", mockLogger.lastMsg)
+
+	// Check attributes
+	attrs := make(map[string]any)
+	for i := 0; i < len(mockLogger.lastArgs); i += 2 {
+		if i+1 < len(mockLogger.lastArgs) {
+			key, ok := mockLogger.lastArgs[i].(string)
+			if ok {
+				attrs[key] = mockLogger.lastArgs[i+1]
+			}
+		}
+	}
+
+	assert.Equal(t, "SystemMessageEvent", attrs["event_type"])
+	assert.ErrorContains(t, attrs["error"].(error), "generic publish error")
+}
+
+func TestToolExecutor_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
+	// Setup
+	mockLogger := &capturingLogger{}
+	mockBus := &errorEventBus{err: events.ErrBusNotInitialized}
+
+	exec := &ToolExecutor{
+		logger: mockLogger,
+	}
+
+	ctx := context.Background()
+	evt := events.SystemMessageEvent{Message: "test"}
+
+	// Action: Call emitEvent which should NOT log ErrBusNotInitialized
+	exec.emitEvent(ctx, mockBus, evt)
+
+	// Assert
+	assert.False(t, mockLogger.errorCalled, "Expected Error NOT to be called on logger for ErrBusNotInitialized")
+}
+
+func TestResultCollector_EmitEvent(t *testing.T) {
+	// Setup
+	mockLogger := &capturingLogger{}
+	genericErr := errors.New("publish error")
+	mockBus := &errorEventBus{err: genericErr}
+
+	exec, err := NewToolExecutor(&mockToolRegistry{}, nil, mockBus, mockLogger, &MockLogger{})
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
+
+	collector := exec.newResultCollector(nil, mockBus)
+
+	// Action: Manually trigger an event emission from collector's context
+	evt := events.ToolResultEvent{Name: "test"}
+	collector.executor.emitEvent(context.Background(), collector.bus, evt)
+
+	// Assert
+	assert.True(t, mockLogger.errorCalled)
+	assert.Equal(t, "event_publish_failed", mockLogger.lastMsg)
 }

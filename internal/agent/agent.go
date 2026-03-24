@@ -47,8 +47,8 @@ type agent struct {
 	config runtimeConfig
 }
 
-// newAgent creates a new agent with required dependencies.
-func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.Registry, sm domain_security.Manager, opts ...option) (ports.Chatter, error) {
+// NewAgent creates a new agent with required dependencies.
+func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.Registry, sm domain_security.Manager, opts ...Option) (ports.Chatter, error) {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -88,14 +88,15 @@ func newAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	}
 
 	factory := &orchestration.PipelineFactory{
-		Registry:   registry,
-		History:    hManager,
-		Summarizer: cfg.summarizer,
-		Estimator:  strategy,
-		Events:     bus,
+		Registry:      registry,
+		History:       hManager,
+		Summarizer:    cfg.summarizer,
+		SkillSelector: cfg.skillSelector,
+		Estimator:     strategy,
+		Events:        bus,
 	}
 
-	ctxManager := orchestration.NewContextManager(strategy, hManager, bus, factory)
+	ctxManager := orchestration.NewContextManager(strategy, hManager, bus, factory, orchestration.WithLogger(cfg.logger))
 	a.ctxManager = ctxManager
 
 	// Initialize engine

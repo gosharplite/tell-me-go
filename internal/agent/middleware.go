@@ -9,13 +9,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
+
+const loopWarning = "SYSTEM WARNING: Infinite loop detected. You are repeating the exact same tool call or response. The previous action was aborted. Please analyze your previous steps and try a DIFFERENT tool or strategy."
 
 // WithStreaming returns a middleware that injects a stream handler into the turn.
 func (e *turnEngine) WithStreaming() turnMiddleware {
@@ -143,25 +144,59 @@ func withLoopDetector() turnMiddleware {
 				h := sha256.Sum256(rawJSON)
 				currentHash := hex.EncodeToString(h[:])
 
-				if err := checkDuplicateResponse(currentHash, turn.State.RecentResponseHashes, rawJSON); err != nil {
-					return processResult{Stop: true}, err
-				}
-				// Keep last N hashes (using the same repetition limit)
-				turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
-				if len(turn.State.RecentResponseHashes) > domain_config.DefaultMaxLoopRepetitions {
-					turn.State.RecentResponseHashes = turn.State.RecentResponseHashes[1:]
-				}
+				var loopDetected bool
 
-				// 2. Tool call loop detection (Immediate threshold)
-				for _, p := range turn.State.Response.Parts {
-					if p.FunctionCall != nil {
-						args, _ := json.Marshal(p.FunctionCall.Args)
-						key := p.FunctionCall.Name + ":" + string(args)
-						turn.State.ToolCallCount[key]++
-						if turn.State.ToolCallCount[key] > domain_config.DefaultMaxLoopRepetitions {
-							return processResult{Stop: true}, newAgentError(errLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil)
+				if isDuplicateResponse(currentHash, turn.State.RecentResponseHashes) {
+					loopDetected = true
+				} else {
+					// Keep last N hashes (using the same repetition limit)
+					turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
+					if len(turn.State.RecentResponseHashes) > domain_config.DefaultMaxLoopRepetitions {
+						turn.State.RecentResponseHashes = turn.State.RecentResponseHashes[1:]
+					}
+
+					// 2. Tool call loop detection (Immediate threshold)
+					for _, p := range turn.State.Response.Parts {
+						if p.FunctionCall != nil {
+							args, _ := json.Marshal(p.FunctionCall.Args)
+							key := p.FunctionCall.Name + ":" + string(args)
+							turn.State.ToolCallCount[key]++
+							if turn.State.ToolCallCount[key] > domain_config.DefaultMaxLoopRepetitions {
+								loopDetected = true
+								break
+							}
 						}
 					}
+				}
+
+				if loopDetected {
+					// Publish warning event for UI visibility
+					_ = events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
+						Message: "Infinite loop detected! Injecting corrective feedback to break the cycle...",
+						Level:   "warn",
+					})
+
+					// SCALABLE: Persist the repeating response so the model sees its own mistake in history.
+					if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
+						return processResult{}, err
+					}
+
+					// INTERCEPTABLE: Append the synthetic warning to history.
+					// We use 'user' role as it's the most common way to provide feedback to the LLM.
+					warning := &llm.Content{
+						Role:  "user",
+						Parts: []*llm.Part{{Text: loopWarning}},
+					}
+					if err := turn.CtxManager.AddContent(ctx, warning); err != nil {
+						return processResult{}, err
+					}
+
+					// RECOVERY: End the current turn gracefully and signal the Run() loop to continue to a new generation turn.
+					turn.State.Response = nil
+					turn.State.ToolResponse = nil
+					turn.State.HasToolCalls = true // Trick shouldStopRunning into starting a new turn
+
+					return processResult{NextPhase: phaseComplete}, nil
 				}
 			}
 
@@ -170,15 +205,13 @@ func withLoopDetector() turnMiddleware {
 	}
 }
 
-func checkDuplicateResponse(currentHash string, recentHashes []string, rawJSON []byte) error {
+func isDuplicateResponse(currentHash string, recentHashes []string) bool {
 	for _, prevHash := range recentHashes {
 		if currentHash == prevHash {
-			snippet := truncateSafe(rawJSON, 147)
-			errMsg := fmt.Sprintf("infinite loop detected: model is repeating a previous response: %s", snippet)
-			return newAgentError(errLogic, errMsg, nil)
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 // truncateSafe truncates a byte slice to a specific number of runes safely.

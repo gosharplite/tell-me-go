@@ -87,14 +87,10 @@ An audit of the repository demonstrates that this pattern is used in a **100% ar
 
 **1. Protecting Mocks (in `_test.go` files):**
 Proving to the compiler that locally defined mock structs satisfy a specific interface.
-* `internal/domain/llmcoord/service_test.go`: `var _ llm.LLMGateway = (*mockGateway)(nil)`
-* `internal/domain/monitoring/service_test.go`: `var _ pricing.CostTracker = (*mockCostTracker)(nil)`
 * `internal/tools/developer/dev_test.go`: `var _ domain_security.ActionConfirmer = (*security.SecurityManager)(nil)`
 
 **2. Protecting Production Services:**
 Ensuring that unexported or DI-injected production services strictly implement their required domain port.
-* `internal/domain/llmcoord/service.go`: `var _ orchestration.LLMCoordinator = (*service)(nil)`
-* `internal/domain/monitoring/service.go`: `var _ orchestration.MonitoringTracker = (*service)(nil)`
 * `internal/domain/services/task_service.go`: `var _ ports.TaskStore = (*TaskService)(nil)`
 
 By adhering to these patterns, the system maintains strict compile-time safety and a pristine architectural dependency graph.

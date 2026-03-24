@@ -368,6 +368,7 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 
 	t.Run("Anchoring enabled when rawOutput is false", func(t *testing.T) {
 		stdout.Reset()
+		stderr.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -375,23 +376,25 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Streaming chunk"}}}
 		_ = finalize()
 
-		output := stdout.String()
-		// Should contain Save Cursor
-		if !strings.Contains(output, "\0337") {
-			t.Errorf("Expected output to contain DEC Save Cursor (\\0337), got %q", output)
+		// Save Cursor should be on stderr to avoid race with LogTurnStatus
+		if !strings.Contains(stderr.String(), "\0337") {
+			t.Errorf("Expected stderr to contain DEC Save Cursor (\\0337), got %q", stderr.String())
 		}
+
+		output := stdout.String()
 		// Should contain Restore Cursor
 		if !strings.Contains(output, "\0338") {
-			t.Errorf("Expected output to contain DEC Restore Cursor (\\0338), got %q", output)
+			t.Errorf("Expected stdout to contain DEC Restore Cursor (\\0338), got %q", output)
 		}
 		// Should contain Clear to End of Screen
 		if !strings.Contains(output, "\033[J") {
-			t.Errorf("Expected output to contain Clear to End of Screen (\\033[J), got %q", output)
+			t.Errorf("Expected stdout to contain Clear to End of Screen (\\033[J), got %q", output)
 		}
 	})
 
 	t.Run("Anchoring disabled when rawOutput is true", func(t *testing.T) {
 		stdout.Reset()
+		stderr.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -399,12 +402,11 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Streaming chunk"}}}
 		_ = finalize()
 
-		output := stdout.String()
-		if strings.Contains(output, "\0337") {
-			t.Errorf("Expected output NOT to contain DEC Save Cursor, got %q", output)
+		if strings.Contains(stderr.String(), "\0337") {
+			t.Errorf("Expected stderr NOT to contain DEC Save Cursor, got %q", stderr.String())
 		}
-		if strings.Contains(output, "\0338") {
-			t.Errorf("Expected output NOT to contain DEC Restore Cursor, got %q", output)
+		if strings.Contains(stdout.String(), "\0338") {
+			t.Errorf("Expected stdout NOT to contain DEC Restore Cursor, got %q", stdout.String())
 		}
 	})
 }

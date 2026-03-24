@@ -93,8 +93,9 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
-						"path":  {Type: "STRING", Description: "The directory to search (defaults to '.')"},
-						"query": {Type: "STRING", Description: "The string or regex to search for."},
+						"path":     {Type: "STRING", Description: "The directory to search (defaults to '.')"},
+						"query":    {Type: "STRING", Description: "The text or regex to search for."},
+						"is_regex": {Type: "BOOLEAN", Description: "If true, treats query as a regex. Default is false (literal string search)."},
 					},
 					Required: []string{"query"},
 				},
@@ -138,7 +139,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "get_definitions",
-				Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives.",
+				Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives. HINT: Once you find the file containing the definition, use 'read_file' to view the internal logic.",
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -239,7 +240,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
-		Description:     "Executes a single binary directly via os/exec (NO shell interpreter). Security: Only whitelisted commands are auto-approved. Do NOT use shell operators like &&, ||, >, <, or wildcards (*). If you NEED shell features, you MUST explicitly wrap your command: e.g., bash -c 'ls *.go && echo done'. To pipe commands, use the 'pipe_commands' tool instead.",
+		Description:     "Executes a single binary directly via os/exec (NO shell interpreter). Security: Only whitelisted commands are auto-approved. CRITICAL: Do NOT use shell operators like &&, ||, >, <, or wildcards (*). If you NEED shell features, you MUST explicitly wrap your command: e.g., bash -c 'ls *.go && echo done'. To pipe commands, use the 'pipe_commands' tool instead.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

@@ -5,18 +5,10 @@ package factory
 
 import (
 	stdctx "context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 
-	agent_executor "github.com/gosharplite/tell-me-go/internal/agent/executor"
-	agent_orchestration "github.com/gosharplite/tell-me-go/internal/agent/orchestration"
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/llmcoord"
-	"github.com/gosharplite/tell-me-go/internal/domain/monitoring"
-	domain_orchestration "github.com/gosharplite/tell-me-go/internal/domain/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_skills "github.com/gosharplite/tell-me-go/internal/domain/skills"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -39,62 +31,24 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	}
 	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills
 
-	strategy := agent_orchestration.NewContextStrategy(agent_orchestration.NewHeuristicTokenCounter(deps.GetRegistry()))
-	factory := &agent_orchestration.PipelineFactory{
-		Registry:      deps.GetRegistry(),
-		History:       deps.GetHistoryManager(),
-		Summarizer:    summarizer,
-		Estimator:     strategy,
-		SkillSelector: skillSelector,
-		Events:        deps.GetEventBus(),
-	}
-	ctxManager := agent_orchestration.NewContextManager(strategy, deps.GetHistoryManager(), deps.GetEventBus(), factory, agent_orchestration.WithLogger(deps.GetLogger()))
-
-	toolExec, err := agent_executor.NewToolExecutor(deps.GetRegistry(), deps.GetSecurityManager(), deps.GetEventBus(), telemetry.NewSlogLogger(deps.GetLogger()), &agent_executor.TelemetryLogger{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tool executor: %w", err)
+	// 2. Compose Agent Options
+	opts := []agent.Option{
+		agent.WithLogger(deps.GetLogger()),
+		agent.WithSummarizer(summarizer),
+		agent.WithSkillSelector(skillSelector),
+		agent.WithInternalTools(),
+		agent.WithSessionCostTracker(deps.GetTracker()),
+		agent.WithPricing(cfg.Model, cfg.Mode, deps.GetPricingOverrides()),
 	}
 
-	// 2. Instantiate the four new domain services wrapping robust implementations.
-	ctxPrep := agent_orchestration.NewContextPrepAdapter(ctxManager)
-	execService := agent_executor.NewExecutionAdapter(toolExec)
-
-	llmCoord := llmcoord.NewService(
-		llmcoord.WithGateway(deps.GetGateway()),
-		llmcoord.WithStreamHandler(func(ctx stdctx.Context, stream <-chan *llm.Content) {
-			e := events.ResponseStreamEvent{Context: ctx, Stream: stream}
-			if err := events.SafePublish(ctx, deps.GetEventBus(), e); err != nil {
-				if !errors.Is(err, events.ErrBusNotInitialized) {
-					deps.GetLogger().Error("event_publish_failed",
-						slog.String("event_type", e.Type()),
-						slog.Any("error", err))
-				}
-			}
-		}),
+	// 3. Return the new Agent.
+	return agent.NewAgent(
+		deps.GetGateway(),
+		deps.GetEventBus(),
+		deps.GetHistoryManager(),
+		cfg.ProviderName,
+		deps.GetRegistry(),
+		deps.GetSecurityManager(),
+		opts...,
 	)
-
-	monitor := monitoring.NewService(
-		monitoring.WithTracker(deps.GetTracker()),
-		monitoring.WithEventBus(deps.GetEventBus()),
-		monitoring.WithLogger(deps.GetLogger()),
-	)
-
-	// 3. Register internal tools (e.g., summarize_history)
-	if err := agent_orchestration.RegisterInternal(deps.GetRegistry(), ctxManager); err != nil {
-		return nil, fmt.Errorf("failed to register internal tools: %w", err)
-	}
-
-	// 4. Return the new ChatterFacade injected with the domain services.
-	return domain_orchestration.NewChatterFacade(
-		domain_orchestration.WithContextPrep(ctxPrep),
-		domain_orchestration.WithExecution(execService),
-		domain_orchestration.WithLLMCoord(llmCoord),
-		domain_orchestration.WithMonitor(monitor),
-		domain_orchestration.WithEventBus(deps.GetEventBus()),
-		domain_orchestration.WithRegistry(deps.GetRegistry()),
-		domain_orchestration.WithHistory(deps.GetHistoryManager()),
-		domain_orchestration.WithProvider(cfg.ProviderName),
-		domain_orchestration.WithModel(cfg.Model),
-		domain_orchestration.WithLogger(deps.GetLogger()),
-	), nil
 }
