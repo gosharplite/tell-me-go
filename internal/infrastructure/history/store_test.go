@@ -1157,10 +1157,10 @@ func TestStore_ErrorPaths(t *testing.T) {
 	dummyContent := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}}
 
 	tests := []struct {
-		name      string
-		setup     func(fs *mockFS, filePath string)
-		action    func(ctx context.Context, s *jsonlStore) error
-		check     func(t *testing.T, err error)
+		name   string
+		setup  func(fs *mockFS, filePath string)
+		action func(ctx context.Context, s *jsonlStore) error
+		check  func(t *testing.T, err error)
 	}{
 		{
 			name: "Load history not found (ErrHistoryNotFound)",

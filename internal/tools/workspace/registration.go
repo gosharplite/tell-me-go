@@ -240,7 +240,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
-		Description:     "Executes a single binary directly via os/exec (NO shell interpreter). Security: Only whitelisted commands are auto-approved. Do NOT use shell operators like &&, ||, >, <, or wildcards (*). If you NEED shell features, you MUST explicitly wrap your command: e.g., bash -c 'ls *.go && echo done'. To pipe commands, use the 'pipe_commands' tool instead.",
+		Description:     "Executes a single binary directly via os/exec (NO shell interpreter). Security: Only whitelisted commands are auto-approved. CRITICAL: Do NOT use shell operators like &&, ||, >, <, or wildcards (*). If you NEED shell features, you MUST explicitly wrap your command: e.g., bash -c 'ls *.go && echo done'. To pipe commands, use the 'pipe_commands' tool instead.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
