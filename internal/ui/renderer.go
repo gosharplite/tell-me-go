@@ -21,6 +21,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
 
@@ -306,7 +307,7 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	if status.IsPostCall && status.Metrics != nil {
 		m := status.Metrics
-		
+
 		if len(status.ToolReasons) > 0 {
 			for _, reason := range status.ToolReasons {
 				_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
@@ -587,12 +588,16 @@ func (r *stdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui ui
 
 	// Track scrolling: If we exceed the threshold (based on terminal height),
 	// we assume the terminal has scrolled, making the saved cursor position invalid.
-	for i := 0; i < len(part.Text); i++ {
-		if part.Text[i] == '\n' {
+	for _, runeVal := range output {
+		if runeVal == '\n' {
 			state.lineCount++
 			state.currentLineWidth = 0
 		} else {
-			state.currentLineWidth++
+			rw := runewidth.RuneWidth(runeVal)
+			if rw < 0 {
+				rw = 0 // control characters
+			}
+			state.currentLineWidth += rw
 			if state.termWidth > 0 && state.currentLineWidth >= state.termWidth {
 				state.lineCount++
 				state.currentLineWidth = 0

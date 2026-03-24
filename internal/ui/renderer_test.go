@@ -768,3 +768,67 @@ func TestStreamResponse_IgnoresThoughtsInFinalOutput(t *testing.T) {
 		t.Errorf("expected stdout NOT to contain 'I am a hidden thought', got %q", output)
 	}
 }
+
+func TestStreamResponse_EmojiWidthCalculation(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	locker := &mockLocker{}
+	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
+
+	t.Run("Emoji should not trigger premature scroll", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		ctx := context.Background()
+
+		ch, finalize := r.StreamResponse(ctx, false, false)
+
+		// 'é' is 2 bytes, 1 column.
+		multiByteLine := strings.Repeat("é", 50) + "\n" // 100 bytes, 50 columns.
+		// If byte-based: 100 / 80 = 1 wrapper line + 1 newline = 2 lines per actual line.
+		// If we send 15 such lines:
+		// Actual lines = 15.
+		// Byte-based lines = 30.
+		// 30 > 25 (threshold) -> triggers hasScrolled.
+		// If column-based:
+		// 50 columns < 80. Only newline triggers lineCount++.
+		// 15 lines = 15. 15 <= 25 -> no hasScrolled.
+
+		for i := 0; i < 15; i++ {
+			ch <- &llm.Content{Parts: []*llm.Part{{Text: multiByteLine}}}
+		}
+
+		_ = finalize()
+
+		if strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
+			t.Errorf("Expected NO scroll separator for 15 lines of multi-byte chars, but got one. Byte-based width calculation is likely overestimating lines.")
+		}
+	})
+
+	t.Run("Wide emojis should be counted as 2 columns", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		ctx := context.Background()
+
+		ch, finalize := r.StreamResponse(ctx, false, false)
+
+		// 🚀 (rocket) is 4 bytes and 2 columns in most terminals.
+		// If we send 30 rockets:
+		// Byte-based: 30 * 4 = 120 bytes. 120 / 80 = 1 extra line (Total 2 per line with \n).
+		// Column-based: 30 * 2 = 60 columns. 60 < 80. (Total 1 per line with \n).
+
+		// If we send 15 such lines:
+		// Actual lines = 15.
+		// Byte-based = 30. 30 > 25 -> scroll.
+		// Column-based = 15. 15 <= 25 -> no scroll.
+
+		rocketLine := strings.Repeat("🚀", 30) + "\n"
+		for i := 0; i < 15; i++ {
+			ch <- &llm.Content{Parts: []*llm.Part{{Text: rocketLine}}}
+		}
+
+		_ = finalize()
+
+		if strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
+			t.Errorf("Expected NO scroll separator for 15 lines of rockets (60 columns each), but got one. Byte-based width calculation is likely overestimating lines.")
+		}
+	})
+}
