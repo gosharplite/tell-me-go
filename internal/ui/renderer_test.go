@@ -138,6 +138,7 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 			CurrentTurns:    1,
 			MaxHistoryTurns: 10,
 			IsPostCall:      true,
+			IsFinal:         true,
 			Metrics: &llm.Metrics{
 				PromptTokens:   500,
 				CachedTokens:   200,
@@ -345,6 +346,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:   mc.Now(),
 		IsPostCall:  true,
+		IsFinal:     true,
 		TaskCost:    0.0001,
 		SessionCost: 0.1234,
 		TotalM:      1000,
@@ -421,6 +423,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			IsPostCall:   true,
+			IsFinal:      true,
 			SessionCost:  1.2345,
 			Metrics:      &llm.Metrics{PromptTokens: 100},
 			SessionTurns: 1,

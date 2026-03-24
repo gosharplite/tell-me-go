@@ -60,6 +60,7 @@ func TestUIRendererGolden(t *testing.T) {
 			SessionTurns:    2,
 			MaxHistoryTurns: 10,
 			IsPostCall:      true,
+			IsFinal:         true,
 			StartTime:       frozenTime.Add(-10 * time.Second),
 			SessionCost:     1.2345,
 			DailyCost:       5.6789,

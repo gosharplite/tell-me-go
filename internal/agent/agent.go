@@ -219,6 +219,7 @@ func (a *agent) Shutdown(ctx context.Context) error {
 	}
 
 	if a.events != nil {
+		_ = a.events.Flush(ctx) // Ensure all pending events are fully dispatched (e.g., the final 'Ready' line)
 		err := a.events.Shutdown(ctx)
 		if errors.Is(err, events.ErrBusNotInitialized) {
 			return nil
