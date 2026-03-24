@@ -69,6 +69,8 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 }
 
 func (e *turnEngine) publishTurnStatus(ctx context.Context, turn *turn, isPostCall bool, isFinal bool) {
+	// Always retrieve fresh limits from the context manager to ensure
+	// autonomous turns (which reuse the same 'turn' object) stay in sync with config.
 	limits := turn.CtxManager.GetLimits()
 	maxTokens := limits.MaxHistoryTokens
 	maxHistTurns := limits.MaxHistoryTurns

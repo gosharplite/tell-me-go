@@ -265,9 +265,7 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 	case events.ToolResultEvent:
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
 	case events.TurnStarted:
-		if ev.Turn > 0 {
-			b.renderer.LogSystemMessage(fmt.Sprintf("Autonomous Engine: Preparing Turn %d...", ev.Turn+1), "info")
-		}
+		// Redundant log removed; session header fixed in renderer
 	case events.SystemMessageEvent:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
 	case events.StatusUpdate:

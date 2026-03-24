@@ -62,6 +62,7 @@ func DefaultPolicy() *Policy {
 			"list_files":        true,
 			"get_tree":          true,
 			"read_file":         true,
+			"read_files":        true,
 			"search_files":      true,
 			"replace_text":      true,
 			"find_file":         true,
