@@ -31,7 +31,17 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	}
 	skillSelector := domain_skills.NewDefaultSkillSelector(skillRepo, 32000) // 32k token budget for skills
 
-	// 2. Return the new Agent.
+	// 2. Compose Agent Options
+	opts := []agent.Option{
+		agent.WithLogger(deps.GetLogger()),
+		agent.WithSummarizer(summarizer),
+		agent.WithSkillSelector(skillSelector),
+		agent.WithInternalTools(),
+		agent.WithSessionCostTracker(deps.GetTracker()),
+		agent.WithPricing(cfg.Model, cfg.Mode, deps.GetPricingOverrides()),
+	}
+
+	// 3. Return the new Agent.
 	return agent.NewAgent(
 		deps.GetGateway(),
 		deps.GetEventBus(),
@@ -39,11 +49,6 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		cfg.ProviderName,
 		deps.GetRegistry(),
 		deps.GetSecurityManager(),
-		agent.WithLogger(deps.GetLogger()),
-		agent.WithSummarizer(summarizer),
-		agent.WithSkillSelector(skillSelector),
-		agent.WithInternalTools(),
-		agent.WithSessionCostTracker(deps.GetTracker()),
-		agent.WithPricing(cfg.Model, cfg.Mode, deps.GetPricingOverrides()),
+		opts...,
 	)
 }
