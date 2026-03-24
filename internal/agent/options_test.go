@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"log/slog"
 	"testing"
 
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -16,6 +17,8 @@ func TestAgentOptions(t *testing.T) {
 	mockLoader := &mockLoader{}
 	mockSessionLoader := &mockSessionLoader{}
 	mockTracker := &mockTracker{}
+	mockLogger := slog.Default()
+	mockSkillSelector := &mockSkillSelector{}
 	overrides := map[string]domain_pricing.ModelPricing{
 		"test": {Miss: 1.0},
 	}
@@ -67,6 +70,20 @@ func TestAgentOptions(t *testing.T) {
 			option: WithSessionCostTracker(mockTracker),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockTracker, cfg.tracker)
+			},
+		},
+		{
+			name:   "WithLogger",
+			option: WithLogger(mockLogger),
+			validate: func(t *testing.T, cfg *agentConfig) {
+				require.Equal(t, mockLogger, cfg.logger)
+			},
+		},
+		{
+			name:   "WithSkillSelector",
+			option: WithSkillSelector(mockSkillSelector),
+			validate: func(t *testing.T, cfg *agentConfig) {
+				require.Equal(t, mockSkillSelector, cfg.skillSelector)
 			},
 		},
 	}
