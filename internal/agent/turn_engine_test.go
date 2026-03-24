@@ -993,7 +993,8 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 					*turnCount++
 					content := &llm.Content{Role: "model"}
-					if *turnCount == 1 {
+					switch *turnCount {
+					case 1:
 						// Tool A called 3 times, Tool B called 3 times. Both should be tracked independently.
 						// This case verifies that calling Tool B doesn't reset or interfere with Tool A's counter.
 						content.Parts = []*llm.Part{
@@ -1005,14 +1006,14 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 							{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
 							{Text: fmt.Sprintf("Turn %d", *turnCount)},
 						}
-					} else if *turnCount == 2 {
+					case 2:
 						// Tool A called 3 more times total 6 > 5. Should trigger loop breaker.
 						content.Parts = []*llm.Part{
 							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
 							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
 							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
 						}
-					} else {
+					default:
 						content.Parts = []*llm.Part{{Text: "final response"}}
 					}
 					ch := make(chan *llm.Content)
