@@ -53,14 +53,15 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 				return res, err
 			}
 
-			// 2. Metrics: Trigger metrics line immediately after inference completes.
-			// This ensures the sequence: Header -> Response -> Metrics -> Tool Call.
-			if turn.State.Phase == phaseInference {
-				e.publishTurnStatus(ctx, turn, true, false)
-			}
-
-			// 3. Ready Footer: Trigger boundary footer only after persistence is complete.
+			// 2. Metrics & Ready Footer:
+			// If there are NO tool calls (final turn), we still want to emit the metrics
+			// But for tool call turns, we want to group Metrics and Ready at the absolute END
+			// of the turn (after tools have printed).
 			if turn.State.Phase == phasePersisting {
+				// We publish the Metrics line right before the Ready footer.
+				if turn.State.Metrics != nil {
+					e.publishTurnStatus(ctx, turn, true, false)
+				}
 				e.publishTurnStatus(ctx, turn, false, true)
 			}
 			return res, nil
