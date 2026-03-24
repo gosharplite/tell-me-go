@@ -297,7 +297,7 @@ func TestCommandValidator_WindowsShell(t *testing.T) {
 		{"cmd /c ls && echo hi", false},
 		{"powershell -Command ls; echo hi", false},
 		{"pwsh -c ls; echo hi", false},
-		
+
 		// This should always PASS
 		{"sh -c ls && echo hi", false},
 	}

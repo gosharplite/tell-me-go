@@ -261,4 +261,3 @@ func (w *warnWriter) Write(p []byte) (n int, err error) {
 	w.sm.Warn(strings.TrimSuffix(msg, "\n"))
 	return len(p), nil
 }
-

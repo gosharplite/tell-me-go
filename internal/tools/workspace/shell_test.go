@@ -508,4 +508,3 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 		}
 	})
 }
-
