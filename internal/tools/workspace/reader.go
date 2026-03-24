@@ -6,6 +6,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -122,6 +123,27 @@ func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent stri
 	return nil
 }
 
+const maxReadSize = 100000
+
+func (r *fileReader) readBoundedContent(ctx context.Context, path string) ([]byte, bool, error) {
+	f, err := r.fs.Open(ctx, path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+
+	// Read up to maxReadSize + 1 to detect truncation
+	content, err := io.ReadAll(io.LimitReader(f, int64(maxReadSize)+1))
+	if err != nil {
+		return nil, false, err
+	}
+
+	if len(content) > maxReadSize {
+		return content[:maxReadSize], true, nil
+	}
+	return content, false, nil
+}
+
 func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
@@ -148,7 +170,7 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, fmt.Errorf("path is a directory, use list_files instead")
 	}
 
-	content, err := r.fs.ReadFile(ctx, resolvedPath)
+	content, truncated, err := r.readBoundedContent(ctx, resolvedPath)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -157,9 +179,9 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{Text: fmt.Sprintf("File %s appears to be a binary file and cannot be displayed as text.", resolvedPath)}, nil
 	}
 
-	if len(content) > 100000 {
-		truncated := string(content[:100000])
-		return tools.ToolResult{Text: strings.ToValidUTF8(truncated, "") + "\n... (truncated)"}, nil
+	if truncated {
+		truncatedStr := string(content)
+		return tools.ToolResult{Text: strings.ToValidUTF8(truncatedStr, "") + "\n... (truncated)"}, nil
 	}
 
 	return tools.ToolResult{Text: string(content)}, nil
@@ -197,7 +219,7 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{})
 			continue
 		}
 
-		content, err := r.fs.ReadFile(ctx, resolvedPath)
+		content, truncated, err := r.readBoundedContent(ctx, resolvedPath)
 		if err != nil {
 			fmt.Fprintf(&sb, "ERROR: failed to read file: %v\n\n", err)
 			continue
@@ -208,9 +230,9 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{})
 			continue
 		}
 
-		if len(content) > 100000 {
-			truncated := string(content[:100000])
-			sb.WriteString(strings.ToValidUTF8(truncated, ""))
+		if truncated {
+			truncatedStr := string(content)
+			sb.WriteString(strings.ToValidUTF8(truncatedStr, ""))
 			sb.WriteString("\n... (truncated)\n\n")
 			continue
 		}
