@@ -150,7 +150,8 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 	}
 
 	if len(content) > 100000 {
-		return tools.ToolResult{Text: string(content[:100000]) + "\n... (truncated)"}, nil
+		truncated := string(content[:100000])
+		return tools.ToolResult{Text: strings.ToValidUTF8(truncated, "") + "\n... (truncated)"}, nil
 	}
 
 	return tools.ToolResult{Text: string(content)}, nil
@@ -190,7 +191,8 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{})
 		}
 
 		if len(content) > 100000 {
-			sb.WriteString(string(content[:100000]))
+			truncated := string(content[:100000])
+			sb.WriteString(strings.ToValidUTF8(truncated, ""))
 			sb.WriteString("\n... (truncated)\n\n")
 			continue
 		}

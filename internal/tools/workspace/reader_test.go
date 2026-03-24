@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
@@ -304,4 +305,81 @@ func TestReadFiles(t *testing.T) {
 			t.Errorf("expected binary message for fbin: %s", res.Text)
 		}
 	})
+}
+
+func TestReadFile_UTF8Truncation(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "utf8.txt")
+	
+	// '😀' is 4 bytes: \xf0 \x9f \x98 \x80
+	// We want to cut it in the middle.
+	// We'll put it at index 99,998.
+	prefix := strings.Repeat("a", 99998)
+	emoji := "😀" // 4 bytes
+	content := []byte(prefix + emoji + "extra")
+	
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	truncatedPart := res.Text
+	// Find where "... (truncated)" starts
+	truncIdx := strings.Index(truncatedPart, "\n... (truncated)")
+	if truncIdx == -1 {
+		t.Fatal("expected truncation message")
+	}
+	
+	finalContent := truncatedPart[:truncIdx]
+	
+	// Check if the last character is valid UTF-8
+	if !utf8.ValidString(finalContent) {
+		t.Errorf("result contains invalid UTF-8: %q", finalContent[len(finalContent)-10:])
+	}
+}
+
+func TestReadFiles_UTF8Truncation(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "utf8.txt")
+	
+	prefix := strings.Repeat("a", 99998)
+	emoji := "😀" // 4 bytes
+	content := []byte(prefix + emoji + "extra")
+	
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	truncatedPart := res.Text
+	// Find where "... (truncated)" starts
+	truncIdx := strings.Index(truncatedPart, "\n... (truncated)")
+	if truncIdx == -1 {
+		t.Fatal("expected truncation message")
+	}
+	
+	// Skip the header "--- File: ... ---\n"
+	headerEnd := strings.Index(truncatedPart, "\n") + 1
+	finalContent := truncatedPart[headerEnd:truncIdx]
+	
+	// Check if the last character is valid UTF-8
+	if !utf8.ValidString(finalContent) {
+		t.Errorf("result contains invalid UTF-8: %q", finalContent[len(finalContent)-10:])
+	}
 }
