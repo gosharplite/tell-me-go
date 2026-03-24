@@ -14,10 +14,12 @@ import (
 // TestEventBus is a thread-safe event bus designed for unit tests.
 // It records all published events for assertion and allows simulating errors.
 type TestEventBus struct {
-	mu         sync.RWMutex
-	events     []events.Event
-	subs       []func(context.Context, events.Event)
-	publishErr error
+	mu          sync.RWMutex
+	events      []events.Event
+	subs        []func(context.Context, events.Event)
+	publishErr  error
+	flushErr    error
+	shutdownErr error
 }
 
 // SetPublishErr sets the error to be returned by Publish.
@@ -25,6 +27,20 @@ func (b *TestEventBus) SetPublishErr(err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.publishErr = err
+}
+
+// SetFlushErr sets the error to be returned by Flush.
+func (b *TestEventBus) SetFlushErr(err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.flushErr = err
+}
+
+// SetShutdownErr sets the error to be returned by Shutdown.
+func (b *TestEventBus) SetShutdownErr(err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.shutdownErr = err
 }
 
 // Publish records the event and notifies subscribers. Returns publishErr if set.
@@ -59,14 +75,18 @@ func (b *TestEventBus) Subscribe(sub func(context.Context, events.Event)) {
 	b.subs = append(b.subs, sub)
 }
 
-// Shutdown is a no-op for TestEventBus.
+// Shutdown returns shutdownErr if set.
 func (b *TestEventBus) Shutdown(ctx context.Context) error {
-	return nil
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.shutdownErr
 }
 
-// Flush is a no-op for TestEventBus as it is synchronous.
+// Flush returns flushErr if set.
 func (b *TestEventBus) Flush(ctx context.Context) error {
-	return nil
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.flushErr
 }
 
 // GetEvents returns a copy of all recorded events.

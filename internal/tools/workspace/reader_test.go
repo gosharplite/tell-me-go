@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
@@ -246,4 +247,198 @@ func TestGetFileDiff_Errors(t *testing.T) {
 			t.Errorf("expected binary message, got %q", res.Text)
 		}
 	})
+}
+
+func TestReadFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	f1 := filepath.Join(tempDir, "f1.txt")
+	f2 := filepath.Join(tempDir, "f2.txt")
+	content1 := "content 1"
+	content2 := "content 2"
+	if err := os.WriteFile(f1, []byte(content1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f2, []byte(content2), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	t.Run("read multiple files", func(t *testing.T) {
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, f2}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "--- File: "+f1+" ---") || !strings.Contains(res.Text, content1) {
+			t.Errorf("f1 missing or incorrect: %s", res.Text)
+		}
+		if !strings.Contains(res.Text, "--- File: "+f2+" ---") || !strings.Contains(res.Text, content2) {
+			t.Errorf("f2 missing or incorrect: %s", res.Text)
+		}
+	})
+
+	t.Run("partial success", func(t *testing.T) {
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, "missing.txt"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, content1) {
+			t.Errorf("f1 missing: %s", res.Text)
+		}
+		if !strings.Contains(res.Text, "ERROR: failed to read file") {
+			t.Errorf("expected error message for missing file: %s", res.Text)
+		}
+	})
+
+	t.Run("binary file in batch", func(t *testing.T) {
+		fbin := filepath.Join(tempDir, "bin")
+		if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
+			t.Fatal(err)
+		}
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, fbin}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "(Binary file, cannot display as text)") {
+			t.Errorf("expected binary message for fbin: %s", res.Text)
+		}
+	})
+}
+
+func TestReadFile_UTF8Truncation(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "utf8.txt")
+
+	// '😀' is 4 bytes: \xf0 \x9f \x98 \x80
+	// We want to cut it in the middle.
+	// We'll put it at index 99,998.
+	prefix := strings.Repeat("a", 99998)
+	emoji := "😀" // 4 bytes
+	content := []byte(prefix + emoji + "extra")
+
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	truncatedPart := res.Text
+	// Find where "... (truncated)" starts
+	truncIdx := strings.Index(truncatedPart, "\n... (truncated)")
+	if truncIdx == -1 {
+		t.Fatal("expected truncation message")
+	}
+
+	finalContent := truncatedPart[:truncIdx]
+
+	// Check if the last character is valid UTF-8
+	if !utf8.ValidString(finalContent) {
+		t.Errorf("result contains invalid UTF-8: %q", finalContent[len(finalContent)-10:])
+	}
+}
+
+func TestReadFiles_UTF8Truncation(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "utf8.txt")
+
+	prefix := strings.Repeat("a", 99998)
+	emoji := "😀" // 4 bytes
+	content := []byte(prefix + emoji + "extra")
+
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	truncatedPart := res.Text
+	// Find where "... (truncated)" starts
+	truncIdx := strings.Index(truncatedPart, "\n... (truncated)")
+	if truncIdx == -1 {
+		t.Fatal("expected truncation message")
+	}
+
+	// Skip the header "--- File: ... ---\n"
+	headerEnd := strings.Index(truncatedPart, "\n") + 1
+	finalContent := truncatedPart[headerEnd:truncIdx]
+
+	// Check if the last character is valid UTF-8
+	if !utf8.ValidString(finalContent) {
+		t.Errorf("result contains invalid UTF-8: %q", finalContent[len(finalContent)-10:])
+	}
+}
+
+func TestReadFile_Directory(t *testing.T) {
+	tempDir := t.TempDir()
+	subDir := filepath.Join(tempDir, "subdir")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	_, err := r.readFile(ctx, map[string]interface{}{"filepath": subDir})
+	if err == nil {
+		t.Error("expected error when reading a directory")
+	} else if !strings.Contains(err.Error(), "path is a directory") {
+		t.Errorf("expected error message to contain 'path is a directory', got %q", err.Error())
+	}
+}
+
+func TestReadFiles_Directory(t *testing.T) {
+	tempDir := t.TempDir()
+	subDir := filepath.Join(tempDir, "subdir")
+	if err := os.Mkdir(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{subDir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "ERROR: path is a directory, use list_files instead") {
+		t.Errorf("expected directory error message, got %q", res.Text)
+	}
+}
+
+func TestReadFiles_Limit(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	// More than 50 files
+	paths := make([]interface{}, 51)
+	for i := 0; i < 51; i++ {
+		paths[i] = "f" + string(rune(i)) + ".txt"
+	}
+
+	_, err := r.readFiles(ctx, map[string]interface{}{"filepaths": paths})
+	if err == nil {
+		t.Fatal("expected error for exceeding file limit")
+	}
+	if !strings.Contains(err.Error(), "requested too many files") {
+		t.Errorf("expected limit error message, got %q", err.Error())
+	}
 }

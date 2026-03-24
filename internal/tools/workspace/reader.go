@@ -6,6 +6,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -122,6 +123,27 @@ func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent stri
 	return nil
 }
 
+const maxReadSize = 100000
+
+func (r *fileReader) readBoundedContent(ctx context.Context, path string) ([]byte, bool, error) {
+	f, err := r.fs.Open(ctx, path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = f.Close() }()
+
+	// Read up to maxReadSize + 1 to detect truncation
+	content, err := io.ReadAll(io.LimitReader(f, int64(maxReadSize)+1))
+	if err != nil {
+		return nil, false, err
+	}
+
+	if len(content) > maxReadSize {
+		return content[:maxReadSize], true, nil
+	}
+	return content, false, nil
+}
+
 func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
@@ -140,7 +162,15 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, err
 	}
 
-	content, err := r.fs.ReadFile(ctx, resolvedPath)
+	info, err := r.fs.Stat(ctx, resolvedPath)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
+	}
+	if info.IsDir() {
+		return tools.ToolResult{}, fmt.Errorf("path is a directory, use list_files instead")
+	}
+
+	content, truncated, err := r.readBoundedContent(ctx, resolvedPath)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -149,11 +179,74 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{Text: fmt.Sprintf("File %s appears to be a binary file and cannot be displayed as text.", resolvedPath)}, nil
 	}
 
-	if len(content) > 100000 {
-		return tools.ToolResult{Text: string(content[:100000]) + "\n... (truncated)"}, nil
+	if truncated {
+		truncatedStr := string(content)
+		return tools.ToolResult{Text: strings.ToValidUTF8(truncatedStr, "") + "\n... (truncated)"}, nil
 	}
 
 	return tools.ToolResult{Text: string(content)}, nil
+}
+
+func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		FilePaths []string `json:"filepaths"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if len(params.FilePaths) == 0 {
+		return tools.ToolResult{}, fmt.Errorf("filepaths argument is required and cannot be empty")
+	}
+
+	const maxFilesPerCall = 50
+	if len(params.FilePaths) > maxFilesPerCall {
+		return tools.ToolResult{}, fmt.Errorf("requested too many files (%d). Maximum allowed per call is %d", len(params.FilePaths), maxFilesPerCall)
+	}
+
+	var sb strings.Builder
+	for _, path := range params.FilePaths {
+		fmt.Fprintf(&sb, "--- File: %s ---\n", path)
+
+		resolvedPath, err := r.sm.IsPathSafe(path)
+		if err != nil {
+			fmt.Fprintf(&sb, "ERROR: %v\n\n", err)
+			continue
+		}
+
+		info, err := r.fs.Stat(ctx, resolvedPath)
+		if err != nil {
+			fmt.Fprintf(&sb, "ERROR: failed to read file: %v\n\n", err)
+			continue
+		}
+		if info.IsDir() {
+			sb.WriteString("ERROR: path is a directory, use list_files instead\n\n")
+			continue
+		}
+
+		content, truncated, err := r.readBoundedContent(ctx, resolvedPath)
+		if err != nil {
+			fmt.Fprintf(&sb, "ERROR: failed to read file: %v\n\n", err)
+			continue
+		}
+
+		if persistence.IsBinary(content) {
+			sb.WriteString("(Binary file, cannot display as text)\n\n")
+			continue
+		}
+
+		if truncated {
+			truncatedStr := string(content)
+			sb.WriteString(strings.ToValidUTF8(truncatedStr, ""))
+			sb.WriteString("\n... (truncated)\n\n")
+			continue
+		}
+
+		sb.Write(content)
+		sb.WriteString("\n\n")
+	}
+
+	return tools.ToolResult{Text: sb.String()}, nil
 }
 
 func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

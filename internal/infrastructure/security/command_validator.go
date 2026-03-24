@@ -90,16 +90,31 @@ func (v *commandValidator) Split(cmd string) ([]string, error) {
 // ValidateStructure ensures the command does not contain standalone shell operators
 // that would be misinterpreted during direct binary execution.
 func (v *commandValidator) ValidateStructure(parts []string) error {
-	if ok, desc := v.safety.HasForbiddenOperators(parts); ok {
-		return fmt.Errorf("standalone shell operator (%s) detected. "+
-			"This tool executes binaries directly and does not support shell features. "+
-			"To use shell features, wrap the command: sh -c \"your command\"", desc)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	// 1. Skip structural syntax limits if the intent is to use a shell.
+	// The shell safely evaluates interpolation and the entire string is still
+	// subject to the IsSafe prompt/authorization flow anyway.
+	isShell := false
+	switch parts[0] {
+	case "sh", "bash", "zsh", "ksh", "csh", "cmd.exe", "cmd", "powershell", "pwsh":
+		isShell = true
+	}
+
+	if !isShell {
+		if ok, desc := v.safety.HasForbiddenOperators(parts); ok {
+			return fmt.Errorf("standalone shell operator (%s) detected. "+
+				"This tool executes binaries directly and does not support shell features. "+
+				"To use shell features, wrap the command: sh -c \"your command\"", desc)
+		}
 	}
 
 	for i, part := range parts {
 		// Check for interpolation characters in any token to prevent shell-like behavior
 		// in binaries that might evaluate their arguments.
-		if v.safety.HasUnsafeInterpolation(part) {
+		if !isShell && v.safety.HasUnsafeInterpolation(part) {
 			return fmt.Errorf("shell interpolation character detected in token '%s'. "+
 				"This tool executes binaries directly and does not support shell expansion. "+
 				"To use shell features, wrap the command: sh -c \"your command\"", part)
@@ -108,7 +123,7 @@ func (v *commandValidator) ValidateStructure(parts []string) error {
 		// Check for attached operators like "ls;echo" or "ls>out"
 		// We only apply this to the first token (the command) to minimize false positives
 		// in arguments (e.g., grep "a;b") while still catching common mistakes.
-		if i == 0 && v.safety.HasForbiddenCharsInCommand(part) {
+		if i == 0 && !isShell && v.safety.HasForbiddenCharsInCommand(part) {
 			return fmt.Errorf("shell operator detected inside command token '%s'. "+
 				"This tool executes binaries directly and does not support shell features. "+
 				"To use shell features, wrap the command: sh -c \"your command\"", part)
@@ -205,6 +220,9 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 		{"<", "input redirection is not allowed"},
 		{"$", "variable expansion is not allowed"},
 		{"`", "command substitution is not allowed"},
+		{"*", "wildcards are not allowed in auto-approvable commands"},
+		{"?", "wildcards are not allowed in auto-approvable commands"},
+		{"[", "wildcards are not allowed in auto-approvable commands"},
 		{"\n", "newlines are not allowed"},
 		{"\r", "carriage returns are not allowed"},
 	}
@@ -231,6 +249,39 @@ func (v *commandValidator) CheckPathSafety(parts []string) (bool, string) {
 		}
 	}
 	return true, ""
+}
+
+// HasShellFeatures checks if the command parts contain any shell operators,
+// wildcards, or interpolation characters that require a shell interpreter.
+func (v *commandValidator) HasShellFeatures(parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+
+	// 1. Skip if already calling a shell explicitly as the primary command
+	switch parts[0] {
+	case "sh", "bash", "zsh", "ksh", "csh", "cmd.exe", "cmd", "powershell", "pwsh":
+		return false
+	}
+
+	// 2. Check for standalone shell operators (e.g. &&, ||, ;, |, >, <)
+	if ok, _ := v.safety.HasForbiddenOperators(parts); ok {
+		return true
+	}
+
+	for i, part := range parts {
+		// 3. Check for shell interpolation ($ or `) and wildcards (*, ?, [])
+		if v.safety.HasUnsafeInterpolation(part) || strings.ContainsAny(part, "*?[]") {
+			return true
+		}
+
+		// 4. Check for attached operators in the command token (e.g. "ls;echo")
+		if i == 0 && v.safety.HasForbiddenCharsInCommand(part) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func cleanPathArgument(arg string) string {

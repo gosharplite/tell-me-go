@@ -62,6 +62,8 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 		{"sh -c \"ls && echo hi\"", false},     // Operator is inside another string
 		{"go test ./$(id)", true},              // $ inside second token (interpolation)
 		{"ls `id` /tmp", true},                 // ` inside token (interpolation)
+		{"sh -c \"echo $HOME\"", false},        // Should be allowed in shell commands
+		{"bash -c \"ls && echo hi\"", false},   // Should be allowed in shell commands
 	}
 
 	for _, tt := range tests {
@@ -279,6 +281,66 @@ func TestTruncateOutput(t *testing.T) {
 		got := truncateOutput(tt.input, tt.max)
 		if got != tt.expected {
 			t.Errorf("truncateOutput(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.expected)
+		}
+	}
+}
+
+func TestCommandValidator_WindowsShell(t *testing.T) {
+	v := NewCommandValidator(nil, nil)
+
+	tests := []struct {
+		cmd     string
+		wantErr bool
+	}{
+		// Unquoted: shell operators are standalone tokens
+		{"cmd.exe /c ls && echo hi", false},
+		{"cmd /c ls && echo hi", false},
+		{"powershell -Command ls; echo hi", false},
+		{"pwsh -c ls; echo hi", false},
+
+		// This should always PASS
+		{"sh -c ls && echo hi", false},
+	}
+
+	for _, tt := range tests {
+		parts, err := v.Split(tt.cmd)
+		if err != nil {
+			t.Errorf("Split(%q) error: %v", tt.cmd, err)
+			continue
+		}
+		err = v.ValidateStructure(parts)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ValidateStructure(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+		}
+	}
+}
+
+func TestCommandValidator_HasShellFeatures(t *testing.T) {
+	v := NewCommandValidator(nil, nil)
+
+	tests := []struct {
+		cmd  string
+		want bool
+	}{
+		{"", false},
+		{"ls", false},
+		{"ls -la", false},
+		{"ls && echo hi", true},
+		{"ls | grep foo", true},
+		{"ls > out.txt", true},
+		{"echo $HOME", true},
+		{"ls *.go", true},
+		{"ls;echo hi", true},
+		{"sh -c \"ls && echo hi\"", false},
+		{"cmd.exe /c \"ls && echo hi\"", false},
+		{"powershell -Command \"ls; echo hi\"", false},
+	}
+
+	for _, tt := range tests {
+		parts, _ := v.Split(tt.cmd)
+		got := v.HasShellFeatures(parts)
+		if got != tt.want {
+			t.Errorf("HasShellFeatures(%q) = %v, want %v", tt.cmd, got, tt.want)
 		}
 	}
 }

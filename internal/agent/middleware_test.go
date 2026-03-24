@@ -83,8 +83,8 @@ func TestWithStatusReporter(t *testing.T) {
 		phase      turnPhase
 		wantEvents int
 	}{
-		{"Refining phase", phaseRefining, 1},
-		{"Persisting phase", phasePersisting, 1},
+		{"Inference phase", phaseInference, 1},
+		{"Persisting phase", phasePersisting, 2},
 		{"Other phase", phaseExecuting, 0},
 	}
 
@@ -102,7 +102,7 @@ func TestWithStatusReporter(t *testing.T) {
 			cm := &orchestration.ContextManager{Strategy: cs, History: h}
 
 			turn := &turn{
-				State:      &turnState{Phase: tt.phase},
+				State:      &turnState{Phase: tt.phase, Metrics: &llm.Metrics{}},
 				CtxManager: cm,
 				Clock:      clock.RealClock{},
 			}
@@ -123,8 +123,8 @@ func TestWithMetrics(t *testing.T) {
 		hasMetrics bool
 		wantEvents int
 	}{
-		{"Persisting with metrics", phasePersisting, true, 1},
-		{"Persisting without metrics", phasePersisting, false, 0},
+		{"Inference with metrics", phaseInference, true, 1},
+		{"Inference without metrics", phaseInference, false, 0},
 		{"Other phase with metrics", phaseExecuting, true, 0},
 	}
 

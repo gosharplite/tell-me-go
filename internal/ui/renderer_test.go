@@ -79,8 +79,8 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 			MaxHistoryTokens: 1000,
 		})
 		output := stderr.String()
-		if !strings.Contains(output, "Session: 1/10 turns") {
-			t.Errorf("expected stderr to contain 'Session: 1/10 turns', got %q", output)
+		if !strings.Contains(output, "Turn 1/10") {
+			t.Errorf("expected stderr to contain 'Turn 1/10', got %q", output)
 		}
 		// Check for the trailing newline (visual gap)
 		if !strings.HasSuffix(output, "\n\n") {
@@ -99,8 +99,8 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 			MaxHistoryTokens: 1000,
 		})
 		output := stderr.String()
-		if !strings.Contains(output, "Session: 1 turns") {
-			t.Errorf("expected stderr to contain 'Session: 1 turns', got %q", output)
+		if !strings.Contains(output, "Turn 1") {
+			t.Errorf("expected stderr to contain 'Turn 1', got %q", output)
 		}
 	})
 
@@ -138,6 +138,7 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 			CurrentTurns:    1,
 			MaxHistoryTurns: 10,
 			IsPostCall:      true,
+			IsFinal:         true,
 			Metrics: &llm.Metrics{
 				PromptTokens:   500,
 				CachedTokens:   200,
@@ -148,8 +149,8 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 			StartTime: r.nowSafe().Add(-5 * time.Second),
 		})
 		output := stderr.String()
-		if !strings.HasPrefix(output, "\n") {
-			t.Errorf("expected stderr to start with a newline, got %q", output)
+		if !strings.Contains(output, "Payload:") {
+			t.Errorf("expected stderr to contain 'Payload:', got %q", output)
 		}
 		if !strings.Contains(output, "Ready") {
 			t.Errorf("expected stderr to contain 'Ready', got %q", output)
@@ -345,6 +346,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:   mc.Now(),
 		IsPostCall:  true,
+		IsFinal:     true,
 		TaskCost:    0.0001,
 		SessionCost: 0.1234,
 		TotalM:      1000,
@@ -421,6 +423,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
 			IsPostCall:   true,
+			IsFinal:      true,
 			SessionCost:  1.2345,
 			Metrics:      &llm.Metrics{PromptTokens: 100},
 			SessionTurns: 1,
@@ -654,7 +657,7 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 		_ = finalize()
 
 		// Should NOT contain Restore Cursor in the finalization phase (it might be there from the start of stream, but let's check the separator)
-		if !strings.Contains(stderr.String(), "── (formatted) ──") {
+		if !strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
 			t.Errorf("expected scroll separator, got %q", stderr.String())
 		}
 	})
@@ -679,7 +682,7 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 
 		_ = finalize()
 
-		if !strings.Contains(stderr.String(), "── (formatted) ──") {
+		if !strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
 			t.Errorf("expected scroll separator after 26 lines, got %q", stderr.String())
 		}
 	})
@@ -764,4 +767,68 @@ func TestStreamResponse_IgnoresThoughtsInFinalOutput(t *testing.T) {
 	if strings.Contains(output, "I am a hidden thought") {
 		t.Errorf("expected stdout NOT to contain 'I am a hidden thought', got %q", output)
 	}
+}
+
+func TestStreamResponse_EmojiWidthCalculation(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	locker := &mockLocker{}
+	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{})
+
+	t.Run("Emoji should not trigger premature scroll", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		ctx := context.Background()
+
+		ch, finalize := r.StreamResponse(ctx, false, false)
+
+		// 'é' is 2 bytes, 1 column.
+		multiByteLine := strings.Repeat("é", 50) + "\n" // 100 bytes, 50 columns.
+		// If byte-based: 100 / 80 = 1 wrapper line + 1 newline = 2 lines per actual line.
+		// If we send 15 such lines:
+		// Actual lines = 15.
+		// Byte-based lines = 30.
+		// 30 > 25 (threshold) -> triggers hasScrolled.
+		// If column-based:
+		// 50 columns < 80. Only newline triggers lineCount++.
+		// 15 lines = 15. 15 <= 25 -> no hasScrolled.
+
+		for i := 0; i < 15; i++ {
+			ch <- &llm.Content{Parts: []*llm.Part{{Text: multiByteLine}}}
+		}
+
+		_ = finalize()
+
+		if strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
+			t.Errorf("Expected NO scroll separator for 15 lines of multi-byte chars, but got one. Byte-based width calculation is likely overestimating lines.")
+		}
+	})
+
+	t.Run("Wide emojis should be counted as 2 columns", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		ctx := context.Background()
+
+		ch, finalize := r.StreamResponse(ctx, false, false)
+
+		// 🚀 (rocket) is 4 bytes and 2 columns in most terminals.
+		// If we send 30 rockets:
+		// Byte-based: 30 * 4 = 120 bytes. 120 / 80 = 1 extra line (Total 2 per line with \n).
+		// Column-based: 30 * 2 = 60 columns. 60 < 80. (Total 1 per line with \n).
+
+		// If we send 15 such lines:
+		// Actual lines = 15.
+		// Byte-based = 30. 30 > 25 -> scroll.
+		// Column-based = 15. 15 <= 25 -> no scroll.
+
+		rocketLine := strings.Repeat("🚀", 30) + "\n"
+		for i := 0; i < 15; i++ {
+			ch <- &llm.Content{Parts: []*llm.Part{{Text: rocketLine}}}
+		}
+
+		_ = finalize()
+
+		if strings.Contains(stderr.String(), "────────────────────────────────────────────────────────────────────────────────") {
+			t.Errorf("Expected NO scroll separator for 15 lines of rockets (60 columns each), but got one. Byte-based width calculation is likely overestimating lines.")
+		}
+	})
 }

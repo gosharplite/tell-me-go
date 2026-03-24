@@ -120,6 +120,7 @@ type turnState struct {
 	RecentResponseHashes []string                `json:"-"`
 	PreparedHistory      []*llm.Content          `json:"-"`
 	TaskCost             float64                 `json:"task_cost"`
+	ToolReasons          []string                `json:"-"`
 }
 
 // toolExecutor defines the interface for tool execution.
@@ -271,8 +272,8 @@ func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.Context
 	if e.events != nil {
 		e.middleware = append(e.middleware,
 			e.WithStreaming(),
-			e.WithStatusReporter(),
 			e.WithMetrics(),
+			e.WithStatusReporter(),
 			withLoopDetector(),
 		)
 	}
@@ -318,6 +319,7 @@ func (e *turnEngine) prepareNextTurn(turn *turn) {
 	turn.State.Response = nil
 	turn.State.ToolResponse = nil
 	turn.State.HasToolCalls = false
+	turn.State.ToolReasons = nil
 }
 
 func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
@@ -569,6 +571,15 @@ func (p *inferenceStep) updateState(turn *turn, content *llm.Content, metrics *l
 		turn.State.Tokens = int(metrics.PromptTokens)
 	}
 	turn.State.HasToolCalls = p.hasToolCalls(content)
+	if turn.State.HasToolCalls {
+		for _, part := range content.Parts {
+			if part.FunctionCall != nil {
+				if reason, ok := part.FunctionCall.Args["reason"].(string); ok && reason != "" {
+					turn.State.ToolReasons = append(turn.State.ToolReasons, reason)
+				}
+			}
+		}
+	}
 }
 
 func (p *inferenceStep) routeBasedOnContent(content *llm.Content) processResult {

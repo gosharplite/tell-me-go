@@ -231,7 +231,7 @@ type uiBridge struct {
 
 // newUIBridge creates a new uiBridge.
 func newUIBridge(renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
-	return &uiBridge{
+	b := &uiBridge{
 		renderer:     renderer,
 		showThoughts: showThoughts,
 		showTools:    showTools,
@@ -239,10 +239,15 @@ func newUIBridge(renderer ports.UIRenderer, showThoughts, showTools, rawOutput, 
 		useColor:     useColor,
 		logFile:      logFile,
 	}
+	return b
 }
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
+	b.processEvent(ctx, e)
+}
+
+func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.renderer.LogTurnStatus(ev.Status)
@@ -264,6 +269,8 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
 	case events.ToolResultEvent:
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
+	case events.TurnStarted:
+		// Redundant log removed; session header fixed in renderer
 	case events.SystemMessageEvent:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
 	case events.StatusUpdate:

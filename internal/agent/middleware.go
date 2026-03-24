@@ -43,59 +43,80 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 func (e *turnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
+			// 1. Header: Trigger session boundary header at the absolute start of every LLM generation cycle.
+			if turn.State.Phase == phaseInference && turn.State.RetryCount == 0 && e.events != nil {
+				e.publishTurnStatus(ctx, turn, false, false)
+			}
+
 			res, err := next.process(ctx, turn)
 			if e.events == nil || err != nil {
 				return res, err
 			}
 
-			if (turn.State.Phase == phaseRefining && turn.State.RetryCount == 0) || turn.State.Phase == phasePersisting {
-				limits := turn.CtxManager.GetLimits()
-				maxTokens := limits.MaxHistoryTokens
-				maxHistTurns := limits.MaxHistoryTurns
-				threshold := limits.TieredThreshold
-
-				var cost float64
-				var dailyCost float64
-				var totalM, totalH, totalO int64
-				if turn.CostTracker != nil {
-					cost = turn.CostTracker.GetTotalCost(ctx)
-					dailyCost = turn.CostTracker.GetDailyCost(ctx)
-					stats, _ := turn.CostTracker.GetStats(ctx)
-					totalM = stats.PromptTokens - stats.CachedTokens
-					totalH = stats.CachedTokens
-					totalO = stats.ResponseTokens + stats.ThinkingTokens
+			// 2. Metrics & Ready Footer:
+			// If there are NO tool calls (final turn), we still want to emit the metrics
+			// But for tool call turns, we want to group Metrics and Ready at the absolute END
+			// of the turn (after tools have printed).
+			if turn.State.Phase == phasePersisting {
+				// We publish the Metrics line right before the Ready footer.
+				if turn.State.Metrics != nil {
+					e.publishTurnStatus(ctx, turn, true, false)
 				}
-
-				evt := events.TurnStatusEvent{
-					Status: events.TurnStatus{
-						Timestamp:        turn.Clock.Now(),
-						CurrentTurns:     turn.Index,
-						SessionTurns:     turn.CtxManager.History.GetTotalEntries() / 2,
-						MaxHistoryTurns:  maxHistTurns,
-						Tokens:           turn.State.Tokens,
-						MaxHistoryTokens: maxTokens,
-						TieredThreshold:  threshold,
-						Metrics:          turn.State.Metrics,
-						IsPostCall:       turn.State.Phase == phasePersisting,
-						StartTime:        turn.StartTime,
-						SessionCost:      cost,
-						DailyCost:        dailyCost,
-						TaskCost:         turn.State.TaskCost,
-						TotalM:           totalM,
-						TotalH:           totalH,
-						TotalO:           totalO,
-					},
-				}
-				if err := events.SafePublish(ctx, e.events, evt); err != nil {
-					if !errors.Is(err, events.ErrBusNotInitialized) {
-						e.getLogger().Error("event_publish_failed",
-							slog.String("event_type", string(evt.Type())),
-							slog.Any("error", err))
-					}
-				}
+				e.publishTurnStatus(ctx, turn, false, true)
 			}
 			return res, nil
 		})
+	}
+}
+
+func (e *turnEngine) publishTurnStatus(ctx context.Context, turn *turn, isPostCall bool, isFinal bool) {
+	// Always retrieve fresh limits from the context manager to ensure
+	// autonomous turns (which reuse the same 'turn' object) stay in sync with config.
+	limits := turn.CtxManager.GetLimits()
+	maxTokens := limits.MaxHistoryTokens
+	maxHistTurns := limits.MaxHistoryTurns
+	threshold := limits.TieredThreshold
+
+	var cost float64
+	var dailyCost float64
+	var totalM, totalH, totalO int64
+	if turn.CostTracker != nil {
+		cost = turn.CostTracker.GetTotalCost(ctx)
+		dailyCost = turn.CostTracker.GetDailyCost(ctx)
+		stats, _ := turn.CostTracker.GetStats(ctx)
+		totalM = stats.PromptTokens - stats.CachedTokens
+		totalH = stats.CachedTokens
+		totalO = stats.ResponseTokens + stats.ThinkingTokens
+	}
+
+	evt := events.TurnStatusEvent{
+		Status: events.TurnStatus{
+			Timestamp:        turn.Clock.Now(),
+			CurrentTurns:     turn.Index,
+			SessionTurns:     turn.CtxManager.History.GetTotalEntries() / 2,
+			MaxHistoryTurns:  maxHistTurns,
+			Tokens:           turn.State.Tokens,
+			MaxHistoryTokens: maxTokens,
+			TieredThreshold:  threshold,
+			Metrics:          turn.State.Metrics,
+			IsPostCall:       isPostCall,
+			IsFinal:          isFinal,
+			StartTime:        turn.StartTime,
+			SessionCost:      cost,
+			DailyCost:        dailyCost,
+			TaskCost:         turn.State.TaskCost,
+			TotalM:           totalM,
+			TotalH:           totalH,
+			TotalO:           totalO,
+			ToolReasons:      turn.State.ToolReasons,
+		},
+	}
+	if err := events.SafePublish(ctx, e.events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			e.getLogger().Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
+		}
 	}
 }
 
@@ -103,13 +124,15 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 func (e *turnEngine) WithMetrics() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
+			phase := turn.State.Phase
 			res, err := next.process(ctx, turn)
-			if e.events != nil && turn.State.Phase == phasePersisting && turn.State.Metrics != nil {
+
+			// Trigger accumulation and event publication immediately after inference
+			// so that subsequent status events (metrics line) have accurate data.
+			if phase == phaseInference && e.events != nil && err == nil && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
 					// Calculate and accumulate into session total (thread-safe)
 					turnCost := turn.CostTracker.AccumulateAndReturn(*turn.State.Metrics)
-
-					// Populate fields for the UI/EventBus
 					turn.State.Metrics.Cost = turnCost
 					turn.State.TaskCost += turnCost
 				}

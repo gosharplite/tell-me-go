@@ -119,7 +119,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger))
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithWorkers(0))
 
 	pricingData := telemetry.GetPricing(ctx, b.SM, filepath.Join(b.HomeDir, "output"))
 

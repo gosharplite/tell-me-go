@@ -75,7 +75,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "read_file",
-				Description: "Reads the full content of a specific file (similar to 'cat').",
+				Description: "[DEPRECATED] Reads the content of a single file. You MUST use 'read_files' instead (even for single files) to maintain consistent batching patterns and minimize LLM roundtrips.",
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -85,6 +85,24 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 				},
 			},
 			handler: m.reader.readFile,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "read_files",
+				Description: "Reads the full content of multiple files. CRITICAL: Use this tool whenever you need to read more than one file to minimize LLM roundtrips.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"filepaths": {
+							Type:        "ARRAY",
+							Items:       &tools.Schema{Type: "STRING"},
+							Description: "The list of file paths to read.",
+						},
+					},
+					Required: []string{"filepaths"},
+				},
+			},
+			handler: m.reader.readFiles,
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -139,7 +157,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "get_definitions",
-				Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives. HINT: Once you find the file containing the definition, use 'read_file' to view the internal logic.",
+				Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives. HINT: Once you find the files containing the definitions, use 'read_files' to view the internal logic.",
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
@@ -240,7 +258,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
-		Description:     "Executes a single binary directly via os/exec (NO shell interpreter). Security: Only whitelisted commands are auto-approved. CRITICAL: Do NOT use shell operators like &&, ||, >, <, or wildcards (*). If you NEED shell features, you MUST explicitly wrap your command: e.g., bash -c 'ls *.go && echo done'. To pipe commands, use the 'pipe_commands' tool instead.",
+		Description:     "Executes a command. Shell features like operators (&&, ||, ;, |, >, <), wildcards (*, ?), and variable expansion ($) are supported and automatically handled via 'sh -c'. Security: Only whitelisted commands are auto-approved. For advanced multi-stage pipes, use the 'pipe_commands' tool.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

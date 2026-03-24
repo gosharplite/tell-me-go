@@ -6,6 +6,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -47,6 +48,16 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	parts, err := t.validator.Split(params.Command)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("error parsing command: %w", err)
+	}
+
+	// NEW: Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation)
+	// This prevents the AI from failing on valid shell commands that don't fit the direct-exec model.
+	if t.validator.HasShellFeatures(parts) {
+		if runtime.GOOS == "windows" {
+			parts = []string{"cmd.exe", "/c", params.Command}
+		} else {
+			parts = []string{"sh", "-c", params.Command}
+		}
 	}
 
 	if err := t.validator.ValidateStructure(parts); err != nil {

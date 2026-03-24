@@ -21,6 +21,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
 
@@ -37,15 +38,17 @@ type stdUIRenderer struct {
 
 // streamState holds the transient state for a single response stream.
 type streamState struct {
-	aggregated      *llm.Content
-	totalText       strings.Builder
-	thoughtActive   bool
-	showThoughts    bool
-	rawOutput       bool
-	lineCount       int
-	hasScrolled     bool
-	scrollThreshold int
-	isTerm          bool
+	aggregated       *llm.Content
+	totalText        strings.Builder
+	thoughtActive    bool
+	showThoughts     bool
+	rawOutput        bool
+	lineCount        int
+	currentLineWidth int
+	hasScrolled      bool
+	scrollThreshold  int
+	termWidth        int
+	isTerm           bool
 }
 
 // NewRenderer creates a new ports.UIRenderer.
@@ -131,7 +134,6 @@ func (r *stdUIRenderer) renderMarkdown(text string) {
 
 func (r *stdUIRenderer) renderMarkdownWithUI(ui uiState, text string) {
 	stdout := ui.stdout
-	_, _ = fmt.Fprintf(stdout, "%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
 	if r.renderer == nil {
 		_, _ = fmt.Fprint(stdout, text)
 		return
@@ -140,7 +142,11 @@ func (r *stdUIRenderer) renderMarkdownWithUI(ui uiState, text string) {
 	if err != nil {
 		_, _ = fmt.Fprint(stdout, text)
 	} else {
-		_, _ = fmt.Fprint(stdout, out)
+		out = strings.TrimLeft(out, "\n")
+		out = strings.TrimRight(out, "\n")
+		if out != "" {
+			_, _ = fmt.Fprint(stdout, out+"\n\n")
+		}
 	}
 }
 
@@ -286,35 +292,52 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		}
 	}
 
-	if !status.IsPostCall {
+	if !status.IsPostCall && !status.IsFinal {
 		_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
 
 		if status.MaxHistoryTurns > 0 {
-			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, ui.c(colorGray))
+			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d/%d%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, ui.c(colorGray))
 		} else {
-			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sSession: %d turns%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, ui.c(colorGray))
+			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, ui.c(colorGray))
 		}
 
 		printSystemLine(status.Tokens, false)
 		_, _ = fmt.Fprintln(stderr) // Ensure visual gap before response
-	} else if status.Metrics != nil {
+	}
+
+	if status.IsPostCall && status.Metrics != nil {
 		m := status.Metrics
-		_, _ = fmt.Fprintln(stderr) // Add vertical separation
+
+		if len(status.ToolReasons) > 0 {
+			for _, reason := range status.ToolReasons {
+				_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
+					ui.c(colorGray), status.Timestamp.Format("15:04:05"), reason, ui.c(colorReset))
+			}
+		}
+
 		printSystemLine(int(m.PromptTokens), true)
-
 		r.renderMetricsLine(ui, m, status.StartTime)
+	}
 
+	if status.IsFinal {
 		costStr := ""
 		if status.SessionCost > 0 {
 			hitRate := 0.0
 			if total := status.TotalM + status.TotalH; total > 0 {
 				hitRate = float64(status.TotalH) / float64(total) * 100
 			}
+
+			// Safe access to metrics; metrics could be nil if the turn stopped before inference
+			turnCost := 0.0
+			if status.Metrics != nil {
+				turnCost = status.Metrics.Cost
+			}
+
 			// Format: (TurnCost TaskCost SessionCost DailyCost M: ... H: ... O: ...)
 			// Highlight ONLY the SessionCost ($1.4745 in user example).
 			costStr = fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
 				ui.c(colorGray),
-				status.Metrics.Cost, status.TaskCost,
+				turnCost, status.TaskCost,
 				ui.c(colorGreen), status.SessionCost,
 				ui.c(colorGray), status.DailyCost,
 				ui.c(colorGray),
@@ -324,6 +347,7 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 				status.TotalO,
 				ui.c(colorGray))
 		}
+
 		_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
 	}
 }
@@ -387,11 +411,17 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 
 	isTerm := false
 	threshold := 25
+	width := 80
 	if f, ok := ui.stdout.(*os.File); ok {
 		if term.IsTerminal(int(f.Fd())) {
 			isTerm = true
-			if _, h, err := term.GetSize(int(f.Fd())); err == nil && h > 0 {
-				threshold = h - 2
+			if w, h, err := term.GetSize(int(f.Fd())); err == nil {
+				if h > 0 {
+					threshold = h - 2
+				}
+				if w > 0 {
+					width = w
+				}
 			}
 		}
 	}
@@ -401,6 +431,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		showThoughts:    showThoughts,
 		rawOutput:       rawOutput,
 		scrollThreshold: threshold,
+		termWidth:       width,
 		isTerm:          isTerm,
 	}
 
@@ -437,7 +468,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 
 func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState, ui uiState) {
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	firstChunkReceived := false
+	indicatorStopped := false
 	indicatorDrawn := false
 	startTime := time.Now()
 
@@ -445,11 +476,11 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 	defer stopTicker()
 
 	stopIndicator := func() {
-		if !firstChunkReceived && state.isTerm {
+		if !indicatorStopped && state.isTerm {
 			if indicatorDrawn {
 				r.clearLoadingIndicator(ui, state.rawOutput)
 			}
-			firstChunkReceived = true // Mark as handled
+			indicatorStopped = true
 			stopTicker()
 			tickerC = nil
 		}
@@ -466,13 +497,33 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 		case content, ok := <-ch:
 			if !ok {
 				r.closeThinking(state, ui)
+				stopIndicator()
 				return
 			}
 
-			stopIndicator() // Clear before rendering first chunk
+			if !indicatorStopped {
+				if r.shouldStopIndicator(content, state.showThoughts) {
+					stopIndicator()
+				}
+			}
 			r.handleStreamContent(state, content, ui)
 		}
 	}
+}
+
+func (r *stdUIRenderer) shouldStopIndicator(content *llm.Content, showThoughts bool) bool {
+	for _, part := range content.Parts {
+		if part.IsThought || len(part.ThoughtSignature) > 0 {
+			if showThoughts {
+				return true
+			}
+			continue
+		}
+		if part.Text != "" || part.InlineData != nil || part.FunctionCall != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *stdUIRenderer) setupIndicator(state *streamState, ui uiState, frames []string, startTime time.Time) (<-chan time.Time, int, func()) {
@@ -537,7 +588,19 @@ func (r *stdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui ui
 
 	// Track scrolling: If we exceed the threshold (based on terminal height),
 	// we assume the terminal has scrolled, making the saved cursor position invalid.
-	state.lineCount += strings.Count(part.Text, "\n")
+	for _, runeVal := range output {
+		if runeVal == '\n' {
+			state.lineCount++
+			state.currentLineWidth = 0
+		} else {
+			rw := runewidth.RuneWidth(runeVal)
+			state.currentLineWidth += rw
+			if state.termWidth > 0 && state.currentLineWidth >= state.termWidth {
+				state.lineCount++
+				state.currentLineWidth = 0
+			}
+		}
+	}
 	if state.lineCount > state.scrollThreshold {
 		state.hasScrolled = true
 	}
@@ -617,22 +680,17 @@ func (r *stdUIRenderer) finalizeOutput(state *streamState, ui uiState) {
 		if fullText != "" {
 			sanitized := sanitizeForTerminal(fullText)
 
-			if state.hasScrolled {
-				// FAIL-SAFE: Terminal scrolled. Redrawing would cause overlap.
+			canRedraw := ui.c(termSaveCursor) != "" && !state.hasScrolled
+
+			if !canRedraw {
+				// FAIL-SAFE: Terminal scrolled, or no terminal. Redrawing would cause overlap.
 				// Just print a separator and append the final formatted text.
-				r.safePrintStderr("\n"+ui.c(colorGray)+"── (formatted) ──"+ui.c(colorReset)+"\n", ui)
+				r.safePrintStderr("\n"+ui.c(colorGray)+"────────────────────────────────────────────────────────────────────────────────"+ui.c(colorReset)+"\n", ui)
 				r.renderMarkdownWithUI(ui, sanitized)
 			} else {
 				// Normal path: Cursor is still valid, do a clean redraw.
 				r.clearAndRenderMarkdown(ui, sanitized)
 			}
-		}
-		if r.locker != nil {
-			r.locker.TerminalLock()
-		}
-		_, _ = fmt.Fprintln(ui.stdout)
-		if r.locker != nil {
-			r.locker.TerminalUnlock()
 		}
 	}
 }
