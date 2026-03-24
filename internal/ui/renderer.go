@@ -411,8 +411,6 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	go func() {
 		for {
 			select {
-			case <-ctx.Done():
-				return
 			case <-done:
 				return
 			case <-ticker.C:
