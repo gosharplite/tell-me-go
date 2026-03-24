@@ -134,65 +134,72 @@ func (cm *ContextManager) updateCache(snapshotVersion int, req *request) error {
 
 // Prepare prepares the history for the given turn, applying pruning and summarization.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
-	// SCALABLE: Immediate context check
-	select {
-	case <-ctx.Done():
-		return nil, nil, ctx.Err()
-	default:
-	}
-
-	cm.mu.RLock()
-	snapshotVersion := cm.version
-
-	// 1. CACHE HIT: Return cached Read-Model if version hasn't changed
-	if history, meta, ok := cm.getCachedView(snapshotVersion); ok {
-		cm.mu.RUnlock()
+	if history, meta, ok := cm.tryCache(); ok {
 		return history, meta, nil
 	}
 
-	// 2. CACHE MISS: Load raw history
-	history, err := cm.History.GetWindow(ctx, 0, -1)
+	snapshotVersion, history, pipeline, err := cm.loadHistory(ctx)
 	if err != nil {
-		cm.mu.RUnlock()
 		return nil, nil, err
 	}
 
-	// [FAIL-FAST] Boundary Validation: Validate history before passing to pipeline
-	if err := validateHistoryBoundaries(history); err != nil {
-		cm.mu.RUnlock()
-		return nil, nil, err
-	}
-
-	pipeline := cm.Pipeline
-	cm.mu.RUnlock()
-
-	// Initialize request with snapshot of history
 	req := &request{
 		Turn:    turn,
 		History: history,
 	}
 
-	if pipeline == nil {
-		clonedMeta := req.Metadata.Clone()
-		return req.History, clonedMeta, nil
-	}
-
-	// 3. Execute Pipeline
-	persisted, err := cm.executePipeline(ctx, pipeline, req, snapshotVersion)
+	persisted, err := cm.runPipeline(ctx, pipeline, req, snapshotVersion)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// 4. UPDATE CACHE: Store the Materialized View
-	expectedVersion := snapshotVersion
-	if persisted {
-		expectedVersion++
-	}
-	if err := cm.updateCache(expectedVersion, req); err != nil {
+	if err := cm.commitToCache(snapshotVersion, persisted, req); err != nil {
 		return nil, nil, err
 	}
 
 	return req.History, &req.Metadata, nil
+}
+
+func (cm *ContextManager) tryCache() ([]*llm.Content, *Metadata, bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.getCachedView(cm.version)
+}
+
+func (cm *ContextManager) loadHistory(ctx context.Context) (int, []*llm.Content, *ContextPipeline, error) {
+	if err := cm.checkContext(ctx); err != nil {
+		return 0, nil, nil, err
+	}
+
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	snapshotVersion := cm.version
+	history, err := cm.History.GetWindow(ctx, 0, -1)
+	if err != nil {
+		return snapshotVersion, nil, nil, err
+	}
+
+	if err := validateHistoryBoundaries(history); err != nil {
+		return snapshotVersion, nil, nil, err
+	}
+
+	return snapshotVersion, history, cm.Pipeline, nil
+}
+
+func (cm *ContextManager) runPipeline(ctx context.Context, pipeline *ContextPipeline, req *request, snapshotVersion int) (bool, error) {
+	if pipeline == nil {
+		return false, nil
+	}
+	return cm.executePipeline(ctx, pipeline, req, snapshotVersion)
+}
+
+func (cm *ContextManager) commitToCache(snapshotVersion int, persisted bool, req *request) error {
+	expectedVersion := snapshotVersion
+	if persisted {
+		expectedVersion++
+	}
+	return cm.updateCache(expectedVersion, req)
 }
 
 func validateHistoryBoundaries(history []*llm.Content) error {
