@@ -108,6 +108,7 @@ func (e *turnEngine) publishTurnStatus(ctx context.Context, turn *turn, isPostCa
 			TotalM:           totalM,
 			TotalH:           totalH,
 			TotalO:           totalO,
+			ToolReasons:      turn.State.ToolReasons,
 		},
 	}
 	if err := events.SafePublish(ctx, e.events, evt); err != nil {
