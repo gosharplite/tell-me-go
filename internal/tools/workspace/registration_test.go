@@ -30,6 +30,7 @@ func TestRegister(t *testing.T) {
 		"list_files",
 		"get_tree",
 		"read_file",
+		"read_files",
 		"search_files",
 		"replace_text",
 		"find_file",

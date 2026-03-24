@@ -209,7 +209,7 @@ func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]inter
 		}
 	}
 
-	res.Text += "\n\n// SYSTEM HINT: To view the full function bodies, call 'read_file' on this filepath."
+	res.Text += "\n\n// SYSTEM HINT: To view the full function bodies, call 'read_files' on this filepath."
 	return res, nil
 }
 
