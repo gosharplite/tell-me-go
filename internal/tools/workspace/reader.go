@@ -156,6 +156,52 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 	return tools.ToolResult{Text: string(content)}, nil
 }
 
+func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		FilePaths []string `json:"filepaths"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if len(params.FilePaths) == 0 {
+		return tools.ToolResult{}, fmt.Errorf("filepaths argument is required and cannot be empty")
+	}
+
+	var sb strings.Builder
+	for _, path := range params.FilePaths {
+		sb.WriteString(fmt.Sprintf("--- File: %s ---\n", path))
+
+		resolvedPath, err := r.sm.IsPathSafe(path)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("ERROR: %v\n\n", err))
+			continue
+		}
+
+		content, err := r.fs.ReadFile(ctx, resolvedPath)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("ERROR: failed to read file: %v\n\n", err))
+			continue
+		}
+
+		if persistence.IsBinary(content) {
+			sb.WriteString(fmt.Sprintf("(Binary file, cannot display as text)\n\n"))
+			continue
+		}
+
+		if len(content) > 100000 {
+			sb.WriteString(string(content[:100000]))
+			sb.WriteString("\n... (truncated)\n\n")
+			continue
+		}
+
+		sb.Write(content)
+		sb.WriteString("\n\n")
+	}
+
+	return tools.ToolResult{Text: sb.String()}, nil
+}
+
 func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path    string `json:"path"`

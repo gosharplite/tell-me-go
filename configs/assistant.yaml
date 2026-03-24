@@ -3,7 +3,7 @@
 
 # Multi-Provider AI Assistant Configuration
 MODE: "assistant"
-PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
+PERSON: "You are an AI assistant. CRITICAL: When investigating repositories, if you need to read multiple files, you MUST use the 'read_files' tool to fetch them in a single batch. Do not read files sequentially in multiple turns. Please respond concisely and accurately in English."
 
 # --- Active Provider ---
 SELECTED_PROVIDER: "google"

@@ -247,3 +247,61 @@ func TestGetFileDiff_Errors(t *testing.T) {
 		}
 	})
 }
+
+func TestReadFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	f1 := filepath.Join(tempDir, "f1.txt")
+	f2 := filepath.Join(tempDir, "f2.txt")
+	content1 := "content 1"
+	content2 := "content 2"
+	if err := os.WriteFile(f1, []byte(content1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f2, []byte(content2), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	t.Run("read multiple files", func(t *testing.T) {
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, f2}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "--- File: "+f1+" ---") || !strings.Contains(res.Text, content1) {
+			t.Errorf("f1 missing or incorrect: %s", res.Text)
+		}
+		if !strings.Contains(res.Text, "--- File: "+f2+" ---") || !strings.Contains(res.Text, content2) {
+			t.Errorf("f2 missing or incorrect: %s", res.Text)
+		}
+	})
+
+	t.Run("partial success", func(t *testing.T) {
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, "missing.txt"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, content1) {
+			t.Errorf("f1 missing: %s", res.Text)
+		}
+		if !strings.Contains(res.Text, "ERROR: failed to read file") {
+			t.Errorf("expected error message for missing file: %s", res.Text)
+		}
+	})
+
+	t.Run("binary file in batch", func(t *testing.T) {
+		fbin := filepath.Join(tempDir, "bin")
+		if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
+			t.Fatal(err)
+		}
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, fbin}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "(Binary file, cannot display as text)") {
+			t.Errorf("expected binary message for fbin: %s", res.Text)
+		}
+	})
+}
