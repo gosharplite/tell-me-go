@@ -304,8 +304,15 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	if status.IsPostCall && status.Metrics != nil {
 		m := status.Metrics
-		printSystemLine(int(m.PromptTokens), true)
+		
+		if len(status.ToolReasons) > 0 {
+			for _, reason := range status.ToolReasons {
+				_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
+					ui.c(colorGray), status.Timestamp.Format("15:04:05"), reason, ui.c(colorReset))
+			}
+		}
 
+		printSystemLine(int(m.PromptTokens), true)
 		r.renderMetricsLine(ui, m, status.StartTime)
 	}
 
@@ -336,13 +343,6 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 				hitRate,
 				status.TotalO,
 				ui.c(colorGray))
-		}
-
-		if len(status.ToolReasons) > 0 {
-			for _, reason := range status.ToolReasons {
-				_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
-					ui.c(colorGray), status.Timestamp.Format("15:04:05"), reason, ui.c(colorReset))
-			}
 		}
 
 		_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
