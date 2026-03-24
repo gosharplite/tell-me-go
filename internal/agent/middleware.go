@@ -43,10 +43,9 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 func (e *turnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
-			// [FIX] Trigger session boundary header at the absolute start of every LLM generation cycle
-			// (autonomous or user-triggered) to ensure visibility during tool chains.
+			// 1. Header: Trigger session boundary header at the absolute start of every LLM generation cycle.
 			if turn.State.Phase == phaseInference && turn.State.RetryCount == 0 && e.events != nil {
-				e.publishTurnStatus(ctx, turn, false)
+				e.publishTurnStatus(ctx, turn, false, false)
 			}
 
 			res, err := next.process(ctx, turn)
@@ -54,16 +53,22 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 				return res, err
 			}
 
-			// Trigger boundary footer/metrics after persistence is complete.
-			if turn.State.Phase == phasePersisting {
-				e.publishTurnStatus(ctx, turn, true)
+			// 2. Metrics: Trigger metrics line immediately after inference completes.
+			// This ensures the sequence: Header -> Response -> Metrics -> Tool Call.
+			if turn.State.Phase == phaseInference {
+				e.publishTurnStatus(ctx, turn, true, false)
+			}
+
+			// 3. Ready Footer: Trigger boundary footer only after persistence is complete and agent is stopping.
+			if turn.State.Phase == phasePersisting && (!turn.State.HasToolCalls || turn.Stop) {
+				e.publishTurnStatus(ctx, turn, false, true)
 			}
 			return res, nil
 		})
 	}
 }
 
-func (e *turnEngine) publishTurnStatus(ctx context.Context, turn *turn, isPostCall bool) {
+func (e *turnEngine) publishTurnStatus(ctx context.Context, turn *turn, isPostCall bool, isFinal bool) {
 	limits := turn.CtxManager.GetLimits()
 	maxTokens := limits.MaxHistoryTokens
 	maxHistTurns := limits.MaxHistoryTurns
@@ -92,6 +97,7 @@ func (e *turnEngine) publishTurnStatus(ctx context.Context, turn *turn, isPostCa
 			TieredThreshold:  threshold,
 			Metrics:          turn.State.Metrics,
 			IsPostCall:       isPostCall,
+			IsFinal:          isFinal,
 			StartTime:        turn.StartTime,
 			SessionCost:      cost,
 			DailyCost:        dailyCost,
@@ -114,13 +120,15 @@ func (e *turnEngine) publishTurnStatus(ctx context.Context, turn *turn, isPostCa
 func (e *turnEngine) WithMetrics() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
+			phase := turn.State.Phase
 			res, err := next.process(ctx, turn)
-			if e.events != nil && turn.State.Phase == phasePersisting && turn.State.Metrics != nil {
+
+			// Trigger accumulation and event publication immediately after inference
+			// so that subsequent status events (metrics line) have accurate data.
+			if phase == phaseInference && e.events != nil && err == nil && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
 					// Calculate and accumulate into session total (thread-safe)
 					turnCost := turn.CostTracker.AccumulateAndReturn(*turn.State.Metrics)
-
-					// Populate fields for the UI/EventBus
 					turn.State.Metrics.Cost = turnCost
 					turn.State.TaskCost += turnCost
 				}

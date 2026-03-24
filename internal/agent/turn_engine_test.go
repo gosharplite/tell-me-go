@@ -114,7 +114,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 			ch <- &llm.Content{Parts: []*llm.Part{{Text: "hello"}}}
 			close(ch)
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}, &llm.Metrics{}, nil
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}, &llm.Metrics{PromptTokens: 100}, nil
 			}
 		},
 	}
@@ -134,7 +134,14 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 
 	_ = bus.Flush(context.Background())
 
-	expected := []string{"TurnStarted", "TurnStatusEvent", "ResponseStreamEvent", "TurnStatusEvent", "UsageMetricsEvent"}
+	// Sequence:
+	// TurnStarted (phaseGuard)
+	// TurnStatusEvent (phaseInference Header)
+	// ResponseStreamEvent (phaseInference Start)
+	// UsageMetricsEvent (phaseInference End - WithMetrics)
+	// TurnStatusEvent (phaseInference End - WithStatusReporter)
+	// TurnStatusEvent (phasePersisting End - WithStatusReporter - Ready)
+	expected := []string{"TurnStarted", "TurnStatusEvent", "ResponseStreamEvent", "UsageMetricsEvent", "TurnStatusEvent", "TurnStatusEvent"}
 	mu.Lock()
 	defer mu.Unlock()
 	if len(capturedEvents) != len(expected) {
@@ -1156,7 +1163,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100}
 		tn := &turn{
 			State: &turnState{
-				Phase:   phasePersisting,
+				Phase:   phaseInference,
 				Metrics: metrics,
 			},
 			CostTracker: tracker,

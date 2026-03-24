@@ -83,7 +83,7 @@ func TestWithStatusReporter(t *testing.T) {
 		phase      turnPhase
 		wantEvents int
 	}{
-		{"Inference phase", phaseInference, 1},
+		{"Inference phase", phaseInference, 2},
 		{"Persisting phase", phasePersisting, 1},
 		{"Other phase", phaseExecuting, 0},
 	}
@@ -123,8 +123,8 @@ func TestWithMetrics(t *testing.T) {
 		hasMetrics bool
 		wantEvents int
 	}{
-		{"Persisting with metrics", phasePersisting, true, 1},
-		{"Persisting without metrics", phasePersisting, false, 0},
+		{"Inference with metrics", phaseInference, true, 1},
+		{"Inference without metrics", phaseInference, false, 0},
 		{"Other phase with metrics", phaseExecuting, true, 0},
 	}
 

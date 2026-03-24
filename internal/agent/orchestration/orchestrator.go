@@ -264,6 +264,10 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
 	case events.ToolResultEvent:
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
+	case events.TurnStarted:
+		if ev.Turn > 0 {
+			b.renderer.LogSystemMessage(fmt.Sprintf("Autonomous Engine: Preparing Turn %d...", ev.Turn+1), "info")
+		}
 	case events.SystemMessageEvent:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
 	case events.StatusUpdate:

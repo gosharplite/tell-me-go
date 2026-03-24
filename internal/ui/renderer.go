@@ -286,7 +286,7 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		}
 	}
 
-	if !status.IsPostCall {
+	if !status.IsPostCall && !status.IsFinal {
 		_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
 
 		if status.MaxHistoryTurns > 0 {
@@ -297,13 +297,17 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 		printSystemLine(status.Tokens, false)
 		_, _ = fmt.Fprintln(stderr) // Ensure visual gap before response
-	} else if status.Metrics != nil {
+	}
+
+	if status.IsPostCall && status.Metrics != nil {
 		m := status.Metrics
 		_, _ = fmt.Fprintln(stderr) // Add vertical separation
 		printSystemLine(int(m.PromptTokens), true)
 
 		r.renderMetricsLine(ui, m, status.StartTime)
+	}
 
+	if status.IsFinal {
 		costStr := ""
 		if status.SessionCost > 0 {
 			hitRate := 0.0
@@ -437,7 +441,7 @@ func (r *stdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 
 func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState, ui uiState) {
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	firstChunkReceived := false
+	indicatorStopped := false
 	indicatorDrawn := false
 	startTime := time.Now()
 
@@ -445,11 +449,11 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 	defer stopTicker()
 
 	stopIndicator := func() {
-		if !firstChunkReceived && state.isTerm {
+		if !indicatorStopped && state.isTerm {
 			if indicatorDrawn {
 				r.clearLoadingIndicator(ui, state.rawOutput)
 			}
-			firstChunkReceived = true // Mark as handled
+			indicatorStopped = true
 			stopTicker()
 			tickerC = nil
 		}
@@ -466,13 +470,33 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 		case content, ok := <-ch:
 			if !ok {
 				r.closeThinking(state, ui)
+				stopIndicator()
 				return
 			}
 
-			stopIndicator() // Clear before rendering first chunk
+			if !indicatorStopped {
+				if r.shouldStopIndicator(content, state.showThoughts) {
+					stopIndicator()
+				}
+			}
 			r.handleStreamContent(state, content, ui)
 		}
 	}
+}
+
+func (r *stdUIRenderer) shouldStopIndicator(content *llm.Content, showThoughts bool) bool {
+	for _, part := range content.Parts {
+		if part.IsThought || len(part.ThoughtSignature) > 0 {
+			if showThoughts {
+				return true
+			}
+			continue
+		}
+		if part.Text != "" || part.InlineData != nil || part.FunctionCall != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *stdUIRenderer) setupIndicator(state *streamState, ui uiState, frames []string, startTime time.Time) (<-chan time.Time, int, func()) {

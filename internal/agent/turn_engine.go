@@ -271,8 +271,8 @@ func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.Context
 	if e.events != nil {
 		e.middleware = append(e.middleware,
 			e.WithStreaming(),
-			e.WithStatusReporter(),
 			e.WithMetrics(),
+			e.WithStatusReporter(),
 			withLoopDetector(),
 		)
 	}

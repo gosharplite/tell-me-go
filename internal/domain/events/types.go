@@ -34,6 +34,7 @@ type TurnStatus struct {
 	TieredThreshold  int
 	Metrics          *llm.Metrics
 	IsPostCall       bool
+	IsFinal          bool // True if the agent is stopping and yielding control to user
 	StartTime        time.Time
 	SessionCost      float64
 	DailyCost        float64
