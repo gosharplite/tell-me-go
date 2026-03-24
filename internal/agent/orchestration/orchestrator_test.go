@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -743,4 +744,65 @@ func TestRun_Routing(t *testing.T) {
 		// Verify that Chatter.Chat was NOT called
 		mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
 	})
+}
+
+func TestUIBridge_DataRace(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {})
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	const iterations = 1000
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			bridge.handleEvent(ctx, events.ResponseEvent{
+				Content: &llm.Content{},
+			})
+		}
+	}()
+
+	wg.Wait()
+}
+
+func TestUIBridge_LogicalRace(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {})
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
+
+	ctx := context.Background()
+
+	// Simulate ResponseEvent arriving BEFORE InferenceStartedEvent
+	bridge.handleEvent(ctx, events.ResponseEvent{
+		Content: &llm.Content{},
+	})
+	
+	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+	
+	bridge.mu.Lock()
+	spinnerStarted := bridge.stopSpinner != nil
+	bridge.mu.Unlock()
+
+	// If logical race is fixed, spinnerStarted should be false because response already arrived
+	if spinnerStarted {
+		t.Error("Spinner should not have started because ResponseEvent already arrived")
+	}
+	
+	if bridge.stopSpinner != nil {
+		bridge.stopSpinner()
+	}
 }

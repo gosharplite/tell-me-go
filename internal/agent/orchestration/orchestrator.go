@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -220,6 +221,7 @@ func (o *orchestrator) setupUIRendering(chatAgent ports.Chatter, cfg *config.Con
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
+	mu           sync.Mutex
 	renderer     ports.UIRenderer
 	showThoughts bool
 	showTools    bool
@@ -227,6 +229,7 @@ type uiBridge struct {
 	useColor     bool
 	logFile      string
 	stopSpinner  func()
+	isRendering  bool
 }
 
 // newUIBridge creates a new uiBridge.
@@ -252,12 +255,19 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	case events.TurnStatusEvent:
 		b.renderer.LogTurnStatus(ev.Status)
 	case events.InferenceStartedEvent:
-		b.stopSpinner = b.renderer.StartSpinner(ctx)
+		b.mu.Lock()
+		if !b.isRendering {
+			b.stopSpinner = b.renderer.StartSpinner(ctx)
+		}
+		b.mu.Unlock()
 	case events.ResponseEvent:
+		b.mu.Lock()
+		b.isRendering = true
 		if b.stopSpinner != nil {
 			b.stopSpinner()
 			b.stopSpinner = nil
 		}
+		b.mu.Unlock()
 		b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
 	case events.UsageMetricsEvent:
 		ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
@@ -270,7 +280,9 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	case events.ToolResultEvent:
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
 	case events.TurnStarted:
-		// Redundant log removed; session header fixed in renderer
+		b.mu.Lock()
+		b.isRendering = false
+		b.mu.Unlock()
 	case events.SystemMessageEvent:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
 	case events.StatusUpdate:
