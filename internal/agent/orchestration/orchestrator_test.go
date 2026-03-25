@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 // --- Mocks ---
@@ -135,7 +136,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -296,7 +297,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -330,7 +331,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return nil, nil
@@ -386,9 +387,10 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, 10, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
 
-	err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, paths, pData, mCapturer)
+	cleanup, err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, paths, pData, mCapturer)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
+	require.NotNil(t, cleanup)
 }
 
 // --- Behavioral Sequence Testing ---
@@ -533,7 +535,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mUIRenderer := &behaviorMockUIRenderer{tracker: tracker}
 
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		tracker.record("AgentFactory")
@@ -697,7 +699,7 @@ func TestRun_Routing(t *testing.T) {
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
 	mCapturer := new(mockCapturer)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 
 	factory := func(mChatter ports.Chatter) func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -929,4 +931,99 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
 
 	mRenderer.AssertExpectations(t)
+}
+
+func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	var spinnerStopped bool
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+
+	// Start Inference
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+
+	// Simulate unexpected exit by calling Cleanup
+	bridge.Cleanup()
+
+	assert.True(t, spinnerStopped, "Expected stopSpinner to be called during Cleanup")
+
+	// Double cleanup should be safe
+	bridge.Cleanup()
+}
+
+func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	tests := []struct {
+		name          string
+		chatErr       error
+		expectedError string
+	}{
+		{
+			name:          "Context Deadline Exceeded",
+			chatErr:       context.DeadlineExceeded,
+			expectedError: context.DeadlineExceeded.Error(),
+		},
+		{
+			name:          "Unauthorized (API token error)",
+			chatErr:       fmt.Errorf("unauthorized: invalid API key"),
+			expectedError: "unauthorized: invalid API key",
+		},
+		{
+			name:          "Rate Limiting",
+			chatErr:       fmt.Errorf("rate limit exceeded"),
+			expectedError: "rate limit exceeded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mChatter := new(mockChatter)
+			mCapturer := new(mockCapturer)
+			mHistory := new(mockHistoryManager)
+			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+
+			factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+				return mChatter, nil
+			}
+
+			mHistoryRenderer := new(mockHistoryRenderer)
+			mUIRenderer := new(mockUIRenderer)
+			orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+
+			sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+				Model: "model",
+				Mode:  "mode",
+			})
+			deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default())
+
+			mCapturer.On("IsTTY", io.Discard).Return(true)
+			mUIRenderer.On("SetUseColor", true).Return()
+
+			var spinnerStopped bool
+			mUIRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+
+			mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
+				sub := args.Get(0).(func(context.Context, events.Event))
+				// Simulate spinner start before chat fails
+				sub(context.Background(), events.InferenceStartedEvent{})
+			}).Return()
+
+			mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+			mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(tt.chatErr)
+			mChatter.On("Shutdown", mock.Anything).Return(nil)
+
+			err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.expectedError)
+
+			assert.True(t, spinnerStopped, "Expected spinner to be stopped via deferred Cleanup on error")
+
+			mChatter.AssertExpectations(t)
+			mCapturer.AssertExpectations(t)
+		})
+	}
 }

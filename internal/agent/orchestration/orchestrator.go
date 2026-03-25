@@ -154,7 +154,11 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		}
 	}()
 
-	if err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic); err != nil {
+	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic)
+	if cleanupUI != nil {
+		defer cleanupUI()
+	}
+	if err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
@@ -203,20 +207,21 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer ports.Capturer) error {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer ports.Capturer) (func(), error) {
 	cfg := sCfg.GetConfig()
-	o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
+	cleanup := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
-		return err
+		return cleanup, err
 	}
-	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
+	return cleanup, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ports.Capturer) {
+func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ports.Capturer) func() {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
 	chatAgent.Subscribe(bridge.handleEvent)
+	return bridge.Cleanup
 }
 
 // uiBridge translates domain events into UI updates.
@@ -231,6 +236,16 @@ type uiBridge struct {
 	logFile      string
 	stopSpinner  func()
 	isRendering  bool
+}
+
+// Cleanup stops any active spinner.
+func (b *uiBridge) Cleanup() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.stopSpinner != nil {
+		b.stopSpinner()
+		b.stopSpinner = nil
+	}
 }
 
 // newUIBridge creates a new uiBridge.
