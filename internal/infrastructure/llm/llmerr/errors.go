@@ -6,9 +6,15 @@ package llmerr
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+)
+
+var (
+	reRateLimit = regexp.MustCompile(`(?i)(HTTP 429|STATUS: 429|RATE_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|QUOTA|RESOURCE EXHAUSTED)`)
+	reTransient = regexp.MustCompile(`(?i)(HTTP 50[0234]|STATUS: 50[0234]|INTERNAL_SERVER_ERROR|INTERNAL SERVER ERROR|BAD_GATEWAY|BAD GATEWAY|SERVICE_UNAVAILABLE|SERVICE UNAVAILABLE|GATEWAY_TIMEOUT|GATEWAY TIMEOUT|DEADLINE_EXCEEDED|UNAVAILABLE|(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[_ ]TIMEOUT)`)
 )
 
 // APIError represents an error returned by an LLM provider's API.
@@ -78,20 +84,17 @@ func classifyHTTP(err error) (error, bool) {
 }
 
 func classifyString(err error) (error, bool) {
-	msg := strings.ToUpper(err.Error())
-	if strings.Contains(msg, "UNAUTHENTICATED") || strings.Contains(msg, "API_KEY_INVALID") {
+	msg := err.Error() // Regex handles (?i) case-insensitivity
+
+	if strings.Contains(strings.ToUpper(msg), "UNAUTHENTICATED") || strings.Contains(strings.ToUpper(msg), "API_KEY_INVALID") {
 		return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
 	}
-	if strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") || strings.Contains(msg, "QUOTA") || strings.Contains(msg, "RESOURCE EXHAUSTED") {
+
+	if reRateLimit.MatchString(msg) {
 		return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
 	}
 
-	// 3. Transient matching (5xx status codes, deadline/unavailable strings)
-	if strings.Contains(msg, "504") || strings.Contains(msg, "DEADLINE_EXCEEDED") ||
-		strings.Contains(msg, "503") || strings.Contains(msg, "UNAVAILABLE") ||
-		strings.Contains(msg, "502") || strings.Contains(msg, "BAD_GATEWAY") ||
-		strings.Contains(msg, "500") || strings.Contains(msg, "INTERNAL") ||
-		strings.Contains(msg, "TIMEOUT") {
+	if reTransient.MatchString(msg) {
 		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
 	}
 

@@ -94,7 +94,7 @@ func TestClassify(t *testing.T) {
 		},
 		{
 			name:          "String matching 429",
-			input:         errors.New("got 429 error"),
+			input:         errors.New("got HTTP 429 error"),
 			expectedWrap:  llm.ErrRateLimit,
 			containsMatch: "429",
 		},
@@ -161,5 +161,38 @@ func TestClassify_MultiWrap(t *testing.T) {
 		t.Errorf("expected classified error to be extractable as *APIError")
 	} else if apiErr.Status != 429 {
 		t.Errorf("extracted APIError has wrong status: got %d, want 429", apiErr.Status)
+	}
+}
+
+func TestClassify_GreedyAvoidance(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        error
+		expectedWrap error
+	}{
+		{
+			name:         "Token limit 500 should be terminal",
+			input:        errors.New("prompt exceeds 500 tokens"),
+			expectedWrap: llm.ErrTerminal,
+		},
+		{
+			name:         "Internal ID should be terminal",
+			input:        errors.New("invalid field: internal_id"),
+			expectedWrap: llm.ErrTerminal,
+		},
+		{
+			name:         "Timeout in text should be terminal if not a system timeout",
+			input:        errors.New("the user mentioned a timeout in their prompt"),
+			expectedWrap: llm.ErrTerminal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Classify(tt.input)
+			if !errors.Is(got, tt.expectedWrap) {
+				t.Errorf("Classify(%q) = %v; want %v", tt.input.Error(), got, tt.expectedWrap)
+			}
+		})
 	}
 }
