@@ -704,8 +704,8 @@ func (p *recoveryStep) handleFailure(err error) (processResult, error) {
 func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.Duration) (processResult, error) {
 	turn.State.RetryCount++
 
-	// Log retry to application logs
-	turn.getLogger().Warn("retrying_after_transient_error",
+	// Log retry to application logs (Technical debugging only)
+	turn.getLogger().Debug("retrying_after_transient_error",
 		slog.Any("error", turn.State.LastError),
 		slog.Duration("delay", delay),
 		slog.Int("attempt", turn.State.RetryCount))
