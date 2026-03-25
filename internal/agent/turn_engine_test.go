@@ -1373,3 +1373,61 @@ func TestTurnEngine_InvokeModel_SafePublish_ErrorLogging(t *testing.T) {
 		t.Errorf("expected log to contain 'Failed to publish ResponseEvent', got %q", logBuf.String())
 	}
 }
+
+func TestTurnEngine_Retry_EventSequence(t *testing.T) {
+	t.Parallel()
+	var capturedEvents []string
+	var mu sync.Mutex
+	bus := events.NewSimpleEventBus(context.Background())
+	defer bus.Shutdown(context.Background())
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch e.(type) {
+		case events.InferenceStartedEvent:
+			capturedEvents = append(capturedEvents, "InferenceStartedEvent")
+		case events.SystemMessageEvent:
+			if sme, ok := e.(events.SystemMessageEvent); ok && sme.Level == "warn" {
+				capturedEvents = append(capturedEvents, "SystemMessageEvent")
+			}
+		}
+	})
+
+	attempts := 0
+	mockGw := &mockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, nil, llm.ErrTransient
+			}
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+		},
+	}
+
+	reg := &mockToolRegistry{}
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
+	hManager := &mockHistoryManager{}
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, withEngineClock(&mockClock{}))
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	_ = bus.Flush(context.Background())
+
+	// Expected sequence:
+	// 1. InferenceStartedEvent (first attempt)
+	// 2. SystemMessageEvent (retry notice)
+	// 3. InferenceStartedEvent (fired in attemptRetry after wait)
+	// 4. InferenceStartedEvent (second attempt in inferenceStep)
+	expected := []string{"InferenceStartedEvent", "SystemMessageEvent", "InferenceStartedEvent", "InferenceStartedEvent"}
+	mu.Lock()
+	defer mu.Unlock()
+	if !assert.Equal(t, expected, capturedEvents) {
+		t.Errorf("expected sequence %v, got %v", expected, capturedEvents)
+	}
+}

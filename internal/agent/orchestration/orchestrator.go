@@ -255,10 +255,13 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
+		b.mu.Lock()
+		b.isRendering = false
+		b.mu.Unlock()
 		b.renderer.LogTurnStatus(ev.Status)
 	case events.InferenceStartedEvent:
 		b.mu.Lock()
-		if !b.isRendering {
+		if !b.isRendering && b.stopSpinner == nil {
 			// Use the bridge's session/turn context instead of the event handler's context,
 			// which has a 5s timeout. This ensures the spinner stays alive.
 			b.stopSpinner = b.renderer.StartSpinner(b.ctx)

@@ -872,3 +872,31 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 		t.Error("Expected stopSpinner to be called during TurnStarted to prevent resource leaks")
 	}
 }
+
+func TestUIBridge_Retry_Spinner(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	// First attempt
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Once()
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	
+	// Response (e.g. error)
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
+	bridge.handleEvent(context.Background(), events.ResponseEvent{
+		Content: &llm.Content{},
+	})
+
+	// TurnStatusEvent happens after the inference step (fired by WithStatusReporter middleware)
+	mRenderer.On("LogTurnStatus", mock.Anything).Return().Once()
+	bridge.handleEvent(context.Background(), events.TurnStatusEvent{
+		Status: events.TurnStatus{IsPostCall: true},
+	})
+
+	// Second attempt (Retry)
+	// Now this SHOULD be called because TurnStatusEvent reset isRendering.
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Once()
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+
+	mRenderer.AssertExpectations(t)
+}
