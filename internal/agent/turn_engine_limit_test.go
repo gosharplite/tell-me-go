@@ -55,7 +55,8 @@ func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 
 func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(context.Background()) }()
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -179,6 +180,8 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 				},
 			}
 
+			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			defer bus.Shutdown(context.Background())
 			turn := &turn{
 				CtxManager:   cm,
 				TokenCounter: counter,
@@ -186,7 +189,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 					Tokens:       tt.existingTokens,
 					ToolResponse: toolResponse,
 				},
-				Events: events.NewSimpleEventBus(context.Background()),
+				Events: bus,
 			}
 
 			p := &executionStep{}

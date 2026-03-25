@@ -141,7 +141,7 @@ type countingEventBus struct {
 // NewCountingEventBus creates a new CountingEventBus.
 func NewCountingEventBus() *countingEventBus {
 	cb := &countingEventBus{
-		SimpleEventBus: events.NewSimpleEventBus(context.Background()),
+		SimpleEventBus: events.NewSimpleEventBus(context.Background(), events.WithWorkers(0)),
 	}
 	cb.cond = sync.NewCond(&cb.mu)
 	return cb

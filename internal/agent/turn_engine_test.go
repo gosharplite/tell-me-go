@@ -203,7 +203,11 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 
 			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-			e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, events.NewSimpleEventBus(context.Background())), reg, events.NewSimpleEventBus(context.Background()), strategy)
+			bus1 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			defer bus1.Shutdown(context.Background())
+			bus2 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			defer bus2.Shutdown(context.Background())
+			e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 			strategy.SetLimits(1000, 5, 10)
 
 			err := e.Run(context.Background(), time.Now())
@@ -254,7 +258,11 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, events.NewSimpleEventBus(context.Background())), reg, events.NewSimpleEventBus(context.Background()), strategy)
+	bus1 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer bus1.Shutdown(context.Background())
+	bus2 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer bus2.Shutdown(context.Background())
+	e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -271,7 +279,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	defer func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -326,7 +334,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	defer func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -457,7 +465,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 
 	var capturedTime time.Time
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	defer func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -973,7 +981,8 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			bus := events.NewSimpleEventBus(context.Background())
+			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			defer bus.Shutdown(context.Background())
 			reg := &mockToolRegistry{}
 			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 			hManager := &mockHistoryManager{}
@@ -1021,7 +1030,8 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer bus.Shutdown(context.Background())
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 
@@ -1071,7 +1081,8 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 
 func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer bus.Shutdown(context.Background())
 	tracker := &mockEngineCostTracker{}
 	reg := &mockToolRegistry{}
 	hManager := &mockHistoryManager{}

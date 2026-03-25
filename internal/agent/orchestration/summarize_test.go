@@ -107,7 +107,9 @@ func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
 	defer server.Close()
 
 	client := setupTestClient(t, server.URL)
+	defer func() { _ = client.GetEventBus().Shutdown(ctx) }()
 	it := setupInternalTools(client, hManager)
+	defer func() { _ = it.ctxManager.Events.Shutdown(ctx) }()
 
 	args := map[string]interface{}{"turns": tt.turns}
 	if tt.name == "with focus" {
@@ -149,7 +151,8 @@ func setupMockGeminiServer() *httptest.Server {
 func setupTestClient(t *testing.T, url string) *gemini.Client {
 	t.Helper()
 	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := gemini.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(context.Background()), 5*time.Second)
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	client, err := gemini.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, bus, 5*time.Second)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -157,7 +160,7 @@ func setupTestClient(t *testing.T, url string) *gemini.Client {
 }
 
 func setupInternalTools(client *gemini.Client, h ports.HistoryManager) *InternalTools {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	reg := registry.New()
 	gw := llm.NewResilientClient(client)
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))

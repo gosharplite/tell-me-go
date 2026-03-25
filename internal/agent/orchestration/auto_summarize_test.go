@@ -40,7 +40,8 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to register tool: %v", err)
 	}
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(ctx) }()
 
 	// Mock server for summarization
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +123,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	ctx := context.Background()
 	hManager, cm, bus, server := setupAutoSummarizeTest(t)
 	defer server.Close()
+	defer bus.Shutdown(ctx)
 
 	// Set a limit to trigger auto-summarization (90% threshold = 90k tokens)
 	cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20})
@@ -155,7 +157,7 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -212,7 +214,8 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(ctx) }()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -285,7 +288,8 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	historyPath := filepath.Join(tmpDir, "tool_pressure_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(context.Background()) }()
 
 	// 1. Register many tools to create a large schema (approx 2000 tokens)
 	for i := 0; i < 20; i++ {

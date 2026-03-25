@@ -44,7 +44,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 }
 
 func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	reg := &mockToolRegistry{}
 
 	tmpDir := t.TempDir()
@@ -85,6 +85,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
+	defer engine.events.Shutdown(context.Background())
 
 	err := engine.Run(context.Background(), time.Now())
 
@@ -131,6 +132,7 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
+	defer engine.events.Shutdown(context.Background())
 
 	err := engine.Run(context.Background(), time.Now())
 
@@ -179,6 +181,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
+	defer engine.events.Shutdown(context.Background())
 
 	err := engine.Run(context.Background(), time.Now())
 
@@ -240,6 +243,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	}
 
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
+	defer engine.events.Shutdown(context.Background())
 
 	err := engine.Run(context.Background(), time.Now())
 
@@ -278,6 +282,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
+	defer engine.events.Shutdown(context.Background())
 
 	err := engine.Run(context.Background(), time.Now())
 
@@ -312,6 +317,7 @@ func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 	gw := &mockGateway{}
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, &errorPhaseTracker{})
+	defer engine.events.Shutdown(context.Background())
 
 	turn := &turn{
 		State: &turnState{

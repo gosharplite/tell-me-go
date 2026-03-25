@@ -33,7 +33,8 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{FunctionResponse: &domain_llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
 
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(ctx) }()
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	strategy.SetLimits(1000, 5, 20) // turn 3/5 (remaining 2) -> Triggers warning
 
@@ -93,29 +94,34 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 
 	t.Run("ExecuteSummarize", func(t *testing.T) {
 		cm, capturedInput := setupSummarizationTest(t)
+		defer func() { _ = cm.Events.Shutdown(context.Background()) }()
 		verifyExecuteSummarize(t, cm, subset, capturedInput)
 	})
 
 	t.Run("PayloadIntegrity", func(t *testing.T) {
 		cm, capturedInput := setupSummarizationTest(t)
+		defer func() { _ = cm.Events.Shutdown(context.Background()) }()
 		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyPayloadIntegrity(t, capturedInput)
 	})
 
 	t.Run("InputTransformation", func(t *testing.T) {
 		cm, capturedInput := setupSummarizationTest(t)
+		defer func() { _ = cm.Events.Shutdown(context.Background()) }()
 		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyInputTransformation(t, capturedInput)
 	})
 
 	t.Run("ToolCallMapping", func(t *testing.T) {
 		cm, capturedInput := setupSummarizationTest(t)
+		defer func() { _ = cm.Events.Shutdown(context.Background()) }()
 		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyToolCallMapping(t, capturedInput)
 	})
 
 	t.Run("BinaryDataMapping", func(t *testing.T) {
 		cm, capturedInput := setupSummarizationTest(t)
+		defer func() { _ = cm.Events.Shutdown(context.Background()) }()
 		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyBinaryDataMapping(t, capturedInput)
 	})
@@ -387,7 +393,7 @@ func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Conte
 			return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
 		},
 	}
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{})), hManager, bus, nil)
 	cm.Summarizer = llm.NewSummarizer(g, bus)
 	return cm, capturedInput
@@ -487,7 +493,8 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	// Initial message
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "initial"}}})
 
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(context.Background()) }()
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	cm := NewContextManager(strategy, hManager, bus, nil)
 

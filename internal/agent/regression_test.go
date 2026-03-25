@@ -38,7 +38,8 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	registry := internaltools.New()
 	client := &mockLLMClient{}
 	sm := &mockSecurityManager{AllowAll: true}
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer bus.Shutdown(context.Background())
 	a, err := NewAgent(client, bus, h, "test-provider", registry, sm)
 	require.NoError(t, err)
 
@@ -72,7 +73,8 @@ func TestAgent_InLoopPruning(t *testing.T) {
 
 	client := &mockLLMClient{}
 	sm := &mockSecurityManager{AllowAll: true}
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer bus.Shutdown(context.Background())
 	a, err := NewAgent(client, bus, h, "test-provider", registry, sm)
 	require.NoError(t, err)
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
@@ -112,7 +114,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	// Mock client that triggers the tool
 	mockClient := newMultiModalMockClient()
 
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer bus.Shutdown(context.Background())
 	a, err := NewAgent(mockClient, bus, h, "test-provider", registry, sm)
 	require.NoError(t, err)
 	sess := ports.NewSession("regression-multimodal", h)

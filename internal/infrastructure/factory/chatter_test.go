@@ -105,12 +105,15 @@ func TestNewChatter(t *testing.T) {
 		t.Fatalf("failed to create skills dir: %v", err)
 	}
 
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(context.Background()) }()
+
 	deps := &mockSessionDeps{
 		gw:       &mockGateway{},
 		hManager: &mockHistoryManager{},
 		reg:      &mockRegistry{},
 		sm:       &mockSecurityManager{},
-		bus:      events.NewSimpleEventBus(context.Background()),
+		bus:      bus,
 		paths: &persistence.Paths{
 			ModeDir: modeDir,
 		},

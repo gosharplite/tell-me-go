@@ -444,7 +444,8 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	assert.NotNil(t, factory)
 
 	// Execute the factory
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(context.Background()) }()
 	client := new(mockLLMClient)
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
@@ -556,7 +557,8 @@ func TestSessionDeps_Getters(t *testing.T) {
 	gw := client
 	reg := registry.New()
 	sm := new(mockConfigurableSecurityManager)
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	defer func() { _ = bus.Shutdown(context.Background()) }()
 	tracker := &mockTracker{}
 	pData := pricing.PricingData{}
 

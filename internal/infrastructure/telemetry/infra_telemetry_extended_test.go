@@ -209,7 +209,8 @@ func TestTraceTelemetry(t *testing.T) {
 
 	t.Run("RegisterTraceSubscriber", func(t *testing.T) {
 		t.Parallel()
-		bus := events.NewSimpleEventBus(context.Background())
+		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		defer func() { _ = bus.Shutdown(context.Background()) }()
 		RegisterTraceSubscriber(bus, logFile)
 
 		_ = bus.Publish(context.Background(), events.TraceEvent{Trace: trace})

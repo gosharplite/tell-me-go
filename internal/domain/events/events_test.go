@@ -61,7 +61,7 @@ func (s *funcSubscriberWithErr) Handle(ctx context.Context, e events.Event) erro
 func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(ctx)
+	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
 	defer func() { _ = bus.Shutdown(ctx) }()
 	received := make(chan events.Event, 1)
 
@@ -143,7 +143,7 @@ func TestSimpleEventBus_PanicRecovery(t *testing.T) {
 func TestSafePublish_Timeout(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(ctx)
+	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
 	defer func() { _ = bus.Shutdown(ctx) }()
 
 	ctx2, cancel := context.WithCancel(context.Background())
@@ -162,7 +162,7 @@ func TestSafePublish_Timeout(t *testing.T) {
 func TestSimpleEventBus_FlushAndShutdown(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(ctx)
+	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
 
 	if err := bus.Flush(ctx); err != nil {
 		t.Errorf("Flush failed: %v", err)
@@ -195,7 +195,7 @@ func TestSimpleEventBus_ContextCancellation(t *testing.T) {
 func TestSimpleEventBus_Race(t *testing.T) {
 	nullLogger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(nullLogger))
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(nullLogger), events.WithWorkers(2))
 	defer func() { _ = bus.Shutdown(ctx) }()
 
 	var wg sync.WaitGroup
@@ -224,7 +224,7 @@ func TestSimpleEventBus_Race(t *testing.T) {
 func TestSimpleEventBus_Deadlock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(ctx)
+	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
 	defer func() { _ = bus.Shutdown(ctx) }()
 
 	sub := &deadlockSubscriber{bus: bus}
@@ -265,7 +265,7 @@ func (s *deadlockSubscriber) Handle(ctx context.Context, e events.Event) error {
 func TestSafePublish_Success(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(ctx)
+	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
 	defer func() { _ = bus.Shutdown(ctx) }()
 	received := make(chan events.Event, 1)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
@@ -292,7 +292,7 @@ func TestEventBus_RoutingErrorIsolation(t *testing.T) {
 	ctx := context.Background()
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(testLogger))
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(testLogger), events.WithWorkers(1))
 	defer func() { _ = bus.Shutdown(ctx) }()
 
 	errGlobal := errors.New("global error")
@@ -365,12 +365,12 @@ func TestSafePublish_NoGoroutineLeak(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(1))
+	defer func() { _ = bus.Shutdown(ctx) }()
 
 	sub := &respectfulSubscriber{}
 	bus.SubscribeSubscriber("leak_test", sub)
 
 	_ = bus.Publish(ctx, testEvent{typeName: "leak_test"})
-	_ = bus.Shutdown(ctx)
 }
 
 type respectfulSubscriber struct{}
@@ -434,7 +434,7 @@ func TestWithLogger(t *testing.T) {
 func TestErrBusClosed_Explicit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(ctx)
+	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
 	_ = bus.Shutdown(ctx)
 
 	err := bus.Publish(ctx, testEvent{})
