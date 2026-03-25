@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -46,6 +48,10 @@ func Classify(err error) error {
 		return wrapped
 	}
 
+	if wrapped, ok := classifyGRPC(err); ok {
+		return wrapped
+	}
+
 	if wrapped, ok := classifyHTTP(err); ok {
 		return wrapped
 	}
@@ -61,6 +67,23 @@ func Classify(err error) error {
 func classifyDomain(err error) (error, bool) {
 	if errors.Is(err, llm.ErrAuth) || errors.Is(err, llm.ErrTransient) || errors.Is(err, llm.ErrTerminal) || errors.Is(err, llm.ErrRateLimit) {
 		return err, true
+	}
+	return nil, false
+}
+
+func classifyGRPC(err error) (error, bool) {
+	if s, ok := status.FromError(err); ok {
+		switch s.Code() {
+		case codes.Unauthenticated:
+			return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
+		case codes.ResourceExhausted:
+			// gRPC ResourceExhausted is often a rate limit in LLM providers
+			return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
+		case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
+			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
+		case codes.PermissionDenied, codes.InvalidArgument:
+			return fmt.Errorf("%w: %w", llm.ErrTerminal, err), true
+		}
 	}
 	return nil, false
 }

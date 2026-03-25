@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestAPIError_Error(t *testing.T) {
@@ -66,6 +68,41 @@ func TestClassify(t *testing.T) {
 		{
 			name:         "HTTP 400 via APIError",
 			input:        &APIError{Status: 400, Body: "Bad Request"},
+			expectedWrap: llm.ErrTerminal,
+		},
+		{
+			name:         "gRPC Unauthenticated",
+			input:        status.Error(codes.Unauthenticated, "unauthenticated"),
+			expectedWrap: llm.ErrAuth,
+		},
+		{
+			name:         "gRPC ResourceExhausted",
+			input:        status.Error(codes.ResourceExhausted, "quota exceeded"),
+			expectedWrap: llm.ErrRateLimit,
+		},
+		{
+			name:         "gRPC Unavailable",
+			input:        status.Error(codes.Unavailable, "server offline"),
+			expectedWrap: llm.ErrTransient,
+		},
+		{
+			name:         "gRPC DeadlineExceeded",
+			input:        status.Error(codes.DeadlineExceeded, "timeout"),
+			expectedWrap: llm.ErrTransient,
+		},
+		{
+			name:         "gRPC Aborted",
+			input:        status.Error(codes.Aborted, "conflict"),
+			expectedWrap: llm.ErrTransient,
+		},
+		{
+			name:         "gRPC InvalidArgument",
+			input:        status.Error(codes.InvalidArgument, "bad param"),
+			expectedWrap: llm.ErrTerminal,
+		},
+		{
+			name:         "gRPC PermissionDenied",
+			input:        status.Error(codes.PermissionDenied, "no access"),
 			expectedWrap: llm.ErrTerminal,
 		},
 		{

@@ -6,14 +6,11 @@ package llm
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 	"go.opentelemetry.io/otel"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // resilientClient wraps an LLMClient with retry logic and domain-specific error wrapping.
@@ -35,19 +32,7 @@ func (r *resilientClient) wrapError(err error) error {
 		return nil
 	}
 
-	// Try gRPC classification first as it's specific to the Google SDK
-	if s, ok := status.FromError(err); ok {
-		switch s.Code() {
-		case codes.Unauthenticated:
-			return fmt.Errorf("%w: %w", llm.ErrAuth, err)
-		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
-			return fmt.Errorf("%w: %w", llm.ErrTransient, err)
-		case codes.PermissionDenied, codes.InvalidArgument:
-			return fmt.Errorf("%w: %w", llm.ErrTerminal, err)
-		}
-	}
-
-	// Use the unified classifier for everything else
+	// Use the unified classifier for all errors (HTTP, gRPC, strings)
 	return llmerr.Classify(err)
 }
 
