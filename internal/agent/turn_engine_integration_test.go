@@ -90,7 +90,11 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	t.Run("Scenario A - Single Massive Payload", func(t *testing.T) {
 		t.Parallel()
 		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-		defer func() { _ = bus.Shutdown(context.Background()) }()
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = bus.Shutdown(ctx)
+		})
 		historyPath := filepath.Join(t.TempDir(), "history_a.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -163,7 +167,11 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	t.Run("Scenario B - Context Exhaustion", func(t *testing.T) {
 		t.Parallel()
 		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-		defer func() { _ = bus.Shutdown(context.Background()) }()
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = bus.Shutdown(ctx)
+		})
 		historyPath := filepath.Join(t.TempDir(), "history_b.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -256,7 +264,11 @@ func (m *cancelIntegrationRegistry) GetDeclarations() []*tools.ToolDeclaration {
 func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	defer func() { _ = bus.Shutdown(context.Background()) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	historyPath := filepath.Join(t.TempDir(), "history_cancel.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 

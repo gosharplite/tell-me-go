@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -112,7 +113,11 @@ func TestNewClient(t *testing.T) {
 			}
 			pData := pricing.PricingData{}
 			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-			defer func() { _ = bus.Shutdown(context.Background()) }()
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = bus.Shutdown(ctx)
+			})
 
 			client, err := NewClient(cfg, pData, bus, nil)
 

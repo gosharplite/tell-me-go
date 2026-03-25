@@ -62,7 +62,11 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	defer func() { _ = bus.Shutdown(context.Background()) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	a, err := NewAgent(mockClient, bus, hManager, "test-provider", reg, sm)
 	require.NoError(t, err)
 	session := &ports.Session{History: hManager, StartTime: time.Now()}
@@ -176,7 +180,11 @@ func TestContextManager_Race(t *testing.T) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	defer func() { _ = bus.Shutdown(context.Background()) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil))
 	factory := &orchestration.PipelineFactory{
 		Estimator: strategy,
@@ -247,7 +255,11 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	// Setup
 	reg := registry.New()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	defer func() { _ = bus.Shutdown(context.Background()) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 
 	// Create a single engine instance
 	gw := &mockGateway{
