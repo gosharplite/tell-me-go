@@ -415,7 +415,6 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 		return func() {}
 	}
 
-	ticker := time.NewTicker(200 * time.Millisecond)
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	idx := 0
 	startTime := r.nowSafe()
@@ -434,7 +433,6 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	go func() {
 		// Guaranteed cleanup on exit
 		defer stopFunc()
-		defer ticker.Stop()
 		defer r.clearLoadingIndicator(ui, false)
 
 		for {
@@ -443,7 +441,7 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 				return
 			case <-done:
 				return
-			case <-ticker.C:
+			case <-ui.clock.After(200 * time.Millisecond):
 				r.updateIndicatorFrame(ui, frames, &idx, startTime)
 			}
 		}

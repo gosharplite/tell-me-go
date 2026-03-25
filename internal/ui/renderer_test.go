@@ -598,15 +598,15 @@ func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
 		stdout.Reset()
 		stderr.Reset()
 		ctx, cancel := context.WithCancel(context.Background())
-		
+
 		r.SetForceSpinner(true)
 		_ = r.StartSpinner(ctx)
-		
+
 		cancel() // Cancel the context
-		
+
 		// Wait a bit for the goroutine to exit
 		time.Sleep(100 * time.Millisecond)
-		
+
 		// If the goroutine leaked, it would still be running, but we can't easily check that without a more complex setup.
 		// However, we can check if it cleared the indicator.
 		if !strings.Contains(stderr.String(), termClearLine) {

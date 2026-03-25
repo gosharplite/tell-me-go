@@ -113,7 +113,7 @@ func (m *mockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error) {
+func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
 }
@@ -490,7 +490,7 @@ func (m *behaviorMockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error) {
+func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	m.tracker.record("Capturer.CapturePrompt")
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
@@ -838,9 +838,9 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	bridge.handleEvent(ctx, events.ResponseEvent{
 		Content: &llm.Content{},
 	})
-	
+
 	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
-	
+
 	bridge.mu.Lock()
 	spinnerStarted := bridge.stopSpinner != nil
 	bridge.mu.Unlock()
@@ -849,7 +849,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	if spinnerStarted {
 		t.Error("Spinner should not have started because ResponseEvent already arrived")
 	}
-	
+
 	if bridge.stopSpinner != nil {
 		bridge.stopSpinner()
 	}

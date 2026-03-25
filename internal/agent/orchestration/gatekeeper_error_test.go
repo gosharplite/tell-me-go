@@ -149,14 +149,14 @@ func (m *mockFailingChatter) GetName() string                                   
 type mockFailingCapturer struct{}
 
 func (m *mockFailingCapturer) IsTTY(any) bool { return false }
-func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, ...CaptureOption) (string, error) {
+func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, ...ports.CaptureOption) (string, error) {
 	return "", nil
 }
 
 type mockFailingUIRenderer struct{}
 
 func (m *mockFailingUIRenderer) SetUseColor(bool)                                                  {}
-func (m *mockFailingUIRenderer) SetForceSpinner(bool)                                             {}
+func (m *mockFailingUIRenderer) SetForceSpinner(bool)                                              {}
 func (m *mockFailingUIRenderer) LogTurnStatus(events.TurnStatus)                                   {}
 func (m *mockFailingUIRenderer) StartSpinner(ctx context.Context) func()                           { return func() {} }
 func (m *mockFailingUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {}

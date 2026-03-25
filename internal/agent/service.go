@@ -70,7 +70,7 @@ func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string)
 }
 
 // ProcessMessage implements ChatService.
-func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capturer orchestration.Capturer) error {
+func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capturer ports.Capturer) error {
 	// 1. Load configuration
 	cfg, err := s.Loader.Load(opts.ConfigPath)
 	if err != nil {

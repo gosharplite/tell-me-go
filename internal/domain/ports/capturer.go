@@ -1,0 +1,38 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package ports
+
+import (
+	"context"
+	"flag"
+)
+
+// CaptureOptions configures the behavior of the Capturer.
+type CaptureOptions struct {
+	SkipTTYWait bool // If true, the capturer will not block waiting for interactive input if empty.
+	Raw         bool // If true, disables markdown rendering/special formatting (if applicable).
+}
+
+// CaptureOption defines a functional option for configuring CaptureOptions.
+type CaptureOption func(*CaptureOptions)
+
+// WithSkipTTYWait sets whether the capturer should skip waiting for interactive TTY input.
+func WithSkipTTYWait(skip bool) CaptureOption {
+	return func(o *CaptureOptions) {
+		o.SkipTTYWait = skip
+	}
+}
+
+// WithRaw sets whether the capturer should use raw output formatting.
+func WithRaw(raw bool) CaptureOption {
+	return func(o *CaptureOptions) {
+		o.Raw = raw
+	}
+}
+
+// Capturer defines the interface for UI interactions that the orchestrator needs.
+type Capturer interface {
+	IsTTY(v any) bool
+	CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error)
+}

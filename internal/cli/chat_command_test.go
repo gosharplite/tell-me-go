@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
@@ -18,7 +18,7 @@ type mockChatService struct {
 	lastParams agent.ChatOptions
 }
 
-func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOptions, capturer orchestration.Capturer) error {
+func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOptions, capturer ports.Capturer) error {
 	m.chatCalled = true
 	m.lastParams = opts
 	return nil

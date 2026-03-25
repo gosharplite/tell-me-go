@@ -1347,27 +1347,27 @@ func TestTurnEngine_ExecuteTurn_Publish_Error(t *testing.T) {
 func TestTurnEngine_InvokeModel_SafePublish_ErrorLogging(t *testing.T) {
 	t.Parallel()
 	env := setupTurnEngineTest(t)
-	
+
 	// Use a mock logger to capture logs
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-	
+
 	// mockBus that returns error on Publish
 	mockBus := &inframock.TestEventBus{}
 	mockBus.SetPublishErr(errors.New("bus full"))
-	
+
 	e := newTurnEngine(env.gw, nil, env.cm, env.reg, mockBus, env.cm.Strategy, withEngineLogger(logger))
-	
+
 	turn := e.createTurn(0, time.Now())
 	turn.State.PreparedHistory = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hi"}}}}
-	
+
 	env.gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "resp"}}}, &llm.Metrics{}, nil
 	}
-	
+
 	p := &inferenceStep{}
 	_, _, _ = p.invokeModel(context.Background(), turn)
-	
+
 	// Verify log contains the error message
 	if !strings.Contains(logBuf.String(), "Failed to publish ResponseEvent") {
 		t.Errorf("expected log to contain 'Failed to publish ResponseEvent', got %q", logBuf.String())

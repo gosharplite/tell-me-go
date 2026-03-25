@@ -133,7 +133,7 @@ func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 }
 
 // Run executes the session orchestration.
-func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic Capturer) error {
+func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic ports.Capturer) error {
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
@@ -203,7 +203,7 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer Capturer) error {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer ports.Capturer) error {
 	cfg := sCfg.GetConfig()
 	o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
@@ -212,7 +212,7 @@ func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.C
 	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer Capturer) {
+func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ports.Capturer) {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
@@ -325,7 +325,7 @@ type RunParams struct {
 	Prompt          string
 	Config          *config.Config
 	Deps            ports.SessionDependencies
-	Capturer        Capturer
+	Capturer        ports.Capturer
 }
 
 // Run is the high-level entry point for running a chat session.
