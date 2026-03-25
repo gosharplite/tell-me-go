@@ -379,11 +379,6 @@ func (r *stdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 	}
 }
 
-func (r *stdUIRenderer) renderThought(ui uiState, part *llm.Part, showThoughts bool) {
-	r.ioMu.Lock()
-	defer r.ioMu.Unlock()
-	r.renderThoughtLocked(ui, part, showThoughts)
-}
 
 func (r *stdUIRenderer) renderThoughtLocked(ui uiState, part *llm.Part, showThoughts bool) {
 	if showThoughts && (part.IsThought || len(part.ThoughtSignature) > 0) {
@@ -399,11 +394,6 @@ func (r *stdUIRenderer) renderThoughtLocked(ui uiState, part *llm.Part, showThou
 	}
 }
 
-func (r *stdUIRenderer) renderText(ui uiState, part *llm.Part, raw bool) {
-	r.ioMu.Lock()
-	defer r.ioMu.Unlock()
-	r.renderTextLocked(ui, part, raw)
-}
 
 func (r *stdUIRenderer) renderTextLocked(ui uiState, part *llm.Part, raw bool) {
 	if part.Text != "" && !part.IsThought {
@@ -420,11 +410,6 @@ func (r *stdUIRenderer) renderTextLocked(ui uiState, part *llm.Part, raw bool) {
 	}
 }
 
-func (r *stdUIRenderer) renderInlineData(ui uiState, part *llm.Part) {
-	r.ioMu.Lock()
-	defer r.ioMu.Unlock()
-	r.renderInlineDataLocked(ui, part)
-}
 
 func (r *stdUIRenderer) renderInlineDataLocked(ui uiState, part *llm.Part) {
 	if part.InlineData != nil {
