@@ -187,7 +187,7 @@ type mockRetryPolicy struct {
 	retry             bool
 }
 
-func (m *mockRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int) (time.Duration, bool) {
+func (m *mockRetryPolicy) ShouldRetry(c clock.Clock, turn *turn, err error) (time.Duration, bool) {
 	m.shouldRetryCalled = true
 	return m.delay, m.retry
 }

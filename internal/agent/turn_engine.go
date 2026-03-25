@@ -46,7 +46,7 @@ type processResult struct {
 
 // retryPolicy defines how the engine should handle errors and retries.
 type retryPolicy interface {
-	ShouldRetry(c clock.Clock, err error, attempt int) (time.Duration, bool)
+	ShouldRetry(c clock.Clock, turn *turn, err error) (time.Duration, bool)
 }
 
 // defaultRetryPolicy provides a standard retry implementation with exponential backoff and jitter.
@@ -56,7 +56,8 @@ type defaultRetryPolicy struct {
 	RateLimitBackoff time.Duration
 }
 
-func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int) (time.Duration, bool) {
+func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, turn *turn, err error) (time.Duration, bool) {
+	attempt := turn.State.RetryCount
 	if attempt >= p.MaxRetries {
 		return 0, false
 	}
@@ -66,8 +67,15 @@ func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int) 
 	if isTransient(err) {
 		base := p.Backoff
 
-		// Specific handling for Rate Limits
+		// 1. Mark if we've seen a rate limit to ensure future backoffs in this turn are also severe
 		if errors.Is(err, llm.ErrRateLimit) {
+			turn.State.HasSeenRateLimit = true
+		}
+
+		// 2. Consistent base logic: if we've been rate-limited at any point during this turn's
+		// retry sequence, maintain the higher base (5s) to avoid "flooding" the provider again
+		// with a 1s base for subsequent 504 errors in the same turn.
+		if turn.State.HasSeenRateLimit {
 			base = p.RateLimitBackoff
 		}
 
@@ -116,6 +124,7 @@ type turnState struct {
 	ToolResponse         *llm.Content            `json:"tool_response,omitempty"`
 	LastError            error                   `json:"-"`
 	RetryCount           int                     `json:"retry_count"`
+	HasSeenRateLimit     bool                    `json:"-"`
 	ToolCallCount        map[string]int          `json:"-"`
 	RecentResponseHashes []string                `json:"-"`
 	PreparedHistory      []*llm.Content          `json:"-"`
@@ -244,7 +253,7 @@ func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.Context
 		tokenCounter: counter,
 		events:       bus,
 		processors:   make(map[turnPhase]turnProcessor),
-		retryPolicy:  &defaultRetryPolicy{MaxRetries: 4, Backoff: 1 * time.Second, RateLimitBackoff: 5 * time.Second},
+		retryPolicy:  &defaultRetryPolicy{MaxRetries: 6, Backoff: 2 * time.Second, RateLimitBackoff: 5 * time.Second},
 		clock:        clock.RealClock{},
 	}
 
@@ -686,7 +695,7 @@ func (p *recoveryStep) process(ctx context.Context, turn *turn) (processResult, 
 		return processResult{NextPhase: phaseComplete}, nil
 	}
 
-	delay, retry := p.Policy.ShouldRetry(turn.Clock, err, turn.State.RetryCount)
+	delay, retry := p.Policy.ShouldRetry(turn.Clock, turn, err)
 	if !retry {
 		return p.handleFailure(err)
 	}
