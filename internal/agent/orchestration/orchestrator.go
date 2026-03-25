@@ -284,7 +284,8 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 		b.mu.Unlock()
 	case events.RefiningStartedEvent:
 		b.mu.Lock()
-		if !b.isRendering && b.stopSpinner == nil {
+		b.isRendering = false // Reset state for the new retry cycle
+		if b.stopSpinner == nil {
 			b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
 		}
 		b.mu.Unlock()
