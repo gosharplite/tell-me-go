@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -181,11 +182,11 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 
 	// Case 9: Event publishing
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	defer func() {
-		if err := bus.Shutdown(ctx); err != nil {
-			t.Errorf("failed to shutdown event bus: %v", err)
-		}
-	}()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 
 	var logBuf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -283,9 +284,11 @@ func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
 func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	ctx := context.Background()
-	defer func() {
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
 		_ = bus.Shutdown(ctx)
-	}()
+	})
 
 	strategy := NewContextStrategy(&mockTokenCounter{})
 	factory := &PipelineFactory{Estimator: strategy, Events: bus}

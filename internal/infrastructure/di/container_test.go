@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -445,7 +446,11 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 
 	// Execute the factory
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	defer func() { _ = bus.Shutdown(context.Background()) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	client := new(mockLLMClient)
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
@@ -558,7 +563,11 @@ func TestSessionDeps_Getters(t *testing.T) {
 	reg := registry.New()
 	sm := new(mockConfigurableSecurityManager)
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	defer func() { _ = bus.Shutdown(context.Background()) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	tracker := &mockTracker{}
 	pData := pricing.PricingData{}
 

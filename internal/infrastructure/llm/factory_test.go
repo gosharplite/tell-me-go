@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -142,7 +143,9 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	t.Cleanup(func() {
-		_ = bus.Shutdown(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
 	})
 
 	pData := pricing.PricingData{}
