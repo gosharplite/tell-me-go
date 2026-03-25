@@ -85,5 +85,15 @@ func classifyString(err error) (error, bool) {
 	if strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") || strings.Contains(msg, "QUOTA") || strings.Contains(msg, "RESOURCE EXHAUSTED") {
 		return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
 	}
+
+	// 3. Transient matching (5xx status codes, deadline/unavailable strings)
+	if strings.Contains(msg, "504") || strings.Contains(msg, "DEADLINE_EXCEEDED") ||
+		strings.Contains(msg, "503") || strings.Contains(msg, "UNAVAILABLE") ||
+		strings.Contains(msg, "502") || strings.Contains(msg, "BAD_GATEWAY") ||
+		strings.Contains(msg, "500") || strings.Contains(msg, "INTERNAL") ||
+		strings.Contains(msg, "TIMEOUT") {
+		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
+	}
+
 	return nil, false
 }

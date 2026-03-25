@@ -99,6 +99,18 @@ func TestClassify(t *testing.T) {
 			containsMatch: "429",
 		},
 		{
+			name:          "User reported Error 504",
+			input:         errors.New("Error 504, Message: Deadline expired before operation could complete., Status: DEADLINE_EXCEEDED, Details: []"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "504",
+		},
+		{
+			name:          "String matching UNAVAILABLE",
+			input:         errors.New("Status: UNAVAILABLE"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "UNAVAILABLE",
+		},
+		{
 			name:         "Unclassified error defaults to terminal",
 			input:        errors.New("unknown error"),
 			expectedWrap: llm.ErrTerminal,
