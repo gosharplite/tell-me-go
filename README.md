@@ -23,7 +23,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Deep Analysis**: High-level tools for `verify_architecture` (Hexagonal/Clean Architecture checks), `get_code_health`, and `analyze_sequence_flow` (Mermaid sequence diagrams).
     *   **Enterprise**: Deep integration with **Jira** (search/get), **Confluence** (search/read/write), **Azure DevOps** (PRs, Repos, Pipeline creation/runs/logs), and **Teams**.
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
-    *   **State & History**: Task tracking, `summarize_history`, and `manage_history` (pinning/unpinning turns to protect them from pruning).
+    *   **State & History**: Task tracking, `summarize_history`, and `manage_history` (pinning/unpinning turns to protect them from pruning). *(Proposed: Interactive history browser with search and thought visibility)*
     *   **Media**: Imagen 3 image generation and Vision analysis.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
@@ -66,6 +66,10 @@ tell-me-go -b 3
 Retry the last user message (automatically rolls back the last attempt):
 ```bash
 tell-me-go --retry
+```
+*(Proposed)* Interactive history browsing with search and thought visibility:
+```bash
+tell-me-go browse
 ```
 
 **Raw Output Mode:**
@@ -184,7 +188,14 @@ Use the `Makefile` for all development tasks:
 
 ### Architecture Documentation
 Refer to the following documents for deep-dives into the system design:
-- **ADR-002**: [Tool Execution Concurrency & Timeouts](docs/adr/0002-tool-execution-concurrency-and-timeouts.md)
-- **ADR-003**: [Domain Decomposition Strategy](docs/adr/0003-domain-decomposition-strategy.md)
-- **ADR-005**: [Skill Injection Architecture](docs/adr/0005-skill-injection-architecture.md)
+
+- **ADR Index**: Complete list of Architectural Decision Records in [docs/adr/README.md](docs/adr/README.md)
+- **ADR-001**: [Hybrid LLM Infrastructure Strategy](docs/adr/2024-05-multi-llm-provider-strategy.md)
+- **ADR-002**: [Tool Execution Concurrency & Timeouts](docs/adr/2024-06-tool-execution-concurrency-and-timeouts.md)
+- **ADR-003**: [Domain Decomposition Strategy](docs/adr/2024-07-domain-decomposition-strategy.md)
+- **ADR-004**: [ChatterParams Elimination](docs/adr/2024-08-chatterparams-elimination.md)
+- **ADR-005**: [Skill Injection Architecture](docs/adr/2024-09-skill-injection-architecture.md)
+- **ADR-006**: [History Log Compaction and Bounded Contexts](docs/adr/2024-10-history-log-compaction.md)
+- **ADR-007**: [Extract Agent Configuration via Functional Options](docs/adr/2026-02-agent-options-extraction.md)
+- **ADR-008**: [Bubble Tea Interactive History Browser](docs/adr/2026-02-bubble-tea-history-browser.md) *(Proposed)*
 - **SOPs**: Standard Operating Procedures are located in `docs/sop/`.

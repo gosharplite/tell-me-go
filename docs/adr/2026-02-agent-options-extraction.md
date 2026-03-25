@@ -1,4 +1,4 @@
-# ADR 002: Extract Agent Configuration via Functional Options
+# ADR-007: Extract Agent Configuration via Functional Options
 
 **Status:** Accepted  
 **Date:** 2026-02-14

@@ -1,10 +1,10 @@
-# ADR 0004: Elimination of ChatterParams God Object
+# ADR-004: Elimination of ChatterParams God Object
 
 ## Status
 Accepted
 
 ## Context
-As identified in **ADR-0003: Domain Decomposition Strategy**, the `Chatter` orchestrator and its associated `ChatterParams` struct had evolved into a "God Object." 
+As identified in **ADR-003: Domain Decomposition Strategy**, the `Chatter` orchestrator and its associated `ChatterParams` struct had evolved into a "God Object." 
 
 Specifically:
 - **Dependency Bloat:** `ChatterParams` accumulated 14+ disparate dependencies, including `Context`, `ConfigLoader`, `LLMGateway`, `HistoryManager`, `ToolRegistry`, `SecurityManager`, `CostTracker`, and others.
@@ -23,7 +23,7 @@ We have eliminated the `ChatterParams` struct and refactored the initialization 
     -   The deep initialization logic for the `Chatter` orchestrator was moved from the general `internal/infrastructure/di/container.go` to a specialized factory: `internal/infrastructure/factory/chatter.go`.
     -   The `Container` now delegates the complexity of building the `Chatter` object graph to this factory.
 3.  **Refined Orchestrator Initialization:**
-    -   The `Chatter` orchestrator now accepts structured dependencies that align with its internal components (e.g., `ContextPreparationService`, `ExecutionOrchestrator`, `MonitoringService`), adhering to the **Facade Pattern** defined in ADR-0003.
+    -   The `Chatter` orchestrator now accepts structured dependencies that align with its internal components (e.g., `ContextPreparationService`, `ExecutionOrchestrator`, `MonitoringService`), adhering to the **Facade Pattern** defined in ADR-003.
 
 ## Consequences
 

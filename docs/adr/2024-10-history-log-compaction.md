@@ -1,4 +1,4 @@
-# ADR 001: History Log Compaction and Bounded Contexts
+# ADR-006: History Log Compaction and Bounded Contexts
 
 ## Status
 Implemented (v3.3.0)
