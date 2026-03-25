@@ -50,7 +50,7 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 
 	err := llm.ErrTransient
 	for _, tt := range tests {
-		delay, retry := policy.ShouldRetry(c, err, tt.attempt)
+		delay, retry := policy.ShouldRetry(c, err, tt.attempt, false)
 		if !retry {
 			t.Errorf("Attempt %d: expected retry=true", tt.attempt)
 		}
@@ -64,7 +64,7 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 		MaxRetries: 5,
 		Backoff:    300 * time.Second,
 	}
-	delay, _ := policyLarge.ShouldRetry(c, err, 0)
+	delay, _ := policyLarge.ShouldRetry(c, err, 0, false)
 	if delay != 120*time.Second {
 		t.Errorf("Expected initial cap of 120s, got %v", delay)
 	}

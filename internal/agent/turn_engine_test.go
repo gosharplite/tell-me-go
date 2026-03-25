@@ -1166,23 +1166,20 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	t.Run("Transient error", func(t *testing.T) {
 		t.Parallel()
 		err := &agentError{Category: llm.ErrTransient, Message: "retry"}
-		turn := &turn{State: &turnState{RetryCount: 0}}
 
 		// Attempt 0: 10ms * 2^0 * 1.0 = 10ms
-		delay, retry := policy.ShouldRetry(c, turn, err)
+		delay, retry := policy.ShouldRetry(c, err, 0, false)
 		if !retry || delay != 10*time.Millisecond {
 			t.Errorf("expected retry with 10ms, got %v, %v", retry, delay)
 		}
 
 		// Attempt 1: 10ms * 2^1 * 1.0 = 20ms
-		turn.State.RetryCount = 1
-		delay, retry = policy.ShouldRetry(c, turn, err)
+		delay, retry = policy.ShouldRetry(c, err, 1, false)
 		if !retry || delay != 20*time.Millisecond {
 			t.Errorf("expected retry with 20ms, got %v, %v", retry, delay)
 		}
 
-		turn.State.RetryCount = 2
-		_, retry = policy.ShouldRetry(c, turn, err)
+		_, retry = policy.ShouldRetry(c, err, 2, false)
 		if retry {
 			t.Error("expected no retry after MaxRetries")
 		}
@@ -1191,22 +1188,17 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	t.Run("Rate limit error", func(t *testing.T) {
 		t.Parallel()
 		err := llm.ErrRateLimit
-		turn := &turn{State: &turnState{RetryCount: 0}}
-		// Base overridden to 5s. 5s * 2^0 * 1.0 = 5s
-		delay, retry := policy.ShouldRetry(c, turn, err)
+		// Base overridden to 5s if hasSeenRateLimit is true. 5s * 2^0 * 1.0 = 5s
+		delay, retry := policy.ShouldRetry(c, err, 0, true)
 		if !retry || delay != 5000*time.Millisecond {
 			t.Errorf("expected retry with 5s for rate limit, got %v, %v", retry, delay)
-		}
-		if !turn.State.HasSeenRateLimit {
-			t.Error("expected HasSeenRateLimit to be true")
 		}
 	})
 
 	t.Run("Fatal error", func(t *testing.T) {
 		t.Parallel()
 		err := &agentError{Category: llm.ErrTerminal, Message: "fatal"}
-		turn := &turn{State: &turnState{RetryCount: 0}}
-		_, retry := policy.ShouldRetry(c, turn, err)
+		_, retry := policy.ShouldRetry(c, err, 0, false)
 		if retry {
 			t.Error("expected no retry for fatal error")
 		}
@@ -1215,9 +1207,7 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	t.Run("Generic error", func(t *testing.T) {
 		t.Parallel()
 		// If err is nil, it returns false.
-		turn := &turn{State: &turnState{RetryCount: 0}}
-
-		_, retry := policy.ShouldRetry(c, turn, nil)
+		_, retry := policy.ShouldRetry(c, nil, 0, false)
 		if retry {
 			t.Error("expected no retry for nil error")
 		}

@@ -46,7 +46,7 @@ type processResult struct {
 
 // retryPolicy defines how the engine should handle errors and retries.
 type retryPolicy interface {
-	ShouldRetry(c clock.Clock, turn *turn, err error) (time.Duration, bool)
+	ShouldRetry(c clock.Clock, err error, attempt int, hasSeenRateLimit bool) (time.Duration, bool)
 }
 
 // defaultRetryPolicy provides a standard retry implementation with exponential backoff and jitter.
@@ -56,8 +56,7 @@ type defaultRetryPolicy struct {
 	RateLimitBackoff time.Duration
 }
 
-func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, turn *turn, err error) (time.Duration, bool) {
-	attempt := turn.State.RetryCount
+func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int, hasSeenRateLimit bool) (time.Duration, bool) {
 	if attempt >= p.MaxRetries {
 		return 0, false
 	}
@@ -67,15 +66,9 @@ func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, turn *turn, err error) (
 	if isTransient(err) {
 		base := p.Backoff
 
-		// 1. Mark if we've seen a rate limit to ensure future backoffs in this turn are also severe
-		if errors.Is(err, llm.ErrRateLimit) {
-			turn.State.HasSeenRateLimit = true
-		}
-
-		// 2. Consistent base logic: if we've been rate-limited at any point during this turn's
-		// retry sequence, maintain the higher base (5s) to avoid "flooding" the provider again
-		// with a 1s base for subsequent 504 errors in the same turn.
-		if turn.State.HasSeenRateLimit {
+		// Use the severe backoff if we have been rate-limited at any point during this turn's
+		// retry sequence, to avoid "flooding" the provider again.
+		if hasSeenRateLimit {
 			base = p.RateLimitBackoff
 		}
 
@@ -695,7 +688,12 @@ func (p *recoveryStep) process(ctx context.Context, turn *turn) (processResult, 
 		return processResult{NextPhase: phaseComplete}, nil
 	}
 
-	delay, retry := p.Policy.ShouldRetry(turn.Clock, turn, err)
+	// State mutation is handled by the workflow engine (caller)
+	if errors.Is(err, llm.ErrRateLimit) {
+		turn.State.HasSeenRateLimit = true
+	}
+
+	delay, retry := p.Policy.ShouldRetry(turn.Clock, err, turn.State.RetryCount, turn.State.HasSeenRateLimit)
 	if !retry {
 		return p.handleFailure(err)
 	}
