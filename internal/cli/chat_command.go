@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
@@ -108,8 +108,8 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}, capturer)
 }
 
-func (c *chatCommand) setupCapturer() orchestration.Capturer {
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(orchestration.Capturer)
+func (c *chatCommand) setupCapturer() ports.Capturer {
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(ports.Capturer)
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
@@ -118,7 +118,7 @@ func (c *chatCommand) setupCapturer() orchestration.Capturer {
 	return capturer
 }
 
-func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer orchestration.Capturer) (string, error) {
+func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer ports.Capturer) (string, error) {
 	captureOpts := c.prepareCaptureOptions(opts)
 	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
 	if err != nil {
@@ -149,13 +149,13 @@ func (c *chatCommand) handleRetryFlow(ctx stdctx.Context, opts *cliOptions) (pro
 	return lastMsg, turns, false, nil
 }
 
-func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []orchestration.CaptureOption {
-	var captureOpts []orchestration.CaptureOption
+func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []ports.CaptureOption {
+	var captureOpts []ports.CaptureOption
 	if opts.lastN > 0 || opts.backN > 0 {
-		captureOpts = append(captureOpts, orchestration.WithSkipTTYWait(true))
+		captureOpts = append(captureOpts, ports.WithSkipTTYWait(true))
 	}
 	if opts.rawOutput {
-		captureOpts = append(captureOpts, orchestration.WithRaw(true))
+		captureOpts = append(captureOpts, ports.WithRaw(true))
 	}
 	return captureOpts
 }

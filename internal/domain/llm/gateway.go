@@ -41,6 +41,6 @@ func IsAuth(err error) bool {
 
 // LLMGateway defines the interface for resilient AI model interactions.
 type LLMGateway interface {
-	// Generate handles auth retries and returns a content stream and a finalizer.
-	Generate(ctx context.Context, input []*Content, tools []*tools.ToolDeclaration, resolver AssetResolver) (<-chan *Content, func() (*Content, *Metrics, error))
+	// Generate handles auth retries and synchronous chat response.
+	Generate(ctx context.Context, input []*Content, tools []*tools.ToolDeclaration, resolver AssetResolver) (*Content, *Metrics, error)
 }

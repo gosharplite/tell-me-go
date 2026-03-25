@@ -46,7 +46,6 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL,
-		"TELL_ME_NO_STREAM=true",
 		"TELL_ME_MOCK_ANSWER=y", // Approve all tool calls
 	}
 

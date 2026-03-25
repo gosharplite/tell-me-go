@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -111,7 +112,12 @@ func TestNewClient(t *testing.T) {
 				HTTPTimeoutSeconds: tt.timeoutSeconds,
 			}
 			pData := pricing.PricingData{}
-			bus := events.NewSimpleEventBus(context.Background())
+			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = bus.Shutdown(ctx)
+			})
 
 			client, err := NewClient(cfg, pData, bus, nil)
 
@@ -193,7 +199,6 @@ func TestResilientClient_WrapError(t *testing.T) {
 
 type mockLLMClient struct {
 	sendChatFn       func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	streamChatFn     func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
 	refreshAuthFn    func() error
 	generateImagesFn func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
 	authRefreshed    int
@@ -204,13 +209,6 @@ func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, to
 		return m.sendChatFn(ctx, history, tools, resolver)
 	}
 	return nil, nil, nil
-}
-
-func (m *mockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	if m.streamChatFn != nil {
-		return m.streamChatFn(ctx, history, tools, resolver, callback)
-	}
-	return nil, nil
 }
 
 func (m *mockLLMClient) RefreshAuth() error {
@@ -239,9 +237,8 @@ func TestResilientClient_Generate_RetryAuth(t *testing.T) {
 		},
 	}
 
-	client := NewResilientClient(mock, true) // Disable streaming for easier testing of SendChat
-	_, finalize := client.Generate(context.Background(), nil, nil, nil)
-	content, _, err := finalize()
+	client := NewResilientClient(mock)
+	content, _, err := client.Generate(context.Background(), nil, nil, nil)
 
 	if err != nil {
 		t.Fatalf("Expected success after retry, got error: %v", err)
@@ -251,36 +248,6 @@ func TestResilientClient_Generate_RetryAuth(t *testing.T) {
 	}
 	if mock.authRefreshed != 1 {
 		t.Errorf("Expected 1 auth refresh, got %d", mock.authRefreshed)
-	}
-}
-
-func TestResilientClient_Generate_Streaming(t *testing.T) {
-	mock := &mockLLMClient{
-		streamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-			callback(&llm.Content{Parts: []*llm.Part{{Text: "part1"}}})
-			callback(&llm.Content{Parts: []*llm.Part{{Text: "part2"}}})
-			return &llm.Metrics{}, nil
-		},
-	}
-
-	client := NewResilientClient(mock, false)
-	outCh, finalize := client.Generate(context.Background(), nil, nil, nil)
-
-	var parts []string
-	for c := range outCh {
-		parts = append(parts, c.Parts[0].Text)
-	}
-
-	content, _, err := finalize()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(parts) != 2 || parts[0] != "part1" || parts[1] != "part2" {
-		t.Errorf("Unexpected stream parts: %v", parts)
-	}
-	if len(content.Parts) != 1 || content.Parts[0].Text != "part1part2" {
-		t.Errorf("Expected 1 final part with combined text, got %d parts, text: %q", len(content.Parts), content.Parts[0].Text)
 	}
 }
 
@@ -294,9 +261,8 @@ func TestResilientClient_Generate_AuthRefreshFail(t *testing.T) {
 		},
 	}
 
-	client := NewResilientClient(mock, true)
-	_, finalize := client.Generate(context.Background(), nil, nil, nil)
-	_, _, err := finalize()
+	client := NewResilientClient(mock)
+	_, _, err := client.Generate(context.Background(), nil, nil, nil)
 
 	if !errors.Is(err, llm.ErrAuth) {
 		t.Errorf("Expected ErrAuth, got %v", err)
@@ -306,76 +272,11 @@ func TestResilientClient_Generate_AuthRefreshFail(t *testing.T) {
 	}
 }
 
-func TestResilientClient_RetryIdempotency(t *testing.T) {
-	t.Run("No retry if data emitted in streaming", func(t *testing.T) {
-		calls := 0
-		mock := &mockLLMClient{
-			streamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-				calls++
-				// Emit some data
-				callback(&llm.Content{Parts: []*llm.Part{{Text: "partial"}}})
-				// Then return an error that would normally trigger a retry (like Auth)
-				return nil, status.Error(codes.Unauthenticated, "expired")
-			},
-		}
-
-		client := NewResilientClient(mock, false)
-		outCh, finalize := client.Generate(context.Background(), nil, nil, nil)
-
-		// Drain the channel
-		for range outCh {
-		}
-
-		_, _, err := finalize()
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if calls != 1 {
-			t.Errorf("expected exactly 1 call because data was emitted, got %d", calls)
-		}
-		if mock.authRefreshed != 0 {
-			t.Errorf("expected 0 auth refreshes because retry should have been skipped, got %d", mock.authRefreshed)
-		}
-	})
-
-	t.Run("No retry if data emitted in non-streaming", func(t *testing.T) {
-		calls := 0
-		mock := &mockLLMClient{
-			sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-				calls++
-				// Returning success will 'emit' the data into the outCh in attemptCall
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "full"}}}, &llm.Metrics{}, nil
-			},
-		}
-
-		// To simulate the 'emitted' logic in executeWithTransparentRetry with SendChat,
-		// we need a case where attemptCall returns err=nil, then the loop returns.
-		// If attemptCall returns err != nil, 'emitted' will be false for SendChat because
-		// the outCh <- content only happens if err == nil.
-
-		client := NewResilientClient(mock, true)
-		outCh, finalize := client.Generate(context.Background(), nil, nil, nil)
-		for range outCh {
-		}
-		_, _, err := finalize()
-
-		if err != nil {
-			t.Fatalf("expected success, got %v", err)
-		}
-		if calls != 1 {
-			t.Errorf("expected 1 call, got %d", calls)
-		}
-	})
-}
-
 func TestResilientClient_ErrorDelegation(t *testing.T) {
 	mockErr := errors.New("mock execution error")
 	mock := &mockLLMClient{
 		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, mockErr
-		},
-		streamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-			return nil, mockErr
 		},
 		refreshAuthFn: func() error {
 			return mockErr
@@ -385,17 +286,10 @@ func TestResilientClient_ErrorDelegation(t *testing.T) {
 		},
 	}
 
-	client := NewResilientClient(mock, false)
+	client := NewResilientClient(mock)
 
 	t.Run("SendChat Error Delegation", func(t *testing.T) {
 		_, _, err := client.SendChat(context.Background(), nil, nil, nil)
-		if !errors.Is(err, mockErr) {
-			t.Errorf("Expected %v, got %v", mockErr, err)
-		}
-	})
-
-	t.Run("StreamChat Error Delegation", func(t *testing.T) {
-		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 		if !errors.Is(err, mockErr) {
 			t.Errorf("Expected %v, got %v", mockErr, err)
 		}

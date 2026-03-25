@@ -246,7 +246,7 @@ func TestEnvironmentPersistence(t *testing.T) {
 	defer server.Close()
 
 	configPath := createTempConfig(t, "google", server.URL)
-	env = append(env, "TELL_ME_MOCK_URL="+server.URL, "TELL_ME_NO_STREAM=true")
+	env = append(env, "TELL_ME_MOCK_URL="+server.URL)
 
 	var stdout, stderr string
 
@@ -364,7 +364,6 @@ func TestToolOrchestrationLoop(t *testing.T) {
 			env := []string{
 				"TELL_ME_HOME=" + homeDir,
 				"TELL_ME_MOCK_URL=" + server.URL,
-				"TELL_ME_NO_STREAM=true",
 			}
 
 			stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "list the files")
@@ -375,7 +374,7 @@ func TestToolOrchestrationLoop(t *testing.T) {
 			out := stripANSI(stdout)
 			errOut := stripANSI(stderr)
 
-			if !strings.Contains(errOut, "Calling: list_files") {
+			if !strings.Contains(errOut, "[Tool Action] list_files") {
 				t.Errorf("Expected tool engine log in stderr, got: %q", errOut)
 			}
 			if !strings.Contains(out, "I have listed the files.") {
@@ -405,7 +404,6 @@ func TestWriteFileConfirmation(t *testing.T) {
 				"TELL_ME_HOME=" + homeDir,
 				"TELL_ME_MOCK_ANSWER=y",
 				"TELL_ME_MOCK_URL=" + server.URL,
-				"TELL_ME_NO_STREAM=true",
 			}
 
 			// 2. Run CLI and Verification
@@ -445,7 +443,6 @@ func TestWriteFileDenial(t *testing.T) {
 				"TELL_ME_HOME=" + homeDir,
 				"TELL_ME_MOCK_ANSWER=n",
 				"TELL_ME_MOCK_URL=" + server.URL,
-				"TELL_ME_NO_STREAM=true",
 			}
 
 			// 2. Run CLI and Verification
@@ -480,7 +477,6 @@ func TestSecurityGate(t *testing.T) {
 			env := []string{
 				"TELL_ME_HOME=" + homeDir,
 				"TELL_ME_MOCK_URL=" + server.URL,
-				"TELL_ME_NO_STREAM=true",
 			}
 
 			_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
@@ -517,7 +513,6 @@ func TestSymlinkAttack(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL,
-		"TELL_ME_NO_STREAM=true",
 	}
 
 	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
@@ -547,7 +542,6 @@ func TestManageTasks(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL,
-		"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI and Verification

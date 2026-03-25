@@ -159,7 +159,17 @@ func (m *mockClock) After(d time.Duration) <-chan time.Time {
 	ch <- m.CurrentTime
 	return ch
 }
+func (m *mockClock) NewTicker(d time.Duration) clock.Ticker {
+	return mockTicker{c: m.After(d)}
+}
 func (m *mockClock) Jitter(base float64) float64 { return base }
+
+type mockTicker struct {
+	c <-chan time.Time
+}
+
+func (m mockTicker) C() <-chan time.Time { return m.c }
+func (m mockTicker) Stop()               {}
 
 type mockHook struct {
 	beforeCalled int
@@ -242,7 +252,11 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	reg := &mockToolRegistry{}
 	// Use synchronous event bus for deterministic test results
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	cm := newTestContextManager(strategy, hManager, bus)
@@ -318,15 +332,6 @@ func (c *costCapturer) assertTurnCosts(t *testing.T, expected []float64) {
 	}
 }
 
-func closedChan(content *llm.Content) <-chan *llm.Content {
-	ch := make(chan *llm.Content, 1)
-	if content != nil {
-		ch <- content
-	}
-	close(ch)
-	return ch
-}
-
 func createProcessorForPhase(phase turnPhase) turnProcessor {
 	switch phase {
 	case phaseGuard:
@@ -347,14 +352,12 @@ func createProcessorForPhase(phase turnPhase) turnProcessor {
 
 func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			return closedChan(nil), func() (*llm.Content, *llm.Metrics, error) {
-				content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-				if hasTools && phase == phaseInference {
-					content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
-				}
-				return content, &llm.Metrics{}, nil
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+			if hasTools && phase == phaseInference {
+				content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
 			}
+			return content, &llm.Metrics{}, nil
 		},
 	}
 	reg := &mockToolRegistry{}

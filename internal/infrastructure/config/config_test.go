@@ -86,7 +86,6 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 	t.Setenv("GOSHARP_PERSON", "env-person")
 	t.Setenv("GOSHARP_AIMODEL", "env-model")
 	t.Setenv("GOSHARP_AIURL", "env-url")
-	t.Setenv("TELL_ME_NO_STREAM", "true")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test_env_more.yaml")
@@ -105,9 +104,6 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 	}
 	if cfg.URL != "env-url" {
 		t.Errorf("expected URL 'env-url', got '%s'", cfg.URL)
-	}
-	if !cfg.DisableStreaming {
-		t.Error("expected DisableStreaming to be true")
 	}
 }
 

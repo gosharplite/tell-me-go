@@ -26,8 +26,14 @@ func TestAgent_ConfigFailure(t *testing.T) {
 		},
 	}
 
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	a := &agent{
-		events: events.NewSimpleEventBus(context.Background()),
+		events: bus,
 		ctxManager: &orchestration.ContextManager{
 			History: hm,
 		},

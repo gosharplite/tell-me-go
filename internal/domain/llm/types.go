@@ -76,7 +76,6 @@ type AssetResolver interface {
 // LLMClient defines the interface for AI model providers.
 type LLMClient interface {
 	SendChat(ctx context.Context, history []*Content, tools []*tools.ToolDeclaration, resolver AssetResolver) (*Content, *Metrics, error)
-	StreamChat(ctx context.Context, history []*Content, tools []*tools.ToolDeclaration, resolver AssetResolver, callback func(*Content)) (*Metrics, error)
 	GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
 	RefreshAuth() error
 }

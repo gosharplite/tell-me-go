@@ -4,7 +4,6 @@
 package anthropic
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -64,7 +63,6 @@ type messagesRequest struct {
 	MaxTokens int         `json:"max_tokens"`
 	Tools     []tool      `json:"tools,omitempty"`
 	Thinking  *thinking   `json:"thinking,omitempty"`
-	Stream    bool        `json:"stream,omitempty"`
 }
 
 type systemBlock struct {
@@ -123,7 +121,7 @@ type usage struct {
 }
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	req, err := c.prepareAnthropicRequest(ctx, history, toolDecls, false)
+	req, err := c.prepareAnthropicRequest(ctx, history, toolDecls)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -376,43 +374,6 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 	return content, metrics, nil
 }
 
-func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	req, err := c.prepareAnthropicRequest(ctx, history, toolDecls, true)
-	if err != nil {
-		return nil, err
-	}
-
-	startTime := time.Now()
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	if err := c.checkResponse(resp); err != nil {
-		return nil, err
-	}
-
-	state := &streamState{
-		toolCalls: make(map[int]*llm.Part),
-		toolJSONs: make(map[int]*strings.Builder),
-	}
-
-	err = c.parseStream(ctx, resp.Body, callback, state)
-
-	if state.metrics != nil {
-		state.metrics.Duration = time.Since(startTime).Seconds()
-	}
-
-	if err != nil {
-		return state.metrics, fmt.Errorf("stream error: %w", err)
-	}
-
-	return state.metrics, nil
-}
-
 func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, fmt.Errorf("GenerateImages not implemented for Anthropic")
 }
@@ -422,13 +383,7 @@ func (c *client) RefreshAuth() error {
 	return nil
 }
 
-type streamState struct {
-	metrics   *llm.Metrics
-	toolCalls map[int]*llm.Part
-	toolJSONs map[int]*strings.Builder
-}
-
-func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, stream bool) (*http.Request, error) {
+func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration) (*http.Request, error) {
 	systemStr, messages, err := c.toAnthropicMessages(history)
 	if err != nil {
 		return nil, err
@@ -439,7 +394,6 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 		Messages:  messages,
 		MaxTokens: 4096, // Default for now
 		Tools:     c.toAnthropicTools(toolDecls),
-		Stream:    stream,
 	}
 
 	if systemStr != "" {
@@ -470,10 +424,10 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	return c.buildHTTPRequest(ctx, body, stream)
+	return c.buildHTTPRequest(ctx, body)
 }
 
-func (c *client) buildHTTPRequest(ctx context.Context, body []byte, stream bool) (*http.Request, error) {
+func (c *client) buildHTTPRequest(ctx context.Context, body []byte) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/messages", bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -482,9 +436,6 @@ func (c *client) buildHTTPRequest(ctx context.Context, body []byte, stream bool)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("anthropic-beta", "prompt-caching-2024-07-31")
-	if stream {
-		req.Header.Set("Accept", "text/event-stream")
-	}
 
 	// Apply custom headers
 	for k, v := range c.headers {
@@ -503,176 +454,8 @@ func (c *client) buildHTTPRequest(ctx context.Context, body []byte, stream bool)
 	return req, nil
 }
 
-func (c *client) handleAnthropicEvent(eventType, data string, callback func(*llm.Content), state *streamState) error {
-	switch eventType {
-	case "content_block_start":
-		return c.handleContentBlockStart(data, callback, state)
-	case "content_block_delta":
-		return c.handleContentBlockDelta(data, callback, state)
-	case "content_block_stop":
-		return c.handleContentBlockStop(data, callback, state)
-	case "message_delta":
-		return c.handleMessageDelta(data, state)
-	case "message_start":
-		return c.handleMessageStart(data, state)
-	case "error":
-		return c.handleErrorEvent(data)
-	}
-	return nil
-}
-
-func (c *client) handleContentBlockStart(data string, callback func(*llm.Content), state *streamState) error {
-	var start struct {
-		Index        int `json:"index"`
-		ContentBlock struct {
-			Type      string `json:"type"`
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			Signature string `json:"signature"`
-		} `json:"content_block"`
-	}
-	if err := json.Unmarshal([]byte(data), &start); err != nil {
-		return nil
-	}
-	switch start.ContentBlock.Type {
-	case "thinking":
-		update := &llm.Content{Role: "model"}
-		update.Parts = append(update.Parts, &llm.Part{
-			IsThought:        true,
-			ThoughtSignature: []byte(start.ContentBlock.Signature),
-		})
-		update.Validate()
-		callback(update)
-	case "tool_use":
-		state.toolCalls[start.Index] = &llm.Part{
-			FunctionCall: &llm.FunctionCall{
-				ID:   start.ContentBlock.ID,
-				Name: start.ContentBlock.Name,
-				Args: make(map[string]interface{}),
-			},
-		}
-		state.toolJSONs[start.Index] = &strings.Builder{}
-	}
-	return nil
-}
-
-func (c *client) handleContentBlockDelta(data string, callback func(*llm.Content), state *streamState) error {
-	var delta struct {
-		Index int `json:"index"`
-		Delta struct {
-			Type        string `json:"type"`
-			Text        string `json:"text"`
-			Thinking    string `json:"thinking"`
-			Signature   string `json:"signature"`
-			PartialJSON string `json:"partial_json"`
-		} `json:"delta"`
-	}
-	if err := json.Unmarshal([]byte(data), &delta); err != nil {
-		return nil
-	}
-	update := &llm.Content{Role: "model"}
-	if delta.Delta.Text != "" {
-		update.Parts = append(update.Parts, &llm.Part{Text: delta.Delta.Text})
-	}
-	if delta.Delta.Thinking != "" || delta.Delta.Signature != "" {
-		update.Parts = append(update.Parts, &llm.Part{
-			Text:             delta.Delta.Thinking,
-			IsThought:        true,
-			ThoughtSignature: []byte(delta.Delta.Signature),
-		})
-	}
-	if b, ok := state.toolJSONs[delta.Index]; ok {
-		b.WriteString(delta.Delta.PartialJSON)
-	}
-	if len(update.Parts) > 0 {
-		update.Validate()
-		callback(update)
-	}
-	return nil
-}
-
-func (c *client) handleContentBlockStop(data string, callback func(*llm.Content), state *streamState) error {
-	var stop struct {
-		Index int `json:"index"`
-	}
-	if err := json.Unmarshal([]byte(data), &stop); err != nil {
-		return nil
-	}
-	if part, ok := state.toolCalls[stop.Index]; ok {
-		if b, ok := state.toolJSONs[stop.Index]; ok {
-			var args map[string]interface{}
-			if err := json.Unmarshal([]byte(b.String()), &args); err == nil {
-				part.FunctionCall.Args = args
-			}
-			update := &llm.Content{Role: "model", Parts: []*llm.Part{part}}
-			update.Validate()
-			callback(update)
-			delete(state.toolCalls, stop.Index)
-			delete(state.toolJSONs, stop.Index)
-		}
-	}
-	return nil
-}
-
-func (c *client) handleMessageDelta(data string, state *streamState) error {
-	var md struct {
-		Usage struct {
-			OutputTokens   int32 `json:"output_tokens"`
-			ThinkingTokens int32 `json:"thinking_tokens,omitempty"`
-		} `json:"usage"`
-	}
-	if err := json.Unmarshal([]byte(data), &md); err != nil {
-		return nil
-	}
-	if state.metrics != nil {
-		state.metrics.ResponseTokens = md.Usage.OutputTokens
-		state.metrics.ThinkingTokens = md.Usage.ThinkingTokens
-		state.metrics.TotalTokens = state.metrics.PromptTokens + state.metrics.ResponseTokens
-	}
-	return nil
-}
-
-func (c *client) handleMessageStart(data string, state *streamState) error {
-	var ms struct {
-		Message struct {
-			Usage struct {
-				InputTokens          int32 `json:"input_tokens"`
-				CacheReadInputTokens int32 `json:"cache_read_input_tokens,omitempty"`
-			} `json:"usage"`
-		} `json:"message"`
-	}
-	if err := json.Unmarshal([]byte(data), &ms); err != nil {
-		return nil
-	}
-	state.metrics = &llm.Metrics{
-		Model:        c.model,
-		PromptTokens: ms.Message.Usage.InputTokens,
-		CachedTokens: ms.Message.Usage.CacheReadInputTokens,
-	}
-	return nil
-}
-
-func (c *client) handleErrorEvent(data string) error {
-	var apiErr struct {
-		Error struct {
-			Type    string `json:"type"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(data), &apiErr); err == nil {
-		return fmt.Errorf("anthropic api error: %s (%s)", apiErr.Error.Message, apiErr.Error.Type)
-	}
-	return fmt.Errorf("anthropic api error: %s", data)
-}
-
 func (c *client) checkResponse(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {
-		// Function-scoped defer: executes when this function returns,
-		// safely protecting against panics inside io.ReadAll.
-		defer func() {
-			_ = resp.Body.Close()
-		}()
-
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
@@ -680,39 +463,6 @@ func (c *client) checkResponse(resp *http.Response) error {
 		return &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
 	return nil
-}
-
-func (c *client) parseStream(ctx context.Context, body io.Reader, callback func(*llm.Content), state *streamState) error {
-	scanner := bufio.NewScanner(body)
-	var eventType string
-
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-
-		if strings.HasPrefix(line, "event: ") {
-			eventType = strings.TrimSpace(strings.TrimPrefix(line, "event: "))
-			continue
-		}
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
-		if err := c.handleAnthropicEvent(eventType, data, callback, state); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
 }
 
 func marshalResponse(res map[string]interface{}) string {

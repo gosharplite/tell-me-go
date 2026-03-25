@@ -13,7 +13,14 @@ type Clock interface {
 	Now() time.Time
 	Sleep(d time.Duration)
 	After(d time.Duration) <-chan time.Time
+	NewTicker(d time.Duration) Ticker
 	Jitter(base float64) float64
+}
+
+// Ticker provides a testable interface for a time ticker.
+type Ticker interface {
+	C() <-chan time.Time
+	Stop()
 }
 
 // RealClock implements the Clock interface using the standard time package.
@@ -34,8 +41,21 @@ func (RealClock) After(d time.Duration) <-chan time.Time {
 	return time.After(d)
 }
 
+// NewTicker returns a new Ticker that will send the current time on its channel after each tick.
+func (RealClock) NewTicker(d time.Duration) Ticker {
+	return realTicker{time.NewTicker(d)}
+}
+
 // Jitter returns the base value with some random jitter applied (+/- 10%).
 func (RealClock) Jitter(base float64) float64 {
 	// math/rand/v2 is used for better performance and better API
 	return base * (0.9 + (rand.Float64() * 0.2))
+}
+
+type realTicker struct {
+	*time.Ticker
+}
+
+func (rt realTicker) C() <-chan time.Time {
+	return rt.Ticker.C
 }

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/term"
@@ -74,8 +74,8 @@ func (c *capturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
-func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...orchestration.CaptureOption) (string, error) {
-	options := &orchestration.CaptureOptions{}
+func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+	options := &ports.CaptureOptions{}
 	for _, opt := range opts {
 		opt(options)
 	}
@@ -97,8 +97,8 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...
 	var err error
 	if !c.IsTTY(c.Stdin) {
 		prompt, err = c.captureFromPipe(ctx, prompt)
-	} else if prompt == "" && !options.SkipTTYWait() {
-		prompt, err = c.captureFromTTY(ctx, !options.Raw())
+	} else if prompt == "" && !options.SkipTTYWait {
+		prompt, err = c.captureFromTTY(ctx, !options.Raw)
 	}
 
 	if err != nil {
@@ -108,10 +108,10 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...
 	return c.finalizePrompt(prompt, options)
 }
 
-func (c *capturer) finalizePrompt(prompt string, options *orchestration.CaptureOptions) (string, error) {
+func (c *capturer) finalizePrompt(prompt string, options *ports.CaptureOptions) (string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		if options.SkipTTYWait() {
+		if options.SkipTTYWait {
 			return "", ErrNoInput
 		}
 		_, _ = fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")
@@ -119,7 +119,7 @@ func (c *capturer) finalizePrompt(prompt string, options *orchestration.CaptureO
 		return "", fmt.Errorf("empty prompt")
 	}
 
-	c.printFeedback(c.Stderr, !options.Raw(), colorGreen,
+	c.printFeedback(c.Stderr, !options.Raw, colorGreen,
 		fmt.Sprintf("[%s] Input captured. Processing...", c.Clock.Now().Format("15:04:05")))
 
 	return prompt, nil

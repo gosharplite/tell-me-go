@@ -18,15 +18,13 @@ import (
 
 // resilientClient wraps an LLMClient with retry logic and domain-specific error wrapping.
 type resilientClient struct {
-	client           llm.LLMClient
-	disableStreaming bool
+	client llm.LLMClient
 }
 
 // NewResilientClient creates a new resilientClient.
-func NewResilientClient(client llm.LLMClient, disableStreaming bool) *resilientClient {
+func NewResilientClient(client llm.LLMClient) *resilientClient {
 	return &resilientClient{
-		client:           client,
-		disableStreaming: disableStreaming,
+		client: client,
 	}
 }
 
@@ -53,57 +51,20 @@ func (r *resilientClient) wrapError(err error) error {
 	return llmerr.Classify(err)
 }
 
-type result struct {
-	content *llm.Content
-	metrics *llm.Metrics
-	err     error
-}
+// Generate handles the LLM interaction logic synchronously.
+func (r *resilientClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	ctx, span := otel.Tracer("llm").Start(ctx, "llm.generate_content")
+	defer span.End()
 
-// Generate handles the LLM interaction logic, returning a stream and a finalizer.
-func (r *resilientClient) Generate(parentCtx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	ctx, span := otel.Tracer("llm").Start(parentCtx, "llm.generate_content")
-
-	outCh := make(chan *llm.Content, 100)
-	resCh := make(chan result, 1)
-
-	go func() {
-		content, metrics, err := r.executeWithTransparentRetry(ctx, input, tools, resolver, outCh)
-		close(outCh)
-		resCh <- result{content, metrics, err}
-	}()
-
-	finalize := func() (*llm.Content, *llm.Metrics, error) {
-		defer span.End()
-		select {
-		case res := <-resCh:
-			return res.content, res.metrics, res.err
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		}
-	}
-
-	return outCh, finalize
-}
-
-// executeWithTransparentRetry only retries for things the client can fix (like Auth)
-func (r *resilientClient) executeWithTransparentRetry(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		content, metrics, emitted, err := r.attemptCall(ctx, input, tools, resolver, outCh)
+		content, metrics, err := r.client.SendChat(ctx, input, tools, resolver)
 		if err == nil {
 			return content, metrics, nil
 		}
 
-		// [ARCHITECTURAL GUARD]
-		// If we've already emitted data, we CANNOT retry transparently.
-		// Doing so would cause duplicated text in the UI and history.
-		// We return the partial content we've accumulated along with the error.
-		if emitted {
-			return content, metrics, r.wrapError(err)
-		}
-
 		wrapped := r.wrapError(err)
-		if errors.Is(wrapped, llm.ErrAuth) {
+		if errors.Is(wrapped, llm.ErrAuth) && attempt == 0 {
 			if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
 				continue // Fixed! Retry once.
 			}
@@ -114,47 +75,9 @@ func (r *resilientClient) executeWithTransparentRetry(ctx context.Context, input
 	return nil, nil, lastErr
 }
 
-func (r *resilientClient) attemptCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, bool, error) {
-	if r.disableStreaming {
-		content, metrics, err := r.client.SendChat(ctx, input, tools, resolver)
-		var emitted bool
-		if err == nil {
-			select {
-			case outCh <- content:
-				emitted = true
-			case <-ctx.Done():
-			}
-		}
-		return content, metrics, emitted, err
-	}
-	return r.performStreamingCall(ctx, input, tools, resolver, outCh)
-}
-
-func (r *resilientClient) performStreamingCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, bool, error) {
-	finalContent := &llm.Content{Role: "model"}
-	var emitted bool
-	callback := func(c *llm.Content) {
-		emitted = true // Mark that data has left the gateway
-		for _, p := range c.Parts {
-			finalContent.AddPart(p)
-		}
-		select {
-		case outCh <- c:
-		case <-ctx.Done():
-		}
-	}
-	metrics, err := r.client.StreamChat(ctx, input, tools, resolver, callback)
-	return finalContent, metrics, emitted, err
-}
-
 // SendChat delegates to the underlying client.
 func (r *resilientClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	return r.client.SendChat(ctx, history, tools, resolver)
-}
-
-// StreamChat delegates to the underlying client.
-func (r *resilientClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return r.client.StreamChat(ctx, history, tools, resolver, callback)
 }
 
 // RefreshAuth delegates to the underlying client.

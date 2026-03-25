@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -40,11 +41,6 @@ func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, to
 	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
 }
 
-func (m *mockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	args := m.Called(ctx, history, toolDecls, resolver, callback)
-	return args.Get(0).(*llm.Metrics), args.Error(1)
-}
-
 func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	args := m.Called(ctx, model, prompt, mimeType)
 	return args.Get(0).([][]byte), args.Error(1)
@@ -55,8 +51,12 @@ func (m *mockLLMClient) RefreshAuth() error {
 	return args.Error(0)
 }
 
-func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	return nil, nil
+func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	args := m.Called(ctx, input, toolDecls, resolver)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
 }
 
 type mockConfigurableSecurityManager struct {
@@ -445,7 +445,12 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	assert.NotNil(t, factory)
 
 	// Execute the factory
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	client := new(mockLLMClient)
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
@@ -460,11 +465,10 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	}
 
 	cfg := ports.ChatterConfig{
-		ProviderName:     "test-provider",
-		Model:            "test-model",
-		Mode:             "assistant",
-		LogPath:          "tokens.log",
-		DisableStreaming: false,
+		ProviderName: "test-provider",
+		Model:        "test-model",
+		Mode:         "assistant",
+		LogPath:      "tokens.log",
 	}
 	agent, err := factory(context.Background(), mockDeps, cfg)
 	assert.NoError(t, err)
@@ -558,7 +562,12 @@ func TestSessionDeps_Getters(t *testing.T) {
 	gw := client
 	reg := registry.New()
 	sm := new(mockConfigurableSecurityManager)
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	tracker := &mockTracker{}
 	pData := pricing.PricingData{}
 

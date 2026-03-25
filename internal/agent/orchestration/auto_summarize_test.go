@@ -40,7 +40,12 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to register tool: %v", err)
 	}
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 
 	// Mock server for summarization
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +67,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	}
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
@@ -155,7 +160,12 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -170,7 +180,7 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
@@ -212,7 +222,12 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -231,7 +246,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
@@ -285,7 +300,12 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	historyPath := filepath.Join(tmpDir, "tool_pressure_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 
 	// 1. Register many tools to create a large schema (approx 2000 tokens)
 	for i := 0; i < 20; i++ {
@@ -315,7 +335,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
-	gw := llm.NewResilientClient(client, true)
+	gw := llm.NewResilientClient(client)
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,

@@ -143,13 +143,10 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
-	respCh := make(chan *llm.Content) // unbuffered
 
 	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			return respCh, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, ctx.Err()
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, ctx.Err()
 		},
 	}
 

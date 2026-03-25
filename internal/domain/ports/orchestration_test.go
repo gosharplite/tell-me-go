@@ -32,17 +32,15 @@ func TestNewSession(t *testing.T) {
 func TestChatterConfig(t *testing.T) {
 	t.Parallel()
 	cfg := ChatterConfig{
-		ProviderName:     "test-provider",
-		Model:            "test-model",
-		Mode:             "test-mode",
-		LogPath:          "/tmp/test.log",
-		DisableStreaming: true,
+		ProviderName: "test-provider",
+		Model:        "test-model",
+		Mode:         "test-mode",
+		LogPath:      "/tmp/test.log",
 	}
 	assert.Equal(t, "test-provider", cfg.ProviderName)
 	assert.Equal(t, "test-model", cfg.Model)
 	assert.Equal(t, "test-mode", cfg.Mode)
 	assert.Equal(t, "/tmp/test.log", cfg.LogPath)
-	assert.True(t, cfg.DisableStreaming)
 }
 
 func TestContextMetadata_Clone(t *testing.T) {

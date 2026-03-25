@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"iter"
 	"net/http"
 	"os"
 	"strings"
@@ -406,63 +405,6 @@ func (c *Client) classifyError(err error) error {
 	return llmerr.Classify(err)
 }
 
-// StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
-func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	config, sdkHistory := c.prepareRequest(ctx, history, tools, resolver)
-
-	c.mu.RLock()
-	sdkClient := c.sdkClient
-	model := c.model
-	c.mu.RUnlock()
-
-	startTime := time.Now()
-	iter := sdkClient.Models.GenerateContentStream(ctx, model, sdkHistory, config)
-
-	return c.processStream(iter, startTime, callback)
-}
-
-func (c *Client) processStream(iter iter.Seq2[*genai.GenerateContentResponse, error], startTime time.Time, callback func(*llm.Content)) (*llm.Metrics, error) {
-	var lastMetrics *llm.Metrics
-
-	for resp, err := range iter {
-		if err != nil {
-			return lastMetrics, c.classifyError(err)
-		}
-
-		duration := time.Since(startTime).Seconds()
-		lastMetrics = c.parseMetrics(resp, duration)
-
-		if err := c.processStreamChunk(resp, callback); err != nil {
-			return lastMetrics, err
-		}
-	}
-
-	return lastMetrics, nil
-}
-
-func (c *Client) processStreamChunk(resp *genai.GenerateContentResponse, callback func(*llm.Content)) error {
-	if len(resp.Candidates) == 0 {
-		return c.handleSafetyBlock(resp)
-	}
-
-	candidate := resp.Candidates[0]
-	if candidate.Content != nil {
-		callback(c.fromSDKContent(candidate.Content))
-	}
-
-	if candidate.FinishReason != "" && candidate.FinishReason != genai.FinishReasonStop {
-		return c.formatFinishError(candidate, "stream interrupted")
-	}
-	return nil
-}
-
-func (c *Client) handleSafetyBlock(resp *genai.GenerateContentResponse) error {
-	if resp.PromptFeedback != nil && resp.PromptFeedback.BlockReason != "" {
-		return fmt.Errorf("blocked by safety filters (Prompt Block Reason: %s)", resp.PromptFeedback.BlockReason)
-	}
-	return nil
-}
-
 func toSDKTool(declarations []*tools.ToolDeclaration) []*genai.Tool {
 	if len(declarations) == 0 {
 		return nil
@@ -529,4 +471,11 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 	}
 
 	return results, nil
+}
+
+// GetEventBus returns the event bus used by the client.
+func (c *Client) GetEventBus() events.EventBus {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.eventBus
 }

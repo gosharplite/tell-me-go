@@ -23,25 +23,16 @@ type limitMockLLMGateway struct {
 	mock.Mock
 }
 
-func (m *limitMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+func (m *limitMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	args := m.Called(ctx, input, tools, resolver)
-	ch := args.Get(0)
-	if ch == nil {
-		return nil, args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
 	}
-	// Use type assertion to handle both chan and <-chan
-	if c, ok := ch.(chan *llm.Content); ok {
-		return c, args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
-	}
-	return ch.(<-chan *llm.Content), args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
+	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
 }
 
 func (m *limitMockLLMGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	return nil, nil, nil
-}
-
-func (m *limitMockLLMGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return nil, nil
 }
 
 func (m *limitMockLLMGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
@@ -64,7 +55,12 @@ func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 
 func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -95,12 +91,8 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 
 	// turn 0, 1, 2: Model returns a tool call with unique arguments to avoid loop detector
 	for i := 0; i < 3; i++ {
-		ch := make(chan *llm.Content, 1)
-		ch <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"n": i}}}}}
-		close(ch)
-		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch, func() (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"n": i}}}}}, &llm.Metrics{}, nil
-		}).Once()
+		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"n": i}}}}}
+		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{}, nil).Once()
 	}
 
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, 2).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil).Times(3)
@@ -192,6 +184,12 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 				},
 			}
 
+			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = bus.Shutdown(ctx)
+			})
 			turn := &turn{
 				CtxManager:   cm,
 				TokenCounter: counter,
@@ -199,7 +197,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 					Tokens:       tt.existingTokens,
 					ToolResponse: toolResponse,
 				},
-				Events: events.NewSimpleEventBus(context.Background()),
+				Events: bus,
 			}
 
 			p := &executionStep{}

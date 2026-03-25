@@ -162,9 +162,6 @@ type turn struct {
 	Model        string
 	Logger       *slog.Logger
 
-	// StreamHandler allows external handling of LLM response streams.
-	StreamHandler func(context.Context, <-chan *llm.Content)
-
 	// Results/Outputs
 	Stop bool
 }
@@ -271,7 +268,6 @@ func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.Context
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
 		e.middleware = append(e.middleware,
-			e.WithStreaming(),
 			e.WithMetrics(),
 			e.WithStatusReporter(),
 			withLoopDetector(),
@@ -530,36 +526,27 @@ func (p *inferenceStep) process(ctx context.Context, turn *turn) (processResult,
 	return p.routeBasedOnContent(respContent), nil
 }
 
-func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
-	history := turn.State.PreparedHistory
-	respCh, finalize := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
+func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (respContent *llm.Content, metrics *llm.Metrics, err error) {
+	_ = events.SafePublish(ctx, turn.Events, events.InferenceStartedEvent{})
 
-	if turn.StreamHandler != nil {
-		turn.StreamHandler(ctx, respCh)
-	} else {
-	drainLoop:
-		for {
-			select {
-			case <-ctx.Done():
-				break drainLoop
-			case _, ok := <-respCh:
-				if !ok {
-					break drainLoop
-				}
-			}
+	defer func() {
+		safeContent := respContent
+		if safeContent == nil {
+			safeContent = &llm.Content{Role: "model"}
 		}
-	}
+		// Detach context to ensure the UI ALWAYS receives the stop signal even on timeout
+		stopCtx := context.WithoutCancel(ctx)
+		if err := events.SafePublish(stopCtx, turn.Events, events.ResponseEvent{Content: safeContent}); err != nil {
+			turn.getLogger().ErrorContext(stopCtx, "Failed to publish ResponseEvent; UI spinner may hang",
+				slog.Any("error", err))
+		}
+	}()
 
-	respContent, metrics, err := finalize()
-	if err != nil {
-		// We return what we have (partial content) along with the error
-		// so that the engine can attempt an emergency checkpoint.
-		return respContent, metrics, err
-	}
-	if respContent == nil {
+	respContent, metrics, err = turn.Gateway.Generate(ctx, turn.State.PreparedHistory, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
+	if err == nil && respContent == nil {
 		return nil, nil, newAgentError(errLogic, "api returned nil content", nil)
 	}
-	return respContent, metrics, nil
+	return respContent, metrics, err
 }
 
 func (p *inferenceStep) updateState(turn *turn, content *llm.Content, metrics *llm.Metrics) {
@@ -742,6 +729,9 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 		return processResult{}, ctx.Err()
 	case <-turn.Clock.After(delay):
 	}
+
+	// Trigger a spinner early so it covers refining and the next inference attempt
+	_ = events.SafePublish(ctx, turn.Events, events.RefiningStartedEvent{})
 
 	return processResult{NextPhase: phaseRefining}, nil
 }

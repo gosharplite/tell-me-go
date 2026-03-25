@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 // --- Mocks ---
@@ -58,9 +60,24 @@ type mockUIRenderer struct {
 	mock.Mock
 }
 
-func (m *mockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
-	args := m.Called(ctx, showThoughts, rawOutput)
-	return args.Get(0).(chan<- *llm.Content), args.Get(1).(func() *llm.Content)
+func (m *mockUIRenderer) StartSpinner(ctx context.Context) func() {
+	args := m.Called(ctx)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *mockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	args := m.Called(ctx, status)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *mockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
+	m.Called(content, showThoughts, rawOutput)
 }
 
 func (m *mockUIRenderer) LogTurnStatus(status events.TurnStatus) {
@@ -87,6 +104,10 @@ func (m *mockUIRenderer) SetUseColor(use bool) {
 	m.Called(use)
 }
 
+func (m *mockUIRenderer) SetForceSpinner(force bool) {
+	m.Called(force)
+}
+
 type mockHistoryRenderer struct {
 	mock.Mock
 }
@@ -104,7 +125,7 @@ func (m *mockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error) {
+func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
 }
@@ -115,7 +136,12 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = mEventBus.Shutdown(ctx)
+	})
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -147,21 +173,18 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 }
 
 func TestUIBridge_HandleEvent(t *testing.T) {
-	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
-
 	tests := []struct {
 		name  string
 		event events.Event
-		setup func()
+		setup func(m *mockUIRenderer)
 	}{
 		{
 			name: "TurnStatusEvent",
 			event: events.TurnStatusEvent{
 				Status: events.TurnStatus{SessionTurns: 1},
 			},
-			setup: func() {
-				mRenderer.On("LogTurnStatus", mock.Anything).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogTurnStatus", mock.Anything).Return()
 			},
 		},
 		{
@@ -171,8 +194,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				StartTime: time.Now(),
 				Context:   context.Background(),
 			},
-			setup: func() {
-				mRenderer.On("LogUsage", mock.Anything, mock.Anything, "log.txt", mock.Anything).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogUsage", mock.Anything, mock.Anything, "log.txt", mock.Anything).Return()
 			},
 		},
 		{
@@ -182,8 +205,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Turn:     0,
 				MaxTurns: 5,
 			},
-			setup: func() {
-				mRenderer.On("LogToolCall", mock.Anything, 0, 5, true).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogToolCall", mock.Anything, 0, 5, true).Return()
 			},
 		},
 		{
@@ -192,8 +215,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Name:   "test",
 				Result: tools.ToolResult{Text: "result"},
 			},
-			setup: func() {
-				mRenderer.On("LogToolResult", "test", mock.Anything, true).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogToolResult", "test", mock.Anything, true).Return()
 			},
 		},
 		{
@@ -202,8 +225,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Message: "msg",
 				Level:   "info",
 			},
-			setup: func() {
-				mRenderer.On("LogSystemMessage", "msg", "info").Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogSystemMessage", "msg", "info").Return()
 			},
 		},
 		{
@@ -212,85 +235,51 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Message: "updating",
 				Level:   "info",
 			},
-			setup: func() {
-				mRenderer.On("LogSystemMessage", "updating", "info").Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogSystemMessage", "updating", "info").Return()
 			},
 		},
 		{
-			name: "ResponseStreamEvent",
-			event: events.ResponseStreamEvent{
-				Context: context.Background(),
-				Stream:  make(chan *llm.Content),
+			name:  "InferenceStartedEvent",
+			event: events.InferenceStartedEvent{},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinner", mock.Anything).Return(func() {})
 			},
-			setup: func() {
-				uiCh := make(chan *llm.Content)
-				var uiChSend chan<- *llm.Content = uiCh
-				mRenderer.On("StreamResponse", mock.Anything, true, false).Return(uiChSend, func() *llm.Content { return &llm.Content{} })
-
-				// Close the stream in background to avoid blocking
-				go func() {
-					close(uiCh)
-				}()
+		},
+		{
+			name:  "RefiningStartedEvent",
+			event: events.RefiningStartedEvent{},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {})
+			},
+		},
+		{
+			name: "ResponseEvent",
+			event: events.ResponseEvent{
+				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},
+			},
+			setup: func(m *mockUIRenderer) {
+				m.On("RenderResponse", mock.Anything, true, false).Return()
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.setup()
+			mRenderer := new(mockUIRenderer)
+			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+			tt.setup(mRenderer)
 
-			// For ResponseStreamEvent, we need to handle the channel closing
-			if ev, ok := tt.event.(events.ResponseStreamEvent); ok {
-				stream := make(chan *llm.Content)
-				ev.Stream = stream
-				close(stream)
-				bridge.handleEvent(context.Background(), ev)
-			} else {
-				bridge.handleEvent(context.Background(), tt.event)
-			}
+			bridge.handleEvent(context.Background(), tt.event)
 
 			mRenderer.AssertExpectations(t)
 		})
 	}
 }
 
-func TestUIBridge_RelayStream(t *testing.T) {
-	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
-
-	t.Run("Relays content", func(t *testing.T) {
-		ctx := context.Background()
-		stream := make(chan *llm.Content, 2)
-		uiCh := make(chan *llm.Content, 2)
-
-		content := &llm.Content{Parts: []*llm.Part{{Text: "hello"}}}
-		stream <- content
-		close(stream)
-
-		bridge.relayStream(ctx, stream, uiCh)
-
-		select {
-		case received := <-uiCh:
-			assert.Equal(t, content, received)
-		case <-time.After(100 * time.Millisecond):
-			t.Fatal("timed out waiting for content")
-		}
-	})
-
-	t.Run("Handles context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		stream := make(chan *llm.Content)
-		uiCh := make(chan *llm.Content)
-
-		cancel()
-		bridge.relayStream(ctx, stream, uiCh)
-		// Should return immediately
-	})
-}
-
 func TestUIBridge_EnsureContext(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	t.Run("Returns existing context", func(t *testing.T) {
 		type contextKey string
@@ -313,7 +302,12 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = mEventBus.Shutdown(ctx)
+	})
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -347,7 +341,12 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = mEventBus.Shutdown(ctx)
+	})
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return nil, nil
@@ -403,27 +402,10 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, 10, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
 
-	err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, paths, pData, mCapturer)
+	cleanup, err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, paths, pData, mCapturer)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
-}
-
-func TestUIBridge_RelayStream_ContextCancelledDuringSend(t *testing.T) {
-	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	stream := make(chan *llm.Content)
-	uiCh := make(chan *llm.Content) // Unbuffered
-
-	// Blocks until the consumer (relayStream) picks it up, guaranteeing state
-	go func() {
-		stream <- &llm.Content{}
-		cancel()
-	}()
-
-	bridge.relayStream(ctx, stream, uiCh)
-	// Should return when context is cancelled
+	require.NotNil(t, cleanup)
 }
 
 // --- Behavioral Sequence Testing ---
@@ -485,10 +467,27 @@ type behaviorMockUIRenderer struct {
 	tracker *behaviorTracker
 }
 
-func (m *behaviorMockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
-	m.tracker.record("UIRenderer.StreamResponse")
-	args := m.Called(ctx, showThoughts, rawOutput)
-	return args.Get(0).(chan<- *llm.Content), args.Get(1).(func() *llm.Content)
+func (m *behaviorMockUIRenderer) StartSpinner(ctx context.Context) func() {
+	m.tracker.record("UIRenderer.StartSpinner")
+	args := m.Called(ctx)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *behaviorMockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	m.tracker.record("UIRenderer.StartSpinnerWithStatus")
+	args := m.Called(ctx, status)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *behaviorMockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
+	m.tracker.record("UIRenderer.RenderResponse")
+	m.Called(content, showThoughts, rawOutput)
 }
 
 func (m *behaviorMockUIRenderer) LogTurnStatus(status events.TurnStatus) {
@@ -521,6 +520,11 @@ func (m *behaviorMockUIRenderer) SetUseColor(use bool) {
 	m.Called(use)
 }
 
+func (m *behaviorMockUIRenderer) SetForceSpinner(force bool) {
+	m.tracker.record("UIRenderer.SetForceSpinner")
+	m.Called(force)
+}
+
 type behaviorMockCapturer struct {
 	mock.Mock
 	tracker *behaviorTracker
@@ -532,7 +536,7 @@ func (m *behaviorMockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error) {
+func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	m.tracker.record("Capturer.CapturePrompt")
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
@@ -546,7 +550,12 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mUIRenderer := &behaviorMockUIRenderer{tracker: tracker}
 
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = mEventBus.Shutdown(ctx)
+	})
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		tracker.record("AgentFactory")
@@ -710,7 +719,12 @@ func TestRun_Routing(t *testing.T) {
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
 	mCapturer := new(mockCapturer)
-	mEventBus := events.NewSimpleEventBus(context.Background())
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = mEventBus.Shutdown(ctx)
+	})
 
 	factory := func(mChatter ports.Chatter) func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -795,4 +809,251 @@ func TestRun_Routing(t *testing.T) {
 		// Verify that Chatter.Chat was NOT called
 		mChatter.AssertNotCalled(t, "Chat", mock.Anything, mock.Anything, mock.Anything)
 	})
+}
+
+func TestUIBridge_Concurrency(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	// Setup mocks with Maybe() to handle concurrent calls safely
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Maybe()
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
+	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	const iterations = 1000
+	start := make(chan struct{})
+
+	// Fire InferenceStartedEvent and ResponseEvent simultaneously
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < iterations; i++ {
+			bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < iterations; i++ {
+			bridge.handleEvent(ctx, events.ResponseEvent{
+				Content: &llm.Content{},
+			})
+		}
+	}()
+
+	// Fire other events to simulate real event bus behavior and increase noise
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < iterations; i++ {
+			bridge.handleEvent(ctx, events.TurnStarted{})
+			bridge.handleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{}})
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < iterations; i++ {
+			bridge.handleEvent(ctx, events.UsageMetricsEvent{
+				Metrics:   &llm.Metrics{},
+				StartTime: time.Now(),
+				Context:   ctx,
+			})
+			bridge.handleEvent(ctx, events.ToolCallEvent{
+				Calls:    []*llm.FunctionCall{{Name: "test"}},
+				Turn:     0,
+				MaxTurns: 5,
+			})
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+}
+
+func TestUIBridge_LogicalRace(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {})
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
+
+	ctx := context.Background()
+
+	// Simulate ResponseEvent arriving BEFORE InferenceStartedEvent
+	bridge.handleEvent(ctx, events.ResponseEvent{
+		Content: &llm.Content{},
+	})
+
+	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+
+	bridge.mu.Lock()
+	spinnerStarted := bridge.stopSpinner != nil
+	bridge.mu.Unlock()
+
+	// If logical race is fixed, spinnerStarted should be false because response already arrived
+	if spinnerStarted {
+		t.Error("Spinner should not have started because ResponseEvent already arrived")
+	}
+
+	if bridge.stopSpinner != nil {
+		bridge.stopSpinner()
+	}
+}
+
+func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	var spinnerStopped bool
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+
+	// Start Inference
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+
+	// Force new turn before ResponseEvent arrives (Simulates an abort/reset)
+	bridge.handleEvent(context.Background(), events.TurnStarted{})
+
+	if !spinnerStopped {
+		t.Error("Expected stopSpinner to be called during TurnStarted to prevent resource leaks")
+	}
+}
+
+func TestUIBridge_Retry_Spinner(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	// First attempt
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Once()
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+
+	// Response (e.g. error)
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
+	bridge.handleEvent(context.Background(), events.ResponseEvent{
+		Content: &llm.Content{},
+	})
+
+	// TurnStatusEvent happens after the inference step (fired by WithStatusReporter middleware)
+	mRenderer.On("LogTurnStatus", mock.Anything).Return().Once()
+	bridge.handleEvent(context.Background(), events.TurnStatusEvent{
+		Status: events.TurnStatus{IsPostCall: true},
+	})
+
+	// Second attempt (Retry)
+	// Now this SHOULD be called because TurnStatusEvent reset isRendering.
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {}).Once()
+	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
+
+	mRenderer.AssertExpectations(t)
+}
+
+func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	var spinnerStopped bool
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+
+	// Start Inference
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+
+	// Simulate unexpected exit by calling Cleanup
+	bridge.Cleanup()
+
+	assert.True(t, spinnerStopped, "Expected stopSpinner to be called during Cleanup")
+
+	// Double cleanup should be safe
+	bridge.Cleanup()
+}
+
+func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	tests := []struct {
+		name          string
+		chatErr       error
+		expectedError string
+	}{
+		{
+			name:          "Context Deadline Exceeded",
+			chatErr:       context.DeadlineExceeded,
+			expectedError: context.DeadlineExceeded.Error(),
+		},
+		{
+			name:          "Unauthorized (API token error)",
+			chatErr:       fmt.Errorf("unauthorized: invalid API key"),
+			expectedError: "unauthorized: invalid API key",
+		},
+		{
+			name:          "Rate Limiting",
+			chatErr:       fmt.Errorf("rate limit exceeded"),
+			expectedError: "rate limit exceeded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mChatter := new(mockChatter)
+			mCapturer := new(mockCapturer)
+			mHistory := new(mockHistoryManager)
+			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = mEventBus.Shutdown(ctx)
+			})
+
+			factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+				return mChatter, nil
+			}
+
+			mHistoryRenderer := new(mockHistoryRenderer)
+			mUIRenderer := new(mockUIRenderer)
+			orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+
+			sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+				Model: "model",
+				Mode:  "mode",
+			})
+			deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default())
+
+			mCapturer.On("IsTTY", io.Discard).Return(true)
+			mUIRenderer.On("SetUseColor", true).Return()
+
+			var spinnerStopped bool
+			mUIRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+
+			mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
+				sub := args.Get(0).(func(context.Context, events.Event))
+				// Simulate spinner start before chat fails
+				sub(context.Background(), events.InferenceStartedEvent{})
+			}).Return()
+
+			mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+			mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(tt.chatErr)
+			mChatter.On("Shutdown", mock.Anything).Return(nil)
+
+			err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.expectedError)
+
+			assert.True(t, spinnerStopped, "Expected spinner to be stopped via deferred Cleanup on error")
+
+			mChatter.AssertExpectations(t)
+			mCapturer.AssertExpectations(t)
+		})
+	}
 }

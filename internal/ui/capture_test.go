@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"io"
 	"os"
 	"strings"
@@ -113,7 +113,7 @@ func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, orchestration.WithSkipTTYWait(true))
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, ports.WithSkipTTYWait(true))
 
 	if !errors.Is(err, ErrNoInput) {
 		t.Errorf("expected ErrNoInput, got %v", err)

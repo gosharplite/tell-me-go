@@ -45,36 +45,6 @@ func (m *mockProcessor) process(ctx context.Context, turn *turn) (processResult,
 	return m.res, m.err
 }
 
-func TestWithStreaming(t *testing.T) {
-	t.Parallel()
-	bus := &mockEventBus{}
-	e := &turnEngine{events: bus}
-	mw := e.WithStreaming()
-	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
-
-	ctx := context.Background()
-	turn := &turn{
-		State: &turnState{Phase: phaseInference},
-		Clock: &mockClock{},
-	}
-
-	_, _ = mw(next).process(ctx, turn)
-
-	if turn.StreamHandler == nil {
-		t.Fatal("Expected StreamHandler to be set")
-	}
-
-	stream := make(chan *llm.Content, 1)
-	turn.StreamHandler(ctx, stream)
-
-	if len(bus.events) != 1 {
-		t.Fatalf("Expected 1 event, got %d", len(bus.events))
-	}
-	if _, ok := bus.events[0].(events.ResponseStreamEvent); !ok {
-		t.Errorf("Expected ResponseStreamEvent, got %T", bus.events[0])
-	}
-}
-
 func TestWithStatusReporter(t *testing.T) {
 	t.Parallel()
 

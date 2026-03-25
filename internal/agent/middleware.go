@@ -18,27 +18,6 @@ import (
 
 const loopWarning = "SYSTEM WARNING: Infinite loop detected. You are repeating the exact same tool call or response. The previous action was aborted. Please analyze your previous steps and try a DIFFERENT tool or strategy."
 
-// WithStreaming returns a middleware that injects a stream handler into the turn.
-func (e *turnEngine) WithStreaming() turnMiddleware {
-	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
-			if turn.State.Phase == phaseInference && e.events != nil {
-				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
-					evt := events.ResponseStreamEvent{Context: ctx, Stream: stream}
-					if err := events.SafePublish(ctx, e.events, evt); err != nil {
-						if !errors.Is(err, events.ErrBusNotInitialized) {
-							e.getLogger().Error("event_publish_failed",
-								slog.String("event_type", string(evt.Type())),
-								slog.Any("error", err))
-						}
-					}
-				}
-			}
-			return next.process(ctx, turn)
-		})
-	}
-}
-
 // WithStatusReporter returns a middleware that publishes turn status events.
 func (e *turnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {

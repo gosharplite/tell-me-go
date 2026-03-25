@@ -42,24 +42,16 @@ type integrationMockLLMGateway struct {
 	mock.Mock
 }
 
-func (m *integrationMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+func (m *integrationMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	args := m.Called(ctx, input, tools, resolver)
-	ch := args.Get(0)
-	if ch == nil {
-		return nil, args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
 	}
-	if c, ok := ch.(chan *llm.Content); ok {
-		return c, args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
-	}
-	return ch.(<-chan *llm.Content), args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
+	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
 }
 
 func (m *integrationMockLLMGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	return nil, nil, nil
-}
-
-func (m *integrationMockLLMGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return nil, nil
 }
 
 func (m *integrationMockLLMGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
@@ -97,7 +89,12 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	t.Parallel()
 	t.Run("Scenario A - Single Massive Payload", func(t *testing.T) {
 		t.Parallel()
-		bus := events.NewSimpleEventBus(context.Background())
+		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = bus.Shutdown(ctx)
+		})
 		historyPath := filepath.Join(t.TempDir(), "history_a.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -126,12 +123,8 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "read large file"}}})
 
 		// 2. Action: Model returns tool call
-		ch := make(chan *llm.Content, 1)
-		ch <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "read_file", Args: map[string]interface{}{"path": "huge.txt"}}}}}
-		close(ch)
-		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch, func() (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "read_file", Args: map[string]interface{}{"path": "huge.txt"}}}}}, &llm.Metrics{PromptTokens: 100}, nil
-		})
+		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "read_file", Args: map[string]interface{}{"path": "huge.txt"}}}}}
+		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{PromptTokens: 100}, nil)
 
 		// 3. Action: Tool returns massive payload
 		toolResp := &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "read_file", Response: map[string]any{"content": "massive string..."}}}}}
@@ -173,7 +166,12 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 	t.Run("Scenario B - Context Exhaustion", func(t *testing.T) {
 		t.Parallel()
-		bus := events.NewSimpleEventBus(context.Background())
+		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = bus.Shutdown(ctx)
+		})
 		historyPath := filepath.Join(t.TempDir(), "history_b.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -212,12 +210,8 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		assert.Equal(t, 8500, turn0.State.Tokens)
 
 		// 2. Action: Model returns tool call
-		ch := make(chan *llm.Content, 1)
-		ch <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "search", Args: map[string]interface{}{"q": "something"}}}}}
-		close(ch)
-		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch, func() (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "search", Args: map[string]interface{}{"q": "something"}}}}}, &llm.Metrics{PromptTokens: 8500}, nil
-		})
+		modelResp := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "search", Args: map[string]interface{}{"q": "something"}}}}}
+		gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{PromptTokens: 8500}, nil)
 
 		// 3. Action: Tool returns moderate payload (1000 tokens)
 		// Total will be 8500 + 1000 = 9500. 90% of 10000 is 9000. 9500 > 9000 -> Truncate.
@@ -269,7 +263,12 @@ func (m *cancelIntegrationRegistry) GetDeclarations() []*tools.ToolDeclaration {
 
 func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	historyPath := filepath.Join(t.TempDir(), "history_cancel.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -328,12 +327,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 			{FunctionCall: &llm.FunctionCall{Name: "tool2", Args: map[string]any{"id": 2}}},
 		},
 	}
-	ch := make(chan *llm.Content, 1)
-	ch <- modelResp
-	close(ch)
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch, func() (*llm.Content, *llm.Metrics, error) {
-		return modelResp, &llm.Metrics{PromptTokens: 100}, nil
-	})
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(modelResp, &llm.Metrics{PromptTokens: 100}, nil)
 
 	// 3. Execute turn in goroutine
 	errCh := make(chan error, 1)

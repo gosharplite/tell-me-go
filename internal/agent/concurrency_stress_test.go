@@ -61,7 +61,12 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 		},
 	}
 
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	a, err := NewAgent(mockClient, bus, hManager, "test-provider", reg, sm)
 	require.NoError(t, err)
 	session := &ports.Session{History: hManager, StartTime: time.Now()}
@@ -98,14 +103,6 @@ func (m *stressmockLLMClient) SendChat(ctx context.Context, history []*llm.Conte
 	return m.sendChatFn(ctx, history, tools, resolver)
 }
 
-func (m *stressmockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	content, metrics, err := m.sendChatFn(ctx, history, tools, resolver)
-	if err == nil {
-		callback(content)
-	}
-	return metrics, err
-}
-
 func (m *stressmockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
 }
@@ -114,33 +111,8 @@ func (m *stressmockLLMClient) RefreshAuth() error {
 	return nil
 }
 
-func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	outCh := make(chan *llm.Content, 1)
-	resCh := make(chan struct {
-		content *llm.Content
-		metrics *llm.Metrics
-		err     error
-	}, 1)
-
-	go func() {
-		defer close(outCh)
-		content, metrics, err := m.SendChat(ctx, input, tools, resolver)
-		if err == nil {
-			outCh <- content
-		}
-		resCh <- struct {
-			content *llm.Content
-			metrics *llm.Metrics
-			err     error
-		}{content, metrics, err}
-	}()
-
-	finalize := func() (*llm.Content, *llm.Metrics, error) {
-		res := <-resCh
-		return res.content, res.metrics, res.err
-	}
-
-	return outCh, finalize
+func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	return m.sendChatFn(ctx, input, tools, resolver)
 }
 
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
@@ -207,7 +179,12 @@ func TestContextManager_Race(t *testing.T) {
 	}
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil))
 	factory := &orchestration.PipelineFactory{
 		Estimator: strategy,
@@ -277,19 +254,20 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	}
 	// Setup
 	reg := registry.New()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 
 	// Create a single engine instance
 	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{
-					PromptTokens:   1000,
-					ResponseTokens: 1000,
-				}, nil
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{
+				PromptTokens:   1000,
+				ResponseTokens: 1000,
+			}, nil
 		},
 	}
 

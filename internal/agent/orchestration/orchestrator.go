@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -132,16 +133,15 @@ func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 }
 
 // Run executes the session orchestration.
-func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic Capturer) error {
+func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic ports.Capturer) error {
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
 	chatterCfg := ports.ChatterConfig{
-		ProviderName:     cfg.SelectedProvider,
-		Model:            activeModel,
-		Mode:             cfg.Mode,
-		LogPath:          paths.LogPath,
-		DisableStreaming: cfg.DisableStreaming,
+		ProviderName: cfg.SelectedProvider,
+		Model:        activeModel,
+		Mode:         cfg.Mode,
+		LogPath:      paths.LogPath,
 	}
 	chatAgent, err := o.AgentFactory(ctx, sd, chatterCfg)
 	if err != nil {
@@ -154,7 +154,11 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		}
 	}()
 
-	if err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic); err != nil {
+	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic)
+	if cleanupUI != nil {
+		defer cleanupUI()
+	}
+	if err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
@@ -203,35 +207,51 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer Capturer) error {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer ports.Capturer) (func(), error) {
 	cfg := sCfg.GetConfig()
-	o.setupUIRendering(chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
+	cleanup := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
-		return err
+		return cleanup, err
 	}
-	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
+	return cleanup, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer Capturer) {
+func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ports.Capturer) func() {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
-	bridge := newUIBridge(o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
+	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
 	chatAgent.Subscribe(bridge.handleEvent)
+	return bridge.Cleanup
 }
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
+	mu           sync.Mutex
+	ctx          context.Context
 	renderer     ports.UIRenderer
 	showThoughts bool
 	showTools    bool
 	rawOutput    bool
 	useColor     bool
 	logFile      string
+	stopSpinner  func()
+	isRendering  bool
+}
+
+// Cleanup stops any active spinner.
+func (b *uiBridge) Cleanup() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.stopSpinner != nil {
+		b.stopSpinner()
+		b.stopSpinner = nil
+	}
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
+func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
 	b := &uiBridge{
+		ctx:          ctx,
 		renderer:     renderer,
 		showThoughts: showThoughts,
 		showTools:    showTools,
@@ -250,15 +270,35 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
+		b.mu.Lock()
+		b.isRendering = false
+		b.mu.Unlock()
 		b.renderer.LogTurnStatus(ev.Status)
-	case events.ResponseStreamEvent:
-		ctx := b.ensureContext(ev.Context, "ResponseStreamEvent")
-		if ctx == nil {
-			ctx = context.Background()
+	case events.InferenceStartedEvent:
+		b.mu.Lock()
+		if !b.isRendering && b.stopSpinner == nil {
+			// Use the bridge's session/turn context instead of the event handler's context,
+			// which has a 5s timeout. This ensures the spinner stays alive.
+			b.stopSpinner = b.renderer.StartSpinner(b.ctx)
 		}
-		uiCh, uiFinalize := b.renderer.StreamResponse(ctx, b.showThoughts, b.rawOutput)
-		b.relayStream(ctx, ev.Stream, uiCh)
-		_ = uiFinalize()
+		b.mu.Unlock()
+	case events.RefiningStartedEvent:
+		b.mu.Lock()
+		if !b.isRendering && b.stopSpinner == nil {
+			b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
+		}
+		b.mu.Unlock()
+	case events.ResponseEvent:
+		b.mu.Lock()
+		b.isRendering = true
+		stop := b.stopSpinner
+		b.stopSpinner = nil
+		b.mu.Unlock()
+
+		if stop != nil {
+			stop()
+		}
+		b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
 	case events.UsageMetricsEvent:
 		ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
 		if ctx == nil {
@@ -270,7 +310,15 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	case events.ToolResultEvent:
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
 	case events.TurnStarted:
-		// Redundant log removed; session header fixed in renderer
+		b.mu.Lock()
+		stop := b.stopSpinner
+		b.stopSpinner = nil
+		b.isRendering = false
+		b.mu.Unlock()
+
+		if stop != nil {
+			stop()
+		}
 	case events.SystemMessageEvent:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
 	case events.StatusUpdate:
@@ -284,24 +332,6 @@ func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Conte
 		return context.Background()
 	}
 	return ctx
-}
-
-func (b *uiBridge) relayStream(ctx context.Context, stream <-chan *domain_llm.Content, uiCh chan<- *domain_llm.Content) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case c, ok := <-stream:
-			if !ok {
-				return
-			}
-			select {
-			case uiCh <- c:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}
 }
 
 // RunParams contains all parameters needed to execute a chat session.
@@ -323,7 +353,7 @@ type RunParams struct {
 	Prompt          string
 	Config          *config.Config
 	Deps            ports.SessionDependencies
-	Capturer        Capturer
+	Capturer        ports.Capturer
 }
 
 // Run is the high-level entry point for running a chat session.

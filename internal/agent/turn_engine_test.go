@@ -4,9 +4,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +22,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -63,12 +66,8 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	ctx := context.Background()
 
 	// Force tool calls to keep the loop going
-	env.gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content)
-		close(ch)
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "t"}}}}, &llm.Metrics{}, nil
-		}
+	env.gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "t"}}}}, &llm.Metrics{}, nil
 	}
 	e.executor.(*mockExecutor).ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 		return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "t"}}}}, nil
@@ -87,12 +86,14 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	t.Parallel()
 	var capturedEvents []string
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus(context.Background())
-	defer func() {
-		if err := bus.Shutdown(context.Background()); err != nil {
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := bus.Shutdown(ctx); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
-	}()
+	})
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -101,21 +102,18 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 			capturedEvents = append(capturedEvents, "TurnStarted")
 		case events.TurnStatusEvent:
 			capturedEvents = append(capturedEvents, "TurnStatusEvent")
-		case events.ResponseStreamEvent:
-			capturedEvents = append(capturedEvents, "ResponseStreamEvent")
+		case events.InferenceStartedEvent:
+			capturedEvents = append(capturedEvents, "InferenceStartedEvent")
+		case events.ResponseEvent:
+			capturedEvents = append(capturedEvents, "ResponseEvent")
 		case events.UsageMetricsEvent:
 			capturedEvents = append(capturedEvents, "UsageMetricsEvent")
 		}
 	})
 
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content, 1)
-			ch <- &llm.Content{Parts: []*llm.Part{{Text: "hello"}}}
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}, &llm.Metrics{PromptTokens: 100}, nil
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}, &llm.Metrics{PromptTokens: 100}, nil
 		},
 	}
 
@@ -137,11 +135,12 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	// Sequence:
 	// TurnStarted (phaseGuard)
 	// TurnStatusEvent (phaseInference Header)
-	// ResponseStreamEvent (phaseInference Start)
+	// InferenceStartedEvent (phaseInference Start)
+	// ResponseEvent (phaseInference End)
 	// UsageMetricsEvent (phaseInference End - WithMetrics)
 	// TurnStatusEvent (phaseInference End - WithStatusReporter)
 	// TurnStatusEvent (phasePersisting End - WithStatusReporter - Ready)
-	expected := []string{"TurnStarted", "TurnStatusEvent", "ResponseStreamEvent", "UsageMetricsEvent", "TurnStatusEvent", "TurnStatusEvent"}
+	expected := []string{"TurnStarted", "TurnStatusEvent", "InferenceStartedEvent", "ResponseEvent", "UsageMetricsEvent", "TurnStatusEvent", "TurnStatusEvent"}
 	mu.Lock()
 	defer mu.Unlock()
 	if len(capturedEvents) != len(expected) {
@@ -159,12 +158,8 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 		{
 			name: "History error in Persistence",
 			setup: func(gw *mockGateway, hm ports.HistoryManager) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-					ch := make(chan *llm.Content)
-					close(ch)
-					return ch, func() (*llm.Content, *llm.Metrics, error) {
-						return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "resp"}}}, &llm.Metrics{}, nil
-					}
+				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+					return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "resp"}}}, &llm.Metrics{}, nil
 				}
 				if h, ok := hm.(*mockHistoryManager); ok {
 					h.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
@@ -183,18 +178,14 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 		{
 			name: "Finalize error in Inference",
 			setup: func(gw *mockGateway, hm ports.HistoryManager) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-					ch := make(chan *llm.Content)
-					close(ch)
-					return ch, func() (*llm.Content, *llm.Metrics, error) {
-						return nil, nil, errors.New("finalize failed")
-					}
+				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+					return nil, nil, errors.New("generate failed")
 				}
 				if h, ok := hm.(*mockHistoryManager); ok {
 					h.AddContentFunc = func(ctx context.Context, content *llm.Content) error { return nil }
 				}
 			},
-			wantErr: "finalize failed",
+			wantErr: "generate failed",
 		},
 	}
 
@@ -214,7 +205,19 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 
 			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-			e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, events.NewSimpleEventBus(context.Background())), reg, events.NewSimpleEventBus(context.Background()), strategy)
+			bus1 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = bus1.Shutdown(ctx)
+			})
+			bus2 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = bus2.Shutdown(ctx)
+			})
+			e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 			strategy.SetLimits(1000, 5, 10)
 
 			err := e.Run(context.Background(), time.Now())
@@ -232,24 +235,20 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	t.Parallel()
 	turnCount := 0
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				turnCount++
-				if turnCount == 1 {
-					return &llm.Content{
-						Role: "model",
-						Parts: []*llm.Part{{
-							FunctionCall: &llm.FunctionCall{Name: "test_tool"},
-						}},
-					}, &llm.Metrics{}, nil
-				}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			turnCount++
+			if turnCount == 1 {
 				return &llm.Content{
-					Role:  "model",
-					Parts: []*llm.Part{{Text: "final response"}},
+					Role: "model",
+					Parts: []*llm.Part{{
+						FunctionCall: &llm.FunctionCall{Name: "test_tool"},
+					}},
 				}, &llm.Metrics{}, nil
 			}
+			return &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "final response"}},
+			}, &llm.Metrics{}, nil
 		},
 	}
 
@@ -269,7 +268,19 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, events.NewSimpleEventBus(context.Background())), reg, events.NewSimpleEventBus(context.Background()), strategy)
+	bus1 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus1.Shutdown(ctx)
+	})
+	bus2 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus2.Shutdown(ctx)
+	})
+	e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -286,12 +297,14 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background())
-	defer func() {
-		if err := bus.Shutdown(context.Background()); err != nil {
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := bus.Shutdown(ctx); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
-	}()
+	})
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -307,16 +320,12 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	})
 
 	attempts := 0
-	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content)
-		close(ch)
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			attempts++
-			if attempts < 3 {
-				return nil, nil, llm.ErrTransient
-			}
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		attempts++
+		if attempts < 3 {
+			return nil, nil, llm.ErrTransient
 		}
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 	}
 
 	cm := newTestContextManager(strategy, hManager, bus)
@@ -345,12 +354,14 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background())
-	defer func() {
-		if err := bus.Shutdown(context.Background()); err != nil {
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := bus.Shutdown(ctx); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
-	}()
+	})
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -366,10 +377,8 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	})
 
 	// Success for gateway
-	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		return closedChan(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}), func() (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
-		}
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 	}
 
 	attempts := 0
@@ -436,12 +445,8 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	}
 
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &mockToolRegistry{}
@@ -482,12 +487,14 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 
 	var capturedTime time.Time
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus(context.Background())
-	defer func() {
-		if err := bus.Shutdown(context.Background()); err != nil {
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := bus.Shutdown(ctx); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
-	}()
+	})
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if st, ok := e.(events.TurnStatusEvent); ok {
 			mu.Lock()
@@ -497,12 +504,8 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	})
 
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &mockToolRegistry{}
@@ -592,17 +595,13 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	attempts := 0
-	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content)
-		close(ch)
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			attempts++
-			if attempts < 2 {
-				// Return gateway transient error
-				return nil, nil, llm.ErrTransient
-			}
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		attempts++
+		if attempts < 2 {
+			// Return gateway transient error
+			return nil, nil, llm.ErrTransient
 		}
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 	}
 
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineClock(&mockClock{}))
@@ -627,14 +626,10 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	attempts := 0
-	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content)
-		close(ch)
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			attempts++
-			// Always return transient error
-			return nil, nil, llm.ErrTransient
-		}
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		attempts++
+		// Always return transient error
+		return nil, nil, llm.ErrTransient
 	}
 
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineClock(&mockClock{}))
@@ -656,12 +651,8 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 func TestTurnEngine_withEngineProcessor(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "custom"}}}, &llm.Metrics{}, nil
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "custom"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &mockToolRegistry{}
@@ -693,12 +684,8 @@ func TestTurnEngine_withEngineProcessor(t *testing.T) {
 func TestTurnEngine_Hooks(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &mockToolRegistry{}
@@ -729,12 +716,8 @@ func TestTurnEngine_Hooks(t *testing.T) {
 func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, errors.New("transient")
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, errors.New("transient")
 		},
 	}
 	reg := &mockToolRegistry{}
@@ -755,12 +738,8 @@ func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 func TestTurnEngine_StopSignal(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-			ch := make(chan *llm.Content)
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
-			}
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &mockToolRegistry{}
@@ -812,7 +791,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	// First turn: 1000 prompt tokens, 500 response tokens
 	// Second turn: 1000 prompt tokens, 500 response tokens
 	turnCount := 0
-	env.gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+	env.gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		turnCount++
 		content := &llm.Content{Role: "model"}
 		if turnCount == 1 {
@@ -820,9 +799,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 		} else {
 			content.Parts = []*llm.Part{{Text: "done"}}
 		}
-		return closedChan(content), func() (*llm.Content, *llm.Metrics, error) {
-			return content, &llm.Metrics{PromptTokens: 1000, ResponseTokens: 500}, nil
-		}
+		return content, &llm.Metrics{PromptTokens: 1000, ResponseTokens: 500}, nil
 	}
 
 	e.executor.(*mockExecutor).ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
@@ -864,37 +841,33 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 	turnIndex := 0
 	totalAttempts := 0
 
-	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content)
-		close(ch)
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			attemptsInTurn++
-			totalAttempts++
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		attemptsInTurn++
+		totalAttempts++
 
-			// turn 0: Fail twice, then tool call
-			if turnIndex == 0 {
-				if attemptsInTurn <= 2 {
-					return nil, nil, llm.ErrTransient
-				}
-				return &llm.Content{
-					Role:  "model",
-					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
-				}, &llm.Metrics{}, nil
+		// turn 0: Fail twice, then tool call
+		if turnIndex == 0 {
+			if attemptsInTurn <= 2 {
+				return nil, nil, llm.ErrTransient
 			}
-
-			// turn 1: Fail twice, then success
-			if turnIndex == 1 {
-				if attemptsInTurn <= 2 {
-					return nil, nil, llm.ErrTransient
-				}
-				return &llm.Content{
-					Role:  "model",
-					Parts: []*llm.Part{{Text: "done"}},
-				}, &llm.Metrics{}, nil
-			}
-
-			return nil, nil, fmt.Errorf("unexpected turn")
+			return &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
+			}, &llm.Metrics{}, nil
 		}
+
+		// turn 1: Fail twice, then success
+		if turnIndex == 1 {
+			if attemptsInTurn <= 2 {
+				return nil, nil, llm.ErrTransient
+			}
+			return &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "done"}},
+			}, &llm.Metrics{}, nil
+		}
+
+		return nil, nil, fmt.Errorf("unexpected turn")
 	}
 
 	mockEx := &mockExecutor{
@@ -936,7 +909,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 			name:      "Calls across exactly 2 turns",
 			toolLimit: 10, // Higher than loop threshold to avoid MaxTurnsReached
 			setupGateway: func(gw *mockGateway, turnCount *int) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 					*turnCount++
 					content := &llm.Content{Role: "model"}
 					if *turnCount <= 2 {
@@ -950,11 +923,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 					} else {
 						content.Parts = []*llm.Part{{Text: "final response"}}
 					}
-					ch := make(chan *llm.Content)
-					close(ch)
-					return ch, func() (*llm.Content, *llm.Metrics, error) {
-						return content, &llm.Metrics{}, nil
-					}
+					return content, &llm.Metrics{}, nil
 				}
 			},
 			setupExecutor: func(ex *mockExecutor, turnIndex *int) {
@@ -970,7 +939,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 			name:      "Calls hitting limit within a single turn",
 			toolLimit: 10,
 			setupGateway: func(gw *mockGateway, turnCount *int) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 					*turnCount++
 					content := &llm.Content{Role: "model"}
 					if *turnCount == 1 {
@@ -985,11 +954,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 					} else {
 						content.Parts = []*llm.Part{{Text: "final response"}}
 					}
-					ch := make(chan *llm.Content)
-					close(ch)
-					return ch, func() (*llm.Content, *llm.Metrics, error) {
-						return content, &llm.Metrics{}, nil
-					}
+					return content, &llm.Metrics{}, nil
 				}
 			},
 		},
@@ -997,7 +962,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 			name:      "Different tools sharing session-level counter",
 			toolLimit: 10,
 			setupGateway: func(gw *mockGateway, turnCount *int) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 					*turnCount++
 					content := &llm.Content{Role: "model"}
 					switch *turnCount {
@@ -1023,11 +988,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 					default:
 						content.Parts = []*llm.Part{{Text: "final response"}}
 					}
-					ch := make(chan *llm.Content)
-					close(ch)
-					return ch, func() (*llm.Content, *llm.Metrics, error) {
-						return content, &llm.Metrics{}, nil
-					}
+					return content, &llm.Metrics{}, nil
 				}
 			},
 			setupExecutor: func(ex *mockExecutor, turnIndex *int) {
@@ -1044,7 +1005,12 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			bus := events.NewSimpleEventBus(context.Background())
+			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = bus.Shutdown(ctx)
+			})
 			reg := &mockToolRegistry{}
 			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 			hManager := &mockHistoryManager{}
@@ -1092,7 +1058,12 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 
@@ -1109,18 +1080,11 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	mockGw.GenerateFunc = func(c context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content, 1)
-		// Simulate partial response before cancellation
-		ch <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "partial"}}}
-
+	mockGw.GenerateFunc = func(c context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		// Cancel the context to simulate interruption
 		cancel()
 
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			// Even though canceled, the gateway should return what it got so far
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "partial response"}}}, &llm.Metrics{}, context.Canceled
-		}
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "partial response"}}}, &llm.Metrics{}, context.Canceled
 	}
 
 	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy)
@@ -1149,7 +1113,12 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 
 func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	tracker := &mockEngineCostTracker{}
 	reg := &mockToolRegistry{}
 	hManager := &mockHistoryManager{}
@@ -1291,6 +1260,9 @@ func (m *mockBlockingClock) After(d time.Duration) <-chan time.Time {
 	}
 	return m.afterChan
 }
+func (m *mockBlockingClock) NewTicker(d time.Duration) clock.Ticker {
+	return mockTicker{c: m.afterChan}
+}
 func (m *mockBlockingClock) Jitter(base float64) float64 { return base }
 
 func TestTurnEngine_ContextCancellation(t *testing.T) {
@@ -1420,5 +1392,99 @@ func TestTurnEngine_ExecuteTurn_Publish_Error(t *testing.T) {
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled error from executeTurn, got: %v", err)
+	}
+}
+
+func TestTurnEngine_InvokeModel_SafePublish_ErrorLogging(t *testing.T) {
+	t.Parallel()
+	env := setupTurnEngineTest(t)
+
+	// Use a mock logger to capture logs
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	// mockBus that returns error on Publish
+	mockBus := &inframock.TestEventBus{}
+	mockBus.SetPublishErr(errors.New("bus full"))
+
+	e := newTurnEngine(env.gw, nil, env.cm, env.reg, mockBus, env.cm.Strategy, withEngineLogger(logger))
+
+	turn := e.createTurn(0, time.Now())
+	turn.State.PreparedHistory = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hi"}}}}
+
+	env.gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "resp"}}}, &llm.Metrics{}, nil
+	}
+
+	p := &inferenceStep{}
+	_, _, _ = p.invokeModel(context.Background(), turn)
+
+	// Verify log contains the error message
+	if !strings.Contains(logBuf.String(), "Failed to publish ResponseEvent") {
+		t.Errorf("expected log to contain 'Failed to publish ResponseEvent', got %q", logBuf.String())
+	}
+}
+
+func TestTurnEngine_Retry_EventSequence(t *testing.T) {
+	t.Parallel()
+	var capturedEvents []string
+	var mu sync.Mutex
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch e := e.(type) {
+		case events.InferenceStartedEvent:
+			capturedEvents = append(capturedEvents, "InferenceStartedEvent")
+		case events.RefiningStartedEvent:
+			capturedEvents = append(capturedEvents, "RefiningStartedEvent")
+		case events.SystemMessageEvent:
+			if e.Level == "warn" {
+				capturedEvents = append(capturedEvents, "SystemMessageEvent")
+			}
+		}
+	})
+
+	attempts := 0
+	mockGw := &mockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			attempts++
+			if attempts == 1 {
+				return nil, nil, llm.ErrTransient
+			}
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+		},
+	}
+
+	reg := &mockToolRegistry{}
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
+	hManager := &mockHistoryManager{}
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, withEngineClock(&mockClock{}))
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	_ = bus.Flush(context.Background())
+
+	// Expected sequence:
+	// 1. InferenceStartedEvent (first attempt)
+	// 2. SystemMessageEvent (retry notice)
+	// 3. RefiningStartedEvent (fired in attemptRetry after wait)
+	// 4. InferenceStartedEvent (second attempt in inferenceStep)
+	expected := []string{"InferenceStartedEvent", "SystemMessageEvent", "RefiningStartedEvent", "InferenceStartedEvent"}
+	mu.Lock()
+	defer mu.Unlock()
+	if !assert.Equal(t, expected, capturedEvents) {
+		t.Errorf("expected sequence %v, got %v", expected, capturedEvents)
 	}
 }

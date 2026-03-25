@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -22,7 +23,12 @@ func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 
 	// Create a cancelled context to force applyConfig to fail
 	ctx, cancel := context.WithCancel(context.Background())

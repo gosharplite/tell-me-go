@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -105,12 +106,19 @@ func TestNewChatter(t *testing.T) {
 		t.Fatalf("failed to create skills dir: %v", err)
 	}
 
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
+
 	deps := &mockSessionDeps{
 		gw:       &mockGateway{},
 		hManager: &mockHistoryManager{},
 		reg:      &mockRegistry{},
 		sm:       &mockSecurityManager{},
-		bus:      events.NewSimpleEventBus(context.Background()),
+		bus:      bus,
 		paths: &persistence.Paths{
 			ModeDir: modeDir,
 		},

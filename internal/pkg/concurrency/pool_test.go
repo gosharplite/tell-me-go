@@ -16,7 +16,7 @@ func TestWorkerPool_BoundaryConditions(t *testing.T) {
 	t.Run("ZeroWorkers", func(t *testing.T) {
 		t.Parallel()
 		p := NewWorkerPool(0)
-		defer p.Shutdown()
+		t.Cleanup(p.Shutdown)
 
 		if p.maxWorkers != 1 {
 			t.Errorf("Expected maxWorkers to be 1 when initialized with 0, got %d", p.maxWorkers)
@@ -41,7 +41,7 @@ func TestWorkerPool_BoundaryConditions(t *testing.T) {
 	t.Run("NegativeWorkers", func(t *testing.T) {
 		t.Parallel()
 		p := NewWorkerPool(-5)
-		defer p.Shutdown()
+		t.Cleanup(p.Shutdown)
 
 		if p.maxWorkers != 1 {
 			t.Errorf("Expected maxWorkers to be 1 when initialized with negative value, got %d", p.maxWorkers)
@@ -159,7 +159,7 @@ func TestWorkerPool_Concurrency(t *testing.T) {
 	numWorkers := 5
 	numTasks := 20
 	p := NewWorkerPool(numWorkers)
-	defer p.Shutdown()
+	t.Cleanup(p.Shutdown)
 
 	var wg sync.WaitGroup
 	wg.Add(numTasks)

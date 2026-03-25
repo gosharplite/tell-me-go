@@ -51,8 +51,7 @@ type Config struct {
 	MaxConcurrentTools int                    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
 	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
 	HTTPTimeoutSeconds int                    `yaml:"HTTP_TIMEOUT"`         // LLM Client timeout
-	DisableStreaming   bool                   `yaml:"DISABLE_STREAMING"`
-	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
+	Models             map[string]ModelConfig `yaml:"MODELS"`               // Model-specific overrides
 	SelectedProvider   string                 `yaml:"SELECTED_PROVIDER"`
 	Providers          map[string]LLMProvider `yaml:"PROVIDERS"`
 }

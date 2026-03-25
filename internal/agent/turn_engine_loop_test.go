@@ -20,7 +20,12 @@ import (
 
 func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	counter := &orchestration.HeuristicTokenCounter{}
@@ -44,39 +49,23 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 	// Sequence of responses: A -> B -> A
 	// turn 0: returns "A"
-	ch0 := make(chan *llm.Content, 1)
-	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
-	close(ch0)
+	resp0 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
 
 	// turn 1: returns "B"
-	ch1 := make(chan *llm.Content, 1)
-	ch1 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
-	close(ch1)
+	resp1 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
 
 	// turn 2: returns "A" again
-	ch2 := make(chan *llm.Content, 1)
-	ch2 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
-	close(ch2)
+	resp2 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
 
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch0, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}, &llm.Metrics{}, nil
-	}).Once()
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp0, &llm.Metrics{}, nil).Once()
 
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch1, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}, &llm.Metrics{}, nil
-	}).Once()
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp1, &llm.Metrics{}, nil).Once()
 
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch2, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}, &llm.Metrics{}, nil
-	}).Once()
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp2, &llm.Metrics{}, nil).Once()
 
 	// turn 3: final response after loop breaker
-	ch3 := make(chan *llm.Content, 1)
-	ch3 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response C"}}}
-	close(ch3)
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch3, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response C"}}}, &llm.Metrics{}, nil
-	}).Once()
+	resp3 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response C"}}}
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp3, &llm.Metrics{}, nil).Once()
 
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil)
 
@@ -97,7 +86,12 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	counter := &orchestration.HeuristicTokenCounter{}
@@ -121,39 +115,23 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 
 	// Sequence of tool-only responses: Tool A -> Tool B -> Tool A
 	// turn 0: returns Tool A
-	ch0 := make(chan *llm.Content, 1)
-	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
-	close(ch0)
+	resp0 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
 
 	// turn 1: returns Tool B
-	ch1 := make(chan *llm.Content, 1)
-	ch1 <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_b"}}}}
-	close(ch1)
+	resp1 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_b"}}}}
 
 	// turn 2: returns Tool A again
-	ch2 := make(chan *llm.Content, 1)
-	ch2 <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
-	close(ch2)
+	resp2 := &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
 
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch0, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}, &llm.Metrics{}, nil
-	}).Once()
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp0, &llm.Metrics{}, nil).Once()
 
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch1, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_b"}}}}, &llm.Metrics{}, nil
-	}).Once()
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp1, &llm.Metrics{}, nil).Once()
 
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch2, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}, &llm.Metrics{}, nil
-	}).Once()
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp2, &llm.Metrics{}, nil).Once()
 
 	// turn 3: final response after loop breaker
-	ch3 := make(chan *llm.Content, 1)
-	ch3 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response Final"}}}
-	close(ch3)
-	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch3, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response Final"}}}, &llm.Metrics{}, nil
-	}).Once()
+	resp3 := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response Final"}}}
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(resp3, &llm.Metrics{}, nil).Once()
 
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "result"}}}, nil)
 

@@ -4,7 +4,6 @@
 package openai
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -58,18 +57,12 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 }
 
 type chatRequest struct {
-	Model               string         `json:"model"`
-	Messages            []message      `json:"messages"`
-	Tools               []tool         `json:"tools,omitempty"`
-	MaxTokens           int            `json:"max_tokens,omitempty"`
-	MaxCompletionTokens int            `json:"max_completion_tokens,omitempty"`
-	ReasoningEffort     string         `json:"reasoning_effort,omitempty"`
-	Stream              bool           `json:"stream,omitempty"`
-	StreamOptions       *streamOptions `json:"stream_options,omitempty"`
-}
-
-type streamOptions struct {
-	IncludeUsage bool `json:"include_usage"`
+	Model               string    `json:"model"`
+	Messages            []message `json:"messages"`
+	Tools               []tool    `json:"tools,omitempty"`
+	MaxTokens           int       `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int       `json:"max_completion_tokens,omitempty"`
+	ReasoningEffort     string    `json:"reasoning_effort,omitempty"`
 }
 
 type message struct {
@@ -144,7 +137,7 @@ type completionTokensDetails struct {
 
 // prepareChatRequest constructs the chat request payload.
 // It returns an error if message conversion or JSON serialization fails.
-func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, stream bool) (*chatRequest, error) {
+func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
 	messages, err := c.toOpenAIMessages(ctx, history, resolver)
 	if err != nil {
 		return nil, err
@@ -154,7 +147,6 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 		Model:    c.model,
 		Messages: messages,
 		Tools:    c.toOpenAITools(toolDecls),
-		Stream:   stream,
 	}
 
 	// OpenAI reasoning models (o1, o3, gpt-5) use 'max_completion_tokens' instead of 'max_tokens'
@@ -172,17 +164,10 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 		reqPayload.MaxTokens = c.thinkingBudget
 	}
 
-	// DeepSeek and some other providers do not support stream_options
-	if stream && !strings.Contains(c.model, "deepseek") {
-		reqPayload.StreamOptions = &streamOptions{
-			IncludeUsage: true,
-		}
-	}
-
 	return &reqPayload, nil
 }
 
-func (c *client) createHTTPRequest(ctx context.Context, payload interface{}, stream bool) (*http.Request, error) {
+func (c *client) createHTTPRequest(ctx context.Context, payload interface{}) (*http.Request, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -194,9 +179,6 @@ func (c *client) createHTTPRequest(ctx context.Context, payload interface{}, str
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if stream {
-		req.Header.Set("Accept", "text/event-stream")
-	}
 
 	// Apply custom headers
 	for k, v := range c.headers {
@@ -216,11 +198,11 @@ func (c *client) createHTTPRequest(ctx context.Context, payload interface{}, str
 }
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, resolver, false)
+	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, resolver)
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := c.createHTTPRequest(ctx, reqPayload, false)
+	req, err := c.createHTTPRequest(ctx, reqPayload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -556,229 +538,6 @@ func (c *client) parseResponseToolCalls(toolCalls []toolCall, content *llm.Conte
 		})
 	}
 	return nil
-}
-
-type toolCallState struct {
-	id   string
-	name string
-	args strings.Builder
-}
-
-type streamChunk struct {
-	Choices []struct {
-		Delta delta `json:"delta"`
-	} `json:"choices"`
-	Usage *usage `json:"usage"`
-	Error *struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-	} `json:"error"`
-}
-
-type delta struct {
-	Content          string `json:"content,omitempty"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
-	ToolCalls        []struct {
-		Index    int    `json:"index"`
-		ID       string `json:"id,omitempty"`
-		Function struct {
-			Name      string `json:"name,omitempty"`
-			Arguments string `json:"arguments,omitempty"`
-		} `json:"function,omitempty"`
-	} `json:"tool_calls,omitempty"`
-}
-
-func (c *client) processStreamChunk(data []byte, toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) (*llm.Metrics, error) {
-	var chunk streamChunk
-	if err := json.Unmarshal(data, &chunk); err != nil {
-		return nil, nil // Ignore malformed JSON in stream
-	}
-
-	if chunk.Error != nil {
-		return nil, fmt.Errorf("api error: %s (%s)", chunk.Error.Message, chunk.Error.Type)
-	}
-
-	var metrics *llm.Metrics
-	if chunk.Usage != nil {
-		metrics = &llm.Metrics{
-			Model:          c.model,
-			PromptTokens:   chunk.Usage.PromptTokens,
-			ResponseTokens: chunk.Usage.CompletionTokens,
-			TotalTokens:    chunk.Usage.TotalTokens,
-		}
-		if chunk.Usage.PromptTokensDetails != nil {
-			metrics.CachedTokens = chunk.Usage.PromptTokensDetails.CachedTokens
-		}
-		if chunk.Usage.PromptCacheHitTokens > 0 {
-			metrics.CachedTokens = chunk.Usage.PromptCacheHitTokens
-		}
-		if chunk.Usage.CompletionTokensDetails != nil {
-			metrics.ThinkingTokens = chunk.Usage.CompletionTokensDetails.ReasoningTokens
-		}
-	}
-
-	if len(chunk.Choices) > 0 {
-		d := chunk.Choices[0].Delta
-		c.handleDeltaContent(d, callback)
-		c.handleDeltaToolCalls(d, toolCallsByIndex)
-	}
-
-	return metrics, nil
-}
-
-func (c *client) handleDeltaContent(d delta, callback func(*llm.Content)) {
-	if d.Content != "" || d.ReasoningContent != "" {
-		update := &llm.Content{Role: "model"}
-		if d.Content != "" {
-			update.Parts = append(update.Parts, &llm.Part{Text: d.Content})
-		}
-		if d.ReasoningContent != "" {
-			update.Parts = append(update.Parts, &llm.Part{Text: d.ReasoningContent, IsThought: true})
-		}
-		update.Validate()
-		callback(update)
-	}
-}
-
-func (c *client) handleDeltaToolCalls(d delta, toolCallsByIndex map[int]*toolCallState) {
-	for _, tc := range d.ToolCalls {
-		state, ok := toolCallsByIndex[tc.Index]
-		if !ok {
-			state = &toolCallState{}
-			toolCallsByIndex[tc.Index] = state
-		}
-		if tc.ID != "" {
-			state.id = tc.ID
-		}
-		if tc.Function.Name != "" {
-			state.name = tc.Function.Name
-		}
-		if tc.Function.Arguments != "" {
-			state.args.WriteString(tc.Function.Arguments)
-		}
-	}
-}
-
-// emitToolCalls sends accumulated tool calls back through the callback.
-// It returns an error if tool arguments cannot be unmarshalled from the accumulated buffer.
-func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) error {
-	if len(toolCallsByIndex) == 0 {
-		return nil
-	}
-	finalContent := &llm.Content{
-		Role:  "model",
-		Parts: make([]*llm.Part, 0, len(toolCallsByIndex)),
-	}
-	// Sort by index to maintain order
-	for i := 0; i < len(toolCallsByIndex); i++ {
-		if state, ok := toolCallsByIndex[i]; ok && state.name != "" {
-			var args map[string]interface{}
-			if err := json.Unmarshal([]byte(state.args.String()), &args); err != nil {
-				return fmt.Errorf("failed to unmarshal tool arguments: %w", err)
-			}
-			finalContent.Parts = append(finalContent.Parts, &llm.Part{
-				FunctionCall: &llm.FunctionCall{
-					ID:   state.id,
-					Name: state.name,
-					Args: args,
-				},
-			})
-		}
-	}
-	if len(finalContent.Parts) > 0 {
-		finalContent.Validate()
-		callback(finalContent)
-	}
-	return nil
-}
-
-func (c *client) executeStreamRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*http.Response, error) {
-	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, resolver, true)
-	if err != nil {
-		return nil, err
-	}
-	req, err := c.createHTTPRequest(ctx, reqPayload, true)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		// Function-scoped defer: executes when this function returns,
-		// safely protecting against panics inside io.ReadAll.
-		defer func() {
-			_ = resp.Body.Close()
-		}()
-
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
-		}
-		return nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
-	}
-	return resp, nil
-}
-
-func (c *client) scanStream(scanner *bufio.Scanner, toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) (*llm.Metrics, error) {
-	var metrics *llm.Metrics
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
-
-		chunkMetrics, err := c.processStreamChunk([]byte(data), toolCallsByIndex, callback)
-		if err != nil {
-			return metrics, err
-		}
-		if chunkMetrics != nil {
-			metrics = chunkMetrics
-		}
-	}
-	return metrics, scanner.Err()
-}
-
-func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	resp, err := c.executeStreamRequest(ctx, history, toolDecls, resolver)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	startTime := time.Now()
-	toolCallsByIndex := make(map[int]*toolCallState)
-	scanner := bufio.NewScanner(resp.Body)
-	// Use a 1MB max buffer size
-	const maxCapacity = 1024 * 1024
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, maxCapacity)
-
-	metrics, err := c.scanStream(scanner, toolCallsByIndex, callback)
-
-	if emitErr := c.emitToolCalls(toolCallsByIndex, callback); emitErr != nil {
-		return metrics, emitErr
-	}
-
-	if metrics != nil {
-		metrics.Duration = time.Since(startTime).Seconds()
-	}
-
-	if err != nil {
-		return metrics, fmt.Errorf("stream error: %w", err)
-	}
-
-	return metrics, nil
 }
 
 func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
