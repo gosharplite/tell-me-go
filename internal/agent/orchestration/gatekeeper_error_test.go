@@ -155,9 +155,9 @@ func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, ...p
 
 type mockFailingUIRenderer struct{}
 
-func (m *mockFailingUIRenderer) SetUseColor(bool)                                                  {}
-func (m *mockFailingUIRenderer) SetForceSpinner(bool)                                              {}
-func (m *mockFailingUIRenderer) LogTurnStatus(events.TurnStatus)                                   {}
+func (m *mockFailingUIRenderer) SetUseColor(bool)                        {}
+func (m *mockFailingUIRenderer) SetForceSpinner(bool)                    {}
+func (m *mockFailingUIRenderer) LogTurnStatus(events.TurnStatus)         {}
 func (m *mockFailingUIRenderer) StartSpinner(ctx context.Context) func() { return func() {} }
 func (m *mockFailingUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
 	return func() {}

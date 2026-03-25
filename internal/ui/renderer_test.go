@@ -652,30 +652,30 @@ func TestStartSpinner_Synchronization(t *testing.T) {
 
 	// Start spinner
 	stop := r.StartSpinner(context.Background())
-	
+
 	// Call stop
 	stop()
-	
+
 	// Immediately write to "stdout" (the same buffer)
 	_, _ = fmt.Fprint(&combined, "Response")
-	
+
 	output := combined.String()
-	
+
 	// Expected sequence:
 	// 1. Spinner frame (\r...)
 	// 2. Clear sequence (\r\033[2K)
 	// 3. "Response"
-	
+
 	clearIdx := strings.LastIndex(output, termClearLine)
 	respIdx := strings.Index(output, "Response")
-	
+
 	if clearIdx == -1 {
 		t.Fatal("clear sequence not found")
 	}
 	if respIdx == -1 {
 		t.Fatal("Response not found")
 	}
-	
+
 	if respIdx < clearIdx {
 		t.Errorf("Response appeared BEFORE clear sequence: %q", output)
 	}

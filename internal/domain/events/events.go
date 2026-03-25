@@ -535,4 +535,4 @@ func (e SystemMessageEvent) Type() string     { return "SystemMessageEvent" }
 func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" }
 func (e SummarizationRequired) Type() string  { return "SummarizationRequired" }
 func (e TraceEvent) Type() string             { return "TraceEvent" }
-func (e RefiningStartedEvent) Type() string  { return "RefiningStartedEvent" }
+func (e RefiningStartedEvent) Type() string   { return "RefiningStartedEvent" }

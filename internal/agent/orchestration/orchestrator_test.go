@@ -937,7 +937,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	// First attempt
 	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
-	
+
 	// Response (e.g. error)
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
 	bridge.handleEvent(context.Background(), events.ResponseEvent{

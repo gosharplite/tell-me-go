@@ -59,4 +59,3 @@ type realTicker struct {
 func (rt realTicker) C() <-chan time.Time {
 	return rt.Ticker.C
 }
-

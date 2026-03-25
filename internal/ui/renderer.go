@@ -379,7 +379,6 @@ func (r *stdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 	}
 }
 
-
 func (r *stdUIRenderer) renderThoughtLocked(ui uiState, part *llm.Part, showThoughts bool) {
 	if showThoughts && (part.IsThought || len(part.ThoughtSignature) > 0) {
 		ts := ui.getTimestamp()
@@ -393,7 +392,6 @@ func (r *stdUIRenderer) renderThoughtLocked(ui uiState, part *llm.Part, showThou
 		_, _ = fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", ui.c(colorGray), ts, sanitized, ui.c(colorReset))
 	}
 }
-
 
 func (r *stdUIRenderer) renderTextLocked(ui uiState, part *llm.Part, raw bool) {
 	if part.Text != "" && !part.IsThought {
@@ -409,7 +407,6 @@ func (r *stdUIRenderer) renderTextLocked(ui uiState, part *llm.Part, raw bool) {
 		}
 	}
 }
-
 
 func (r *stdUIRenderer) renderInlineDataLocked(ui uiState, part *llm.Part) {
 	if part.InlineData != nil {
@@ -455,7 +452,7 @@ func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status strin
 	stopFunc := func() {
 		stopOnce.Do(func() {
 			close(done) // Triggers the goroutine to exit
-			<-waitDone   // Wait for the goroutine to finish clearing the indicator
+			<-waitDone  // Wait for the goroutine to finish clearing the indicator
 		})
 	}
 
