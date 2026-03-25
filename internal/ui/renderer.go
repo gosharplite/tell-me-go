@@ -419,6 +419,7 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	idx := 0
 	startTime := r.nowSafe()
 	done := make(chan struct{})
+	waitDone := make(chan struct{})
 
 	// Draw the first frame synchronously to avoid 200ms delay.
 	r.updateIndicatorFrame(ui, frames, &idx, startTime)
@@ -427,12 +428,13 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	stopFunc := func() {
 		stopOnce.Do(func() {
 			close(done) // Triggers the goroutine to exit
+			<-waitDone   // Wait for the goroutine to finish clearing the indicator
 		})
 	}
 
 	go func() {
+		defer close(waitDone)
 		// Guaranteed cleanup on exit
-		defer stopFunc()
 		defer r.clearLoadingIndicator(ui, false)
 
 		for {

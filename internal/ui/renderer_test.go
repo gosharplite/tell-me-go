@@ -614,3 +614,41 @@ func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
 		}
 	})
 }
+
+func TestStartSpinner_Synchronization(t *testing.T) {
+	var combined bytes.Buffer
+	locker := &mockLocker{}
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &combined, &combined, mc).(*stdUIRenderer)
+	r.SetForceSpinner(true)
+
+	// Start spinner
+	stop := r.StartSpinner(context.Background())
+	
+	// Call stop
+	stop()
+	
+	// Immediately write to "stdout" (the same buffer)
+	_, _ = fmt.Fprint(&combined, "Response")
+	
+	output := combined.String()
+	
+	// Expected sequence:
+	// 1. Spinner frame (\r...)
+	// 2. Clear sequence (\r\033[2K)
+	// 3. "Response"
+	
+	clearIdx := strings.LastIndex(output, termClearLine)
+	respIdx := strings.Index(output, "Response")
+	
+	if clearIdx == -1 {
+		t.Fatal("clear sequence not found")
+	}
+	if respIdx == -1 {
+		t.Fatal("Response not found")
+	}
+	
+	if respIdx < clearIdx {
+		t.Errorf("Response appeared BEFORE clear sequence: %q", output)
+	}
+}
