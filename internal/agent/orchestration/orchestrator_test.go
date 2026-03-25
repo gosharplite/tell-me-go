@@ -157,7 +157,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 
 func TestUIBridge_HandleEvent(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	tests := []struct {
 		name  string
@@ -256,7 +256,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 
 func TestUIBridge_EnsureContext(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	t.Run("Returns existing context", func(t *testing.T) {
 		type contextKey string
@@ -757,7 +757,7 @@ func TestRun_Routing(t *testing.T) {
 
 func TestUIBridge_Concurrency(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	// Setup mocks with Maybe() to handle concurrent calls safely
 	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Maybe()
@@ -827,7 +827,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 
 func TestUIBridge_LogicalRace(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	mRenderer.On("StartSpinner", mock.Anything).Return(func() {})
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
@@ -857,7 +857,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 
 func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	var spinnerStopped bool
 	mRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })

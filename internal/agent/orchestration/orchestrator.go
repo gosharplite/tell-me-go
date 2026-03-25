@@ -205,23 +205,24 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 
 func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer Capturer) error {
 	cfg := sCfg.GetConfig()
-	o.setupUIRendering(chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
+	o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return err
 	}
 	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer Capturer) {
+func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer Capturer) {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
-	bridge := newUIBridge(o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
+	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
 	chatAgent.Subscribe(bridge.handleEvent)
 }
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
 	mu           sync.Mutex
+	ctx          context.Context
 	renderer     ports.UIRenderer
 	showThoughts bool
 	showTools    bool
@@ -233,8 +234,9 @@ type uiBridge struct {
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
+func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
 	b := &uiBridge{
+		ctx:          ctx,
 		renderer:     renderer,
 		showThoughts: showThoughts,
 		showTools:    showTools,
@@ -257,7 +259,9 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	case events.InferenceStartedEvent:
 		b.mu.Lock()
 		if !b.isRendering {
-			b.stopSpinner = b.renderer.StartSpinner(ctx)
+			// Use the bridge's session/turn context instead of the event handler's context,
+			// which has a 5s timeout. This ensures the spinner stays alive.
+			b.stopSpinner = b.renderer.StartSpinner(b.ctx)
 		}
 		b.mu.Unlock()
 	case events.ResponseEvent:
