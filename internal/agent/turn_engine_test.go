@@ -1379,15 +1379,15 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	var capturedEvents []string
 	var mu sync.Mutex
 	bus := events.NewSimpleEventBus(context.Background())
-	defer bus.Shutdown(context.Background())
+	defer func() { _ = bus.Shutdown(context.Background()) }()
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		switch e.(type) {
+		switch e := e.(type) {
 		case events.InferenceStartedEvent:
 			capturedEvents = append(capturedEvents, "InferenceStartedEvent")
 		case events.SystemMessageEvent:
-			if sme, ok := e.(events.SystemMessageEvent); ok && sme.Level == "warn" {
+			if e.Level == "warn" {
 				capturedEvents = append(capturedEvents, "SystemMessageEvent")
 			}
 		}
