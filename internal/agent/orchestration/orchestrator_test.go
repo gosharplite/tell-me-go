@@ -854,3 +854,21 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 		bridge.stopSpinner()
 	}
 }
+
+func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
+
+	var spinnerStopped bool
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+
+	// Start Inference
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+
+	// Force new turn before ResponseEvent arrives (Simulates an abort/reset)
+	bridge.handleEvent(context.Background(), events.TurnStarted{})
+
+	if !spinnerStopped {
+		t.Error("Expected stopSpinner to be called during TurnStarted to prevent resource leaks")
+	}
+}

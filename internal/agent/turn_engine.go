@@ -526,20 +526,20 @@ func (p *inferenceStep) process(ctx context.Context, turn *turn) (processResult,
 	return p.routeBasedOnContent(respContent), nil
 }
 
-func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
+func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (respContent *llm.Content, metrics *llm.Metrics, err error) {
 	_ = events.SafePublish(ctx, turn.Events, events.InferenceStartedEvent{})
 
-	history := turn.State.PreparedHistory
-	respContent, metrics, err := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
+	defer func() {
+		safeContent := respContent
+		if safeContent == nil {
+			safeContent = &llm.Content{Role: "model"}
+		}
+		// Detach context to ensure the UI ALWAYS receives the stop signal even on timeout
+		stopCtx := context.WithoutCancel(ctx)
+		_ = events.SafePublish(stopCtx, turn.Events, events.ResponseEvent{Content: safeContent})
+	}()
 
-	// Guarantee the spinner is stopped by publishing the event regardless of error.
-	// If respContent is nil due to failure, supply an empty Content to avoid panics down the chain.
-	safeContent := respContent
-	if safeContent == nil {
-		safeContent = &llm.Content{Role: "model"}
-	}
-	_ = events.SafePublish(ctx, turn.Events, events.ResponseEvent{Content: safeContent})
-
+	respContent, metrics, err = turn.Gateway.Generate(ctx, turn.State.PreparedHistory, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
 	if err != nil {
 		return respContent, metrics, err
 	}

@@ -281,6 +281,10 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
 	case events.TurnStarted:
 		b.mu.Lock()
+		if b.stopSpinner != nil {
+			b.stopSpinner()
+			b.stopSpinner = nil
+		}
 		b.isRendering = false
 		b.mu.Unlock()
 	case events.SystemMessageEvent:
