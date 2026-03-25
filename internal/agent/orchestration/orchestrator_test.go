@@ -944,14 +944,8 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 		Content: &llm.Content{},
 	})
 
-	// TurnStatusEvent happens after the inference step (fired by WithStatusReporter middleware)
-	mRenderer.On("LogTurnStatus", mock.Anything).Return().Once()
-	bridge.handleEvent(context.Background(), events.TurnStatusEvent{
-		Status: events.TurnStatus{IsPostCall: true},
-	})
-
 	// Second attempt (Retry)
-	// Now this SHOULD be called because TurnStatusEvent reset isRendering.
+	// Now this SHOULD be called because RefiningStartedEvent resets isRendering.
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
 

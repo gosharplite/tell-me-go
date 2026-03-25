@@ -6,9 +6,17 @@ package llmerr
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+var (
+	reRateLimit = regexp.MustCompile(`(?i)(HTTP 429|STATUS: 429|RATE_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|QUOTA|RESOURCE EXHAUSTED)`)
+	reTransient = regexp.MustCompile(`(?i)(HTTP 50[0234]|STATUS: 50[0234]|INTERNAL_SERVER_ERROR|INTERNAL SERVER ERROR|BAD_GATEWAY|BAD GATEWAY|SERVICE_UNAVAILABLE|SERVICE UNAVAILABLE|GATEWAY_TIMEOUT|GATEWAY TIMEOUT|DEADLINE_EXCEEDED|UNAVAILABLE|(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[_ ]TIMEOUT)`)
 )
 
 // APIError represents an error returned by an LLM provider's API.
@@ -40,6 +48,10 @@ func Classify(err error) error {
 		return wrapped
 	}
 
+	if wrapped, ok := classifyGRPC(err); ok {
+		return wrapped
+	}
+
 	if wrapped, ok := classifyHTTP(err); ok {
 		return wrapped
 	}
@@ -55,6 +67,23 @@ func Classify(err error) error {
 func classifyDomain(err error) (error, bool) {
 	if errors.Is(err, llm.ErrAuth) || errors.Is(err, llm.ErrTransient) || errors.Is(err, llm.ErrTerminal) || errors.Is(err, llm.ErrRateLimit) {
 		return err, true
+	}
+	return nil, false
+}
+
+func classifyGRPC(err error) (error, bool) {
+	if s, ok := status.FromError(err); ok {
+		switch s.Code() {
+		case codes.Unauthenticated:
+			return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
+		case codes.ResourceExhausted:
+			// gRPC ResourceExhausted is often a rate limit in LLM providers
+			return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
+		case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
+			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
+		case codes.PermissionDenied, codes.InvalidArgument:
+			return fmt.Errorf("%w: %w", llm.ErrTerminal, err), true
+		}
 	}
 	return nil, false
 }
@@ -78,12 +107,19 @@ func classifyHTTP(err error) (error, bool) {
 }
 
 func classifyString(err error) (error, bool) {
-	msg := strings.ToUpper(err.Error())
-	if strings.Contains(msg, "UNAUTHENTICATED") || strings.Contains(msg, "API_KEY_INVALID") {
+	msg := err.Error() // Regex handles (?i) case-insensitivity
+
+	if strings.Contains(strings.ToUpper(msg), "UNAUTHENTICATED") || strings.Contains(strings.ToUpper(msg), "API_KEY_INVALID") {
 		return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
 	}
-	if strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") || strings.Contains(msg, "QUOTA") || strings.Contains(msg, "RESOURCE EXHAUSTED") {
+
+	if reRateLimit.MatchString(msg) {
 		return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
 	}
+
+	if reTransient.MatchString(msg) {
+		return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
+	}
+
 	return nil, false
 }
