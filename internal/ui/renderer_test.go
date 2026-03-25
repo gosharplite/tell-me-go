@@ -587,3 +587,30 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 		})
 	}
 }
+
+func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	locker := &mockLocker{}
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+
+	t.Run("StartSpinnerContextCancellation", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		ctx, cancel := context.WithCancel(context.Background())
+		
+		r.SetForceSpinner(true)
+		_ = r.StartSpinner(ctx)
+		
+		cancel() // Cancel the context
+		
+		// Wait a bit for the goroutine to exit
+		time.Sleep(100 * time.Millisecond)
+		
+		// If the goroutine leaked, it would still be running, but we can't easily check that without a more complex setup.
+		// However, we can check if it cleared the indicator.
+		if !strings.Contains(stderr.String(), termClearLine) {
+			t.Errorf("expected stderr to contain clear sequence %q, got %q", termClearLine, stderr.String())
+		}
+	})
+}

@@ -536,7 +536,10 @@ func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (respConten
 		}
 		// Detach context to ensure the UI ALWAYS receives the stop signal even on timeout
 		stopCtx := context.WithoutCancel(ctx)
-		_ = events.SafePublish(stopCtx, turn.Events, events.ResponseEvent{Content: safeContent})
+		if err := events.SafePublish(stopCtx, turn.Events, events.ResponseEvent{Content: safeContent}); err != nil {
+			turn.getLogger().ErrorContext(stopCtx, "Failed to publish ResponseEvent; UI spinner may hang",
+				slog.Any("error", err))
+		}
 	}()
 
 	respContent, metrics, err = turn.Gateway.Generate(ctx, turn.State.PreparedHistory, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())

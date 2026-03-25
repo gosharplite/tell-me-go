@@ -424,9 +424,23 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	// Draw the first frame synchronously to avoid 200ms delay.
 	r.updateIndicatorFrame(ui, frames, &idx, startTime)
 
+	var stopOnce sync.Once
+	stopFunc := func() {
+		stopOnce.Do(func() {
+			close(done) // Triggers the goroutine to exit
+		})
+	}
+
 	go func() {
+		// Guaranteed cleanup on exit
+		defer stopFunc()
+		defer ticker.Stop()
+		defer r.clearLoadingIndicator(ui, false)
+
 		for {
 			select {
+			case <-ctx.Done(): // Prevent leak if caller never invokes stopFunc
+				return
 			case <-done:
 				return
 			case <-ticker.C:
@@ -435,14 +449,7 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 		}
 	}()
 
-	var stopOnce sync.Once
-	return func() {
-		stopOnce.Do(func() {
-			ticker.Stop()
-			close(done)
-			r.clearLoadingIndicator(ui, false)
-		})
-	}
+	return stopFunc
 }
 
 func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time) {
@@ -481,13 +488,9 @@ func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 	stderr := ui.stderr
 
 	ts := ui.getTimestamp()
-	var names []string
-	for _, fc := range calls {
-		names = append(names, fc.Name)
-	}
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Engine (Step %d/%d)] Calling: %s%s\n",
-		ui.c(colorCyan), ts, turn+1, maxTurns, strings.Join(names, ", "), ui.c(colorReset))
+	_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Engine] Step %d/%d%s\n",
+		ui.c(colorCyan), ts, turn+1, maxTurns, ui.c(colorReset))
 
 	if showTools {
 		for _, fc := range calls {
