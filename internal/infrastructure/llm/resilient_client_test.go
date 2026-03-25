@@ -161,6 +161,7 @@ func TestResilientClient_WrapError(t *testing.T) {
 		{"Already Auth", llm.ErrAuth, llm.ErrAuth},
 		{"Already Transient", llm.ErrTransient, llm.ErrTransient},
 		{"Already Terminal", llm.ErrTerminal, llm.ErrTerminal},
+		{"Already RateLimit", llm.ErrRateLimit, llm.ErrRateLimit},
 
 		{"gRPC Unauthenticated", status.Error(codes.Unauthenticated, "fail"), llm.ErrAuth},
 		{"gRPC Unavailable", status.Error(codes.Unavailable, "fail"), llm.ErrTransient},
@@ -171,12 +172,8 @@ func TestResilientClient_WrapError(t *testing.T) {
 		{"HTTP 500", mockHttpStatusErr{500}, llm.ErrTransient},
 		{"HTTP 404", mockHttpStatusErr{404}, llm.ErrTerminal},
 
-		{"String match Auth", errors.New("API_KEY_INVALID"), llm.ErrAuth},
-		{"String match Auth Upper", errors.New("unauthenticated request"), llm.ErrAuth},
-
-		{"String match Rate Limit 429", errors.New("error 429: too many requests"), llm.ErrRateLimit},
-		{"String match Quota", errors.New("quota exceeded for project"), llm.ErrRateLimit},
-		{"String match Resource Exhausted", errors.New("RESOURCE_EXHAUSTED: quota limit reached"), llm.ErrRateLimit},
+		// Verify delegation to llmerr.Classify string matching for one case
+		{"String match Rate Limit", errors.New("RATE_LIMIT_EXCEEDED"), llm.ErrRateLimit},
 
 		{"Generic fallback", errors.New("unknown error"), llm.ErrTerminal},
 	}
@@ -185,14 +182,10 @@ func TestResilientClient_WrapError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := client.wrapError(tt.err)
 			if tt.expected == nil {
-				if got != nil {
-					t.Errorf("wrapError() = %v, want nil", got)
-				}
+				assert.NoError(t, got)
 				return
 			}
-			if !errors.Is(got, tt.expected) {
-				t.Errorf("wrapError() = %v, want error containing %v", got, tt.expected)
-			}
+			assert.ErrorIs(t, got, tt.expected)
 		})
 	}
 }
