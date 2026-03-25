@@ -539,14 +539,7 @@ func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (respConten
 		_ = events.SafePublish(stopCtx, turn.Events, events.ResponseEvent{Content: safeContent})
 	}()
 
-	respContent, metrics, err = turn.Gateway.Generate(ctx, turn.State.PreparedHistory, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
-	if err != nil {
-		return respContent, metrics, err
-	}
-	if respContent == nil {
-		return nil, nil, newAgentError(errLogic, "api returned nil content", nil)
-	}
-	return respContent, metrics, nil
+	return turn.Gateway.Generate(ctx, turn.State.PreparedHistory, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
 }
 
 func (p *inferenceStep) updateState(turn *turn, content *llm.Content, metrics *llm.Metrics) {
