@@ -61,7 +61,18 @@ type mockUIRenderer struct {
 
 func (m *mockUIRenderer) StartSpinner(ctx context.Context) func() {
 	args := m.Called(ctx)
-	return args.Get(0).(func())
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *mockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	args := m.Called(ctx, status)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
 }
 
 func (m *mockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
@@ -156,21 +167,18 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 }
 
 func TestUIBridge_HandleEvent(t *testing.T) {
-	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
-
 	tests := []struct {
 		name  string
 		event events.Event
-		setup func()
+		setup func(m *mockUIRenderer)
 	}{
 		{
 			name: "TurnStatusEvent",
 			event: events.TurnStatusEvent{
 				Status: events.TurnStatus{SessionTurns: 1},
 			},
-			setup: func() {
-				mRenderer.On("LogTurnStatus", mock.Anything).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogTurnStatus", mock.Anything).Return()
 			},
 		},
 		{
@@ -180,8 +188,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				StartTime: time.Now(),
 				Context:   context.Background(),
 			},
-			setup: func() {
-				mRenderer.On("LogUsage", mock.Anything, mock.Anything, "log.txt", mock.Anything).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogUsage", mock.Anything, mock.Anything, "log.txt", mock.Anything).Return()
 			},
 		},
 		{
@@ -191,8 +199,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Turn:     0,
 				MaxTurns: 5,
 			},
-			setup: func() {
-				mRenderer.On("LogToolCall", mock.Anything, 0, 5, true).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogToolCall", mock.Anything, 0, 5, true).Return()
 			},
 		},
 		{
@@ -201,8 +209,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Name:   "test",
 				Result: tools.ToolResult{Text: "result"},
 			},
-			setup: func() {
-				mRenderer.On("LogToolResult", "test", mock.Anything, true).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogToolResult", "test", mock.Anything, true).Return()
 			},
 		},
 		{
@@ -211,8 +219,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Message: "msg",
 				Level:   "info",
 			},
-			setup: func() {
-				mRenderer.On("LogSystemMessage", "msg", "info").Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogSystemMessage", "msg", "info").Return()
 			},
 		},
 		{
@@ -221,15 +229,22 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Message: "updating",
 				Level:   "info",
 			},
-			setup: func() {
-				mRenderer.On("LogSystemMessage", "updating", "info").Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("LogSystemMessage", "updating", "info").Return()
 			},
 		},
 		{
 			name:  "InferenceStartedEvent",
 			event: events.InferenceStartedEvent{},
-			setup: func() {
-				mRenderer.On("StartSpinner", mock.Anything).Return(func() {})
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinner", mock.Anything).Return(func() {})
+			},
+		},
+		{
+			name:  "RefiningStartedEvent",
+			event: events.RefiningStartedEvent{},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {})
 			},
 		},
 		{
@@ -237,15 +252,17 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.ResponseEvent{
 				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},
 			},
-			setup: func() {
-				mRenderer.On("RenderResponse", mock.Anything, true, false).Return()
+			setup: func(m *mockUIRenderer) {
+				m.On("RenderResponse", mock.Anything, true, false).Return()
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.setup()
+			mRenderer := new(mockUIRenderer)
+			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+			tt.setup(mRenderer)
 
 			bridge.handleEvent(context.Background(), tt.event)
 
@@ -436,7 +453,19 @@ type behaviorMockUIRenderer struct {
 func (m *behaviorMockUIRenderer) StartSpinner(ctx context.Context) func() {
 	m.tracker.record("UIRenderer.StartSpinner")
 	args := m.Called(ctx)
-	return args.Get(0).(func())
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *behaviorMockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	m.tracker.record("UIRenderer.StartSpinnerWithStatus")
+	args := m.Called(ctx, status)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
 }
 
 func (m *behaviorMockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
@@ -761,6 +790,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 
 	// Setup mocks with Maybe() to handle concurrent calls safely
 	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Maybe()
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
 	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
@@ -895,8 +925,8 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 
 	// Second attempt (Retry)
 	// Now this SHOULD be called because TurnStatusEvent reset isRendering.
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Once()
-	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {}).Once()
+	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
 
 	mRenderer.AssertExpectations(t)
 }

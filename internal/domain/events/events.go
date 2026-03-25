@@ -439,6 +439,9 @@ type TurnStarted struct {
 // InferenceStartedEvent signals that the agent is starting to generate a response.
 type InferenceStartedEvent struct{}
 
+// RefiningStartedEvent signals that the agent is starting to refine or recover context.
+type RefiningStartedEvent struct{}
+
 // ResponseEvent carries the final LLM output.
 type ResponseEvent struct {
 	Content *llm.Content
@@ -532,3 +535,4 @@ func (e SystemMessageEvent) Type() string     { return "SystemMessageEvent" }
 func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" }
 func (e SummarizationRequired) Type() string  { return "SummarizationRequired" }
 func (e TraceEvent) Type() string             { return "TraceEvent" }
+func (e RefiningStartedEvent) Type() string  { return "RefiningStartedEvent" }

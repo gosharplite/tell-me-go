@@ -32,6 +32,7 @@ type stdUIRenderer struct {
 	clock        clock.Clock
 	renderer     *glamour.TermRenderer
 	mu           sync.RWMutex
+	ioMu         sync.Mutex
 	useColor     bool
 	forceSpinner bool
 }
@@ -125,7 +126,14 @@ func (r *stdUIRenderer) renderMarkdown(text string) {
 }
 
 func (r *stdUIRenderer) renderMarkdownWithUI(ui uiState, text string) {
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+	r.renderMarkdownWithUILocked(ui, text)
+}
+
+func (r *stdUIRenderer) renderMarkdownWithUILocked(ui uiState, text string) {
 	stdout := ui.stdout
+
 	if r.renderer == nil {
 		_, _ = fmt.Fprint(stdout, text)
 		return
@@ -213,6 +221,12 @@ func (r *stdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 }
 
 func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime time.Time) {
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+	r.renderMetricsLineLocked(ui, m, startTime)
+}
+
+func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, startTime time.Time) {
 	if m == nil {
 		return
 	}
@@ -266,6 +280,9 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	timestamp := status.Timestamp.Format("15:04:05")
 	stderr := ui.stderr
 
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+
 	printSystemLine := func(tks int, isActual bool) {
 		tokenColor := colorReset
 		if float64(tks) > float64(status.MaxHistoryTokens)*config.WarningRatio {
@@ -308,7 +325,7 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		}
 
 		printSystemLine(int(m.PromptTokens), true)
-		r.renderMetricsLine(ui, m, status.StartTime)
+		r.renderMetricsLineLocked(ui, m, status.StartTime)
 	}
 
 	if status.IsFinal {
@@ -352,14 +369,23 @@ func (r *stdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 
 	ui := r.getUIState()
 
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+
 	for _, part := range respContent.Parts {
-		r.renderThought(ui, part, showThoughts)
-		r.renderText(ui, part, rawOutput)
-		r.renderInlineData(ui, part)
+		r.renderThoughtLocked(ui, part, showThoughts)
+		r.renderTextLocked(ui, part, rawOutput)
+		r.renderInlineDataLocked(ui, part)
 	}
 }
 
 func (r *stdUIRenderer) renderThought(ui uiState, part *llm.Part, showThoughts bool) {
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+	r.renderThoughtLocked(ui, part, showThoughts)
+}
+
+func (r *stdUIRenderer) renderThoughtLocked(ui uiState, part *llm.Part, showThoughts bool) {
 	if showThoughts && (part.IsThought || len(part.ThoughtSignature) > 0) {
 		ts := ui.getTimestamp()
 		stderr := ui.stderr
@@ -374,6 +400,12 @@ func (r *stdUIRenderer) renderThought(ui uiState, part *llm.Part, showThoughts b
 }
 
 func (r *stdUIRenderer) renderText(ui uiState, part *llm.Part, raw bool) {
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+	r.renderTextLocked(ui, part, raw)
+}
+
+func (r *stdUIRenderer) renderTextLocked(ui uiState, part *llm.Part, raw bool) {
 	if part.Text != "" && !part.IsThought {
 		stdout := ui.stdout
 		if raw {
@@ -383,12 +415,18 @@ func (r *stdUIRenderer) renderText(ui uiState, part *llm.Part, raw bool) {
 			}
 		} else {
 			sanitized := sanitizeForTerminal(part.Text)
-			r.renderMarkdownWithUI(ui, sanitized)
+			r.renderMarkdownWithUILocked(ui, sanitized)
 		}
 	}
 }
 
 func (r *stdUIRenderer) renderInlineData(ui uiState, part *llm.Part) {
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+	r.renderInlineDataLocked(ui, part)
+}
+
+func (r *stdUIRenderer) renderInlineDataLocked(ui uiState, part *llm.Part) {
 	if part.InlineData != nil {
 		ts := ui.getTimestamp()
 		stderr := ui.stderr
@@ -406,6 +444,10 @@ func (r *stdUIRenderer) isTerminalContext() bool {
 }
 
 func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
+	return r.StartSpinnerWithStatus(ctx, " Thinking...")
+}
+
+func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
 	ui := r.getUIState()
 	r.mu.RLock()
 	force := r.forceSpinner
@@ -422,7 +464,7 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	waitDone := make(chan struct{})
 
 	// Draw the first frame synchronously to avoid 200ms delay.
-	r.updateIndicatorFrame(ui, frames, &idx, startTime)
+	r.updateIndicatorFrame(ui, frames, &idx, startTime, status)
 
 	var stopOnce sync.Once
 	stopFunc := func() {
@@ -447,7 +489,7 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 			case <-done:
 				return
 			case <-ticker.C():
-				r.updateIndicatorFrame(ui, frames, &idx, startTime)
+				r.updateIndicatorFrame(ui, frames, &idx, startTime, status)
 			}
 		}
 	}()
@@ -455,17 +497,20 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 	return stopFunc
 }
 
-func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time) {
-	msg := " Thinking..."
+func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string) {
+	msg := status
 	if !startTime.IsZero() {
 		elapsed := int(ui.clock.Now().Sub(startTime).Seconds())
-		msg = fmt.Sprintf(" Thinking... (%ds)", elapsed)
+		msg = fmt.Sprintf("%s (%ds)", status, elapsed)
 	}
 
 	if r.locker != nil {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
 	}
+
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
 
 	// Move to start of line, clear current line, then print the indicator.
 	_, _ = fmt.Fprintf(ui.stderr, "\r%s%s%s%s%s", ui.c(termClearLine), ui.c(colorGray), frame, msg, ui.c(colorReset))
@@ -476,6 +521,9 @@ func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
 	}
+
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
 
 	// Move to start of line and clear the spinner.
 	// We do NOT add a newline here to allow the answer to start exactly where the spinner was.
@@ -491,6 +539,9 @@ func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 	stderr := ui.stderr
 
 	ts := ui.getTimestamp()
+
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
 
 	_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Engine] Step %d/%d%s\n",
 		ui.c(colorCyan), ts, turn+1, maxTurns, ui.c(colorReset))
@@ -534,6 +585,9 @@ func (r *stdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 
 	timestamp := ui.getTimestamp()
 
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+
 	if result.Text != "" {
 		snippet := result.Text
 		if len(snippet) > 200 {
@@ -549,7 +603,7 @@ func (r *stdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 	}
 
 	if m, ok := result.Metadata["metrics"].(*llm.Metrics); ok {
-		r.renderMetricsLine(ui, m, time.Time{}) // Render the usage line after the result
+		r.renderMetricsLineLocked(ui, m, time.Time{}) // Render the usage line after the result
 	}
 }
 
@@ -576,11 +630,14 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 		prefix = "Info"
 	}
 
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+
 	_, _ = fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
 }
 
-func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time) {
-	r.drawLoadingIndicator(ui, frames[*idx], startTime)
+func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string) {
+	r.drawLoadingIndicator(ui, frames[*idx], startTime, status)
 	*idx = (*idx + 1) % len(frames)
 }

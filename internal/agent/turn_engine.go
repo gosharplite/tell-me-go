@@ -731,7 +731,7 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	}
 
 	// Trigger a spinner early so it covers refining and the next inference attempt
-	_ = events.SafePublish(ctx, turn.Events, events.InferenceStartedEvent{})
+	_ = events.SafePublish(ctx, turn.Events, events.RefiningStartedEvent{})
 
 	return processResult{NextPhase: phaseRefining}, nil
 }

@@ -267,6 +267,12 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 			b.stopSpinner = b.renderer.StartSpinner(b.ctx)
 		}
 		b.mu.Unlock()
+	case events.RefiningStartedEvent:
+		b.mu.Lock()
+		if !b.isRendering && b.stopSpinner == nil {
+			b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
+		}
+		b.mu.Unlock()
 	case events.ResponseEvent:
 		b.mu.Lock()
 		b.isRendering = true

@@ -19,8 +19,38 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
+// safeBuffer is a thread-safe wrapper around bytes.Buffer for testing concurrent I/O.
+type safeBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func (s *safeBuffer) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.b.Reset()
+}
+
+func (s *safeBuffer) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Len()
+}
+
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -92,7 +122,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_StatusLogging(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -125,7 +155,7 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_ToolLogging(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -155,7 +185,7 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_ResponseRendering(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -180,7 +210,7 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 }
 
 func TestStdUIRenderer_Spinner(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -227,7 +257,7 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 		ui := r.getUIState()
 		stdout.Reset()
 		stderr.Reset()
-		r.drawLoadingIndicator(ui, "X", mc.now)
+		r.drawLoadingIndicator(ui, "X", mc.now, " Thinking...")
 		if !strings.Contains(stderr.String(), "X Thinking...") {
 			t.Errorf("expected stderr to contain spinner, got %q", stderr.String())
 		}
@@ -251,7 +281,7 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 }
 
 func TestLogTurnStatus_Format(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -337,7 +367,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 }
 
 func TestStdUIRenderer_Colors(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -391,7 +421,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 }
 
 func TestStdUIRenderer_ToolMetrics(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -434,7 +464,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 }
 
 func TestStdUIRenderer_Concurrency(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{}).(*stdUIRenderer)
 
@@ -547,7 +577,7 @@ func TestStdUIRenderer_NowSafeRace(t *testing.T) {
 }
 
 func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -589,7 +619,7 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 }
 
 func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
@@ -600,12 +630,10 @@ func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		r.SetForceSpinner(true)
-		_ = r.StartSpinner(ctx)
+		stop := r.StartSpinner(ctx)
 
 		cancel() // Cancel the context
-
-		// Wait a bit for the goroutine to exit
-		time.Sleep(100 * time.Millisecond)
+		stop()   // Wait for the goroutine to finish
 
 		// If the goroutine leaked, it would still be running, but we can't easily check that without a more complex setup.
 		// However, we can check if it cleared the indicator.
@@ -616,7 +644,7 @@ func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
 }
 
 func TestStartSpinner_Synchronization(t *testing.T) {
-	var combined bytes.Buffer
+	var combined safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, &combined, &combined, mc).(*stdUIRenderer)

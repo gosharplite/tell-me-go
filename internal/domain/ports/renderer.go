@@ -16,6 +16,7 @@ import (
 // ResponseRenderer defines the interface for synchronous response rendering.
 type ResponseRenderer interface {
 	StartSpinner(ctx context.Context) (stop func())
+	StartSpinnerWithStatus(ctx context.Context, status string) (stop func())
 	RenderResponse(content *llm.Content, showThoughts, rawOutput bool)
 }
 

@@ -158,7 +158,10 @@ type mockFailingUIRenderer struct{}
 func (m *mockFailingUIRenderer) SetUseColor(bool)                                                  {}
 func (m *mockFailingUIRenderer) SetForceSpinner(bool)                                              {}
 func (m *mockFailingUIRenderer) LogTurnStatus(events.TurnStatus)                                   {}
-func (m *mockFailingUIRenderer) StartSpinner(ctx context.Context) func()                           { return func() {} }
+func (m *mockFailingUIRenderer) StartSpinner(ctx context.Context) func() { return func() {} }
+func (m *mockFailingUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	return func() {}
+}
 func (m *mockFailingUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {}
 func (m *mockFailingUIRenderer) LogUsage(context.Context, *llm.Metrics, string, time.Time)         {}
 func (m *mockFailingUIRenderer) LogToolCall([]*llm.FunctionCall, int, int, bool)                   {}
