@@ -22,6 +22,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -85,7 +86,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	t.Parallel()
 	var capturedEvents []string
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	defer func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
@@ -1212,6 +1213,9 @@ func (m *mockBlockingClock) After(d time.Duration) <-chan time.Time {
 	}
 	return m.afterChan
 }
+func (m *mockBlockingClock) NewTicker(d time.Duration) clock.Ticker {
+	return mockTicker{c: m.afterChan}
+}
 func (m *mockBlockingClock) Jitter(base float64) float64 { return base }
 
 func TestTurnEngine_ContextCancellation(t *testing.T) {
@@ -1378,7 +1382,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	t.Parallel()
 	var capturedEvents []string
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus(context.Background())
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	defer func() { _ = bus.Shutdown(context.Background()) }()
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()

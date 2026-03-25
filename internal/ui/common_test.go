@@ -22,7 +22,17 @@ func (m *mockClock) Now() time.Time {
 
 func (m *mockClock) Sleep(d time.Duration)                  {}
 func (m *mockClock) After(d time.Duration) <-chan time.Time { return nil }
-func (m *mockClock) Jitter(base float64) float64            { return base }
+func (m *mockClock) NewTicker(d time.Duration) clock.Ticker {
+	return mockTicker{c: nil}
+}
+func (m *mockClock) Jitter(base float64) float64 { return base }
+
+type mockTicker struct {
+	c <-chan time.Time
+}
+
+func (m mockTicker) C() <-chan time.Time { return m.c }
+func (m mockTicker) Stop()               {}
 
 type mockLocker struct {
 	locked bool

@@ -437,13 +437,16 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 		// Guaranteed cleanup on exit
 		defer r.clearLoadingIndicator(ui, false)
 
+		ticker := ui.clock.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done(): // Prevent leak if caller never invokes stopFunc
 				return
 			case <-done:
 				return
-			case <-ui.clock.After(200 * time.Millisecond):
+			case <-ticker.C():
 				r.updateIndicatorFrame(ui, frames, &idx, startTime)
 			}
 		}

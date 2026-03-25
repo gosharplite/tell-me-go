@@ -17,10 +17,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+// ControlledTicker allows us to trigger ticks manually for spinner frames.
+type ControlledTicker struct {
+	CChan <-chan time.Time
+}
+
+func (ct ControlledTicker) C() <-chan time.Time { return ct.CChan }
+func (ct ControlledTicker) Stop()               {}
 
 // controlledClock allows us to trigger ticks manually for spinner frames.
 type controlledClock struct {
@@ -43,6 +52,10 @@ func (c *controlledClock) Sleep(d time.Duration) {
 
 func (c *controlledClock) After(d time.Duration) <-chan time.Time {
 	return c.tickChannel
+}
+
+func (c *controlledClock) NewTicker(d time.Duration) clock.Ticker {
+	return ControlledTicker{CChan: c.tickChannel}
 }
 
 func (c *controlledClock) Jitter(base float64) float64 { return base }

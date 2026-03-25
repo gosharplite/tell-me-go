@@ -159,7 +159,17 @@ func (m *mockClock) After(d time.Duration) <-chan time.Time {
 	ch <- m.CurrentTime
 	return ch
 }
+func (m *mockClock) NewTicker(d time.Duration) clock.Ticker {
+	return mockTicker{c: m.After(d)}
+}
 func (m *mockClock) Jitter(base float64) float64 { return base }
+
+type mockTicker struct {
+	c <-chan time.Time
+}
+
+func (m mockTicker) C() <-chan time.Time { return m.c }
+func (m mockTicker) Stop()               {}
 
 type mockHook struct {
 	beforeCalled int
