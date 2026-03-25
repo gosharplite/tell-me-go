@@ -1,96 +1,111 @@
 # ADR-008: Bubble Tea Interactive History Browser
 
 ## Status
-Proposed (2026-02-15)
+Proposed (2026-02-15) - *Revised with Architectural Review Findings on Archival & CQRS*
 
 ## Context
 The current `tell-me-go` CLI provides limited history viewing capabilities through the `-l N` flag, which dumps the last N messages to stdout. This approach has several limitations:
 
-1. **Static Output**: History is displayed as a one-time text dump without interactivity
-2. **Thought Visibility**: AI reasoning chains (`IsThought: true`) are hidden by default (controlled by `SHOW_THOUGHTS` config)
-3. **Poor Large History Handling**: Long conversations become overwhelming wall-of-text output
-4. **No Search/Navigation**: Users cannot search within history or jump to specific turns
-5. **Limited User Experience**: No keyboard shortcuts, scrolling, or filtering capabilities
+1. **Static Output**: History is displayed as a one-time text dump without interactivity.
+2. **Thought Visibility**: AI reasoning chains (`IsThought: true`) are hidden by default.
+3. **Poor Large History Handling**: Long conversations become an overwhelming wall-of-text.
+4. **No Search/Navigation**: Users cannot search within history or jump to specific turns.
 
-However, the architecture already stores complete conversation history with AI thoughts preserved in the `history.jsonl` file, and the `HistoryManager` interface provides full access to this data. The system also already uses the Charm ecosystem (`glamour`, `lipgloss`) for markdown rendering, making Bubble Tea a natural extension.
+**The Architectural Conflict (Active vs. Archived History):**
+ADR-006 introduced History Log Compaction, splitting conversation history into an active in-memory context (`history.jsonl`) and a disk-only archive (`history.archive.jsonl`) to prevent Out-Of-Memory (OOM) crashes. Currently, the `HistoryManager` only exposes the active history. If the UI is built solely on the existing interface, the user will not see older, summarized conversations. Conversely, naively loading the archive into memory for the UI would re-introduce the exact OOM vulnerabilities ADR-006 fixed.
 
 ## Decision
-We will implement a new `tell-me-go browse` subcommand using the Bubble Tea TUI framework to provide interactive history exploration. This will be implemented in three phases:
+We will implement a new `tell-me-go browse` subcommand using the Bubble Tea TUI framework to provide interactive history exploration. To ensure system stability and protect existing summarization logic, this requires a foundational data layer refactor before UI implementation.
+
+### Phase 0: Unified History Data Layer (Prerequisite)
+1. **`ArchiveReader` Port**: Create a new domain interface for unbounded, paginated reading of `history.archive.jsonl` using O(1) byte-offset indexing. It must never load the entire archive into RAM.
+2. **`UnifiedHistoryProvider` Facade**: Create a read-only UI service that dynamically stitches data from the `ArchiveReader` (disk) and `HistoryManager` (memory) into a single continuous stream.
 
 ### Phase 1: Core Browser (MVP)
-1. **New Subcommand**: `tell-me-go browse` launches interactive TUI
-2. **Basic Navigation**: ↑/↓ scroll through messages, spacebar toggle thoughts
-3. **Color-Coded Display**: User (blue), Model (green), Thoughts (gray) using existing Lip Gloss styles
-4. **TTY Awareness**: Graceful fallback to text output when not in interactive terminal
+3. **New Subcommand**: `tell-me-go browse` launches the interactive TUI.
+4. **Basic Navigation**: ↑/↓ scroll through messages asynchronously via `UnifiedHistoryProvider`, spacebar toggle thoughts.
+5. **Color-Coded Display**: User (blue), Model (green), Thoughts (gray).
+6. **TTY Awareness**: Graceful fallback to text output when not in an interactive terminal.
 
 ### Phase 2: Enhanced Features
-5. **Search**: `/` to search within history, `n`/`N` navigate matches
-6. **Turn Navigation**: Jump to specific turn by number
-7. **Tool Call Expansion**: Expand/collapse detailed tool calls and responses
-8. **Raw JSON View**: Debug view of underlying data structure
+7. **Search**: `/` to search within history, `n`/`N` navigate matches.
+8. **Turn Navigation**: Jump to specific turn by number.
+9. **Tool Call Expansion**: Expand/collapse detailed tool calls and responses.
 
 ### Phase 3: Advanced Integration
-9. **Direct Manipulation**: Pin/unpin turns from TUI using existing `SetPinned` API
-10. **Rollback Interface**: Rollback turns directly from browser using `RollbackTurns`
-11. **Multi-session Support**: Switch between different mode histories
-12. **Export Capability**: Export selected turns to markdown/text files
+10. **Direct Manipulation**: Pin/unpin turns from TUI using CQRS Command Ports.
+11. **Rollback Interface**: Rollback turns directly from browser using CQRS Command Ports.
+12. **Export Capability**: Export selected turns to markdown/text files.
 
-### Architectural Integration
-- **CLI Registration**: Add `browse` command to existing registry in `internal/cli/registry.go`
-- **Dependency Reuse**: Leverage existing `ChatService`, `HistoryManager`, and configuration loading
-- **TTY Detection**: Use same TTY detection as current UI layer for graceful fallback
-- **Configuration Respect**: TUI defaults respect `SHOW_THOUGHTS` config but allow runtime override
+### Architectural Integration & Technical Implementation
 
-### Technical Implementation
+To prevent TUI "God Objects", synchronous blocking, and token/memory bloat, implementation must strictly adhere to **CQRS (Command Query Responsibility Segregation)** and **Component Composition**.
+
+#### Strict CQRS Boundary
+The `UnifiedHistoryProvider` must **only** be injected into the UI tier. The core Agent and `ContextManager` must continue using the existing `ports.HistoryManager`. This ensures that the `summarize_history` tool and LLM context window remain completely bounded to the active history, preventing context limit crashes.
+
 ```go
-// New command structure (internal/cli/browse_command.go)
-type browseCommand struct {
-    ChatService agent.ChatService  // Reuse existing service
-    HomeDir     string
-    // ... other existing dependencies
+// 1. Phase 0: Unified Read Model (internal/ui/history_provider.go)
+type UnifiedHistoryProvider struct {
+    archive ports.ArchiveReader  // Reads history.archive.jsonl (O(1) lazy load via file.Seek)
+    active  ports.HistoryReader  // Reads history.jsonl (Fast RAM access)
 }
 
-// TUI Model (internal/ui/tui/browser.go)  
-type HistoryBrowser struct {
-    history      []*llm.Content    // From HistoryManager.GetWindow()
-    cursor       int
-    showThoughts bool              // Toggle via spacebar
-    tea.Program                    // Bubble Tea integration
+// 2. Scalable Component Composition (internal/ui/tui/browser.go)
+type RootBrowserModel struct {
+    viewport ui.ViewportModel
+    search   ui.SearchModel
+
+    // Injected CQRS Ports (Separation of Concerns)
+    historyProvider UnifiedHistoryProvider    // UI Read-Model (Sees Everything)
+    cmdService      port.HistoryCommandService // Mutates Active State
+
+    isLoading bool
+}
+
+// 3. Non-blocking Asynchronous I/O via tea.Cmd
+func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case ScrollDownMsg:
+        m.isLoading = true
+        // NON-BLOCKING: Dispatch disk read to a background goroutine
+        return m, fetchNextPageCmd(m.historyProvider, m.cursor) 
+    case PageLoadedMsg:
+        m.isLoading = false
+        m.viewport.SetData(msg.Data)
+        return m, nil
+    }
+    // ...
 }
 ```
 
 ## Consequences
 
 ### Positive
-1. **Enhanced Debugging**: Developers can explore AI reasoning chains and tool execution flows
-2. **Better UX for Long Conversations**: Paginated, searchable interface replaces overwhelming text dumps
-3. **Architectural Alignment**: Builds on existing Charm ecosystem and clean architecture
-4. **Backward Compatibility**: `-l N` remains unchanged for scripts/automation
-5. **Professional Polish**: Elevates `tell-me-go` from utility to professional-grade tool
-6. **Minimal Dependency Impact**: Adds only `bubbletea` and `bubbles` (~2MB binary increase)
+1. **Complete Visibility**: Users can transparently browse their entire history (active + archived) without OOM risks.
+2. **Safe Summarization**: By using CQRS, `summarize_history` and existing context pipelines remain untouched and completely safe from token bloat.
+3. **O(1) Data Access**: Upgrading `jsonlStore` with byte-offset indexing (`file.Seek`) eliminates the JSONL O(N) pagination penalty, guaranteeing smooth scrolling.
+4. **Enhanced Debugging**: Developers can explore AI reasoning chains and tool execution flows asynchronously.
 
 ### Negative
-1. **TTY Requirement**: Bubble Tea requires interactive terminal (with graceful fallback)
-2. **Dependency Increase**: Adds ~2MB to binary size (25MB → 27MB)
-3. **Learning Curve**: New keybindings for users (mitigated with help screen)
-4. **Testing Complexity**: TUI components require different testing approach than CLI
+1. **TTY Requirement**: Bubble Tea requires an interactive terminal (with graceful fallback).
+2. **Dependency Increase**: Adds ~2MB to binary size (25MB → 27MB).
+3. **Architecture Complexity**: Introduces a necessary but complex `UnifiedHistoryProvider` to handle the math of stitching two distinct storage boundaries (archive + active).
 
 ### Risks & Mitigations
-- **Risk**: Bubble Tea conflicts with existing event loop
-  - **Mitigation**: Isolate TUI to subcommand only; don't mix with main chat flow
-- **Risk**: Performance with massive histories
-  - **Mitigation**: Lazy loading via `GetWindow()`; paginate display
-- **Risk**: Users expect TUI when piping output
-  - **Mitigation**: Automatic fallback to text rendering when not in TTY
+- **Risk**: Passing the `UnifiedHistoryProvider` into the Agent/LLM Context Pipeline, breaking `summarize_history` and exceeding context limits.
+  - **Mitigation**: Enforce CQRS Hexagonal boundaries. The Agent tier must only accept `ports.HistoryManager`.
+- **Risk**: Synchronous I/O blocking the UI thread during scrolling (severe input lag).
+  - **Mitigation**: Dispatch all disk reads/writes as asynchronous `tea.Cmd` operations. Display loading indicators.
+- **Risk**: Re-introducing OOM bloat when reading the archive.
+  - **Mitigation**: Implement an in-memory byte-offset index (`[]int64`) for `ArchiveReader`. It must use `file.Seek(offset, io.SeekStart)` to read pages on-demand without loading the file into memory.
+- **Risk**: TUI God Object anti-pattern where state, logic, and rendering merge into a massive single struct.
+  - **Mitigation**: Decompose the TUI into isolated sub-models (e.g., `viewportModel`, `searchBarModel`).
 
 ## Implementation Notes
-The implementation leverages existing architectural components:
-- **History Storage**: Thoughts already persisted with `IsThought: true` in `history.jsonl`
-- **Data Access**: `HistoryManager.GetWindow()` provides full history access
-- **UI Consistency**: Uses same color system and styling as existing markdown rendering
-- **Configuration**: Respects `SHOW_THOUGHTS` from YAML config while allowing runtime toggle
+- **Offset Indexing**: Scan `history.archive.jsonl` once on session startup to populate the `[]int64` offset slice.
+- **UI Consistency**: Uses the same color system and styling as existing markdown rendering.
+- **Configuration**: Respects `SHOW_THOUGHTS` from YAML config while allowing runtime toggle.
 
 ## User Documentation
 For user-facing documentation, mockups, and usage examples, see [docs/user/history-browser.md](../user/history-browser.md).
-
-This decision aligns with the project's clean architecture while significantly improving the user experience for history exploration and debugging.
