@@ -374,7 +374,7 @@ func TestToolOrchestrationLoop(t *testing.T) {
 			out := stripANSI(stdout)
 			errOut := stripANSI(stderr)
 
-			if !strings.Contains(errOut, "Calling: list_files") {
+			if !strings.Contains(errOut, "[Tool Action] list_files") {
 				t.Errorf("Expected tool engine log in stderr, got: %q", errOut)
 			}
 			if !strings.Contains(out, "I have listed the files.") {

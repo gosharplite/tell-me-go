@@ -270,11 +270,13 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	case events.ResponseEvent:
 		b.mu.Lock()
 		b.isRendering = true
-		if b.stopSpinner != nil {
-			b.stopSpinner()
-			b.stopSpinner = nil
-		}
+		stop := b.stopSpinner
+		b.stopSpinner = nil
 		b.mu.Unlock()
+
+		if stop != nil {
+			stop()
+		}
 		b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
 	case events.UsageMetricsEvent:
 		ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
@@ -288,12 +290,14 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
 	case events.TurnStarted:
 		b.mu.Lock()
-		if b.stopSpinner != nil {
-			b.stopSpinner()
-			b.stopSpinner = nil
-		}
+		stop := b.stopSpinner
+		b.stopSpinner = nil
 		b.isRendering = false
 		b.mu.Unlock()
+
+		if stop != nil {
+			stop()
+		}
 	case events.SystemMessageEvent:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
 	case events.StatusUpdate:
