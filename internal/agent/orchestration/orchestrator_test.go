@@ -1069,9 +1069,9 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {
 		stopSummarizationCalled = true
 	}).Once()
-	
+
 	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
-	
+
 	// 2. Inference starts (without previous response)
 	stopInferenceCalled := false
 	mRenderer.On("StartSpinner", mock.Anything).Return(func() {
@@ -1085,7 +1085,7 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {
 		stopRefiningCalled = true
 	}).Once()
-	
+
 	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
 
 	// Verification
