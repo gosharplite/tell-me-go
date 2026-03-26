@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -25,15 +26,19 @@ type BaseCapturer interface {
 
 // PromptCapturer is an adapter that implements ports.Capturer using a Bubble Tea TUI.
 type PromptCapturer struct {
-	base BaseCapturer
-	svc  ports.SuggestionService
+	base         BaseCapturer
+	svc          ports.SuggestionService
+	providerName string
+	modelName    string
 }
 
 // NewPromptCapturer creates a new PromptCapturer.
-func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService) *PromptCapturer {
+func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService, providerName, modelName string) *PromptCapturer {
 	return &PromptCapturer{
-		base: base,
-		svc:  svc,
+		base:         base,
+		svc:          svc,
+		providerName: providerName,
+		modelName:    modelName,
 	}
 }
 
@@ -50,19 +55,16 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 	}
 
 	// Fallback to base capturer if TUI is not requested or not applicable
-	if !options.UseTUIPrompt || !c.IsTTY(nil) { // Simplified TTY check, base will handle it
+	if !options.UseTUIPrompt || !c.IsTTY(os.Stdin) {
 		return c.base.CapturePrompt(ctx, fs, opts...)
 	}
 
 	// Initialize TUI Model
-	// We need some default stats for the dashboard.
-	// Since we are capturing the prompt BEFORE the session is fully active,
-	// we use placeholders or zeroes.
 	stats := prompt.SessionStats{
 		TurnCount:    0,
 		TokenUsage:   0,
-		ProviderName: "Initializing...",
-		ModelName:    "...",
+		ProviderName: c.providerName,
+		ModelName:    c.modelName,
 	}
 
 	model := prompt.NewModel(c.svc, stats)

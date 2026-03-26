@@ -5,6 +5,7 @@ package prompt
 
 import (
 	"context"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +19,11 @@ var (
 
 // SuggestionsMsg contains a list of suggested prompts returned from an asynchronous call.
 type SuggestionsMsg []string
+
+// debounceMsg is sent after a short delay to trigger suggestion fetching.
+type debounceMsg struct {
+	value string
+}
 
 // Model is the main orchestrator for the TUI prompt.
 type Model struct {
@@ -109,19 +115,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input = newInput
 		cmd = inputCmd
 
-		// If input changed, trigger suggestion fetch
+		// If input changed, trigger suggestion fetch with debounce
 		if m.input.Value() != oldVal {
-			if m.input.Value() == "" {
-				m.cancel()
-				m.ctx, m.cancel = context.WithCancel(context.Background())
-				return m, tea.Batch(cmd, m.getSuggestions(""))
-			}
-			m.cancel()
-			m.ctx, m.cancel = context.WithCancel(context.Background())
-			return m, tea.Batch(cmd, m.getSuggestions(m.input.Value()))
+			newVal := m.input.Value()
+			return m, tea.Batch(cmd, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+				return debounceMsg{value: newVal}
+			}))
 		}
 	case tea.WindowSizeMsg:
 		m.input.Model.SetWidth(msg.Width - 4)
+		return m, nil
+
+	case debounceMsg:
+		// Only fetch suggestions if the value hasn't changed since the debounce message was sent
+		if msg.value == m.input.Value() {
+			m.cancel()
+			m.ctx, m.cancel = context.WithCancel(context.Background())
+			return m, m.getSuggestions(msg.value)
+		}
 		return m, nil
 
 	case SuggestionsMsg:

@@ -13,10 +13,14 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 )
 
 func init() {
@@ -89,7 +93,36 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// 2. Invoking a Use Case / Service interface
-	capturer := c.setupCapturer()
+	var capturer ports.Capturer
+	if opts.tuiPrompt {
+		// Load config for provider and model info for the TUI dashboard
+		loader := &infra_config.YAMLConfigLoader{}
+		cfg, _ := loader.Load(opts.configPath)
+		
+		providerName := "..."
+		modelName := "..."
+		if cfg != nil {
+			providerName = cfg.SelectedProvider
+			modelName = cfg.Model
+		}
+
+		tracker := history.NewGlobalPromptTracker(c.HomeDir)
+		
+		// Try to get at least the last user message for the trie
+		lastMsg, _, _ := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
+		var recentHistory []string
+		if lastMsg != "" {
+			recentHistory = append(recentHistory, lastMsg)
+		}
+		
+		svc, _ := suggestions.NewMultiSourceSuggestionService(tracker, nil, recentHistory)
+		
+		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
+		
+		capturer = tui.NewPromptCapturer(baseCapturer, svc, providerName, modelName)
+	} else {
+		capturer = c.setupCapturer()
+	}
 
 	if !opts.retry {
 		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
@@ -158,6 +191,9 @@ func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []ports.CaptureOpt
 	}
 	if opts.rawOutput {
 		captureOpts = append(captureOpts, ports.WithRaw(true))
+	}
+	if opts.tuiPrompt {
+		captureOpts = append(captureOpts, ports.WithTUIPrompt(true))
 	}
 	return captureOpts
 }
