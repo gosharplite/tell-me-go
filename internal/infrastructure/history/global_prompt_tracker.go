@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -75,20 +76,28 @@ func (t *GlobalPromptTracker) LoadTopN(limit int) ([]string, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	// Read all prompts into a list (this is a simple implementation)
-	// For very large files, this would need optimization.
+	// Read all prompts into a list
 	var prompts []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		var entry PromptEntry
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
-			continue // Skip malformed lines
+	reader := bufio.NewReader(f)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				if len(line) > 0 {
+					var entry PromptEntry
+					if err := json.Unmarshal(line, &entry); err == nil {
+						prompts = append(prompts, entry.Prompt)
+					}
+				}
+				break
+			}
+			return nil, fmt.Errorf("failed to read global prompts: %w", err)
 		}
-		prompts = append(prompts, entry.Prompt)
-	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read global prompts: %w", err)
+		var entry PromptEntry
+		if err := json.Unmarshal(line, &entry); err == nil {
+			prompts = append(prompts, entry.Prompt)
+		}
 	}
 
 	// Reverse and filter duplicates

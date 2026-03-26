@@ -61,3 +61,36 @@ func TestGlobalPromptTrackerNoFile(t *testing.T) {
 		t.Errorf("got %d prompts; want 0", len(got))
 	}
 }
+
+func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracker := NewGlobalPromptTracker(tmpDir)
+
+	// Create a payload larger than 64KB (e.g., 70,000 chars)
+	// We'll use a string that's clearly larger than bufio.MaxScanTokenSize (64*1024)
+	largePrompt := "START_" + string(make([]byte, 70000)) + "_END"
+	
+	err := tracker.Append(largePrompt)
+	if err != nil {
+		t.Fatalf("Failed to append large prompt: %v", err)
+	}
+
+	// Attempt to load the prompt back
+	got, err := tracker.LoadTopN(1)
+	if err != nil {
+		t.Fatalf("LoadTopN failed for large payload: %v", err)
+	}
+
+	if len(got) == 0 {
+		t.Fatal("LoadTopN returned 0 prompts, expected 1")
+	}
+
+	if got[0] != largePrompt {
+		t.Errorf("Retrieved prompt length mismatch: got %d; want %d", len(got[0]), len(largePrompt))
+		// Log a bit of the beginning/end for debugging
+		if len(got[0]) > 20 && len(largePrompt) > 20 {
+			t.Errorf("Start mismatch: got %q...; want %q...", got[0][:10], largePrompt[:10])
+			t.Errorf("End mismatch: got ...%q; want ...%q", got[0][len(got[0])-10:], largePrompt[len(largePrompt)-10:])
+		}
+	}
+}
