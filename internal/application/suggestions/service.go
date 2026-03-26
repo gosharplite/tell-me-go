@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/pkg/trie"
 )
@@ -20,13 +21,15 @@ var _ ports.SuggestionService = (*MultiSourceSuggestionService)(nil)
 type MultiSourceSuggestionService struct {
 	trie    *trie.Trie
 	tracker ports.PromptTracker
+	fs      persistence.FileSystem
 }
 
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the trie.
-func NewMultiSourceSuggestionService(tracker ports.PromptTracker, recentHistory []string) (*MultiSourceSuggestionService, error) {
+func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string) (*MultiSourceSuggestionService, error) {
 	s := &MultiSourceSuggestionService{
 		trie:    trie.NewTrie(),
 		tracker: tracker,
+		fs:      fs,
 	}
 
 	// 1. Pre-load Global Top Prompts
@@ -89,43 +92,31 @@ func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, prefix str
 		dir = "."
 	}
 
-	f, err := os.Open(dir)
+	entries, err := s.fs.ReadDir(ctx, dir)
 	if err != nil {
 		return nil
 	}
-	defer func() { _ = f.Close() }()
 
 	var results []string
-	// Read directory in small batches to allow context cancellation
-	batchSize := 100
-
-	for {
-		// Check cancellation before each batch
+	for _, entry := range entries {
+		// Check cancellation
 		if ctx.Err() != nil {
 			return results
 		}
 
-		entries, err := f.ReadDir(batchSize)
-		if err != nil {
-			// io.EOF or other errors
-			break
-		}
+		name := entry.Name()
+		if strings.HasPrefix(name, filePrefix) {
+			if name == ".git" || name == "node_modules" || name == "vendor" || name == "bin" || name == "obj" {
+				continue
+			}
 
-		for _, entry := range entries {
-			name := entry.Name()
-			if strings.HasPrefix(name, filePrefix) {
-				if name == ".git" || name == "node_modules" || name == "vendor" || name == "bin" || name == "obj" {
-					continue
-				}
-
-				fullPath := filepath.Join(dir, name)
-				if entry.IsDir() {
-					fullPath += string(os.PathSeparator)
-				}
-				results = append(results, fullPath)
-				if len(results) >= 10 {
-					return results
-				}
+			fullPath := filepath.Join(dir, name)
+			if entry.IsDir() {
+				fullPath += string(os.PathSeparator)
+			}
+			results = append(results, fullPath)
+			if len(results) >= 10 {
+				return results
 			}
 		}
 	}

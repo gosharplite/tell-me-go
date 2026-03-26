@@ -18,6 +18,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
@@ -113,7 +114,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 			recentHistory = append(recentHistory, lastMsg)
 		}
 
-		svc, _ := suggestions.NewMultiSourceSuggestionService(tracker, recentHistory)
+		svc, _ := suggestions.NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, recentHistory)
 
 		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
 

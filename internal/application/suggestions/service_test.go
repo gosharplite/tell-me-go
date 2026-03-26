@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type mockPromptTracker struct {
@@ -45,7 +47,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 		prompts: []string{"test-prompt-1", "test-prompt-2"},
 	}
 
-	service, err := NewMultiSourceSuggestionService(tracker, []string{"hello", "world"})
+	service, err := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, []string{"hello", "world"})
 	if err != nil {
 		t.Fatalf("failed to create service: %v", err)
 	}
@@ -87,7 +89,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 
 func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	// Create many files to make scan slow
 	tmpDir := t.TempDir()
@@ -106,7 +108,7 @@ func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 
 func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	// Create some test files
 	tmpDir := t.TempDir()
@@ -146,7 +148,7 @@ func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 
 func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	prompt := "new-unique-prompt"
 	err := service.RecordPrompt(prompt)
@@ -230,7 +232,7 @@ func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
 
 func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	// Create a temp directory with some files
 	tmpDir := t.TempDir()
@@ -277,7 +279,7 @@ func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 
 func TestSuggestionService_ScanFiles_InvalidDir(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	// Call GetSuggestions with a path that definitely doesn't exist
 	invalidPath := filepath.Join(t.TempDir(), "non-existent-dir", "file")
@@ -307,7 +309,7 @@ func (e *errorPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string,
 func TestSuggestionService_LoadTopNFails(t *testing.T) {
 	tracker := &errorPromptTracker{}
 	// This should log to stderr but not return an error
-	service, err := NewMultiSourceSuggestionService(tracker, nil)
+	service, err := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 	if err != nil {
 		t.Fatalf("NewMultiSourceSuggestionService should not fail when tracker fails to load: %v", err)
 	}
@@ -318,7 +320,7 @@ func TestSuggestionService_LoadTopNFails(t *testing.T) {
 
 func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	err := service.RecordPrompt("")
 	if err != nil {
@@ -333,7 +335,7 @@ func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 
 func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	tmpDir := t.TempDir()
 	
