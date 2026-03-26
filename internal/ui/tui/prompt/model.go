@@ -5,6 +5,7 @@ package prompt
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -83,13 +84,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// But the instruction says Alt+Enter or Ctrl+S to submit.
 			// TextArea handles Enter as newline by default.
 			if msg.Alt { // Alt+Enter
-				m.submit()
-				return m, tea.Quit
+				if m.submit() {
+					return m, tea.Quit
+				}
+				return m, nil
 			}
 
 		case tea.KeyCtrlS:
-			m.submit()
-			return m, tea.Quit
+			if m.submit() {
+				return m, tea.Quit
+			}
+			return m, nil
 
 		case tea.KeyTab, tea.KeyShiftTab:
 			if len(m.suggester.Suggestions) > 0 {
@@ -161,9 +166,14 @@ func (m Model) View() string {
 	)
 }
 
-func (m *Model) submit() {
-	m.finalPrompt = m.input.Value()
+func (m *Model) submit() bool {
+	trimmed := strings.TrimSpace(m.input.Value())
+	if trimmed == "" {
+		return false
+	}
+	m.finalPrompt = trimmed
 	m.submitted = true
+	return true
 }
 
 func (m *Model) getSuggestions(prefix string) tea.Cmd {
