@@ -357,8 +357,16 @@ func (b *uiBridge) transitionSpinner(startFn func() func()) {
 		newStop() // Drop the new spinner if rendering started concurrently
 		return
 	}
+
+	// CAPTURE any spinner assigned by a concurrent thread while we were unlocked
+	leakedStop := b.stopSpinner
 	b.stopSpinner = newStop
 	b.mu.Unlock()
+
+	// Stop the leaked spinner OUTSIDE the lock to prevent deadlocks
+	if leakedStop != nil {
+		leakedStop()
+	}
 }
 
 func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Context {
