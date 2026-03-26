@@ -401,14 +401,19 @@ func (m *RootBrowserModel) renderHistory() string {
 			roleLabel = "MODEL"
 		}
 
+		turnStr := ""
+		if !dto.IsArchived {
+			turnStr = fmt.Sprintf(" - %d", (dto.OriginalIndex/2)+1)
+		}
+
 		var styledLabel string
 		switch dto.Role {
 		case "user":
-			styledLabel = userStyle.Render(fmt.Sprintf("[%s]", roleLabel))
+			styledLabel = userStyle.Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
 		case "assistant", "model":
-			styledLabel = modelStyle.Render(fmt.Sprintf("[%s]", roleLabel))
+			styledLabel = modelStyle.Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
 		default:
-			styledLabel = lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s]", roleLabel))
+			styledLabel = lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
 		}
 
 		if dto.IsArchived {
