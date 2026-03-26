@@ -33,10 +33,9 @@ We will create a new TUI model in `internal/ui/tui/prompt.go` that incorporates:
 
 ### 2. Suggestion Architecture
 To keep the TUI responsive, suggestions will be powered by a `SuggestionService` that pre-fetches and indexes relevant data:
-- **HistorySuggestions**: Pulled from `UnifiedHistoryProvider` and a new `GlobalPromptTracker` (`global_prompts.json`) containing the top 1000 cross-session prompts.
-- **ToolSuggestions**: Pulled from the `ToolRegistry`.
+- **HistorySuggestions**: Pulled from a new `GlobalPromptTracker` (`global_prompts.json`) containing the top 1000 cross-session prompts.
 - **PromptSuggestions**: Pre-defined prompts from `docs/user/prompts.md`.
-- **FileSuggestions**: Dynamic `os.ReadDir` with intelligent caching.
+- **FileSuggestions**: Dynamic `os.ReadDir` with intelligent caching (bounded and security-aware).
 
 ### 3. Integration with Capturer
 The existing `ports.Capturer` interface will be extended or implemented by a `TUICapturer` that launches the Bubble Tea program and returns the final string once the user presses `Ctrl+S` or `Enter` (configurable).

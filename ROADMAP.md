@@ -89,6 +89,9 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - **[TECHNICAL DEBT] "God Object" TUI Model:** Must use Component Composition (`Dashboard`, `Prompt/Textarea`, `Suggester/Autocomplete`) instead of a single massive Model.
     - **[REFACTOR] CQRS for Real-Time Querying:** Must implement an optimized Read Model (e.g., Radix Tree/Trie) for `O(k)` prefix matching instead of linear scans over history and tools.
     - **[ARCHITECTURAL BLOCKER] Synchronous Global State Mutation:** The new `global_prompts.json` tracker MUST use file-locking (e.g., `syscall.Flock`) to prevent corruption from concurrent terminal sessions, and updates MUST run asynchronously (fire-and-forget) to prevent blocking the LLM request cycle.
+    - **[SECURITY & SCOPE] Bounded File Scanning:** File completion must restrict scan depth and filter large directories (e.g., `node_modules`) to avoid memory exhaustion.
+    - **[UI RISK] Multi-line Layout Paging:** The textarea must have fixed layout bounds with internal scrolling to prevent large pastes from breaking the TUI layout.
+    - **[COMPATIBILITY] Cross-Platform Constraints:** Provide alternatives to `Ctrl+S` (e.g., `Alt+Enter` to avoid XOFF locks) and sanitize line-endings (`\r\n` to `\n`).
 - **Task:** Implement **Opt-In TUI Prompt Engine**:
     - [ ] Create `tell-me-go --tui` (or `-i`) flag for explicit activation.
     - [ ] Implement `USE_TUI_PROMPT` configuration (default: `false`).
@@ -105,4 +108,5 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
         - [ ] Files: Local workspace paths with dynamic directory scanning.
     - [ ] Add **Ghost Text** and **Floating Dropdown** UI components for non-intrusive autocompletion.
     - [ ] Map standard keybindings (`Tab` to cycle, `Ctrl+S` to submit, `Esc` to quit).
+    - [ ] Ensure rendering degrades gracefully on `TERM=dumb` and handles Windows line-endings (`\r\n`) securely.
 - **Reference:** [ADR-009: TUI Interactive Prompt Mode with Auto-completion](./docs/adr/2026-02-tui-prompt-mode.md)
