@@ -59,7 +59,7 @@ func NewModel(svc ports.SuggestionService) *Model {
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		textarea.Blink,
-		m.getSuggestions(""), // Load initial top prompts
+		m.getSuggestions(m.ctx, ""), // Load initial top prompts
 	)
 }
 
@@ -134,7 +134,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.value == m.input.Value() {
 			m.cancel()
 			m.ctx, m.cancel = context.WithCancel(context.Background())
-			return m, m.getSuggestions(msg.value)
+			return m, m.getSuggestions(m.ctx, msg.value)
 		}
 		return m, nil
 
@@ -176,12 +176,12 @@ func (m *Model) submit() bool {
 	return true
 }
 
-func (m *Model) getSuggestions(prefix string) tea.Cmd {
+func (m *Model) getSuggestions(ctx context.Context, prefix string) tea.Cmd {
 	return func() tea.Msg {
 		// Asynchronous call to the suggestion service
-		suggestions, err := m.suggestionSvc.GetSuggestions(m.ctx, prefix)
+		suggestions, err := m.suggestionSvc.GetSuggestions(ctx, prefix)
 		if err != nil {
-			if context.Cause(m.ctx) == context.Canceled {
+			if ctx.Err() != nil {
 				return nil // Silently ignore canceled requests
 			}
 			// For other errors, we could return them, but let's keep it quiet in TUI
