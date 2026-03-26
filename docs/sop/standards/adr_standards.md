@@ -28,9 +28,11 @@ Every ADR must include the following sections:
 1. **Drafting:** The Architect drafts the ADR in a temporary file or discussion.
 2. **Review:** The decision is reviewed against existing SOPs (e.g., Security, Testing).
 3. **Commitment:** Once accepted, the Coder creates the file in `docs/adr/` and updates any relevant cross-references in the SOPs.
-4. **Superseding:** If a decision is changed later, the old ADR's status is updated to "Superseded" with a link to the new ADR.
+4. **Index Maintenance:** The Coder updates the [ADR index file](../adr/README.md) with the new ADR entry.
+5. **Superseding:** If a decision is changed later, the old ADR's status is updated to "Superseded" with a link to the new ADR.
 
 ---
 
 ### 5. Verification
 - Verify that the new ADR is linked in the main `README.md` under a "Design Decisions" section.
+- Verify that the [ADR index file](../adr/README.md) has been updated with the new ADR entry.

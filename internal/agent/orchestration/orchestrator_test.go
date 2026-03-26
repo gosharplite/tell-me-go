@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -251,6 +252,13 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.RefiningStartedEvent{},
 			setup: func(m *mockUIRenderer) {
 				m.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {})
+			},
+		},
+		{
+			name:  "SummarizationStartedEvent",
+			event: events.SummarizationStartedEvent{},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {})
 			},
 		},
 		{
@@ -1050,4 +1058,77 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			mCapturer.AssertExpectations(t)
 		})
 	}
+}
+
+func TestUIBridge_SpinnerTransitions(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	// 1. Summarization starts
+	stopSummarizationCalled := false
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {
+		stopSummarizationCalled = true
+	}).Once()
+
+	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
+
+	// 2. Inference starts (without previous response)
+	stopInferenceCalled := false
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {
+		stopInferenceCalled = true
+	}).Once()
+
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+
+	// 3. Refining starts
+	stopRefiningCalled := false
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {
+		stopRefiningCalled = true
+	}).Once()
+
+	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
+
+	// Verification
+	assert.True(t, stopSummarizationCalled, "Expected summarization spinner to be stopped before inference started")
+	assert.True(t, stopInferenceCalled, "Expected inference spinner to be stopped before refining started")
+
+	// Cleanup remaining
+	bridge.Cleanup()
+	assert.True(t, stopRefiningCalled, "Expected refining spinner to be stopped during cleanup")
+
+	mRenderer.AssertExpectations(t)
+}
+
+func TestUIBridge_SpinnerConcurrency(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+
+	var activeSpinners int32
+
+	// Thread-safe mock setup
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {
+		atomic.AddInt32(&activeSpinners, -1)
+	})
+	mRenderer.On("StartSpinner", mock.Anything).Return(func() {
+		atomic.AddInt32(&activeSpinners, -1)
+	})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			atomic.AddInt32(&activeSpinners, 1)
+			if idx%2 == 0 {
+				bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
+			} else {
+				bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+			}
+		}(i)
+	}
+	wg.Wait()
+	bridge.Cleanup()
+
+	// Verify all spinners were eventually stopped
+	assert.Equal(t, int32(0), atomic.LoadInt32(&activeSpinners), "Expected all spinners to be stopped")
 }

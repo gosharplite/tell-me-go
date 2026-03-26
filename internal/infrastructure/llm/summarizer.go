@@ -53,6 +53,16 @@ func (s *summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 
 	summarizerInput := s.prepareSummarizerInput(subset, focus)
 
+	if s.events != nil {
+		if err := events.SafePublish(ctx, s.events, events.SummarizationStartedEvent{}); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				s.logger.Error("event_publish_failed",
+					slog.String("event_type", "SummarizationStartedEvent"),
+					slog.Any("error", err))
+			}
+		}
+	}
+
 	// We need a resolver for the gateway call, but since we've stripped binary data, it's mostly for satisfying the interface.
 	respContent, metrics, err := s.gateway.Generate(ctx, summarizerInput, nil, nil)
 	duration := time.Since(startTime)

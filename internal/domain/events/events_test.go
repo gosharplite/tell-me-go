@@ -388,6 +388,7 @@ func TestEventTypes(t *testing.T) {
 		events.TokenLimitReachedEvent{},
 		events.SummarizationRequired{},
 		events.TraceEvent{},
+		events.SummarizationStartedEvent{},
 	}
 
 	for _, e := range events_list {

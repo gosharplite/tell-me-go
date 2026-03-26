@@ -1,4 +1,4 @@
-# ADR 0005: Skill Injection Architecture
+# ADR-005: Skill Injection Architecture
 
 ## Status
 Accepted
