@@ -65,11 +65,10 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 
 ## Phase 8: Interactive History Exploration (Proposed)
 - **Goal:** Provide professional-grade, unbounded history exploration with search, navigation, and thought visibility controls, without compromising memory safety or LLM context limits.
-- **Task:** Implement **Unified History Data Layer (Prerequisite)**:
-    - [ ] Create `ArchiveReader` port with O(1) byte-offset indexing for safe, paginated reads of `history.archive.jsonl`.
-    - [ ] Implement `UnifiedHistoryProvider` facade to stitch archived and active history seamlessly.
-    - [ ] Implement **Summary Filtering**: Silently drop synthetic "System Auto-Summary" messages during stitching to prevent "double history" UX bugs.
-    - [ ] Enforce CQRS boundaries: UI uses the unified reader; Agent retains the active `HistoryManager` to protect `summarize_history` from token bloat.
+- **Task:** Implement **Unified History Data Layer (Strict Prerequisite - STOP & VERIFY before TUI)**:
+    - [ ] **1. Domain Layer (Read Model)**: Define `HistoryViewDTO`, `ArchiveReader`, and `UnifiedHistoryProvider` interfaces in `internal/domain/ports/` to enforce CQRS.
+    - [ ] **2. Infrastructure Layer (Archive Adapter)**: Implement `ArchiveReader` using `os.File.Seek(offset, io.SeekStart)` for O(1) byte-offset reads. Write a benchmark proving low memory allocation on a 50MB file.
+    - [ ] **3. Application Layer (Unified Facade)**: Implement `UnifiedHistoryProvider` to stitch active/archive data, map to `HistoryViewDTO`, and strictly filter out synthetic "System Auto-Summary" messages.
 - **Task:** Implement **Interactive History Browser** using Bubble Tea TUI framework:
     - [ ] Create `tell-me-go browse` subcommand with TTY-aware fallback.
     - [ ] Architect a non-blocking asynchronous event loop (`tea.Cmd`) to prevent disk I/O UI freezing.
