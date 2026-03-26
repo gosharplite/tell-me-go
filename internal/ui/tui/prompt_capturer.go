@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -80,11 +82,21 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 		return "", context.Canceled
 	}
 
-	finalPrompt := finalModel.FinalPrompt()
+	finalPrompt := strings.TrimSpace(finalModel.FinalPrompt())
 
 	// Record the prompt for future suggestions
 	if finalPrompt != "" {
 		_ = c.svc.RecordPrompt(finalPrompt)
+
+		// Provide visual feedback after the TUI closes so the user knows what was sent.
+		// This uses the base capturer's Prompt method to stay consistent with the tool's theme.
+		timestamp := time.Now().Format("15:04:05")
+		c.base.Prompt(fmt.Sprintf("[%s] Input captured:\n", timestamp))
+		fmt.Fprintln(os.Stderr, finalPrompt)
+		c.base.Prompt(fmt.Sprintf("[%s] Processing...\n", timestamp))
+	} else if !options.SkipTTYWait {
+		// Return an error for empty prompt to match the base capturer's behavior
+		return "", fmt.Errorf("empty prompt")
 	}
 
 	return finalPrompt, nil
