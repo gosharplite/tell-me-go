@@ -32,22 +32,24 @@ type historyLoadedMsg struct {
 
 // RootBrowserModel implements the tea.Model interface for the history browser.
 type RootBrowserModel struct {
-	provider   ports.UnifiedHistoryProvider
-	history    []ports.HistoryViewDTO
-	viewport   viewport.Model
-	isLoading  bool
-	ready      bool
-	cursor     string
-	err        error
-	width      int
-	height     int
+	provider     ports.UnifiedHistoryProvider
+	history      []ports.HistoryViewDTO
+	viewport     viewport.Model
+	isLoading    bool
+	showThoughts bool
+	ready        bool
+	cursor       string
+	err          error
+	width        int
+	height       int
 }
 
 // NewRootBrowserModel creates a new history browser root model.
 func NewRootBrowserModel(provider ports.UnifiedHistoryProvider) *RootBrowserModel {
 	return &RootBrowserModel{
-		provider:  provider,
-		isLoading: true,
+		provider:     provider,
+		isLoading:    true,
+		showThoughts: true,
 	}
 }
 
@@ -68,6 +70,10 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case " ":
+			m.showThoughts = !m.showThoughts
+			m.viewport.SetContent(m.renderHistory())
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -90,15 +96,25 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, nil
 		}
-		m.history = append(m.history, msg.dtos...)
+		if len(msg.dtos) > 0 {
+			m.history = append(m.history, msg.dtos...)
+		}
 		m.cursor = msg.nextCursor
 		m.viewport.SetContent(m.renderHistory())
 		return m, nil
 	}
 
-	// Forward messages to the viewport (e.g., arrow keys, page up/down)
+	// Forward messages to the viewport
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
+
+	// Infinite pagination trigger
+	if m.viewport.AtBottom() && !m.isLoading && m.cursor != "EOF" && m.ready {
+		m.isLoading = true
+		m.viewport.SetContent(m.renderHistory())
+		m.viewport.GotoBottom()
+		return m, tea.Batch(append(cmds, fetchHistoryCmd(m.provider, m.cursor))...)
+	}
 
 	return m, tea.Batch(cmds...)
 }
@@ -125,7 +141,7 @@ func (m *RootBrowserModel) renderHistory() string {
 	if len(m.history) == 0 && m.isLoading {
 		return "Loading history..."
 	}
-	if len(m.history) == 0 {
+	if len(m.history) == 0 && m.cursor == "EOF" {
 		return "No history found."
 	}
 
@@ -153,7 +169,7 @@ func (m *RootBrowserModel) renderHistory() string {
 		sb.WriteString(styledLabel)
 		sb.WriteString("\n")
 
-		if dto.ThoughtProcess != "" {
+		if m.showThoughts && dto.ThoughtProcess != "" {
 			sb.WriteString(thoughtStyle.Render("[THOUGHTS] " + dto.ThoughtProcess))
 			sb.WriteString("\n\n")
 		}
@@ -174,22 +190,31 @@ func (m *RootBrowserModel) renderHistory() string {
 
 	if m.isLoading {
 		sb.WriteString("\n\n" + thoughtStyle.Render("Loading more messages..."))
+	} else if m.cursor == "EOF" && len(m.history) > 0 {
+		sb.WriteString("\n\n" + archivedStyle.Render("─── End of History ───"))
 	}
 
 	return sb.String()
 }
 
 func (m *RootBrowserModel) renderFooter() string {
-	info := footerStyle.Render("↑/↓: Scroll • q: Quit")
+	var sb strings.Builder
+	sb.WriteString("↑/↓: Scroll • Space: Toggle Thoughts • q: Quit")
 	if m.isLoading {
-		info += footerStyle.Render(" • LOADING...")
+		sb.WriteString(" • LOADING...")
 	}
-	return info
+	if !m.showThoughts {
+		sb.WriteString(" (Thoughts hidden)")
+	}
+	return footerStyle.Render(sb.String())
 }
 
 func fetchHistoryCmd(provider ports.UnifiedHistoryProvider, cursor string) tea.Cmd {
 	return func() tea.Msg {
 		dtos, nextCursor, err := provider.GetHistoryStream(context.Background(), 20, cursor)
+		if err == nil && len(dtos) == 0 && cursor != "" {
+			nextCursor = "EOF"
+		}
 		return historyLoadedMsg{
 			dtos:       dtos,
 			nextCursor: nextCursor,
