@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 )
 
 type mockArchiveReader struct {
@@ -51,7 +51,7 @@ func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
 		},
 	}
 
-	provider := agent.NewUnifiedProvider(archive, active)
+	provider := history.NewUnifiedProvider(archive, active)
 
 	t.Run("it filters out auto-summary messages from active history", func(t *testing.T) {
 		dtos, nextCursor, err := provider.GetHistoryStream(ctx, 10, "")

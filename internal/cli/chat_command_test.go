@@ -28,6 +28,10 @@ func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, configPath stri
 	return "retry test", 1, nil
 }
 
+func (m *mockChatService) BrowseHistory(ctx stdctx.Context, configPath string, capturer ports.Capturer) error {
+	return nil
+}
+
 type mockSM struct {
 	domain_security.Manager
 }

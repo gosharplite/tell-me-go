@@ -67,8 +67,8 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 - **Goal:** Provide professional-grade, unbounded history exploration with search, navigation, and thought visibility controls, without compromising memory safety or LLM context limits.
 - **Task:** Implement **Unified History Data Layer (Strict Prerequisite - STOP & VERIFY before TUI)**:
     - [x] **1. Domain Layer (Read Model)**: Define `HistoryViewDTO`, `ArchiveReader`, and `UnifiedHistoryProvider` interfaces in `internal/domain/ports/` to enforce CQRS.
-    - [ ] **2. Infrastructure Layer (Archive Adapter)**: Implement `ArchiveReader` using `os.File.Seek(offset, io.SeekStart)` for O(1) byte-offset reads. Write a benchmark proving low memory allocation on a 50MB file.
-    - [ ] **3. Application Layer (Unified Facade)**: Implement `UnifiedHistoryProvider` to stitch active/archive data, map to `HistoryViewDTO`, and strictly filter out synthetic "System Auto-Summary" messages.
+    - [x] **2. Infrastructure Layer (Archive Adapter)**: Implement `ArchiveReader` using `os.File.Seek(offset, io.SeekStart)` for O(1) byte-offset reads. Write a benchmark proving low memory allocation on a 50MB file.
+    - [x] **3. Application Layer (Unified Facade)**: Implement `UnifiedHistoryProvider` to stitch active/archive data, map to `HistoryViewDTO`, and strictly filter out synthetic "System Auto-Summary" messages.
 - **Task:** Implement **Interactive History Browser** using Bubble Tea TUI framework:
     - [ ] Create `tell-me-go browse` subcommand with TTY-aware fallback.
     - [ ] Architect a non-blocking asynchronous event loop (`tea.Cmd`) to prevent disk I/O UI freezing.

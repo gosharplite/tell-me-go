@@ -16,6 +16,8 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Container defines the interface for building session dependencies and provides factories.
@@ -25,6 +27,7 @@ type Container interface {
 	GetAgentFactory() ports.ChatterFactory
 	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
 	GetHistoryManager(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
+	GetUnifiedHistoryProvider(ctx context.Context, cfg *domain_config.Config) (ports.UnifiedHistoryProvider, error)
 }
 
 type chatService struct {
@@ -127,4 +130,28 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 
 	return err
+}
+
+// BrowseHistory initializes the TUI history browser and runs the Bubble Tea loop.
+func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capturer ports.Capturer) error {
+	cfg, err := s.Loader.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("error loading config [%s]: %w", configPath, err)
+	}
+
+	provider, err := s.Container.GetUnifiedHistoryProvider(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to load unified history provider: %w", err)
+	}
+
+	// TTY check is done in the command layer or here.
+	// We'll trust the caller for now, or check if capturer is available.
+
+	model := tui.NewRootBrowserModel(provider)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("tui program error: %w", err)
+	}
+
+	return nil
 }

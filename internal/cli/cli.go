@@ -89,6 +89,10 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	// Determine which command to run
 	cmdName := "chat"
 	for _, arg := range args {
+		if arg == "browse" {
+			cmdName = "browse"
+			break
+		}
 		if arg == "-v" || arg == "--version" {
 			cmdName = "version"
 			break
