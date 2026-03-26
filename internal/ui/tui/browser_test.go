@@ -6,6 +6,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -450,5 +452,264 @@ func TestBrowserModel_Update(t *testing.T) {
 				tt.check(t, updatedModel, cmd, mockModifier)
 			}
 		})
+	}
+}
+
+func TestBrowserModel_View(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	ctx := context.Background()
+	m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
+
+	// Test Initializing state
+	m.ready = false
+	got := m.View()
+	if !strings.Contains(got, "Initializing terminal...") {
+		t.Errorf("expected Initializing state, got %q", got)
+	}
+
+	// Test ready state with data
+	m.ready = true
+	m.width = 80
+	m.height = 40 // Larger height to ensure all items are in view
+	m.viewport = viewport.New(80, 30)
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ContentPreview: "User Message", OriginalIndex: 0, IsPinned: true},
+		{Role: "assistant", ContentPreview: "Assistant Message", ThoughtProcess: "Thinking...", ToolCalls: []string{"test-tool"}, OriginalIndex: 1},
+		{Role: "other", ContentPreview: "Other Message", OriginalIndex: 2},
+		{Role: "user", ContentPreview: "Archived Message", IsArchived: true, OriginalIndex: 3},
+	}
+	m.selectedTurn = 0
+	m.showThoughts = true
+
+	// Trigger render
+	rendered := m.renderHistory()
+	m.viewport.SetContent(rendered)
+
+	got = m.View()
+
+	// Assertions on the rendered content (directly or via View if height permits)
+	expectedSubstrings := []string{
+		"> [USER] - 1",
+		"[PINNED]",
+		"User Message",
+		"[MODEL] - 1",
+		"Assistant Message",
+		"[THOUGHTS] Thinking...",
+		"Executing tool: test-tool",
+		"[OTHER] - 2",
+		"(archived)",
+		"Archived Message",
+	}
+
+	for _, s := range expectedSubstrings {
+		if !strings.Contains(rendered, s) {
+			t.Errorf("expected %q in renderHistory output", s)
+		}
+	}
+
+	// Test Search state
+	m.isSearching = true
+	m.searchBar.SetValue("query")
+	got = m.View()
+	if !strings.Contains(got, "query") {
+		t.Errorf("expected search bar view in search state, got %q", got)
+	}
+
+	// Test Error state
+	m.err = errors.New("test error")
+	got = m.View()
+	if !strings.Contains(got, "Error: test error") {
+		t.Errorf("expected error view, got %q", got)
+	}
+}
+
+func TestBrowserModel_RenderHistory_Paths(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+
+	m.isLoading = true
+	got := m.renderHistory()
+	if !strings.Contains(got, "Loading history...") {
+		t.Errorf("expected Loading history..., got %q", got)
+	}
+
+	m.isLoading = false
+	m.cursor = "EOF"
+	got = m.renderHistory()
+	if !strings.Contains(got, "No history found.") {
+		t.Errorf("expected No history found., got %q", got)
+	}
+
+	// Multi-line content
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ContentPreview: "Line 1\nLine 2", OriginalIndex: 0},
+	}
+	got = m.renderHistory()
+	if !strings.Contains(got, "Line 1") || !strings.Contains(got, "Line 2") {
+		t.Errorf("expected multi-line content, got %q", got)
+	}
+
+	// Loading more messages at bottom
+	m.isLoading = true
+	got = m.renderHistory()
+	if !strings.Contains(got, "Loading more messages...") {
+		t.Errorf("expected Loading more messages..., got %q", got)
+	}
+
+	// End of History at bottom
+	m.isLoading = false
+	m.cursor = "EOF"
+	got = m.renderHistory()
+	if !strings.Contains(got, "End of History") {
+		t.Errorf("expected End of History, got %q", got)
+	}
+
+	// Highlight in renderHistory
+	m.currentQuery = "Line"
+	got = m.renderHistory()
+	if len(m.matches) == 0 {
+		t.Error("expected matches to be populated")
+	}
+}
+
+func TestFetchHistoryCmd(t *testing.T) {
+	mockProvider := &mockHistoryProvider{
+		GetHistoryStreamFunc: func(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
+			return []ports.HistoryViewDTO{
+				{Role: "user", ContentPreview: "test"},
+			}, "next-cursor", nil
+		},
+	}
+
+	cmd := fetchHistoryCmd(mockProvider, "start")
+	msg := cmd()
+
+	m, ok := msg.(historyLoadedMsg)
+	if !ok {
+		t.Fatalf("expected historyLoadedMsg, got %T", msg)
+	}
+	if m.nextCursor != "next-cursor" {
+		t.Errorf("got cursor %q; want %q", m.nextCursor, "next-cursor")
+	}
+	if len(m.dtos) != 1 {
+		t.Errorf("got %d dtos; want 1", len(m.dtos))
+	}
+}
+
+func TestWatchHistoryFileCmd(t *testing.T) {
+	// 1. Empty filepath
+	cmd := watchHistoryFileCmd(context.Background(), "")
+	if cmd() != nil {
+		t.Error("expected nil msg for empty filepath")
+	}
+
+	// 2. Non-existent file
+	cmd = watchHistoryFileCmd(context.Background(), "non-existent")
+	if cmd() != nil {
+		t.Error("expected nil msg for non-existent file")
+	}
+
+	// 3. Cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tmpFile, err := os.CreateTemp("", "test-watch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	cmd = watchHistoryFileCmd(ctx, tmpFile.Name())
+	if cmd() != nil {
+		t.Error("expected nil msg for cancelled context")
+	}
+}
+
+func TestRootBrowserModel_Init(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("expected Init to return a command")
+	}
+}
+
+func TestBrowserModel_HighlightMatches(t *testing.T) {
+	m := &RootBrowserModel{}
+	text := "This is a test message"
+	query := "test"
+
+	got := m.highlightMatches(text, query)
+	if !strings.Contains(got, "test") {
+		t.Errorf("expected highlight in %q", got)
+	}
+
+	// Test empty query
+	if m.highlightMatches(text, "") != text {
+		t.Error("expected original text for empty query")
+	}
+
+	// Test invalid regex query
+	if m.highlightMatches(text, "[") != text {
+		t.Error("expected original text for invalid regex query")
+	}
+}
+
+func TestBrowserModel_Footer(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+
+	// Test normal footer
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", OriginalIndex: 0},
+		{Role: "assistant", OriginalIndex: 1},
+	}
+	got := m.renderFooter()
+	if !strings.Contains(got, "Scroll") {
+		t.Errorf("expected normal footer, got %q", got)
+	}
+
+	// Test high pinning pressure (count of pinned turns > 5)
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", OriginalIndex: 0, IsPinned: true},
+		{Role: "assistant", OriginalIndex: 1, IsPinned: true},
+		{Role: "user", OriginalIndex: 2, IsPinned: true},
+		{Role: "assistant", OriginalIndex: 3, IsPinned: true},
+		{Role: "user", OriginalIndex: 4, IsPinned: true},
+		{Role: "assistant", OriginalIndex: 5, IsPinned: true},
+		{Role: "user", OriginalIndex: 6, IsPinned: true},
+		{Role: "assistant", OriginalIndex: 7, IsPinned: true},
+		{Role: "user", OriginalIndex: 8, IsPinned: true},
+		{Role: "assistant", OriginalIndex: 9, IsPinned: true},
+		{Role: "user", OriginalIndex: 10, IsPinned: true},
+		{Role: "assistant", OriginalIndex: 11, IsPinned: true},
+	}
+	got = m.renderFooter()
+	if !strings.Contains(got, "High Pinning Pressure") {
+		t.Errorf("expected high pinning pressure warning, got %q", got)
+	}
+
+	if m.calculateFooterHeight() != 2 {
+		t.Errorf("expected footer height 2 for high pinning pressure, got %d", m.calculateFooterHeight())
+	}
+
+	// Test search query in footer
+	m.currentQuery = "findme"
+	m.matches = []int{1, 2}
+	m.currentMatch = 0
+	got = m.renderFooter()
+	if !strings.Contains(got, "Query: \"findme\" (1/2 matches)") {
+		t.Errorf("expected search info in footer, got %q", got)
+	}
+
+	// Test search query in footer with no matches
+	m.matches = nil
+	got = m.renderFooter()
+	if !strings.Contains(got, "no matches") {
+		t.Errorf("expected 'no matches' in footer, got %q", got)
 	}
 }
