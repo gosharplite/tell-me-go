@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/fsnotify/fsnotify"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -23,6 +25,7 @@ var (
 	toolStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))              // Yellow
 	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Padding(0, 1)
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
+	warningStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
 	archivedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
 	highlightStyle = lipgloss.NewStyle().Background(lipgloss.Color("226")).Foreground(lipgloss.Color("0")) // Yellow BG, Black FG
 )
@@ -33,25 +36,28 @@ type historyLoadedMsg struct {
 	err        error
 }
 
+type fileChangedMsg struct{}
+
 // RootBrowserModel implements the tea.Model interface for the history browser.
 type RootBrowserModel struct {
-	provider     ports.UnifiedHistoryProvider
-	cmdService   ports.HistoryModifier
-	history      []ports.HistoryViewDTO
-	viewport     viewport.Model
-	searchBar    textinput.Model
-	matches      []int
-	currentMatch int
-	selectedTurn int
-	isSearching  bool
-	currentQuery string
-	isLoading    bool
-	showThoughts bool
-	ready        bool
-	cursor       string
-	err          error
-	width        int
-	height       int
+	provider         ports.UnifiedHistoryProvider
+	cmdService       ports.HistoryModifier
+	history          []ports.HistoryViewDTO
+	viewport         viewport.Model
+	searchBar        textinput.Model
+	matches          []int
+	currentMatch     int
+	selectedTurn     int
+	isSearching      bool
+	currentQuery     string
+	isLoading        bool
+	showThoughts     bool
+	ready            bool
+	cursor           string
+	err              error
+	width            int
+	height           int
+	lastMutationTime time.Time
 }
 
 // NewRootBrowserModel creates a new history browser root model.
@@ -75,7 +81,48 @@ func (m RootBrowserModel) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		fetchHistoryCmd(m.provider, ""),
+		watchHistoryFileCmd(m.cmdService.GetFilePath()),
 	)
+}
+
+func watchHistoryFileCmd(filepath string) tea.Cmd {
+	if filepath == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			return nil
+		}
+		defer watcher.Close()
+
+		if err := watcher.Add(filepath); err != nil {
+			return nil
+		}
+
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return nil
+			}
+			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+				return fileChangedMsg{}
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return nil
+			}
+			_ = err
+		}
+		return nil
+	}
+}
+
+func (m *RootBrowserModel) updateViewportHeight() {
+	if !m.ready {
+		return
+	}
+	m.viewport.Height = m.height - m.calculateFooterHeight()
 }
 
 // Update handles incoming messages and updates the model state.
@@ -94,6 +141,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentQuery = m.searchBar.Value()
 				m.currentMatch = 0
 				m.viewport.SetContent(m.renderHistory())
+				m.updateViewportHeight()
 				m.viewport.GotoTop()
 				return m, nil
 			case "esc":
@@ -102,6 +150,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentQuery = ""
 				m.matches = nil
 				m.viewport.SetContent(m.renderHistory())
+				m.updateViewportHeight()
 				return m, nil
 			}
 			m.searchBar, cmd = m.searchBar.Update(msg)
@@ -118,6 +167,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.isSearching = true
 			m.searchBar.Focus()
+			m.updateViewportHeight()
 			return m, nil
 		case "j":
 			if len(m.history) > 0 {
@@ -155,7 +205,9 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.history[idx].IsPinned = newPinState
 						}
 					}
+					m.lastMutationTime = time.Now()
 					m.viewport.SetContent(m.renderHistory())
+					m.updateViewportHeight()
 				}
 			}
 			return m, nil
@@ -186,6 +238,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 
+					m.lastMutationTime = time.Now()
 					// Full Refresh
 					m.history = nil
 					m.cursor = ""
@@ -215,15 +268,14 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		footerHeight := 1
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-footerHeight)
+			m.viewport = viewport.New(msg.Width, msg.Height-m.calculateFooterHeight())
 			m.viewport.HighPerformanceRendering = false
 			m.viewport.SetContent(m.renderHistory())
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - footerHeight
+			m.updateViewportHeight()
 		}
 
 	case historyLoadedMsg:
@@ -237,7 +289,22 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.cursor = msg.nextCursor
 		m.viewport.SetContent(m.renderHistory())
+		m.updateViewportHeight()
 		return m, nil
+
+	case fileChangedMsg:
+		// Debounce: ignore changes if we just mutated the file
+		if time.Since(m.lastMutationTime) < 500*time.Millisecond {
+			return m, watchHistoryFileCmd(m.cmdService.GetFilePath())
+		}
+		// Refresh active memory
+		m.history = nil
+		m.cursor = ""
+		m.isLoading = true
+		return m, tea.Batch(
+			fetchHistoryCmd(m.provider, ""),
+			watchHistoryFileCmd(m.cmdService.GetFilePath()),
+		)
 	}
 
 	// Forward messages to the viewport
@@ -407,8 +474,58 @@ func (m *RootBrowserModel) highlightMatches(text, query string) string {
 	})
 }
 
+func (m *RootBrowserModel) calculateFooterHeight() int {
+	if m.isSearching {
+		return 1
+	}
+
+	activeTurns := 0
+	pinnedTurns := 0
+	lastTurnIdx := -1
+	for _, dto := range m.history {
+		if !dto.IsArchived {
+			turnIdx := dto.OriginalIndex / 2
+			if turnIdx != lastTurnIdx {
+				activeTurns++
+				if dto.IsPinned {
+					pinnedTurns++
+				}
+				lastTurnIdx = turnIdx
+			}
+		}
+	}
+
+	if pinnedTurns > 5 || (activeTurns > 0 && float64(pinnedTurns)/float64(activeTurns) > 0.5) {
+		return 2
+	}
+	return 1
+}
+
 func (m *RootBrowserModel) renderFooter() string {
 	var sb strings.Builder
+
+	// Calculate Pinning Pressure
+	activeTurns := 0
+	pinnedTurns := 0
+	lastTurnIdx := -1
+	for _, dto := range m.history {
+		if !dto.IsArchived {
+			turnIdx := dto.OriginalIndex / 2
+			if turnIdx != lastTurnIdx {
+				activeTurns++
+				if dto.IsPinned {
+					pinnedTurns++
+				}
+				lastTurnIdx = turnIdx
+			}
+		}
+	}
+
+	if pinnedTurns > 5 || (activeTurns > 0 && float64(pinnedTurns)/float64(activeTurns) > 0.5) {
+		sb.WriteString(warningStyle.Render("⚠️ High Pinning Pressure: Auto-summarization may fail."))
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("↑/↓: Scroll • Space: Toggle Thoughts • /: Search • j/k: Select • p: Pin • r: Rollback • q: Quit")
 	if m.currentQuery != "" {
 		matchInfo := ""
