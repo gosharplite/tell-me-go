@@ -74,7 +74,7 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [x] Architect a non-blocking asynchronous event loop (`tea.Cmd`) to prevent disk I/O UI freezing.
     - [x] Implement Component Composition (Viewport, SearchBar) to avoid TUI 'God Objects'.
     - [x] Add basic scrolling navigation and thought visibility toggle (spacebar).
-    - [ ] Add full-text search across the complete conversation timeline.
+    - [x] Add full-text search across the complete conversation timeline.
     - [ ] Support turn jumping and tool call expansion.
     - [ ] **Asset Hydration Check**: Render placeholders (`[Image Attached: {ID}]`) to prevent binary blob panics in the TUI.
     - [ ] Integrate with existing pin/unpin and rollback functionality via Command Ports.

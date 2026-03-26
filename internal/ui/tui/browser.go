@@ -39,6 +39,8 @@ type RootBrowserModel struct {
 	history      []ports.HistoryViewDTO
 	viewport     viewport.Model
 	searchBar    textinput.Model
+	matches      []int
+	currentMatch int
 	isSearching  bool
 	currentQuery string
 	isLoading    bool
@@ -86,6 +88,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.isSearching = false
 				m.currentQuery = m.searchBar.Value()
+				m.currentMatch = 0
 				m.viewport.SetContent(m.renderHistory())
 				m.viewport.GotoTop()
 				return m, nil
@@ -93,6 +96,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isSearching = false
 				m.searchBar.SetValue("")
 				m.currentQuery = ""
+				m.matches = nil
 				m.viewport.SetContent(m.renderHistory())
 				return m, nil
 			}
@@ -110,6 +114,21 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.isSearching = true
 			m.searchBar.Focus()
+			return m, nil
+		case "n":
+			if len(m.matches) > 0 {
+				m.currentMatch = (m.currentMatch + 1) % len(m.matches)
+				m.viewport.SetYOffset(m.matches[m.currentMatch])
+			}
+			return m, nil
+		case "N":
+			if len(m.matches) > 0 {
+				m.currentMatch--
+				if m.currentMatch < 0 {
+					m.currentMatch = len(m.matches) - 1
+				}
+				m.viewport.SetYOffset(m.matches[m.currentMatch])
+			}
 			return m, nil
 		}
 
@@ -245,7 +264,31 @@ func (m *RootBrowserModel) renderHistory() string {
 		sb.WriteString("\n\n" + archivedStyle.Render("─── End of History ───"))
 	}
 
-	return sb.String()
+	rendered := sb.String()
+
+	// Recalculate match line positions
+	m.matches = []int{}
+	if m.currentQuery != "" {
+		re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(m.currentQuery))
+		if err == nil {
+			lines := strings.Split(rendered, "\n")
+			for i, line := range lines {
+				if re.MatchString(line) {
+					m.matches = append(m.matches, i)
+				}
+			}
+		}
+	}
+
+	if len(m.matches) > 0 {
+		if m.currentMatch >= len(m.matches) {
+			m.currentMatch = len(m.matches) - 1
+		}
+	} else {
+		m.currentMatch = 0
+	}
+
+	return rendered
 }
 
 func (m *RootBrowserModel) highlightMatches(text, query string) string {
@@ -268,7 +311,13 @@ func (m *RootBrowserModel) renderFooter() string {
 	var sb strings.Builder
 	sb.WriteString("↑/↓: Scroll • Space: Toggle Thoughts • /: Search • q: Quit")
 	if m.currentQuery != "" {
-		sb.WriteString(fmt.Sprintf(" • Query: %q", m.currentQuery))
+		matchInfo := ""
+		if len(m.matches) > 0 {
+			matchInfo = fmt.Sprintf(" (%d/%d matches)", m.currentMatch+1, len(m.matches))
+		} else {
+			matchInfo = " (no matches)"
+		}
+		sb.WriteString(fmt.Sprintf(" • Query: %q%s", m.currentQuery, matchInfo))
 	}
 	if m.isLoading {
 		sb.WriteString(" • LOADING...")
