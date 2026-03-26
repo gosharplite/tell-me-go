@@ -376,7 +376,11 @@ func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, conf
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize session state: %w", err)
 	}
-	defer state.Close()
+	defer func() {
+		if err := state.Close(); err != nil {
+			b.Logger.Error("failed to close session state", "error", err)
+		}
+	}()
 
 	pricingOverrides := b.getPricingOverrides(cfg)
 
