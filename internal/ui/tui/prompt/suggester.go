@@ -74,7 +74,7 @@ func (s Suggester) View() string {
 			prefix = "> "
 			style = selectedStyle
 		}
-		sb.WriteString(fmt.Sprintf("%s%s\n", prefix, style.Render(suggestion)))
+		fmt.Fprintf(&sb, "%s%s\n", prefix, style.Render(suggestion))
 	}
 	return suggesterStyle.Render(sb.String())
 }

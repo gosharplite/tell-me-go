@@ -51,7 +51,7 @@ func (t *GlobalPromptTracker) Append(prompt string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open global prompts file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("failed to append prompt: %w", err)
@@ -73,7 +73,7 @@ func (t *GlobalPromptTracker) LoadTopN(limit int) ([]string, error) {
 		}
 		return nil, fmt.Errorf("failed to open global prompts file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Read all prompts into a list (this is a simple implementation)
 	// For very large files, this would need optimization.

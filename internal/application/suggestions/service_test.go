@@ -18,8 +18,8 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 	tracker := history.NewGlobalPromptTracker(tmpDir)
 
 	// Pre-populate with some data
-	tracker.Append("test-prompt-1")
-	tracker.Append("test-prompt-2")
+	_ = tracker.Append("test-prompt-1")
+	_ = tracker.Append("test-prompt-2")
 
 	service, err := NewMultiSourceSuggestionService(tracker, []string{"ls", "grep"}, []string{"hello", "world"})
 	if err != nil {
@@ -98,8 +98,8 @@ func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 
 	// Move to tmpDir to test file scanning
 	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	_ = os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(oldWd) }()
 
 	got, err := service.GetSuggestions(context.Background(), "./ba")
 	if err != nil {
