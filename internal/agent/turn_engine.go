@@ -162,6 +162,7 @@ type turn struct {
 	CostTracker  domain_pricing.CostTracker
 	ProviderName string
 	Model        string
+	Mode         string
 	Logger       *slog.Logger
 
 	// Results/Outputs
@@ -185,6 +186,7 @@ type turnEngine struct {
 	sm               domain_security.Manager
 	providerName     string
 	model            string
+	mode             string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	costTracker      domain_pricing.CostTracker
 	logger           *slog.Logger
@@ -208,11 +210,12 @@ func withEngineCostTracker(tracker domain_pricing.CostTracker) engineOption {
 }
 
 // withEngineConfig sets the security and usage configuration for the engine.
-func withEngineConfig(sm domain_security.Manager, providerName, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
+func withEngineConfig(sm domain_security.Manager, providerName, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
 	return func(e *turnEngine) {
 		e.sm = sm
 		e.providerName = providerName
 		e.model = model
+		e.mode = mode
 		e.pricingOverrides = pricingOverrides
 	}
 }
@@ -232,6 +235,7 @@ func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.CostT
 	defer e.mu.Unlock()
 	e.providerName = cfg.ProviderName
 	e.model = cfg.Model
+	e.mode = cfg.Mode
 	e.pricingOverrides = cfg.PricingOverrides
 	e.costTracker = tracker
 }
@@ -325,6 +329,7 @@ func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 	tracker := e.costTracker
 	providerName := e.providerName
 	model := e.model
+	mode := e.mode
 	counter := e.tokenCounter
 	logger := e.getLogger()
 	e.mu.RUnlock()
@@ -343,6 +348,7 @@ func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 		CostTracker:  tracker,
 		ProviderName: providerName,
 		Model:        model,
+		Mode:         mode,
 		Logger:       logger,
 	}
 	turn.MaxToolTurns = e.ctxManager.GetLimits().MaxToolTurns

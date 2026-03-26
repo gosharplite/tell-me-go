@@ -101,7 +101,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 
 	// Initialize engine
 	a.engine = newTurnEngine(client, exec, ctxManager, registry, bus, strategy,
-		withEngineConfig(sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
+		withEngineConfig(sm, a.config.ProviderName, a.config.Model, a.config.Mode, a.config.PricingOverrides),
 		withEngineCostTracker(a.tracker),
 		withEngineLogger(a.logger),
 	)

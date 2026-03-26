@@ -304,10 +304,17 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	if !status.IsPostCall && !status.IsFinal {
 		_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
 
+		modeStr := ""
+		if status.Mode != "" {
+			// Title case the mode
+			modeTitle := strings.ToUpper(status.Mode[:1]) + strings.ToLower(status.Mode[1:])
+			modeStr = fmt.Sprintf(" - %s", modeTitle)
+		}
+
 		if status.MaxHistoryTurns > 0 {
-			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d/%d%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, ui.c(colorGray))
+			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d/%d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, modeStr, ui.c(colorGray))
 		} else {
-			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, ui.c(colorGray))
+			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, modeStr, ui.c(colorGray))
 		}
 
 		printSystemLine(status.Tokens, false)
