@@ -50,6 +50,12 @@ Run the assistant by passing your prompt as an argument. By default, it uses `co
 tell-me-go "How to use this tool?"
 ```
 
+**Interactive TUI Prompt (Auto-complete):**
+Launch a rich terminal prompt with real-time suggestions for history, files, and tools.
+```bash
+tell-me-go -i
+```
+
 **History Management:**
 Show the last 5 messages:
 ```bash
@@ -198,4 +204,5 @@ Refer to the following documents for deep-dives into the system design:
 - **ADR-006**: [History Log Compaction and Bounded Contexts](docs/adr/2024-10-history-log-compaction.md)
 - **ADR-007**: [Extract Agent Configuration via Functional Options](docs/adr/2026-02-agent-options-extraction.md)
 - **ADR-008**: [Bubble Tea Interactive History Browser](docs/adr/2026-02-bubble-tea-history-browser.md)
+- **ADR-009**: [TUI Interactive Prompt Mode](docs/adr/2026-02-tui-prompt-mode.md)
 - **SOPs**: Standard Operating Procedures are located in `docs/sop/`.

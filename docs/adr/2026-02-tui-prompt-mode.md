@@ -1,7 +1,7 @@
 # ADR-009: TUI Interactive Prompt Mode with Auto-completion
 
 ## Status
-Proposed (2026-02-26)
+Accepted / Implemented (2026-03-26)
 
 ## Context
 Currently, `tell-me-go` captures user input either as command-line arguments or via a simple "Press Ctrl+D to send" multi-line reader. While functional, it lacks modern CLI conveniences such as:
@@ -83,13 +83,8 @@ Based on Principal Architect review, the following strict architectural constrai
 **Risk:** Managing concurrent state using `syscall.Flock` on a shared monolithic `.json` file for the global prompt tracker across disparate OS platforms (Windows vs POSIX) is notoriously brittle and a source of deadlocks or corruption.
 **Constraint:** Implement an append-only JSON Lines (`global_prompts.jsonl`) design for tracking cross-session prompts. Utilize `os.O_APPEND` for atomic, lock-free sequential writes that offload synchronization to the operating system.
 
-- **Component Layout**:
-    ```text
-    ╭─⠿ Turn 51
-    [14:51:20] Payload: 53873/200000 tokens
-    [14:51:20] [google] M: 2141 H: 51732 C: 242 Th: 0 ($0.0044) [3.82s (ΣT: 0.00s) / 48.43s]
-    ╰─⠿ Ready ($0.0044 $0.0404 $0.3280 $22.5537 M: 423791 H: 1542792 78.5% O: 12989)
-
-    [Coder prompts. Press Ctrl+S to send]
-
-    ```
+### 5. Implementation Notes & Final Reality (Post-Implementation)
+During implementation, several refinements were made to the original design to improve stability and UX:
+- **No Internal Dashboard:** The proposed internal dashboard (`Turn 3/20 | Tokens 4500`) was removed. Instead, the `tea.WithAltScreen()` constraint was dropped so the TUI renders inline. This allows the user to simply read the detailed, standard `╰─⠿ Ready` payload metrics from the previous turn directly above their text box, eliminating redundant clutter.
+- **Debouncing:** A 100ms `tea.Tick` debouncer was introduced to prevent rapid keystrokes from spamming the system with `tea.Cmd` context cancellations and async requests.
+- **Lock-Free Append:** Instead of using error-prone `syscall.Flock` for global history, the system strictly utilizes an append-only `.jsonl` structure via `os.O_APPEND` to ensure atomic state mutation across simultaneous terminal sessions.
