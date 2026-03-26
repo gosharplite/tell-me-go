@@ -95,21 +95,21 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - **[UI RISK] Multi-line Layout Paging:** The textarea must have fixed layout bounds with internal scrolling to prevent large pastes from breaking the TUI layout.
     - **[COMPATIBILITY] Cross-Platform Constraints:** Provide alternatives to `Ctrl+S` (e.g., `Alt+Enter` to avoid XOFF locks) and sanitize line-endings (`\r\n` to `\n`).
 - **Task:** Implement **Opt-In TUI Prompt Engine**:
-    - [ ] Create `tell-me-go --tui` (or `-i`) flag for explicit activation.
-    - [ ] Implement `USE_TUI_PROMPT` configuration (default: `false`).
-    - [ ] Architect the `MainTUIModel` using Bubble Tea with Component Composition.
-    - [ ] **Dashboard Integration**: Display previous turn metrics (Turn ID, Tokens, Cost, Timing) at the top of the TUI.
-    - [ ] **Session Observability**: Show real-time turn counts and active context token usage during composition.
+    - [x] Create `tell-me-go --tui` (or `-i`) flag for explicit activation.
+    - [x] Implement `USE_TUI_PROMPT` configuration (default: `false`).
+    - [x] Architect the `MainTUIModel` using Bubble Tea with Component Composition.
+    - [x] **Dashboard Integration**: Display previous turn metrics (Turn ID, Tokens, Cost, Timing) at the top of the TUI.
+    - [x] **Session Observability**: Show real-time turn counts and active context token usage during composition.
 - **Task:** Implement **Suggestion & Auto-completion System**:
-    - [ ] Create an asynchronous `SuggestionService` to prevent UI blocking during data fetching.
-    - [ ] Implement context cancellation (`context.Context`) and a 50-100ms debouncer to prevent Goroutine leaks and CPU spikes on rapid keystrokes.
-    - [ ] Implement an optimized Read Model (Trie) for `O(k)` lookups.
-    - [ ] Implement **Multi-Source Suggestions**:
-        - [ ] History: Recent user prompts from the `UnifiedHistoryProvider` and the top 1000 cross-session prompts from `global_prompts.jsonl`.
-        - [ ] Tools: Registered tool names from the `ToolRegistry`.
-        - [ ] Prompts: Pre-defined templates from `docs/user/prompts.md`.
-        - [ ] Files: Local workspace paths with dynamic directory scanning.
-    - [ ] Add **Ghost Text** and **Floating Dropdown** UI components for non-intrusive autocompletion.
-    - [ ] Map standard keybindings (`Tab` to cycle, `Ctrl+S` to submit, `Esc` to quit).
-    - [ ] Ensure rendering degrades gracefully on `TERM=dumb` and handles Windows line-endings (`\r\n`) securely.
+    - [x] Create an asynchronous `SuggestionService` to prevent UI blocking during data fetching.
+    - [x] Implement context cancellation (`context.Context`) and a 50-100ms debouncer to prevent Goroutine leaks and CPU spikes on rapid keystrokes.
+    - [x] Implement an optimized Read Model (Trie) for `O(k)` lookups.
+    - [x] Implement **Multi-Source Suggestions**:
+        - [x] History: Recent user prompts from the `UnifiedHistoryProvider` and the top 1000 cross-session prompts from `global_prompts.jsonl`.
+        - [x] Tools: Registered tool names from the `ToolRegistry`.
+        - [x] Prompts: Pre-defined templates from `docs/user/prompts.md`.
+        - [x] Files: Local workspace paths with dynamic directory scanning.
+    - [x] Add **Ghost Text** and **Floating Dropdown** UI components for non-intrusive autocompletion.
+    - [x] Map standard keybindings (`Tab` to cycle, `Ctrl+S` to submit, `Esc` to quit).
+    - [x] Ensure rendering degrades gracefully on `TERM=dumb` and handles Windows line-endings (`\r\n`) securely.
 - **Reference:** [ADR-009: TUI Interactive Prompt Mode with Auto-completion](./docs/adr/2026-02-tui-prompt-mode.md)
