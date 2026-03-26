@@ -187,7 +187,15 @@ func (m *Model) getSuggestions(ctx context.Context, prefix string) tea.Cmd {
 			// For other errors, we could return them, but let's keep it quiet in TUI
 			return nil
 		}
-		return SuggestionsMsg(suggestions)
+		// Filter out suggestions with more than 3 lines
+		var filtered []string
+		for _, s := range suggestions {
+			if strings.Count(strings.TrimSpace(s), "\n") < 3 {
+				filtered = append(filtered, s)
+			}
+		}
+
+		return SuggestionsMsg(filtered)
 	}
 }
 

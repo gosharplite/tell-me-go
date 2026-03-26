@@ -255,3 +255,37 @@ func TestSuggester_Empty(t *testing.T) {
 		t.Error("expected empty view")
 	}
 }
+
+func TestModel_GetSuggestions_FilterLines(t *testing.T) {
+	svc := &mockSuggestionSvcMultiLine{}
+	m := NewModel(svc)
+
+	cmd := m.getSuggestions(context.Background(), "")
+	msg := cmd()
+
+	suggMsg, ok := msg.(SuggestionsMsg)
+	if !ok {
+		t.Fatalf("Expected SuggestionsMsg, got %T", msg)
+	}
+
+	if len(suggMsg) != 2 {
+		t.Errorf("Expected 2 suggestions (filtered out the >3 lines one), got %d", len(suggMsg))
+	}
+	if suggMsg[0] != "one line" || suggMsg[1] != "two\nlines" {
+		t.Errorf("Unexpected filtered suggestions: %v", suggMsg)
+	}
+}
+
+type mockSuggestionSvcMultiLine struct{}
+
+func (m *mockSuggestionSvcMultiLine) GetSuggestions(ctx context.Context, prefix string) ([]string, error) {
+	return []string{
+		"one line",
+		"two\nlines",
+		"four\nlines\nreally\nlong", // This should be filtered out
+	}, nil
+}
+
+func (m *mockSuggestionSvcMultiLine) RecordPrompt(prompt string) error {
+	return nil
+}
