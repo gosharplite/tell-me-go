@@ -70,10 +70,10 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [x] **2. Infrastructure Layer (Archive Adapter)**: Implement `ArchiveReader` using `os.File.Seek(offset, io.SeekStart)` for O(1) byte-offset reads. Write a benchmark proving low memory allocation on a 50MB file.
     - [x] **3. Application Layer (Unified Facade)**: Implement `UnifiedHistoryProvider` to stitch active/archive data, map to `HistoryViewDTO`, and strictly filter out synthetic "System Auto-Summary" messages.
 - **Task:** Implement **Interactive History Browser** using Bubble Tea TUI framework:
-    - [ ] Create `tell-me-go browse` subcommand with TTY-aware fallback.
-    - [ ] Architect a non-blocking asynchronous event loop (`tea.Cmd`) to prevent disk I/O UI freezing.
-    - [ ] Implement Component Composition (Viewport, SearchBar) to avoid TUI 'God Objects'.
-    - [ ] Add basic scrolling navigation and thought visibility toggle (spacebar).
+    - [x] Create `tell-me-go browse` subcommand with TTY-aware fallback.
+    - [x] Architect a non-blocking asynchronous event loop (`tea.Cmd`) to prevent disk I/O UI freezing.
+    - [x] Implement Component Composition (Viewport, SearchBar) to avoid TUI 'God Objects'.
+    - [x] Add basic scrolling navigation and thought visibility toggle (spacebar).
     - [ ] Add full-text search across the complete conversation timeline.
     - [ ] Support turn jumping and tool call expansion.
     - [ ] **Asset Hydration Check**: Render placeholders (`[Image Attached: {ID}]`) to prevent binary blob panics in the TUI.

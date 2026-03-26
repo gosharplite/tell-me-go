@@ -6,8 +6,10 @@ package tui
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,6 +24,7 @@ var (
 	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Padding(0, 1)
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 	archivedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
+	highlightStyle = lipgloss.NewStyle().Background(lipgloss.Color("226")).Foreground(lipgloss.Color("0")) // Yellow BG, Black FG
 )
 
 type historyLoadedMsg struct {
@@ -35,6 +38,9 @@ type RootBrowserModel struct {
 	provider     ports.UnifiedHistoryProvider
 	history      []ports.HistoryViewDTO
 	viewport     viewport.Model
+	searchBar    textinput.Model
+	isSearching  bool
+	currentQuery string
 	isLoading    bool
 	showThoughts bool
 	ready        bool
@@ -46,8 +52,13 @@ type RootBrowserModel struct {
 
 // NewRootBrowserModel creates a new history browser root model.
 func NewRootBrowserModel(provider ports.UnifiedHistoryProvider) *RootBrowserModel {
+	ti := textinput.New()
+	ti.Placeholder = "Search history..."
+	ti.Prompt = "🔍 "
+
 	return &RootBrowserModel{
 		provider:     provider,
+		searchBar:    ti,
 		isLoading:    true,
 		showThoughts: true,
 	}
@@ -55,7 +66,10 @@ func NewRootBrowserModel(provider ports.UnifiedHistoryProvider) *RootBrowserMode
 
 // Init initializes the model with an asynchronous disk read.
 func (m RootBrowserModel) Init() tea.Cmd {
-	return fetchHistoryCmd(m.provider, "")
+	return tea.Batch(
+		textinput.Blink,
+		fetchHistoryCmd(m.provider, ""),
+	)
 }
 
 // Update handles incoming messages and updates the model state.
@@ -67,12 +81,35 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.isSearching {
+			switch msg.String() {
+			case "enter":
+				m.isSearching = false
+				m.currentQuery = m.searchBar.Value()
+				m.viewport.SetContent(m.renderHistory())
+				m.viewport.GotoTop()
+				return m, nil
+			case "esc":
+				m.isSearching = false
+				m.searchBar.SetValue("")
+				m.currentQuery = ""
+				m.viewport.SetContent(m.renderHistory())
+				return m, nil
+			}
+			m.searchBar, cmd = m.searchBar.Update(msg)
+			return m, cmd
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case " ":
 			m.showThoughts = !m.showThoughts
 			m.viewport.SetContent(m.renderHistory())
+			return m, nil
+		case "/":
+			m.isSearching = true
+			m.searchBar.Focus()
 			return m, nil
 		}
 
@@ -109,7 +146,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	// Infinite pagination trigger
-	if m.viewport.AtBottom() && !m.isLoading && m.cursor != "EOF" && m.ready {
+	if m.viewport.AtBottom() && !m.isLoading && m.cursor != "EOF" && m.ready && !m.isSearching {
 		m.isLoading = true
 		m.viewport.SetContent(m.renderHistory())
 		m.viewport.GotoBottom()
@@ -132,7 +169,12 @@ func (m RootBrowserModel) View() string {
 	var sb strings.Builder
 	sb.WriteString(m.viewport.View())
 	sb.WriteString("\n")
-	sb.WriteString(m.renderFooter())
+
+	if m.isSearching {
+		sb.WriteString(footerStyle.Render(m.searchBar.View()))
+	} else {
+		sb.WriteString(m.renderFooter())
+	}
 
 	return sb.String()
 }
@@ -170,7 +212,11 @@ func (m *RootBrowserModel) renderHistory() string {
 		sb.WriteString("\n")
 
 		if m.showThoughts && dto.ThoughtProcess != "" {
-			sb.WriteString(thoughtStyle.Render("[THOUGHTS] " + dto.ThoughtProcess))
+			thoughtText := "[THOUGHTS] " + dto.ThoughtProcess
+			if m.currentQuery != "" {
+				thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
+			}
+			sb.WriteString(thoughtStyle.Render(thoughtText))
 			sb.WriteString("\n\n")
 		}
 
@@ -182,7 +228,12 @@ func (m *RootBrowserModel) renderHistory() string {
 			sb.WriteString("\n")
 		}
 
-		sb.WriteString(dto.ContentPreview)
+		content := dto.ContentPreview
+		if m.currentQuery != "" {
+			content = m.highlightMatches(content, m.currentQuery)
+		}
+		sb.WriteString(content)
+
 		if i < len(m.history)-1 {
 			sb.WriteString("\n\n" + archivedStyle.Render(strings.Repeat("─", m.width/2)) + "\n\n")
 		}
@@ -197,9 +248,28 @@ func (m *RootBrowserModel) renderHistory() string {
 	return sb.String()
 }
 
+func (m *RootBrowserModel) highlightMatches(text, query string) string {
+	if query == "" {
+		return text
+	}
+
+	// Case-insensitive regex for the query
+	re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(query))
+	if err != nil {
+		return text
+	}
+
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		return highlightStyle.Render(match)
+	})
+}
+
 func (m *RootBrowserModel) renderFooter() string {
 	var sb strings.Builder
-	sb.WriteString("↑/↓: Scroll • Space: Toggle Thoughts • q: Quit")
+	sb.WriteString("↑/↓: Scroll • Space: Toggle Thoughts • /: Search • q: Quit")
+	if m.currentQuery != "" {
+		sb.WriteString(fmt.Sprintf(" • Query: %q", m.currentQuery))
+	}
 	if m.isLoading {
 		sb.WriteString(" • LOADING...")
 	}
