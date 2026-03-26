@@ -30,7 +30,7 @@ func NewMultiSourceSuggestionService(tracker ports.PromptTracker, toolNames []st
 	}
 
 	// 1. Pre-load Global Top Prompts
-	topPrompts, err := tracker.LoadTopN(50)
+	topPrompts, err := tracker.LoadTopN(context.Background(), 50)
 	if err != nil {
 		// Log error but continue with what we have
 		fmt.Fprintf(os.Stderr, "Warning: failed to load top prompts: %v\n", err)

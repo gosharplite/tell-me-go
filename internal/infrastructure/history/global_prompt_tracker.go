@@ -5,6 +5,7 @@ package history
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -61,8 +62,9 @@ func (t *GlobalPromptTracker) Append(prompt string) error {
 	return nil
 }
 
-// LoadTopN loads the last unique prompts up to the limit.
-func (t *GlobalPromptTracker) LoadTopN(limit int) ([]string, error) {
+// LoadTopN loads the last unique prompts up to the limit using a bounded circular buffer.
+// Time complexity: O(FileLines), Memory complexity: O(limit).
+func (t *GlobalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
@@ -76,40 +78,56 @@ func (t *GlobalPromptTracker) LoadTopN(limit int) ([]string, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	// Read all prompts into a list
-	var prompts []string
+	// Circular buffer to store the last 'limit' lines.
+	buffer := make([]string, limit)
+	count := 0
 	reader := bufio.NewReader(f)
+
 	for {
+		// Periodically check for context cancellation
+		if count%100 == 0 {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+		}
+
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			if err == io.EOF {
 				if len(line) > 0 {
-					var entry PromptEntry
-					if err := json.Unmarshal(line, &entry); err == nil {
-						prompts = append(prompts, entry.Prompt)
-					}
+					buffer[count%limit] = string(line)
+					count++
 				}
 				break
 			}
 			return nil, fmt.Errorf("failed to read global prompts: %w", err)
 		}
-
-		var entry PromptEntry
-		if err := json.Unmarshal(line, &entry); err == nil {
-			prompts = append(prompts, entry.Prompt)
-		}
+		buffer[count%limit] = string(line)
+		count++
 	}
 
-	// Reverse and filter duplicates
+	// Extract unique items from the circular buffer (newest first).
+	size := limit
+	if count < limit {
+		size = count
+	}
+
 	seen := make(map[string]bool)
 	var result []string
-	for i := len(prompts) - 1; i >= 0; i-- {
-		p := prompts[i]
-		if !seen[p] {
-			seen[p] = true
-			result = append(result, p)
-			if len(result) >= limit {
-				break
+
+	for i := 0; i < size; i++ {
+		// Calculate the index of the (count - 1 - i)-th element
+		idx := (count - 1 - i) % limit
+		if idx < 0 {
+			idx += limit
+		}
+
+		var entry PromptEntry
+		if err := json.Unmarshal([]byte(buffer[idx]), &entry); err == nil {
+			p := entry.Prompt
+			if p != "" && !seen[p] {
+				seen[p] = true
+				result = append(result, p)
 			}
 		}
 	}

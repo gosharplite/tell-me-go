@@ -4,6 +4,7 @@
 package history
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -21,7 +22,7 @@ func TestGlobalPromptTracker(t *testing.T) {
 
 	// Verify LoadTopN (reverse order, no duplicates)
 	// Last unique: hello, bar, foo, world
-	got, err := tracker.LoadTopN(5)
+	got, err := tracker.LoadTopN(context.Background(), 5)
 	if err != nil {
 		t.Fatalf("LoadTopN failed: %v", err)
 	}
@@ -37,7 +38,7 @@ func TestGlobalPromptTracker(t *testing.T) {
 	}
 
 	// Test with smaller limit
-	got2, err := tracker.LoadTopN(2)
+	got2, err := tracker.LoadTopN(context.Background(), 2)
 	if err != nil {
 		t.Fatalf("LoadTopN(2) failed: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestGlobalPromptTrackerNoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracker := NewGlobalPromptTracker(filepath.Join(tmpDir, "non-existent"))
 
-	got, err := tracker.LoadTopN(10)
+	got, err := tracker.LoadTopN(context.Background(), 10)
 	if err != nil {
 		t.Fatalf("LoadTopN from non-existent file failed: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 	}
 
 	// Attempt to load the prompt back
-	got, err := tracker.LoadTopN(1)
+	got, err := tracker.LoadTopN(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("LoadTopN failed for large payload: %v", err)
 	}

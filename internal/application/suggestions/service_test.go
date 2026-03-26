@@ -24,7 +24,7 @@ func (m *mockPromptTracker) Append(prompt string) error {
 	return nil
 }
 
-func (m *mockPromptTracker) LoadTopN(limit int) ([]string, error) {
+func (m *mockPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if limit >= len(m.prompts) {

@@ -19,5 +19,5 @@ type SuggestionService interface {
 // PromptTracker defines the interface for persisting and loading cross-session prompts.
 type PromptTracker interface {
 	Append(prompt string) error
-	LoadTopN(limit int) ([]string, error)
+	LoadTopN(ctx context.Context, limit int) ([]string, error)
 }
