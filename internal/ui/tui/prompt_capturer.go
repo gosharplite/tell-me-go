@@ -68,7 +68,7 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 	}
 
 	model := prompt.NewModel(c.svc, stats)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model)
 
 	resModel, err := p.Run()
 	if err != nil {
