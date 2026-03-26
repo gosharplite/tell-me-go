@@ -35,6 +35,7 @@ We will create a new TUI model in `internal/ui/tui/prompt.go` that incorporates:
 To keep the TUI responsive, suggestions will be powered by a `SuggestionService` that pre-fetches and indexes relevant data:
 - **HistorySuggestions**: Pulled from `UnifiedHistoryProvider`.
 - **ToolSuggestions**: Pulled from the `ToolRegistry`.
+- **PromptSuggestions**: Pre-defined prompts from `docs/user/prompts.md`.
 - **FileSuggestions**: Dynamic `os.ReadDir` with intelligent caching.
 
 ### 3. Integration with Capturer
