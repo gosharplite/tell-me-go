@@ -276,25 +276,30 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 		b.renderer.LogTurnStatus(ev.Status)
 	case events.InferenceStartedEvent:
 		b.mu.Lock()
-		if !b.isRendering && b.stopSpinner == nil {
+		if !b.isRendering {
 			// Use the bridge's session/turn context instead of the event handler's context,
 			// which has a 5s timeout. This ensures the spinner stays alive.
+			if b.stopSpinner != nil {
+				b.stopSpinner()
+			}
 			b.stopSpinner = b.renderer.StartSpinner(b.ctx)
 		}
 		b.mu.Unlock()
 	case events.RefiningStartedEvent:
 		b.mu.Lock()
 		b.isRendering = false // Reset state for the new retry cycle
-		if b.stopSpinner == nil {
-			b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
+		if b.stopSpinner != nil {
+			b.stopSpinner()
 		}
+		b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
 		b.mu.Unlock()
 	case events.SummarizationStartedEvent:
 		b.mu.Lock()
 		b.isRendering = false
-		if b.stopSpinner == nil {
-			b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
+		if b.stopSpinner != nil {
+			b.stopSpinner()
 		}
+		b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
 		b.mu.Unlock()
 	case events.ResponseEvent:
 		b.mu.Lock()
