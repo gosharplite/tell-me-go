@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -615,13 +616,13 @@ func TestWatchHistoryFileCmd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	tmpFile, err := os.CreateTemp("", "test-watch")
-	if err != nil {
+	tmpDir := t.TempDir()
+	tmpFilePath := filepath.Join(tmpDir, "test-watch")
+	if err := os.WriteFile(tmpFilePath, []byte("test"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpFile.Name())
 
-	cmd = watchHistoryFileCmd(ctx, tmpFile.Name())
+	cmd = watchHistoryFileCmd(ctx, tmpFilePath)
 	if cmd() != nil {
 		t.Error("expected nil msg for cancelled context")
 	}
