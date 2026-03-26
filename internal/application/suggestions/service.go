@@ -79,12 +79,8 @@ func (s *MultiSourceSuggestionService) RecordPrompt(prompt string) error {
 	// 1. Immediate in-memory update
 	s.trie.Insert(prompt)
 
-	// 2. Fire-and-forget persistent update
-	go func() {
-		_ = s.tracker.Append(prompt)
-	}()
-
-	return nil
+	// 2. Synchronous persistent update
+	return s.tracker.Append(prompt)
 }
 
 func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, prefix string) []string {

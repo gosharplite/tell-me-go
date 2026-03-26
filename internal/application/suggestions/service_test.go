@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 type mockPromptTracker struct {
@@ -160,9 +159,6 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	if len(got) != 1 || got[0] != prompt {
 		t.Errorf("prompt not immediately available in trie: %v", got)
 	}
-
-	// Wait for goroutine to finish (short sleep is okay in test here)
-	time.Sleep(100 * time.Millisecond)
 
 	// Check persistence in tracker
 	prompts := tracker.GetPrompts()
