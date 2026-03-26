@@ -33,7 +33,7 @@ We will create a new TUI model in `internal/ui/tui/prompt.go` that incorporates:
 
 ### 2. Suggestion Architecture
 To keep the TUI responsive, suggestions will be powered by a `SuggestionService` that pre-fetches and indexes relevant data:
-- **HistorySuggestions**: Pulled from a new `GlobalPromptTracker` (`global_prompts.json`) containing the top 1000 cross-session prompts.
+- **HistorySuggestions**: Pulled from a new `GlobalPromptTracker` (`global_prompts.jsonl`) containing the top 1000 cross-session prompts. (Using JSON Lines for lock-free append-only writes).
 - **PromptSuggestions**: Pre-defined prompts from `docs/user/prompts.md`.
 - **FileSuggestions**: Dynamic `os.ReadDir` with intelligent caching (bounded and security-aware).
 
@@ -67,17 +67,21 @@ The existing `ports.Capturer` interface will be extended or implemented by a `TU
 ## Architectural Constraints (Post-Review)
 Based on Principal Architect review, the following strict architectural constraints apply to this implementation:
 
-### 1. [ARCHITECTURAL BLOCKER] Synchronous Autocomplete I/O
-**Risk:** Triggering disk I/O (directory scanning for files) or complex history parsing on every single keystroke will block the Bubble Tea UI thread, causing severe input lag.
-**Constraint:** All auto-complete fetching MUST be executed asynchronously using Bubble Tea's `tea.Cmd`. The `Update` function must never block on disk I/O or heavy computation.
+### 1. [ARCHITECTURAL BLOCKER] Synchronous Autocomplete I/O & Goroutine Leaks
+**Risk:** Triggering disk I/O (directory scanning for files) or complex history parsing on every single keystroke will block the Bubble Tea UI thread, causing severe input lag. Conversely, firing un-managed async requests will lead to goroutine leaks and CPU spikes.
+**Constraint:** All auto-complete fetching MUST be executed asynchronously using Bubble Tea's `tea.Cmd`. Furthermore, the `SuggestionService` MUST accept a `context.Context` to correctly cancel previous operations upon subsequent keystrokes, combined with a 50-100ms debouncer. The `Update` function must never block on disk I/O or heavy computation.
 
-### 2. [TECHNICAL DEBT] "God Object" TUI Model
-**Risk:** Packing the Dashboard, Input, Auto-completion Engine, and Suggestion Dropdown into a single `PromptModel` struct violates the Single Responsibility Principle (SRP).
-**Constraint:** The UI must be implemented using Component Composition. Specifically, separate the UI into specialized models (e.g., `MainTUIModel` containing `Dashboard`, `Prompt/Textarea`, and `Suggester/Autocomplete` components) to maintain clean architectural boundaries at the UI layer.
+### 2. [TECHNICAL DEBT] "God Object" TUI Model & Dependency Injection
+**Risk:** Packing the Dashboard, Input, Auto-completion Engine, and Suggestion Dropdown into a single `PromptModel` struct violates the Single Responsibility Principle (SRP). If the TUI models instantiate their own services, it breaks Clean Architecture.
+**Constraint:** The UI must be implemented using Component Composition. Specifically, separate the UI into specialized models (e.g., `MainTUIModel` containing `Dashboard`, `Prompt/Textarea`, and `Suggester/Autocomplete` components). The `SuggestionService` and `UnifiedHistoryProvider` MUST be injected from the application composition root.
 
 ### 3. [REFACTOR] CQRS for Real-Time Querying
 **Risk:** The existing `UnifiedHistoryProvider` and `ToolRegistry` are designed for point-in-time reads and will degrade performance if scanned linearly on every keystroke.
 **Constraint:** Implement an optimized Read Model (CQRS) specifically for the `SuggestionService`. Cache tool names, file paths, and recent history entries in a Radix Tree (Trie) or an in-memory inverted index upon TUI initialization to ensure `O(k)` prefix matching.
+
+### 4. [TECHNICAL DEBT] Cross-Platform State Mutation
+**Risk:** Managing concurrent state using `syscall.Flock` on a shared monolithic `.json` file for the global prompt tracker across disparate OS platforms (Windows vs POSIX) is notoriously brittle and a source of deadlocks or corruption.
+**Constraint:** Implement an append-only JSON Lines (`global_prompts.jsonl`) design for tracking cross-session prompts. Utilize `os.O_APPEND` for atomic, lock-free sequential writes that offload synchronization to the operating system.
 
 - **Component Layout**:
     ```text

@@ -86,9 +86,11 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 - **Goal:** Provide a professional-grade interactive prompt experience with auto-completion and real-time session observability, while strictly preserving the current multi-line input as the default.
 - **Architectural Constraints (Strictly Enforced):**
     - **[ARCHITECTURAL BLOCKER] Synchronous Autocomplete I/O:** All suggestions MUST be fetched asynchronously via `tea.Cmd` to prevent UI thread blocking.
+    - **[ARCHITECTURAL BLOCKER] Goroutine Leaks in Autocomplete:** The `SuggestionService` MUST accept a `context.Context` to cancel previous requests on rapid keystrokes, combined with a 50-100ms debouncer to prevent CPU spikes.
     - **[TECHNICAL DEBT] "God Object" TUI Model:** Must use Component Composition (`Dashboard`, `Prompt/Textarea`, `Suggester/Autocomplete`) instead of a single massive Model.
+    - **[REFACTOR] Strict Dependency Injection:** TUI components must not instantiate services. The `SuggestionService` and `UnifiedHistoryProvider` MUST be injected from the application composition root.
     - **[REFACTOR] CQRS for Real-Time Querying:** Must implement an optimized Read Model (e.g., Radix Tree/Trie) for `O(k)` prefix matching instead of linear scans over history and tools.
-    - **[ARCHITECTURAL BLOCKER] Synchronous Global State Mutation:** The new `global_prompts.json` tracker MUST use file-locking (e.g., `syscall.Flock`) to prevent corruption from concurrent terminal sessions, and updates MUST run asynchronously (fire-and-forget) to prevent blocking the LLM request cycle.
+    - **[TECHNICAL DEBT] Cross-Platform State Mutation:** The new `global_prompts.jsonl` tracker MUST use an append-only JSON Lines format to eliminate the need for brittle `syscall.Flock` locks, preventing concurrent terminal session corruption. Updates must run asynchronously.
     - **[SECURITY & SCOPE] Bounded File Scanning:** File completion must restrict scan depth and filter large directories (e.g., `node_modules`) to avoid memory exhaustion.
     - **[UI RISK] Multi-line Layout Paging:** The textarea must have fixed layout bounds with internal scrolling to prevent large pastes from breaking the TUI layout.
     - **[COMPATIBILITY] Cross-Platform Constraints:** Provide alternatives to `Ctrl+S` (e.g., `Alt+Enter` to avoid XOFF locks) and sanitize line-endings (`\r\n` to `\n`).
@@ -100,9 +102,10 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [ ] **Session Observability**: Show real-time turn counts and active context token usage during composition.
 - **Task:** Implement **Suggestion & Auto-completion System**:
     - [ ] Create an asynchronous `SuggestionService` to prevent UI blocking during data fetching.
+    - [ ] Implement context cancellation (`context.Context`) and a 50-100ms debouncer to prevent Goroutine leaks and CPU spikes on rapid keystrokes.
     - [ ] Implement an optimized Read Model (Trie) for `O(k)` lookups.
     - [ ] Implement **Multi-Source Suggestions**:
-        - [ ] History: Recent user prompts from the `UnifiedHistoryProvider` and the top 1000 cross-session prompts from `global_prompts.json`.
+        - [ ] History: Recent user prompts from the `UnifiedHistoryProvider` and the top 1000 cross-session prompts from `global_prompts.jsonl`.
         - [ ] Tools: Registered tool names from the `ToolRegistry`.
         - [ ] Prompts: Pre-defined templates from `docs/user/prompts.md`.
         - [ ] Files: Local workspace paths with dynamic directory scanning.
