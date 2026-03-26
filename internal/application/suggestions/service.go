@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/pkg/trie"
 )
 
@@ -20,11 +19,11 @@ var _ ports.SuggestionService = (*MultiSourceSuggestionService)(nil)
 // MultiSourceSuggestionService aggregates suggestions from various sources.
 type MultiSourceSuggestionService struct {
 	trie    *trie.Trie
-	tracker *history.GlobalPromptTracker
+	tracker ports.PromptTracker
 }
 
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the trie.
-func NewMultiSourceSuggestionService(tracker *history.GlobalPromptTracker, toolNames []string, recentHistory []string) (*MultiSourceSuggestionService, error) {
+func NewMultiSourceSuggestionService(tracker ports.PromptTracker, toolNames []string, recentHistory []string) (*MultiSourceSuggestionService, error) {
 	s := &MultiSourceSuggestionService{
 		trie:    trie.NewTrie(),
 		tracker: tracker,

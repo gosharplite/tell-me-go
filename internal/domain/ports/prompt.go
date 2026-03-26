@@ -15,3 +15,9 @@ type SuggestionService interface {
 	// Fire-and-forget metric recording.
 	RecordPrompt(prompt string) error
 }
+
+// PromptTracker defines the interface for persisting and loading cross-session prompts.
+type PromptTracker interface {
+	Append(prompt string) error
+	LoadTopN(limit int) ([]string, error)
+}

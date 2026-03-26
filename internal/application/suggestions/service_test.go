@@ -9,17 +9,28 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 )
 
-func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
-	tmpDir := t.TempDir()
-	tracker := history.NewGlobalPromptTracker(tmpDir)
+type mockPromptTracker struct {
+	prompts []string
+}
 
-	// Pre-populate with some data
-	_ = tracker.Append("test-prompt-1")
-	_ = tracker.Append("test-prompt-2")
+func (m *mockPromptTracker) Append(prompt string) error {
+	m.prompts = append(m.prompts, prompt)
+	return nil
+}
+
+func (m *mockPromptTracker) LoadTopN(limit int) ([]string, error) {
+	if limit >= len(m.prompts) {
+		return m.prompts, nil
+	}
+	return m.prompts[:limit], nil
+}
+
+func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
+	tracker := &mockPromptTracker{
+		prompts: []string{"test-prompt-1", "test-prompt-2"},
+	}
 
 	service, err := NewMultiSourceSuggestionService(tracker, []string{"ls", "grep"}, []string{"hello", "world"})
 	if err != nil {
@@ -67,11 +78,11 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 }
 
 func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
-	tmpDir := t.TempDir()
-	tracker := history.NewGlobalPromptTracker(tmpDir)
+	tracker := &mockPromptTracker{}
 	service, _ := NewMultiSourceSuggestionService(tracker, nil, nil)
 
 	// Create many files to make scan slow
+	tmpDir := t.TempDir()
 	for i := 0; i < 1000; i++ {
 		_ = os.WriteFile(filepath.Join(tmpDir, "test-file-"+string(rune(i))), []byte(""), 0644)
 	}
@@ -86,11 +97,11 @@ func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 }
 
 func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
-	tmpDir := t.TempDir()
-	tracker := history.NewGlobalPromptTracker(tmpDir)
+	tracker := &mockPromptTracker{}
 	service, _ := NewMultiSourceSuggestionService(tracker, nil, nil)
 
 	// Create some test files
+	tmpDir := t.TempDir()
 	files := []string{"foo.txt", "bar.txt", "baz.txt", ".git"}
 	for _, f := range files {
 		_ = os.WriteFile(filepath.Join(tmpDir, f), []byte(""), 0644)
@@ -127,8 +138,7 @@ func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 }
 
 func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
-	tmpDir := t.TempDir()
-	tracker := history.NewGlobalPromptTracker(tmpDir)
+	tracker := &mockPromptTracker{}
 	service, _ := NewMultiSourceSuggestionService(tracker, nil, nil)
 
 	prompt := "new-unique-prompt"
@@ -147,8 +157,7 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Check persistence in tracker
-	top, _ := tracker.LoadTopN(1)
-	if len(top) != 1 || top[0] != prompt {
-		t.Errorf("prompt not persisted in tracker: %v", top)
+	if len(tracker.prompts) != 1 || tracker.prompts[0] != prompt {
+		t.Errorf("prompt not persisted in tracker: %v", tracker.prompts)
 	}
 }
