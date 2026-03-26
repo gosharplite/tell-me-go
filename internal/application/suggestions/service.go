@@ -67,7 +67,7 @@ func (s *MultiSourceSuggestionService) GetSuggestions(ctx context.Context, prefi
 	suggestions := s.trie.SearchPrefix(prefix, 10)
 
 	// 2. File System Search if it looks like a path
-	if strings.Contains(prefix, "/") || strings.HasPrefix(prefix, ".") {
+	if strings.Contains(prefix, string(os.PathSeparator)) || strings.Contains(prefix, "/") || strings.HasPrefix(prefix, ".") {
 		fileSuggestions := s.scanFiles(ctx, prefix)
 		suggestions = s.mergeSuggestions(suggestions, fileSuggestions, 10)
 	}
@@ -93,15 +93,9 @@ func (s *MultiSourceSuggestionService) RecordPrompt(prompt string) error {
 }
 
 func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, prefix string) []string {
-	dir := "."
-	filePrefix := prefix
-
-	if lastSlash := strings.LastIndex(prefix, "/"); lastSlash != -1 {
-		dir = prefix[:lastSlash]
-		if dir == "" {
-			dir = "/"
-		}
-		filePrefix = prefix[lastSlash+1:]
+	dir, filePrefix := filepath.Split(prefix)
+	if dir == "" {
+		dir = "."
 	}
 
 	f, err := os.Open(dir)
@@ -135,7 +129,7 @@ func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, prefix str
 
 				fullPath := filepath.Join(dir, name)
 				if entry.IsDir() {
-					fullPath += "/"
+					fullPath += string(os.PathSeparator)
 				}
 				results = append(results, fullPath)
 				if len(results) >= 10 {

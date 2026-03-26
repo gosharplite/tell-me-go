@@ -102,7 +102,7 @@ func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := service.GetSuggestions(ctx, "./")
+	_, err := service.GetSuggestions(ctx, tmpDir+string(os.PathSeparator))
 	if err == nil {
 		t.Error("expected context canceled error, got nil")
 	}
@@ -119,18 +119,17 @@ func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(tmpDir, f), []byte(""), 0644)
 	}
 
-	// Move to tmpDir to test file scanning
-	oldWd, _ := os.Getwd()
-	_ = os.Chdir(tmpDir)
-	defer func() { _ = os.Chdir(oldWd) }()
-
-	got, err := service.GetSuggestions(context.Background(), "./ba")
+	prefix := filepath.Join(tmpDir, "ba")
+	got, err := service.GetSuggestions(context.Background(), prefix)
 	if err != nil {
 		t.Fatalf("GetSuggestions failed: %v", err)
 	}
 
 	// Should match bar.txt and baz.txt
-	expected := []string{"bar.txt", "baz.txt"}
+	expected := []string{
+		filepath.Join(tmpDir, "bar.txt"),
+		filepath.Join(tmpDir, "baz.txt"),
+	}
 	if len(got) != 2 {
 		t.Errorf("got %d suggestions; want 2. Got: %v", len(got), got)
 	}
