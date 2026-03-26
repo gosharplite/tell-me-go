@@ -82,3 +82,21 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [x] **Pinning Pressure Warning (Minor)**: Display a UI warning if the user pins too many active messages, preventing safe auto-summarization.
     - [x] **Live Reload (Minor)**: Optional EventBus subscription to gracefully refresh the TUI if `history.jsonl` is modified in another terminal window.
 - **Reference:** [ADR-008: Bubble Tea Interactive History Browser](./docs/adr/2026-02-bubble-tea-history-browser.md)
+## Phase 9: Interactive TUI Prompt Mode (Proposed)
+- **Goal:** Provide a professional-grade interactive prompt experience with auto-completion and real-time session observability, while strictly preserving the current multi-line input as the default.
+- **Task:** Implement **Opt-In TUI Prompt Engine**:
+    - [ ] Create `tell-me-go --tui` (or `-i`) flag for explicit activation.
+    - [ ] Implement `USE_TUI_PROMPT` configuration (default: `false`).
+    - [ ] Architect the `PromptModel` using Bubble Tea with a dual-header layout.
+    - [ ] **Dashboard Integration**: Display previous turn metrics (Turn ID, Tokens, Cost, Timing) at the top of the TUI.
+    - [ ] **Session Observability**: Show real-time turn counts and active context token usage during composition.
+- **Task:** Implement **Suggestion & Auto-completion System**:
+    - [ ] Create an asynchronous `SuggestionService` to prevent UI blocking during data fetching.
+    - [ ] Implement **Multi-Source Suggestions**:
+        - [ ] History: Recent user prompts from the `UnifiedHistoryProvider`.
+        - [ ] Tools: Registered tool names from the `ToolRegistry`.
+        - [ ] Prompts: Pre-defined templates from `docs/user/prompts.md`.
+        - [ ] Files: Local workspace paths with dynamic directory scanning.
+    - [ ] Add **Ghost Text** and **Floating Dropdown** UI components for non-intrusive autocompletion.
+    - [ ] Map standard keybindings (`Tab` to cycle, `Ctrl+S` to submit, `Esc` to quit).
+- **Reference:** [ADR-009: TUI Interactive Prompt Mode with Auto-completion](./docs/adr/2026-02-tui-prompt-mode.md)
