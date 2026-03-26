@@ -487,7 +487,7 @@ func TestBrowserModel_View(t *testing.T) {
 	rendered := m.renderHistory()
 	m.viewport.SetContent(rendered)
 
-	got = m.View()
+	_ = m.View()
 
 	// Assertions on the rendered content (directly or via View if height permits)
 	expectedSubstrings := []string{
@@ -569,7 +569,7 @@ func TestBrowserModel_RenderHistory_Paths(t *testing.T) {
 
 	// Highlight in renderHistory
 	m.currentQuery = "Line"
-	got = m.renderHistory()
+	_ = m.renderHistory()
 	if len(m.matches) == 0 {
 		t.Error("expected matches to be populated")
 	}
