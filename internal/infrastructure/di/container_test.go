@@ -707,3 +707,30 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestGetToolNames(t *testing.T) {
+	ctx := context.Background()
+	tempDir, err := os.MkdirTemp("", "di-test-tool-names")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+	sm.On("LoadSafePaths").Return(nil).Maybe()
+	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
+	sm.On("RegisterPolicyTools", mock.Anything).Return(nil).Maybe()
+
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
+
+	cfg := &config.Config{
+		Mode: "assistant",
+		Model: "test-model",
+	}
+
+	names, err := bootstrapper.GetToolNames(ctx, cfg, "config.yaml")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, names)
+	// Check for a few common tools that should always be registered
+	assert.Contains(t, names, "list_files")
+	assert.Contains(t, names, "read_files")
+}

@@ -32,6 +32,10 @@ func (m *mockChatService) BrowseHistory(ctx stdctx.Context, configPath string, c
 	return nil
 }
 
+func (m *mockChatService) GetToolNames(ctx stdctx.Context, configPath string) ([]string, error) {
+	return []string{"test_tool"}, nil
+}
+
 type mockSM struct {
 	domain_security.Manager
 }

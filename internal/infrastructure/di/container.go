@@ -53,6 +53,7 @@ type Container interface {
 	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error
 	GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error)
 	GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
+	GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error)
 }
 
 // bootstrapper handles the instantiation and wiring of system components.
@@ -358,4 +359,52 @@ func (b *bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config
 	archiveReader := history.NewJSONLArchiveReader(infra_persistence.NewOSFileSystem(), paths.HistoryArchivePath)
 
 	return history.NewUnifiedProvider(archiveReader, hManager), nil
+}
+
+// GetToolNames retrieves the names of all available tools without starting a full session.
+func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error) {
+	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize paths: %w", err)
+	}
+
+	if err := b.setupSecurity(paths, configPath); err != nil {
+		return nil, err
+	}
+
+	state, err := b.NewSessionState(ctx, paths.ModeDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize session state: %w", err)
+	}
+	defer state.Close()
+
+	pricingOverrides := b.getPricingOverrides(cfg)
+
+	// Create a minimal event bus to avoid nil panics in some tool registration
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithWorkers(0))
+
+	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
+		SecurityManager:  b.SM,
+		CommandExecutor:  &exec.RealExecutor{},
+		CommandValidator: internal_security.NewCommandValidator(b.SM, nil),
+		SessionProvider:  state,
+		LogFile:          paths.LogPath,
+		Model:            cfg.Model,
+		Mode:             cfg.Mode,
+		PricingOverrides: pricingOverrides,
+		Client:           nil, // Integrations don't call client during registration
+		AssetsDir:        filepath.Join(b.HomeDir, "assets/generated"),
+		EventBus:         bus,
+		FileSystem:       infra_persistence.NewOSFileSystem(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	declarations := reg.GetDeclarations()
+	names := make([]string, 0, len(declarations))
+	for _, d := range declarations {
+		names = append(names, d.Name)
+	}
+	return names, nil
 }

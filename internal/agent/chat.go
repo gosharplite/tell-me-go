@@ -32,4 +32,7 @@ type ChatService interface {
 
 	// BrowseHistory starts the TUI browser for chat history.
 	BrowseHistory(ctx context.Context, configPath string, capturer ports.Capturer) error
+
+	// GetToolNames retrieves the names of all available tools.
+	GetToolNames(ctx context.Context, configPath string) ([]string, error)
 }

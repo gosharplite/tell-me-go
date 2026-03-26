@@ -123,6 +123,11 @@ func (m *mockServiceContainer) GetUnifiedHistoryProvider(ctx context.Context, cf
 	return args.Get(0).(ports.UnifiedHistoryProvider), args.Error(1)
 }
 
+func (m *mockServiceContainer) GetToolNames(ctx context.Context, cfg *config.Config, configPath string) ([]string, error) {
+	args := m.Called(ctx, cfg, configPath)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 // mockServiceSessionDependencies is a mock of SessionDependencies.
 type mockServiceSessionDependencies struct {
 	mock.Mock

@@ -28,6 +28,7 @@ type Container interface {
 	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
 	GetHistoryManager(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
 	GetUnifiedHistoryProvider(ctx context.Context, cfg *domain_config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
+	GetToolNames(ctx context.Context, cfg *domain_config.Config, configPath string) ([]string, error)
 }
 
 type chatService struct {
@@ -159,4 +160,14 @@ func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capt
 	}
 
 	return nil
+}
+
+// GetToolNames retrieves the names of all available tools.
+func (s *chatService) GetToolNames(ctx context.Context, configPath string) ([]string, error) {
+	cfg, err := s.Loader.Load(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("error loading config [%s]: %w", configPath, err)
+	}
+
+	return s.Container.GetToolNames(ctx, cfg, configPath)
 }
