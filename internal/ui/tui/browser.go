@@ -95,7 +95,7 @@ func watchHistoryFileCmd(filepath string) tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		defer watcher.Close()
+		defer func() { _ = watcher.Close() }()
 
 		if err := watcher.Add(filepath); err != nil {
 			return nil
@@ -291,7 +291,6 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-m.calculateFooterHeight())
-			m.viewport.HighPerformanceRendering = false
 			m.viewport.SetContent(m.renderHistory())
 			m.ready = true
 		} else {
@@ -575,7 +574,7 @@ func (m *RootBrowserModel) renderFooter() string {
 		} else {
 			matchInfo = " (no matches)"
 		}
-		sb.WriteString(fmt.Sprintf(" • Query: %q%s", m.currentQuery, matchInfo))
+		fmt.Fprintf(&sb, " • Query: %q%s", m.currentQuery, matchInfo)
 	}
 	if m.isLoading {
 		sb.WriteString(" • LOADING...")

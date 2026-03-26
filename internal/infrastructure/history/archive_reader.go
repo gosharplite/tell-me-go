@@ -41,7 +41,7 @@ func (r *JSONLArchiveReader) ReadPage(ctx context.Context, limit int, offset int
 		}
 		return nil, 0, fmt.Errorf("open archive %s: %w", r.archivePath, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return nil, 0, fmt.Errorf("seek to offset %d: %w", offset, err)

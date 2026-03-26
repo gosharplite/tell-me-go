@@ -44,7 +44,7 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 		offsets[i] = currentOffset
 		currentOffset += int64(n)
 	}
-	f.Close()
+	_ = f.Close()
 
 	reader := history.NewJSONLArchiveReader(fs, archivePath)
 
@@ -89,8 +89,8 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 		f, _ := os.OpenFile(archivePath, os.O_APPEND|os.O_WRONLY, 0644)
 		data, _ := json.Marshal(c)
 		data = append(data, '\n')
-		f.Write(data)
-		f.Close()
+		_, _ = f.Write(data)
+		_ = f.Close()
 
 		dtos, _, err := reader.ReadPage(ctx, 1, currentOffset)
 		if err != nil {
@@ -126,7 +126,7 @@ func BenchmarkReadPage(b *testing.B) {
 			b.Fatalf("failed to write to benchmark file: %v", err)
 		}
 	}
-	f.Close()
+	_ = f.Close()
 
 	reader := history.NewJSONLArchiveReader(fs, archivePath)
 

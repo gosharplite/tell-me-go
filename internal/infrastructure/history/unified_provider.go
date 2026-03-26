@@ -128,7 +128,7 @@ func (p *UnifiedProvider) toDTO(c *llm.Content, archived bool) ports.HistoryView
 		}
 
 		if part.AssetID != "" {
-			preview.WriteString(fmt.Sprintf(" [Attached Asset: %s] ", part.AssetID))
+			fmt.Fprintf(&preview, " [Attached Asset: %s] ", part.AssetID)
 		}
 	}
 
