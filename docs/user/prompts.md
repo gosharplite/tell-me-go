@@ -1,9 +1,7 @@
-Do not do it yourself, instead clearly tell Coder what to do with details.
-Output one task at a time, since Coder will start a new session for each of your task.
-Coder don't have previous memory, be as clear as possible.
-Output task one at a time.
+Do not do it yourself, instead clearly tell Coder what to do with details. Output one task at a time, since Coder will start a new session for each of your task. Coder don't have previous memory, be as clear as possible. Output task one at a time.
 
 Please check new codes in the last commit.
+
 Revise ROADMAP if needed.
 
 Is the difference between dev branch and main branch good enough to be merged into main branch?
@@ -11,9 +9,11 @@ Is the difference between dev branch and main branch good enough to be merged in
 What is the next step to improve this project?
 
 Is README.md still up-to-date?
+
 Are SOPs still up-to-date?
 
 Do docs/sop/lifecycle/public_release.md
 
 Show costs summary (billing) by date by model in a table.
+
 Show costs summary (local) by hour by model of today.
