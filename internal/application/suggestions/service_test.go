@@ -7,24 +7,36 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
 
 type mockPromptTracker struct {
+	mu      sync.RWMutex
 	prompts []string
 }
 
 func (m *mockPromptTracker) Append(prompt string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.prompts = append(m.prompts, prompt)
 	return nil
 }
 
 func (m *mockPromptTracker) LoadTopN(limit int) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if limit >= len(m.prompts) {
 		return m.prompts, nil
 	}
 	return m.prompts[:limit], nil
+}
+
+func (m *mockPromptTracker) GetPrompts() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.prompts
 }
 
 func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
@@ -157,7 +169,8 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Check persistence in tracker
-	if len(tracker.prompts) != 1 || tracker.prompts[0] != prompt {
-		t.Errorf("prompt not persisted in tracker: %v", tracker.prompts)
+	prompts := tracker.GetPrompts()
+	if len(prompts) != 1 || prompts[0] != prompt {
+		t.Errorf("prompt not persisted in tracker: %v", prompts)
 	}
 }

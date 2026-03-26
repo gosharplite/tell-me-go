@@ -19,12 +19,14 @@ func (m *mockBaseCapturer) IsTTY(v any) bool { return false }
 func (m *mockBaseCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	return "base prompt", nil
 }
-func (m *mockBaseCapturer) Confirm(ctx context.Context, message string) (bool, error) { return true, nil }
-func (m *mockBaseCapturer) Warn(message string)                                      {}
+func (m *mockBaseCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+	return true, nil
+}
+func (m *mockBaseCapturer) Warn(message string) {}
 func (m *mockBaseCapturer) Prompt(message string) {
 	m.promptMsgs = append(m.promptMsgs, message)
 }
-func (m *mockBaseCapturer) ReadLine(ctx context.Context) (string, error)     { return "", nil }
+func (m *mockBaseCapturer) ReadLine(ctx context.Context) (string, error)      { return "", nil }
 func (m *mockBaseCapturer) ReadSingleKey(ctx context.Context) (string, error) { return "", nil }
 
 type mockSuggestionService struct {

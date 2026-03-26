@@ -11,9 +11,9 @@ import (
 
 // ChatOptions defines the configuration for a chat session.
 type ChatOptions struct {
-	ConfigPath string
-	NewSession bool
-	LastN      int
+	ConfigPath   string
+	NewSession   bool
+	LastN        int
 	BackN        int
 	RawOutput    bool
 	UseTUIPrompt bool

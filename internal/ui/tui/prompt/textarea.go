@@ -11,8 +11,8 @@ import (
 
 var (
 	textareaStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), true).
-			BorderForeground(lipgloss.Color("240"))
+		Border(lipgloss.NormalBorder(), true).
+		BorderForeground(lipgloss.Color("240"))
 )
 
 // TextArea wraps the Bubble Tea textarea component with fixed height.

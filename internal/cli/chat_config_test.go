@@ -16,7 +16,7 @@ func TestChatCommand_Execute_ConfigMerge(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	
+
 	// Create a config file with USE_TUI_PROMPT: true
 	configContent := `
 USE_TUI_PROMPT: true
@@ -66,7 +66,7 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	
+
 	// Config has USE_TUI_PROMPT: false
 	configContent := `
 USE_TUI_PROMPT: false

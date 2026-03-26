@@ -105,18 +105,18 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	var capturer ports.Capturer
 	if opts.tuiPrompt {
 		tracker := history.NewGlobalPromptTracker(c.HomeDir)
-		
+
 		// Try to get at least the last user message for the trie
 		lastMsg, _, _ := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
 		var recentHistory []string
 		if lastMsg != "" {
 			recentHistory = append(recentHistory, lastMsg)
 		}
-		
+
 		svc, _ := suggestions.NewMultiSourceSuggestionService(tracker, nil, recentHistory)
-		
+
 		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
-		
+
 		capturer = tui.NewPromptCapturer(baseCapturer, svc)
 	} else {
 		capturer = c.setupCapturer()
