@@ -64,13 +64,17 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 
 
 ## Phase 8: Interactive History Exploration (Proposed)
-- **Goal:** Provide professional-grade history exploration with search, navigation, and thought visibility controls.
+- **Goal:** Provide professional-grade, unbounded history exploration with search, navigation, and thought visibility controls, without compromising memory safety or LLM context limits.
+- **Task:** Implement **Unified History Data Layer (Prerequisite)**:
+    - [ ] Create `ArchiveReader` port with O(1) byte-offset indexing for safe, paginated reads of `history.archive.jsonl`.
+    - [ ] Implement `UnifiedHistoryProvider` facade to stitch archived and active history seamlessly.
+    - [ ] Enforce CQRS boundaries: UI uses the unified reader; Agent retains the active `HistoryManager` to protect `summarize_history` from token bloat.
 - **Task:** Implement **Interactive History Browser** using Bubble Tea TUI framework:
-    - [ ] Create `tell-me-go browse` subcommand with TTY-aware fallback
-    - [ ] Implement basic scrolling navigation and thought visibility toggle
-    - [ ] Add full-text search across conversation history
-    - [ ] Support turn jumping and tool call expansion
-    - [ ] Integrate with existing pin/unpin and rollback functionality
-- **Task:** Ensure graceful degradation for non-interactive environments (scripts/pipes)
-- **Task:** Maintain backward compatibility with existing `-l N` flag
+    - [ ] Create `tell-me-go browse` subcommand with TTY-aware fallback.
+    - [ ] Architect a non-blocking asynchronous event loop (`tea.Cmd`) to prevent disk I/O UI freezing.
+    - [ ] Implement Component Composition (Viewport, SearchBar) to avoid TUI 'God Objects'.
+    - [ ] Add basic scrolling navigation and thought visibility toggle (spacebar).
+    - [ ] Add full-text search across the complete conversation timeline.
+    - [ ] Support turn jumping and tool call expansion.
+    - [ ] Integrate with existing pin/unpin and rollback functionality via Command Ports.
 - **Reference:** [ADR-008: Bubble Tea Interactive History Browser](./docs/adr/2026-02-bubble-tea-history-browser.md)

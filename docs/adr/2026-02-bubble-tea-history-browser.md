@@ -44,6 +44,12 @@ To prevent TUI "God Objects", synchronous blocking, and token/memory bloat, impl
 #### Strict CQRS Boundary
 The `UnifiedHistoryProvider` must **only** be injected into the UI tier. The core Agent and `ContextManager` must continue using the existing `ports.HistoryManager`. This ensures that the `summarize_history` tool and LLM context window remain completely bounded to the active history, preventing context limit crashes.
 
+#### Unified Data Layer Edge Cases
+The `UnifiedHistoryProvider` must resolve the following edge cases before supplying data to the TUI:
+1. **Summary Filtering**: When stitching the archive and active files, the provider must silently filter out the synthetic "System Auto-Summary" messages injected by the Token Gatekeeper, preventing the TUI from displaying double-histories.
+2. **Immutable Archive Boundary**: Pinning and Rollback operations rely on the mutable `HistoryManager`. The TUI must visually disable/block these actions for any turns originating from the immutable archive boundary.
+3. **Asset Hydration Check**: The TUI must render textual placeholders for `AssetID` (e.g., `[Image Attached: {ID}]`) rather than attempting to decode binary blobs into standard output.
+
 ```go
 // 1. Phase 0: Unified Read Model (internal/ui/history_provider.go)
 type UnifiedHistoryProvider struct {
