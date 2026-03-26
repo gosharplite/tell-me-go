@@ -5,6 +5,7 @@ package trie
 
 import (
 	"sort"
+	"sync"
 )
 
 // Node represents a single character in the Trie.
@@ -17,6 +18,7 @@ type Node struct {
 // Trie is a thread-safe prefix tree for word suggestions.
 // Optimized for read-heavy operations.
 type Trie struct {
+	mu   sync.RWMutex
 	root *Node
 }
 
@@ -34,6 +36,9 @@ func (t *Trie) Insert(word string) {
 	if word == "" {
 		return
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	current := t.root
 	for _, char := range word {
 		if _, ok := current.children[char]; !ok {
@@ -52,6 +57,9 @@ func (t *Trie) SearchPrefix(prefix string, limit int) []string {
 	if limit <= 0 {
 		return nil
 	}
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	current := t.root
 	for _, char := range prefix {
@@ -99,6 +107,9 @@ func (t *Trie) collect(node *Node, results *[]string, limit int) {
 
 // Clear removes all words from the Trie.
 func (t *Trie) Clear() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	t.root = &Node{
 		children: make(map[rune]*Node),
 	}
