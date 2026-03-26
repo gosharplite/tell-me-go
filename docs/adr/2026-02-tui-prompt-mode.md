@@ -66,11 +66,11 @@ The existing `ports.Capturer` interface will be extended or implemented by a `TU
     - `Esc`: Cancel/Quit.
 - **Component Layout**:
     ```text
-    ╭─⠿ Previous Turn: [google] M: 4467 H: 44851 C: 70 Th: 0 ($0.0047) [2.7s] ──────╮
-    ├─⠿ Session: 3/20 turns | Provider: google | Tokens: 4,549/180,000 ────────────┤
-    │                                                                              │
-    │  Write a script to analyze...                                                │
-    │  > [analyze_sequence_flow]  (Prompt/Tool/File Suggestion)                    │
-    │                                                                              │
-    ╰──────────────────────────────────────────────────────────────────────────────╯
+    ╭─⠿ Turn 51
+    [14:51:20] Payload: 53873/200000 tokens
+    [14:51:20] [google] M: 2141 H: 51732 C: 242 Th: 0 ($0.0044) [3.82s (ΣT: 0.00s) / 48.43s]
+    ╰─⠿ Ready ($0.0044 $0.0404 $0.3280 $22.5537 M: 423791 H: 1542792 78.5% O: 12989)
+
+    [Reading TUI input. Press Ctrl+S to send]
+
     ```
