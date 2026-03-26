@@ -68,6 +68,7 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 - **Task:** Implement **Unified History Data Layer (Prerequisite)**:
     - [ ] Create `ArchiveReader` port with O(1) byte-offset indexing for safe, paginated reads of `history.archive.jsonl`.
     - [ ] Implement `UnifiedHistoryProvider` facade to stitch archived and active history seamlessly.
+    - [ ] Implement **Summary Filtering**: Silently drop synthetic "System Auto-Summary" messages during stitching to prevent "double history" UX bugs.
     - [ ] Enforce CQRS boundaries: UI uses the unified reader; Agent retains the active `HistoryManager` to protect `summarize_history` from token bloat.
 - **Task:** Implement **Interactive History Browser** using Bubble Tea TUI framework:
     - [ ] Create `tell-me-go browse` subcommand with TTY-aware fallback.
@@ -76,5 +77,7 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [ ] Add basic scrolling navigation and thought visibility toggle (spacebar).
     - [ ] Add full-text search across the complete conversation timeline.
     - [ ] Support turn jumping and tool call expansion.
+    - [ ] **Asset Hydration Check**: Render placeholders (`[Image Attached: {ID}]`) to prevent binary blob panics in the TUI.
     - [ ] Integrate with existing pin/unpin and rollback functionality via Command Ports.
+    - [ ] **Immutable Archive Boundary**: Visually disable/block mutation commands (Pin/Rollback) for messages originating from the archive.
 - **Reference:** [ADR-008: Bubble Tea Interactive History Browser](./docs/adr/2026-02-bubble-tea-history-browser.md)

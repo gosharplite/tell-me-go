@@ -23,7 +23,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Deep Analysis**: High-level tools for `verify_architecture` (Hexagonal/Clean Architecture checks), `get_code_health`, and `analyze_sequence_flow` (Mermaid sequence diagrams).
     *   **Enterprise**: Deep integration with **Jira** (search/get), **Confluence** (search/read/write), **Azure DevOps** (PRs, Repos, Pipeline creation/runs/logs), and **Teams**.
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
-    *   **State & History**: Task tracking, `summarize_history`, and `manage_history` (pinning/unpinning turns to protect them from pruning). *(Proposed: Interactive history browser with search and thought visibility)*
+    *   **State & History**: Task tracking, `summarize_history`, and `manage_history` (pinning/unpinning turns to protect them from pruning).
     *   **Media**: Imagen 3 image generation and Vision analysis.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
@@ -55,6 +55,10 @@ Show the last 5 messages:
 ```bash
 tell-me-go -l 5
 ```
+*(Coming Soon)* Interactive history browsing with search and thought visibility:
+```bash
+tell-me-go browse
+```
 Go back / undo the last message (shorthand):
 ```bash
 tell-me-go -b
@@ -66,10 +70,6 @@ tell-me-go -b 3
 Retry the last user message (automatically rolls back the last attempt):
 ```bash
 tell-me-go --retry
-```
-*(Proposed)* Interactive history browsing with search and thought visibility:
-```bash
-tell-me-go browse
 ```
 
 **Raw Output Mode:**
