@@ -283,6 +283,13 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
+	modeStr := ""
+	if status.Mode != "" {
+		// Title case the mode
+		modeTitle := strings.ToUpper(status.Mode[:1]) + strings.ToLower(status.Mode[1:])
+		modeStr = fmt.Sprintf(" - %s", modeTitle)
+	}
+
 	printSystemLine := func(tks int, isActual bool) {
 		tokenColor := colorReset
 		if float64(tks) > float64(status.MaxHistoryTokens)*config.WarningRatio {
@@ -293,23 +300,16 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		}
 
 		if isActual {
-			_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
-				ui.c(colorGray), timestamp, ui.c(tokenColor), tks, ui.c(colorGray), status.MaxHistoryTokens, ui.c(colorReset))
+			_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: %s%d%s/%d tokens%s%s\n",
+				ui.c(colorGray), timestamp, ui.c(tokenColor), tks, ui.c(colorGray), status.MaxHistoryTokens, modeStr, ui.c(colorReset))
 		} else {
-			_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: ~%s%d%s/%d tokens%s\n",
-				ui.c(colorGray), timestamp, ui.c(tokenColor), tks, ui.c(colorGray), status.MaxHistoryTokens, ui.c(colorReset))
+			_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: ~%s%d%s/%d tokens%s%s\n",
+				ui.c(colorGray), timestamp, ui.c(tokenColor), tks, ui.c(colorGray), status.MaxHistoryTokens, modeStr, ui.c(colorReset))
 		}
 	}
 
 	if !status.IsPostCall && !status.IsFinal {
 		_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
-
-		modeStr := ""
-		if status.Mode != "" {
-			// Title case the mode
-			modeTitle := strings.ToUpper(status.Mode[:1]) + strings.ToLower(status.Mode[1:])
-			modeStr = fmt.Sprintf(" - %s", modeTitle)
-		}
 
 		if status.MaxHistoryTurns > 0 {
 			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d/%d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, modeStr, ui.c(colorGray))

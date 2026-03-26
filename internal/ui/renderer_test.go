@@ -73,10 +73,16 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 			MaxHistoryTurns:  10,
 			Tokens:           100,
 			MaxHistoryTokens: 1000,
+			Mode:             "coder",
 		})
 		output := stderr.String()
-		if !strings.Contains(output, "Turn 1/10") {
-			t.Errorf("expected stderr to contain 'Turn 1/10', got %q", output)
+		if !strings.Contains(output, "Turn 1/10 - Coder") {
+			t.Errorf("expected stderr to contain 'Turn 1/10 - Coder', got %q", output)
+		}
+		// Payload line: contains tokens/max, and - Coder. 
+		// Note: contains ~ since it's not a post-call
+		if !strings.Contains(output, "Payload:") || !strings.Contains(output, "/1000 tokens - Coder") {
+			t.Errorf("expected stderr to contain 'Payload: ... /1000 tokens - Coder', got %q", output)
 		}
 		// Check for the trailing newline (visual gap)
 		if !strings.HasSuffix(output, "\n\n") {
