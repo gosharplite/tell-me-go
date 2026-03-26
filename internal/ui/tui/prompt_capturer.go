@@ -28,19 +28,15 @@ type BaseCapturer interface {
 
 // PromptCapturer is an adapter that implements ports.Capturer using a Bubble Tea TUI.
 type PromptCapturer struct {
-	base         BaseCapturer
-	svc          ports.SuggestionService
-	providerName string
-	modelName    string
+	base BaseCapturer
+	svc  ports.SuggestionService
 }
 
 // NewPromptCapturer creates a new PromptCapturer.
-func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService, providerName, modelName string) *PromptCapturer {
+func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService) *PromptCapturer {
 	return &PromptCapturer{
-		base:         base,
-		svc:          svc,
-		providerName: providerName,
-		modelName:    modelName,
+		base: base,
+		svc:  svc,
 	}
 }
 
@@ -66,14 +62,7 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 	}
 
 	// Initialize TUI Model
-	stats := prompt.SessionStats{
-		TurnCount:    0,
-		TokenUsage:   0,
-		ProviderName: c.providerName,
-		ModelName:    c.modelName,
-	}
-
-	model := prompt.NewModel(c.svc, stats)
+	model := prompt.NewModel(c.svc)
 	p := tea.NewProgram(model)
 
 	resModel, err := p.Run()

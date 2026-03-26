@@ -104,13 +104,6 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	// 3. Invoking a Use Case / Service interface
 	var capturer ports.Capturer
 	if opts.tuiPrompt {
-		providerName := "..."
-		modelName := "..."
-		if cfg != nil {
-			providerName = cfg.SelectedProvider
-			modelName = cfg.Model
-		}
-
 		tracker := history.NewGlobalPromptTracker(c.HomeDir)
 		
 		// Try to get at least the last user message for the trie
@@ -124,7 +117,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		
 		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
 		
-		capturer = tui.NewPromptCapturer(baseCapturer, svc, providerName, modelName)
+		capturer = tui.NewPromptCapturer(baseCapturer, svc)
 	} else {
 		capturer = c.setupCapturer()
 	}

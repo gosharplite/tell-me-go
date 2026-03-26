@@ -42,7 +42,7 @@ func (m *mockSuggestionService) RecordPrompt(prompt string) error {
 func TestPromptCapturer_CapturePrompt_Fallback(t *testing.T) {
 	base := &mockBaseCapturer{}
 	svc := &mockSuggestionService{}
-	capturer := NewPromptCapturer(base, svc, "provider", "model")
+	capturer := NewPromptCapturer(base, svc)
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	prompt, err := capturer.CapturePrompt(context.Background(), fs) // No UseTUIPrompt option
@@ -65,7 +65,7 @@ func (m *mockBaseCapturerWithTTY) IsTTY(v any) bool { return m.isTTY }
 func TestPromptCapturer_CapturePrompt_Fallback_Conditions(t *testing.T) {
 	base := &mockBaseCapturerWithTTY{isTTY: true}
 	svc := &mockSuggestionService{}
-	capturer := NewPromptCapturer(base, svc, "provider", "model")
+	capturer := NewPromptCapturer(base, svc)
 
 	ctx := context.Background()
 
@@ -95,7 +95,7 @@ func TestPromptCapturer_CapturePrompt_Fallback_Conditions(t *testing.T) {
 
 func TestPromptCapturer_IsTTY(t *testing.T) {
 	base := &mockBaseCapturer{}
-	capturer := NewPromptCapturer(base, nil, "", "")
+	capturer := NewPromptCapturer(base, nil)
 	if capturer.IsTTY(nil) != false {
 		t.Error("expected IsTTY to delegate to base")
 	}
@@ -103,7 +103,7 @@ func TestPromptCapturer_IsTTY(t *testing.T) {
 
 func TestPromptCapturer_UserInteractorDelegation(t *testing.T) {
 	base := &mockBaseCapturer{}
-	capturer := NewPromptCapturer(base, nil, "", "")
+	capturer := NewPromptCapturer(base, nil)
 
 	ctx := context.Background()
 	_, _ = capturer.Confirm(ctx, "test")

@@ -27,7 +27,6 @@ type debounceMsg struct {
 
 // Model is the main orchestrator for the TUI prompt.
 type Model struct {
-	dashboard Dashboard
 	input     TextArea
 	suggester Suggester
 
@@ -43,11 +42,10 @@ type Model struct {
 	aborted     bool
 }
 
-// NewModel creates a new Model with the given suggestion service and session stats.
-func NewModel(svc ports.SuggestionService, stats SessionStats) *Model {
+// NewModel creates a new Model with the given suggestion service.
+func NewModel(svc ports.SuggestionService) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Model{
-		dashboard:     Dashboard{Stats: stats},
 		input:         NewTextArea(),
 		suggester:     Suggester{Index: -1}, // -1 means no suggestion is currently selected/highlighted
 		suggestionSvc: svc,
