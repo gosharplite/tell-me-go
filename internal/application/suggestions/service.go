@@ -104,34 +104,43 @@ func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, prefix str
 		filePrefix = prefix[lastSlash+1:]
 	}
 
-	entries, err := os.ReadDir(dir)
+	f, err := os.Open(dir)
 	if err != nil {
 		return nil
 	}
+	defer func() { _ = f.Close() }()
 
 	var results []string
-	for _, entry := range entries {
-		// Frequently check for cancellation
-		select {
-		case <-ctx.Done():
+	// Read directory in small batches to allow context cancellation
+	batchSize := 100
+
+	for {
+		// Check cancellation before each batch
+		if ctx.Err() != nil {
 			return results
-		default:
 		}
 
-		name := entry.Name()
-		if strings.HasPrefix(name, filePrefix) {
-			// Skip noisy/binary directories to avoid memory exhaustion/noise
-			if name == ".git" || name == "node_modules" || name == "vendor" || name == "bin" || name == "obj" {
-				continue
-			}
+		entries, err := f.ReadDir(batchSize)
+		if err != nil {
+			// io.EOF or other errors
+			break
+		}
 
-			fullPath := filepath.Join(dir, name)
-			if entry.IsDir() {
-				fullPath += "/"
-			}
-			results = append(results, fullPath)
-			if len(results) >= 10 {
-				break
+		for _, entry := range entries {
+			name := entry.Name()
+			if strings.HasPrefix(name, filePrefix) {
+				if name == ".git" || name == "node_modules" || name == "vendor" || name == "bin" || name == "obj" {
+					continue
+				}
+
+				fullPath := filepath.Join(dir, name)
+				if entry.IsDir() {
+					fullPath += "/"
+				}
+				results = append(results, fullPath)
+				if len(results) >= 10 {
+					return results
+				}
 			}
 		}
 	}
