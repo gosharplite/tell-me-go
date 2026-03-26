@@ -5,8 +5,10 @@ package suggestions
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -227,5 +229,151 @@ func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
+	tracker := &mockPromptTracker{}
+	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+
+	// Create a temp directory with some files
+	tmpDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmpDir, "test1.txt"), []byte(""), 0644)
+
+	// Case 1: Pre-cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Calling scanFiles indirectly via GetSuggestions
+	// Need to ensure the prefix looks like a path
+	prefix := tmpDir + string(os.PathSeparator) + "t"
+	
+	// We call GetSuggestions. It checks ctx.Err() at the beginning.
+	// But we also want to hit the check inside scanFiles loop.
+	// scanFiles is called AFTER the initial check in GetSuggestions.
+	
+	results, err := service.GetSuggestions(ctx, prefix)
+	if err == nil {
+		t.Errorf("expected error from GetSuggestions with cancelled context, got nil")
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+
+	// To specifically cover the check INSIDE scanFiles (line 108-110), 
+	// we'd ideally want a context that cancels MID-SCAN.
+	// But since GetSuggestions checks it first, we might need to call scanFiles directly if possible,
+	// or use a context that cancels after a short delay if the scan is slow enough.
+	// Since scanFiles is unexported, we can use the receiver.
+	
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	// We can't easily trigger cancellation mid-scan without a very large directory or a hook.
+	// However, if we call GetSuggestions with a NON-cancelled context, it passes the first check.
+	// If we then cancel it, and scanFiles is slow...
+	// Let's just call scanFiles via the service struct since we are in the same package.
+	
+	cancel2()
+	res := service.scanFiles(ctx2, prefix)
+	if len(res) != 0 {
+		t.Errorf("scanFiles: expected 0 results for cancelled context, got %d", len(res))
+	}
+}
+
+func TestSuggestionService_ScanFiles_InvalidDir(t *testing.T) {
+	tracker := &mockPromptTracker{}
+	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+
+	// Call GetSuggestions with a path that definitely doesn't exist
+	invalidPath := filepath.Join(t.TempDir(), "non-existent-dir", "file")
+	
+	// Ensure it looks like a path to trigger scanFiles
+	prefix := invalidPath 
+	
+	got, err := service.GetSuggestions(context.Background(), prefix)
+	if err != nil {
+		t.Fatalf("GetSuggestions failed: %v", err)
+	}
+	
+	// Should return nil/empty results from scanFiles and whatever is in trie
+	if len(got) != 0 {
+		t.Errorf("expected 0 suggestions for invalid path, got %v", got)
+	}
+}
+
+type errorPromptTracker struct {
+	mockPromptTracker
+}
+
+func (e *errorPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
+	return nil, fmt.Errorf("forced error")
+}
+
+func TestSuggestionService_LoadTopNFails(t *testing.T) {
+	tracker := &errorPromptTracker{}
+	// This should log to stderr but not return an error
+	service, err := NewMultiSourceSuggestionService(tracker, nil)
+	if err != nil {
+		t.Fatalf("NewMultiSourceSuggestionService should not fail when tracker fails to load: %v", err)
+	}
+	if service == nil {
+		t.Fatal("service is nil")
+	}
+}
+
+func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
+	tracker := &mockPromptTracker{}
+	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+
+	err := service.RecordPrompt("")
+	if err != nil {
+		t.Errorf("RecordPrompt(\"\") should return nil, got %v", err)
+	}
+	
+	// Verify tracker wasn't called
+	if len(tracker.GetPrompts()) != 0 {
+		t.Errorf("expected 0 prompts in tracker, got %d", len(tracker.GetPrompts()))
+	}
+}
+
+func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T) {
+	tracker := &mockPromptTracker{}
+	service, _ := NewMultiSourceSuggestionService(tracker, nil)
+
+	tmpDir := t.TempDir()
+	
+	// 1. Check directory path separator (Line 127)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "sub-dir"), 0755)
+	prefix := tmpDir + string(os.PathSeparator) + "s"
+	got, _ := service.GetSuggestions(context.Background(), prefix)
+	foundDir := false
+	for _, v := range got {
+		if strings.HasSuffix(v, string(os.PathSeparator)) {
+			foundDir = true
+			break
+		}
+	}
+	if !foundDir {
+		t.Errorf("expected directory to have path separator, got: %v", got)
+	}
+
+	// 2. Check exclusions (Line 122)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "vendor"), 0755)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "node_modules"), 0755)
+	prefix2 := tmpDir + string(os.PathSeparator)
+	got2, _ := service.GetSuggestions(context.Background(), prefix2)
+	for _, v := range got2 {
+		if strings.Contains(v, "vendor") || strings.Contains(v, "node_modules") {
+			t.Errorf("found excluded directory in suggestions: %q", v)
+		}
+	}
+
+	// 3. Check limit (Line 131)
+	for i := 0; i < 20; i++ {
+		_ = os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)), []byte(""), 0644)
+	}
+	prefix3 := tmpDir + string(os.PathSeparator) + "f"
+	got3, _ := service.GetSuggestions(context.Background(), prefix3)
+	if len(got3) != 10 {
+		t.Errorf("expected 10 suggestions, got %d", len(got3))
 	}
 }
