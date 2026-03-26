@@ -51,6 +51,7 @@ type Config struct {
 	MaxConcurrentTools int                    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
 	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
 	HTTPTimeoutSeconds int                    `yaml:"HTTP_TIMEOUT"`         // LLM Client timeout
+	UseTUIPrompt       bool                   `yaml:"USE_TUI_PROMPT"`       // Enable TUI prompt with suggestions
 	Models             map[string]ModelConfig `yaml:"MODELS"`               // Model-specific overrides
 	SelectedProvider   string                 `yaml:"SELECTED_PROVIDER"`
 	Providers          map[string]LLMProvider `yaml:"PROVIDERS"`

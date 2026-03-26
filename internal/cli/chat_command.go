@@ -45,6 +45,7 @@ type cliOptions struct {
 	lastN       int
 	backN       int
 	rawOutput   bool
+	tuiPrompt   bool
 	retry       bool
 }
 
@@ -99,12 +100,13 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 
 	// Delegate all business logic and orchestration to the ChatService
 	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
-		ConfigPath: opts.configPath,
-		NewSession: opts.newSession,
-		LastN:      opts.lastN,
-		BackN:      opts.backN,
-		RawOutput:  opts.rawOutput,
-		Prompt:     prompt,
+		ConfigPath:   opts.configPath,
+		NewSession:   opts.newSession,
+		LastN:        opts.lastN,
+		BackN:        opts.backN,
+		RawOutput:    opts.rawOutput,
+		UseTUIPrompt: opts.tuiPrompt,
+		Prompt:       prompt,
 	}, capturer)
 }
 
@@ -176,6 +178,8 @@ func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.Flag
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
 	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
 	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
+	fs.BoolVar(&opts.tuiPrompt, "i", false, "Enable interactive TUI prompt with suggestions")
+	fs.BoolVar(&opts.tuiPrompt, "tui", false, "Enable interactive TUI prompt with suggestions")
 	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
 
 	if err := fs.Parse(flagArgs); err != nil {

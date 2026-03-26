@@ -14,9 +14,10 @@ type ChatOptions struct {
 	ConfigPath string
 	NewSession bool
 	LastN      int
-	BackN      int
-	RawOutput  bool
-	Prompt     string
+	BackN        int
+	RawOutput    bool
+	UseTUIPrompt bool
+	Prompt       string
 }
 
 // ChatService defines the interface for chat orchestration operations.
