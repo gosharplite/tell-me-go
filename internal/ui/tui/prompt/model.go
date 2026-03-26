@@ -156,8 +156,6 @@ func (m Model) View() string {
 	return modelStyle.Render(
 		lipgloss.JoinVertical(
 			lipgloss.Left,
-			m.dashboard.View(),
-			"\n",
 			m.input.View(),
 			"\n",
 			m.suggester.View(),
