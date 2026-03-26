@@ -254,6 +254,13 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
+			name:  "SummarizationStartedEvent",
+			event: events.SummarizationStartedEvent{},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {})
+			},
+		},
+		{
 			name: "ResponseEvent",
 			event: events.ResponseEvent{
 				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},

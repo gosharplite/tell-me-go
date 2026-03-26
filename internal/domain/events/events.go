@@ -442,6 +442,9 @@ type InferenceStartedEvent struct{}
 // RefiningStartedEvent signals that the agent is starting to refine or recover context.
 type RefiningStartedEvent struct{}
 
+// SummarizationStartedEvent signals that the history summarization process has begun.
+type SummarizationStartedEvent struct{}
+
 // ResponseEvent carries the final LLM output.
 type ResponseEvent struct {
 	Content *llm.Content
@@ -536,3 +539,4 @@ func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" 
 func (e SummarizationRequired) Type() string  { return "SummarizationRequired" }
 func (e TraceEvent) Type() string             { return "TraceEvent" }
 func (e RefiningStartedEvent) Type() string   { return "RefiningStartedEvent" }
+func (e SummarizationStartedEvent) Type() string { return "SummarizationStartedEvent" }

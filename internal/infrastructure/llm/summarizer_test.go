@@ -112,6 +112,11 @@ func TestSummarizer_Summarize(t *testing.T) {
 		}), mock.Anything, mock.Anything).Return(respContent, metrics, nil)
 
 		bus.On("Publish", mock.Anything, mock.MatchedBy(func(event events.Event) bool {
+			_, ok := event.(events.SummarizationStartedEvent)
+			return ok
+		})).Return(nil)
+
+		bus.On("Publish", mock.Anything, mock.MatchedBy(func(event events.Event) bool {
 			e, ok := event.(events.UsageMetricsEvent)
 			return ok && e.Metrics.IsSummary && e.Metrics.PromptTokens == 10
 		})).Return(nil)
@@ -211,6 +216,11 @@ func TestSummarizer_WithLogger(t *testing.T) {
 	bus := new(mockEventBus)
 
 	s := NewSummarizer(gw, bus, WithLogger(testLogger))
+
+	bus.On("Publish", mock.Anything, mock.MatchedBy(func(event events.Event) bool {
+		_, ok := event.(events.SummarizationStartedEvent)
+		return ok
+	})).Return(nil)
 
 	gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil, errors.New("simulated logger test error"))
 
