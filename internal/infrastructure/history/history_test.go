@@ -136,8 +136,8 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 	archiveFile := filepath.Join(tmpDir, "interfaces.archive.jsonl")
 	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 
-	if m.getPath() != historyFile {
-		t.Errorf("getPath() = %s, want %s", m.getPath(), historyFile)
+	if m.GetFilePath() != historyFile {
+		t.Errorf("GetFilePath() = %s, want %s", m.GetFilePath(), historyFile)
 	}
 
 	if m.GetResolver() == nil {

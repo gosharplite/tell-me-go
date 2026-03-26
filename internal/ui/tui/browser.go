@@ -58,6 +58,7 @@ type RootBrowserModel struct {
 	width            int
 	height           int
 	lastMutationTime time.Time
+	turnOffsets      []int
 }
 
 // NewRootBrowserModel creates a new history browser root model.
@@ -176,6 +177,16 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedTurn = len(m.history) - 1
 				}
 				m.viewport.SetContent(m.renderHistory())
+
+				if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
+					targetLine := m.turnOffsets[m.selectedTurn]
+					if targetLine < m.viewport.YOffset {
+						m.viewport.SetYOffset(targetLine)
+					}
+					if targetLine >= m.viewport.YOffset+m.viewport.Height {
+						m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
+					}
+				}
 			}
 			return m, nil
 		case "k":
@@ -185,6 +196,16 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedTurn = 0
 				}
 				m.viewport.SetContent(m.renderHistory())
+
+				if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
+					targetLine := m.turnOffsets[m.selectedTurn]
+					if targetLine < m.viewport.YOffset {
+						m.viewport.SetYOffset(targetLine)
+					}
+					if targetLine >= m.viewport.YOffset+m.viewport.Height {
+						m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
+					}
+				}
 			}
 			return m, nil
 		case "p":
@@ -284,12 +305,24 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, nil
 		}
+
+		isInitialLoad := (m.selectedTurn == -1)
+
 		if len(msg.dtos) > 0 {
 			m.history = append(m.history, msg.dtos...)
 		}
+		if isInitialLoad && len(m.history) > 0 {
+			m.selectedTurn = len(m.history) - 1
+		}
+
 		m.cursor = msg.nextCursor
 		m.viewport.SetContent(m.renderHistory())
 		m.updateViewportHeight()
+
+		if isInitialLoad && len(m.history) > 0 {
+			m.viewport.GotoBottom()
+		}
+
 		return m, nil
 
 	case fileChangedMsg:
@@ -353,8 +386,11 @@ func (m *RootBrowserModel) renderHistory() string {
 		return "No history found."
 	}
 
+	m.turnOffsets = make([]int, 0, len(m.history))
 	var sb strings.Builder
 	for i, dto := range m.history {
+		m.turnOffsets = append(m.turnOffsets, strings.Count(sb.String(), "\n"))
+
 		prefix := "  "
 		if i == m.selectedTurn {
 			prefix = "> "

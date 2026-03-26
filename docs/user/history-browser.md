@@ -1,193 +1,64 @@
 # Interactive History Browser
 
-**Status**: Proposed Feature  
-**Target Release**: Future Release  
+**Status**: Released  
 **Author**: Principal Software Architect
 
 ## Overview
 
-The **Interactive History Browser** is a proposed new feature for `tell-me-go` that provides a rich, keyboard-driven interface for exploring conversation history. Unlike the current `-l N` flag which produces static text output, the browser offers search, navigation, and interactive filtering of AI thoughts and tool calls.
+The **Interactive History Browser** is a rich, keyboard-driven Terminal User Interface (TUI) for exploring your entire `tell-me-go` conversation history. It safely stitches your active memory and your archived disk history into a single, unbounded, scrollable view without risking Out-Of-Memory (OOM) crashes.
 
-## Motivation
+Unlike the static `-l N` flag, the browser offers full-text search, thought toggling, and the ability to pin or rollback messages directly from the UI.
 
-When working with complex AI conversations, developers need to:
-- Review the AI's reasoning process (internal "thoughts")
-- Navigate long conversation histories efficiently  
-- Search for specific content across turns
-- Understand tool execution flows
-- Debug complex multi-turn interactions
+## Command
 
-The current `-l N` output is insufficient for these use cases, especially with long conversations where AI thoughts are hidden by default.
+To launch the browser for a specific session, use the new `browse` subcommand:
 
-## Proposed Implementation
-
-### Command
 ```bash
-tell-me-go browse [options]
-```
-
-### Options
-- `-c, --config PATH`: Configuration file (default: `configs/assistant.yaml`)
-- `--search QUERY`: Pre-populate search with query
-- `--show-thoughts`: Start with thoughts visible (overrides config)
-- `--export FILE`: Export selected turns to file (future)
-
-### Key Features
-
-#### 1. **Interactive Navigation**
-```
-[USER] What's the capital of France?
-[MODEL] <thinking>I need to recall European geography...</thinking>
-       Paris is the capital of France.
-───────────────────────────────────────
-↑/↓: Navigate  Space: Toggle thoughts  
-/: Search     n/N: Next/prev match    q: Quit
-```
-
-#### 2. **Thought Visibility Toggle**
-- Thoughts (`IsThought: true`) are shown/collapsed with spacebar
-- Respects `SHOW_THOUGHTS` configuration but allows override
-- Visual distinction: thoughts in gray, regular text in default color
-
-#### 3. **Full-Text Search**
-- `/` enters search mode
-- Highlights matches across entire history
-- `n`/`N` jump between matches
-- Case-insensitive by default
-
-#### 4. **Turn Navigation**
-- Jump to specific turn number
-- Expand/collapse tool call details
-- View raw JSON for debugging
-
-#### 5. **Direct History Manipulation** (Future)
-- Pin/unpin turns from TUI
-- Rollback turns directly
-- Export selected conversations
-
-## Technical Details
-
-### Architecture
-The browser builds on existing `tell-me-go` components:
-
-1. **History Data Layer**: Uses `UnifiedHistoryProvider` to seamlessly stitch active memory and archived disk storage via O(1) byte-offset reads, ensuring the UI never causes OOM crashes. It consumes read-only `HistoryViewDTO` structs.
-2. **CQRS Boundary**: Strictly separated from the Agent's `HistoryManager` to protect the LLM context window from UI bloat.
-2. **Configuration**: Respects existing `SHOW_THOUGHTS` YAML setting
-3. **UI Framework**: Bubble Tea TUI (Charm ecosystem, already used for markdown rendering)
-4. **CLI Integration**: New `browse` subcommand following existing patterns
-
-### Dependencies
-- **bubbletea**: TUI framework (+1 main dependency)
-- **bubbles**: Reusable components (+1 main dependency)
-- **Existing**: charmbracelet/glamour, charmbracelet/lipgloss (already present)
-
-### Performance Considerations
-- **Large Histories**: Lazy loading via `UnifiedHistoryProvider` pagination using O(1) byte-offset file seeking on the archive.
-- **Memory**: Only loads visible portion of history
-- **Fallback**: Automatically uses text rendering when not in TTY
-
-## Usage Examples
-
-### Basic Exploration
-```bash
-# Launch interactive browser
 tell-me-go browse -c configs/assistant.yaml
-
-# Navigate with ↑/↓, toggle thoughts with space
-# Search with /, quit with q
 ```
 
-### Search-First Workflow
-```bash
-# Search for refactoring discussions
-tell-me-go browse --search "refactor"
+*(Note: It accepts the exact same configuration flags as the `chat` command so it targets the correct history file).*
 
-# Search with specific config
-tell-me-go browse -c configs/code-review.yaml --search "security"
-```
+---
 
-### Non-Interactive Use (Pipes/Automation)
-```bash
-# Fallback to text output for scripting
-tell-me-go browse -l 50 | grep "ERROR"
+## Controls & Keybindings
 
-# Export to file (future)
-tell-me-go browse --export conversation.md
-```
+Once the interface loads, you will see your history formatted with colors, tool execution logs, and an interactive footer.
 
-## Configuration Integration
+### 1. Basic Navigation
+- **`↑` / `k` (up arrow):** Scroll up line-by-line.
+- **`↓` / `j` (down arrow):** Scroll down line-by-line.
+- **`Page Up` / `Page Down`:** Scroll by full pages.
+- **`Spacebar`:** Toggle the visibility of the AI's internal `<thinking>` processes (shown in gray text).
+- **`q` or `Ctrl+C`:** Quit the browser and return to the shell.
 
-### YAML Configuration
-```yaml
-# configs/assistant.yaml
-SHOW_THOUGHTS: false  # Browser respects this default
-SHOW_TOOLS: true      # Affects tool call display
-```
+*Note: Scrolling to the bottom will automatically load older history from the disk archive.*
 
-### TUI Preferences (Future)
-```yaml
-# ~/.tell-me-go/tui.yaml (proposed)
-browser:
-  show_thoughts: true      # User preference overrides config
-  color_scheme: "dark"
-  keybindings:
-    toggle_thoughts: " "
-    search: "/"
-    quit: "q"
-```
+### 2. Full-Text Search
+- **`/` (forward slash):** Opens the search bar at the bottom of the screen.
+- Type your query and press **`Enter`**.
+- The UI will instantly highlight all case-insensitive matches in yellow.
+- **`n`:** Jump to the **next** match.
+- **`N` (Shift+n):** Jump to the **previous** match.
+- **`Esc`:** Clear the search and remove highlights.
 
-## Comparison with `-l N`
+### 3. Direct History Manipulation
+You can directly modify the AI's active memory from the browser. 
 
-| Feature | `-l N` (Current) | `browse` (Proposed) |
-|---------|-----------------|-------------------|
-| **Interactivity** | None | Full keyboard navigation |
-| **Thought Visibility** | Config-only | Interactive toggle |
-| **Search** | None | Full-text search |
-| **Large History** | Overwhelming | Paginated, scrollable |
-| **Tool Inspection** | Limited | Expandable details |
-| **TTY Required** | No | Yes (with fallback) |
-| **Scripting** | Excellent | Fallback mode |
+First, select a turn by pressing **`j`** or **`k`** until the `> ` cursor points to the message you want to modify.
 
-## Development Roadmap
+- **`p` (Pin/Unpin):** Pins the selected turn. Pinned turns are marked with an orange `[PINNED]` badge and are protected from the AI's auto-summarization garbage collector. Press `p` again to unpin.
+- **`r` (Rollback):** Destroys all history from the selected turn to the present. The UI will instantly refresh to reflect the deleted timeline.
 
-### Phase 1 (MVP)
-- Basic scrolling navigation
-- Thought visibility toggle  
-- TTY detection and fallback
-- Color-coded role display
+#### The Archive Boundary
+Older conversations are automatically moved to disk (`history.archive.jsonl`) to save memory. Messages in the browser marked with `(archived)` are strictly read-only. **You cannot Pin or Rollback archived messages.** If you try, the interface will ignore the command.
 
-### Phase 2
-- Full-text search
-- Turn jumping
-- Tool call expansion
-- Help screen
+### 4. Live Reload
+If you have the `tell-me-go browse` window open in one terminal pane, and you are actively chatting with `tell-me-go chat` in another pane, the browser will automatically detect file changes and live-update to show the AI's new responses in real-time.
 
-### Phase 3  
-- Direct pin/unpin
-- Rollback interface
-- Multi-session support
-- Export functionality
+---
 
-## Technical Constraints
+## Warnings & Constraints
 
-1. **TTY Requirement**: Bubble Tea requires interactive terminal
-   - **Solution**: Automatic fallback to text rendering
-2. **Binary Size**: +2MB from dependencies
-   - **Impact**: 25MB → 27MB total
-3. **Learning Curve**: New keybindings
-   - **Mitigation**: On-screen help, intuitive defaults
-
-## Related Documentation
-
-- [ADR-008: Bubble Tea Interactive History Browser](../adr/2026-02-bubble-tea-history-browser.md)
-- [History Management SOP](../sop/technical/history_management.md)
-- [UI Rendering Architecture](../adr/2024-10-history-log-compaction.md)
-
-## Feedback & Contribution
-
-This feature is currently in proposal phase. Feedback can be provided through:
-- GitHub Issues
-- Architecture review discussions
-- User experience testing
-
-The implementation will follow the project's clean architecture patterns and existing code standards.
+- **Pinning Pressure:** If you pin too many active messages, the AI will not have enough token budget left to auto-summarize the rest of the conversation, resulting in an eventual context-window crash. If you pin a large amount of text, a `⚠️ High Pinning Pressure` warning will appear in the footer.
+- **TTY Requirement:** The `browse` command requires an interactive terminal. If you pipe the output (e.g., `tell-me-go browse | grep "foo"`), the application will gracefully abort. For scripting, continue to use `tell-me-go chat -l 50`.

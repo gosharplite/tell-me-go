@@ -143,3 +143,23 @@ func BenchmarkReadPage(b *testing.B) {
 		}
 	}
 }
+
+func TestJSONLArchiveReader_ReadPage_NonExistent(t *testing.T) {
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "non_existent.jsonl")
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	dtos, nextOffset, err := reader.ReadPage(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("expected no error for non-existent file, got %v", err)
+	}
+	if len(dtos) != 0 {
+		t.Errorf("expected 0 DTOs, got %d", len(dtos))
+	}
+	if nextOffset != 0 {
+		t.Errorf("expected nextOffset 0, got %d", nextOffset)
+	}
+}

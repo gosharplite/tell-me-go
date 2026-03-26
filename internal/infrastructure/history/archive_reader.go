@@ -7,8 +7,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -34,6 +36,9 @@ func NewJSONLArchiveReader(fs persistence.FileSystem, archivePath string) *JSONL
 func (r *JSONLArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	file, err := r.fs.Open(ctx, r.archivePath)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, offset, nil
+		}
 		return nil, 0, fmt.Errorf("open archive %s: %w", r.archivePath, err)
 	}
 	defer file.Close()
