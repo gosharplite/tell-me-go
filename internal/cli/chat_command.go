@@ -80,6 +80,14 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return nil
 	}
 
+	// 2. Configuration Merge
+	// Load configuration early to merge with CLI options
+	loader := &infra_config.YAMLConfigLoader{}
+	cfg, _ := loader.Load(opts.configPath)
+	if cfg != nil && cfg.UseTUIPrompt {
+		opts.tuiPrompt = true
+	}
+
 	var prompt string
 	if opts.retry {
 		var abort bool
@@ -92,13 +100,9 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		}
 	}
 
-	// 2. Invoking a Use Case / Service interface
+	// 3. Invoking a Use Case / Service interface
 	var capturer ports.Capturer
 	if opts.tuiPrompt {
-		// Load config for provider and model info for the TUI dashboard
-		loader := &infra_config.YAMLConfigLoader{}
-		cfg, _ := loader.Load(opts.configPath)
-		
 		providerName := "..."
 		modelName := "..."
 		if cfg != nil {
