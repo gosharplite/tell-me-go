@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -17,7 +18,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Container defines the interface for building session dependencies and provides factories.
@@ -27,7 +27,7 @@ type Container interface {
 	GetAgentFactory() ports.ChatterFactory
 	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
 	GetHistoryManager(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
-	GetUnifiedHistoryProvider(ctx context.Context, cfg *domain_config.Config) (ports.UnifiedHistoryProvider, error)
+	GetUnifiedHistoryProvider(ctx context.Context, cfg *domain_config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
 }
 
 type chatService struct {
@@ -144,7 +144,7 @@ func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capt
 		return fmt.Errorf("failed to load history manager: %w", err)
 	}
 
-	provider, err := s.Container.GetUnifiedHistoryProvider(ctx, cfg)
+	provider, err := s.Container.GetUnifiedHistoryProvider(ctx, cfg, hManager)
 	if err != nil {
 		return fmt.Errorf("failed to load unified history provider: %w", err)
 	}

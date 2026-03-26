@@ -19,10 +19,10 @@ import (
 )
 
 var (
-	userStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)   // Blue
-	modelStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)   // Green
+	userStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)    // Blue
+	modelStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)    // Green
 	thoughtStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true) // Gray
-	toolStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))              // Yellow
+	toolStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))               // Yellow
 	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Padding(0, 1)
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 	warningStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
@@ -445,7 +445,7 @@ func (m *RootBrowserModel) renderHistory() string {
 		if m.currentQuery != "" {
 			content = m.highlightMatches(content, m.currentQuery)
 		}
-		
+
 		// Handle multi-line content to maintain prefix
 		lines := strings.Split(content, "\n")
 		for j, line := range lines {

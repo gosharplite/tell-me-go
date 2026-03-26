@@ -52,7 +52,7 @@ type Container interface {
 	GetAgentFactory() ports.ChatterFactory
 	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error
 	GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error)
-	GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config) (ports.UnifiedHistoryProvider, error)
+	GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
 }
 
 // bootstrapper handles the instantiation and wiring of system components.
@@ -349,15 +349,10 @@ func (b *bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config)
 }
 
 // GetUnifiedHistoryProvider assembles the read-model for the history browser.
-func (b *bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config) (ports.UnifiedHistoryProvider, error) {
+func (b *bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
 	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize session paths: %w", err)
-	}
-
-	hManager, err := b.buildHistoryManager(ctx, paths)
-	if err != nil {
-		return nil, err
 	}
 
 	archiveReader := history.NewJSONLArchiveReader(infra_persistence.NewOSFileSystem(), paths.HistoryArchivePath)

@@ -34,7 +34,7 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
-	
+
 	offsets := make([]int64, len(contents))
 	var currentOffset int64
 	for i, c := range contents {
@@ -129,7 +129,7 @@ func BenchmarkReadPage(b *testing.B) {
 	f.Close()
 
 	reader := history.NewJSONLArchiveReader(fs, archivePath)
-	
+
 	// Jump to the middle
 	offset := int64(25000 * len(lineBytes))
 

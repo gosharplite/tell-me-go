@@ -115,7 +115,7 @@ func (m *mockServiceContainer) GetHistoryManager(ctx context.Context, cfg *confi
 	return args.Get(0).(ports.HistoryManager), args.Error(1)
 }
 
-func (m *mockServiceContainer) GetUnifiedHistoryProvider(ctx context.Context, cfg *config.Config) (ports.UnifiedHistoryProvider, error) {
+func (m *mockServiceContainer) GetUnifiedHistoryProvider(ctx context.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
 	args := m.Called(ctx, cfg)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -401,3 +401,5 @@ func (m *mockHistoryManagerForRetry) SetPinned(ctx context.Context, turnIndex in
 func (m *mockHistoryManagerForRetry) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
 	return 0, 0, 0, nil
 }
+
+func (m *mockHistoryManagerForRetry) GetFilePath() string { return "" }
