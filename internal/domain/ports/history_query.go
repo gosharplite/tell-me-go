@@ -13,6 +13,8 @@ type HistoryViewDTO struct {
 	ContentPreview string // Masked/formatted text (e.g., base64 attachments hidden)
 	ThoughtProcess string // Extracted reasoning blocks
 	IsArchived     bool   // True if sourced from the disk archive (disables UI mutation actions)
+	IsPinned       bool   // True if the turn is pinned in active memory
+	OriginalIndex  int    // The underlying index in active memory (used for mutation)
 	Timestamp      time.Time
 	ToolCalls      []string // Summarized tool execution names
 }

@@ -39,7 +39,7 @@ func (p *UnifiedProvider) GetHistoryStream(ctx context.Context, limit int, curso
 		}
 
 		var dtos []ports.HistoryViewDTO
-		for _, c := range contents {
+		for i, c := range contents {
 			if c == nil {
 				continue
 			}
@@ -49,7 +49,9 @@ func (p *UnifiedProvider) GetHistoryStream(ctx context.Context, limit int, curso
 				continue
 			}
 
-			dtos = append(dtos, p.toDTO(c, false))
+			dto := p.toDTO(c, false)
+			dto.OriginalIndex = i
+			dtos = append(dtos, dto)
 		}
 
 		// After active history, we point to the start of the archive.
@@ -92,6 +94,7 @@ func (p *UnifiedProvider) toDTO(c *llm.Content, archived bool) ports.HistoryView
 	dto := ports.HistoryViewDTO{
 		Role:       c.Role,
 		IsArchived: archived,
+		IsPinned:   c.Pinned,
 	}
 
 	var preview strings.Builder

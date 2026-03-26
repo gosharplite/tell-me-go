@@ -36,11 +36,13 @@ type historyLoadedMsg struct {
 // RootBrowserModel implements the tea.Model interface for the history browser.
 type RootBrowserModel struct {
 	provider     ports.UnifiedHistoryProvider
+	cmdService   ports.HistoryModifier
 	history      []ports.HistoryViewDTO
 	viewport     viewport.Model
 	searchBar    textinput.Model
 	matches      []int
 	currentMatch int
+	selectedTurn int
 	isSearching  bool
 	currentQuery string
 	isLoading    bool
@@ -53,16 +55,18 @@ type RootBrowserModel struct {
 }
 
 // NewRootBrowserModel creates a new history browser root model.
-func NewRootBrowserModel(provider ports.UnifiedHistoryProvider) *RootBrowserModel {
+func NewRootBrowserModel(provider ports.UnifiedHistoryProvider, cmdService ports.HistoryModifier) *RootBrowserModel {
 	ti := textinput.New()
 	ti.Placeholder = "Search history..."
 	ti.Prompt = "🔍 "
 
 	return &RootBrowserModel{
 		provider:     provider,
+		cmdService:   cmdService,
 		searchBar:    ti,
 		isLoading:    true,
 		showThoughts: true,
+		selectedTurn: -1,
 	}
 }
 
@@ -114,6 +118,82 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.isSearching = true
 			m.searchBar.Focus()
+			return m, nil
+		case "j":
+			if len(m.history) > 0 {
+				m.selectedTurn++
+				if m.selectedTurn >= len(m.history) {
+					m.selectedTurn = len(m.history) - 1
+				}
+				m.viewport.SetContent(m.renderHistory())
+			}
+			return m, nil
+		case "k":
+			if len(m.history) > 0 {
+				m.selectedTurn--
+				if m.selectedTurn < 0 {
+					m.selectedTurn = 0
+				}
+				m.viewport.SetContent(m.renderHistory())
+			}
+			return m, nil
+		case "p":
+			if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
+				dto := m.history[m.selectedTurn]
+				if !dto.IsArchived {
+					// Toggle pin state
+					err := m.cmdService.SetPinned(context.Background(), dto.OriginalIndex/2, !dto.IsPinned)
+					if err != nil {
+						m.err = err
+						return m, nil
+					}
+					// Update local DTOs for the turn to reflect toggle
+					newPinState := !dto.IsPinned
+					turnStartIdx := dto.OriginalIndex & ^1
+					for idx := range m.history {
+						if !m.history[idx].IsArchived && (m.history[idx].OriginalIndex & ^1) == turnStartIdx {
+							m.history[idx].IsPinned = newPinState
+						}
+					}
+					m.viewport.SetContent(m.renderHistory())
+				}
+			}
+			return m, nil
+		case "r":
+			if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
+				dto := m.history[m.selectedTurn]
+				if !dto.IsArchived {
+					// We need total active turns.
+					// Let's get it from the last active DTO.
+					lastActiveIdx := -1
+					for i := len(m.history) - 1; i >= 0; i-- {
+						if !m.history[i].IsArchived {
+							lastActiveIdx = m.history[i].OriginalIndex
+							break
+						}
+					}
+					if lastActiveIdx == -1 {
+						return m, nil
+					}
+
+					totalMsgs := lastActiveIdx + 1
+					targetStartIdx := dto.OriginalIndex & ^1
+					turnsToRemove := (totalMsgs - targetStartIdx + 1) / 2
+
+					_, _, _, err := m.cmdService.RollbackTurns(context.Background(), turnsToRemove)
+					if err != nil {
+						m.err = err
+						return m, nil
+					}
+
+					// Full Refresh
+					m.history = nil
+					m.cursor = ""
+					m.selectedTurn = -1
+					m.isLoading = true
+					return m, fetchHistoryCmd(m.provider, "")
+				}
+			}
 			return m, nil
 		case "n":
 			if len(m.matches) > 0 {
@@ -208,6 +288,11 @@ func (m *RootBrowserModel) renderHistory() string {
 
 	var sb strings.Builder
 	for i, dto := range m.history {
+		prefix := "  "
+		if i == m.selectedTurn {
+			prefix = "> "
+		}
+
 		roleLabel := strings.ToUpper(dto.Role)
 		if dto.Role == "assistant" {
 			roleLabel = "MODEL"
@@ -226,7 +311,11 @@ func (m *RootBrowserModel) renderHistory() string {
 		if dto.IsArchived {
 			styledLabel += archivedStyle.Render(" (archived)")
 		}
+		if dto.IsPinned {
+			styledLabel += lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Render(" [PINNED]")
+		}
 
+		sb.WriteString(prefix)
 		sb.WriteString(styledLabel)
 		sb.WriteString("\n")
 
@@ -235,12 +324,14 @@ func (m *RootBrowserModel) renderHistory() string {
 			if m.currentQuery != "" {
 				thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
 			}
+			sb.WriteString(prefix)
 			sb.WriteString(thoughtStyle.Render(thoughtText))
 			sb.WriteString("\n\n")
 		}
 
 		if len(dto.ToolCalls) > 0 {
 			for _, tool := range dto.ToolCalls {
+				sb.WriteString(prefix)
 				sb.WriteString(toolStyle.Render(fmt.Sprintf("  🔧 Executing tool: %s", tool)))
 				sb.WriteString("\n")
 			}
@@ -251,7 +342,16 @@ func (m *RootBrowserModel) renderHistory() string {
 		if m.currentQuery != "" {
 			content = m.highlightMatches(content, m.currentQuery)
 		}
-		sb.WriteString(content)
+		
+		// Handle multi-line content to maintain prefix
+		lines := strings.Split(content, "\n")
+		for j, line := range lines {
+			sb.WriteString(prefix)
+			sb.WriteString(line)
+			if j < len(lines)-1 {
+				sb.WriteString("\n")
+			}
+		}
 
 		if i < len(m.history)-1 {
 			sb.WriteString("\n\n" + archivedStyle.Render(strings.Repeat("─", m.width/2)) + "\n\n")
@@ -309,7 +409,7 @@ func (m *RootBrowserModel) highlightMatches(text, query string) string {
 
 func (m *RootBrowserModel) renderFooter() string {
 	var sb strings.Builder
-	sb.WriteString("↑/↓: Scroll • Space: Toggle Thoughts • /: Search • q: Quit")
+	sb.WriteString("↑/↓: Scroll • Space: Toggle Thoughts • /: Search • j/k: Select • p: Pin • r: Rollback • q: Quit")
 	if m.currentQuery != "" {
 		matchInfo := ""
 		if len(m.matches) > 0 {

@@ -139,6 +139,11 @@ func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capt
 		return fmt.Errorf("error loading config [%s]: %w", configPath, err)
 	}
 
+	hManager, err := s.Container.GetHistoryManager(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to load history manager: %w", err)
+	}
+
 	provider, err := s.Container.GetUnifiedHistoryProvider(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to load unified history provider: %w", err)
@@ -147,7 +152,7 @@ func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capt
 	// TTY check is done in the command layer or here.
 	// We'll trust the caller for now, or check if capturer is available.
 
-	model := tui.NewRootBrowserModel(provider)
+	model := tui.NewRootBrowserModel(provider, hManager)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui program error: %w", err)
