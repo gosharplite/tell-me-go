@@ -50,6 +50,10 @@ The `UnifiedHistoryProvider` must resolve the following edge cases before supply
 2. **Immutable Archive Boundary**: Pinning and Rollback operations rely on the mutable `HistoryManager`. The TUI must visually disable/block these actions for any turns originating from the immutable archive boundary.
 3. **Asset Hydration Check**: The TUI must render textual placeholders for `AssetID` (e.g., `[Image Attached: {ID}]`) rather than attempting to decode binary blobs into standard output.
 
+#### Minor UI Enhancements
+- **Pinning Pressure Warning**: Since pinned turns cannot be auto-summarized, pinning too many active messages will cause a context limit crash. The TUI should ideally display a warning if the user pins >50% of the active context.
+- **Live Reload (EventBus)**: Support optional `events.EventBus` subscriptions to detect file changes and prompt the user to refresh if the AI is generating responses in another terminal.
+
 ```go
 // 1. Phase 0: Unified Read Model (internal/ui/history_provider.go)
 type UnifiedHistoryProvider struct {
