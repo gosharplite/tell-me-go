@@ -241,10 +241,12 @@ type uiBridge struct {
 // Cleanup stops any active spinner.
 func (b *uiBridge) Cleanup() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.stopSpinner != nil {
-		b.stopSpinner()
-		b.stopSpinner = nil
+	stop := b.stopSpinner
+	b.stopSpinner = nil
+	b.mu.Unlock()
+
+	if stop != nil {
+		stop()
 	}
 }
 
@@ -275,32 +277,23 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 		b.mu.Unlock()
 		b.renderer.LogTurnStatus(ev.Status)
 	case events.InferenceStartedEvent:
-		b.mu.Lock()
-		if !b.isRendering {
-			// Use the bridge's session/turn context instead of the event handler's context,
-			// which has a 5s timeout. This ensures the spinner stays alive.
-			if b.stopSpinner != nil {
-				b.stopSpinner()
-			}
-			b.stopSpinner = b.renderer.StartSpinner(b.ctx)
-		}
-		b.mu.Unlock()
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinner(b.ctx)
+		})
 	case events.RefiningStartedEvent:
 		b.mu.Lock()
 		b.isRendering = false // Reset state for the new retry cycle
-		if b.stopSpinner != nil {
-			b.stopSpinner()
-		}
-		b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
 		b.mu.Unlock()
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
+		})
 	case events.SummarizationStartedEvent:
 		b.mu.Lock()
 		b.isRendering = false
-		if b.stopSpinner != nil {
-			b.stopSpinner()
-		}
-		b.stopSpinner = b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
 		b.mu.Unlock()
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
+		})
 	case events.ResponseEvent:
 		b.mu.Lock()
 		b.isRendering = true
@@ -337,6 +330,35 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	case events.StatusUpdate:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
 	}
+}
+
+func (b *uiBridge) transitionSpinner(startFn func() func()) {
+	b.mu.Lock()
+	if b.isRendering {
+		b.mu.Unlock()
+		return
+	}
+	oldStop := b.stopSpinner
+	b.stopSpinner = nil
+	b.mu.Unlock()
+
+	// Stop the old spinner OUTSIDE the lock
+	if oldStop != nil {
+		oldStop()
+	}
+
+	// Start the new spinner
+	newStop := startFn()
+
+	// Safely assign the new spinner, watching out for race conditions
+	b.mu.Lock()
+	if b.isRendering {
+		b.mu.Unlock()
+		newStop() // Drop the new spinner if rendering started concurrently
+		return
+	}
+	b.stopSpinner = newStop
+	b.mu.Unlock()
 }
 
 func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Context {
