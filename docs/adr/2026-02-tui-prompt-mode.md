@@ -87,6 +87,6 @@ Based on Principal Architect review, the following strict architectural constrai
     [14:51:20] [google] M: 2141 H: 51732 C: 242 Th: 0 ($0.0044) [3.82s (ΣT: 0.00s) / 48.43s]
     ╰─⠿ Ready ($0.0044 $0.0404 $0.3280 $22.5537 M: 423791 H: 1542792 78.5% O: 12989)
 
-    [Reading TUI input. Press Ctrl+S to send]
+    [Coder prompts. Press Ctrl+S to send]
 
     ```
