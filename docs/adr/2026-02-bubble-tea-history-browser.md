@@ -1,7 +1,7 @@
 # ADR-008: Bubble Tea Interactive History Browser
 
 ## Status
-Proposed (2026-02-15) - *Revised with Architectural Review Findings on Archival & CQRS*
+Implemented (2026-02-25) - *Revised with Architectural Review Findings on Archival & CQRS*
 
 ## Context
 The current `tell-me-go` CLI provides limited history viewing capabilities through the `-l N` flag, which dumps the last N messages to stdout. This approach has several limitations:

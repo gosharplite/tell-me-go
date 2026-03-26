@@ -63,7 +63,7 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 *Note: This roadmap is subject to change based on the evolution of LLM APIs and project requirements.*
 
 
-## Phase 8: Interactive History Exploration (Proposed)
+## Phase 8: Interactive History Exploration (Completed)
 - **Goal:** Provide professional-grade, unbounded history exploration with search, navigation, and thought visibility controls, without compromising memory safety or LLM context limits.
 - **Task:** Implement **Unified History Data Layer (Strict Prerequisite - STOP & VERIFY before TUI)**:
     - [x] **1. Domain Layer (Read Model)**: Define `HistoryViewDTO`, `ArchiveReader`, and `UnifiedHistoryProvider` interfaces in `internal/domain/ports/` to enforce CQRS.

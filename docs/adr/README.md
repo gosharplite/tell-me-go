@@ -13,7 +13,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-005** | Skill Injection Architecture | 2024-09 | Accepted | [2024-09-skill-injection-architecture.md](2024-09-skill-injection-architecture.md) |
 | **ADR-006** | History Log Compaction and Bounded Contexts | 2024-10 | Implemented | [2024-10-history-log-compaction.md](2024-10-history-log-compaction.md) |
 | **ADR-007** | Extract Agent Configuration via Functional Options | 2026-02 | Accepted | [2026-02-agent-options-extraction.md](2026-02-agent-options-extraction.md) |
-| **ADR-008** | Bubble Tea Interactive History Browser | 2026-02 | Proposed | [2026-02-bubble-tea-history-browser.md](2026-02-bubble-tea-history-browser.md) |
+| **ADR-008** | Bubble Tea Interactive History Browser | 2026-02 | Implemented | [2026-02-bubble-tea-history-browser.md](2026-02-bubble-tea-history-browser.md) |
 
 ## How to Create a New ADR
 
