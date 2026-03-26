@@ -56,8 +56,12 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 		opt(options)
 	}
 
-	// Fallback to base capturer if TUI is not requested or not applicable
-	if !options.UseTUIPrompt || !c.IsTTY(os.Stdin) {
+	// Fallback to base capturer if:
+	// 1. TUI is not requested
+	// 2. Not a TTY
+	// 3. Positional arguments are provided (e.g. tell-me-go "hello")
+	// 4. History command is provided (SkipTTYWait is true)
+	if !options.UseTUIPrompt || !c.IsTTY(os.Stdin) || (fs != nil && fs.NArg() > 0) || options.SkipTTYWait {
 		return c.base.CapturePrompt(ctx, fs, opts...)
 	}
 

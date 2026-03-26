@@ -84,7 +84,8 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	// Load configuration early to merge with CLI options
 	loader := &infra_config.YAMLConfigLoader{}
 	cfg, _ := loader.Load(opts.configPath)
-	if cfg != nil && cfg.UseTUIPrompt {
+	// Only auto-enable TUI from config if no other actions are requested
+	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
 		opts.tuiPrompt = true
 	}
 

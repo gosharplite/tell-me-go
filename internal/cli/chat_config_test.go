@@ -43,8 +43,9 @@ AIMODEL: "test-model"
 	}
 
 	ctx := stdctx.Background()
-	// No -i or -tui flag, but config has it enabled
-	args := []string{"chat", "-c", configPath, "hello"}
+	// No -i or -tui flag, but config has it enabled.
+	// We run WITHOUT positional arguments to allow TUI auto-enable from config.
+	args := []string{"chat", "-c", configPath}
 
 	err = cmd.Execute(ctx, args)
 	if err != nil {

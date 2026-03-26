@@ -55,6 +55,44 @@ func TestPromptCapturer_CapturePrompt_Fallback(t *testing.T) {
 	}
 }
 
+type mockBaseCapturerWithTTY struct {
+	mockBaseCapturer
+	isTTY bool
+}
+
+func (m *mockBaseCapturerWithTTY) IsTTY(v any) bool { return m.isTTY }
+
+func TestPromptCapturer_CapturePrompt_Fallback_Conditions(t *testing.T) {
+	base := &mockBaseCapturerWithTTY{isTTY: true}
+	svc := &mockSuggestionService{}
+	capturer := NewPromptCapturer(base, svc, "provider", "model")
+
+	ctx := context.Background()
+
+	t.Run("fallback when SkipTTYWait is true", func(t *testing.T) {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		prompt, err := capturer.CapturePrompt(ctx, fs, ports.WithTUIPrompt(true), ports.WithSkipTTYWait(true))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if prompt != "base prompt" {
+			t.Errorf("expected 'base prompt', got %q", prompt)
+		}
+	})
+
+	t.Run("fallback when positional arguments are present", func(t *testing.T) {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		_ = fs.Parse([]string{"hello"}) // Set one positional argument
+		prompt, err := capturer.CapturePrompt(ctx, fs, ports.WithTUIPrompt(true))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if prompt != "base prompt" {
+			t.Errorf("expected 'base prompt', got %q", prompt)
+		}
+	})
+}
+
 func TestPromptCapturer_IsTTY(t *testing.T) {
 	base := &mockBaseCapturer{}
 	capturer := NewPromptCapturer(base, nil, "", "")
