@@ -119,3 +119,25 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 ## User Documentation
 For user-facing documentation, mockups, and usage examples, see [docs/user/history-browser.md](../user/history-browser.md).
+
+### 4. Immutable DTOs (Data Transfer Objects)
+To prevent accidental state mutation and protect the presentation layer from choking on raw data (e.g., large base64 strings or complex tool payloads), the `UnifiedHistoryProvider` will not return pointers to the core `domain.Message` entities.
+
+Instead, it will map all data into a strictly formatted, read-only DTO tailored for the Bubble Tea UI:
+
+```go
+// Application Layer (Read Model DTO)
+package history
+
+type HistoryViewDTO struct {
+    ID             string
+    Role           string
+    ContentPreview string // Formatted for UI (e.g., base64 images replaced with "[Attached Image: {ID}]")
+    ThoughtProcess string // Optional reasoning blocks
+    IsArchived     bool   // UI uses this to visually disable the "Pin" or "Rollback" buttons
+    Timestamp      time.Time
+    ToolCalls      []string // Summarized tool execution names
+}
+```
+
+The UI components will only receive and render `HistoryViewDTO` values.

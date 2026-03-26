@@ -70,7 +70,8 @@ tell-me-go browse [options]
 ### Architecture
 The browser builds on existing `tell-me-go` components:
 
-1. **History Data**: Uses `HistoryManager.GetWindow()` to retrieve complete history with thoughts
+1. **History Data Layer**: Uses `UnifiedHistoryProvider` to seamlessly stitch active memory and archived disk storage via O(1) byte-offset reads, ensuring the UI never causes OOM crashes. It consumes read-only `HistoryViewDTO` structs.
+2. **CQRS Boundary**: Strictly separated from the Agent's `HistoryManager` to protect the LLM context window from UI bloat.
 2. **Configuration**: Respects existing `SHOW_THOUGHTS` YAML setting
 3. **UI Framework**: Bubble Tea TUI (Charm ecosystem, already used for markdown rendering)
 4. **CLI Integration**: New `browse` subcommand following existing patterns
@@ -81,7 +82,7 @@ The browser builds on existing `tell-me-go` components:
 - **Existing**: charmbracelet/glamour, charmbracelet/lipgloss (already present)
 
 ### Performance Considerations
-- **Large Histories**: Lazy loading via `GetWindow()` pagination
+- **Large Histories**: Lazy loading via `UnifiedHistoryProvider` pagination using O(1) byte-offset file seeking on the archive.
 - **Memory**: Only loads visible portion of history
 - **Fallback**: Automatically uses text rendering when not in TTY
 
