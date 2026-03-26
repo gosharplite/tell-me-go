@@ -82,18 +82,24 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [x] **Pinning Pressure Warning (Minor)**: Display a UI warning if the user pins too many active messages, preventing safe auto-summarization.
     - [x] **Live Reload (Minor)**: Optional EventBus subscription to gracefully refresh the TUI if `history.jsonl` is modified in another terminal window.
 - **Reference:** [ADR-008: Bubble Tea Interactive History Browser](./docs/adr/2026-02-bubble-tea-history-browser.md)
-## Phase 9: Interactive TUI Prompt Mode (Proposed)
+## Phase 9: Interactive TUI Prompt Mode (Approved)
 - **Goal:** Provide a professional-grade interactive prompt experience with auto-completion and real-time session observability, while strictly preserving the current multi-line input as the default.
+- **Architectural Constraints (Strictly Enforced):**
+    - **[ARCHITECTURAL BLOCKER] Synchronous Autocomplete I/O:** All suggestions MUST be fetched asynchronously via `tea.Cmd` to prevent UI thread blocking.
+    - **[TECHNICAL DEBT] "God Object" TUI Model:** Must use Component Composition (`Dashboard`, `Prompt/Textarea`, `Suggester/Autocomplete`) instead of a single massive Model.
+    - **[REFACTOR] CQRS for Real-Time Querying:** Must implement an optimized Read Model (e.g., Radix Tree/Trie) for `O(k)` prefix matching instead of linear scans over history and tools.
+    - **[ARCHITECTURAL BLOCKER] Synchronous Global State Mutation:** The new `global_prompts.json` tracker MUST use file-locking (e.g., `syscall.Flock`) to prevent corruption from concurrent terminal sessions, and updates MUST run asynchronously (fire-and-forget) to prevent blocking the LLM request cycle.
 - **Task:** Implement **Opt-In TUI Prompt Engine**:
     - [ ] Create `tell-me-go --tui` (or `-i`) flag for explicit activation.
     - [ ] Implement `USE_TUI_PROMPT` configuration (default: `false`).
-    - [ ] Architect the `PromptModel` using Bubble Tea with a dual-header layout.
+    - [ ] Architect the `MainTUIModel` using Bubble Tea with Component Composition.
     - [ ] **Dashboard Integration**: Display previous turn metrics (Turn ID, Tokens, Cost, Timing) at the top of the TUI.
     - [ ] **Session Observability**: Show real-time turn counts and active context token usage during composition.
 - **Task:** Implement **Suggestion & Auto-completion System**:
     - [ ] Create an asynchronous `SuggestionService` to prevent UI blocking during data fetching.
+    - [ ] Implement an optimized Read Model (Trie) for `O(k)` lookups.
     - [ ] Implement **Multi-Source Suggestions**:
-        - [ ] History: Recent user prompts from the `UnifiedHistoryProvider`.
+        - [ ] History: Recent user prompts from the `UnifiedHistoryProvider` and the top 1000 cross-session prompts from `global_prompts.json`.
         - [ ] Tools: Registered tool names from the `ToolRegistry`.
         - [ ] Prompts: Pre-defined templates from `docs/user/prompts.md`.
         - [ ] Files: Local workspace paths with dynamic directory scanning.

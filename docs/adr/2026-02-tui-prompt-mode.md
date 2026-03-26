@@ -33,7 +33,7 @@ We will create a new TUI model in `internal/ui/tui/prompt.go` that incorporates:
 
 ### 2. Suggestion Architecture
 To keep the TUI responsive, suggestions will be powered by a `SuggestionService` that pre-fetches and indexes relevant data:
-- **HistorySuggestions**: Pulled from `UnifiedHistoryProvider`.
+- **HistorySuggestions**: Pulled from `UnifiedHistoryProvider` and a new `GlobalPromptTracker` (`global_prompts.json`) containing the top 1000 cross-session prompts.
 - **ToolSuggestions**: Pulled from the `ToolRegistry`.
 - **PromptSuggestions**: Pre-defined prompts from `docs/user/prompts.md`.
 - **FileSuggestions**: Dynamic `os.ReadDir` with intelligent caching.
@@ -64,6 +64,22 @@ The existing `ports.Capturer` interface will be extended or implemented by a `TU
     - `Enter`: New line.
     - `Ctrl+S` or `Ctrl+Enter`: Submit prompt.
     - `Esc`: Cancel/Quit.
+
+## Architectural Constraints (Post-Review)
+Based on Principal Architect review, the following strict architectural constraints apply to this implementation:
+
+### 1. [ARCHITECTURAL BLOCKER] Synchronous Autocomplete I/O
+**Risk:** Triggering disk I/O (directory scanning for files) or complex history parsing on every single keystroke will block the Bubble Tea UI thread, causing severe input lag.
+**Constraint:** All auto-complete fetching MUST be executed asynchronously using Bubble Tea's `tea.Cmd`. The `Update` function must never block on disk I/O or heavy computation.
+
+### 2. [TECHNICAL DEBT] "God Object" TUI Model
+**Risk:** Packing the Dashboard, Input, Auto-completion Engine, and Suggestion Dropdown into a single `PromptModel` struct violates the Single Responsibility Principle (SRP).
+**Constraint:** The UI must be implemented using Component Composition. Specifically, separate the UI into specialized models (e.g., `MainTUIModel` containing `Dashboard`, `Prompt/Textarea`, and `Suggester/Autocomplete` components) to maintain clean architectural boundaries at the UI layer.
+
+### 3. [REFACTOR] CQRS for Real-Time Querying
+**Risk:** The existing `UnifiedHistoryProvider` and `ToolRegistry` are designed for point-in-time reads and will degrade performance if scanned linearly on every keystroke.
+**Constraint:** Implement an optimized Read Model (CQRS) specifically for the `SuggestionService`. Cache tool names, file paths, and recent history entries in a Radix Tree (Trie) or an in-memory inverted index upon TUI initialization to ensure `O(k)` prefix matching.
+
 - **Component Layout**:
     ```text
     ╭─⠿ Turn 51
