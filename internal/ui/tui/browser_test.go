@@ -430,7 +430,7 @@ func TestBrowserModel_Update(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockProvider := &mockHistoryProvider{}
 			mockModifier := &mockHistoryModifier{}
-			m := NewRootBrowserModel(mockProvider, mockModifier)
+			m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
 			if tt.initialState != nil {
 				tt.initialState(m)
 			}

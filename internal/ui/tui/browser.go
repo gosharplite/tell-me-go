@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -40,6 +41,7 @@ type fileChangedMsg struct{}
 
 // RootBrowserModel implements the tea.Model interface for the history browser.
 type RootBrowserModel struct {
+	ctx              context.Context
 	provider         ports.UnifiedHistoryProvider
 	cmdService       ports.HistoryModifier
 	history          []ports.HistoryViewDTO
@@ -62,12 +64,13 @@ type RootBrowserModel struct {
 }
 
 // NewRootBrowserModel creates a new history browser root model.
-func NewRootBrowserModel(provider ports.UnifiedHistoryProvider, cmdService ports.HistoryModifier) *RootBrowserModel {
+func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvider, cmdService ports.HistoryModifier) *RootBrowserModel {
 	ti := textinput.New()
 	ti.Placeholder = "Search history..."
 	ti.Prompt = "🔍 "
 
 	return &RootBrowserModel{
+		ctx:          ctx,
 		provider:     provider,
 		cmdService:   cmdService,
 		searchBar:    ti,
@@ -82,15 +85,20 @@ func (m RootBrowserModel) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		fetchHistoryCmd(m.provider, ""),
-		watchHistoryFileCmd(m.cmdService.GetFilePath()),
+		watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath()),
 	)
 }
 
-func watchHistoryFileCmd(filepath string) tea.Cmd {
-	if filepath == "" {
-		return nil
-	}
+func watchHistoryFileCmd(ctx context.Context, filepath string) tea.Cmd {
 	return func() tea.Msg {
+		if filepath == "" {
+			return nil
+		}
+		// Check if file exists to avoid watcher error
+		if _, err := os.Stat(filepath); os.IsNotExist(err) {
+			return nil
+		}
+
 		watcher, err := fsnotify.NewWatcher()
 		if err != nil {
 			return nil
@@ -102,6 +110,8 @@ func watchHistoryFileCmd(filepath string) tea.Cmd {
 		}
 
 		select {
+		case <-ctx.Done():
+			return nil
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return nil
@@ -327,7 +337,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fileChangedMsg:
 		// Debounce: ignore changes if we just mutated the file
 		if time.Since(m.lastMutationTime) < 500*time.Millisecond {
-			return m, watchHistoryFileCmd(m.cmdService.GetFilePath())
+			return m, watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath())
 		}
 		// Refresh active memory
 		m.history = nil
@@ -335,7 +345,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isLoading = true
 		return m, tea.Batch(
 			fetchHistoryCmd(m.provider, ""),
-			watchHistoryFileCmd(m.cmdService.GetFilePath()),
+			watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath()),
 		)
 	}
 

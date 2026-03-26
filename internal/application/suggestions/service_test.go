@@ -168,3 +168,64 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 		t.Errorf("prompt not persisted in tracker: %v", prompts)
 	}
 }
+
+func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
+	s := &MultiSourceSuggestionService{}
+	tests := []struct {
+		name     string
+		s1       []string
+		s2       []string
+		limit    int
+		expected []string
+	}{
+		{
+			name:     "duplicates across slices",
+			s1:       []string{"a", "b"},
+			s2:       []string{"b", "c"},
+			limit:    5,
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "limit exactly reached during s1",
+			s1:       []string{"a", "b"},
+			s2:       []string{"c"},
+			limit:    2,
+			expected: []string{"a", "b"},
+		},
+		{
+			name:     "limit strictly reached during s2",
+			s1:       []string{"a"},
+			s2:       []string{"b", "c", "d"},
+			limit:    3,
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "empty slices",
+			s1:       []string{},
+			s2:       []string{},
+			limit:    5,
+			expected: nil,
+		},
+		{
+			name:     "s1 larger than limit",
+			s1:       []string{"a", "b", "c"},
+			s2:       []string{"d"},
+			limit:    2,
+			expected: []string{"a", "b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := s.mergeSuggestions(tt.s1, tt.s2, tt.limit)
+			if len(got) != len(tt.expected) {
+				t.Errorf("got length %d; want %d", len(got), len(tt.expected))
+			}
+			for i := range got {
+				if got[i] != tt.expected[i] {
+					t.Errorf("at index %d: got %q; want %q", i, got[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}

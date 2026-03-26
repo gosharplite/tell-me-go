@@ -153,7 +153,7 @@ func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capt
 	// TTY check is done in the command layer or here.
 	// We'll trust the caller for now, or check if capturer is available.
 
-	model := tui.NewRootBrowserModel(provider, hManager)
+	model := tui.NewRootBrowserModel(ctx, provider, hManager)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui program error: %w", err)
