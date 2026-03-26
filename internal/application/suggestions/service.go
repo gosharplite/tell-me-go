@@ -23,7 +23,7 @@ type MultiSourceSuggestionService struct {
 }
 
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the trie.
-func NewMultiSourceSuggestionService(tracker ports.PromptTracker, toolNames []string, recentHistory []string) (*MultiSourceSuggestionService, error) {
+func NewMultiSourceSuggestionService(tracker ports.PromptTracker, recentHistory []string) (*MultiSourceSuggestionService, error) {
 	s := &MultiSourceSuggestionService{
 		trie:    trie.NewTrie(),
 		tracker: tracker,
@@ -42,11 +42,6 @@ func NewMultiSourceSuggestionService(tracker ports.PromptTracker, toolNames []st
 	// 2. Pre-load Active Session History
 	for _, h := range recentHistory {
 		s.trie.Insert(h)
-	}
-
-	// 3. Pre-load Tool Names
-	for _, t := range toolNames {
-		s.trie.Insert(t)
 	}
 
 	return s, nil

@@ -113,9 +113,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 			recentHistory = append(recentHistory, lastMsg)
 		}
 
-		toolNames, _ := c.ChatService.GetToolNames(ctx, opts.configPath)
-
-		svc, _ := suggestions.NewMultiSourceSuggestionService(tracker, toolNames, recentHistory)
+		svc, _ := suggestions.NewMultiSourceSuggestionService(tracker, recentHistory)
 
 		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
 

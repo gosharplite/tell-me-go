@@ -44,7 +44,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 		prompts: []string{"test-prompt-1", "test-prompt-2"},
 	}
 
-	service, err := NewMultiSourceSuggestionService(tracker, []string{"ls", "grep"}, []string{"hello", "world"})
+	service, err := NewMultiSourceSuggestionService(tracker, []string{"hello", "world"})
 	if err != nil {
 		t.Fatalf("failed to create service: %v", err)
 	}
@@ -62,12 +62,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 		{
 			name:     "empty prefix",
 			prefix:   "",
-			expected: []string{"grep", "hello", "ls", "test-prompt-1", "test-prompt-2"}, // Sorted trie results
-		},
-		{
-			name:     "tool search",
-			prefix:   "gr",
-			expected: []string{"grep"},
+			expected: []string{"hello", "test-prompt-1", "test-prompt-2", "world"}, // Sorted trie results
 		},
 	}
 
@@ -91,7 +86,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 
 func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil, nil)
+	service, _ := NewMultiSourceSuggestionService(tracker, nil)
 
 	// Create many files to make scan slow
 	tmpDir := t.TempDir()
@@ -110,7 +105,7 @@ func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 
 func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil, nil)
+	service, _ := NewMultiSourceSuggestionService(tracker, nil)
 
 	// Create some test files
 	tmpDir := t.TempDir()
@@ -150,7 +145,7 @@ func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 
 func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(tracker, nil, nil)
+	service, _ := NewMultiSourceSuggestionService(tracker, nil)
 
 	prompt := "new-unique-prompt"
 	err := service.RecordPrompt(prompt)
