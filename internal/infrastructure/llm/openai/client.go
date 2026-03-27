@@ -23,6 +23,7 @@ import (
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
 	httpClient     *http.Client
+	transport      *http.Transport
 	authenticator  auth.Authenticator
 	baseURL        string
 	model          string
@@ -44,8 +45,11 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 	if timeout == 0 {
 		timeout = 60 * time.Second
 	}
+
+	tr := http.DefaultTransport.(*http.Transport).Clone()
 	return &client{
-		httpClient:     &http.Client{Timeout: timeout},
+		httpClient:     &http.Client{Timeout: timeout, Transport: tr},
+		transport:      tr,
 		authenticator:  authenticator,
 		baseURL:        strings.TrimSuffix(baseURL, "/"),
 		model:          model,
@@ -547,6 +551,13 @@ func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 func (c *client) RefreshAuth() error {
 	c.authenticator.Invalidate()
 	return nil
+}
+
+// ResetConnections flushes the underlying connection pool to ensure a fresh network path.
+func (c *client) ResetConnections() {
+	if c.transport != nil {
+		c.transport.CloseIdleConnections()
+	}
 }
 
 // marshalArgs converts tool arguments map to a JSON string.

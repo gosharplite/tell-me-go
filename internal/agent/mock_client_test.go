@@ -35,6 +35,8 @@ func (m *mockLLMClient) RefreshAuth() error {
 	return nil
 }
 
+func (m *mockLLMClient) ResetConnections() {}
+
 func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	return m.SendChat(ctx, input, tools, resolver)
 }

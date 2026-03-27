@@ -60,6 +60,8 @@ func (m *integrationMockLLMGateway) GenerateImages(ctx context.Context, model, p
 
 func (m *integrationMockLLMGateway) RefreshAuth() error { return nil }
 
+func (m *integrationMockLLMGateway) ResetConnections() {}
+
 // dynamicMockCounter allows controlling token counts for specific contents.
 type dynamicMockCounter struct {
 	trigger    *llm.Content

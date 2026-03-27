@@ -189,6 +189,8 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 
 func (m *mockGateway) RefreshAuth() error { return nil }
 
+func (m *mockGateway) ResetConnections() {}
+
 type mockConfigLoader struct {
 	mock.Mock
 }

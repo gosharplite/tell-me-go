@@ -80,6 +80,8 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 
 func (m *mockGateway) RefreshAuth() error { return nil }
 
+func (m *mockGateway) ResetConnections() {}
+
 type mockSecurityManager struct {
 	domain_security.Manager
 	AllowAll bool

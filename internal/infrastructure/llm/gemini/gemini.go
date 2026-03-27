@@ -38,6 +38,7 @@ type Client struct {
 	backend           genai.Backend
 	eventBus          events.EventBus
 	logger            ports.Logger
+	httpTransport     *http.Transport
 }
 
 // NewClient returns a new Gemini API client.
@@ -100,8 +101,10 @@ func (c *Client) initSDK(timeout time.Duration) error {
 		return fmt.Errorf("failed to prepare auth headers: %w", err)
 	}
 
+	tr := http.DefaultTransport.(*http.Transport).Clone()
 	httpClient := &http.Client{
-		Timeout: timeout,
+		Transport: tr,
+		Timeout:   timeout,
 	}
 
 	clientConfig := &genai.ClientConfig{
@@ -121,6 +124,7 @@ func (c *Client) initSDK(timeout time.Duration) error {
 	}
 
 	c.mu.Lock()
+	c.httpTransport = tr
 	c.backend = backend
 	c.sdkClient = sdkClient
 	c.mu.Unlock()
@@ -201,6 +205,17 @@ func (c *Client) RefreshAuth() error {
 	authenticator.Invalidate()
 	// Using a default 1m timeout for RefreshAuth to prevent hangs
 	return c.initSDK(1 * time.Minute)
+}
+
+// ResetConnections clears the underlying connection pool.
+func (c *Client) ResetConnections() {
+	c.mu.RLock()
+	tr := c.httpTransport
+	c.mu.RUnlock()
+
+	if tr != nil {
+		tr.CloseIdleConnections()
+	}
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
