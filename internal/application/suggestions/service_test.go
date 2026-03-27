@@ -6,12 +6,15 @@ package suggestions
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
@@ -373,5 +376,90 @@ func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T)
 	got3, _ := service.GetSuggestions(context.Background(), prefix3)
 	if len(got3) != 10 {
 		t.Errorf("expected 10 suggestions, got %d", len(got3))
+	}
+}
+
+
+type chunkedMockFile struct {
+	persistence.File
+	ctx        context.Context
+	cancel     context.CancelFunc
+	readCalled int32
+}
+
+func (f *chunkedMockFile) ReadDir(n int) ([]os.DirEntry, error) {
+	called := atomic.AddInt32(&f.readCalled, 1)
+
+	// Trigger cancellation during the first call
+	if called == 1 {
+		f.cancel()
+	}
+
+	res := make([]os.DirEntry, n)
+	for i := 0; i < n; i++ {
+		res[i] = &chunkedMockDirEntry{name: "matching-file", isDir: false}
+	}
+	
+	return res, nil
+}
+
+func (f *chunkedMockFile) Close() error {
+	return nil
+}
+
+// Dummy implementations for required methods of persistence.File
+func (f *chunkedMockFile) Read(p []byte) (n int, err error)  { return 0, io.EOF }
+func (f *chunkedMockFile) Write(p []byte) (n int, err error) { return 0, nil }
+func (f *chunkedMockFile) Seek(offset int64, whence int) (int64, error) { return 0, nil }
+
+type chunkedMockDirEntry struct {
+	name  string
+	isDir bool
+}
+
+func (m *chunkedMockDirEntry) Name() string               { return m.name }
+func (m *chunkedMockDirEntry) IsDir() bool                { return m.isDir }
+func (m *chunkedMockDirEntry) Type() os.FileMode          { return 0 }
+func (m *chunkedMockDirEntry) Info() (os.FileInfo, error) { return nil, nil }
+
+type controlledMockFS struct {
+	persistence.FileSystem
+	file persistence.File
+}
+
+func (m *controlledMockFS) Open(ctx context.Context, name string) (persistence.File, error) {
+	return m.file, nil
+}
+
+func TestScanFiles_RespectsCancellationBetweenChunks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mockFile := &chunkedMockFile{
+		ctx:    ctx,
+		cancel: cancel,
+	}
+
+	fs := &controlledMockFS{
+		file: mockFile,
+	}
+
+	service := &MultiSourceSuggestionService{
+		fs: fs,
+	}
+
+	// Calling scanFiles.
+	// 1st iteration:
+	//   ctx.Err() is nil
+	//   ReadDir(100) is called. It returns 100 entries AND calls cancel().
+	// 2nd iteration:
+	//   ctx.Err() is now non-nil (context cancelled)
+	//   The loop should exit early BEFORE calling ReadDir(100) again.
+	
+	service.scanFiles(ctx, "mat")
+	
+	calledCount := atomic.LoadInt32(&mockFile.readCalled)
+	if calledCount != 1 {
+		t.Errorf("expected ReadDir to be called exactly once, but it was called %d times", calledCount)
 	}
 }

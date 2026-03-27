@@ -6,6 +6,7 @@ package suggestions
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,31 +93,43 @@ func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, prefix str
 		dir = "."
 	}
 
-	entries, err := s.fs.ReadDir(ctx, dir)
+	f, err := s.fs.Open(ctx, dir)
 	if err != nil {
 		return nil
 	}
+	defer f.Close()
 
 	var results []string
-	for _, entry := range entries {
-		// Check cancellation
-		if ctx.Err() != nil {
+	for {
+		// Yield to debouncer cancellation
+		if err := ctx.Err(); err != nil {
 			return results
 		}
 
-		name := entry.Name()
-		if strings.HasPrefix(name, filePrefix) {
-			if name == ".git" || name == "node_modules" || name == "vendor" || name == "bin" || name == "obj" {
-				continue
+		// Read in chunks of 100 to avoid blocking during massive directory scans
+		entries, err := f.ReadDir(100)
+		if err != nil {
+			if err == io.EOF {
+				break
 			}
+			return results
+		}
 
-			fullPath := filepath.Join(dir, name)
-			if entry.IsDir() {
-				fullPath += string(os.PathSeparator)
-			}
-			results = append(results, fullPath)
-			if len(results) >= 10 {
-				return results
+		for _, entry := range entries {
+			name := entry.Name()
+			if strings.HasPrefix(name, filePrefix) {
+				if name == ".git" || name == "node_modules" || name == "vendor" || name == "bin" || name == "obj" {
+					continue
+				}
+
+				fullPath := filepath.Join(dir, name)
+				if entry.IsDir() {
+					fullPath += string(os.PathSeparator)
+				}
+				results = append(results, fullPath)
+				if len(results) >= 10 {
+					return results
+				}
 			}
 		}
 	}
