@@ -67,7 +67,11 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 
 	// Initialize background logger for TUI
 	if closer, err := InitLogger(); err == nil {
-		defer closer.Close()
+		defer func() {
+			if closeErr := closer.Close(); closeErr != nil {
+				log.Printf("failed to close tui logger: %v", closeErr)
+			}
+		}()
 	}
 
 	p := tea.NewProgram(model)

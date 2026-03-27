@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
@@ -152,7 +153,11 @@ func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capt
 
 	// Initialize background logger for TUI
 	if closer, err := tui.InitLogger(); err == nil {
-		defer closer.Close()
+		defer func() {
+			if closeErr := closer.Close(); closeErr != nil {
+				log.Printf("failed to close tui logger: %v", closeErr)
+			}
+		}()
 	}
 
 	// TTY check is done in the command layer or here.
