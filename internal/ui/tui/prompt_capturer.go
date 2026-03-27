@@ -34,18 +34,18 @@ type promptCapturer struct {
 	programOpts []tea.ProgramOption
 }
 
-// CapturerOption defines a functional option for configuring a promptCapturer.
-type CapturerOption func(*promptCapturer)
+// capturerOption defines a functional option for configuring a promptCapturer.
+type capturerOption func(*promptCapturer)
 
-// WithProgramOptions allows injecting Bubble Tea program options.
-func WithProgramOptions(opts ...tea.ProgramOption) CapturerOption {
+// withProgramOptions allows injecting Bubble Tea program options.
+func withProgramOptions(opts ...tea.ProgramOption) capturerOption {
 	return func(c *promptCapturer) {
 		c.programOpts = opts
 	}
 }
 
 // NewPromptCapturer creates a new promptCapturer.
-func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService, opts ...CapturerOption) *promptCapturer {
+func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService, opts ...capturerOption) *promptCapturer {
 	c := &promptCapturer{
 		base: base,
 		svc:  svc,

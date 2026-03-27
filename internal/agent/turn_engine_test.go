@@ -899,105 +899,31 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name          string
-		maxToolTurns  int
-		toolLimit     int
-		setupGateway  func(gw *mockGateway, turnCount *int)
-		setupExecutor func(ex *mockExecutor, turnIndex *int)
+		name      string
+		toolLimit int
+		setup     func(gw *mockGateway, ex *mockExecutor, turnCount *int, turnIndex *int)
 	}{
 		{
 			name:      "Calls across exactly 2 turns",
-			toolLimit: 10, // Higher than loop threshold to avoid MaxTurnsReached
-			setupGateway: func(gw *mockGateway, turnCount *int) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-					*turnCount++
-					content := &llm.Content{Role: "model"}
-					if *turnCount <= 2 {
-						// Call tool 3 times in turn 1, then 3 times in turn 2 (total 6 > 5 threshold)
-						content.Parts = []*llm.Part{
-							{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-							{Text: fmt.Sprintf("Turn %d", *turnCount)},
-						}
-					} else {
-						content.Parts = []*llm.Part{{Text: "final response"}}
-					}
-					return content, &llm.Metrics{}, nil
-				}
-			},
-			setupExecutor: func(ex *mockExecutor, turnIndex *int) {
-				ex.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-					return &llm.Content{
-						Role:  "user",
-						Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}},
-					}, nil
-				}
+			toolLimit: 10,
+			setup: func(gw *mockGateway, ex *mockExecutor, turnCount *int, turnIndex *int) {
+				setupTwoTurnRepeatingGateway(gw, turnCount, "test_tool")
+				setupSimpleToolExecutor(ex, "test_tool")
 			},
 		},
 		{
 			name:      "Calls hitting limit within a single turn",
 			toolLimit: 10,
-			setupGateway: func(gw *mockGateway, turnCount *int) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-					*turnCount++
-					content := &llm.Content{Role: "model"}
-					if *turnCount == 1 {
-						content.Parts = []*llm.Part{
-							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-						}
-					} else {
-						content.Parts = []*llm.Part{{Text: "final response"}}
-					}
-					return content, &llm.Metrics{}, nil
-				}
+			setup: func(gw *mockGateway, ex *mockExecutor, turnCount *int, turnIndex *int) {
+				setupRepeatingToolGateway(gw, turnCount, 6, "loop_tool")
 			},
 		},
 		{
 			name:      "Different tools sharing session-level counter",
 			toolLimit: 10,
-			setupGateway: func(gw *mockGateway, turnCount *int) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-					*turnCount++
-					content := &llm.Content{Role: "model"}
-					switch *turnCount {
-					case 1:
-						// Tool A called 3 times, Tool B called 3 times. Both should be tracked independently.
-						// This case verifies that calling Tool B doesn't reset or interfere with Tool A's counter.
-						content.Parts = []*llm.Part{
-							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
-							{Text: fmt.Sprintf("Turn %d", *turnCount)},
-						}
-					case 2:
-						// Tool A called 3 more times total 6 > 5. Should trigger loop breaker.
-						content.Parts = []*llm.Part{
-							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-							{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
-						}
-					default:
-						content.Parts = []*llm.Part{{Text: "final response"}}
-					}
-					return content, &llm.Metrics{}, nil
-				}
-			},
-			setupExecutor: func(ex *mockExecutor, turnIndex *int) {
-				ex.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-					return &llm.Content{
-						Role:  "user",
-						Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "tool_A", Response: map[string]interface{}{"result": "ok"}}}},
-					}, nil
-				}
+			setup: func(gw *mockGateway, ex *mockExecutor, turnCount *int, turnIndex *int) {
+				setupMultiToolGateway(gw, turnCount)
+				setupSimpleToolExecutor(ex, "tool_A")
 			},
 		},
 	}
@@ -1005,54 +931,119 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				_ = bus.Shutdown(ctx)
-			})
-			reg := &mockToolRegistry{}
-			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
-			hManager := &mockHistoryManager{}
-			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
-
-			mockGw := &mockGateway{}
+			env := setupTurnEngineTest(t)
 			mockEx := &mockExecutor{}
 			turnCount := 0
 			turnIndex := 0
 
-			if tt.setupGateway != nil {
-				tt.setupGateway(mockGw, &turnCount)
-			}
-			if tt.setupExecutor != nil {
-				tt.setupExecutor(mockEx, &turnIndex)
+			if tt.setup != nil {
+				tt.setup(env.gw, mockEx, &turnCount, &turnIndex)
 			}
 
-			e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus), reg, bus, strategy)
-			strategy.SetLimits(1000, tt.toolLimit, 10)
+			e := newTurnEngine(env.gw, mockEx, env.cm, env.reg, env.bus, env.cm.Strategy)
+			env.cm.Strategy.SetLimits(1000, tt.toolLimit, 10)
 
 			err := e.Run(context.Background(), time.Now())
 			assert.NoError(t, err)
 
-			// Check history for the injected warning
-			mu := &sync.Mutex{}
-			hManager.mu.Lock()
-			contents := make([]*llm.Content, len(hManager.Contents))
-			copy(contents, hManager.Contents)
-			hManager.mu.Unlock()
-
-			foundWarning := false
-			for _, msg := range contents {
-				if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
-					foundWarning = true
-					break
-				}
-			}
-			_ = mu
-			assert.True(t, foundWarning, "Should have injected loop warning")
+			assertLoopWarningInjected(t, env.hManager.(*mockHistoryManager))
 		})
 	}
 }
+
+func setupRepeatingToolGateway(gw *mockGateway, turnCount *int, repeatCount int, toolName string) {
+	gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		*turnCount++
+		content := &llm.Content{Role: "model"}
+		if *turnCount == 1 {
+			parts := make([]*llm.Part, repeatCount)
+			for i := 0; i < repeatCount; i++ {
+				parts[i] = &llm.Part{FunctionCall: &llm.FunctionCall{Name: toolName, Args: map[string]interface{}{"x": 1}}}
+			}
+			content.Parts = parts
+		} else {
+			content.Parts = []*llm.Part{{Text: "final response"}}
+		}
+		return content, &llm.Metrics{}, nil
+	}
+}
+
+func setupTwoTurnRepeatingGateway(gw *mockGateway, turnCount *int, toolName string) {
+	gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		*turnCount++
+		content := &llm.Content{Role: "model"}
+		if *turnCount <= 2 {
+			// Call tool 3 times in turn 1, then 3 times in turn 2 (total 6 > 5 threshold)
+			content.Parts = []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: toolName, Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: toolName, Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: toolName, Args: map[string]interface{}{"id": 1}}},
+				{Text: fmt.Sprintf("Turn %d", *turnCount)},
+			}
+		} else {
+			content.Parts = []*llm.Part{{Text: "final response"}}
+		}
+		return content, &llm.Metrics{}, nil
+	}
+}
+
+func setupMultiToolGateway(gw *mockGateway, turnCount *int) {
+	gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		*turnCount++
+		content := &llm.Content{Role: "model"}
+		switch *turnCount {
+		case 1:
+			// Tool A called 3 times, Tool B called 3 times. Both should be tracked independently.
+			// This case verifies that calling Tool B doesn't reset or interfere with Tool A's counter.
+			content.Parts = []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+				{Text: fmt.Sprintf("Turn %d", *turnCount)},
+			}
+		case 2:
+			// Tool A called 3 more times total 6 > 5. Should trigger loop breaker.
+			content.Parts = []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+			}
+		default:
+			content.Parts = []*llm.Part{{Text: "final response"}}
+		}
+		return content, &llm.Metrics{}, nil
+	}
+}
+
+func setupSimpleToolExecutor(ex *mockExecutor, toolName string) {
+	ex.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+		return &llm.Content{
+			Role:  "user",
+			Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: toolName, Response: map[string]interface{}{"result": "ok"}}}},
+		}, nil
+	}
+}
+
+func assertLoopWarningInjected(t *testing.T, hm *mockHistoryManager) {
+	t.Helper()
+	hm.mu.Lock()
+	contents := make([]*llm.Content, len(hm.Contents))
+	copy(contents, hm.Contents)
+	hm.mu.Unlock()
+
+	foundWarning := false
+	for _, msg := range contents {
+		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
+			foundWarning = true
+			break
+		}
+	}
+	assert.True(t, foundWarning, "Should have injected loop warning")
+}
+
 
 func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	t.Parallel()

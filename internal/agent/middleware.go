@@ -140,72 +140,78 @@ func withLoopDetector() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			res, err := next.process(ctx, turn)
+			if turn.State.Phase != phaseInference || err != nil || turn.State.Response == nil {
+				return res, err
+			}
 
-			if turn.State.Phase == phaseInference && err == nil && turn.State.Response != nil {
-				// 1. Multi-step loop detection (Text & Tool Calls)
-				rawJSON, _ := json.Marshal(turn.State.Response)
-				h := sha256.Sum256(rawJSON)
-				currentHash := hex.EncodeToString(h[:])
-
-				var loopDetected bool
-
-				if isDuplicateResponse(currentHash, turn.State.RecentResponseHashes) {
-					loopDetected = true
-				} else {
-					// Keep last N hashes (using the same repetition limit)
-					turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
-					if len(turn.State.RecentResponseHashes) > domain_config.DefaultMaxLoopRepetitions {
-						turn.State.RecentResponseHashes = turn.State.RecentResponseHashes[1:]
-					}
-
-					// 2. Tool call loop detection (Immediate threshold)
-					for _, p := range turn.State.Response.Parts {
-						if p.FunctionCall != nil {
-							args, _ := json.Marshal(p.FunctionCall.Args)
-							key := p.FunctionCall.Name + ":" + string(args)
-							turn.State.ToolCallCount[key]++
-							if turn.State.ToolCallCount[key] > domain_config.DefaultMaxLoopRepetitions {
-								loopDetected = true
-								break
-							}
-						}
-					}
-				}
-
-				if loopDetected {
-					// Publish warning event for UI visibility
-					_ = events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
-						Message: "Infinite loop detected! Injecting corrective feedback to break the cycle...",
-						Level:   "warn",
-					})
-
-					// SCALABLE: Persist the repeating response so the model sees its own mistake in history.
-					if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
-						return processResult{}, err
-					}
-
-					// INTERCEPTABLE: Append the synthetic warning to history.
-					// We use 'user' role as it's the most common way to provide feedback to the LLM.
-					warning := &llm.Content{
-						Role:  "user",
-						Parts: []*llm.Part{{Text: loopWarning}},
-					}
-					if err := turn.CtxManager.AddContent(ctx, warning); err != nil {
-						return processResult{}, err
-					}
-
-					// RECOVERY: End the current turn gracefully and signal the Run() loop to continue to a new generation turn.
-					turn.State.Response = nil
-					turn.State.ToolResponse = nil
-					turn.State.HasToolCalls = true // Trick shouldStopRunning into starting a new turn
-
-					return processResult{NextPhase: phaseComplete}, nil
-				}
+			if detectLoop(turn.State) {
+				return handleLoopBreak(ctx, turn)
 			}
 
 			return res, err
 		})
 	}
+}
+
+func detectLoop(state *turnState) bool {
+	// 1. Multi-step loop detection (Text & Tool Calls)
+	rawJSON, _ := json.Marshal(state.Response)
+	h := sha256.Sum256(rawJSON)
+	currentHash := hex.EncodeToString(h[:])
+
+	if isDuplicateResponse(currentHash, state.RecentResponseHashes) {
+		return true
+	}
+
+	// Keep last N hashes (using the same repetition limit)
+	state.RecentResponseHashes = append(state.RecentResponseHashes, currentHash)
+	if len(state.RecentResponseHashes) > domain_config.DefaultMaxLoopRepetitions {
+		state.RecentResponseHashes = state.RecentResponseHashes[1:]
+	}
+
+	// 2. Tool call loop detection (Immediate threshold)
+	for _, p := range state.Response.Parts {
+		if p.FunctionCall != nil {
+			args, _ := json.Marshal(p.FunctionCall.Args)
+			key := p.FunctionCall.Name + ":" + string(args)
+			state.ToolCallCount[key]++
+			if state.ToolCallCount[key] > domain_config.DefaultMaxLoopRepetitions {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func handleLoopBreak(ctx context.Context, turn *turn) (processResult, error) {
+	// Publish warning event for UI visibility
+	_ = events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
+		Message: "Infinite loop detected! Injecting corrective feedback to break the cycle...",
+		Level:   "warn",
+	})
+
+	// SCALABLE: Persist the repeating response so the model sees its own mistake in history.
+	if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
+		return processResult{}, err
+	}
+
+	// INTERCEPTABLE: Append the synthetic warning to history.
+	// We use 'user' role as it's the most common way to provide feedback to the LLM.
+	warning := &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: loopWarning}},
+	}
+	if err := turn.CtxManager.AddContent(ctx, warning); err != nil {
+		return processResult{}, err
+	}
+
+	// RECOVERY: End the current turn gracefully and signal the Run() loop to continue to a new generation turn.
+	turn.State.Response = nil
+	turn.State.ToolResponse = nil
+	turn.State.HasToolCalls = true // Trick shouldStopRunning into starting a new turn
+
+	return processResult{NextPhase: phaseComplete}, nil
 }
 
 func isDuplicateResponse(currentHash string, recentHashes []string) bool {
