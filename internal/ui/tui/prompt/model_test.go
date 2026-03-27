@@ -127,7 +127,7 @@ func TestModel_Update(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel(&mockSuggestionSvc{})
+			m := NewModel(&mockSuggestionSvc{}).(*promptModel)
 			defer m.Destroy()
 			if tt.initialInput != "" {
 				m.input.SetValue(tt.initialInput)
@@ -173,7 +173,7 @@ func TestModel_Update(t *testing.T) {
 
 func TestModel_View(t *testing.T) {
 	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
+	m := NewModel(svc).(*promptModel)
 	defer m.Destroy()
 
 	view := m.View()
@@ -194,7 +194,7 @@ func TestModel_View(t *testing.T) {
 }
 
 func TestModel_FinalPrompt(t *testing.T) {
-	m := &Model{finalPrompt: "test"}
+	m := &promptModel{finalPrompt: "test"}
 	if m.FinalPrompt() != "test" {
 		t.Errorf("Expected 'test', got %q", m.FinalPrompt())
 	}
@@ -261,7 +261,7 @@ func TestSuggester_Empty(t *testing.T) {
 
 func TestModel_GetSuggestions_FilterLines(t *testing.T) {
 	svc := &mockSuggestionSvcMultiLine{}
-	m := NewModel(svc)
+	m := NewModel(svc).(*promptModel)
 	defer m.Destroy()
 
 	cmd := m.getSuggestions(context.Background(), "")

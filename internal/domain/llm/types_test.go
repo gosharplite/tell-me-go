@@ -462,7 +462,7 @@ func TestPartEqual(t *testing.T) {
 	}
 }
 
-func TestAddPart(t *testing.T) {
+func Test_addPart(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -579,7 +579,7 @@ func TestAddPart(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c := &Content{Parts: tt.initial}
-			c.AddPart(tt.newPart)
+			c.addPart(tt.newPart)
 
 			if len(c.Parts) != len(tt.expected) {
 				t.Fatalf("expected %d parts, got %d", len(tt.expected), len(c.Parts))
@@ -763,10 +763,10 @@ func TestContent_ValidateStructure(t *testing.T) {
 	}
 }
 
-func TestContent_AddPart_ExplicitCall(t *testing.T) {
+func TestContent_addPart_ExplicitCall(t *testing.T) {
 	// Silence dead_code_graph false positive
 	c := &Content{}
-	c.AddPart(&Part{Text: "test"})
+	c.addPart(&Part{Text: "test"})
 	if len(c.Parts) != 1 {
 		t.Errorf("Expected 1 part, got %d", len(c.Parts))
 	}

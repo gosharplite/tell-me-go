@@ -82,7 +82,7 @@ func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 		return "", fmt.Errorf("tui prompt error: %w", err)
 	}
 
-	finalModel := resModel.(*prompt.Model)
+	finalModel := resModel.(prompt.PromptModel)
 	if finalModel.Aborted() {
 		return "", context.Canceled
 	}

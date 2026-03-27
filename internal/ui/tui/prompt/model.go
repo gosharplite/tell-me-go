@@ -27,8 +27,16 @@ type debounceMsg struct {
 	value string
 }
 
-// Model is the main orchestrator for the TUI prompt.
-type Model struct {
+// PromptModel defines the public interface for the interactive TUI prompt.
+type PromptModel interface {
+	tea.Model
+	FinalPrompt() string
+	Aborted() bool
+	Destroy()
+}
+
+// promptModel is the main orchestrator for the TUI prompt.
+type promptModel struct {
 	input     textArea
 	suggester suggester
 
@@ -44,10 +52,10 @@ type Model struct {
 	aborted     bool
 }
 
-// NewModel creates a new Model with the given suggestion service.
-func NewModel(svc ports.SuggestionService) *Model {
+// NewModel creates a new PromptModel with the given suggestion service.
+func NewModel(svc ports.SuggestionService) PromptModel {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{
+	return &promptModel{
 		input:         newTextArea(),
 		suggester:     suggester{Index: -1}, // -1 means no suggestion is currently selected/highlighted
 		suggestionSvc: svc,
@@ -57,14 +65,14 @@ func NewModel(svc ports.SuggestionService) *Model {
 }
 
 // Destroy cleans up the model's resources, specifically cancelling any background context.
-func (m *Model) Destroy() {
+func (m *promptModel) Destroy() {
 	if m.cancel != nil {
 		m.cancel()
 	}
 }
 
 // Init initializes the TUI prompt and triggers initial suggestions.
-func (m Model) Init() tea.Cmd {
+func (m promptModel) Init() tea.Cmd {
 	return tea.Batch(
 		textarea.Blink,
 		m.getSuggestions(m.ctx, ""), // Load initial top prompts
@@ -72,7 +80,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 // Update handles UI interactions and asynchronous messages.
-func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *promptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
@@ -160,7 +168,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the TUI prompt layout.
-func (m Model) View() string {
+func (m promptModel) View() string {
 	if m.submitted || m.aborted {
 		return ""
 	}
@@ -175,7 +183,7 @@ func (m Model) View() string {
 	)
 }
 
-func (m *Model) submit() bool {
+func (m *promptModel) submit() bool {
 	trimmed := strings.TrimSpace(m.input.Value())
 	if trimmed == "" {
 		return false
@@ -185,7 +193,7 @@ func (m *Model) submit() bool {
 	return true
 }
 
-func (m *Model) getSuggestions(ctx context.Context, prefix string) tea.Cmd {
+func (m *promptModel) getSuggestions(ctx context.Context, prefix string) tea.Cmd {
 	return func() tea.Msg {
 		// Asynchronous call to the suggestion service
 		suggestions, err := m.suggestionSvc.GetSuggestions(ctx, prefix)
@@ -209,11 +217,11 @@ func (m *Model) getSuggestions(ctx context.Context, prefix string) tea.Cmd {
 }
 
 // FinalPrompt returns the captured prompt.
-func (m *Model) FinalPrompt() string {
+func (m *promptModel) FinalPrompt() string {
 	return m.finalPrompt
 }
 
 // Aborted returns true if the user cancelled the prompt.
-func (m *Model) Aborted() bool {
+func (m *promptModel) Aborted() bool {
 	return m.aborted
 }
