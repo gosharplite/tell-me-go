@@ -102,14 +102,14 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [x] **Session Observability**: Show real-time turn counts and active context token usage during composition.
 - **Task:** Implement **Suggestion & Auto-completion System**:
     - [x] Create an asynchronous `SuggestionService` to prevent UI blocking during data fetching.
-    - [x] Implement context cancellation (`context.Context`) and a 50-100ms debouncer to prevent Goroutine leaks and CPU spikes on rapid keystrokes.
-    - [x] Implement an optimized Read Model (Trie) for `O(k)` lookups.
+    - [x] Implement context cancellation (`context.Context`) and a 100ms debouncer to prevent Goroutine leaks and CPU spikes on rapid keystrokes.
+    - [x] Implement an optimized Read Model using Fuzzy Subsequence Matching for flexible, typo-tolerant lookups.
     - [x] Implement **Multi-Source Suggestions**:
-        - [x] History: Recent user prompts from the `UnifiedHistoryProvider` and the top 1000 cross-session prompts from `global_prompts.jsonl`.
-        - [x] Tools: Registered tool names from the `ToolRegistry`.
-        - [x] Prompts: Pre-defined templates from `docs/user/prompts.md`.
-        - [x] Files: Local workspace paths with dynamic directory scanning.
-    - [x] Add **Ghost Text** and **Floating Dropdown** UI components for non-intrusive autocompletion.
-    - [x] Map standard keybindings (`Tab` to cycle, `Ctrl+S` to submit, `Esc` to quit).
+        - [x] History: Recent user prompts and top cross-session prompts from `global_prompts.jsonl`.
+        - [x] Files: Local workspace paths with dynamic, chunked directory scanning (`ReadDir(100)`).
+        - [ ] Tools: Registered tool names from the `ToolRegistry` (Deferred).
+        - [ ] Prompts: Pre-defined templates from `docs/user/prompts.md` (Deferred).
+    - [x] Add **Floating Dropdown** UI components for non-intrusive autocompletion.
+    - [x] Map standard keybindings (`Tab` to cycle, `Ctrl+S` or `Alt+Enter` to submit, `Esc` to quit).
     - [x] Ensure rendering degrades gracefully on `TERM=dumb` and handles Windows line-endings (`\r\n`) securely.
 - **Reference:** [ADR-009: TUI Interactive Prompt Mode with Auto-completion](./docs/adr/2026-02-tui-prompt-mode.md)

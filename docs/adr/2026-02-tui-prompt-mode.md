@@ -23,9 +23,9 @@ To respect the "Keep-As-Is" requirement for the current Ctrl+D input mode:
 We will create a new TUI model in `internal/ui/tui/prompt.go` that incorporates:
 - **Textarea Component**: For multi-line message composition with familiar keybindings.
 - **Auto-completion Engine**: A non-blocking suggestion system that provides real-time completions for:
-    - **History**: Recent user messages.
-    - **Tools**: Registered tool names.
-    - **Files**: Local workspace file paths.
+    - **History**: Recent user messages and top global prompts.
+    - **Files**: Local workspace file paths via dynamic chunked scanning.
+    - *(Deferred)*: Registered tool names and pre-defined prompts.
 - **Session Dashboard**: A status bar or header showing:
     - Current Turn Count (e.g., `3/20`).
     - Token Usage (e.g., `4,500 / 180,000`).
@@ -33,9 +33,9 @@ We will create a new TUI model in `internal/ui/tui/prompt.go` that incorporates:
 
 ### 2. Suggestion Architecture
 To keep the TUI responsive, suggestions will be powered by a `SuggestionService` that pre-fetches and indexes relevant data:
-- **HistorySuggestions**: Pulled from a new `GlobalPromptTracker` (`global_prompts.jsonl`) containing the top 1000 cross-session prompts. (Using JSON Lines for lock-free append-only writes).
-- **PromptSuggestions**: Pre-defined prompts from `docs/user/prompts.md`.
-- **FileSuggestions**: Dynamic `os.ReadDir` with intelligent caching (bounded and security-aware).
+- **HistorySuggestions**: Pulled from a new `GlobalPromptTracker` (`global_prompts.jsonl`) containing the top 50 cross-session prompts, combined with the active session history. (Using JSON Lines for lock-free append-only writes).
+- **FileSuggestions**: Dynamic `os.ReadDir` with intelligent, chunked directory scanning (`ReadDir(100)`) that frequently yields to context cancellation to prevent UI blocking.
+- **Tools & PromptTemplates**: Deferred to a future iteration to focus on stabilizing core history and file workflows.
 
 ### 3. Integration with Capturer
 The existing `ports.Capturer` interface will be extended or implemented by a `TUICapturer` that launches the Bubble Tea program and returns the final string once the user presses `Ctrl+S` or `Enter` (configurable).
@@ -75,9 +75,9 @@ Based on Principal Architect review, the following strict architectural constrai
 **Risk:** Packing the Dashboard, Input, Auto-completion Engine, and Suggestion Dropdown into a single `PromptModel` struct violates the Single Responsibility Principle (SRP). If the TUI models instantiate their own services, it breaks Clean Architecture.
 **Constraint:** The UI must be implemented using Component Composition. Specifically, separate the UI into specialized models (e.g., `MainTUIModel` containing `Dashboard`, `Prompt/Textarea`, and `Suggester/Autocomplete` components). The `SuggestionService` and `UnifiedHistoryProvider` MUST be injected from the application composition root.
 
-### 3. [REFACTOR] CQRS for Real-Time Querying
+### 3. [REFACTOR] CQRS for Real-Time Querying (Updated)
 **Risk:** The existing `UnifiedHistoryProvider` and `ToolRegistry` are designed for point-in-time reads and will degrade performance if scanned linearly on every keystroke.
-**Constraint:** Implement an optimized Read Model (CQRS) specifically for the `SuggestionService`. Cache tool names, file paths, and recent history entries in a Radix Tree (Trie) or an in-memory inverted index upon TUI initialization to ensure `O(k)` prefix matching.
+**Constraint & Resolution:** While initially proposed to use a strict Radix Tree (Trie) for `O(k)` prefix matching, the final implementation opted for an in-memory array with **`O(N)` fuzzy subsequence matching** (`matcher.IsSubsequence`). Because the read model is explicitly capped at initialization (e.g., top 50 global prompts + recent session history), the `O(N)` scan combined with 100ms debouncing remains highly performant. This approach also provides superior UX by allowing users to skip characters (fuzzy matching), which a strict Trie prefix search does not support.
 
 ### 4. [TECHNICAL DEBT] Cross-Platform State Mutation
 **Risk:** Managing concurrent state using `syscall.Flock` on a shared monolithic `.json` file for the global prompt tracker across disparate OS platforms (Windows vs POSIX) is notoriously brittle and a source of deadlocks or corruption.
@@ -85,6 +85,9 @@ Based on Principal Architect review, the following strict architectural constrai
 
 ### 5. Implementation Notes & Final Reality (Post-Implementation)
 During implementation, several refinements were made to the original design to improve stability and UX:
+- **Fuzzy Matching over Prefix Matching:** Opted for `matcher.IsSubsequence` over a Trie, as it scales adequately for a bounded context (top 50 history entries) and provides a more forgiving user experience for typos or abbreviations.
+- **Chunked File Scanning:** File completion uses a chunked `ReadDir(100)` loop that yields to `context.Context` cancellation on every iteration. This guarantees rapid exit when a user continues typing, avoiding blocking the background thread during massive directory scans.
+- **Deferred Sources:** Tool names and predefined templates were temporarily deferred to focus on delivering a stable core experience around history and file system navigation.
 - **No Internal Dashboard:** The proposed internal dashboard (`Turn 3/20 | Tokens 4500`) was removed. Instead, the `tea.WithAltScreen()` constraint was dropped so the TUI renders inline. This allows the user to simply read the detailed, standard `╰─⠿ Ready` payload metrics from the previous turn directly above their text box, eliminating redundant clutter.
 - **Debouncing:** A 100ms `tea.Tick` debouncer was introduced to prevent rapid keystrokes from spamming the system with `tea.Cmd` context cancellations and async requests.
 - **Lock-Free Append:** Instead of using error-prone `syscall.Flock` for global history, the system strictly utilizes an append-only `.jsonl` structure via `os.O_APPEND` to ensure atomic state mutation across simultaneous terminal sessions.
