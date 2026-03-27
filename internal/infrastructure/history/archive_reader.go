@@ -23,10 +23,9 @@ import (
 type jsonlArchiveReader struct {
 	fs          persistence.FileSystem
 	archivePath string
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	index       []int64 // offsets of each line
-	indexOnce   sync.Once
-	indexErr    error
+	indexed     bool
 }
 
 // NewJSONLArchiveReader creates a new JSONLArchiveReader.
@@ -57,9 +56,9 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 		return nil, 0, err
 	}
 
-	r.mu.Lock()
+	r.mu.RLock()
 	if len(r.index) == 0 {
-		r.mu.Unlock()
+		r.mu.RUnlock()
 		return nil, 0, nil
 	}
 
@@ -77,7 +76,7 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 	}
 
 	if targetIdx == 0 {
-		r.mu.Unlock()
+		r.mu.RUnlock()
 		return nil, 0, nil
 	}
 
@@ -88,7 +87,7 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 
 	startOffset := r.index[startIdx]
 	limitToRead := targetIdx - startIdx
-	r.mu.Unlock()
+	r.mu.RUnlock()
 
 	dtos, _, err := r.readPageInternal(ctx, limitToRead, startOffset)
 	if err != nil {
@@ -99,19 +98,31 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 }
 
 func (r *jsonlArchiveReader) ensureIndex(ctx context.Context) error {
-	r.indexOnce.Do(func() {
-		r.indexErr = r.buildIndex(ctx)
-	})
-	return r.indexErr
+	r.mu.RLock()
+	if r.indexed {
+		r.mu.RUnlock()
+		return nil
+	}
+	r.mu.RUnlock()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.indexed {
+		return nil
+	}
+
+	if err := r.buildIndex(ctx); err != nil {
+		return err // Do not cache transient errors
+	}
+	r.indexed = true
+	return nil
 }
 
 func (r *jsonlArchiveReader) buildIndex(ctx context.Context) error {
 	file, err := r.fs.Open(ctx, r.archivePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			r.mu.Lock()
 			r.index = []int64{}
-			r.mu.Unlock()
 			return nil
 		}
 		return fmt.Errorf("open archive for indexing %s: %w", r.archivePath, err)
@@ -138,9 +149,7 @@ func (r *jsonlArchiveReader) buildIndex(ctx context.Context) error {
 		}
 	}
 
-	r.mu.Lock()
 	r.index = index
-	r.mu.Unlock()
 	return nil
 }
 
