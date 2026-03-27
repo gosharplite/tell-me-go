@@ -246,7 +246,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	auth := e.authorizer
 	e.mu.RUnlock()
 
-	declinedMap := auth.RequestBatchConsent(ctx, calls)
+	ctx, declinedMap := auth.RequestBatchConsent(ctx, calls)
 
 	// Orchestrate Execution
 	collector := e.newResultCollector(calls, bus)

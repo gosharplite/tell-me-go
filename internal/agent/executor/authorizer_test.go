@@ -23,7 +23,7 @@ func TestRequestBatchConsent_Denied(t *testing.T) {
 	auth := newSecurityAuthorizer(sm, reg)
 
 	calls := []*llm.FunctionCall{{Name: "dangerous_tool"}}
-	declined := auth.RequestBatchConsent(context.Background(), calls)
+	_, declined := auth.RequestBatchConsent(context.Background(), calls)
 
 	assert.True(t, declined[0], "Expected the tool to be declined by user")
 }

@@ -72,7 +72,7 @@ func (sm *SecurityManager) confirmDestructiveAction(ctx context.Context, action,
 
 // Authorize prompts the user for authorization of a specific command or action.
 func (sm *SecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
-	if sm.IsBypassActive() {
+	if domain.IsApproved(ctx) || sm.IsBypassActive() {
 		return true, nil
 	}
 	if isSafe {
@@ -98,7 +98,7 @@ func (sm *SecurityManager) Prompt(message string) {
 
 // Confirm prompts the user for confirmation.
 func (sm *SecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
-	if sm.IsBypassActive() {
+	if domain.IsApproved(ctx) || sm.IsBypassActive() {
 		sm.interaction.TerminalLock()
 		defer sm.interaction.TerminalUnlock()
 		sm.interaction.interactor.Warn(fmt.Sprintf("[Auto-Approved] %s", message))

@@ -18,7 +18,7 @@ import (
 type ToolAuthorizer interface {
 	AuthorizeTool(tool *domaintools.ToolDeclaration, call *llm.FunctionCall) error
 	IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool)
-	RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) map[int]bool
+	RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
 }
 
 type securityAuthorizer struct {
@@ -71,11 +71,11 @@ func (a *securityAuthorizer) IdentifyConsentItems(calls []*llm.FunctionCall) ([]
 	return consentIndices, declinedMap
 }
 
-func (a *securityAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) map[int]bool {
+func (a *securityAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
 	consentIndices, declinedMap := a.IdentifyConsentItems(calls)
 
 	if len(consentIndices) == 0 {
-		return declinedMap
+		return ctx, declinedMap
 	}
 
 	var sb strings.Builder
@@ -100,9 +100,12 @@ func (a *securityAuthorizer) RequestBatchConsent(ctx context.Context, calls []*l
 				for _, i := range consentIndices {
 					declinedMap[i] = true
 				}
+			} else {
+				// BATCH APPROVED: Inject the authorization state into the context
+				ctx = domain_security.WithApproval(ctx, true)
 			}
 		}
 	}
 
-	return declinedMap
+	return ctx, declinedMap
 }
