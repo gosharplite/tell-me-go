@@ -219,6 +219,8 @@ func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string
 	return nil, nil
 }
 
+func (m *mockLLMClient) ResetConnections() {}
+
 func TestResilientClient_Generate_RetryAuth(t *testing.T) {
 	var mock *mockLLMClient
 	mock = &mockLLMClient{

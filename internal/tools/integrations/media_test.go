@@ -27,6 +27,8 @@ func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string
 	return nil, nil
 }
 
+func (m *mockLLMClient) ResetConnections() {}
+
 func TestMediaTools(t *testing.T) {
 	ctx := context.Background()
 	r := registry.New()

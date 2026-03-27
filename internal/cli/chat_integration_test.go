@@ -188,3 +188,5 @@ func (m *mockClient) SendChat(ctx stdctx.Context, history []*domain_llm.Content,
 func (m *mockClient) RefreshAuth() error {
 	return nil
 }
+
+func (m *mockClient) ResetConnections() {}
