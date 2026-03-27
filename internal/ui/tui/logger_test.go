@@ -14,7 +14,11 @@ func TestInitLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitLogger() failed: %v", err)
 	}
-	defer closer.Close()
+	t.Cleanup(func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("failed to close logger: %v", err)
+		}
+	})
 
 	expectedPath := filepath.Join(os.TempDir(), "tell-me-go-tui.log")
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
