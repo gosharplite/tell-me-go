@@ -61,14 +61,19 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "trie search",
+			name:     "trie search (prefix match still works)",
 			prefix:   "tes",
 			expected: []string{"test-prompt-1", "test-prompt-2"},
 		},
 		{
-			name:     "empty prefix",
+			name:     "fuzzy search - subsequence",
+			prefix:   "tp1",
+			expected: []string{"test-prompt-1"},
+		},
+		{
+			name:     "empty prefix returns first 5 insertion-ordered items",
 			prefix:   "",
-			expected: []string{"hello", "test-prompt-1", "test-prompt-2", "world"}, // Sorted trie results
+			expected: []string{"test-prompt-1", "test-prompt-2", "hello", "world"},
 		},
 	}
 

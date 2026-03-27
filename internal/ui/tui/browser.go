@@ -330,7 +330,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(m.renderHistory())
 				addedLines := m.turnOffsets[numAdded]
 				m.viewport.SetYOffset(m.viewport.YOffset + addedLines)
-				
+
 				// Adjust selected turn
 				m.selectedTurn += numAdded
 			}

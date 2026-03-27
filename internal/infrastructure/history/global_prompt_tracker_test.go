@@ -106,7 +106,7 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 			t.Fatalf("Append failed: %v", err)
 		}
 	}
-	
+
 	// Add 5 unique prompts BEFORE the duplicates
 	uniquePrompts := []string{"p1", "p2", "p3", "p4", "p5"}
 	// We append them first, so they are at the beginning of the file.

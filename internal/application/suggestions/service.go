@@ -10,25 +10,27 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/pkg/trie"
+	"github.com/gosharplite/tell-me-go/internal/pkg/matcher"
 )
 
 var _ ports.SuggestionService = (*MultiSourceSuggestionService)(nil)
 
-// MultiSourceSuggestionService aggregates suggestions from various sources.
+// MultiSourceSuggestionService aggregates suggestions from various sources using fuzzy matching.
 type MultiSourceSuggestionService struct {
-	trie    *trie.Trie
-	tracker ports.PromptTracker
-	fs      persistence.FileSystem
+	historyMu sync.RWMutex
+	history   []string
+	tracker   ports.PromptTracker
+	fs        persistence.FileSystem
 }
 
-// NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the trie.
+// NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the history.
 func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string) (*MultiSourceSuggestionService, error) {
 	s := &MultiSourceSuggestionService{
-		trie:    trie.NewTrie(),
+		history: make([]string, 0),
 		tracker: tracker,
 		fs:      fs,
 	}
@@ -39,56 +41,93 @@ func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.Pr
 		// Log error but continue with what we have
 		fmt.Fprintf(os.Stderr, "Warning: failed to load top prompts: %v\n", err)
 	}
+
+	seen := make(map[string]bool)
 	for _, p := range topPrompts {
-		s.trie.Insert(p)
+		if !seen[p] {
+			s.history = append(s.history, p)
+			seen[p] = true
+		}
 	}
 
 	// 2. Pre-load Active Session History
 	for _, h := range recentHistory {
-		s.trie.Insert(h)
+		if !seen[h] {
+			s.history = append(s.history, h)
+			seen[h] = true
+		}
 	}
 
 	return s, nil
 }
 
-// GetSuggestions returns up to 10 suggestions based on the prefix.
-func (s *MultiSourceSuggestionService) GetSuggestions(ctx context.Context, prefix string) ([]string, error) {
+// GetSuggestions returns up to 10 suggestions based on fuzzy matching.
+func (s *MultiSourceSuggestionService) GetSuggestions(ctx context.Context, query string) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	// If prefix is empty, we can return some default top prompts
-	if prefix == "" {
-		return s.trie.SearchPrefix("", 5), nil
+	var suggestions []string
+
+	s.historyMu.RLock()
+	// If query is empty, return the first 5 items from history
+	if query == "" {
+		limit := 5
+		if len(s.history) < limit {
+			limit = len(s.history)
+		}
+		suggestions = make([]string, limit)
+		copy(suggestions, s.history[:limit])
+		s.historyMu.RUnlock()
+		return suggestions, nil
 	}
 
-	// 1. Trie Search
-	suggestions := s.trie.SearchPrefix(prefix, 10)
+	// 1. History Search
+	for _, h := range s.history {
+		if matcher.IsSubsequence(query, h) {
+			suggestions = append(suggestions, h)
+			if len(suggestions) >= 10 {
+				break
+			}
+		}
+	}
+	s.historyMu.RUnlock()
 
 	// 2. File System Search if it looks like a path
-	if strings.Contains(prefix, string(os.PathSeparator)) || strings.Contains(prefix, "/") || strings.HasPrefix(prefix, ".") {
-		fileSuggestions := s.scanFiles(ctx, prefix)
+	if strings.Contains(query, string(os.PathSeparator)) || strings.Contains(query, "/") || strings.HasPrefix(query, ".") {
+		fileSuggestions := s.scanFiles(ctx, query)
 		suggestions = s.mergeSuggestions(suggestions, fileSuggestions, 10)
 	}
 
 	return suggestions, nil
 }
 
-// RecordPrompt records a user prompt into both the Trie and the global tracker.
+// RecordPrompt records a user prompt into both the history and the global tracker.
 func (s *MultiSourceSuggestionService) RecordPrompt(prompt string) error {
 	if prompt == "" {
 		return nil
 	}
 
 	// 1. Immediate in-memory update
-	s.trie.Insert(prompt)
+	s.historyMu.Lock()
+	found := false
+	for _, h := range s.history {
+		if h == prompt {
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.history = append(s.history, prompt)
+	}
+	s.historyMu.Unlock()
 
 	// 2. Synchronous persistent update
 	return s.tracker.Append(prompt)
 }
 
-func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, prefix string) []string {
-	dir, filePrefix := filepath.Split(prefix)
+func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, query string) []string {
+	dir, fileQuery := filepath.Split(query)
 	if dir == "" {
 		dir = "."
 	}
@@ -117,7 +156,7 @@ func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, prefix str
 
 		for _, entry := range entries {
 			name := entry.Name()
-			if strings.HasPrefix(name, filePrefix) {
+			if matcher.IsSubsequence(fileQuery, name) {
 				if name == ".git" || name == "node_modules" || name == "vendor" || name == "bin" || name == "obj" {
 					continue
 				}
