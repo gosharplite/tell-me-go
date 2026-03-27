@@ -35,10 +35,6 @@ func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, t []*t
 	return content, metrics, args.Error(2)
 }
 
-func (m *mockGateway) ResetConnections() {
-	m.Called()
-}
-
 type mockEventBus struct {
 	mock.Mock
 }

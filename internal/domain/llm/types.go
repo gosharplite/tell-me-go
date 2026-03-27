@@ -78,8 +78,6 @@ type LLMClient interface {
 	SendChat(ctx context.Context, history []*Content, tools []*tools.ToolDeclaration, resolver AssetResolver) (*Content, *Metrics, error)
 	GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
 	RefreshAuth() error
-	// ResetConnections flushes the underlying connection pool to ensure a fresh network path.
-	ResetConnections()
 }
 
 // ExtendedClient defines a client that provides both raw LLM operations and resilient Gateway capabilities.

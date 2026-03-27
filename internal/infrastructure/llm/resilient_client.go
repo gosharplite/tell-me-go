@@ -13,6 +13,10 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+type connectionResetter interface {
+	ResetConnections()
+}
+
 // resilientClient wraps an LLMClient with retry logic and domain-specific error wrapping.
 type resilientClient struct {
 	client llm.LLMClient
@@ -54,6 +58,15 @@ func (r *resilientClient) Generate(ctx context.Context, input []*llm.Content, to
 				continue // Fixed! Retry once.
 			}
 		}
+
+		// Infrastructure-level resilience: reset connections on rate limit
+		// or on the final internal retry attempt.
+		if errors.Is(wrapped, llm.ErrRateLimit) || attempt == 1 {
+			if cr, ok := r.client.(connectionResetter); ok {
+				cr.ResetConnections()
+			}
+		}
+
 		lastErr = wrapped
 		break // Let the TurnEngine handle transient/terminal retries
 	}
@@ -75,7 +88,3 @@ func (r *resilientClient) GenerateImages(ctx context.Context, model, prompt stri
 	return r.client.GenerateImages(ctx, model, prompt, mimeType)
 }
 
-// ResetConnections delegates to the underlying client.
-func (r *resilientClient) ResetConnections() {
-	r.client.ResetConnections()
-}

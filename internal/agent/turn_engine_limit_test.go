@@ -41,8 +41,6 @@ func (m *limitMockLLMGateway) GenerateImages(ctx context.Context, model, prompt 
 
 func (m *limitMockLLMGateway) RefreshAuth() error { return nil }
 
-func (m *limitMockLLMGateway) ResetConnections() {}
-
 type limitMockExecutor struct {
 	mock.Mock
 }

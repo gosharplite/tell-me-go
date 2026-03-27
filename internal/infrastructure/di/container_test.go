@@ -51,10 +51,6 @@ func (m *mockLLMClient) RefreshAuth() error {
 	return args.Error(0)
 }
 
-func (m *mockLLMClient) ResetConnections() {
-	m.Called()
-}
-
 func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	args := m.Called(ctx, input, toolDecls, resolver)
 	if args.Get(0) == nil {

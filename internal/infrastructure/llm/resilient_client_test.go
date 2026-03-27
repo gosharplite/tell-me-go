@@ -308,15 +308,36 @@ func TestResilientClient_ErrorDelegation(t *testing.T) {
 	})
 }
 
-func TestResilientClient_ResetConnections(t *testing.T) {
-	mock := &mockLLMClient{}
+func TestResilientClient_Generate_ResetsOnRateLimit(t *testing.T) {
+	mock := &mockLLMClient{
+		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, llm.ErrRateLimit
+		},
+	}
 	client := NewResilientClient(mock)
 
-	// Call the wrapper method
-	client.ResetConnections()
+	_, _, _ = client.Generate(context.Background(), nil, nil, nil)
 
-	// Verify that the call was delegated to the inner mock client
 	if !mock.resetCalled {
-		t.Error("expected ResetConnections to be delegated to the underlying client")
+		t.Error("expected ResetConnections to be called on rate limit")
+	}
+}
+
+func TestResilientClient_Generate_ResetsOnFinalAttempt(t *testing.T) {
+	var m *mockLLMClient
+	m = &mockLLMClient{
+		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			if m.authRefreshed == 0 {
+				return nil, nil, llm.ErrAuth
+			}
+			return nil, nil, errors.New("persistent failure")
+		},
+	}
+	client := NewResilientClient(m)
+
+	_, _, _ = client.Generate(context.Background(), nil, nil, nil)
+
+	if !m.resetCalled {
+		t.Error("expected ResetConnections to be called on the final attempt (attempt 1) after auth retry")
 	}
 }

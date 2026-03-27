@@ -111,8 +111,6 @@ func (m *stressmockLLMClient) RefreshAuth() error {
 	return nil
 }
 
-func (m *stressmockLLMClient) ResetConnections() {}
-
 func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	return m.sendChatFn(ctx, input, tools, resolver)
 }

@@ -700,16 +700,6 @@ func (p *recoveryStep) process(ctx context.Context, turn *turn) (processResult, 
 		turn.State.HasSeenRateLimit = true
 	}
 
-	// Trigger Global Fresh Start for network connections if we hit a rate limit
-	// or if this is our 3rd attempt (RetryCount starts at 0, so 2 means 3rd attempt).
-	if isRateLimit || turn.State.RetryCount == 2 {
-		turn.getLogger().Debug("resetting_connection_pool",
-			slog.Bool("is_rate_limit", isRateLimit),
-			slog.Int("attempt", turn.State.RetryCount))
-
-		turn.Gateway.ResetConnections()
-	}
-
 	delay, retry := p.Policy.ShouldRetry(turn.Clock, err, turn.State.RetryCount, turn.State.HasSeenRateLimit)
 	if !retry {
 		return p.handleFailure(err)

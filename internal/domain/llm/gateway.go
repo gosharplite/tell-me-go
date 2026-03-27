@@ -43,6 +43,4 @@ func IsAuth(err error) bool {
 type LLMGateway interface {
 	// Generate handles auth retries and synchronous chat response.
 	Generate(ctx context.Context, input []*Content, tools []*tools.ToolDeclaration, resolver AssetResolver) (*Content, *Metrics, error)
-	// ResetConnections flushes the underlying connection pool to ensure a fresh network path.
-	ResetConnections()
 }
