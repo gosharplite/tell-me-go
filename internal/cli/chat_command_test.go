@@ -219,7 +219,6 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	}
 }
 
-
 func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 	t.Parallel()
 
