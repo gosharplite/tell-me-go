@@ -1044,7 +1044,6 @@ func assertLoopWarningInjected(t *testing.T, hm *mockHistoryManager) {
 	assert.True(t, foundWarning, "Should have injected loop warning")
 }
 
-
 func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}

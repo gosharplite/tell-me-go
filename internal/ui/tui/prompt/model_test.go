@@ -5,6 +5,8 @@ package prompt
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -356,4 +358,44 @@ func TestModel_Update_TokenAwareAutocomplete(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestModel_Update_AdditionalCases(t *testing.T) {
+	svc := &mockSuggestionSvc{}
+	m := NewModel(svc, 1*time.Millisecond).(*promptModel)
+	defer m.Destroy()
+
+	t.Run("debounce message", func(t *testing.T) {
+		m.input.SetValue("test")
+		_, cmd := m.Update(debounceMsg{value: "test"})
+		if cmd == nil {
+			t.Error("expected cmd for debounceMsg")
+		}
+	})
+
+	t.Run("debounce message value mismatch", func(t *testing.T) {
+		m.input.SetValue("new value")
+		_, cmd := m.Update(debounceMsg{value: "old value"})
+		if cmd != nil {
+			t.Error("expected nil cmd for mismatched debounceMsg")
+		}
+	})
+
+	t.Run("error message", func(t *testing.T) {
+		err := fmt.Errorf("test error")
+		_, cmd := m.Update(err)
+		if cmd != nil {
+			t.Error("expected nil cmd for error")
+		}
+		if !errors.Is(m.err, err) {
+			t.Errorf("expected error %v, got %v", err, m.err)
+		}
+	})
+
+	t.Run("unhandled message", func(t *testing.T) {
+		_, cmd := m.Update(struct{ tea.Msg }{Msg: nil})
+		if cmd != nil {
+			t.Error("expected nil cmd for unhandled message")
+		}
+	})
 }

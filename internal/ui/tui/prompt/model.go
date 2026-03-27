@@ -95,89 +95,16 @@ func (m promptModel) Init() tea.Cmd {
 
 // Update handles UI interactions and asynchronous messages.
 func (m *promptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEsc:
-			m.aborted = true
-			return m, tea.Quit
+		return m.handleKeyMsg(msg)
 
-		case tea.KeyCtrlC:
-			m.aborted = true
-			return m, tea.Quit
-
-		case tea.KeyEnter:
-			// Alt+Enter or Ctrl+Enter is typically handled by terminal,
-			// here we treat standard Enter as a newline unless it's a specific key combo.
-			// But the instruction says Alt+Enter or Ctrl+S to submit.
-			// TextArea handles Enter as newline by default.
-			if msg.Alt { // Alt+Enter
-				if m.submit() {
-					return m, tea.Quit
-				}
-				return m, nil
-			}
-
-		case tea.KeyCtrlS:
-			if m.submit() {
-				return m, tea.Quit
-			}
-			return m, nil
-
-		case tea.KeyTab, tea.KeyShiftTab:
-			if len(m.suggester.Suggestions) > 0 {
-				if msg.Type == tea.KeyTab {
-					m.suggester.Next()
-				} else {
-					m.suggester.Prev()
-				}
-				selected := m.suggester.GetSelected()
-				if selected != "" {
-					currentVal := m.input.Value()
-					lastSpaceIdx := strings.LastIndex(currentVal, " ")
-
-					// Heuristic: If input has multiple words AND suggestion is a single token (like a file path),
-					// replace only the last token. Otherwise, replace the entire line.
-					if lastSpaceIdx != -1 && !strings.Contains(selected, " ") {
-						preservedContext := currentVal[:lastSpaceIdx+1]
-						m.input.SetValue(preservedContext + selected)
-					} else {
-						m.input.SetValue(selected)
-					}
-
-					m.input.Model.SetCursor(len(m.input.Value()))
-				}
-				return m, nil
-			}
-		}
-
-		// Handle other keys for textarea
-		oldVal := m.input.Value()
-		newInput, inputCmd := m.input.Update(msg)
-		m.input = newInput
-		cmd = inputCmd
-
-		// If input changed, trigger suggestion fetch with debounce
-		if m.input.Value() != oldVal {
-			newVal := m.input.Value()
-			return m, tea.Batch(cmd, tea.Tick(m.debounceDuration, func(t time.Time) tea.Msg {
-				return debounceMsg{value: newVal}
-			}))
-		}
 	case tea.WindowSizeMsg:
 		m.input.Model.SetWidth(msg.Width - 4)
 		return m, nil
 
 	case debounceMsg:
-		// Only fetch suggestions if the value hasn't changed since the debounce message was sent
-		if msg.value == m.input.Value() {
-			m.cancel()
-			m.ctx, m.cancel = context.WithCancel(context.Background())
-			return m, m.getSuggestions(m.ctx, msg.value)
-		}
-		return m, nil
+		return m.handleDebounceMsg(msg)
 
 	case suggestionsMsg:
 		m.suggester.Update(msg, -1) // Reset index when new suggestions arrive
@@ -189,7 +116,86 @@ func (m *promptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m, cmd
+	return m, nil
+}
+
+func (m *promptModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc, tea.KeyCtrlC:
+		m.aborted = true
+		return m, tea.Quit
+
+	case tea.KeyTab, tea.KeyShiftTab:
+		if len(m.suggester.Suggestions) > 0 {
+			return m.handleTabKey(msg)
+		}
+
+	case tea.KeyEnter:
+		if msg.Alt {
+			return m.handleSubmissionKeys(msg)
+		}
+
+	case tea.KeyCtrlS:
+		return m.handleSubmissionKeys(msg)
+	}
+
+	// Handle other keys for textarea
+	oldVal := m.input.Value()
+	newInput, inputCmd := m.input.Update(msg)
+	m.input = newInput
+
+	// If input changed, trigger suggestion fetch with debounce
+	if m.input.Value() != oldVal {
+		newVal := m.input.Value()
+		return m, tea.Batch(inputCmd, tea.Tick(m.debounceDuration, func(t time.Time) tea.Msg {
+			return debounceMsg{value: newVal}
+		}))
+	}
+
+	return m, inputCmd
+}
+
+func (m *promptModel) handleTabKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyTab {
+		m.suggester.Next()
+	} else {
+		m.suggester.Prev()
+	}
+
+	selected := m.suggester.GetSelected()
+	if selected != "" {
+		currentVal := m.input.Value()
+		lastSpaceIdx := strings.LastIndex(currentVal, " ")
+
+		// Heuristic: If input has multiple words AND suggestion is a single token (like a file path),
+		// replace only the last token. Otherwise, replace the entire line.
+		if lastSpaceIdx != -1 && !strings.Contains(selected, " ") {
+			preservedContext := currentVal[:lastSpaceIdx+1]
+			m.input.SetValue(preservedContext + selected)
+		} else {
+			m.input.SetValue(selected)
+		}
+
+		m.input.Model.SetCursor(len(m.input.Value()))
+	}
+	return m, nil
+}
+
+func (m *promptModel) handleSubmissionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.submit() {
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m *promptModel) handleDebounceMsg(msg debounceMsg) (tea.Model, tea.Cmd) {
+	// Only fetch suggestions if the value hasn't changed since the debounce message was sent
+	if msg.value == m.input.Value() {
+		m.cancel()
+		m.ctx, m.cancel = context.WithCancel(context.Background())
+		return m, m.getSuggestions(m.ctx, msg.value)
+	}
+	return m, nil
 }
 
 // View renders the TUI prompt layout.

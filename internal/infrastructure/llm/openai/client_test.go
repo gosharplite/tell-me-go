@@ -802,7 +802,7 @@ func TestOpenAI_ResetConnections(t *testing.T) {
 		if client.transport == nil {
 			t.Fatal("expected transport to be initialized")
 		}
-		
+
 		// This should not panic
 		client.ResetConnections()
 	})
@@ -810,7 +810,7 @@ func TestOpenAI_ResetConnections(t *testing.T) {
 	t.Run("nil transport safety", func(t *testing.T) {
 		// Create a client directly with a nil transport
 		c := &client{}
-		
+
 		// This should not panic because of the internal nil check
 		c.ResetConnections()
 	})

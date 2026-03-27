@@ -104,15 +104,9 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 		default:
 		}
 
-		readSize := chunkSize
-		if pos < int64(readSize) {
-			readSize = int(pos)
-		}
-		pos -= int64(readSize)
-
-		chunk := make([]byte, readSize)
-		if _, err := f.ReadAt(chunk, pos); err != nil {
-			return nil, fmt.Errorf("failed to read global prompts at %d: %w", pos, err)
+		chunk, err := t.readPreviousChunk(f, &pos, chunkSize)
+		if err != nil {
+			return nil, err
 		}
 
 		// Combine with leftover from previous chunk
@@ -126,25 +120,43 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 			leftover = nil
 		}
 
-		// Process lines in reverse order (most recent first)
-		for i := len(lines) - 1; i >= 0; i-- {
-			if len(lines[i]) == 0 {
-				continue
-			}
+		t.processLines(lines, seen, &result, limit)
+	}
 
-			var entry promptEntry
-			if err := json.Unmarshal(lines[i], &entry); err == nil {
-				p := entry.Prompt
-				if p != "" && !seen[p] {
-					seen[p] = true
-					result = append(result, p)
-					if len(result) >= limit {
-						break
-					}
+	return result, nil
+}
+
+func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSize int) ([]byte, error) {
+	readSize := chunkSize
+	if *pos < int64(readSize) {
+		readSize = int(*pos)
+	}
+	*pos -= int64(readSize)
+
+	chunk := make([]byte, readSize)
+	if _, err := f.ReadAt(chunk, *pos); err != nil {
+		return nil, fmt.Errorf("failed to read global prompts at %d: %w", *pos, err)
+	}
+	return chunk, nil
+}
+
+func (t *globalPromptTracker) processLines(lines [][]byte, seen map[string]bool, result *[]string, limit int) {
+	// Process lines in reverse order (most recent first)
+	for i := len(lines) - 1; i >= 0; i-- {
+		if len(lines[i]) == 0 {
+			continue
+		}
+
+		var entry promptEntry
+		if err := json.Unmarshal(lines[i], &entry); err == nil {
+			p := entry.Prompt
+			if p != "" && !seen[p] {
+				seen[p] = true
+				*result = append(*result, p)
+				if len(*result) >= limit {
+					break
 				}
 			}
 		}
 	}
-
-	return result, nil
 }

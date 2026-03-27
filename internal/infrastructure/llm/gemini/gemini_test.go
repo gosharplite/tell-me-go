@@ -723,7 +723,7 @@ func TestGemini_ResetConnections(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create client: %v", err)
 		}
-		
+
 		// This should not panic and should access the transport under lock
 		client.ResetConnections()
 	})
@@ -731,7 +731,7 @@ func TestGemini_ResetConnections(t *testing.T) {
 	t.Run("nil transport safety", func(t *testing.T) {
 		// Create a client directly with a nil transport (zero value)
 		c := &Client{}
-		
+
 		// This should not panic because of the internal nil check and mutex handling
 		c.ResetConnections()
 	})
