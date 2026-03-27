@@ -272,63 +272,95 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
-		b.mu.Lock()
-		b.isRendering = false
-		b.mu.Unlock()
-		b.renderer.LogTurnStatus(ev.Status)
+		b.handleTurnStatus(ev)
 	case events.InferenceStartedEvent:
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinner(b.ctx)
-		})
+		b.handleInferenceStarted()
 	case events.RefiningStartedEvent:
-		b.mu.Lock()
-		b.isRendering = false // Reset state for the new retry cycle
-		b.mu.Unlock()
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
-		})
+		b.handleRefiningStarted()
 	case events.SummarizationStartedEvent:
-		b.mu.Lock()
-		b.isRendering = false
-		b.mu.Unlock()
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
-		})
+		b.handleSummarizationStarted()
 	case events.ResponseEvent:
-		b.mu.Lock()
-		b.isRendering = true
-		stop := b.stopSpinner
-		b.stopSpinner = nil
-		b.mu.Unlock()
-
-		if stop != nil {
-			stop()
-		}
-		b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
+		b.handleResponse(ev)
 	case events.UsageMetricsEvent:
-		ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		b.renderer.LogUsage(ctx, ev.Metrics, b.logFile, ev.StartTime)
-	case events.ToolCallEvent:
-		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
-	case events.ToolResultEvent:
-		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
+		b.handleUsageMetrics(ev)
+	case events.ToolCallEvent, events.ToolResultEvent:
+		b.handleToolEvents(ev)
 	case events.TurnStarted:
-		b.mu.Lock()
-		stop := b.stopSpinner
-		b.stopSpinner = nil
-		b.isRendering = false
-		b.mu.Unlock()
-
-		if stop != nil {
-			stop()
-		}
+		b.handleTurnStarted()
 	case events.SystemMessageEvent:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
 	case events.StatusUpdate:
 		b.renderer.LogSystemMessage(ev.Message, ev.Level)
+	}
+}
+
+func (b *uiBridge) handleTurnStatus(ev events.TurnStatusEvent) {
+	b.mu.Lock()
+	b.isRendering = false
+	b.mu.Unlock()
+	b.renderer.LogTurnStatus(ev.Status)
+}
+
+func (b *uiBridge) handleInferenceStarted() {
+	b.transitionSpinner(func() func() {
+		return b.renderer.StartSpinner(b.ctx)
+	})
+}
+
+func (b *uiBridge) handleRefiningStarted() {
+	b.mu.Lock()
+	b.isRendering = false // Reset state for the new retry cycle
+	b.mu.Unlock()
+	b.transitionSpinner(func() func() {
+		return b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
+	})
+}
+
+func (b *uiBridge) handleSummarizationStarted() {
+	b.mu.Lock()
+	b.isRendering = false
+	b.mu.Unlock()
+	b.transitionSpinner(func() func() {
+		return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
+	})
+}
+
+func (b *uiBridge) handleResponse(ev events.ResponseEvent) {
+	b.mu.Lock()
+	b.isRendering = true
+	stop := b.stopSpinner
+	b.stopSpinner = nil
+	b.mu.Unlock()
+
+	if stop != nil {
+		stop()
+	}
+	b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
+}
+
+func (b *uiBridge) handleUsageMetrics(ev events.UsageMetricsEvent) {
+	ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
+	b.renderer.LogUsage(ctx, ev.Metrics, b.logFile, ev.StartTime)
+}
+
+func (b *uiBridge) handleToolEvents(e events.Event) {
+	switch ev := e.(type) {
+	case events.ToolCallEvent:
+		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
+	case events.ToolResultEvent:
+		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
+	}
+}
+
+func (b *uiBridge) handleTurnStarted() {
+	b.mu.Lock()
+	stop := b.stopSpinner
+	b.stopSpinner = nil
+	b.isRendering = false
+	b.mu.Unlock()
+
+	if stop != nil {
+		stop()
 	}
 }
 
