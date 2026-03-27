@@ -38,7 +38,7 @@ type Client struct {
 	backend           genai.Backend
 	eventBus          events.EventBus
 	logger            ports.Logger
-	httpTransport     *http.Transport
+	httpTransport     http.RoundTripper
 }
 
 // NewClient returns a new Gemini API client.
@@ -101,7 +101,13 @@ func (c *Client) initSDK(timeout time.Duration) error {
 		return fmt.Errorf("failed to prepare auth headers: %w", err)
 	}
 
-	tr := http.DefaultTransport.(*http.Transport).Clone()
+	var tr http.RoundTripper
+	if defaultTr, ok := http.DefaultTransport.(*http.Transport); ok {
+		tr = defaultTr.Clone()
+	} else {
+		tr = http.DefaultTransport
+	}
+
 	httpClient := &http.Client{
 		Transport: tr,
 		Timeout:   timeout,
@@ -207,14 +213,18 @@ func (c *Client) RefreshAuth() error {
 	return c.initSDK(1 * time.Minute)
 }
 
+type idleConnectionCloser interface {
+	CloseIdleConnections()
+}
+
 // ResetConnections clears the underlying connection pool.
 func (c *Client) ResetConnections() {
 	c.mu.RLock()
 	tr := c.httpTransport
 	c.mu.RUnlock()
 
-	if tr != nil {
-		tr.CloseIdleConnections()
+	if closer, ok := tr.(idleConnectionCloser); ok {
+		closer.CloseIdleConnections()
 	}
 }
 

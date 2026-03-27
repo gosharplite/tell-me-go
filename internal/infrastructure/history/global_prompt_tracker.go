@@ -120,7 +120,7 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 			leftover = nil
 		}
 
-		t.processLines(lines, seen, &result, limit)
+		result = t.processLines(lines, seen, result, limit)
 	}
 
 	return result, nil
@@ -140,7 +140,7 @@ func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSiz
 	return chunk, nil
 }
 
-func (t *globalPromptTracker) processLines(lines [][]byte, seen map[string]bool, result *[]string, limit int) {
+func (t *globalPromptTracker) processLines(lines [][]byte, seen map[string]bool, result []string, limit int) []string {
 	// Process lines in reverse order (most recent first)
 	for i := len(lines) - 1; i >= 0; i-- {
 		if len(lines[i]) == 0 {
@@ -152,11 +152,12 @@ func (t *globalPromptTracker) processLines(lines [][]byte, seen map[string]bool,
 			p := entry.Prompt
 			if p != "" && !seen[p] {
 				seen[p] = true
-				*result = append(*result, p)
-				if len(*result) >= limit {
+				result = append(result, p)
+				if len(result) >= limit {
 					break
 				}
 			}
 		}
 	}
+	return result
 }
