@@ -521,11 +521,31 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 }
 
 func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string) string {
-	thoughtText := "[THOUGHTS] " + dto.ThoughtProcess
+	// Add a visual icon and newline for better separation
+	thoughtText := "💭 [THOUGHTS]\n" + dto.ThoughtProcess
+
 	if m.currentQuery != "" {
 		thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
 	}
-	return prefix + thoughtStyle.Render(thoughtText) + "\n\n"
+
+	// Calculate safe bounds for text wrapping
+	maxWidth := m.width - len(prefix)
+	if maxWidth < 20 {
+		maxWidth = 20 // Fallback minimum width
+	}
+
+	// Lipgloss handles ANSI sequences correctly when word-wrapping
+	wrappedText := thoughtStyle.Width(maxWidth).Render(thoughtText)
+
+	var sb strings.Builder
+	lines := strings.Split(wrappedText, "\n")
+	for _, line := range lines {
+		sb.WriteString(prefix)
+		sb.WriteString(line)
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 func (m *rootBrowserModel) renderToolCalls(dto ports.HistoryViewDTO, prefix string) string {
@@ -652,7 +672,12 @@ func (m *rootBrowserModel) renderFooter() string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("↑/↓: Scroll • Space: Toggle Thoughts • /: Search • j/k: Select • p: Pin • r: Rollback • q: Quit")
+	thoughtsStatus := "ON"
+	if !m.showThoughts {
+		thoughtsStatus = "OFF"
+	}
+	sb.WriteString(fmt.Sprintf("↑/↓: Scroll • Space: Thoughts [%s] • /: Search • j/k: Select • p: Pin • r: Rollback • q: Quit", thoughtsStatus))
+
 	if m.currentQuery != "" {
 		matchInfo := ""
 		if len(m.matches) > 0 {
@@ -664,9 +689,6 @@ func (m *rootBrowserModel) renderFooter() string {
 	}
 	if m.isLoading {
 		sb.WriteString(" • LOADING...")
-	}
-	if !m.showThoughts {
-		sb.WriteString(" (Thoughts hidden)")
 	}
 	return footerStyle.Render(sb.String())
 }
