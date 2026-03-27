@@ -246,7 +246,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	auth := e.authorizer
 	e.mu.RUnlock()
 
-	declinedMap := auth.RequestBatchConsent(ctx, calls)
+	ctx, declinedMap := auth.RequestBatchConsent(ctx, calls)
 
 	// Orchestrate Execution
 	collector := e.newResultCollector(calls, bus)
@@ -578,6 +578,7 @@ func (e *ToolExecutor) handlePanic(ctx context.Context, r interface{}, toolName 
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
 	ctx, span := otel.Tracer("agent").Start(parentCtx, "tool.execute."+call.Name)
+	ctx = domain_security.WithCurrentTool(ctx, call.Name)
 	span.SetAttributes(attribute.String("tool.name", call.Name))
 	defer span.End()
 

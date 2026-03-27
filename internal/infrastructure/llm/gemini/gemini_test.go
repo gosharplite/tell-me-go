@@ -713,3 +713,46 @@ func TestGemini_EdgeCase_ToSDKContent(t *testing.T) {
 		})
 	}
 }
+
+func TestGemini_ResetConnections(t *testing.T) {
+	t.Run("initialized client", func(t *testing.T) {
+		// Use a Vertex AI style URL to avoid mandatory API key check in SDK for Google AI backend
+		apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+		authenticator := &auth.BearerAuth{Token: "test-token"}
+		client, err := NewClient(apiURL, "gemini-1.5-flash", authenticator, 0, "", 0, "", false, nil, 0)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		// This should not panic and should access the transport under lock
+		client.ResetConnections()
+	})
+
+	t.Run("nil transport safety", func(t *testing.T) {
+		// Create a client directly with a nil transport (zero value)
+		c := &Client{}
+
+		// This should not panic because of the internal nil check and mutex handling
+		c.ResetConnections()
+	})
+}
+
+func TestGemini_ResetConnections_ThreadSafety(t *testing.T) {
+	// Use a Vertex AI style URL to avoid mandatory API key check in SDK for Google AI backend
+	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	authenticator := &auth.BearerAuth{Token: "test-token"}
+	client, err := NewClient(apiURL, "gemini-1.5-flash", authenticator, 0, "", 0, "", false, nil, 0)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			client.ResetConnections()
+		}()
+	}
+	wg.Wait()
+}

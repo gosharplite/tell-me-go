@@ -156,42 +156,48 @@ func (m rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
 	if m.isSearching {
-		switch msg.String() {
-		case "enter":
-			m.isSearching = false
-			m.currentQuery = m.searchBar.Value()
-			m.currentMatch = 0
-			m.viewport.SetContent(m.renderHistory())
-			m.updateViewportHeight()
-			m.viewport.GotoTop()
-			return m, nil
-		case "esc":
-			m.isSearching = false
-			m.searchBar.SetValue("")
-			m.currentQuery = ""
-			m.matches = nil
-			m.viewport.SetContent(m.renderHistory())
-			m.updateViewportHeight()
-			return m, nil
-		}
-		m.searchBar, cmd = m.searchBar.Update(msg)
-		return m, cmd
+		return m.handleSearchInput(msg)
 	}
 
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	case " ":
-		m.showThoughts = !m.showThoughts
+	case "j", "k", "n", "N":
+		return m.handleNavigationKeys(msg)
+	case "p", "r", " ", "/":
+		return m.handleActionKeys(msg)
+	}
+
+	return m.handleViewportUpdate(msg)
+}
+
+func (m rootBrowserModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg.String() {
+	case "enter":
+		m.isSearching = false
+		m.currentQuery = m.searchBar.Value()
+		m.currentMatch = 0
 		m.viewport.SetContent(m.renderHistory())
+		m.updateViewportHeight()
+		m.viewport.GotoTop()
 		return m, nil
-	case "/":
-		m.isSearching = true
-		m.searchBar.Focus()
+	case "esc":
+		m.isSearching = false
+		m.searchBar.SetValue("")
+		m.currentQuery = ""
+		m.matches = nil
+		m.viewport.SetContent(m.renderHistory())
 		m.updateViewportHeight()
 		return m, nil
+	}
+	m.searchBar, cmd = m.searchBar.Update(msg)
+	return m, cmd
+}
+
+func (m rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
 	case "j":
 		if len(m.history) > 0 {
 			m.selectedTurn++
@@ -210,7 +216,6 @@ func (m rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		return m, nil
 	case "k":
 		if len(m.history) > 0 {
 			m.selectedTurn--
@@ -229,7 +234,25 @@ func (m rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		return m, nil
+	case "n":
+		if len(m.matches) > 0 {
+			m.currentMatch = (m.currentMatch + 1) % len(m.matches)
+			m.viewport.SetYOffset(m.matches[m.currentMatch])
+		}
+	case "N":
+		if len(m.matches) > 0 {
+			m.currentMatch--
+			if m.currentMatch < 0 {
+				m.currentMatch = len(m.matches) - 1
+			}
+			m.viewport.SetYOffset(m.matches[m.currentMatch])
+		}
+	}
+	return m, nil
+}
+
+func (m rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
 	case "p":
 		if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
 			dto := m.history[m.selectedTurn]
@@ -253,7 +276,6 @@ func (m rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.updateViewportHeight()
 			}
 		}
-		return m, nil
 	case "r":
 		if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
 			dto := m.history[m.selectedTurn]
@@ -290,25 +312,17 @@ func (m rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, fetchHistoryCmd(m.provider, "")
 			}
 		}
+	case " ":
+		m.showThoughts = !m.showThoughts
+		m.viewport.SetContent(m.renderHistory())
 		return m, nil
-	case "n":
-		if len(m.matches) > 0 {
-			m.currentMatch = (m.currentMatch + 1) % len(m.matches)
-			m.viewport.SetYOffset(m.matches[m.currentMatch])
-		}
-		return m, nil
-	case "N":
-		if len(m.matches) > 0 {
-			m.currentMatch--
-			if m.currentMatch < 0 {
-				m.currentMatch = len(m.matches) - 1
-			}
-			m.viewport.SetYOffset(m.matches[m.currentMatch])
-		}
+	case "/":
+		m.isSearching = true
+		m.searchBar.Focus()
+		m.updateViewportHeight()
 		return m, nil
 	}
-
-	return m.handleViewportUpdate(msg)
+	return m, nil
 }
 
 func (m rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -448,79 +462,106 @@ func (m *rootBrowserModel) renderHistory() string {
 			prefix = "> "
 		}
 
-		roleLabel := strings.ToUpper(dto.Role)
-		if dto.Role == "assistant" {
-			roleLabel = "MODEL"
-		}
-
-		turnStr := ""
-		if !dto.IsArchived {
-			turnStr = fmt.Sprintf(" - %d", (dto.OriginalIndex/2)+1)
-		}
-
-		var styledLabel string
-		switch dto.Role {
-		case "user":
-			styledLabel = userStyle.Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
-		case "assistant", "model":
-			styledLabel = modelStyle.Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
-		default:
-			styledLabel = lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
-		}
-
-		if dto.IsArchived {
-			styledLabel += archivedStyle.Render(" (archived)")
-		}
-		if dto.IsPinned {
-			styledLabel += lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Render(" [PINNED]")
-		}
-
-		sb.WriteString(prefix)
-		sb.WriteString(styledLabel)
-		sb.WriteString("\n")
+		sb.WriteString(m.renderTurnHeader(dto, i == m.selectedTurn))
 
 		if m.showThoughts && dto.ThoughtProcess != "" {
-			thoughtText := "[THOUGHTS] " + dto.ThoughtProcess
-			if m.currentQuery != "" {
-				thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
-			}
-			sb.WriteString(prefix)
-			sb.WriteString(thoughtStyle.Render(thoughtText))
-			sb.WriteString("\n\n")
+			sb.WriteString(m.renderThoughts(dto, prefix))
 		}
 
 		if len(dto.ToolCalls) > 0 {
-			for _, tool := range dto.ToolCalls {
-				sb.WriteString(prefix)
-				sb.WriteString(toolStyle.Render(fmt.Sprintf("  🔧 Executing tool: %s", tool)))
-				sb.WriteString("\n")
-			}
-			sb.WriteString("\n")
+			sb.WriteString(m.renderToolCalls(dto, prefix))
 		}
 
-		content := dto.ContentPreview
-		if m.currentQuery != "" {
-			content = m.highlightMatches(content, m.currentQuery)
-		}
-
-		// Handle multi-line content to maintain prefix
-		lines := strings.Split(content, "\n")
-		for j, line := range lines {
-			sb.WriteString(prefix)
-			sb.WriteString(line)
-			if j < len(lines)-1 {
-				sb.WriteString("\n")
-			}
-		}
+		sb.WriteString(m.renderContent(dto, prefix))
 
 		if i < len(m.history)-1 {
-			sb.WriteString("\n\n" + archivedStyle.Render(strings.Repeat("─", m.width/2)) + "\n\n")
+			sb.WriteString(m.renderSeparator())
 		}
 	}
 
 	rendered := sb.String()
+	m.recalculateSearchMatches(rendered)
+	return rendered
+}
 
-	// Recalculate match line positions
+func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected bool) string {
+	prefix := "  "
+	if isSelected {
+		prefix = "> "
+	}
+
+	roleLabel := strings.ToUpper(dto.Role)
+	if dto.Role == "assistant" {
+		roleLabel = "MODEL"
+	}
+
+	turnStr := ""
+	if !dto.IsArchived {
+		turnStr = fmt.Sprintf(" - %d", (dto.OriginalIndex/2)+1)
+	}
+
+	var styledLabel string
+	switch dto.Role {
+	case "user":
+		styledLabel = userStyle.Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
+	case "assistant", "model":
+		styledLabel = modelStyle.Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
+	default:
+		styledLabel = lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
+	}
+
+	if dto.IsArchived {
+		styledLabel += archivedStyle.Render(" (archived)")
+	}
+	if dto.IsPinned {
+		styledLabel += lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Render(" [PINNED]")
+	}
+
+	return prefix + styledLabel + "\n"
+}
+
+func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string) string {
+	thoughtText := "[THOUGHTS] " + dto.ThoughtProcess
+	if m.currentQuery != "" {
+		thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
+	}
+	return prefix + thoughtStyle.Render(thoughtText) + "\n\n"
+}
+
+func (m *rootBrowserModel) renderToolCalls(dto ports.HistoryViewDTO, prefix string) string {
+	var sb strings.Builder
+	for _, tool := range dto.ToolCalls {
+		sb.WriteString(prefix)
+		sb.WriteString(toolStyle.Render(fmt.Sprintf("  🔧 Executing tool: %s", tool)))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+func (m *rootBrowserModel) renderContent(dto ports.HistoryViewDTO, prefix string) string {
+	content := dto.ContentPreview
+	if m.currentQuery != "" {
+		content = m.highlightMatches(content, m.currentQuery)
+	}
+
+	var sb strings.Builder
+	lines := strings.Split(content, "\n")
+	for j, line := range lines {
+		sb.WriteString(prefix)
+		sb.WriteString(line)
+		if j < len(lines)-1 {
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+func (m *rootBrowserModel) renderSeparator() string {
+	return "\n\n" + archivedStyle.Render(strings.Repeat("─", m.width/2)) + "\n\n"
+}
+
+func (m *rootBrowserModel) recalculateSearchMatches(rendered string) {
 	m.matches = []int{}
 	if m.currentQuery != "" {
 		re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(m.currentQuery))
@@ -541,8 +582,6 @@ func (m *rootBrowserModel) renderHistory() string {
 	} else {
 		m.currentMatch = 0
 	}
-
-	return rendered
 }
 
 func (m *rootBrowserModel) highlightMatches(text, query string) string {

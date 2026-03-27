@@ -794,3 +794,24 @@ func TestDeepSeekEmptyReasoningContent(t *testing.T) {
 		t.Errorf("expected reasoning_content to be empty string, got %v", val)
 	}
 }
+
+func TestOpenAI_ResetConnections(t *testing.T) {
+	t.Run("initialized client", func(t *testing.T) {
+		// NewClient initializes the transport
+		client := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
+		if client.transport == nil {
+			t.Fatal("expected transport to be initialized")
+		}
+
+		// This should not panic
+		client.ResetConnections()
+	})
+
+	t.Run("nil transport safety", func(t *testing.T) {
+		// Create a client directly with a nil transport
+		c := &client{}
+
+		// This should not panic because of the internal nil check
+		c.ResetConnections()
+	})
+}

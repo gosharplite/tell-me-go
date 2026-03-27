@@ -56,33 +56,38 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 	}
 
 	if prunedCount > 0 {
-		t.getLogger().Info("History pruning triggered",
-			slog.Int("initial_turns", len(turns)),
-			slog.Int("pruned_turns", prunedCount),
-			slog.Int("remaining_turns", keptCount),
-			slog.Any("policy_breakdown", req.Metadata.KeptByPolicy),
-		)
-
 		req.History = newHistory
 		req.Metadata.PrunedTurns += prunedCount
 		req.Metadata.TotalTurnsKept += keptCount
 
-		if t.Events != nil {
-			evt := events.SystemMessageEvent{
-				Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, len(newHistory)/2),
-				Level:   "info",
-			}
-			if err := events.SafePublish(ctx, t.Events, evt); err != nil {
-				if !errors.Is(err, events.ErrBusNotInitialized) {
-					t.getLogger().Error("event_publish_failed",
-						slog.String("event_type", string(evt.Type())),
-						slog.Any("error", err))
-					return err
-				}
+		return t.reportPruning(ctx, req, len(turns), prunedCount, keptCount)
+	}
+
+	return nil
+}
+
+func (t *historyPruner) reportPruning(ctx context.Context, req *ports.ContextRequest, initialTurnCount, prunedCount, keptCount int) error {
+	t.getLogger().Info("History pruning triggered",
+		slog.Int("initial_turns", initialTurnCount),
+		slog.Int("pruned_turns", prunedCount),
+		slog.Int("remaining_turns", keptCount),
+		slog.Any("policy_breakdown", req.Metadata.KeptByPolicy),
+	)
+
+	if t.Events != nil {
+		evt := events.SystemMessageEvent{
+			Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, keptCount),
+			Level:   "info",
+		}
+		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				t.getLogger().Error("event_publish_failed",
+					slog.String("event_type", string(evt.Type())),
+					slog.Any("error", err))
+				return err
 			}
 		}
 	}
-
 	return nil
 }
 

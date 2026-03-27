@@ -195,6 +195,7 @@ type mockLLMClient struct {
 	refreshAuthFn    func() error
 	generateImagesFn func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
 	authRefreshed    int
+	resetCalled      bool // New field
 }
 
 func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -217,6 +218,10 @@ func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string
 		return m.generateImagesFn(ctx, model, prompt, mimeType)
 	}
 	return nil, nil
+}
+
+func (m *mockLLMClient) ResetConnections() {
+	m.resetCalled = true
 }
 
 func TestResilientClient_Generate_RetryAuth(t *testing.T) {
@@ -301,4 +306,51 @@ func TestResilientClient_ErrorDelegation(t *testing.T) {
 			t.Errorf("Expected %v, got %v", mockErr, err)
 		}
 	})
+}
+
+func TestResilientClient_Generate_ResetConnections(t *testing.T) {
+	t.Run("Resets on Rate Limit", func(t *testing.T) {
+		mock := &mockLLMClient{
+			sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+				return nil, nil, llm.ErrRateLimit
+			},
+		}
+		client := NewResilientClient(mock)
+		_, _, _ = client.Generate(context.Background(), nil, nil, nil)
+		if !mock.resetCalled {
+			t.Error("expected ResetConnections to be called on rate limit")
+		}
+	})
+
+	t.Run("Resets on Transient Error", func(t *testing.T) {
+		mock := &mockLLMClient{
+			sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+				return nil, nil, llm.ErrTransient
+			},
+		}
+		client := NewResilientClient(mock)
+		_, _, _ = client.Generate(context.Background(), nil, nil, nil)
+		if !mock.resetCalled {
+			t.Error("expected ResetConnections to be called on transient error")
+		}
+	})
+}
+
+func TestResilientClient_Generate_ResetsOnFinalAttempt(t *testing.T) {
+	var m *mockLLMClient
+	m = &mockLLMClient{
+		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			if m.authRefreshed == 0 {
+				return nil, nil, llm.ErrAuth
+			}
+			return nil, nil, errors.New("persistent failure")
+		},
+	}
+	client := NewResilientClient(m)
+
+	_, _, _ = client.Generate(context.Background(), nil, nil, nil)
+
+	if !m.resetCalled {
+		t.Error("expected ResetConnections to be called on the final attempt (attempt 1) after auth retry")
+	}
 }

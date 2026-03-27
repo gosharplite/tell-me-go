@@ -695,7 +695,8 @@ func (p *recoveryStep) process(ctx context.Context, turn *turn) (processResult, 
 	}
 
 	// State mutation is handled by the workflow engine (caller)
-	if errors.Is(err, llm.ErrRateLimit) {
+	isRateLimit := errors.Is(err, llm.ErrRateLimit)
+	if isRateLimit {
 		turn.State.HasSeenRateLimit = true
 	}
 
@@ -765,41 +766,42 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn) {
 		return
 	}
 
-	toolResponse := turn.State.ToolResponse
+	toolTokens := turn.TokenCounter.Count([]*llm.Content{turn.State.ToolResponse})
+	isTooLarge, instruction := p.checkTokenBudget(turn, toolTokens, limits)
 
-	// Estimate tokens for the new tool response using the decoupled counter
-	toolTokens := turn.TokenCounter.Count([]*llm.Content{toolResponse})
+	if isTooLarge {
+		p.handleOversizedPayload(ctx, turn, toolTokens, instruction)
+	}
+}
 
+func (p *executionStep) checkTokenBudget(turn *turn, toolTokens int, limits events.Limits) (bool, string) {
 	// We use the remaining buffer, accounting for the 10% system reservation
 	maxAllowed := int(float64(limits.MaxHistoryTokens) * 0.90)
 
 	// Cap individual tool response size to 50% of total limit just in case,
 	// AND ensure it doesn't push the total over the cliff.
-	var instruction string
-	isTooLarge := false
-
 	if toolTokens > int(float64(limits.MaxHistoryTokens)*0.50) {
-		isTooLarge = true
-		instruction = "The individual tool output is too massive. You MUST use precise boundaries (e.g., 'tail_lines', 'max_lines', 'limit', or 'grep'). Summarizing history will not fix this."
+		return true, "The individual tool output is too massive. You MUST use precise boundaries (e.g., 'tail_lines', 'max_lines', 'limit', or 'grep'). Summarizing history will not fix this."
 	} else if turn.State.Tokens+toolTokens > maxAllowed {
-		isTooLarge = true
-		instruction = "The total conversation context is nearly exhausted. Please call 'summarize_history' first to free up space, then run the tool again."
+		return true, "The total conversation context is nearly exhausted. Please call 'summarize_history' first to free up space, then run the tool again."
 	}
 
-	if isTooLarge {
-		// Delegate mutation to the utility with context-aware instruction
-		truncateOversizedResponse(toolResponse, toolTokens, instruction)
+	return false, ""
+}
 
-		evt := events.SystemMessageEvent{
-			Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
-			Level:   "error",
-		}
-		if err := events.SafePublish(ctx, turn.Events, evt); err != nil {
-			if !errors.Is(err, events.ErrBusNotInitialized) {
-				turn.getLogger().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
-			}
+func (p *executionStep) handleOversizedPayload(ctx context.Context, turn *turn, toolTokens int, instruction string) {
+	// Delegate mutation to the utility with context-aware instruction
+	truncateOversizedResponse(turn.State.ToolResponse, toolTokens, instruction)
+
+	evt := events.SystemMessageEvent{
+		Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
+		Level:   "error",
+	}
+	if err := events.SafePublish(ctx, turn.Events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			turn.getLogger().Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
 		}
 	}
 }

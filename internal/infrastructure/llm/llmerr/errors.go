@@ -16,7 +16,7 @@ import (
 
 var (
 	reRateLimit = regexp.MustCompile(`(?i)(HTTP 429|STATUS: 429|RATE_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|QUOTA|RESOURCE EXHAUSTED)`)
-	reTransient = regexp.MustCompile(`(?i)(HTTP 50[0234]|STATUS: 50[0234]|INTERNAL_SERVER_ERROR|INTERNAL SERVER ERROR|BAD_GATEWAY|BAD GATEWAY|SERVICE_UNAVAILABLE|SERVICE UNAVAILABLE|GATEWAY_TIMEOUT|GATEWAY TIMEOUT|DEADLINE_EXCEEDED|UNAVAILABLE|(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[_ ]TIMEOUT)`)
+	reTransient = regexp.MustCompile(`(?i)(HTTP 50[0234]|STATUS: 50[0234]|HTTP 499|STATUS: 499|CANCELLED|INTERNAL_SERVER_ERROR|INTERNAL SERVER ERROR|BAD_GATEWAY|BAD GATEWAY|SERVICE_UNAVAILABLE|SERVICE UNAVAILABLE|GATEWAY_TIMEOUT|GATEWAY TIMEOUT|DEADLINE_EXCEEDED|UNAVAILABLE|(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[_ ]TIMEOUT)`)
 )
 
 // APIError represents an error returned by an LLM provider's API.
@@ -79,7 +79,7 @@ func classifyGRPC(err error) (error, bool) {
 		case codes.ResourceExhausted:
 			// gRPC ResourceExhausted is often a rate limit in LLM providers
 			return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
-		case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
+		case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted, codes.Canceled:
 			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
 		case codes.PermissionDenied, codes.InvalidArgument:
 			return fmt.Errorf("%w: %w", llm.ErrTerminal, err), true
@@ -97,6 +97,8 @@ func classifyHTTP(err error) (error, bool) {
 			return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
 		case status == 429:
 			return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
+		case status == 499:
+			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
 		case status >= 500:
 			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
 		case status >= 400 && status < 500:

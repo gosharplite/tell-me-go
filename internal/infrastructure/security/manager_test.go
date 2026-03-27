@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 func TestSecurityManager_Bypass(t *testing.T) {
@@ -102,6 +104,14 @@ func TestSecurityManager_Authorize(t *testing.T) {
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
 	if err != nil || ok {
 		t.Errorf("Authorize(user=n) = %v, %v; want false, nil", ok, err)
+	}
+
+	// 5. Authorize with context-based approval
+	ctxApproved := domain.WithApprovedTools(context.Background(), []string{"test_tool"})
+	ctxApproved = domain.WithCurrentTool(ctxApproved, "test_tool")
+	ok, err = sm.Authorize(ctxApproved, "label", "detail", "reason", false)
+	if err != nil || !ok {
+		t.Errorf("Authorize(ctx_approved=true) = %v, %v; want true, nil", ok, err)
 	}
 }
 
@@ -208,5 +218,14 @@ func TestSecurityManager_Confirm_Bypass(t *testing.T) {
 	// Verify that a warning was captured
 	if len(interactor.Warns) == 0 || !strings.Contains(interactor.Warns[0], "[Auto-Approved]") {
 		t.Errorf("Expected auto-approval warning, got: %v", interactor.Warns)
+	}
+
+	// Context approved - should be auto-approved even if bypass is inactive and interactor would say No
+	sm.SetBypassActive(false)
+	ctxApproved := domain.WithApprovedTools(context.Background(), []string{"test_tool"})
+	ctxApproved = domain.WithCurrentTool(ctxApproved, "test_tool")
+	ok, err = sm.Confirm(ctxApproved, "Should I?")
+	if err != nil || !ok {
+		t.Errorf("Confirm(user=n, ctx_approved=true) = %v, %v; want true, nil", ok, err)
 	}
 }

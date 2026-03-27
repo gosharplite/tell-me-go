@@ -146,7 +146,7 @@ func TestPromptCapturer_CapturePrompt_TUI(t *testing.T) {
 			capturer := NewPromptCapturer(
 				base,
 				svc,
-				WithProgramOptions(
+				withProgramOptions(
 					tea.WithInput(&in),
 					tea.WithOutput(io.Discard),
 				),

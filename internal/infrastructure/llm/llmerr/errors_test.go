@@ -66,6 +66,11 @@ func TestClassify(t *testing.T) {
 			expectedWrap: llm.ErrTransient,
 		},
 		{
+			name:         "HTTP 499 via APIError",
+			input:        &APIError{Status: 499, Body: "Client Closed Request"},
+			expectedWrap: llm.ErrTransient,
+		},
+		{
 			name:         "HTTP 400 via APIError",
 			input:        &APIError{Status: 400, Body: "Bad Request"},
 			expectedWrap: llm.ErrTerminal,
@@ -93,6 +98,11 @@ func TestClassify(t *testing.T) {
 		{
 			name:         "gRPC Aborted",
 			input:        status.Error(codes.Aborted, "conflict"),
+			expectedWrap: llm.ErrTransient,
+		},
+		{
+			name:         "gRPC Canceled",
+			input:        status.Error(codes.Canceled, "operation cancelled"),
 			expectedWrap: llm.ErrTransient,
 		},
 		{
@@ -140,6 +150,12 @@ func TestClassify(t *testing.T) {
 			input:         errors.New("Error 504, Message: Deadline expired before operation could complete., Status: DEADLINE_EXCEEDED, Details: []"),
 			expectedWrap:  llm.ErrTransient,
 			containsMatch: "504",
+		},
+		{
+			name:          "String matching 499 and CANCELLED",
+			input:         errors.New("Error 499, Message: The operation was cancelled., Status: CANCELLED"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "CANCELLED",
 		},
 		{
 			name:          "String matching UNAVAILABLE",

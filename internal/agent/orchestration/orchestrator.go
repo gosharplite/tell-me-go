@@ -272,10 +272,37 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
-		b.mu.Lock()
-		b.isRendering = false
-		b.mu.Unlock()
-		b.renderer.LogTurnStatus(ev.Status)
+		b.handleTurnStatus(ev)
+	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent:
+		b.handleSpinnerEvent(ev)
+	case events.ResponseEvent:
+		b.handleResponse(ev)
+	case events.UsageMetricsEvent:
+		b.handleUsageMetrics(ev)
+	case events.ToolCallEvent, events.ToolResultEvent:
+		b.handleToolEvents(ev)
+	case events.TurnStarted:
+		b.handleTurnStarted()
+	case events.SystemMessageEvent, events.StatusUpdate:
+		b.handleSystemMessage(ev)
+	}
+}
+
+func (b *uiBridge) handleSystemMessage(e events.Event) {
+	var msg, lvl string
+	switch ev := e.(type) {
+	case events.SystemMessageEvent:
+		msg, lvl = ev.Message, ev.Level
+	case events.StatusUpdate:
+		msg, lvl = ev.Message, ev.Level
+	default:
+		return
+	}
+	b.renderer.LogSystemMessage(msg, lvl)
+}
+
+func (b *uiBridge) handleSpinnerEvent(e events.Event) {
+	switch e.(type) {
 	case events.InferenceStartedEvent:
 		b.transitionSpinner(func() func() {
 			return b.renderer.StartSpinner(b.ctx)
@@ -294,41 +321,52 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 		b.transitionSpinner(func() func() {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
 		})
-	case events.ResponseEvent:
-		b.mu.Lock()
-		b.isRendering = true
-		stop := b.stopSpinner
-		b.stopSpinner = nil
-		b.mu.Unlock()
+	}
+}
 
-		if stop != nil {
-			stop()
-		}
-		b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
-	case events.UsageMetricsEvent:
-		ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		b.renderer.LogUsage(ctx, ev.Metrics, b.logFile, ev.StartTime)
+func (b *uiBridge) handleTurnStatus(ev events.TurnStatusEvent) {
+	b.mu.Lock()
+	b.isRendering = false
+	b.mu.Unlock()
+	b.renderer.LogTurnStatus(ev.Status)
+}
+
+func (b *uiBridge) handleResponse(ev events.ResponseEvent) {
+	b.mu.Lock()
+	b.isRendering = true
+	stop := b.stopSpinner
+	b.stopSpinner = nil
+	b.mu.Unlock()
+
+	if stop != nil {
+		stop()
+	}
+	b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
+}
+
+func (b *uiBridge) handleUsageMetrics(ev events.UsageMetricsEvent) {
+	ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
+	b.renderer.LogUsage(ctx, ev.Metrics, b.logFile, ev.StartTime)
+}
+
+func (b *uiBridge) handleToolEvents(e events.Event) {
+	switch ev := e.(type) {
 	case events.ToolCallEvent:
 		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
 	case events.ToolResultEvent:
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
-	case events.TurnStarted:
-		b.mu.Lock()
-		stop := b.stopSpinner
-		b.stopSpinner = nil
-		b.isRendering = false
-		b.mu.Unlock()
+	}
+}
 
-		if stop != nil {
-			stop()
-		}
-	case events.SystemMessageEvent:
-		b.renderer.LogSystemMessage(ev.Message, ev.Level)
-	case events.StatusUpdate:
-		b.renderer.LogSystemMessage(ev.Message, ev.Level)
+func (b *uiBridge) handleTurnStarted() {
+	b.mu.Lock()
+	stop := b.stopSpinner
+	b.stopSpinner = nil
+	b.isRendering = false
+	b.mu.Unlock()
+
+	if stop != nil {
+		stop()
 	}
 }
 
