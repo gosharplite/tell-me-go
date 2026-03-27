@@ -15,8 +15,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// PromptEntry represents a single entry in the global prompt log.
-type PromptEntry struct {
+// promptEntry represents a single entry in the global prompt log.
+type promptEntry struct {
 	Timestamp string `json:"timestamp"`
 	Prompt    string `json:"prompt"`
 }
@@ -42,7 +42,7 @@ func (t *globalPromptTracker) Append(prompt string) error {
 		return nil
 	}
 
-	entry := PromptEntry{
+	entry := promptEntry{
 		Timestamp: time.Now().Format(time.RFC3339),
 		Prompt:    prompt,
 	}
@@ -132,7 +132,7 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 				continue
 			}
 
-			var entry PromptEntry
+			var entry promptEntry
 			if err := json.Unmarshal(lines[i], &entry); err == nil {
 				p := entry.Prompt
 				if p != "" && !seen[p] {

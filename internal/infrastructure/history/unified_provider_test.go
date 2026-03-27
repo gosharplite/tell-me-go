@@ -12,28 +12,28 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// MockHistoryManager implements ports.HistoryManager for testing.
-type MockHistoryManager struct {
+// mockHistoryManager implements ports.HistoryManager for testing.
+type mockHistoryManager struct {
 	ports.HistoryManager
 	GetWindowFunc func(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error)
 }
 
-func (m *MockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 	return m.GetWindowFunc(ctx, startIdx, endIdx)
 }
 
-// MockArchiveReader implements ports.ArchiveReader for testing.
-type MockArchiveReader struct {
+// mockArchiveReader implements ports.ArchiveReader for testing.
+type mockArchiveReader struct {
 	ports.ArchiveReader
 	ReadPageFunc     func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
 	ReadPreviousFunc func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
 }
 
-func (m *MockArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+func (m *mockArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	return m.ReadPageFunc(ctx, limit, offset)
 }
 
-func (m *MockArchiveReader) ReadPrevious(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+func (m *mockArchiveReader) ReadPrevious(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	return m.ReadPreviousFunc(ctx, limit, offset)
 }
 
@@ -119,12 +119,12 @@ func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockActive := &MockHistoryManager{
+			mockActive := &mockHistoryManager{
 				GetWindowFunc: func(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 					return tt.activeHist, nil
 				},
 			}
-			mockArchive := &MockArchiveReader{
+			mockArchive := &mockArchiveReader{
 				ReadPreviousFunc: func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 					return tt.archived, tt.nextOffset, nil
 				},
@@ -152,8 +152,8 @@ func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
 
 func TestUnifiedProvider_ToDTO_ExtraCases(t *testing.T) {
 	// Testing parts like thoughts and tool calls which weren't fully covered in the main test.
-	mockActive := &MockHistoryManager{}
-	mockArchive := &MockArchiveReader{}
+	mockActive := &mockHistoryManager{}
+	mockArchive := &mockArchiveReader{}
 	p := NewUnifiedProvider(mockArchive, mockActive)
 
 	c := &llm.Content{
