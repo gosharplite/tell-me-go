@@ -38,13 +38,16 @@ func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int
 func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
 	ctx := context.Background()
 
-	// 1. Mock Active History (with an auto-summary message)
+	// 1. Mock Active History (with auto-summary messages)
 	active := &mockHistoryManager{
 		getWindowFunc: func(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 			return []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "Hello world"}}},
-				{Role: "system", Parts: []*llm.Part{{Text: "System Auto-Summary: blablabla"}}},
-				{Role: "assistant", Parts: []*llm.Part{{Text: "Understood"}}},
+				// The TokenGatekeeper injects a user-role summary
+				{Role: "user", Parts: []*llm.Part{{Text: "System Auto-Summary (context limit reached):\n\nKey points..."}}},
+				// Followed by a model acknowledgement
+				{Role: "model", Parts: []*llm.Part{{Text: "Understood. Context compressed."}}},
+				{Role: "assistant", Parts: []*llm.Part{{Text: "How can I help you?"}}},
 			}, nil
 		},
 	}
@@ -67,13 +70,17 @@ func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
 			t.Fatalf("failed to get history stream: %v", err)
 		}
 
+		// Expected: "Hello world" and "How can I help you?"
 		if len(dtos) != 2 {
-			t.Fatalf("expected 2 DTOs (auto-summary should be filtered), got %d", len(dtos))
+			t.Fatalf("expected 2 DTOs (auto-summary and model acknowledgment should be filtered), got %d", len(dtos))
 		}
 
 		for _, dto := range dtos {
-			if strings.Contains(dto.ContentPreview, "System Auto-Summary:") {
-				t.Errorf("found filtered content in DTO: %s", dto.ContentPreview)
+			if strings.Contains(dto.ContentPreview, "System Auto-Summary") {
+				t.Errorf("found summary content in DTO: %s", dto.ContentPreview)
+			}
+			if dto.ContentPreview == "Understood. Context compressed." {
+				t.Errorf("found model acknowledgment in DTO: %s", dto.ContentPreview)
 			}
 		}
 

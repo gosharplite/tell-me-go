@@ -87,11 +87,9 @@ func (p *unifiedProvider) GetHistoryStream(ctx context.Context, limit int, curso
 }
 
 func (p *unifiedProvider) isAutoSummary(c *llm.Content) bool {
-	if c.Role != "system" {
-		return false
-	}
 	for _, part := range c.Parts {
-		if strings.Contains(part.Text, "System Auto-Summary:") {
+		// Filter both the injected summary block and the agent's synthetic acknowledgment
+		if strings.Contains(part.Text, "System Auto-Summary") || part.Text == "Understood. Context compressed." {
 			return true
 		}
 	}

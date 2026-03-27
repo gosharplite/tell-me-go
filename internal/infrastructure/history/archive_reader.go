@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -66,13 +67,9 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 	// If offset is -1 or greater than file size, we start from the last line.
 	targetIdx := len(r.index)
 	if offset != -1 {
-		// Use binary search if index is large, but for now we find it
-		for i, off := range r.index {
-			if off >= offset {
-				targetIdx = i
-				break
-			}
-		}
+		targetIdx = sort.Search(len(r.index), func(i int) bool {
+			return r.index[i] >= offset
+		})
 	}
 
 	if targetIdx == 0 {
