@@ -273,12 +273,8 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
-	case events.InferenceStartedEvent:
-		b.handleInferenceStarted()
-	case events.RefiningStartedEvent:
-		b.handleRefiningStarted()
-	case events.SummarizationStartedEvent:
-		b.handleSummarizationStarted()
+	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent:
+		b.handleSpinnerEvent(ev)
 	case events.ResponseEvent:
 		b.handleResponse(ev)
 	case events.UsageMetricsEvent:
@@ -287,10 +283,44 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 		b.handleToolEvents(ev)
 	case events.TurnStarted:
 		b.handleTurnStarted()
+	case events.SystemMessageEvent, events.StatusUpdate:
+		b.handleSystemMessage(ev)
+	}
+}
+
+func (b *uiBridge) handleSystemMessage(e events.Event) {
+	var msg, lvl string
+	switch ev := e.(type) {
 	case events.SystemMessageEvent:
-		b.renderer.LogSystemMessage(ev.Message, ev.Level)
+		msg, lvl = ev.Message, ev.Level
 	case events.StatusUpdate:
-		b.renderer.LogSystemMessage(ev.Message, ev.Level)
+		msg, lvl = ev.Message, ev.Level
+	default:
+		return
+	}
+	b.renderer.LogSystemMessage(msg, lvl)
+}
+
+func (b *uiBridge) handleSpinnerEvent(e events.Event) {
+	switch e.(type) {
+	case events.InferenceStartedEvent:
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinner(b.ctx)
+		})
+	case events.RefiningStartedEvent:
+		b.mu.Lock()
+		b.isRendering = false // Reset state for the new retry cycle
+		b.mu.Unlock()
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
+		})
+	case events.SummarizationStartedEvent:
+		b.mu.Lock()
+		b.isRendering = false
+		b.mu.Unlock()
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
+		})
 	}
 }
 
@@ -299,30 +329,6 @@ func (b *uiBridge) handleTurnStatus(ev events.TurnStatusEvent) {
 	b.isRendering = false
 	b.mu.Unlock()
 	b.renderer.LogTurnStatus(ev.Status)
-}
-
-func (b *uiBridge) handleInferenceStarted() {
-	b.transitionSpinner(func() func() {
-		return b.renderer.StartSpinner(b.ctx)
-	})
-}
-
-func (b *uiBridge) handleRefiningStarted() {
-	b.mu.Lock()
-	b.isRendering = false // Reset state for the new retry cycle
-	b.mu.Unlock()
-	b.transitionSpinner(func() func() {
-		return b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
-	})
-}
-
-func (b *uiBridge) handleSummarizationStarted() {
-	b.mu.Lock()
-	b.isRendering = false
-	b.mu.Unlock()
-	b.transitionSpinner(func() func() {
-		return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
-	})
 }
 
 func (b *uiBridge) handleResponse(ev events.ResponseEvent) {

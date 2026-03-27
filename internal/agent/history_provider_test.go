@@ -35,9 +35,7 @@ func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int
 	return m.getWindowFunc(ctx, startIdx, endIdx)
 }
 
-func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
-	ctx := context.Background()
-
+func setupUnifiedProviderMocks() (*mockArchiveReader, *mockHistoryManager) {
 	// 1. Mock Active History (with auto-summary messages)
 	active := &mockHistoryManager{
 		getWindowFunc: func(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
@@ -62,59 +60,74 @@ func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
 		},
 	}
 
+	return archive, active
+}
+
+func testAutoSummaryFiltering(t *testing.T, provider ports.UnifiedHistoryProvider) {
+	ctx := context.Background()
+	dtos, nextCursor, err := provider.GetHistoryStream(ctx, 10, "")
+	if err != nil {
+		t.Fatalf("failed to get history stream: %v", err)
+	}
+
+	// Expected: "Hello world" and "How can I help you?"
+	if len(dtos) != 2 {
+		t.Fatalf("expected 2 DTOs (auto-summary and model acknowledgment should be filtered), got %d", len(dtos))
+	}
+
+	for _, dto := range dtos {
+		if strings.Contains(dto.ContentPreview, "System Auto-Summary") {
+			t.Errorf("found summary content in DTO: %s", dto.ContentPreview)
+		}
+		if dto.ContentPreview == "Understood. Context compressed." {
+			t.Errorf("found model acknowledgment in DTO: %s", dto.ContentPreview)
+		}
+	}
+
+	if nextCursor != "archive:-1" {
+		t.Errorf("expected archive:-1 cursor, got %s", nextCursor)
+	}
+}
+
+func testArchivePagination(t *testing.T, provider ports.UnifiedHistoryProvider, archive *mockArchiveReader) {
+	ctx := context.Background()
+	// Note: we use ReadPrevious now.
+	archiveCalled := false
+	archive.readPreviousFunc = func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+		if offset != 123 {
+			t.Errorf("expected offset 123, got %d", offset)
+		}
+		archiveCalled = true
+		return []ports.HistoryViewDTO{{ContentPreview: "Archived content"}}, 100, nil
+	}
+
+	dtos, nextCursor, err := provider.GetHistoryStream(ctx, 10, "archive:123")
+	if err != nil {
+		t.Fatalf("failed to get archive page: %v", err)
+	}
+
+	if !archiveCalled {
+		t.Error("archive reader was not called")
+	}
+
+	if len(dtos) != 1 || dtos[0].ContentPreview != "Archived content" {
+		t.Errorf("unexpected archive content: %+v", dtos)
+	}
+
+	if nextCursor != "archive:100" {
+		t.Errorf("expected archive:100 cursor, got %s", nextCursor)
+	}
+}
+
+func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
+	archive, active := setupUnifiedProviderMocks()
 	provider := history.NewUnifiedProvider(archive, active)
 
 	t.Run("it filters out auto-summary messages from active history", func(t *testing.T) {
-		dtos, nextCursor, err := provider.GetHistoryStream(ctx, 10, "")
-		if err != nil {
-			t.Fatalf("failed to get history stream: %v", err)
-		}
-
-		// Expected: "Hello world" and "How can I help you?"
-		if len(dtos) != 2 {
-			t.Fatalf("expected 2 DTOs (auto-summary and model acknowledgment should be filtered), got %d", len(dtos))
-		}
-
-		for _, dto := range dtos {
-			if strings.Contains(dto.ContentPreview, "System Auto-Summary") {
-				t.Errorf("found summary content in DTO: %s", dto.ContentPreview)
-			}
-			if dto.ContentPreview == "Understood. Context compressed." {
-				t.Errorf("found model acknowledgment in DTO: %s", dto.ContentPreview)
-			}
-		}
-
-		if nextCursor != "archive:-1" {
-			t.Errorf("expected archive:-1 cursor, got %s", nextCursor)
-		}
+		testAutoSummaryFiltering(t, provider)
 	})
 
 	t.Run("it paginates archive when using archive: prefix", func(t *testing.T) {
-		// Note: we use ReadPrevious now.
-		archiveCalled := false
-		archive.readPreviousFunc = func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
-			if offset != 123 {
-				t.Errorf("expected offset 123, got %d", offset)
-			}
-			archiveCalled = true
-			return []ports.HistoryViewDTO{{ContentPreview: "Archived content"}}, 100, nil
-		}
-
-		dtos, nextCursor, err := provider.GetHistoryStream(ctx, 10, "archive:123")
-		if err != nil {
-			t.Fatalf("failed to get archive page: %v", err)
-		}
-
-		if !archiveCalled {
-			t.Error("archive reader was not called")
-		}
-
-		if len(dtos) != 1 || dtos[0].ContentPreview != "Archived content" {
-			t.Errorf("unexpected archive content: %+v", dtos)
-		}
-
-		if nextCursor != "archive:100" {
-			t.Errorf("expected archive:100 cursor, got %s", nextCursor)
-		}
+		testArchivePagination(t, provider, archive)
 	})
 }
