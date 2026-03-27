@@ -306,3 +306,54 @@ func TestModel_TeaInterface(t *testing.T) {
 	_, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
 	_ = m.View()
 }
+
+func TestModel_Update_TokenAwareAutocomplete(t *testing.T) {
+	tests := []struct {
+		name         string
+		initialInput string
+		suggestions  []string
+		wantValue    string
+	}{
+		{
+			name:         "replace only last word with file path",
+			initialInput: "What is the content of ./f",
+			suggestions:  []string{"./foo.txt"},
+			wantValue:    "What is the content of ./foo.txt",
+		},
+		{
+			name:         "replace entire line when suggestion contains space",
+			initialInput: "How do",
+			suggestions:  []string{"How do I reverse a string?"},
+			wantValue:    "How do I reverse a string?",
+		},
+		{
+			name:         "replace entire line when input has no space",
+			initialInput: "./f",
+			suggestions:  []string{"./foo.txt"},
+			wantValue:    "./foo.txt",
+		},
+		{
+			name:         "replace only last word even if input has many spaces",
+			initialInput: "cat /etc/p",
+			suggestions:  []string{"/etc/passwd"},
+			wantValue:    "cat /etc/passwd",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+			defer m.Destroy()
+			m.input.SetValue(tt.initialInput)
+			m.suggester.Suggestions = tt.suggestions
+			m.suggester.Index = -1 // No selection initially
+
+			// Trigger Tab
+			m.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+			if m.input.Value() != tt.wantValue {
+				t.Errorf("got input value %q; want %q", m.input.Value(), tt.wantValue)
+			}
+		})
+	}
+}

@@ -135,8 +135,19 @@ func (m *promptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				selected := m.suggester.GetSelected()
 				if selected != "" {
-					m.input.SetValue(selected)
-					m.input.Model.SetCursor(len(selected))
+					currentVal := m.input.Value()
+					lastSpaceIdx := strings.LastIndex(currentVal, " ")
+
+					// Heuristic: If input has multiple words AND suggestion is a single token (like a file path),
+					// replace only the last token. Otherwise, replace the entire line.
+					if lastSpaceIdx != -1 && !strings.Contains(selected, " ") {
+						preservedContext := currentVal[:lastSpaceIdx+1]
+						m.input.SetValue(preservedContext + selected)
+					} else {
+						m.input.SetValue(selected)
+					}
+
+					m.input.Model.SetCursor(len(m.input.Value()))
 				}
 				return m, nil
 			}

@@ -467,3 +467,58 @@ func TestScanFiles_RespectsCancellationBetweenChunks(t *testing.T) {
 		t.Errorf("expected ReadDir to be called exactly once, but it was called %d times", calledCount)
 	}
 }
+
+func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
+	tracker := &mockPromptTracker{}
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+
+	// 1. Record multiple prompts
+	prompts := []string{"p1", "p2", "p3"}
+	for _, p := range prompts {
+		_ = service.RecordPrompt(p)
+	}
+
+	// 2. Check MRU order (newest first)
+	got, _ := service.GetSuggestions(context.Background(), "")
+	expected := []string{"p3", "p2", "p1"}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 suggestions, got %d: %v", len(got), got)
+	}
+	for i, v := range got {
+		if v != expected[i] {
+			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
+		}
+	}
+
+	// 3. Re-record an existing prompt (should move to top)
+	_ = service.RecordPrompt("p1")
+	got, _ = service.GetSuggestions(context.Background(), "")
+	expected = []string{"p1", "p3", "p2"}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 suggestions, got %d: %v", len(got), got)
+	}
+	for i, v := range got {
+		if v != expected[i] {
+			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
+		}
+	}
+
+	// 4. Test bounded capacity
+	for i := 0; i < 150; i++ {
+		_ = service.RecordPrompt(fmt.Sprintf("bulk-%d", i))
+	}
+	got, _ = service.GetSuggestions(context.Background(), "")
+	// Should only have 5 (UI limit) but the underlying history should be limited to 100
+	if len(got) != 5 {
+		t.Errorf("expected 5 suggestions (UI limit), got %d", len(got))
+	}
+	
+	// Access the underlying history to check the 100 limit
+	history := service.(*multiSourceSuggestionService).history
+	if len(history) != 100 {
+		t.Errorf("expected history to be limited to 100, got %d", len(history))
+	}
+	if history[0] != "bulk-149" {
+		t.Errorf("expected newest item at index 0, got %q", history[0])
+	}
+}

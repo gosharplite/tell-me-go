@@ -107,16 +107,22 @@ func (s *multiSourceSuggestionService) RecordPrompt(prompt string) error {
 
 	// 1. Immediate in-memory update
 	s.historyMu.Lock()
-	found := false
+	var updated []string
+	updated = append(updated, prompt) // Prepend: Index 0 is the newest
+
 	for _, h := range s.history {
-		if h == prompt {
-			found = true
-			break
+		if h != prompt {
+			updated = append(updated, h)
 		}
 	}
-	if !found {
-		s.history = append(s.history, prompt)
+
+	// Scalability: Prevent unbounded memory growth over long sessions
+	const maxHistory = 100
+	if len(updated) > maxHistory {
+		updated = updated[:maxHistory]
 	}
+
+	s.history = updated
 	s.historyMu.Unlock()
 
 	// 2. Synchronous persistent update
