@@ -56,6 +56,13 @@ func NewModel(svc ports.SuggestionService) *Model {
 	}
 }
 
+// Destroy cleans up the model's resources, specifically cancelling any background context.
+func (m *Model) Destroy() {
+	if m.cancel != nil {
+		m.cancel()
+	}
+}
+
 // Init initializes the TUI prompt and triggers initial suggestions.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(

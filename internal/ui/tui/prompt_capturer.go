@@ -64,6 +64,7 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 
 	// Initialize TUI Model
 	model := prompt.NewModel(c.svc)
+	defer model.Destroy()
 
 	// Initialize background logger for TUI
 	if closer, err := InitLogger(); err == nil {

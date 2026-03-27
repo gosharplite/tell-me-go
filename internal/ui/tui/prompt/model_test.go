@@ -128,6 +128,7 @@ func TestModel_Update(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewModel(&mockSuggestionSvc{})
+			defer m.Destroy()
 			if tt.initialInput != "" {
 				m.input.SetValue(tt.initialInput)
 			}
@@ -173,6 +174,7 @@ func TestModel_Update(t *testing.T) {
 func TestModel_View(t *testing.T) {
 	svc := &mockSuggestionSvc{}
 	m := NewModel(svc)
+	defer m.Destroy()
 
 	view := m.View()
 	if view == "" {
@@ -260,6 +262,7 @@ func TestSuggester_Empty(t *testing.T) {
 func TestModel_GetSuggestions_FilterLines(t *testing.T) {
 	svc := &mockSuggestionSvcMultiLine{}
 	m := NewModel(svc)
+	defer m.Destroy()
 
 	cmd := m.getSuggestions(context.Background(), "")
 	msg := cmd()
