@@ -293,3 +293,15 @@ func (m *mockSuggestionSvcMultiLine) GetSuggestions(ctx context.Context, prefix 
 func (m *mockSuggestionSvcMultiLine) RecordPrompt(prompt string) error {
 	return nil
 }
+
+func TestModel_TeaInterface(t *testing.T) {
+	// Silence dead_code_graph false positives for tea.Model implementations
+	m := NewModel(&mockSuggestionSvc{})
+	defer m.Destroy()
+
+	// These methods are called dynamically by Bubble Tea, so we explicitly
+	// reference them here to satisfy static analysis AST reference counting.
+	_ = m.Init()
+	_, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
+	_ = m.View()
+}

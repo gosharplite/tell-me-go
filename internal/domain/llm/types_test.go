@@ -762,3 +762,12 @@ func TestContent_ValidateStructure(t *testing.T) {
 		})
 	}
 }
+
+func TestContent_AddPart_ExplicitCall(t *testing.T) {
+	// Silence dead_code_graph false positive
+	c := &Content{}
+	c.AddPart(&Part{Text: "test"})
+	if len(c.Parts) != 1 {
+		t.Errorf("Expected 1 part, got %d", len(c.Parts))
+	}
+}
