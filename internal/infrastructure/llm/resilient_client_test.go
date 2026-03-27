@@ -195,6 +195,7 @@ type mockLLMClient struct {
 	refreshAuthFn    func() error
 	generateImagesFn func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
 	authRefreshed    int
+	resetCalled      bool // New field
 }
 
 func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -219,7 +220,9 @@ func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string
 	return nil, nil
 }
 
-func (m *mockLLMClient) ResetConnections() {}
+func (m *mockLLMClient) ResetConnections() {
+	m.resetCalled = true
+}
 
 func TestResilientClient_Generate_RetryAuth(t *testing.T) {
 	var mock *mockLLMClient
@@ -303,4 +306,17 @@ func TestResilientClient_ErrorDelegation(t *testing.T) {
 			t.Errorf("Expected %v, got %v", mockErr, err)
 		}
 	})
+}
+
+func TestResilientClient_ResetConnections(t *testing.T) {
+	mock := &mockLLMClient{}
+	client := NewResilientClient(mock)
+
+	// Call the wrapper method
+	client.ResetConnections()
+
+	// Verify that the call was delegated to the inner mock client
+	if !mock.resetCalled {
+		t.Error("expected ResetConnections to be delegated to the underlying client")
+	}
 }
