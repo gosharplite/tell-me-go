@@ -134,21 +134,27 @@ func (r *jsonlArchiveReader) buildIndex(ctx context.Context) error {
 	reader := bufio.NewReader(file)
 	for {
 		index = append(index, offset)
-		line, err := reader.ReadBytes('\n')
-		offset += int64(len(line))
-		if err != nil {
-			if err == io.EOF {
-				// The last line (if it doesn't end in \n) might have been counted
-				// but let's see. ReadBytes returns the data and EOF if it reaches EOF.
-				if len(line) == 0 {
-					index = index[:len(index)-1]
+		for {
+			line, err := reader.ReadSlice('\n')
+			offset += int64(len(line))
+			if err != nil {
+				if err == bufio.ErrBufferFull {
+					// Line exceeds buffer; we still counted the chunk length correctly.
+					// Just clear the error and continue to read the rest of the line.
+					continue
 				}
-				break
+				if err == io.EOF {
+					if len(line) == 0 {
+						index = index[:len(index)-1]
+					}
+					goto done
+				}
+				return fmt.Errorf("read during indexing: %w", err)
 			}
-			return fmt.Errorf("read during indexing: %w", err)
+			break
 		}
 	}
-
+done:
 	r.index = index
 	return nil
 }
