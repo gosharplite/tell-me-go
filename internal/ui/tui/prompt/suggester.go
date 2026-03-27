@@ -23,20 +23,20 @@ var (
 			Foreground(lipgloss.Color("245"))
 )
 
-// Suggester renders a list of suggestions and highlights the currently selected one.
-type Suggester struct {
+// suggester renders a list of suggestions and highlights the currently selected one.
+type suggester struct {
 	Suggestions []string
 	Index       int
 }
 
 // Update sets the current suggestions and index.
-func (s *Suggester) Update(suggestions []string, index int) {
+func (s *suggester) Update(suggestions []string, index int) {
 	s.Suggestions = suggestions
 	s.Index = index
 }
 
 // Next cycles to the next suggestion.
-func (s *Suggester) Next() {
+func (s *suggester) Next() {
 	if len(s.Suggestions) == 0 {
 		return
 	}
@@ -44,7 +44,7 @@ func (s *Suggester) Next() {
 }
 
 // Prev cycles to the previous suggestion.
-func (s *Suggester) Prev() {
+func (s *suggester) Prev() {
 	if len(s.Suggestions) == 0 {
 		return
 	}
@@ -52,7 +52,7 @@ func (s *Suggester) Prev() {
 }
 
 // GetSelected returns the currently selected suggestion or empty string.
-func (s Suggester) GetSelected() string {
+func (s suggester) GetSelected() string {
 	if len(s.Suggestions) == 0 || s.Index < 0 || s.Index >= len(s.Suggestions) {
 		return ""
 	}
@@ -60,7 +60,7 @@ func (s Suggester) GetSelected() string {
 }
 
 // View renders the suggestion list.
-func (s Suggester) View() string {
+func (s suggester) View() string {
 	if len(s.Suggestions) == 0 {
 		return ""
 	}

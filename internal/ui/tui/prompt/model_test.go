@@ -120,7 +120,7 @@ func TestModel_Update(t *testing.T) {
 		{
 			name:       "Suggestions message",
 			initialIdx: -1,
-			msg:        SuggestionsMsg([]string{"foo", "bar"}),
+			msg:        suggestionsMsg([]string{"foo", "bar"}),
 			wantIdx:    -1,
 		},
 	}
@@ -162,7 +162,7 @@ func TestModel_Update(t *testing.T) {
 					t.Errorf("expected width to change from default 80 for WindowSizeMsg %v", ws)
 				}
 			}
-			if sm, ok := tt.msg.(SuggestionsMsg); ok {
+			if sm, ok := tt.msg.(suggestionsMsg); ok {
 				if len(m.suggester.Suggestions) != len(sm) {
 					t.Errorf("got %d suggestions, want %d", len(m.suggester.Suggestions), len(sm))
 				}
@@ -201,7 +201,7 @@ func TestModel_FinalPrompt(t *testing.T) {
 }
 
 func TestSuggester(t *testing.T) {
-	s := &Suggester{}
+	s := &suggester{}
 	s.Update([]string{"a", "b"}, -1)
 	if len(s.Suggestions) != 2 {
 		t.Error("expected 2 suggestions")
@@ -237,7 +237,7 @@ func TestSuggester(t *testing.T) {
 }
 
 func TestTextArea(t *testing.T) {
-	ta := NewTextArea()
+	ta := newTextArea()
 	ta.SetValue("test")
 	if ta.Value() != "test" {
 		t.Errorf("expected 'test', got %q", ta.Value())
@@ -248,7 +248,7 @@ func TestTextArea(t *testing.T) {
 }
 
 func TestSuggester_Empty(t *testing.T) {
-	s := &Suggester{}
+	s := &suggester{}
 	s.Next()
 	s.Prev()
 	if s.GetSelected() != "" {
@@ -267,9 +267,9 @@ func TestModel_GetSuggestions_FilterLines(t *testing.T) {
 	cmd := m.getSuggestions(context.Background(), "")
 	msg := cmd()
 
-	suggMsg, ok := msg.(SuggestionsMsg)
+	suggMsg, ok := msg.(suggestionsMsg)
 	if !ok {
-		t.Fatalf("Expected SuggestionsMsg, got %T", msg)
+		t.Fatalf("Expected suggestionsMsg, got %T", msg)
 	}
 
 	if len(suggMsg) != 2 {

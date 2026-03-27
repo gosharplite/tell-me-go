@@ -19,8 +19,8 @@ var (
 	modelStyle = lipgloss.NewStyle().Padding(1, 1)
 )
 
-// SuggestionsMsg contains a list of suggested prompts returned from an asynchronous call.
-type SuggestionsMsg []string
+// suggestionsMsg contains a list of suggested prompts returned from an asynchronous call.
+type suggestionsMsg []string
 
 // debounceMsg is sent after a short delay to trigger suggestion fetching.
 type debounceMsg struct {
@@ -29,8 +29,8 @@ type debounceMsg struct {
 
 // Model is the main orchestrator for the TUI prompt.
 type Model struct {
-	input     TextArea
-	suggester Suggester
+	input     textArea
+	suggester suggester
 
 	// DI
 	suggestionSvc ports.SuggestionService
@@ -48,8 +48,8 @@ type Model struct {
 func NewModel(svc ports.SuggestionService) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Model{
-		input:         NewTextArea(),
-		suggester:     Suggester{Index: -1}, // -1 means no suggestion is currently selected/highlighted
+		input:         newTextArea(),
+		suggester:     suggester{Index: -1}, // -1 means no suggestion is currently selected/highlighted
 		suggestionSvc: svc,
 		ctx:           ctx,
 		cancel:        cancel,
@@ -146,7 +146,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case SuggestionsMsg:
+	case suggestionsMsg:
 		m.suggester.Update(msg, -1) // Reset index when new suggestions arrive
 		return m, nil
 
@@ -204,7 +204,7 @@ func (m *Model) getSuggestions(ctx context.Context, prefix string) tea.Cmd {
 			}
 		}
 
-		return SuggestionsMsg(filtered)
+		return suggestionsMsg(filtered)
 	}
 }
 
