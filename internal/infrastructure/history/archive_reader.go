@@ -25,6 +25,8 @@ type jsonlArchiveReader struct {
 	archivePath string
 	mu          sync.Mutex
 	index       []int64 // offsets of each line
+	indexOnce   sync.Once
+	indexErr    error
 }
 
 // NewJSONLArchiveReader creates a new JSONLArchiveReader.
@@ -136,14 +138,13 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 }
 
 func (r *jsonlArchiveReader) ensureIndex(ctx context.Context) error {
-	r.mu.Lock()
-	if r.index != nil {
-		r.mu.Unlock()
-		return nil
-	}
-	r.mu.Unlock()
+	r.indexOnce.Do(func() {
+		r.indexErr = r.buildIndex(ctx)
+	})
+	return r.indexErr
+}
 
-	// Building index
+func (r *jsonlArchiveReader) buildIndex(ctx context.Context) error {
 	file, err := r.fs.Open(ctx, r.archivePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
