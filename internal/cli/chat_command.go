@@ -119,6 +119,11 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
 
 		capturer = tui.NewPromptCapturer(baseCapturer, svc)
+		if sm, ok := c.SM.(interface {
+			SetInteractor(domain_security.UserInteractor)
+		}); ok {
+			sm.SetInteractor(capturer.(domain_security.UserInteractor))
+		}
 	} else {
 		capturer = c.setupCapturer()
 	}
