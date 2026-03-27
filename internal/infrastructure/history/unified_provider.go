@@ -54,11 +54,11 @@ func (p *UnifiedProvider) GetHistoryStream(ctx context.Context, limit int, curso
 			dtos = append(dtos, dto)
 		}
 
-		// After active history, we point to the start of the archive.
-		return dtos, "archive:0", nil
+		// After active history, we point to the END of the archive to read backwards.
+		return dtos, "archive:-1", nil
 	}
 
-	// If cursor points to the archive, we paginate from disk.
+	// If cursor points to the archive, we paginate from disk backwards.
 	if strings.HasPrefix(cursor, "archive:") {
 		offsetStr := strings.TrimPrefix(cursor, "archive:")
 		offset, err := strconv.ParseInt(offsetStr, 10, 64)
@@ -66,9 +66,17 @@ func (p *UnifiedProvider) GetHistoryStream(ctx context.Context, limit int, curso
 			return nil, "", fmt.Errorf("invalid archive cursor %q: %w", cursor, err)
 		}
 
-		dtos, nextOffset, err := p.archive.ReadPage(ctx, limit, offset)
+		if offset == 0 {
+			return nil, "EOF", nil
+		}
+
+		dtos, nextOffset, err := p.archive.ReadPrevious(ctx, limit, offset)
 		if err != nil {
 			return nil, "", fmt.Errorf("read archive page: %w", err)
+		}
+
+		if len(dtos) == 0 || nextOffset == 0 {
+			return dtos, "EOF", nil
 		}
 
 		nextCursor := fmt.Sprintf("archive:%d", nextOffset)

@@ -14,11 +14,16 @@ import (
 )
 
 type mockArchiveReader struct {
-	readPageFunc func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
+	readPageFunc     func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
+	readPreviousFunc func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
 }
 
 func (m *mockArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	return m.readPageFunc(ctx, limit, offset)
+}
+
+func (m *mockArchiveReader) ReadPrevious(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+	return m.readPreviousFunc(ctx, limit, offset)
 }
 
 type mockHistoryManager struct {
@@ -49,6 +54,9 @@ func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
 		readPageFunc: func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 			return nil, offset, nil
 		},
+		readPreviousFunc: func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+			return nil, offset, nil
+		},
 	}
 
 	provider := history.NewUnifiedProvider(archive, active)
@@ -69,19 +77,20 @@ func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
 			}
 		}
 
-		if nextCursor != "archive:0" {
-			t.Errorf("expected archive:0 cursor, got %s", nextCursor)
+		if nextCursor != "archive:-1" {
+			t.Errorf("expected archive:-1 cursor, got %s", nextCursor)
 		}
 	})
 
 	t.Run("it paginates archive when using archive: prefix", func(t *testing.T) {
+		// Note: we use ReadPrevious now.
 		archiveCalled := false
-		archive.readPageFunc = func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+		archive.readPreviousFunc = func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 			if offset != 123 {
 				t.Errorf("expected offset 123, got %d", offset)
 			}
 			archiveCalled = true
-			return []ports.HistoryViewDTO{{ContentPreview: "Archived content"}}, 456, nil
+			return []ports.HistoryViewDTO{{ContentPreview: "Archived content"}}, 100, nil
 		}
 
 		dtos, nextCursor, err := provider.GetHistoryStream(ctx, 10, "archive:123")
@@ -97,8 +106,8 @@ func TestUnifiedProvider_GetHistoryStream_Filtering(t *testing.T) {
 			t.Errorf("unexpected archive content: %+v", dtos)
 		}
 
-		if nextCursor != "archive:456" {
-			t.Errorf("expected archive:456 cursor, got %s", nextCursor)
+		if nextCursor != "archive:100" {
+			t.Errorf("expected archive:100 cursor, got %s", nextCursor)
 		}
 	})
 }

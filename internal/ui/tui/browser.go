@@ -318,10 +318,22 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		isInitialLoad := (m.selectedTurn == -1)
 
 		if len(msg.dtos) > 0 {
-			m.history = append(m.history, msg.dtos...)
-		}
-		if isInitialLoad && len(m.history) > 0 {
-			m.selectedTurn = len(m.history) - 1
+			if isInitialLoad {
+				m.history = msg.dtos
+				m.selectedTurn = len(m.history) - 1
+			} else {
+				// Prepend older history
+				numAdded := len(msg.dtos)
+				m.history = append(msg.dtos, m.history...)
+
+				// Update viewport and maintain scroll position
+				m.viewport.SetContent(m.renderHistory())
+				addedLines := m.turnOffsets[numAdded]
+				m.viewport.SetYOffset(m.viewport.YOffset + addedLines)
+				
+				// Adjust selected turn
+				m.selectedTurn += numAdded
+			}
 		}
 
 		m.cursor = msg.nextCursor
@@ -353,11 +365,10 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
 
-	// Infinite pagination trigger
-	if m.viewport.AtBottom() && !m.isLoading && m.cursor != "EOF" && m.ready && !m.isSearching {
+	// Infinite pagination trigger (Older history from archive)
+	if m.viewport.YOffset == 0 && !m.isLoading && m.cursor != "" && m.cursor != "EOF" && m.ready && !m.isSearching {
 		m.isLoading = true
 		m.viewport.SetContent(m.renderHistory())
-		m.viewport.GotoBottom()
 		return m, tea.Batch(append(cmds, fetchHistoryCmd(m.provider, m.cursor))...)
 	}
 
@@ -397,6 +408,13 @@ func (m *RootBrowserModel) renderHistory() string {
 
 	m.turnOffsets = make([]int, 0, len(m.history))
 	var sb strings.Builder
+
+	if m.isLoading {
+		sb.WriteString(thoughtStyle.Render("Loading more messages...") + "\n\n")
+	} else if m.cursor == "EOF" && len(m.history) > 0 {
+		sb.WriteString(archivedStyle.Render("─── Start of History ───") + "\n\n")
+	}
+
 	for i, dto := range m.history {
 		m.turnOffsets = append(m.turnOffsets, strings.Count(sb.String(), "\n"))
 
@@ -473,12 +491,6 @@ func (m *RootBrowserModel) renderHistory() string {
 		if i < len(m.history)-1 {
 			sb.WriteString("\n\n" + archivedStyle.Render(strings.Repeat("─", m.width/2)) + "\n\n")
 		}
-	}
-
-	if m.isLoading {
-		sb.WriteString("\n\n" + thoughtStyle.Render("Loading more messages..."))
-	} else if m.cursor == "EOF" && len(m.history) > 0 {
-		sb.WriteString("\n\n" + archivedStyle.Render("─── End of History ───"))
 	}
 
 	rendered := sb.String()

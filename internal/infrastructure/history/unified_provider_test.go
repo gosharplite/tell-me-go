@@ -25,11 +25,16 @@ func (m *MockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int
 // MockArchiveReader implements ports.ArchiveReader for testing.
 type MockArchiveReader struct {
 	ports.ArchiveReader
-	ReadPageFunc func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
+	ReadPageFunc     func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
+	ReadPreviousFunc func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error)
 }
 
 func (m *MockArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	return m.ReadPageFunc(ctx, limit, offset)
+}
+
+func (m *MockArchiveReader) ReadPrevious(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+	return m.ReadPreviousFunc(ctx, limit, offset)
 }
 
 func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
@@ -85,20 +90,20 @@ func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
 					ToolCalls:      nil,
 				},
 			},
-			wantCursor: "archive:0",
+			wantCursor: "archive:-1",
 		},
 		{
 			name:   "Archive Read - archive cursor",
 			limit:  5,
-			cursor: "archive:5",
+			cursor: "archive:100",
 			archived: []ports.HistoryViewDTO{
 				{Role: "user", ContentPreview: "Archived msg", IsArchived: true},
 			},
-			nextOffset: 10,
+			nextOffset: 50,
 			wantDTOs: []ports.HistoryViewDTO{
 				{Role: "user", ContentPreview: "Archived msg", IsArchived: true},
 			},
-			wantCursor: "archive:10",
+			wantCursor: "archive:50",
 		},
 		{
 			name:    "Invalid cursor format",
@@ -120,7 +125,7 @@ func TestUnifiedProvider_GetHistoryStream(t *testing.T) {
 				},
 			}
 			mockArchive := &MockArchiveReader{
-				ReadPageFunc: func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+				ReadPreviousFunc: func(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 					return tt.archived, tt.nextOffset, nil
 				},
 			}

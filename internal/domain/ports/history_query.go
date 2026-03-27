@@ -24,6 +24,11 @@ type ArchiveReader interface {
 	// ReadPage uses byte-offsets to read archived history without full memory loading.
 	// Returns the parsed DTOs, the next byte offset cursor, and any error.
 	ReadPage(ctx context.Context, limit int, offset int64) ([]HistoryViewDTO, int64, error)
+
+	// ReadPrevious reads archived history backwards from a given offset.
+	// It returns 'limit' entries that precede the offset, in chronological order,
+	// and the offset of the first entry returned (to be used as the next cursor).
+	ReadPrevious(ctx context.Context, limit int, offset int64) ([]HistoryViewDTO, int64, error)
 }
 
 // UnifiedHistoryProvider stitches active memory and archived history for the TUI.

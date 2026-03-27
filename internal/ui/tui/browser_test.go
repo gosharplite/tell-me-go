@@ -409,7 +409,7 @@ func TestBrowserModel_Update(t *testing.T) {
 			},
 		},
 		{
-			name: "Infinite pagination trigger",
+			name: "Infinite pagination trigger (older history)",
 			initialState: func(m *RootBrowserModel) {
 				m.ready = true
 				m.isLoading = false
@@ -417,9 +417,9 @@ func TestBrowserModel_Update(t *testing.T) {
 				m.isSearching = false
 				m.viewport = viewport.New(80, 10)
 				m.viewport.SetContent("line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20")
-				m.viewport.GotoBottom()
+				m.viewport.SetYOffset(0) // At top
 			},
-			msg: tea.KeyMsg{Type: tea.KeyDown}, // Any msg that updates viewport might trigger it
+			msg: tea.KeyMsg{Type: tea.KeyUp},
 			check: func(t *testing.T, m RootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				// The trigger happens at the end of Update
 				if !m.isLoading {
@@ -559,12 +559,12 @@ func TestBrowserModel_RenderHistory_Paths(t *testing.T) {
 		t.Errorf("expected Loading more messages..., got %q", got)
 	}
 
-	// End of History at bottom
+	// Start of History at top
 	m.isLoading = false
 	m.cursor = "EOF"
 	got = m.renderHistory()
-	if !strings.Contains(got, "End of History") {
-		t.Errorf("expected End of History, got %q", got)
+	if !strings.Contains(got, "Start of History") {
+		t.Errorf("expected Start of History, got %q", got)
 	}
 
 	// Highlight in renderHistory

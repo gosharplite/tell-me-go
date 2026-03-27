@@ -163,3 +163,76 @@ func TestJSONLArchiveReader_ReadPage_NonExistent(t *testing.T) {
 		t.Errorf("expected nextOffset 0, got %d", nextOffset)
 	}
 }
+
+func TestJSONLArchiveReader_ReadPrevious(t *testing.T) {
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive_prev.jsonl")
+
+	contents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 1"}}},
+		{Role: "assistant", Parts: []*llm.Part{{Text: "Msg 2"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 3"}}},
+		{Role: "assistant", Parts: []*llm.Part{{Text: "Msg 4"}}},
+	}
+
+	f, _ := os.Create(archivePath)
+	offsets := make([]int64, len(contents))
+	var currentOffset int64
+	for i, c := range contents {
+		data, _ := json.Marshal(c)
+		data = append(data, '\n')
+		n, _ := f.Write(data)
+		offsets[i] = currentOffset
+		currentOffset += int64(n)
+	}
+	_ = f.Close()
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	t.Run("read last page (limit 2)", func(t *testing.T) {
+		dtos, nextOffset, err := reader.ReadPrevious(ctx, 2, -1)
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		if len(dtos) != 2 {
+			t.Fatalf("expected 2, got %d", len(dtos))
+		}
+		if dtos[0].ContentPreview != "Msg 3" || dtos[1].ContentPreview != "Msg 4" {
+			t.Errorf("unexpected content: %+v", dtos)
+		}
+		if nextOffset != offsets[2] {
+			t.Errorf("expected offset %d, got %d", offsets[2], nextOffset)
+		}
+	})
+
+	t.Run("read previous page from offset", func(t *testing.T) {
+		dtos, nextOffset, err := reader.ReadPrevious(ctx, 2, offsets[2])
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		if len(dtos) != 2 {
+			t.Fatalf("expected 2, got %d", len(dtos))
+		}
+		if dtos[0].ContentPreview != "Msg 1" || dtos[1].ContentPreview != "Msg 2" {
+			t.Errorf("unexpected content: %+v", dtos)
+		}
+		if nextOffset != 0 {
+			t.Errorf("expected offset 0, got %d", nextOffset)
+		}
+	})
+
+	t.Run("read with limit larger than available", func(t *testing.T) {
+		dtos, nextOffset, err := reader.ReadPrevious(ctx, 10, offsets[2])
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+		if len(dtos) != 2 {
+			t.Fatalf("expected 2, got %d", len(dtos))
+		}
+		if nextOffset != 0 {
+			t.Errorf("expected offset 0, got %d", nextOffset)
+		}
+	})
+}
