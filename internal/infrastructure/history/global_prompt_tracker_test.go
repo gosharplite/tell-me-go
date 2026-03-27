@@ -95,3 +95,48 @@ func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 		}
 	}
 }
+
+func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracker := NewGlobalPromptTracker(tmpDir)
+
+	// Add 10 "duplicate" prompts
+	for i := 0; i < 10; i++ {
+		if err := tracker.Append("duplicate"); err != nil {
+			t.Fatalf("Append failed: %v", err)
+		}
+	}
+	
+	// Add 5 unique prompts BEFORE the duplicates
+	uniquePrompts := []string{"p1", "p2", "p3", "p4", "p5"}
+	// We append them first, so they are at the beginning of the file.
+	// But to test that it returns them even if they are far back:
+	tracker = NewGlobalPromptTracker(t.TempDir()) // Reset
+	for _, p := range uniquePrompts {
+		if err := tracker.Append(p); err != nil {
+			t.Fatalf("Append failed: %v", err)
+		}
+	}
+	for i := 0; i < 10; i++ {
+		if err := tracker.Append("duplicate"); err != nil {
+			t.Fatalf("Append failed: %v", err)
+		}
+	}
+
+	// Should return ["duplicate", "p5", "p4", "p3", "p2"]
+	limit := 5
+	got, err := tracker.LoadTopN(context.Background(), limit)
+	if err != nil {
+		t.Fatalf("LoadTopN failed: %v", err)
+	}
+
+	expected := []string{"duplicate", "p5", "p4", "p3", "p2"}
+	if len(got) != len(expected) {
+		t.Errorf("got %d prompts; want %d", len(got), len(expected))
+	}
+	for i, v := range got {
+		if i < len(expected) && v != expected[i] {
+			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
+		}
+	}
+}

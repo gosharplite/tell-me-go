@@ -4,11 +4,10 @@
 package history
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -62,8 +61,8 @@ func (t *GlobalPromptTracker) Append(prompt string) error {
 	return nil
 }
 
-// LoadTopN loads the last unique prompts up to the limit using a bounded circular buffer.
-// Time complexity: O(FileLines), Memory complexity: O(limit).
+// LoadTopN loads the last unique prompts up to the limit using reverse reading.
+// Time complexity: O(limit * avgLineLen), Memory complexity: O(limit * avgLineLen).
 func (t *GlobalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -78,56 +77,67 @@ func (t *GlobalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 	}
 	defer func() { _ = f.Close() }()
 
-	// Circular buffer to store the last 'limit' lines.
-	buffer := make([]string, limit)
-	count := 0
-	reader := bufio.NewReader(f)
-
-	for {
-		// Periodically check for context cancellation
-		if count%100 == 0 {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-		}
-
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			if err == io.EOF {
-				if len(line) > 0 {
-					buffer[count%limit] = string(line)
-					count++
-				}
-				break
-			}
-			return nil, fmt.Errorf("failed to read global prompts: %w", err)
-		}
-		buffer[count%limit] = string(line)
-		count++
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat global prompts file: %w", err)
 	}
 
-	// Extract unique items from the circular buffer (newest first).
-	size := limit
-	if count < limit {
-		size = count
+	pos := info.Size()
+	if pos == 0 {
+		return nil, nil
 	}
 
+	const chunkSize = 4096
 	seen := make(map[string]bool)
 	var result []string
+	var leftover []byte
 
-	for i := 0; i < size; i++ {
-		// Calculate the index of the (count - 1 - i)-th element
-		idx := (count - 1 - i) % limit
-		if idx < 0 {
-			idx += limit
+	for pos > 0 && len(result) < limit {
+		// Periodically check for context cancellation
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
 		}
 
-		var entry PromptEntry
-		if err := json.Unmarshal([]byte(buffer[idx]), &entry); err == nil {
-			p := entry.Prompt
-			if p != "" && !seen[p] {
-				seen[p] = true
-				result = append(result, p)
+		readSize := chunkSize
+		if pos < int64(readSize) {
+			readSize = int(pos)
+		}
+		pos -= int64(readSize)
+
+		chunk := make([]byte, readSize)
+		if _, err := f.ReadAt(chunk, pos); err != nil {
+			return nil, fmt.Errorf("failed to read global prompts at %d: %w", pos, err)
+		}
+
+		// Combine with leftover from previous chunk
+		data := append(chunk, leftover...)
+		lines := bytes.Split(data, []byte{'\n'})
+
+		if pos > 0 {
+			leftover = lines[0]
+			lines = lines[1:]
+		} else {
+			leftover = nil
+		}
+
+		// Process lines in reverse order (most recent first)
+		for i := len(lines) - 1; i >= 0; i-- {
+			if len(lines[i]) == 0 {
+				continue
+			}
+
+			var entry PromptEntry
+			if err := json.Unmarshal(lines[i], &entry); err == nil {
+				p := entry.Prompt
+				if p != "" && !seen[p] {
+					seen[p] = true
+					result = append(result, p)
+					if len(result) >= limit {
+						break
+					}
+				}
 			}
 		}
 	}
