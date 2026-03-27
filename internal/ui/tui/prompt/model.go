@@ -5,6 +5,7 @@ package prompt
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -143,6 +144,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case error:
+		log.Printf("prompt model error: %v", msg)
 		m.err = msg
 		return m, nil
 	}
@@ -184,7 +186,7 @@ func (m *Model) getSuggestions(ctx context.Context, prefix string) tea.Cmd {
 			if ctx.Err() != nil {
 				return nil // Silently ignore canceled requests
 			}
-			// For other errors, we could return them, but let's keep it quiet in TUI
+			log.Printf("failed to get suggestions: %v", err)
 			return nil
 		}
 		// Filter out suggestions with more than 3 lines

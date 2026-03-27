@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -101,11 +102,13 @@ func watchHistoryFileCmd(ctx context.Context, filepath string) tea.Cmd {
 
 		watcher, err := fsnotify.NewWatcher()
 		if err != nil {
+			log.Printf("failed to create history file watcher: %v", err)
 			return nil
 		}
 		defer func() { _ = watcher.Close() }()
 
 		if err := watcher.Add(filepath); err != nil {
+			log.Printf("failed to add history file to watcher: %v", err)
 			return nil
 		}
 
@@ -123,7 +126,7 @@ func watchHistoryFileCmd(ctx context.Context, filepath string) tea.Cmd {
 			if !ok {
 				return nil
 			}
-			_ = err
+			log.Printf("history file watcher error: %v", err)
 		}
 		return nil
 	}
@@ -325,6 +328,7 @@ func (m RootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model,
 func (m RootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
 	m.isLoading = false
 	if msg.err != nil {
+		log.Printf("failed to load history: %v", msg.err)
 		m.err = msg.err
 		return m, nil
 	}

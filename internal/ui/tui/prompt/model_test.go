@@ -20,83 +20,153 @@ func (m *mockSuggestionSvc) RecordPrompt(prompt string) error {
 	return nil
 }
 
-func TestModel_Update_SubmitEmpty(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
-
-	// Ensure input is empty or whitespace
-	m.input.SetValue("   ")
-
-	// Simulate Alt+Enter
-	msg := tea.KeyMsg{Type: tea.KeyEnter, Alt: true}
-	_, cmd := m.Update(msg)
-
-	if cmd != nil {
-		t.Errorf("Expected nil command for empty submission, got %v", cmd)
+func TestModel_Update(t *testing.T) {
+	tests := []struct {
+		name          string
+		initialInput  string
+		initialSuggs  []string
+		initialIdx    int
+		msg           tea.Msg
+		wantSubmitted bool
+		wantAborted   bool
+		wantCmd       bool
+		wantFinal     string
+		wantIdx       int
+	}{
+		{
+			name:          "Empty input Alt+Enter",
+			initialInput:  "   ",
+			initialIdx:    -1,
+			msg:           tea.KeyMsg{Type: tea.KeyEnter, Alt: true},
+			wantSubmitted: false,
+			wantCmd:       false,
+			wantIdx:       -1,
+		},
+		{
+			name:          "Empty input Ctrl+S",
+			initialInput:  "   ",
+			initialIdx:    -1,
+			msg:           tea.KeyMsg{Type: tea.KeyCtrlS},
+			wantSubmitted: false,
+			wantCmd:       false,
+			wantIdx:       -1,
+		},
+		{
+			name:          "Valid input Ctrl+S",
+			initialInput:  "  hello  ",
+			initialIdx:    -1,
+			msg:           tea.KeyMsg{Type: tea.KeyCtrlS},
+			wantSubmitted: true,
+			wantCmd:       true,
+			wantFinal:     "hello",
+			wantIdx:       -1,
+		},
+		{
+			name:        "Abort Esc",
+			initialIdx:  -1,
+			msg:         tea.KeyMsg{Type: tea.KeyEsc},
+			wantAborted: true,
+			wantCmd:     true,
+			wantIdx:     -1,
+		},
+		{
+			name:        "Abort Ctrl+C",
+			initialIdx:  -1,
+			msg:         tea.KeyMsg{Type: tea.KeyCtrlC},
+			wantAborted: true,
+			wantCmd:     true,
+			wantIdx:     -1,
+		},
+		{
+			name:         "Tab cycle 1",
+			initialIdx:   -1,
+			initialSuggs: []string{"foo", "bar"},
+			msg:          tea.KeyMsg{Type: tea.KeyTab},
+			wantFinal:    "foo",
+			wantIdx:      0,
+		},
+		{
+			name:         "Tab cycle 2",
+			initialInput: "foo",
+			initialIdx:   0,
+			initialSuggs: []string{"foo", "bar"},
+			msg:          tea.KeyMsg{Type: tea.KeyTab},
+			wantFinal:    "bar",
+			wantIdx:      1,
+		},
+		{
+			name:         "ShiftTab cycle",
+			initialInput: "bar",
+			initialIdx:   1,
+			initialSuggs: []string{"foo", "bar"},
+			msg:          tea.KeyMsg{Type: tea.KeyShiftTab},
+			wantFinal:    "foo",
+			wantIdx:      0,
+		},
+		{
+			name:       "Input changed (debounce)",
+			initialIdx: -1,
+			msg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}},
+			wantCmd:    true,
+			wantFinal:  "a",
+			wantIdx:    -1,
+		},
+		{
+			name:       "Window resize",
+			initialIdx: -1,
+			msg:        tea.WindowSizeMsg{Width: 100, Height: 50},
+			wantIdx:    -1,
+		},
+		{
+			name:       "Suggestions message",
+			initialIdx: -1,
+			msg:        SuggestionsMsg([]string{"foo", "bar"}),
+			wantIdx:    -1,
+		},
 	}
-	if m.submitted {
-		t.Error("Expected submitted to be false for empty submission")
-	}
 
-	// Simulate Ctrl+S
-	msg = tea.KeyMsg{Type: tea.KeyCtrlS}
-	_, cmd = m.Update(msg)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(&mockSuggestionSvc{})
+			if tt.initialInput != "" {
+				m.input.SetValue(tt.initialInput)
+			}
+			if len(tt.initialSuggs) > 0 {
+				m.suggester.Suggestions = tt.initialSuggs
+			}
+			m.suggester.Index = tt.initialIdx
 
-	if cmd != nil {
-		t.Errorf("Expected nil command for empty submission via Ctrl+S, got %v", cmd)
-	}
-	if m.submitted {
-		t.Error("Expected submitted to be false for empty submission via Ctrl+S")
-	}
-}
+			_, cmd := m.Update(tt.msg)
 
-func TestModel_Update_SubmitNonEmpty(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
-
-	m.input.SetValue("  hello  ")
-
-	msg := tea.KeyMsg{Type: tea.KeyCtrlS}
-	_, cmd := m.Update(msg)
-
-	if cmd == nil {
-		t.Fatal("Expected non-nil command for valid submission")
-	}
-	if !m.submitted {
-		t.Error("Expected submitted to be true for valid submission")
-	}
-	if m.finalPrompt != "hello" {
-		t.Errorf("Expected finalPrompt to be 'hello', got %q", m.finalPrompt)
-	}
-}
-
-func TestModel_Update_AbortEsc(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
-
-	msg := tea.KeyMsg{Type: tea.KeyEsc}
-	_, cmd := m.Update(msg)
-
-	if cmd == nil {
-		t.Error("Expected non-nil command for Esc")
-	}
-	if !m.Aborted() {
-		t.Error("Expected aborted to be true")
-	}
-}
-
-func TestModel_Update_AbortCtrlC(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
-
-	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
-	_, cmd := m.Update(msg)
-
-	if cmd == nil {
-		t.Error("Expected non-nil command for Ctrl+C")
-	}
-	if !m.Aborted() {
-		t.Error("Expected aborted to be true")
+			if (cmd != nil) != tt.wantCmd {
+				t.Errorf("got cmd presence %v, want %v", cmd != nil, tt.wantCmd)
+			}
+			if m.submitted != tt.wantSubmitted {
+				t.Errorf("got submitted %v, want %v", m.submitted, tt.wantSubmitted)
+			}
+			if m.Aborted() != tt.wantAborted {
+				t.Errorf("got aborted %v, want %v", m.Aborted(), tt.wantAborted)
+			}
+			if tt.wantSubmitted && m.FinalPrompt() != tt.wantFinal {
+				t.Errorf("got finalPrompt %q, want %q", m.FinalPrompt(), tt.wantFinal)
+			}
+			if !tt.wantSubmitted && tt.wantFinal != "" && m.input.Value() != tt.wantFinal {
+				t.Errorf("got input value %q, want %q", m.input.Value(), tt.wantFinal)
+			}
+			if m.suggester.Index != tt.wantIdx {
+				t.Errorf("got suggester index %d, want %d", m.suggester.Index, tt.wantIdx)
+			}
+			if ws, ok := tt.msg.(tea.WindowSizeMsg); ok {
+				if m.input.Model.Width() == 80 {
+					t.Errorf("expected width to change from default 80 for WindowSizeMsg %v", ws)
+				}
+			}
+			if sm, ok := tt.msg.(SuggestionsMsg); ok {
+				if len(m.suggester.Suggestions) != len(sm) {
+					t.Errorf("got %d suggestions, want %d", len(m.suggester.Suggestions), len(sm))
+				}
+			}
+		})
 	}
 }
 
@@ -125,75 +195,6 @@ func TestModel_FinalPrompt(t *testing.T) {
 	m := &Model{finalPrompt: "test"}
 	if m.FinalPrompt() != "test" {
 		t.Errorf("Expected 'test', got %q", m.FinalPrompt())
-	}
-}
-
-func TestModel_Update_SuggestionsMsg(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
-
-	msg := SuggestionsMsg([]string{"foo", "bar"})
-	m.Update(msg)
-
-	if len(m.suggester.Suggestions) != 2 {
-		t.Errorf("Expected 2 suggestions, got %d", len(m.suggester.Suggestions))
-	}
-}
-
-func TestModel_Update_WindowSize(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
-
-	msg := tea.WindowSizeMsg{Width: 100, Height: 50}
-	m.Update(msg)
-
-	// In Bubbles TextArea, setting width subtracts some for padding if specified.
-	// But actually, we just want to ensure it's called and something changes.
-	if m.input.Model.Width() == 80 { // Default is 80
-		t.Error("Expected width to change")
-	}
-}
-
-func TestModel_Update_Tab(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
-	m.suggester.Suggestions = []string{"foo", "bar"}
-
-	msg := tea.KeyMsg{Type: tea.KeyTab}
-	m.Update(msg)
-
-	if m.suggester.Index != 0 {
-		t.Errorf("Expected index 0, got %d", m.suggester.Index)
-	}
-	if m.input.Value() != "foo" {
-		t.Errorf("Expected 'foo', got %q", m.input.Value())
-	}
-
-	msg = tea.KeyMsg{Type: tea.KeyTab}
-	m.Update(msg)
-	if m.suggester.Index != 1 {
-		t.Errorf("Expected index 1, got %d", m.suggester.Index)
-	}
-	if m.input.Value() != "bar" {
-		t.Errorf("Expected 'bar', got %q", m.input.Value())
-	}
-
-	msg = tea.KeyMsg{Type: tea.KeyShiftTab}
-	m.Update(msg)
-	if m.suggester.Index != 0 {
-		t.Errorf("Expected index 0, got %d", m.suggester.Index)
-	}
-}
-
-func TestModel_Update_InputChanged(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc)
-
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
-	_, cmd := m.Update(msg)
-
-	if cmd == nil {
-		t.Error("Expected non-nil command for input change (debounce)")
 	}
 }
 

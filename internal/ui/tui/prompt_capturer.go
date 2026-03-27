@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -63,6 +64,12 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 
 	// Initialize TUI Model
 	model := prompt.NewModel(c.svc)
+
+	// Initialize background logger for TUI
+	if closer, err := InitLogger(); err == nil {
+		defer closer.Close()
+	}
+
 	p := tea.NewProgram(model)
 
 	resModel, err := p.Run()
@@ -79,7 +86,9 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 
 	// Record the prompt for future suggestions
 	if finalPrompt != "" {
-		_ = c.svc.RecordPrompt(finalPrompt)
+		if err := c.svc.RecordPrompt(finalPrompt); err != nil {
+			log.Printf("failed to record prompt for suggestions: %v", err)
+		}
 
 		// Provide visual feedback after the TUI closes so the user knows what was sent.
 		// This uses the base capturer's Prompt method to stay consistent with the tool's theme.

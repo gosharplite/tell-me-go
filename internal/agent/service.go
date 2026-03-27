@@ -150,6 +150,11 @@ func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capt
 		return fmt.Errorf("failed to load unified history provider: %w", err)
 	}
 
+	// Initialize background logger for TUI
+	if closer, err := tui.InitLogger(); err == nil {
+		defer closer.Close()
+	}
+
 	// TTY check is done in the command layer or here.
 	// We'll trust the caller for now, or check if capturer is available.
 
