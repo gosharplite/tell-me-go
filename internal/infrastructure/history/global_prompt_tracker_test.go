@@ -4,9 +4,12 @@
 package history
 
 import (
+	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestGlobalPromptTracker(t *testing.T) {
@@ -138,5 +141,82 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 		if i < len(expected) && v != expected[i] {
 			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
 		}
+	}
+}
+
+func TestGlobalPromptTracker_Compaction(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracker := NewGlobalPromptTracker(tmpDir).(*globalPromptTracker)
+
+	// Add duplicates and many entries
+	for i := 0; i < 10; i++ {
+		_ = tracker.Append("duplicate")
+	}
+	_ = tracker.Append("unique1")
+	_ = tracker.Append("unique2")
+	_ = tracker.Append("duplicate") // latest one
+
+	// Manually trigger compaction
+	tracker.compactLog()
+
+	// Verify file content after compaction
+	// Should be: unique1, unique2, duplicate
+	got, err := tracker.LoadTopN(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("LoadTopN failed: %v", err)
+	}
+
+	expected := []string{"duplicate", "unique2", "unique1"}
+	if len(got) != len(expected) {
+		t.Errorf("got %d prompts; want %d", len(got), len(expected))
+	}
+	for i, v := range got {
+		if v != expected[i] {
+			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
+		}
+	}
+
+	// Verify that the file actually shrunk (though with few entries it's hard to see, 
+	// but we can check the number of lines)
+	content, _ := os.ReadFile(tracker.filepath)
+	lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
+	if len(lines) != 3 {
+		t.Errorf("got %d lines; want 3", len(lines))
+	}
+}
+
+func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracker := NewGlobalPromptTracker(tmpDir).(*globalPromptTracker)
+
+	// Append a lot of duplicates to exceed 150KB
+	largePrompt := string(bytes.Repeat([]byte("A"), 1000))
+	for i := 0; i < 200; i++ {
+		_ = tracker.Append(largePrompt)
+	}
+
+	// Verify size crossed threshold (eventually, during the loop)
+	// We don't check it here because compaction might have already started and shrunk the file.
+
+	// Wait for async compaction to reduce the file to 1 unique line.
+	// Since compaction is async and there's a race between Append and Rename,
+	// we might end up with more than 1 line if an Append happened after the last Rename.
+	// But it should definitely be much less than 200.
+	var finalLines int
+	for i := 0; i < 50; i++ {
+		content, _ := os.ReadFile(tracker.filepath)
+		lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
+		finalLines = len(lines)
+		if finalLines < 200 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if finalLines >= 200 {
+		t.Errorf("file was not compacted: got %d lines; want < 200", finalLines)
+	}
+	if finalLines == 0 {
+		t.Errorf("file should not be empty")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -23,9 +24,15 @@ type promptEntry struct {
 
 var _ ports.PromptTracker = (*globalPromptTracker)(nil)
 
+const (
+	maxGlobalPrompts         = 1200
+	compactionThresholdBytes = 150 * 1024
+)
+
 // globalPromptTracker handles atomic, lock-free recording of user prompts.
 type globalPromptTracker struct {
-	filepath string
+	filepath   string
+	compacting atomic.Bool
 }
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
@@ -62,6 +69,13 @@ func (t *globalPromptTracker) Append(prompt string) error {
 		return fmt.Errorf("failed to append prompt: %w", err)
 	}
 
+	// Trigger async compaction if file size exceeds threshold and no compaction is already in progress
+	if info, err := f.Stat(); err == nil && info.Size() > compactionThresholdBytes {
+		if t.compacting.CompareAndSwap(false, true) {
+			go t.compactLog()
+		}
+	}
+
 	return nil
 }
 
@@ -72,6 +86,19 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 		return nil, nil
 	}
 
+	entries, err := t.loadTopUniqueEntries(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, e.Prompt)
+	}
+	return result, nil
+}
+
+func (t *globalPromptTracker) loadTopUniqueEntries(ctx context.Context, limit int) ([]promptEntry, error) {
 	f, err := os.Open(t.filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -93,7 +120,7 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 
 	const chunkSize = 4096
 	seen := make(map[string]bool)
-	result := make([]string, 0, limit)
+	result := make([]promptEntry, 0, limit)
 	var leftover []byte
 
 	for pos > 0 && len(result) < limit {
@@ -120,10 +147,68 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 			leftover = nil
 		}
 
-		result = t.processLines(lines, seen, result, limit)
+		// Process lines in reverse order (most recent first)
+		for i := len(lines) - 1; i >= 0; i-- {
+			if len(lines[i]) == 0 {
+				continue
+			}
+
+			var entry promptEntry
+			if err := json.Unmarshal(lines[i], &entry); err == nil {
+				p := entry.Prompt
+				if p != "" && !seen[p] {
+					seen[p] = true
+					result = append(result, entry)
+					if len(result) >= limit {
+						break
+					}
+				}
+			}
+		}
 	}
 
 	return result, nil
+}
+
+func (t *globalPromptTracker) compactLog() {
+	defer t.compacting.Store(false)
+
+	entries, err := t.loadTopUniqueEntries(context.Background(), maxGlobalPrompts)
+	if err != nil || len(entries) == 0 {
+		return
+	}
+
+	// Reverse entries to chronological order (oldest first)
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+
+	// Use a unique temporary file to avoid races between multiple compaction attempts
+	tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
+	if err != nil {
+		return
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	for _, entry := range entries {
+		data, err := json.Marshal(entry)
+		if err != nil {
+			continue
+		}
+		if _, err := tmpFile.Write(append(data, '\n')); err != nil {
+			return
+		}
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return
+	}
+
+	_ = os.Rename(tmpPath, t.filepath)
 }
 
 func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSize int) ([]byte, error) {
@@ -138,26 +223,4 @@ func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSiz
 		return nil, fmt.Errorf("failed to read global prompts at %d: %w", *pos, err)
 	}
 	return chunk, nil
-}
-
-func (t *globalPromptTracker) processLines(lines [][]byte, seen map[string]bool, result []string, limit int) []string {
-	// Process lines in reverse order (most recent first)
-	for i := len(lines) - 1; i >= 0; i-- {
-		if len(lines[i]) == 0 {
-			continue
-		}
-
-		var entry promptEntry
-		if err := json.Unmarshal(lines[i], &entry); err == nil {
-			p := entry.Prompt
-			if p != "" && !seen[p] {
-				seen[p] = true
-				result = append(result, p)
-				if len(result) >= limit {
-					break
-				}
-			}
-		}
-	}
-	return result
 }
