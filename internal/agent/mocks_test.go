@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"sync"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -56,8 +57,10 @@ func (m *mockTokenCounter) CountTokens(text string) int {
 }
 
 type mockGateway struct {
-	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	sendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	GenerateFunc           func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	sendChatFn             func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	ResetConnectionsCalled int
+	ResetConnectionsMu     sync.Mutex
 }
 
 func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -80,7 +83,11 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 
 func (m *mockGateway) RefreshAuth() error { return nil }
 
-func (m *mockGateway) ResetConnections() {}
+func (m *mockGateway) ResetConnections() {
+	m.ResetConnectionsMu.Lock()
+	defer m.ResetConnectionsMu.Unlock()
+	m.ResetConnectionsCalled++
+}
 
 type mockSecurityManager struct {
 	domain_security.Manager

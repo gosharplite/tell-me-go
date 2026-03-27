@@ -1487,3 +1487,76 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 		t.Errorf("expected sequence %v, got %v", expected, capturedEvents)
 	}
 }
+
+func TestTurnEngine_ResetConnections_OnRateLimit(t *testing.T) {
+	t.Parallel()
+	mockGw := &mockGateway{}
+	reg := &mockToolRegistry{}
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
+	hManager := &mockHistoryManager{}
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	attempts := 0
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, nil, llm.ErrRateLimit
+		}
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+	}
+
+	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, withEngineClock(&mockClock{}))
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(context.Background(), time.Now())
+	assert.NoError(t, err)
+
+	mockGw.ResetConnectionsMu.Lock()
+	count := mockGw.ResetConnectionsCalled
+	mockGw.ResetConnectionsMu.Unlock()
+
+	assert.Equal(t, 1, count, "ResetConnections should be called exactly once on rate limit")
+}
+
+func TestTurnEngine_ResetConnections_OnThirdAttempt(t *testing.T) {
+	t.Parallel()
+	mockGw := &mockGateway{}
+	reg := &mockToolRegistry{}
+	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
+	})
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
+	hManager := &mockHistoryManager{}
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	attempts := 0
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		attempts++
+		if attempts < 4 {
+			return nil, nil, llm.ErrTransient
+		}
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+	}
+
+	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, withEngineClock(&mockClock{}))
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(context.Background(), time.Now())
+	assert.NoError(t, err)
+
+	mockGw.ResetConnectionsMu.Lock()
+	count := mockGw.ResetConnectionsCalled
+	mockGw.ResetConnectionsMu.Unlock()
+
+	// ResetConnections is called when RetryCount == 2 (which is the 3rd attempt's recovery)
+	assert.Equal(t, 1, count, "ResetConnections should be called exactly once on the 3rd attempt (RetryCount=2)")
+}
