@@ -169,7 +169,7 @@ func TestUnifiedProvider_ToDTO_ExtraCases(t *testing.T) {
 		},
 	}
 
-	dto := p.toDTO(c, true)
+	dto := p.(*unifiedProvider).toDTO(c, true)
 
 	if dto.Role != "model" {
 		t.Errorf("expected role model, got %s", dto.Role)

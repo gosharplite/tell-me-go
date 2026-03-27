@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // PromptEntry represents a single entry in the global prompt log.
@@ -19,21 +21,23 @@ type PromptEntry struct {
 	Prompt    string `json:"prompt"`
 }
 
-// GlobalPromptTracker handles atomic, lock-free recording of user prompts.
-type GlobalPromptTracker struct {
+var _ ports.PromptTracker = (*globalPromptTracker)(nil)
+
+// globalPromptTracker handles atomic, lock-free recording of user prompts.
+type globalPromptTracker struct {
 	filepath string
 }
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
-func NewGlobalPromptTracker(homeDir string) *GlobalPromptTracker {
-	return &GlobalPromptTracker{
+func NewGlobalPromptTracker(homeDir string) ports.PromptTracker {
+	return &globalPromptTracker{
 		filepath: filepath.Join(homeDir, "global_prompts.jsonl"),
 	}
 }
 
 // Append records a new prompt to the global log file.
 // Uses os.O_APPEND for atomic writes on POSIX and Windows (up to OS-specific limits).
-func (t *GlobalPromptTracker) Append(prompt string) error {
+func (t *globalPromptTracker) Append(prompt string) error {
 	if prompt == "" {
 		return nil
 	}
@@ -63,7 +67,7 @@ func (t *GlobalPromptTracker) Append(prompt string) error {
 
 // LoadTopN loads the last unique prompts up to the limit using reverse reading.
 // Time complexity: O(limit * avgLineLen), Memory complexity: O(limit * avgLineLen).
-func (t *GlobalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
+func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
 	if limit <= 0 {
 		return nil, nil
 	}

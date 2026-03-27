@@ -13,16 +13,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// UnifiedProvider implements ports.UnifiedHistoryProvider by stitching
+// unifiedProvider implements ports.UnifiedHistoryProvider by stitching
 // active memory history and archived disk history.
-type UnifiedProvider struct {
+type unifiedProvider struct {
 	archive ports.ArchiveReader
 	active  ports.HistoryManager
 }
 
 // NewUnifiedProvider creates a new UnifiedProvider.
-func NewUnifiedProvider(archive ports.ArchiveReader, active ports.HistoryManager) *UnifiedProvider {
-	return &UnifiedProvider{
+func NewUnifiedProvider(archive ports.ArchiveReader, active ports.HistoryManager) ports.UnifiedHistoryProvider {
+	return &unifiedProvider{
 		archive: archive,
 		active:  active,
 	}
@@ -30,7 +30,7 @@ func NewUnifiedProvider(archive ports.ArchiveReader, active ports.HistoryManager
 
 // GetHistoryStream returns a unified, read-only stream of history.
 // It prioritizes active memory history and then paginates into the archive.
-func (p *UnifiedProvider) GetHistoryStream(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
+func (p *unifiedProvider) GetHistoryStream(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
 	// If cursor is empty, we start with active history.
 	if cursor == "" {
 		contents, err := p.active.GetWindow(ctx, 0, -1)
@@ -86,7 +86,7 @@ func (p *UnifiedProvider) GetHistoryStream(ctx context.Context, limit int, curso
 	return nil, "", fmt.Errorf("unsupported cursor format: %s", cursor)
 }
 
-func (p *UnifiedProvider) isAutoSummary(c *llm.Content) bool {
+func (p *unifiedProvider) isAutoSummary(c *llm.Content) bool {
 	if c.Role != "system" {
 		return false
 	}
@@ -98,7 +98,7 @@ func (p *UnifiedProvider) isAutoSummary(c *llm.Content) bool {
 	return false
 }
 
-func (p *UnifiedProvider) toDTO(c *llm.Content, archived bool) ports.HistoryViewDTO {
+func (p *unifiedProvider) toDTO(c *llm.Content, archived bool) ports.HistoryViewDTO {
 	dto := ports.HistoryViewDTO{
 		Role:       c.Role,
 		IsArchived: archived,

@@ -17,10 +17,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/matcher"
 )
 
-var _ ports.SuggestionService = (*MultiSourceSuggestionService)(nil)
+var _ ports.SuggestionService = (*multiSourceSuggestionService)(nil)
 
-// MultiSourceSuggestionService aggregates suggestions from various sources using fuzzy matching.
-type MultiSourceSuggestionService struct {
+// multiSourceSuggestionService aggregates suggestions from various sources using fuzzy matching.
+type multiSourceSuggestionService struct {
 	historyMu sync.RWMutex
 	history   []string
 	tracker   ports.PromptTracker
@@ -28,8 +28,8 @@ type MultiSourceSuggestionService struct {
 }
 
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the history.
-func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string) (*MultiSourceSuggestionService, error) {
-	s := &MultiSourceSuggestionService{
+func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string) (ports.SuggestionService, error) {
+	s := &multiSourceSuggestionService{
 		history: make([]string, 0),
 		tracker: tracker,
 		fs:      fs,
@@ -62,7 +62,7 @@ func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.Pr
 }
 
 // GetSuggestions returns up to 10 suggestions based on fuzzy matching.
-func (s *MultiSourceSuggestionService) GetSuggestions(ctx context.Context, query string) ([]string, error) {
+func (s *multiSourceSuggestionService) GetSuggestions(ctx context.Context, query string) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -103,7 +103,7 @@ func (s *MultiSourceSuggestionService) GetSuggestions(ctx context.Context, query
 }
 
 // RecordPrompt records a user prompt into both the history and the global tracker.
-func (s *MultiSourceSuggestionService) RecordPrompt(prompt string) error {
+func (s *multiSourceSuggestionService) RecordPrompt(prompt string) error {
 	if prompt == "" {
 		return nil
 	}
@@ -126,7 +126,7 @@ func (s *MultiSourceSuggestionService) RecordPrompt(prompt string) error {
 	return s.tracker.Append(prompt)
 }
 
-func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, query string) []string {
+func (s *multiSourceSuggestionService) scanFiles(ctx context.Context, query string) []string {
 	dir, fileQuery := filepath.Split(query)
 	if dir == "" {
 		dir = "."
@@ -176,7 +176,7 @@ func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, query stri
 	return results
 }
 
-func (s *MultiSourceSuggestionService) mergeSuggestions(s1, s2 []string, limit int) []string {
+func (s *multiSourceSuggestionService) mergeSuggestions(s1, s2 []string, limit int) []string {
 	seen := make(map[string]bool)
 	var merged []string
 

@@ -178,7 +178,7 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 }
 
 func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
-	s := &MultiSourceSuggestionService{}
+	s := &multiSourceSuggestionService{}
 	tests := []struct {
 		name     string
 		s1       []string
@@ -279,7 +279,7 @@ func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 	// Let's just call scanFiles via the service struct since we are in the same package.
 
 	cancel2()
-	res := service.scanFiles(ctx2, prefix)
+	res := service.(*multiSourceSuggestionService).scanFiles(ctx2, prefix)
 	if len(res) != 0 {
 		t.Errorf("scanFiles: expected 0 results for cancelled context, got %d", len(res))
 	}
@@ -448,7 +448,7 @@ func TestScanFiles_RespectsCancellationBetweenChunks(t *testing.T) {
 		file: mockFile,
 	}
 
-	service := &MultiSourceSuggestionService{
+	service := &multiSourceSuggestionService{
 		fs: fs,
 	}
 

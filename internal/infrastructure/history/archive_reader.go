@@ -19,8 +19,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// JSONLArchiveReader implements ports.ArchiveReader using a JSONL file.
-type JSONLArchiveReader struct {
+// jsonlArchiveReader implements ports.ArchiveReader using a JSONL file.
+type jsonlArchiveReader struct {
 	fs          persistence.FileSystem
 	archivePath string
 	mu          sync.Mutex
@@ -28,15 +28,15 @@ type JSONLArchiveReader struct {
 }
 
 // NewJSONLArchiveReader creates a new JSONLArchiveReader.
-func NewJSONLArchiveReader(fs persistence.FileSystem, archivePath string) *JSONLArchiveReader {
-	return &JSONLArchiveReader{
+func NewJSONLArchiveReader(fs persistence.FileSystem, archivePath string) ports.ArchiveReader {
+	return &jsonlArchiveReader{
 		fs:          fs,
 		archivePath: archivePath,
 	}
 }
 
 // ReadPage reads a page of history from the archive file using byte-offset seeking.
-func (r *JSONLArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+func (r *jsonlArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	file, err := r.fs.Open(ctx, r.archivePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -92,7 +92,7 @@ func (r *JSONLArchiveReader) ReadPage(ctx context.Context, limit int, offset int
 // ReadPrevious reads archived history backwards from a given offset.
 // It returns 'limit' entries that precede the offset, in chronological order,
 // and the offset of the first entry returned.
-func (r *JSONLArchiveReader) ReadPrevious(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	if err := r.ensureIndex(ctx); err != nil {
 		return nil, 0, err
 	}
@@ -135,7 +135,7 @@ func (r *JSONLArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 	return dtos, startOffset, nil
 }
 
-func (r *JSONLArchiveReader) ensureIndex(ctx context.Context) error {
+func (r *jsonlArchiveReader) ensureIndex(ctx context.Context) error {
 	r.mu.Lock()
 	if r.index != nil {
 		r.mu.Unlock()
@@ -183,7 +183,7 @@ func (r *JSONLArchiveReader) ensureIndex(ctx context.Context) error {
 }
 
 // readPageInternal is like ReadPage but assumes mu is NOT locked.
-func (r *JSONLArchiveReader) readPageInternal(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
+func (r *jsonlArchiveReader) readPageInternal(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	file, err := r.fs.Open(ctx, r.archivePath)
 	if err != nil {
 		return nil, 0, err
@@ -217,7 +217,7 @@ func (r *JSONLArchiveReader) readPageInternal(ctx context.Context, limit int, of
 	return dtos, currentOffset, nil
 }
 
-func (r *JSONLArchiveReader) toDTO(content llm.Content) ports.HistoryViewDTO {
+func (r *jsonlArchiveReader) toDTO(content llm.Content) ports.HistoryViewDTO {
 	dto := ports.HistoryViewDTO{
 		Role:       content.Role,
 		IsArchived: true,
