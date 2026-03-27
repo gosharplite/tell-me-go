@@ -218,3 +218,51 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 		t.Errorf("expected stdout to contain retry message, got %q", stdout.String())
 	}
 }
+
+func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	var setInteractorCalled bool
+
+	sm := &mockSM{}
+	// Override SetInteractor locally using a mock struct that tracks calls
+	trackingSM := &trackingMockSM{
+		mockSM:          sm,
+		setInteractorCb: func() { setInteractorCalled = true },
+	}
+
+	mService := &mockChatService{}
+
+	cmd := &chatCommand{
+		Version:     "1.0.0",
+		Stdin:       strings.NewReader("hello\n"),
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		SM:          trackingSM,
+		ChatService: mService,
+		HomeDir:     t.TempDir(),
+	}
+
+	ctx := stdctx.Background()
+	// Pass --tui flag
+	err := cmd.Execute(ctx, []string{"--tui"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !setInteractorCalled {
+		t.Error("expected SetInteractor to be called when TUI prompt is enabled")
+	}
+}
+
+type trackingMockSM struct {
+	*mockSM
+	setInteractorCb func()
+}
+
+func (m *trackingMockSM) SetInteractor(interactor domain_security.UserInteractor) {
+	if m.setInteractorCb != nil {
+		m.setInteractorCb()
+	}
+}
