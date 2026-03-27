@@ -97,8 +97,8 @@ var (
 	ErrBudgetExceeded = errors.New("session budget exceeded")
 )
 
-// AddPart merges a new part into the content, appending or joining text parts as appropriate.
-func (c *Content) AddPart(p *Part) {
+// addPart merges a new part into the content, appending or joining text parts as appropriate.
+func (c *Content) addPart(p *Part) {
 	if len(c.Parts) > 0 {
 		last := c.Parts[len(c.Parts)-1]
 		if last.canMergeWith(p) {

@@ -11,7 +11,7 @@ SPDX-License-Identifier: MIT
 A high-performance CLI assistant unifying the world's most powerful reasoning engines (**Gemini, OpenAI, DeepSeek, Claude**) under a single, resilient interface.
 
 ## Overview
-`tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
+`tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance, provides a rich TUI for history exploration, and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
 
 ## 🚀 Features
 *   **Multi-Provider Reasoning**: Native support for Gemini 1.5/2.0/3.0, GPT-4o/o1/o3/5, DeepSeek R1, and Claude 3.5/3.7/4.
@@ -23,7 +23,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Deep Analysis**: High-level tools for `verify_architecture` (Hexagonal/Clean Architecture checks), `get_code_health`, and `analyze_sequence_flow` (Mermaid sequence diagrams).
     *   **Enterprise**: Deep integration with **Jira** (search/get), **Confluence** (search/read/write), **Azure DevOps** (PRs, Repos, Pipeline creation/runs/logs), and **Teams**.
     *   **System & Dev**: Shell execution (`execute_command`, `pipe_commands`), testing, linting, and vulnerability scanning (`govulncheck`).
-    *   **State & History**: Task tracking, `summarize_history`, and `manage_history` (pinning/unpinning turns to protect them from pruning).
+    *   **State & History**: Task tracking, `summarize_history`, `manage_history` (pinning/unpinning turns to protect them from pruning), and **Interactive History Browser** (`tell-me-go browse`) with full-text search and O(1) archive navigation.
     *   **Media**: Imagen 3 image generation and Vision analysis.
 *   **Safety Guardrails**: 
     *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
@@ -50,12 +50,18 @@ Run the assistant by passing your prompt as an argument. By default, it uses `co
 tell-me-go "How to use this tool?"
 ```
 
+**Interactive TUI Prompt (Auto-complete):**
+Launch a rich terminal prompt with real-time suggestions for history, files, and tools.
+```bash
+tell-me-go -i
+```
+
 **History Management:**
 Show the last 5 messages:
 ```bash
 tell-me-go -l 5
 ```
-*(Coming Soon)* Interactive history browsing with search and thought visibility:
+Interactive history browsing with search and thought visibility:
 ```bash
 tell-me-go browse
 ```
@@ -197,5 +203,6 @@ Refer to the following documents for deep-dives into the system design:
 - **ADR-005**: [Skill Injection Architecture](docs/adr/2024-09-skill-injection-architecture.md)
 - **ADR-006**: [History Log Compaction and Bounded Contexts](docs/adr/2024-10-history-log-compaction.md)
 - **ADR-007**: [Extract Agent Configuration via Functional Options](docs/adr/2026-02-agent-options-extraction.md)
-- **ADR-008**: [Bubble Tea Interactive History Browser](docs/adr/2026-02-bubble-tea-history-browser.md) *(Proposed)*
+- **ADR-008**: [Bubble Tea Interactive History Browser](docs/adr/2026-02-bubble-tea-history-browser.md)
+- **ADR-009**: [TUI Interactive Prompt Mode](docs/adr/2026-02-tui-prompt-mode.md)
 - **SOPs**: Standard Operating Procedures are located in `docs/sop/`.

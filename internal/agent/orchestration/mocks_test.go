@@ -263,3 +263,5 @@ func (m *mockSessionLoader) LoadSession(path string) (*config.SessionConfig, err
 	}
 	return args.Get(0).(*config.SessionConfig), args.Error(1)
 }
+
+func (m *mockHistoryManager) GetFilePath() string { return "" }

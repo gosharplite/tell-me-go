@@ -399,3 +399,5 @@ func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 	}
 	return nil
 }
+
+func (m *mockHistoryManager) GetFilePath() string { return "" }

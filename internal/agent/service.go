@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -16,6 +18,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 )
 
 // Container defines the interface for building session dependencies and provides factories.
@@ -25,6 +28,8 @@ type Container interface {
 	GetAgentFactory() ports.ChatterFactory
 	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
 	GetHistoryManager(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
+	GetUnifiedHistoryProvider(ctx context.Context, cfg *domain_config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
+	GetToolNames(ctx context.Context, cfg *domain_config.Config, configPath string) ([]string, error)
 }
 
 type chatService struct {
@@ -127,4 +132,52 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 
 	return err
+}
+
+// BrowseHistory initializes the TUI history browser and runs the Bubble Tea loop.
+func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capturer ports.Capturer) error {
+	cfg, err := s.Loader.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("error loading config [%s]: %w", configPath, err)
+	}
+
+	hManager, err := s.Container.GetHistoryManager(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to load history manager: %w", err)
+	}
+
+	provider, err := s.Container.GetUnifiedHistoryProvider(ctx, cfg, hManager)
+	if err != nil {
+		return fmt.Errorf("failed to load unified history provider: %w", err)
+	}
+
+	// Initialize background logger for TUI
+	if closer, err := tui.InitLogger(); err == nil {
+		defer func() {
+			if closeErr := closer.Close(); closeErr != nil {
+				log.Printf("failed to close tui logger: %v", closeErr)
+			}
+		}()
+	}
+
+	// TTY check is done in the command layer or here.
+	// We'll trust the caller for now, or check if capturer is available.
+
+	model := tui.NewRootBrowserModel(ctx, provider, hManager)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("tui program error: %w", err)
+	}
+
+	return nil
+}
+
+// GetToolNames retrieves the names of all available tools.
+func (s *chatService) GetToolNames(ctx context.Context, configPath string) ([]string, error) {
+	cfg, err := s.Loader.Load(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("error loading config [%s]: %w", configPath, err)
+	}
+
+	return s.Container.GetToolNames(ctx, cfg, configPath)
 }

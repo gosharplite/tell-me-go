@@ -10,8 +10,9 @@ import (
 
 // CaptureOptions configures the behavior of the Capturer.
 type CaptureOptions struct {
-	SkipTTYWait bool // If true, the capturer will not block waiting for interactive input if empty.
-	Raw         bool // If true, disables markdown rendering/special formatting (if applicable).
+	SkipTTYWait  bool // If true, the capturer will not block waiting for interactive input if empty.
+	Raw          bool // If true, disables markdown rendering/special formatting (if applicable).
+	UseTUIPrompt bool // If true, uses the interactive TUI prompt with suggestions.
 }
 
 // CaptureOption defines a functional option for configuring CaptureOptions.
@@ -28,6 +29,13 @@ func WithSkipTTYWait(skip bool) CaptureOption {
 func WithRaw(raw bool) CaptureOption {
 	return func(o *CaptureOptions) {
 		o.Raw = raw
+	}
+}
+
+// WithTUIPrompt sets whether to use the interactive TUI prompt.
+func WithTUIPrompt(tui bool) CaptureOption {
+	return func(o *CaptureOptions) {
+		o.UseTUIPrompt = tui
 	}
 }
 

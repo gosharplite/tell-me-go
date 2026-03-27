@@ -153,8 +153,8 @@ func (m *Manager) clonePersistentContentLocked(c *llm.Content) *llm.Content {
 	return cloned
 }
 
-// getPath returns the file path of the history file.
-func (m *Manager) getPath() string {
+// GetFilePath returns the file path of the history file.
+func (m *Manager) GetFilePath() string {
 	return m.FilePath
 }
 

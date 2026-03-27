@@ -47,13 +47,13 @@ func (s *safeBuffer) Reset() {
 	s.b.Reset()
 }
 
-// ControlledTicker allows us to trigger ticks manually for spinner frames.
-type ControlledTicker struct {
+// controlledTicker allows us to trigger ticks manually for spinner frames.
+type controlledTicker struct {
 	CChan <-chan time.Time
 }
 
-func (ct ControlledTicker) C() <-chan time.Time { return ct.CChan }
-func (ct ControlledTicker) Stop()               {}
+func (ct controlledTicker) C() <-chan time.Time { return ct.CChan }
+func (ct controlledTicker) Stop()               {}
 
 // controlledClock allows us to trigger ticks manually for spinner frames.
 type controlledClock struct {
@@ -79,7 +79,7 @@ func (c *controlledClock) After(d time.Duration) <-chan time.Time {
 }
 
 func (c *controlledClock) NewTicker(d time.Duration) clock.Ticker {
-	return ControlledTicker{CChan: c.tickChannel}
+	return controlledTicker{CChan: c.tickChannel}
 }
 
 func (c *controlledClock) Jitter(base float64) float64 { return base }

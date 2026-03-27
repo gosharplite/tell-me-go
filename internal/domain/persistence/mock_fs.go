@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,9 +19,35 @@ import (
 // mockFile implements File interface for testing.
 type mockFile struct {
 	*bytes.Reader
-	name    string
-	content []byte
-	closed  bool
+	name       string
+	content    []byte
+	closed     bool
+	entries    []os.DirEntry
+	entryIndex int
+}
+
+func (f *mockFile) ReadDir(n int) ([]os.DirEntry, error) {
+	if f.entries == nil {
+		return nil, fmt.Errorf("not a directory")
+	}
+
+	if f.entryIndex >= len(f.entries) {
+		if n <= 0 {
+			return nil, nil
+		}
+		return nil, io.EOF
+	}
+
+	start := f.entryIndex
+	end := f.entryIndex + n
+	if n <= 0 || end > len(f.entries) {
+		end = len(f.entries)
+	}
+
+	res := make([]os.DirEntry, end-start)
+	copy(res, f.entries[start:end])
+	f.entryIndex = end
+	return res, nil
 }
 
 func (f *mockFile) Write(p []byte) (n int, err error) {
@@ -129,11 +156,23 @@ func (m *mockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, er
 func (m *mockFileSystem) Open(ctx context.Context, name string) (File, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
 	content, ok := m.Files[name]
-	if !ok {
-		return nil, os.ErrNotExist
+	if ok {
+		return &mockFile{Reader: bytes.NewReader(content), name: name, content: content}, nil
 	}
-	return &mockFile{Reader: bytes.NewReader(content), name: name, content: content}, nil
+
+	// Check if it's a directory
+	stat, err := m.Stat(ctx, name)
+	if err == nil && stat.IsDir() {
+		// Get entries to populate the directory file
+		m.mu.RUnlock()
+		entries, _ := m.ReadDir(ctx, name)
+		m.mu.RLock()
+		return &mockFile{name: name, entries: entries}, nil
+	}
+
+	return nil, os.ErrNotExist
 }
 
 func (m *mockFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {

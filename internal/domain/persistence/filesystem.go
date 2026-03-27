@@ -15,6 +15,8 @@ type File interface {
 	io.Writer
 	io.Seeker
 	io.Closer
+	io.ReaderAt
+	ReadDir(n int) ([]os.DirEntry, error)
 }
 
 // WalkFunc is the signature for the walk function.

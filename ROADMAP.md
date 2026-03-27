@@ -63,23 +63,53 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 *Note: This roadmap is subject to change based on the evolution of LLM APIs and project requirements.*
 
 
-## Phase 8: Interactive History Exploration (Proposed)
+## Phase 8: Interactive History Exploration (Completed)
 - **Goal:** Provide professional-grade, unbounded history exploration with search, navigation, and thought visibility controls, without compromising memory safety or LLM context limits.
-- **Task:** Implement **Unified History Data Layer (Prerequisite)**:
-    - [ ] Create `ArchiveReader` port with O(1) byte-offset indexing for safe, paginated reads of `history.archive.jsonl`.
-    - [ ] Implement `UnifiedHistoryProvider` facade to stitch archived and active history seamlessly.
-    - [ ] Implement **Summary Filtering**: Silently drop synthetic "System Auto-Summary" messages during stitching to prevent "double history" UX bugs.
-    - [ ] Enforce CQRS boundaries: UI uses the unified reader; Agent retains the active `HistoryManager` to protect `summarize_history` from token bloat.
+- **Task:** Implement **Unified History Data Layer (Strict Prerequisite - STOP & VERIFY before TUI)**:
+    - [x] **1. Domain Layer (Read Model)**: Define `HistoryViewDTO`, `ArchiveReader`, and `UnifiedHistoryProvider` interfaces in `internal/domain/ports/` to enforce CQRS.
+    - [x] **2. Infrastructure Layer (Archive Adapter)**: Implement `ArchiveReader` using `os.File.Seek(offset, io.SeekStart)` for O(1) byte-offset reads. Write a benchmark proving low memory allocation on a 50MB file.
+    - [x] **3. Application Layer (Unified Facade)**: Implement `UnifiedHistoryProvider` to stitch active/archive data, map to `HistoryViewDTO`, and strictly filter out synthetic "System Auto-Summary" messages.
 - **Task:** Implement **Interactive History Browser** using Bubble Tea TUI framework:
-    - [ ] Create `tell-me-go browse` subcommand with TTY-aware fallback.
-    - [ ] Architect a non-blocking asynchronous event loop (`tea.Cmd`) to prevent disk I/O UI freezing.
-    - [ ] Implement Component Composition (Viewport, SearchBar) to avoid TUI 'God Objects'.
-    - [ ] Add basic scrolling navigation and thought visibility toggle (spacebar).
-    - [ ] Add full-text search across the complete conversation timeline.
-    - [ ] Support turn jumping and tool call expansion.
-    - [ ] **Asset Hydration Check**: Render placeholders (`[Image Attached: {ID}]`) to prevent binary blob panics in the TUI.
-    - [ ] Integrate with existing pin/unpin and rollback functionality via Command Ports.
-    - [ ] **Immutable Archive Boundary**: Visually disable/block mutation commands (Pin/Rollback) for messages originating from the archive.
-    - [ ] **Pinning Pressure Warning (Minor)**: Display a UI warning if the user pins too many active messages, preventing safe auto-summarization.
-    - [ ] **Live Reload (Minor)**: Optional EventBus subscription to gracefully refresh the TUI if `history.jsonl` is modified in another terminal window.
+    - [x] Create `tell-me-go browse` subcommand with TTY-aware fallback.
+    - [x] Architect a non-blocking asynchronous event loop (`tea.Cmd`) to prevent disk I/O UI freezing.
+    - [x] Implement Component Composition (Viewport, SearchBar) to avoid TUI 'God Objects'.
+    - [x] Add basic scrolling navigation and thought visibility toggle (spacebar).
+    - [x] Add full-text search across the complete conversation timeline.
+    - [x] Support turn jumping and tool call expansion.
+    - [x] **Asset Hydration Check**: Render placeholders (`[Image Attached: {ID}]`) to prevent binary blob panics in the TUI.
+    - [x] Integrate with existing pin/unpin and rollback functionality via Command Ports.
+    - [x] **Immutable Archive Boundary**: Visually disable/block mutation commands (Pin/Rollback) for messages originating from the archive.
+    - [x] **Pinning Pressure Warning (Minor)**: Display a UI warning if the user pins too many active messages, preventing safe auto-summarization.
+    - [x] **Live Reload (Minor)**: Optional EventBus subscription to gracefully refresh the TUI if `history.jsonl` is modified in another terminal window.
 - **Reference:** [ADR-008: Bubble Tea Interactive History Browser](./docs/adr/2026-02-bubble-tea-history-browser.md)
+## Phase 9: Interactive TUI Prompt Mode (Approved)
+- **Goal:** Provide a professional-grade interactive prompt experience with auto-completion and real-time session observability, while strictly preserving the current multi-line input as the default.
+- **Architectural Constraints (Strictly Enforced):**
+    - **[ARCHITECTURAL BLOCKER] Synchronous Autocomplete I/O:** All suggestions MUST be fetched asynchronously via `tea.Cmd` to prevent UI thread blocking.
+    - **[ARCHITECTURAL BLOCKER] Goroutine Leaks in Autocomplete:** The `SuggestionService` MUST accept a `context.Context` to cancel previous requests on rapid keystrokes, combined with a 50-100ms debouncer to prevent CPU spikes.
+    - **[TECHNICAL DEBT] "God Object" TUI Model:** Must use Component Composition (`Dashboard`, `Prompt/Textarea`, `Suggester/Autocomplete`) instead of a single massive Model.
+    - **[REFACTOR] Strict Dependency Injection:** TUI components must not instantiate services. The `SuggestionService` and `UnifiedHistoryProvider` MUST be injected from the application composition root.
+    - **[REFACTOR] CQRS for Real-Time Querying:** Must implement an optimized Read Model (e.g., Radix Tree/Trie) for `O(k)` prefix matching instead of linear scans over history and tools.
+    - **[TECHNICAL DEBT] Cross-Platform State Mutation:** The new `global_prompts.jsonl` tracker MUST use an append-only JSON Lines format to eliminate the need for brittle `syscall.Flock` locks, preventing concurrent terminal session corruption. Updates must run asynchronously.
+    - **[SECURITY & SCOPE] Bounded File Scanning:** File completion must restrict scan depth and filter large directories (e.g., `node_modules`) to avoid memory exhaustion.
+    - **[UI RISK] Multi-line Layout Paging:** The textarea must have fixed layout bounds with internal scrolling to prevent large pastes from breaking the TUI layout.
+    - **[COMPATIBILITY] Cross-Platform Constraints:** Provide alternatives to `Ctrl+S` (e.g., `Alt+Enter` to avoid XOFF locks) and sanitize line-endings (`\r\n` to `\n`).
+- **Task:** Implement **Opt-In TUI Prompt Engine**:
+    - [x] Create `tell-me-go --tui` (or `-i`) flag for explicit activation.
+    - [x] Implement `USE_TUI_PROMPT` configuration (default: `false`).
+    - [x] Architect the `MainTUIModel` using Bubble Tea with Component Composition.
+    - [x] **Dashboard Integration**: Display previous turn metrics (Turn ID, Tokens, Cost, Timing) at the top of the TUI.
+    - [x] **Session Observability**: Show real-time turn counts and active context token usage during composition.
+- **Task:** Implement **Suggestion & Auto-completion System**:
+    - [x] Create an asynchronous `SuggestionService` to prevent UI blocking during data fetching.
+    - [x] Implement context cancellation (`context.Context`) and a 100ms debouncer to prevent Goroutine leaks and CPU spikes on rapid keystrokes.
+    - [x] Implement an optimized Read Model using Fuzzy Subsequence Matching for flexible, typo-tolerant lookups.
+    - [x] Implement **Multi-Source Suggestions**:
+        - [x] History: Recent user prompts and top cross-session prompts from `global_prompts.jsonl`.
+        - [x] Files: Local workspace paths with dynamic, chunked directory scanning (`ReadDir(100)`).
+        - [ ] Tools: Registered tool names from the `ToolRegistry` (Deferred).
+        - [ ] Prompts: Pre-defined templates from `docs/user/prompts.md` (Deferred).
+    - [x] Add **Floating Dropdown** UI components for non-intrusive autocompletion.
+    - [x] Map standard keybindings (`Tab` to cycle, `Ctrl+S` or `Alt+Enter` to submit, `Esc` to quit).
+    - [x] Ensure rendering degrades gracefully on `TERM=dumb` and handles Windows line-endings (`\r\n`) securely.
+- **Reference:** [ADR-009: TUI Interactive Prompt Mode with Auto-completion](./docs/adr/2026-02-tui-prompt-mode.md)

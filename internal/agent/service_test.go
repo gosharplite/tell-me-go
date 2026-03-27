@@ -115,6 +115,19 @@ func (m *mockServiceContainer) GetHistoryManager(ctx context.Context, cfg *confi
 	return args.Get(0).(ports.HistoryManager), args.Error(1)
 }
 
+func (m *mockServiceContainer) GetUnifiedHistoryProvider(ctx context.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
+	args := m.Called(ctx, cfg)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.UnifiedHistoryProvider), args.Error(1)
+}
+
+func (m *mockServiceContainer) GetToolNames(ctx context.Context, cfg *config.Config, configPath string) ([]string, error) {
+	args := m.Called(ctx, cfg, configPath)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 // mockServiceSessionDependencies is a mock of SessionDependencies.
 type mockServiceSessionDependencies struct {
 	mock.Mock
@@ -393,3 +406,5 @@ func (m *mockHistoryManagerForRetry) SetPinned(ctx context.Context, turnIndex in
 func (m *mockHistoryManagerForRetry) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
 	return 0, 0, 0, nil
 }
+
+func (m *mockHistoryManagerForRetry) GetFilePath() string { return "" }

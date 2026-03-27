@@ -42,6 +42,7 @@ type HistoryWriter interface {
 type HistoryModifier interface {
 	Archive(ctx context.Context, contents []*llm.Content) error
 	SetPinned(ctx context.Context, turnIndex int, pinned bool) error
+	GetFilePath() string
 
 	// RollbackTurns removes the last N turns (1 turn = 2 messages) from the history.
 	// It returns the actual number of turns removed, the remaining turns, the remaining total messages, and any error.

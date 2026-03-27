@@ -13,10 +13,15 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 )
 
 func init() {
@@ -45,6 +50,7 @@ type cliOptions struct {
 	lastN       int
 	backN       int
 	rawOutput   bool
+	tuiPrompt   bool
 	retry       bool
 }
 
@@ -75,6 +81,15 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return nil
 	}
 
+	// 2. Configuration Merge
+	// Load configuration early to merge with CLI options
+	loader := &infra_config.YAMLConfigLoader{}
+	cfg, _ := loader.Load(opts.configPath)
+	// Only auto-enable TUI from config if no other actions are requested
+	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
+		opts.tuiPrompt = true
+	}
+
 	var prompt string
 	if opts.retry {
 		var abort bool
@@ -87,8 +102,26 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		}
 	}
 
-	// 2. Invoking a Use Case / Service interface
-	capturer := c.setupCapturer()
+	// 3. Invoking a Use Case / Service interface
+	var capturer ports.Capturer
+	if opts.tuiPrompt {
+		tracker := history.NewGlobalPromptTracker(c.HomeDir)
+
+		// Try to get at least the last user message for the trie
+		lastMsg, _, _ := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
+		var recentHistory []string
+		if lastMsg != "" {
+			recentHistory = append(recentHistory, lastMsg)
+		}
+
+		svc, _ := suggestions.NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, recentHistory)
+
+		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
+
+		capturer = tui.NewPromptCapturer(baseCapturer, svc)
+	} else {
+		capturer = c.setupCapturer()
+	}
 
 	if !opts.retry {
 		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
@@ -99,12 +132,13 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 
 	// Delegate all business logic and orchestration to the ChatService
 	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
-		ConfigPath: opts.configPath,
-		NewSession: opts.newSession,
-		LastN:      opts.lastN,
-		BackN:      opts.backN,
-		RawOutput:  opts.rawOutput,
-		Prompt:     prompt,
+		ConfigPath:   opts.configPath,
+		NewSession:   opts.newSession,
+		LastN:        opts.lastN,
+		BackN:        opts.backN,
+		RawOutput:    opts.rawOutput,
+		UseTUIPrompt: opts.tuiPrompt,
+		Prompt:       prompt,
 	}, capturer)
 }
 
@@ -157,6 +191,9 @@ func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []ports.CaptureOpt
 	if opts.rawOutput {
 		captureOpts = append(captureOpts, ports.WithRaw(true))
 	}
+	if opts.tuiPrompt {
+		captureOpts = append(captureOpts, ports.WithTUIPrompt(true))
+	}
 	return captureOpts
 }
 
@@ -176,6 +213,8 @@ func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.Flag
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
 	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
 	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
+	fs.BoolVar(&opts.tuiPrompt, "i", false, "Enable interactive TUI prompt with suggestions")
+	fs.BoolVar(&opts.tuiPrompt, "tui", false, "Enable interactive TUI prompt with suggestions")
 	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
 
 	if err := fs.Parse(flagArgs); err != nil {

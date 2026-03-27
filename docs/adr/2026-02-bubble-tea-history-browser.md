@@ -1,7 +1,7 @@
 # ADR-008: Bubble Tea Interactive History Browser
 
 ## Status
-Proposed (2026-02-15) - *Revised with Architectural Review Findings on Archival & CQRS*
+Implemented (2026-02-25) - *Revised with Architectural Review Findings on Archival & CQRS*
 
 ## Context
 The current `tell-me-go` CLI provides limited history viewing capabilities through the `-l N` flag, which dumps the last N messages to stdout. This approach has several limitations:
@@ -17,9 +17,43 @@ ADR-006 introduced History Log Compaction, splitting conversation history into a
 ## Decision
 We will implement a new `tell-me-go browse` subcommand using the Bubble Tea TUI framework to provide interactive history exploration. To ensure system stability and protect existing summarization logic, this requires a foundational data layer refactor before UI implementation.
 
-### Phase 0: Unified History Data Layer (Prerequisite)
-1. **`ArchiveReader` Port**: Create a new domain interface for unbounded, paginated reading of `history.archive.jsonl` using O(1) byte-offset indexing. It must never load the entire archive into RAM.
-2. **`UnifiedHistoryProvider` Facade**: Create a read-only UI service that dynamically stitches data from the `ArchiveReader` (disk) and `HistoryManager` (memory) into a single continuous stream.
+### Phase 0: Unified History Data Layer (Strict Prerequisite)
+Before any Bubble Tea UI code (`tea.Model`, `tea.Cmd`) is written, the Coder MUST implement and test the Read Model bounded context:
+
+1. **Domain Layer (Read Boundaries & DTOs)**: 
+   Create `internal/domain/ports/history_query.go` to define the isolated UI Read Model:
+   ```go
+   package ports
+
+   import "time"
+
+   // HistoryViewDTO is the immutable read-model for the UI.
+   type HistoryViewDTO struct {
+       ID             string
+       Role           string
+       ContentPreview string // Masked/formatted text (e.g., base64 hidden)
+       ThoughtProcess string
+       IsArchived     bool   // True if sourced from archive (disables Pinning)
+       Timestamp      time.Time
+   }
+
+   // ArchiveReader provides O(1) unbounded reading of disk history.
+   type ArchiveReader interface {
+       // ReadPage uses byte-offsets, NOT full memory loading.
+       ReadPage(ctx context.Context, limit int, offset int64) ([]HistoryViewDTO, int64, error)
+   }
+
+   // UnifiedHistoryProvider stitches active and archived history for the TUI.
+   type UnifiedHistoryProvider interface {
+       GetHistoryStream(ctx context.Context, limit int, cursor string) ([]HistoryViewDTO, string, error)
+   }
+   ```
+
+2. **Infrastructure Layer (Archive Adapter)**: 
+   Implement the `ArchiveReader` in `internal/infrastructure/history/`. It **must** use `os.File.Seek(offset, io.SeekStart)` to read `history.archive.jsonl` without loading earlier lines into memory. *Verification:* A benchmark test must prove low memory allocation when reading the end of a 50MB dummy file.
+
+3. **Application Layer (Unified Facade)**: 
+   Implement the `UnifiedHistoryProvider` to coordinate `ArchiveReader` and `HistoryManager`. It **must** silently drop synthetic "System Auto-Summary" messages during stitching to prevent "double history" rendering in the UI.
 
 ### Phase 1: Core Browser (MVP)
 3. **New Subcommand**: `tell-me-go browse` launches the interactive TUI.
@@ -62,7 +96,7 @@ type UnifiedHistoryProvider struct {
 }
 
 // 2. Scalable Component Composition (internal/ui/tui/browser.go)
-type RootBrowserModel struct {
+type rootBrowserModel struct {
     viewport ui.ViewportModel
     search   ui.SearchModel
 
@@ -74,7 +108,7 @@ type RootBrowserModel struct {
 }
 
 // 3. Non-blocking Asynchronous I/O via tea.Cmd
-func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
     case ScrollDownMsg:
         m.isLoading = true
@@ -119,3 +153,25 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 ## User Documentation
 For user-facing documentation, mockups, and usage examples, see [docs/user/history-browser.md](../user/history-browser.md).
+
+### 4. Immutable DTOs (Data Transfer Objects)
+To prevent accidental state mutation and protect the presentation layer from choking on raw data (e.g., large base64 strings or complex tool payloads), the `UnifiedHistoryProvider` will not return pointers to the core `domain.Message` entities.
+
+Instead, it will map all data into a strictly formatted, read-only DTO tailored for the Bubble Tea UI:
+
+```go
+// Application Layer (Read Model DTO)
+package history
+
+type HistoryViewDTO struct {
+    ID             string
+    Role           string
+    ContentPreview string // Formatted for UI (e.g., base64 images replaced with "[Attached Image: {ID}]")
+    ThoughtProcess string // Optional reasoning blocks
+    IsArchived     bool   // UI uses this to visually disable the "Pin" or "Rollback" buttons
+    Timestamp      time.Time
+    ToolCalls      []string // Summarized tool execution names
+}
+```
+
+The UI components will only receive and render `HistoryViewDTO` values.
