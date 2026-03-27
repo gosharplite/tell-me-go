@@ -138,228 +138,249 @@ func (m *RootBrowserModel) updateViewportHeight() {
 
 // Update handles incoming messages and updates the model state.
 func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		return m.handleKeyMsg(msg)
+	case tea.WindowSizeMsg:
+		return m.handleWindowSizeMsg(msg)
+	case historyLoadedMsg:
+		return m.handleHistoryLoadedMsg(msg)
+	case fileChangedMsg:
+		return m.handleFileChangedMsg(msg)
+	}
+
+	return m.handleViewportUpdate(msg)
+}
+
+func (m RootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	if m.isSearching {
+		switch msg.String() {
+		case "enter":
+			m.isSearching = false
+			m.currentQuery = m.searchBar.Value()
+			m.currentMatch = 0
+			m.viewport.SetContent(m.renderHistory())
+			m.updateViewportHeight()
+			m.viewport.GotoTop()
+			return m, nil
+		case "esc":
+			m.isSearching = false
+			m.searchBar.SetValue("")
+			m.currentQuery = ""
+			m.matches = nil
+			m.viewport.SetContent(m.renderHistory())
+			m.updateViewportHeight()
+			return m, nil
+		}
+		m.searchBar, cmd = m.searchBar.Update(msg)
+		return m, cmd
+	}
+
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case " ":
+		m.showThoughts = !m.showThoughts
+		m.viewport.SetContent(m.renderHistory())
+		return m, nil
+	case "/":
+		m.isSearching = true
+		m.searchBar.Focus()
+		m.updateViewportHeight()
+		return m, nil
+	case "j":
+		if len(m.history) > 0 {
+			m.selectedTurn++
+			if m.selectedTurn >= len(m.history) {
+				m.selectedTurn = len(m.history) - 1
+			}
+			m.viewport.SetContent(m.renderHistory())
+
+			if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
+				targetLine := m.turnOffsets[m.selectedTurn]
+				if targetLine < m.viewport.YOffset {
+					m.viewport.SetYOffset(targetLine)
+				}
+				if targetLine >= m.viewport.YOffset+m.viewport.Height {
+					m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
+				}
+			}
+		}
+		return m, nil
+	case "k":
+		if len(m.history) > 0 {
+			m.selectedTurn--
+			if m.selectedTurn < 0 {
+				m.selectedTurn = 0
+			}
+			m.viewport.SetContent(m.renderHistory())
+
+			if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
+				targetLine := m.turnOffsets[m.selectedTurn]
+				if targetLine < m.viewport.YOffset {
+					m.viewport.SetYOffset(targetLine)
+				}
+				if targetLine >= m.viewport.YOffset+m.viewport.Height {
+					m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
+				}
+			}
+		}
+		return m, nil
+	case "p":
+		if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
+			dto := m.history[m.selectedTurn]
+			if !dto.IsArchived {
+				// Toggle pin state
+				err := m.cmdService.SetPinned(context.Background(), dto.OriginalIndex/2, !dto.IsPinned)
+				if err != nil {
+					m.err = err
+					return m, nil
+				}
+				// Update local DTOs for the turn to reflect toggle
+				newPinState := !dto.IsPinned
+				turnStartIdx := dto.OriginalIndex & ^1
+				for idx := range m.history {
+					if !m.history[idx].IsArchived && (m.history[idx].OriginalIndex & ^1) == turnStartIdx {
+						m.history[idx].IsPinned = newPinState
+					}
+				}
+				m.lastMutationTime = time.Now()
+				m.viewport.SetContent(m.renderHistory())
+				m.updateViewportHeight()
+			}
+		}
+		return m, nil
+	case "r":
+		if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
+			dto := m.history[m.selectedTurn]
+			if !dto.IsArchived {
+				// We need total active turns.
+				// Let's get it from the last active DTO.
+				lastActiveIdx := -1
+				for i := len(m.history) - 1; i >= 0; i-- {
+					if !m.history[i].IsArchived {
+						lastActiveIdx = m.history[i].OriginalIndex
+						break
+					}
+				}
+				if lastActiveIdx == -1 {
+					return m, nil
+				}
+
+				totalMsgs := lastActiveIdx + 1
+				targetStartIdx := dto.OriginalIndex & ^1
+				turnsToRemove := (totalMsgs - targetStartIdx + 1) / 2
+
+				_, _, _, err := m.cmdService.RollbackTurns(context.Background(), turnsToRemove)
+				if err != nil {
+					m.err = err
+					return m, nil
+				}
+
+				m.lastMutationTime = time.Now()
+				// Full Refresh
+				m.history = nil
+				m.cursor = ""
+				m.selectedTurn = -1
+				m.isLoading = true
+				return m, fetchHistoryCmd(m.provider, "")
+			}
+		}
+		return m, nil
+	case "n":
+		if len(m.matches) > 0 {
+			m.currentMatch = (m.currentMatch + 1) % len(m.matches)
+			m.viewport.SetYOffset(m.matches[m.currentMatch])
+		}
+		return m, nil
+	case "N":
+		if len(m.matches) > 0 {
+			m.currentMatch--
+			if m.currentMatch < 0 {
+				m.currentMatch = len(m.matches) - 1
+			}
+			m.viewport.SetYOffset(m.matches[m.currentMatch])
+		}
+		return m, nil
+	}
+
+	return m.handleViewportUpdate(msg)
+}
+
+func (m RootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	m.height = msg.Height
+	if !m.ready {
+		m.viewport = viewport.New(msg.Width, msg.Height-m.calculateFooterHeight())
+		m.viewport.SetContent(m.renderHistory())
+		m.ready = true
+	} else {
+		m.viewport.Width = msg.Width
+		m.updateViewportHeight()
+	}
+	return m.handleViewportUpdate(msg)
+}
+
+func (m RootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
+	m.isLoading = false
+	if msg.err != nil {
+		m.err = msg.err
+		return m, nil
+	}
+
+	isInitialLoad := (m.selectedTurn == -1)
+
+	if len(msg.dtos) > 0 {
+		if isInitialLoad {
+			m.history = msg.dtos
+			m.selectedTurn = len(m.history) - 1
+		} else {
+			// Prepend older history
+			numAdded := len(msg.dtos)
+			m.history = append(msg.dtos, m.history...)
+
+			// Update viewport and maintain scroll position
+			m.viewport.SetContent(m.renderHistory())
+			addedLines := m.turnOffsets[numAdded]
+			m.viewport.SetYOffset(m.viewport.YOffset + addedLines)
+
+			// Adjust selected turn
+			m.selectedTurn += numAdded
+		}
+	}
+
+	m.cursor = msg.nextCursor
+	m.viewport.SetContent(m.renderHistory())
+	m.updateViewportHeight()
+
+	if isInitialLoad && len(m.history) > 0 {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
+}
+
+func (m RootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, tea.Cmd) {
+	// Debounce: ignore changes if we just mutated the file
+	if time.Since(m.lastMutationTime) < 500*time.Millisecond {
+		return m, watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath())
+	}
+	// Refresh active memory
+	m.history = nil
+	m.cursor = ""
+	m.isLoading = true
+	return m, tea.Batch(
+		fetchHistoryCmd(m.provider, ""),
+		watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath()),
+	)
+}
+
+func (m RootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
 	)
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		if m.isSearching {
-			switch msg.String() {
-			case "enter":
-				m.isSearching = false
-				m.currentQuery = m.searchBar.Value()
-				m.currentMatch = 0
-				m.viewport.SetContent(m.renderHistory())
-				m.updateViewportHeight()
-				m.viewport.GotoTop()
-				return m, nil
-			case "esc":
-				m.isSearching = false
-				m.searchBar.SetValue("")
-				m.currentQuery = ""
-				m.matches = nil
-				m.viewport.SetContent(m.renderHistory())
-				m.updateViewportHeight()
-				return m, nil
-			}
-			m.searchBar, cmd = m.searchBar.Update(msg)
-			return m, cmd
-		}
-
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
-		case " ":
-			m.showThoughts = !m.showThoughts
-			m.viewport.SetContent(m.renderHistory())
-			return m, nil
-		case "/":
-			m.isSearching = true
-			m.searchBar.Focus()
-			m.updateViewportHeight()
-			return m, nil
-		case "j":
-			if len(m.history) > 0 {
-				m.selectedTurn++
-				if m.selectedTurn >= len(m.history) {
-					m.selectedTurn = len(m.history) - 1
-				}
-				m.viewport.SetContent(m.renderHistory())
-
-				if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
-					targetLine := m.turnOffsets[m.selectedTurn]
-					if targetLine < m.viewport.YOffset {
-						m.viewport.SetYOffset(targetLine)
-					}
-					if targetLine >= m.viewport.YOffset+m.viewport.Height {
-						m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
-					}
-				}
-			}
-			return m, nil
-		case "k":
-			if len(m.history) > 0 {
-				m.selectedTurn--
-				if m.selectedTurn < 0 {
-					m.selectedTurn = 0
-				}
-				m.viewport.SetContent(m.renderHistory())
-
-				if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
-					targetLine := m.turnOffsets[m.selectedTurn]
-					if targetLine < m.viewport.YOffset {
-						m.viewport.SetYOffset(targetLine)
-					}
-					if targetLine >= m.viewport.YOffset+m.viewport.Height {
-						m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
-					}
-				}
-			}
-			return m, nil
-		case "p":
-			if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
-				dto := m.history[m.selectedTurn]
-				if !dto.IsArchived {
-					// Toggle pin state
-					err := m.cmdService.SetPinned(context.Background(), dto.OriginalIndex/2, !dto.IsPinned)
-					if err != nil {
-						m.err = err
-						return m, nil
-					}
-					// Update local DTOs for the turn to reflect toggle
-					newPinState := !dto.IsPinned
-					turnStartIdx := dto.OriginalIndex & ^1
-					for idx := range m.history {
-						if !m.history[idx].IsArchived && (m.history[idx].OriginalIndex & ^1) == turnStartIdx {
-							m.history[idx].IsPinned = newPinState
-						}
-					}
-					m.lastMutationTime = time.Now()
-					m.viewport.SetContent(m.renderHistory())
-					m.updateViewportHeight()
-				}
-			}
-			return m, nil
-		case "r":
-			if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
-				dto := m.history[m.selectedTurn]
-				if !dto.IsArchived {
-					// We need total active turns.
-					// Let's get it from the last active DTO.
-					lastActiveIdx := -1
-					for i := len(m.history) - 1; i >= 0; i-- {
-						if !m.history[i].IsArchived {
-							lastActiveIdx = m.history[i].OriginalIndex
-							break
-						}
-					}
-					if lastActiveIdx == -1 {
-						return m, nil
-					}
-
-					totalMsgs := lastActiveIdx + 1
-					targetStartIdx := dto.OriginalIndex & ^1
-					turnsToRemove := (totalMsgs - targetStartIdx + 1) / 2
-
-					_, _, _, err := m.cmdService.RollbackTurns(context.Background(), turnsToRemove)
-					if err != nil {
-						m.err = err
-						return m, nil
-					}
-
-					m.lastMutationTime = time.Now()
-					// Full Refresh
-					m.history = nil
-					m.cursor = ""
-					m.selectedTurn = -1
-					m.isLoading = true
-					return m, fetchHistoryCmd(m.provider, "")
-				}
-			}
-			return m, nil
-		case "n":
-			if len(m.matches) > 0 {
-				m.currentMatch = (m.currentMatch + 1) % len(m.matches)
-				m.viewport.SetYOffset(m.matches[m.currentMatch])
-			}
-			return m, nil
-		case "N":
-			if len(m.matches) > 0 {
-				m.currentMatch--
-				if m.currentMatch < 0 {
-					m.currentMatch = len(m.matches) - 1
-				}
-				m.viewport.SetYOffset(m.matches[m.currentMatch])
-			}
-			return m, nil
-		}
-
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-m.calculateFooterHeight())
-			m.viewport.SetContent(m.renderHistory())
-			m.ready = true
-		} else {
-			m.viewport.Width = msg.Width
-			m.updateViewportHeight()
-		}
-
-	case historyLoadedMsg:
-		m.isLoading = false
-		if msg.err != nil {
-			m.err = msg.err
-			return m, nil
-		}
-
-		isInitialLoad := (m.selectedTurn == -1)
-
-		if len(msg.dtos) > 0 {
-			if isInitialLoad {
-				m.history = msg.dtos
-				m.selectedTurn = len(m.history) - 1
-			} else {
-				// Prepend older history
-				numAdded := len(msg.dtos)
-				m.history = append(msg.dtos, m.history...)
-
-				// Update viewport and maintain scroll position
-				m.viewport.SetContent(m.renderHistory())
-				addedLines := m.turnOffsets[numAdded]
-				m.viewport.SetYOffset(m.viewport.YOffset + addedLines)
-
-				// Adjust selected turn
-				m.selectedTurn += numAdded
-			}
-		}
-
-		m.cursor = msg.nextCursor
-		m.viewport.SetContent(m.renderHistory())
-		m.updateViewportHeight()
-
-		if isInitialLoad && len(m.history) > 0 {
-			m.viewport.GotoBottom()
-		}
-
-		return m, nil
-
-	case fileChangedMsg:
-		// Debounce: ignore changes if we just mutated the file
-		if time.Since(m.lastMutationTime) < 500*time.Millisecond {
-			return m, watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath())
-		}
-		// Refresh active memory
-		m.history = nil
-		m.cursor = ""
-		m.isLoading = true
-		return m, tea.Batch(
-			fetchHistoryCmd(m.provider, ""),
-			watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath()),
-		)
-	}
 
 	// Forward messages to the viewport
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -374,6 +395,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(cmds...)
 }
+
 
 // View renders the current state of the model.
 func (m RootBrowserModel) View() string {
