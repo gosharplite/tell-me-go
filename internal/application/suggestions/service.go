@@ -136,7 +136,7 @@ func (s *MultiSourceSuggestionService) scanFiles(ctx context.Context, query stri
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var results []string
 	for {
