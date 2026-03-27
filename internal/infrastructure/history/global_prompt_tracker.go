@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -29,10 +30,11 @@ const (
 	compactionThresholdBytes = 150 * 1024
 )
 
-// globalPromptTracker handles atomic, lock-free recording of user prompts.
+// globalPromptTracker handles atomic recording of user prompts.
 type globalPromptTracker struct {
 	filepath   string
 	compacting atomic.Bool
+	mu         sync.RWMutex
 }
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
@@ -59,18 +61,28 @@ func (t *globalPromptTracker) Append(prompt string) error {
 		return fmt.Errorf("failed to marshal prompt entry: %w", err)
 	}
 
+	t.mu.RLock()
 	f, err := os.OpenFile(t.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		t.mu.RUnlock()
 		return fmt.Errorf("failed to open global prompts file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
 
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("failed to append prompt: %w", err)
+	_, writeErr := f.Write(append(data, '\n'))
+
+	var size int64
+	if info, err := f.Stat(); err == nil {
+		size = info.Size()
+	}
+	_ = f.Close()
+	t.mu.RUnlock()
+
+	if writeErr != nil {
+		return fmt.Errorf("failed to append prompt: %w", writeErr)
 	}
 
 	// Trigger async compaction if file size exceeds threshold and no compaction is already in progress
-	if info, err := f.Stat(); err == nil && info.Size() > compactionThresholdBytes {
+	if size > compactionThresholdBytes {
 		if t.compacting.CompareAndSwap(false, true) {
 			go t.compactLog()
 		}
@@ -99,6 +111,9 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 }
 
 func (t *globalPromptTracker) loadTopUniqueEntries(ctx context.Context, limit int) ([]promptEntry, error) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
 	f, err := os.Open(t.filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -208,7 +223,9 @@ func (t *globalPromptTracker) compactLog() {
 		return
 	}
 
+	t.mu.Lock()
 	_ = os.Rename(tmpPath, t.filepath)
+	t.mu.Unlock()
 }
 
 func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSize int) ([]byte, error) {

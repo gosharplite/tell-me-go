@@ -62,6 +62,12 @@ type rootBrowserModel struct {
 	height           int
 	lastMutationTime time.Time
 	turnOffsets      []int
+
+	// Render cache for expensive thought wrapping
+	cachedThoughts     string
+	lastThoughtProcess string
+	lastWidth          int
+	lastQuery          string
 }
 
 // NewRootBrowserModel creates a new history browser root model.
@@ -521,6 +527,13 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 }
 
 func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string) string {
+	// Check cache
+	if m.lastThoughtProcess == dto.ThoughtProcess && m.lastWidth == m.width && m.lastQuery == m.currentQuery {
+		if m.cachedThoughts != "" {
+			return m.cachedThoughts
+		}
+	}
+
 	// Add a visual icon and newline for better separation
 	thoughtText := "💭 [THOUGHTS]\n" + dto.ThoughtProcess
 
@@ -545,7 +558,16 @@ func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix strin
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
-	return sb.String()
+
+	result := sb.String()
+
+	// Update Cache
+	m.lastThoughtProcess = dto.ThoughtProcess
+	m.lastWidth = m.width
+	m.lastQuery = m.currentQuery
+	m.cachedThoughts = result
+
+	return result
 }
 
 func (m *rootBrowserModel) renderToolCalls(dto ports.HistoryViewDTO, prefix string) string {
