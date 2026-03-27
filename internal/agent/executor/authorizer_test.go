@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 )
@@ -54,4 +55,25 @@ func TestAuthorizationPanic(t *testing.T) {
 	err := auth.AuthorizeTool(&tools.ToolDeclaration{Name: "forbidden"}, &llm.FunctionCall{Name: "forbidden"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not allowed")
+}
+
+func TestRequestBatchConsent_Approved(t *testing.T) {
+	t.Parallel()
+	reg := &mockToolRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "dangerous_tool", RequiresConsent: true}}
+		},
+	}
+	sm := &mockConsentSecurityManager{confirmResult: true}
+	auth := newSecurityAuthorizer(sm, reg)
+
+	calls := []*llm.FunctionCall{{Name: "dangerous_tool"}}
+	ctx := context.Background()
+	ctx, declined := auth.RequestBatchConsent(ctx, calls)
+
+	assert.False(t, declined[0], "Expected the tool to be approved by user")
+
+	// Verify context has the approved tool
+	ctxWithTool := domain_security.WithCurrentTool(ctx, "dangerous_tool")
+	assert.True(t, domain_security.IsCurrentToolApproved(ctxWithTool), "Context should have dangerous_tool approved")
 }

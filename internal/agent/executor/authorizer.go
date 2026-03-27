@@ -101,8 +101,12 @@ func (a *securityAuthorizer) RequestBatchConsent(ctx context.Context, calls []*l
 					declinedMap[i] = true
 				}
 			} else {
-				// BATCH APPROVED: Inject the authorization state into the context
-				ctx = domain_security.WithApproval(ctx, true)
+				// BATCH APPROVED: Inject the tool names into the context
+				var approvedToolNames []string
+				for _, i := range consentIndices {
+					approvedToolNames = append(approvedToolNames, calls[i].Name)
+				}
+				ctx = domain_security.WithApprovedTools(ctx, approvedToolNames)
 			}
 		}
 	}

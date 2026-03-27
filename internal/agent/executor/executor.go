@@ -578,6 +578,7 @@ func (e *ToolExecutor) handlePanic(ctx context.Context, r interface{}, toolName 
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
 	ctx, span := otel.Tracer("agent").Start(parentCtx, "tool.execute."+call.Name)
+	ctx = domain_security.WithCurrentTool(ctx, call.Name)
 	span.SetAttributes(attribute.String("tool.name", call.Name))
 	defer span.End()
 

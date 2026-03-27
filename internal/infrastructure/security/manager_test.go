@@ -107,7 +107,8 @@ func TestSecurityManager_Authorize(t *testing.T) {
 	}
 
 	// 5. Authorize with context-based approval
-	ctxApproved := domain.WithApproval(context.Background(), true)
+	ctxApproved := domain.WithApprovedTools(context.Background(), []string{"test_tool"})
+	ctxApproved = domain.WithCurrentTool(ctxApproved, "test_tool")
 	ok, err = sm.Authorize(ctxApproved, "label", "detail", "reason", false)
 	if err != nil || !ok {
 		t.Errorf("Authorize(ctx_approved=true) = %v, %v; want true, nil", ok, err)
@@ -221,7 +222,8 @@ func TestSecurityManager_Confirm_Bypass(t *testing.T) {
 
 	// Context approved - should be auto-approved even if bypass is inactive and interactor would say No
 	sm.SetBypassActive(false)
-	ctxApproved := domain.WithApproval(context.Background(), true)
+	ctxApproved := domain.WithApprovedTools(context.Background(), []string{"test_tool"})
+	ctxApproved = domain.WithCurrentTool(ctxApproved, "test_tool")
 	ok, err = sm.Confirm(ctxApproved, "Should I?")
 	if err != nil || !ok {
 		t.Errorf("Confirm(user=n, ctx_approved=true) = %v, %v; want true, nil", ok, err)
