@@ -87,4 +87,3 @@ func (r *resilientClient) RefreshAuth() error {
 func (r *resilientClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return r.client.GenerateImages(ctx, model, prompt, mimeType)
 }
-
