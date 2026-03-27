@@ -333,12 +333,12 @@ func TestBrowserModel_Update(t *testing.T) {
 			name: "Quit (q)",
 			initialState: func(m *RootBrowserModel) {
 			},
-			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")},
+			msg:          tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")},
 			expectedQuit: true,
 		},
 		{
 			name: "WindowSizeMsg updates dimensions",
-			msg: tea.WindowSizeMsg{Width: 100, Height: 50},
+			msg:  tea.WindowSizeMsg{Width: 100, Height: 50},
 			check: func(t *testing.T, m RootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if m.width != 100 || m.height != 50 {
 					t.Errorf("expected 100x50, got %dx%d", m.width, m.height)

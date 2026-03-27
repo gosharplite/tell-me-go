@@ -248,11 +248,11 @@ func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 	// Calling scanFiles indirectly via GetSuggestions
 	// Need to ensure the prefix looks like a path
 	prefix := tmpDir + string(os.PathSeparator) + "t"
-	
+
 	// We call GetSuggestions. It checks ctx.Err() at the beginning.
 	// But we also want to hit the check inside scanFiles loop.
 	// scanFiles is called AFTER the initial check in GetSuggestions.
-	
+
 	results, err := service.GetSuggestions(ctx, prefix)
 	if err == nil {
 		t.Errorf("expected error from GetSuggestions with cancelled context, got nil")
@@ -261,18 +261,18 @@ func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 		t.Errorf("expected 0 results, got %d", len(results))
 	}
 
-	// To specifically cover the check INSIDE scanFiles (line 108-110), 
+	// To specifically cover the check INSIDE scanFiles (line 108-110),
 	// we'd ideally want a context that cancels MID-SCAN.
 	// But since GetSuggestions checks it first, we might need to call scanFiles directly if possible,
 	// or use a context that cancels after a short delay if the scan is slow enough.
 	// Since scanFiles is unexported, we can use the receiver.
-	
+
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	// We can't easily trigger cancellation mid-scan without a very large directory or a hook.
 	// However, if we call GetSuggestions with a NON-cancelled context, it passes the first check.
 	// If we then cancel it, and scanFiles is slow...
 	// Let's just call scanFiles via the service struct since we are in the same package.
-	
+
 	cancel2()
 	res := service.scanFiles(ctx2, prefix)
 	if len(res) != 0 {
@@ -286,15 +286,15 @@ func TestSuggestionService_ScanFiles_InvalidDir(t *testing.T) {
 
 	// Call GetSuggestions with a path that definitely doesn't exist
 	invalidPath := filepath.Join(t.TempDir(), "non-existent-dir", "file")
-	
+
 	// Ensure it looks like a path to trigger scanFiles
-	prefix := invalidPath 
-	
+	prefix := invalidPath
+
 	got, err := service.GetSuggestions(context.Background(), prefix)
 	if err != nil {
 		t.Fatalf("GetSuggestions failed: %v", err)
 	}
-	
+
 	// Should return nil/empty results from scanFiles and whatever is in trie
 	if len(got) != 0 {
 		t.Errorf("expected 0 suggestions for invalid path, got %v", got)
@@ -329,7 +329,7 @@ func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 	if err != nil {
 		t.Errorf("RecordPrompt(\"\") should return nil, got %v", err)
 	}
-	
+
 	// Verify tracker wasn't called
 	if len(tracker.GetPrompts()) != 0 {
 		t.Errorf("expected 0 prompts in tracker, got %d", len(tracker.GetPrompts()))
@@ -341,7 +341,7 @@ func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T)
 	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	tmpDir := t.TempDir()
-	
+
 	// 1. Check directory path separator (Line 127)
 	_ = os.MkdirAll(filepath.Join(tmpDir, "sub-dir"), 0755)
 	prefix := tmpDir + string(os.PathSeparator) + "s"
@@ -379,7 +379,6 @@ func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T)
 	}
 }
 
-
 type chunkedMockFile struct {
 	persistence.File
 	ctx        context.Context
@@ -399,7 +398,7 @@ func (f *chunkedMockFile) ReadDir(n int) ([]os.DirEntry, error) {
 	for i := 0; i < n; i++ {
 		res[i] = &chunkedMockDirEntry{name: "matching-file", isDir: false}
 	}
-	
+
 	return res, nil
 }
 
@@ -408,8 +407,8 @@ func (f *chunkedMockFile) Close() error {
 }
 
 // Dummy implementations for required methods of persistence.File
-func (f *chunkedMockFile) Read(p []byte) (n int, err error)  { return 0, io.EOF }
-func (f *chunkedMockFile) Write(p []byte) (n int, err error) { return 0, nil }
+func (f *chunkedMockFile) Read(p []byte) (n int, err error)             { return 0, io.EOF }
+func (f *chunkedMockFile) Write(p []byte) (n int, err error)            { return 0, nil }
 func (f *chunkedMockFile) Seek(offset int64, whence int) (int64, error) { return 0, nil }
 
 type chunkedMockDirEntry struct {
@@ -455,9 +454,9 @@ func TestScanFiles_RespectsCancellationBetweenChunks(t *testing.T) {
 	// 2nd iteration:
 	//   ctx.Err() is now non-nil (context cancelled)
 	//   The loop should exit early BEFORE calling ReadDir(100) again.
-	
+
 	service.scanFiles(ctx, "mat")
-	
+
 	calledCount := atomic.LoadInt32(&mockFile.readCalled)
 	if calledCount != 1 {
 		t.Errorf("expected ReadDir to be called exactly once, but it was called %d times", calledCount)

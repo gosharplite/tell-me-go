@@ -70,7 +70,7 @@ func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 	// Create a payload larger than 64KB (e.g., 70,000 chars)
 	// We'll use a string that's clearly larger than bufio.MaxScanTokenSize (64*1024)
 	largePrompt := "START_" + string(make([]byte, 70000)) + "_END"
-	
+
 	err := tracker.Append(largePrompt)
 	if err != nil {
 		t.Fatalf("Failed to append large prompt: %v", err)

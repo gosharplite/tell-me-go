@@ -723,7 +723,7 @@ func TestGetToolNames(t *testing.T) {
 	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
 
 	cfg := &config.Config{
-		Mode: "assistant",
+		Mode:  "assistant",
 		Model: "test-model",
 	}
 
