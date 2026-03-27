@@ -72,10 +72,7 @@ func (s *multiSourceSuggestionService) GetSuggestions(ctx context.Context, query
 	s.historyMu.RLock()
 	// If query is empty, return the first 5 items from history
 	if query == "" {
-		limit := 5
-		if len(s.history) < limit {
-			limit = len(s.history)
-		}
+		limit := min(5, len(s.history))
 		suggestions = make([]string, limit)
 		copy(suggestions, s.history[:limit])
 		s.historyMu.RUnlock()
@@ -156,11 +153,11 @@ func (s *multiSourceSuggestionService) scanFiles(ctx context.Context, query stri
 
 		for _, entry := range entries {
 			name := entry.Name()
-			if matcher.IsSubsequence(fileQuery, name) {
-				if name == ".git" || name == "node_modules" || name == "vendor" || name == "bin" || name == "obj" {
-					continue
-				}
+			if entry.IsDir() && isIgnoredDir(name) {
+				continue
+			}
 
+			if matcher.IsSubsequence(fileQuery, name) {
 				fullPath := filepath.Join(dir, name)
 				if entry.IsDir() {
 					fullPath += string(os.PathSeparator)
@@ -201,4 +198,15 @@ func (s *multiSourceSuggestionService) mergeSuggestions(s1, s2 []string, limit i
 		return merged[:limit]
 	}
 	return merged
+}
+
+func isIgnoredDir(name string) bool {
+	// 1. Explicitly ignored common dependency/build directories
+	switch name {
+	case ".git", "node_modules", "vendor", "bin", "obj":
+		return true
+	}
+
+	// 2. Ignore hidden directories
+	return strings.HasPrefix(name, ".")
 }
