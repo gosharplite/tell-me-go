@@ -472,10 +472,3 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 
 	return results, nil
 }
-
-// GetEventBus returns the event bus used by the client.
-func (c *Client) GetEventBus() events.EventBus {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.eventBus
-}
