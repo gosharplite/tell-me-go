@@ -96,7 +96,7 @@ type UnifiedHistoryProvider struct {
 }
 
 // 2. Scalable Component Composition (internal/ui/tui/browser.go)
-type RootBrowserModel struct {
+type rootBrowserModel struct {
     viewport ui.ViewportModel
     search   ui.SearchModel
 
@@ -108,7 +108,7 @@ type RootBrowserModel struct {
 }
 
 // 3. Non-blocking Asynchronous I/O via tea.Cmd
-func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
     case ScrollDownMsg:
         m.isLoading = true

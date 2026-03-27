@@ -18,8 +18,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui/tui/prompt"
 )
 
-var _ ports.Capturer = (*PromptCapturer)(nil)
-var _ domain_security.UserInteractor = (*PromptCapturer)(nil)
+var _ ports.Capturer = (*promptCapturer)(nil)
+var _ domain_security.UserInteractor = (*promptCapturer)(nil)
 
 // BaseCapturer is a helper interface that joins ports.Capturer and security.UserInteractor.
 type BaseCapturer interface {
@@ -27,27 +27,27 @@ type BaseCapturer interface {
 	domain_security.UserInteractor
 }
 
-// PromptCapturer is an adapter that implements ports.Capturer using a Bubble Tea TUI.
-type PromptCapturer struct {
+// promptCapturer is an adapter that implements ports.Capturer using a Bubble Tea TUI.
+type promptCapturer struct {
 	base BaseCapturer
 	svc  ports.SuggestionService
 }
 
-// NewPromptCapturer creates a new PromptCapturer.
-func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService) *PromptCapturer {
-	return &PromptCapturer{
+// NewPromptCapturer creates a new promptCapturer.
+func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService) *promptCapturer {
+	return &promptCapturer{
 		base: base,
 		svc:  svc,
 	}
 }
 
 // IsTTY delegates to the base capturer.
-func (c *PromptCapturer) IsTTY(v any) bool {
+func (c *promptCapturer) IsTTY(v any) bool {
 	return c.base.IsTTY(v)
 }
 
 // CapturePrompt captures the prompt, using the TUI if requested.
-func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	options := &ports.CaptureOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -110,26 +110,26 @@ func (c *PromptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 }
 
 // Confirm delegates to the base capturer.
-func (c *PromptCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+func (c *promptCapturer) Confirm(ctx context.Context, message string) (bool, error) {
 	return c.base.Confirm(ctx, message)
 }
 
 // Warn delegates to the base capturer.
-func (c *PromptCapturer) Warn(message string) {
+func (c *promptCapturer) Warn(message string) {
 	c.base.Warn(message)
 }
 
 // Prompt delegates to the base capturer.
-func (c *PromptCapturer) Prompt(message string) {
+func (c *promptCapturer) Prompt(message string) {
 	c.base.Prompt(message)
 }
 
 // ReadLine delegates to the base capturer.
-func (c *PromptCapturer) ReadLine(ctx context.Context) (string, error) {
+func (c *promptCapturer) ReadLine(ctx context.Context) (string, error) {
 	return c.base.ReadLine(ctx)
 }
 
 // ReadSingleKey delegates to the base capturer.
-func (c *PromptCapturer) ReadSingleKey(ctx context.Context) (string, error) {
+func (c *promptCapturer) ReadSingleKey(ctx context.Context) (string, error) {
 	return c.base.ReadSingleKey(ctx)
 }

@@ -40,8 +40,8 @@ type historyLoadedMsg struct {
 
 type fileChangedMsg struct{}
 
-// RootBrowserModel implements the tea.Model interface for the history browser.
-type RootBrowserModel struct {
+// rootBrowserModel implements the tea.Model interface for the history browser.
+type rootBrowserModel struct {
 	ctx              context.Context
 	provider         ports.UnifiedHistoryProvider
 	cmdService       ports.HistoryModifier
@@ -65,12 +65,12 @@ type RootBrowserModel struct {
 }
 
 // NewRootBrowserModel creates a new history browser root model.
-func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvider, cmdService ports.HistoryModifier) *RootBrowserModel {
+func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvider, cmdService ports.HistoryModifier) *rootBrowserModel {
 	ti := textinput.New()
 	ti.Placeholder = "Search history..."
 	ti.Prompt = "🔍 "
 
-	return &RootBrowserModel{
+	return &rootBrowserModel{
 		ctx:          ctx,
 		provider:     provider,
 		cmdService:   cmdService,
@@ -82,7 +82,7 @@ func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvi
 }
 
 // Init initializes the model with an asynchronous disk read.
-func (m RootBrowserModel) Init() tea.Cmd {
+func (m rootBrowserModel) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		fetchHistoryCmd(m.provider, ""),
@@ -132,7 +132,7 @@ func watchHistoryFileCmd(ctx context.Context, filepath string) tea.Cmd {
 	}
 }
 
-func (m *RootBrowserModel) updateViewportHeight() {
+func (m *rootBrowserModel) updateViewportHeight() {
 	if !m.ready {
 		return
 	}
@@ -140,7 +140,7 @@ func (m *RootBrowserModel) updateViewportHeight() {
 }
 
 // Update handles incoming messages and updates the model state.
-func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
@@ -155,7 +155,7 @@ func (m RootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.handleViewportUpdate(msg)
 }
 
-func (m RootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	if m.isSearching {
 		switch msg.String() {
@@ -311,7 +311,7 @@ func (m RootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleViewportUpdate(msg)
 }
 
-func (m RootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+func (m rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 	if !m.ready {
@@ -325,7 +325,7 @@ func (m RootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model,
 	return m.handleViewportUpdate(msg)
 }
 
-func (m RootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
+func (m rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
 	m.isLoading = false
 	if msg.err != nil {
 		log.Printf("failed to load history: %v", msg.err)
@@ -365,7 +365,7 @@ func (m RootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Mode
 	return m, nil
 }
 
-func (m RootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, tea.Cmd) {
+func (m rootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, tea.Cmd) {
 	// Debounce: ignore changes if we just mutated the file
 	if time.Since(m.lastMutationTime) < 500*time.Millisecond {
 		return m, watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath())
@@ -380,7 +380,7 @@ func (m RootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, t
 	)
 }
 
-func (m RootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m rootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -402,7 +402,7 @@ func (m RootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd)
 
 
 // View renders the current state of the model.
-func (m RootBrowserModel) View() string {
+func (m rootBrowserModel) View() string {
 	if m.err != nil {
 		return errorStyle.Render(fmt.Sprintf("Error: %v\nPress 'q' to quit.", m.err))
 	}
@@ -424,7 +424,7 @@ func (m RootBrowserModel) View() string {
 	return sb.String()
 }
 
-func (m *RootBrowserModel) renderHistory() string {
+func (m *rootBrowserModel) renderHistory() string {
 	if len(m.history) == 0 && m.isLoading {
 		return "Loading history..."
 	}
@@ -546,7 +546,7 @@ func (m *RootBrowserModel) renderHistory() string {
 	return rendered
 }
 
-func (m *RootBrowserModel) highlightMatches(text, query string) string {
+func (m *rootBrowserModel) highlightMatches(text, query string) string {
 	if query == "" {
 		return text
 	}
@@ -562,7 +562,7 @@ func (m *RootBrowserModel) highlightMatches(text, query string) string {
 	})
 }
 
-func (m *RootBrowserModel) calculateFooterHeight() int {
+func (m *rootBrowserModel) calculateFooterHeight() int {
 	if m.isSearching {
 		return 1
 	}
@@ -589,7 +589,7 @@ func (m *RootBrowserModel) calculateFooterHeight() int {
 	return 1
 }
 
-func (m *RootBrowserModel) renderFooter() string {
+func (m *rootBrowserModel) renderFooter() string {
 	var sb strings.Builder
 
 	// Calculate Pinning Pressure
