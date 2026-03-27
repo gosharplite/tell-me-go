@@ -59,9 +59,9 @@ func (r *resilientClient) Generate(ctx context.Context, input []*llm.Content, to
 			}
 		}
 
-		// Infrastructure-level resilience: reset connections on rate limit
-		// or on the final internal retry attempt.
-		if errors.Is(wrapped, llm.ErrRateLimit) || attempt == 1 {
+		// Infrastructure-level resilience: reset connections on transient network errors (e.g., 502/504),
+		// rate limits, or on the final internal retry attempt to prevent reusing poisoned keep-alive connections.
+		if llm.IsTransient(wrapped) || attempt == 1 {
 			if cr, ok := r.client.(connectionResetter); ok {
 				cr.ResetConnections()
 			}

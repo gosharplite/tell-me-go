@@ -308,19 +308,32 @@ func TestResilientClient_ErrorDelegation(t *testing.T) {
 	})
 }
 
-func TestResilientClient_Generate_ResetsOnRateLimit(t *testing.T) {
-	mock := &mockLLMClient{
-		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-			return nil, nil, llm.ErrRateLimit
-		},
-	}
-	client := NewResilientClient(mock)
+func TestResilientClient_Generate_ResetConnections(t *testing.T) {
+	t.Run("Resets on Rate Limit", func(t *testing.T) {
+		mock := &mockLLMClient{
+			sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+				return nil, nil, llm.ErrRateLimit
+			},
+		}
+		client := NewResilientClient(mock)
+		_, _, _ = client.Generate(context.Background(), nil, nil, nil)
+		if !mock.resetCalled {
+			t.Error("expected ResetConnections to be called on rate limit")
+		}
+	})
 
-	_, _, _ = client.Generate(context.Background(), nil, nil, nil)
-
-	if !mock.resetCalled {
-		t.Error("expected ResetConnections to be called on rate limit")
-	}
+	t.Run("Resets on Transient Error", func(t *testing.T) {
+		mock := &mockLLMClient{
+			sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+				return nil, nil, llm.ErrTransient
+			},
+		}
+		client := NewResilientClient(mock)
+		_, _, _ = client.Generate(context.Background(), nil, nil, nil)
+		if !mock.resetCalled {
+			t.Error("expected ResetConnections to be called on transient error")
+		}
+	})
 }
 
 func TestResilientClient_Generate_ResetsOnFinalAttempt(t *testing.T) {
