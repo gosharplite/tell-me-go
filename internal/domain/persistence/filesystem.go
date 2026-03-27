@@ -15,6 +15,7 @@ type File interface {
 	io.Writer
 	io.Seeker
 	io.Closer
+	io.ReaderAt
 	ReadDir(n int) ([]os.DirEntry, error)
 }
 

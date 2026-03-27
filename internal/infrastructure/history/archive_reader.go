@@ -39,56 +39,14 @@ func NewJSONLArchiveReader(fs persistence.FileSystem, archivePath string) ports.
 
 // ReadPage reads a page of history from the archive file using byte-offset seeking.
 func (r *jsonlArchiveReader) ReadPage(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
-	file, err := r.fs.Open(ctx, r.archivePath)
+	dtos, nextOffset, err := r.readPageInternal(ctx, limit, offset)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, offset, nil
 		}
-		return nil, 0, fmt.Errorf("open archive %s: %w", r.archivePath, err)
+		return nil, 0, fmt.Errorf("read page from %s at %d: %w", r.archivePath, offset, err)
 	}
-	defer func() { _ = file.Close() }()
-
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return nil, 0, fmt.Errorf("seek to offset %d: %w", offset, err)
-	}
-
-	var dtos []ports.HistoryViewDTO
-	reader := bufio.NewReader(file)
-	currentOffset := offset
-
-	for len(dtos) < limit {
-		select {
-		case <-ctx.Done():
-			return nil, 0, ctx.Err()
-		default:
-		}
-
-		line, err := reader.ReadBytes('\n')
-		lineLen := int64(len(line))
-
-		if len(line) > 0 {
-			// Basic validation that it's a JSON object
-			trimmed := strings.TrimSpace(string(line))
-			if len(trimmed) > 0 && trimmed[0] == '{' {
-				var content llm.Content
-				if err := json.Unmarshal(line, &content); err != nil {
-					// For robustness, we just skip malformed lines in a "read-only view".
-				} else {
-					dtos = append(dtos, r.toDTO(content))
-				}
-			}
-			currentOffset += lineLen
-		}
-
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, 0, fmt.Errorf("read line at offset %d: %w", currentOffset, err)
-		}
-	}
-
-	return dtos, currentOffset, nil
+	return dtos, nextOffset, nil
 }
 
 // ReadPrevious reads archived history backwards from a given offset.
@@ -100,9 +58,8 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if len(r.index) == 0 {
+		r.mu.Unlock()
 		return nil, 0, nil
 	}
 
@@ -120,6 +77,7 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 	}
 
 	if targetIdx == 0 {
+		r.mu.Unlock()
 		return nil, 0, nil
 	}
 
@@ -129,7 +87,10 @@ func (r *jsonlArchiveReader) ReadPrevious(ctx context.Context, limit int, offset
 	}
 
 	startOffset := r.index[startIdx]
-	dtos, _, err := r.readPageInternal(ctx, targetIdx-startIdx, startOffset)
+	limitToRead := targetIdx - startIdx
+	r.mu.Unlock()
+
+	dtos, _, err := r.readPageInternal(ctx, limitToRead, startOffset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -183,7 +144,8 @@ func (r *jsonlArchiveReader) buildIndex(ctx context.Context) error {
 	return nil
 }
 
-// readPageInternal is like ReadPage but assumes mu is NOT locked.
+// readPageInternal reads a page of history from the archive file.
+// It is thread-safe as it opens its own file handle and uses io.ReaderAt.
 func (r *jsonlArchiveReader) readPageInternal(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, int64, error) {
 	file, err := r.fs.Open(ctx, r.archivePath)
 	if err != nil {
@@ -191,15 +153,21 @@ func (r *jsonlArchiveReader) readPageInternal(ctx context.Context, limit int, of
 	}
 	defer func() { _ = file.Close() }()
 
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return nil, 0, err
-	}
-
-	var dtos []ports.HistoryViewDTO
-	reader := bufio.NewReader(file)
+	// Use SectionReader which uses ReadAt internally, ensuring thread-safety
+	// even if 'file' were somehow shared (though here it's local).
+	// We use a very large value for max size as we read until EOF or limit.
+	section := io.NewSectionReader(file, offset, 1<<62)
+	reader := bufio.NewReader(section)
 	currentOffset := offset
 
+	var dtos []ports.HistoryViewDTO
 	for len(dtos) < limit {
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		default:
+		}
+
 		line, err := reader.ReadBytes('\n')
 		lineLen := int64(len(line))
 
@@ -212,7 +180,10 @@ func (r *jsonlArchiveReader) readPageInternal(ctx context.Context, limit int, of
 		}
 
 		if err != nil {
-			break
+			if err == io.EOF {
+				break
+			}
+			return nil, 0, err
 		}
 	}
 	return dtos, currentOffset, nil

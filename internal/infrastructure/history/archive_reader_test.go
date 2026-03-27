@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -235,4 +236,40 @@ func TestJSONLArchiveReader_ReadPrevious(t *testing.T) {
 			t.Errorf("expected offset 0, got %d", nextOffset)
 		}
 	})
+}
+
+func TestJSONLArchiveReader_ReadPrevious_Concurrency(t *testing.T) {
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive_concurrency.jsonl")
+
+	line := `{"role":"user","parts":[{"text":"message"}]}` + "\n"
+	lineCount := 100
+	f, _ := os.Create(archivePath)
+	for i := 0; i < lineCount; i++ {
+		_, _ = f.Write([]byte(line))
+	}
+	_ = f.Close()
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	var wg sync.WaitGroup
+	numGoroutines := 10
+	numCalls := 50
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < numCalls; j++ {
+				_, _, err := reader.ReadPrevious(ctx, 5, -1)
+				if err != nil {
+					t.Errorf("ReadPrevious failed: %v", err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
