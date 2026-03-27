@@ -29,16 +29,33 @@ type BaseCapturer interface {
 
 // promptCapturer is an adapter that implements ports.Capturer using a Bubble Tea TUI.
 type promptCapturer struct {
-	base BaseCapturer
-	svc  ports.SuggestionService
+	base        BaseCapturer
+	svc         ports.SuggestionService
+	programOpts []tea.ProgramOption
+}
+
+// CapturerOption defines a functional option for configuring a promptCapturer.
+type CapturerOption func(*promptCapturer)
+
+// WithProgramOptions allows injecting Bubble Tea program options.
+func WithProgramOptions(opts ...tea.ProgramOption) CapturerOption {
+	return func(c *promptCapturer) {
+		c.programOpts = opts
+	}
 }
 
 // NewPromptCapturer creates a new promptCapturer.
-func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService) *promptCapturer {
-	return &promptCapturer{
+func NewPromptCapturer(base BaseCapturer, svc ports.SuggestionService, opts ...CapturerOption) *promptCapturer {
+	c := &promptCapturer{
 		base: base,
 		svc:  svc,
 	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
 }
 
 // IsTTY delegates to the base capturer.
@@ -63,7 +80,7 @@ func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 	}
 
 	// Initialize TUI Model
-	model := prompt.NewModel(c.svc)
+	model := prompt.NewModel(c.svc, prompt.DefaultDebounceDuration)
 	defer model.Destroy()
 
 	// Initialize background logger for TUI
@@ -75,7 +92,7 @@ func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 		}()
 	}
 
-	p := tea.NewProgram(model)
+	p := tea.NewProgram(model, c.programOpts...)
 
 	resModel, err := p.Run()
 	if err != nil {

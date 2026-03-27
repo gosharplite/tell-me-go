@@ -4,10 +4,13 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"flag"
+	"io"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -116,5 +119,60 @@ func TestPromptCapturer_UserInteractorDelegation(t *testing.T) {
 
 	if len(base.promptMsgs) != 1 || base.promptMsgs[0] != "test" {
 		t.Errorf("expected Prompt to delegate to base, got %v", base.promptMsgs)
+	}
+}
+
+func TestPromptCapturer_CapturePrompt_TUI(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "successful input",
+			input:    "mocked command\x13", // simulate typing and Ctrl+S to submit
+			expected: "mocked command",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := &mockBaseCapturerWithTTY{isTTY: true}
+			svc := &mockSuggestionService{}
+
+			var in bytes.Buffer
+			in.WriteString(tt.input)
+
+			capturer := NewPromptCapturer(
+				base,
+				svc,
+				WithProgramOptions(
+					tea.WithInput(&in),
+					tea.WithOutput(io.Discard),
+				),
+			)
+
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			got, err := capturer.CapturePrompt(context.Background(), fs, ports.WithTUIPrompt(true))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got != tt.expected {
+				t.Errorf("got %q; want %q", got, tt.expected)
+			}
+
+			// Verify it was recorded in the suggestion service
+			found := false
+			for _, p := range svc.recordedPrompts {
+				if p == tt.expected {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Error("expected prompt to be recorded in suggestion service")
+			}
+		})
 	}
 }

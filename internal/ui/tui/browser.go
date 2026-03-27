@@ -400,7 +400,6 @@ func (m rootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd)
 	return m, tea.Batch(cmds...)
 }
 
-
 // View renders the current state of the model.
 func (m rootBrowserModel) View() string {
 	if m.err != nil {

@@ -6,6 +6,7 @@ package prompt
 import (
 	"context"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -127,7 +128,7 @@ func TestModel_Update(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel(&mockSuggestionSvc{}).(*promptModel)
+			m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
 			defer m.Destroy()
 			if tt.initialInput != "" {
 				m.input.SetValue(tt.initialInput)
@@ -173,7 +174,7 @@ func TestModel_Update(t *testing.T) {
 
 func TestModel_View(t *testing.T) {
 	svc := &mockSuggestionSvc{}
-	m := NewModel(svc).(*promptModel)
+	m := NewModel(svc, 1*time.Millisecond).(*promptModel)
 	defer m.Destroy()
 
 	view := m.View()
@@ -261,7 +262,7 @@ func TestSuggester_Empty(t *testing.T) {
 
 func TestModel_GetSuggestions_FilterLines(t *testing.T) {
 	svc := &mockSuggestionSvcMultiLine{}
-	m := NewModel(svc).(*promptModel)
+	m := NewModel(svc, 1*time.Millisecond).(*promptModel)
 	defer m.Destroy()
 
 	cmd := m.getSuggestions(context.Background(), "")
@@ -296,7 +297,7 @@ func (m *mockSuggestionSvcMultiLine) RecordPrompt(prompt string) error {
 
 func TestModel_TeaInterface(t *testing.T) {
 	// Silence dead_code_graph false positives for tea.Model implementations
-	m := NewModel(&mockSuggestionSvc{})
+	m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
 	defer m.Destroy()
 
 	// These methods are called dynamically by Bubble Tea, so we explicitly

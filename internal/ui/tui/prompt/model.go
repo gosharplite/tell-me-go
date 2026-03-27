@@ -15,6 +15,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
+const (
+	// DefaultDebounceDuration is the default delay for fetching suggestions.
+	DefaultDebounceDuration = 100 * time.Millisecond
+)
+
 var (
 	modelStyle = lipgloss.NewStyle().Padding(1, 1)
 )
@@ -43,6 +48,9 @@ type promptModel struct {
 	// DI
 	suggestionSvc ports.SuggestionService
 
+	// Config
+	debounceDuration time.Duration
+
 	// State
 	finalPrompt string
 	ctx         context.Context
@@ -52,15 +60,21 @@ type promptModel struct {
 	aborted     bool
 }
 
-// NewModel creates a new PromptModel with the given suggestion service.
-func NewModel(svc ports.SuggestionService) PromptModel {
+// NewModel creates a new PromptModel with the given suggestion service and debounce duration.
+func NewModel(svc ports.SuggestionService, debounceDuration time.Duration) PromptModel {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	if debounceDuration == 0 {
+		debounceDuration = DefaultDebounceDuration
+	}
+
 	return &promptModel{
-		input:         newTextArea(),
-		suggester:     suggester{Index: -1}, // -1 means no suggestion is currently selected/highlighted
-		suggestionSvc: svc,
-		ctx:           ctx,
-		cancel:        cancel,
+		input:            newTextArea(),
+		suggester:        suggester{Index: -1}, // -1 means no suggestion is currently selected/highlighted
+		suggestionSvc:    svc,
+		debounceDuration: debounceDuration,
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 }
 
@@ -137,7 +151,7 @@ func (m *promptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If input changed, trigger suggestion fetch with debounce
 		if m.input.Value() != oldVal {
 			newVal := m.input.Value()
-			return m, tea.Batch(cmd, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+			return m, tea.Batch(cmd, tea.Tick(m.debounceDuration, func(t time.Time) tea.Msg {
 				return debounceMsg{value: newVal}
 			}))
 		}
