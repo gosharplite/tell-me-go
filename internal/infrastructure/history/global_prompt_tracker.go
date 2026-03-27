@@ -93,7 +93,7 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 
 	const chunkSize = 4096
 	seen := make(map[string]bool)
-	var result []string
+	result := make([]string, 0, limit)
 	var leftover []byte
 
 	for pos > 0 && len(result) < limit {

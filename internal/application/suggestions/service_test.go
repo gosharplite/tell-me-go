@@ -512,7 +512,7 @@ func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	if len(got) != 5 {
 		t.Errorf("expected 5 suggestions (UI limit), got %d", len(got))
 	}
-	
+
 	// Access the underlying history to check the 100 limit
 	history := service.(*multiSourceSuggestionService).history
 	if len(history) != 100 {
