@@ -100,50 +100,7 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 	monitorCtx, monitorCancel := context.WithCancel(ctx)
 	defer monitorCancel()
 
-	go func() {
-		var timer *time.Timer
-		if opts.LivenessThreshold > 0 {
-			timer = time.NewTimer(opts.LivenessThreshold)
-			defer timer.Stop()
-		}
-
-		for {
-			select {
-			case v, ok := <-hbCh:
-				if !ok {
-					return
-				}
-				// Forward to upper layer if any
-				if heartbeat != nil {
-					select {
-					case heartbeat <- v:
-					default:
-					}
-				}
-
-				if timer != nil {
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
-					timer.Reset(opts.LivenessThreshold)
-				}
-			case <-func() <-chan time.Time {
-				if timer != nil {
-					return timer.C
-				}
-				return nil
-			}():
-				d.logger.Error("tool_liveness_timeout", "tool_name", call.Name, "threshold", opts.LivenessThreshold)
-				cancel()
-				return
-			case <-monitorCtx.Done():
-				return
-			}
-		}
-	}()
+	go d.monitorLiveness(monitorCtx, call.Name, opts, hbCh, heartbeat, cancel)
 
 	go func() {
 		// CRITICAL: This recover block protects the isolated tool execution thread.
@@ -181,6 +138,58 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 
 	case out := <-outCh:
 		return out.Result, out.Err
+	}
+}
+
+func (d *safetyDecorator) monitorLiveness(
+	ctx context.Context,
+	toolName string,
+	opts tools.ToolOptions,
+	hbCh <-chan struct{},
+	heartbeat chan<- struct{},
+	cancel context.CancelFunc,
+) {
+	var timer *time.Timer
+	if opts.LivenessThreshold > 0 {
+		timer = time.NewTimer(opts.LivenessThreshold)
+		defer timer.Stop()
+	}
+
+	for {
+		select {
+		case v, ok := <-hbCh:
+			if !ok {
+				return
+			}
+			// Forward to upper layer if any
+			if heartbeat != nil {
+				select {
+				case heartbeat <- v:
+				default:
+				}
+			}
+
+			if timer != nil {
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(opts.LivenessThreshold)
+			}
+		case <-func() <-chan time.Time {
+			if timer != nil {
+				return timer.C
+			}
+			return nil
+		}():
+			d.logger.Error("tool_liveness_timeout", "tool_name", toolName, "threshold", opts.LivenessThreshold)
+			cancel()
+			return
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
