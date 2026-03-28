@@ -73,7 +73,7 @@ func NewGlobalPromptTracker(homeDir string) (ports.PromptTracker, error) {
 
 // Append records a new prompt to the global log file.
 // Uses os.O_APPEND for atomic writes on POSIX and Windows (up to OS-specific limits).
-func (t *globalPromptTracker) Append(prompt string) error {
+func (t *globalPromptTracker) Append(ctx context.Context, prompt string) error {
 	if prompt == "" {
 		return nil
 	}
@@ -109,7 +109,7 @@ func (t *globalPromptTracker) Append(prompt string) error {
 	// Trigger async compaction if file size exceeds threshold and no compaction is already in progress
 	if size > compactionThresholdBytes {
 		if t.compacting.CompareAndSwap(false, true) {
-			go t.compactLog()
+			go t.compactLog(ctx)
 		}
 	}
 
@@ -213,39 +213,42 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 	return result, nil
 }
 
-func (t *globalPromptTracker) compactLog() {
+func (t *globalPromptTracker) compactLog(ctx context.Context) {
 	defer t.compacting.Store(false)
 	if t.testCompactionHook != nil {
 		defer t.testCompactionHook()
 	}
 
-	for {
-		// Capture initial size for optimistic concurrency check
-		info, err := os.Stat(t.filepath)
-		if err != nil {
-			return
-		}
-		initialSize := info.Size()
+	const maxRetries = 3
+	backoff := 100 * time.Millisecond
 
-		// 1. Read entries without holding the lock to allow concurrent appends
-		entries, err := t.doLoadTopUniqueEntries(context.Background(), maxGlobalPrompts)
-		if err != nil || len(entries) == 0 {
-			return
-		}
-
-		// Reverse entries to chronological order (oldest first)
-		for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-			entries[i], entries[j] = entries[j], entries[i]
-		}
-
-		// 2. Write to temp file
-		tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
-		if err != nil {
-			return
-		}
-		tmpPath := tmpFile.Name()
-
+	for attempt := 0; attempt < maxRetries; attempt++ {
 		success := func() bool {
+			// Capture initial size for optimistic concurrency check
+			info, err := os.Stat(t.filepath)
+			if err != nil {
+				return false
+			}
+			initialSize := info.Size()
+
+			// 1. Read entries without holding the lock to allow concurrent appends
+			entries, err := t.doLoadTopUniqueEntries(ctx, maxGlobalPrompts)
+			if err != nil || len(entries) == 0 {
+				return false
+			}
+
+			// Reverse entries to chronological order (oldest first)
+			for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+				entries[i], entries[j] = entries[j], entries[i]
+			}
+
+			// 2. Write to temp file
+			tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
+			if err != nil {
+				return false
+			}
+			tmpPath := tmpFile.Name()
+
 			defer func() {
 				_ = tmpFile.Close()
 				_ = os.Remove(tmpPath)
@@ -289,6 +292,14 @@ func (t *globalPromptTracker) compactLog() {
 		newInfo, err := os.Stat(t.filepath)
 		if err != nil || newInfo.Size() <= compactionThresholdBytes {
 			return
+		}
+
+		// Scalable: Allows immediate exit if the application is shutting down
+		select {
+		case <-ctx.Done():
+			return // Graceful shutdown
+		case <-time.After(backoff):
+			backoff *= 2 // Exponential backoff is safer for I/O locks
 		}
 	}
 }

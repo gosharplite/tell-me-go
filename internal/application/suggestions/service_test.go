@@ -23,7 +23,7 @@ type mockPromptTracker struct {
 	prompts []string
 }
 
-func (m *mockPromptTracker) Append(prompt string) error {
+func (m *mockPromptTracker) Append(ctx context.Context, prompt string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prompts = append(m.prompts, prompt)
@@ -159,7 +159,7 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	prompt := "new-unique-prompt"
-	err := service.RecordPrompt(prompt)
+	err := service.RecordPrompt(context.Background(), prompt)
 	if err != nil {
 		t.Fatalf("RecordPrompt failed: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
-	err := service.RecordPrompt("")
+	err := service.RecordPrompt(context.Background(), "")
 	if err != nil {
 		t.Errorf("RecordPrompt(\"\") should return nil, got %v", err)
 	}
@@ -475,7 +475,7 @@ func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	// 1. Record multiple prompts
 	prompts := []string{"p1", "p2", "p3"}
 	for _, p := range prompts {
-		_ = service.RecordPrompt(p)
+		_ = service.RecordPrompt(context.Background(), p)
 	}
 
 	// 2. Check MRU order (newest first)
@@ -491,7 +491,7 @@ func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	}
 
 	// 3. Re-record an existing prompt (should move to top)
-	_ = service.RecordPrompt("p1")
+	_ = service.RecordPrompt(context.Background(), "p1")
 	got, _ = service.GetSuggestions(context.Background(), "")
 	expected = []string{"p1", "p3", "p2"}
 	if len(got) != 3 {
@@ -505,7 +505,7 @@ func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 
 	// 4. Test bounded capacity
 	for i := 0; i < 150; i++ {
-		_ = service.RecordPrompt(fmt.Sprintf("bulk-%d", i))
+		_ = service.RecordPrompt(context.Background(), fmt.Sprintf("bulk-%d", i))
 	}
 	got, _ = service.GetSuggestions(context.Background(), "")
 	// Should only have 5 (UI limit) but the underlying history should be limited to 100

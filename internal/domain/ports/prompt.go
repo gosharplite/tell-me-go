@@ -13,11 +13,11 @@ type SuggestionService interface {
 
 	// RecordPrompt records a user prompt for future suggestions.
 	// Fire-and-forget metric recording.
-	RecordPrompt(prompt string) error
+	RecordPrompt(ctx context.Context, prompt string) error
 }
 
 // PromptTracker defines the interface for persisting and loading cross-session prompts.
 type PromptTracker interface {
-	Append(prompt string) error
+	Append(ctx context.Context, prompt string) error
 	LoadTopN(ctx context.Context, limit int) ([]string, error)
 }

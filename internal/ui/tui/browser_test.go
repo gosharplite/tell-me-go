@@ -723,3 +723,52 @@ func TestBrowserModel_Footer(t *testing.T) {
 		t.Errorf("expected 'no matches' in footer, got %q", got)
 	}
 }
+
+func TestBrowserModel_RenderThoughts_Cache(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+
+	thought := "Thinking about the meaning of life..."
+	m.history = []ports.HistoryViewDTO{
+		{Role: "user", ThoughtProcess: thought, OriginalIndex: 0},
+	}
+	m.showThoughts = true
+	m.width = 80
+	m.ready = true
+	m.viewport = viewport.New(80, 20)
+
+	// Force cache warming and viewport population through standard lifecycle
+	m.updateViewportContent()
+
+	// Verify cache was warmed
+	if len(m.cachedThoughts) == 0 {
+		t.Fatal("Expected cachedThoughts to be populated")
+	}
+
+	if _, ok := m.cachedThoughts[0]; !ok {
+		t.Errorf("Expected index 0 to be cached")
+	}
+
+	// Verify final render
+	got := m.viewport.View()
+	if !strings.Contains(got, "Thinking about") {
+		t.Errorf("Expected thoughts in viewport, got: %s", got)
+	}
+
+	// Test case: currentQuery is not empty
+	m.currentQuery = "life"
+	m.cachedThoughts = make(map[int]string) // Invalidate cache manually
+	m.updateViewportContent()
+	if !strings.Contains(m.cachedThoughts[0], "life") {
+		t.Errorf("Expected highlighted query in thoughts")
+	}
+
+	// Test case: width < 20
+	m.width = 10
+	m.cachedThoughts = make(map[int]string) // Invalidate cache manually
+	m.updateViewportContent()
+	if len(m.cachedThoughts) == 0 {
+		t.Fatal("Expected cachedThoughts to be populated for small width")
+	}
+}

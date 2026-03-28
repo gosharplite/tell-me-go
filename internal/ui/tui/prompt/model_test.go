@@ -20,7 +20,7 @@ func (m *mockSuggestionSvc) GetSuggestions(ctx context.Context, prefix string) (
 	return []string{"suggested"}, nil
 }
 
-func (m *mockSuggestionSvc) RecordPrompt(prompt string) error {
+func (m *mockSuggestionSvc) RecordPrompt(ctx context.Context, prompt string) error {
 	return nil
 }
 
@@ -294,7 +294,7 @@ func (m *mockSuggestionSvcMultiLine) GetSuggestions(ctx context.Context, prefix 
 	}, nil
 }
 
-func (m *mockSuggestionSvcMultiLine) RecordPrompt(prompt string) error {
+func (m *mockSuggestionSvcMultiLine) RecordPrompt(ctx context.Context, prompt string) error {
 	return nil
 }
 
@@ -409,7 +409,7 @@ func (m *integrationMockSuggestionSvc) GetSuggestions(ctx context.Context, prefi
 	return []string{m.suggestion}, nil
 }
 
-func (m *integrationMockSuggestionSvc) RecordPrompt(prompt string) error {
+func (m *integrationMockSuggestionSvc) RecordPrompt(ctx context.Context, prompt string) error {
 	return nil
 }
 

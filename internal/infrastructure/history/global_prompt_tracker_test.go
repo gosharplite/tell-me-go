@@ -18,7 +18,7 @@ func TestGlobalPromptTracker(t *testing.T) {
 
 	prompts := []string{"hello", "world", "hello", "foo", "bar", "hello"}
 	for _, p := range prompts {
-		if err := tracker.Append(p); err != nil {
+		if err := tracker.Append(context.Background(), p); err != nil {
 			t.Fatalf("Append failed: %v", err)
 		}
 	}
@@ -74,7 +74,7 @@ func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 	// We'll use a string that's clearly larger than bufio.MaxScanTokenSize (64*1024)
 	largePrompt := "START_" + string(make([]byte, 70000)) + "_END"
 
-	err := tracker.Append(largePrompt)
+	err := tracker.Append(context.Background(), largePrompt)
 	if err != nil {
 		t.Fatalf("Failed to append large prompt: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 
 	// Add 10 "duplicate" prompts
 	for i := 0; i < 10; i++ {
-		if err := tracker.Append("duplicate"); err != nil {
+		if err := tracker.Append(context.Background(), "duplicate"); err != nil {
 			t.Fatalf("Append failed: %v", err)
 		}
 	}
@@ -116,12 +116,12 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	// But to test that it returns them even if they are far back:
 	tracker, _ = NewGlobalPromptTracker(t.TempDir()) // Reset
 	for _, p := range uniquePrompts {
-		if err := tracker.Append(p); err != nil {
+		if err := tracker.Append(context.Background(), p); err != nil {
 			t.Fatalf("Append failed: %v", err)
 		}
 	}
 	for i := 0; i < 10; i++ {
-		if err := tracker.Append("duplicate"); err != nil {
+		if err := tracker.Append(context.Background(), "duplicate"); err != nil {
 			t.Fatalf("Append failed: %v", err)
 		}
 	}
@@ -151,14 +151,14 @@ func TestGlobalPromptTracker_Compaction(t *testing.T) {
 
 	// Add duplicates and many entries
 	for i := 0; i < 10; i++ {
-		_ = tracker.Append("duplicate")
+		_ = tracker.Append(context.Background(), "duplicate")
 	}
-	_ = tracker.Append("unique1")
-	_ = tracker.Append("unique2")
-	_ = tracker.Append("duplicate") // latest one
+	_ = tracker.Append(context.Background(), "unique1")
+	_ = tracker.Append(context.Background(), "unique2")
+	_ = tracker.Append(context.Background(), "duplicate") // latest one
 
 	// Manually trigger compaction
-	tracker.compactLog()
+	tracker.compactLog(context.Background())
 
 	// Verify file content after compaction
 	// Should be: unique1, unique2, duplicate
@@ -204,7 +204,7 @@ func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
 	// Append a lot of duplicates to exceed 150KB
 	largePrompt := string(bytes.Repeat([]byte("A"), 1000))
 	for i := 0; i < 200; i++ {
-		_ = tracker.Append(largePrompt)
+		_ = tracker.Append(context.Background(), largePrompt)
 	}
 
 	// Wait for async compaction
@@ -301,4 +301,43 @@ func TestGlobalPromptTracker_Migration(t *testing.T) {
 			t.Errorf("content mismatch.\nwant: %s\ngot:  %s", newContent, migratedContent)
 		}
 	})
+}
+
+func TestCopyFile(t *testing.T) {
+	// Use t.TempDir() for automatic cleanup and cross-platform compatibility
+	tmpDir := t.TempDir()
+	src := filepath.Join(tmpDir, "src.txt")
+	dst := filepath.Join(tmpDir, "dst.txt")
+
+	expectedContent := "test content for fallback migration"
+	err := os.WriteFile(src, []byte(expectedContent), 0644)
+	if err != nil {
+		t.Fatalf("failed to create src: %v", err)
+	}
+
+	// Execute the utility directly
+	if err := copyFile(src, dst); err != nil {
+		t.Fatalf("copyFile failed: %v", err)
+	}
+
+	// Verify data integrity
+	content, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("failed to read dst: %v", err)
+	}
+	if string(content) != expectedContent {
+		t.Errorf("expected %q, got %q", expectedContent, string(content))
+	}
+
+	// Test non-existent source
+	err = copyFile(filepath.Join(tmpDir, "non-existent"), filepath.Join(tmpDir, "out"))
+	if err == nil {
+		t.Error("expected error for non-existent source, got nil")
+	}
+
+	// Test invalid destination
+	err = copyFile(src, filepath.Join(tmpDir, "non-existent-dir", "out"))
+	if err == nil {
+		t.Error("expected error for invalid destination, got nil")
+	}
 }

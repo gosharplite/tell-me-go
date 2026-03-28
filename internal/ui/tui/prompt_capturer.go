@@ -108,7 +108,7 @@ func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 
 	// Record the prompt for future suggestions
 	if finalPrompt != "" {
-		if err := c.svc.RecordPrompt(finalPrompt); err != nil {
+		if err := c.svc.RecordPrompt(ctx, finalPrompt); err != nil {
 			log.Printf("failed to record prompt for suggestions: %v", err)
 		}
 

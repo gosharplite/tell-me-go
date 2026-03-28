@@ -39,7 +39,7 @@ type mockSuggestionService struct {
 func (m *mockSuggestionService) GetSuggestions(ctx context.Context, prefix string) ([]string, error) {
 	return nil, nil
 }
-func (m *mockSuggestionService) RecordPrompt(prompt string) error {
+func (m *mockSuggestionService) RecordPrompt(ctx context.Context, prompt string) error {
 	m.recordedPrompts = append(m.recordedPrompts, prompt)
 	return nil
 }
