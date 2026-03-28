@@ -30,7 +30,7 @@ func TestRegistry_Resilience(t *testing.T) {
 	t.Run("error on unknown tool execution", func(t *testing.T) {
 		t.Parallel()
 		r := registry.New()
-		_, err := r.Execute(context.Background(), "unknown", nil)
+		_, err := r.Execute(context.Background(), "unknown", nil, nil)
 		if err == nil {
 			t.Fatal("expected error for unknown tool, got nil")
 		}
@@ -43,13 +43,13 @@ func TestRegistry_Resilience(t *testing.T) {
 		t.Parallel()
 		r := registry.New()
 		targetErr := errors.New("something went wrong")
-		if err := r.Register(&tools.ToolDeclaration{Name: "failer"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		if err := r.Register(&tools.ToolDeclaration{Name: "failer"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			return tools.ToolResult{}, targetErr
 		}); err != nil {
 			t.Fatalf("failed to register tool: %v", err)
 		}
 
-		_, err := r.Execute(context.Background(), "failer", nil)
+		_, err := r.Execute(context.Background(), "failer", nil, nil)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}

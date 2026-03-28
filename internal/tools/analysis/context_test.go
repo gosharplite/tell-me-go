@@ -26,7 +26,7 @@ func TestIndexer_Refresh_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 	defer cancel()
 
-	err := idx.Refresh(ctx)
+	err := idx.Refresh(ctx, nil)
 	if err == nil {
 		t.Log("Refresh finished before cancellation, which is fine")
 	} else if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context deadline exceeded") {

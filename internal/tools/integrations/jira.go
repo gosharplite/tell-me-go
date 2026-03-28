@@ -36,7 +36,7 @@ func newjiraManager(sm security.PathValidator, client tools.HTTPClient) *jiraMan
 	}
 }
 
-func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		JQL   string `json:"jql"`
 		Limit int    `json:"limit"`
@@ -146,7 +146,7 @@ func (m *jiraManager) formatSearchResponse(body io.ReadCloser) (string, error) {
 	return resultText.String(), nil
 }
 
-func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		IssueKey string `json:"issue_key"`
 	}

@@ -106,7 +106,7 @@ func TestCheckVulnerabilities(t *testing.T) {
 				return []byte(tt.executeOut), tt.executeErr
 			}
 
-			res, err := m.checkVulnerabilities(context.Background(), nil)
+			res, err := m.checkVulnerabilities(context.Background(), nil, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("checkVulnerabilities() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -204,7 +204,7 @@ func TestGetCoverage(t *testing.T) {
 			m, executor, _ := setupDevManager(t)
 			setupCoverageMock(t, m, executor, tt.executeOut, tt.executeErr, tt.summaryOut, tt.summaryErr, tt.tempErr)
 
-			res, err := m.getCoverage(context.Background(), nil)
+			res, err := m.getCoverage(context.Background(), nil, nil)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantSubstr)
@@ -220,7 +220,7 @@ func TestGoTidy(t *testing.T) {
 	t.Parallel()
 	m, _, _ := setupDevManager(t)
 
-	res, err := m.goTidy(context.Background(), nil)
+	res, err := m.goTidy(context.Background(), nil, nil)
 	if err != nil {
 		t.Errorf("goTidy() unexpected error = %v", err)
 	}
@@ -236,7 +236,7 @@ func TestRunBenchmark(t *testing.T) {
 		return []byte("BenchmarkResult"), nil
 	}
 
-	res, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "./...", "bench": "BenchmarkFoo"})
+	res, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "./...", "bench": "BenchmarkFoo"}, nil)
 	if err != nil {
 		t.Errorf("runBenchmark() unexpected error = %v", err)
 	}
@@ -295,7 +295,7 @@ func TestRunLinter(t *testing.T) {
 				return []byte(tt.executeOut), tt.executeErr
 			}
 
-			res, err := m.runLinter(context.Background(), nil)
+			res, err := m.runLinter(context.Background(), nil, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("runLinter() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -340,7 +340,7 @@ func TestGoTidy_Errors(t *testing.T) {
 				return []byte("ok"), nil
 			}
 
-			_, err := m.goTidy(context.Background(), nil)
+			_, err := m.goTidy(context.Background(), nil, nil)
 			if err == nil {
 				t.Errorf("expected error for %s, got nil", tt.name)
 			}
@@ -355,7 +355,7 @@ func TestRunBenchmark_Error(t *testing.T) {
 		return []byte("error output"), errors.New("benchmark failed")
 	}
 
-	_, err := m.runBenchmark(context.Background(), nil)
+	_, err := m.runBenchmark(context.Background(), nil, nil)
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -368,7 +368,7 @@ func TestRunTests(t *testing.T) {
 		return []byte("PASS"), nil
 	}
 
-	res, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
+	res, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."}, nil)
 	if err != nil {
 		t.Errorf("runTests() unexpected error = %v", err)
 	}
@@ -414,7 +414,7 @@ func TestRunTests_Violations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := m.runTests(context.Background(), map[string]interface{}{"command": tt.command})
+			_, err := m.runTests(context.Background(), map[string]interface{}{"command": tt.command}, nil)
 			if err == nil {
 				t.Errorf("expected error for %s, got nil", tt.name)
 			}
@@ -429,7 +429,7 @@ func TestRunTests_Failure(t *testing.T) {
 		return []byte("FAIL"), errors.New("exit status 1")
 	}
 
-	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
+	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."}, nil)
 	if err == nil {
 		t.Error("expected error, got nil")
 	}

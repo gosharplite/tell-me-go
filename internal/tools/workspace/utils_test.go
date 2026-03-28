@@ -78,7 +78,7 @@ func TestWalkAndProcess(t *testing.T) {
 	}
 
 	t.Run("safe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), tempDir, processor)
+		err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), tempDir, nil, processor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,7 +88,7 @@ func TestWalkAndProcess(t *testing.T) {
 	})
 
 	t.Run("unsafe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), "/etc", processor)
+		err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), "/etc", nil, processor)
 		if err == nil {
 			t.Error("expected error for unsafe path")
 		}

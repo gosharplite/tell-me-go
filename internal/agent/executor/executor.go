@@ -607,7 +607,7 @@ func (e *Orchestrator) executeTool(parentCtx context.Context, call *llm.Function
 		return tools.ToolResult{Text: err.Error(), Error: fmt.Errorf("%w: %v", llm.ErrTerminal, err)}
 	}
 
-	result, err = e.runtime.Execute(parentCtx, tool, call)
+	result, err = e.runtime.Execute(parentCtx, tool, call, nil)
 	status, msg := classifyToolError(err, result.Error)
 
 	if status == "user_declined" || status == "security_blocked" {

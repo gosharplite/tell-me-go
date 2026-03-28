@@ -31,7 +31,7 @@ func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handl
 	return nil
 }
 
-func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
 
@@ -112,4 +112,8 @@ type mockSessionLoader struct {
 
 type mockSkillSelector struct {
 	skills.SkillSelector
+}
+
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

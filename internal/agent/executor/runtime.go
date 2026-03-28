@@ -23,9 +23,9 @@ func newBaseRuntime(registry tools.Registry) *baseRuntime {
 }
 
 // Execute performs the raw execution of a tool call.
-func (b *baseRuntime) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
+func (b *baseRuntime) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hb chan<- struct{}) (tools.ToolResult, error) {
 	// 2. Unmarshal/validate arguments (already done by the LLM in call.Args)
 	// 3. Execute the underlying tool logic
 	// 4. Return the ToolResult
-	return b.registry.Execute(ctx, tool.Name, call.Args)
+	return b.registry.Execute(ctx, tool.Name, call.Args, hb)
 }

@@ -106,7 +106,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	registry := internaltools.New()
 	regErr := registry.Register(&tools.ToolDeclaration{
 		Name: "get_image",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		return tools.ToolResult{
 			Text: "Image of a cat",
 			BinaryData: []tools.BinaryData{

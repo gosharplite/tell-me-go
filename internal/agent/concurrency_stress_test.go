@@ -42,7 +42,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	defer close(toolProceed) // Ensure it's closed to prevent deadlock
 	err := reg.Register(&tools.ToolDeclaration{
 		Name: "slow_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
 		case <-toolProceed:
 		case <-ctx.Done():
@@ -130,7 +130,7 @@ func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
 	toolProceedTask := make(chan struct{})
 	defer close(toolProceedTask)
 
-	err = reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err = reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
 		case <-toolProceedTask:
 		case <-ctx.Done():

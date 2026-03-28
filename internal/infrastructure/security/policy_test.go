@@ -33,7 +33,7 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 		_, err := p.RegisterSafePath(ctx, map[string]interface{}{
 			"path":   path,
 			"reason": "testing",
-		})
+		}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -55,9 +55,9 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
 		// Register a path first so the list is not empty
-		_, _ = p.RegisterSafePath(ctx, map[string]interface{}{"path": "/tmp/list-test", "reason": "test"})
+		_, _ = p.RegisterSafePath(ctx, map[string]interface{}{"path": "/tmp/list-test", "reason": "test"}, nil)
 
-		res, _ := p.ListSafePaths(ctx, nil)
+		res, _ := p.ListSafePaths(ctx, nil, nil)
 		if !strings.Contains(res.Text, "authorized safe paths") {
 			t.Error("Expected safe paths in list")
 		}
@@ -67,8 +67,8 @@ func TestPolicyTool_SafePathManagement(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
 		path := "/tmp/safe_to_remove"
-		_, _ = p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"})
-		_, _ = p.RemoveSafePath(ctx, map[string]interface{}{"path": path})
+		_, _ = p.RegisterSafePath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
+		_, _ = p.RemoveSafePath(ctx, map[string]interface{}{"path": path}, nil)
 
 		found := false
 		absPath, _ := filepath.Abs(path)
@@ -91,15 +91,15 @@ func TestPolicyTool_ReadPathManagement(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
 		path := "/tmp/ro"
-		_, _ = p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"})
+		_, _ = p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
 
-		res, _ := p.ListReadPaths(ctx, nil)
+		res, _ := p.ListReadPaths(ctx, nil, nil)
 		if !strings.Contains(res.Text, path) {
 			t.Error("Expected read-only path in list")
 		}
 
-		_, _ = p.RemoveReadPath(ctx, map[string]interface{}{"path": path})
-		res, _ = p.ListReadPaths(ctx, nil)
+		_, _ = p.RemoveReadPath(ctx, map[string]interface{}{"path": path}, nil)
+		res, _ = p.ListReadPaths(ctx, nil, nil)
 		if strings.Contains(res.Text, path) {
 			t.Error("Did not expect read-only path in list after removal")
 		}
@@ -108,7 +108,7 @@ func TestPolicyTool_ReadPathManagement(t *testing.T) {
 	t.Run("List Empty Read Paths", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
-		res, _ := p.ListReadPaths(ctx, nil)
+		res, _ := p.ListReadPaths(ctx, nil, nil)
 		if !strings.Contains(res.Text, "No additional read-only paths") {
 			t.Error("Expected no read-only paths message")
 		}
@@ -123,7 +123,7 @@ func TestPolicyTool_BypassManagement(t *testing.T) {
 		t.Error("expected bypass to be inactive initially")
 	}
 
-	_, err := p.BypassConfirmation(ctx, nil)
+	_, err := p.BypassConfirmation(ctx, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestPolicyTool_BypassManagement(t *testing.T) {
 		t.Error("expected bypass to be active after call")
 	}
 
-	_, err = p.RevokeBypass(ctx, nil)
+	_, err = p.RevokeBypass(ctx, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestPolicyTool_ValidationErrors(t *testing.T) {
 	t.Run("RegisterSafePath missing path", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
-		_, err := p.RegisterSafePath(ctx, map[string]interface{}{"reason": "test"})
+		_, err := p.RegisterSafePath(ctx, map[string]interface{}{"reason": "test"}, nil)
 		if err == nil {
 			t.Error("Expected error for missing path")
 		}
@@ -157,7 +157,7 @@ func TestPolicyTool_ValidationErrors(t *testing.T) {
 	t.Run("RemoveSafePath missing path", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
-		_, err := p.RemoveSafePath(ctx, map[string]interface{}{})
+		_, err := p.RemoveSafePath(ctx, map[string]interface{}{}, nil)
 		if err == nil {
 			t.Error("Expected error for missing path")
 		}
@@ -166,7 +166,7 @@ func TestPolicyTool_ValidationErrors(t *testing.T) {
 	t.Run("RegisterReadPath missing path", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
-		_, err := p.RegisterReadPath(ctx, map[string]interface{}{"reason": "test"})
+		_, err := p.RegisterReadPath(ctx, map[string]interface{}{"reason": "test"}, nil)
 		if err == nil {
 			t.Error("Expected error for missing path")
 		}
@@ -175,7 +175,7 @@ func TestPolicyTool_ValidationErrors(t *testing.T) {
 	t.Run("RemoveReadPath missing path", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
-		_, err := p.RemoveReadPath(ctx, map[string]interface{}{})
+		_, err := p.RemoveReadPath(ctx, map[string]interface{}{}, nil)
 		if err == nil {
 			t.Error("Expected error for missing path")
 		}
@@ -189,7 +189,7 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetInteractor(&MockInteractor{Answer: "n"})
-		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": "/tmp/denied", "reason": "test"})
+		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": "/tmp/denied", "reason": "test"}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -202,7 +202,7 @@ func TestPolicyTool_DeniedInteractions(t *testing.T) {
 		t.Parallel()
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetInteractor(&MockInteractor{Answer: "n"})
-		res, err := p.BypassConfirmation(ctx, nil)
+		res, err := p.BypassConfirmation(ctx, nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -220,7 +220,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetBypassActive(true)
 		sm.SetInteractor(&MockInteractor{Answer: "n"})
-		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": "/tmp/b1", "reason": "r"})
+		res, err := p.RegisterSafePath(ctx, map[string]interface{}{"path": "/tmp/b1", "reason": "r"}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -234,7 +234,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetBypassActive(true)
 		sm.SetInteractor(&MockInteractor{Answer: "n"})
-		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": "/tmp/b1"})
+		res, err := p.RemoveSafePath(ctx, map[string]interface{}{"path": "/tmp/b1"}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -248,7 +248,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetBypassActive(true)
 		sm.SetInteractor(&MockInteractor{Answer: "n"})
-		res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": "/tmp/b2", "reason": "r"})
+		res, err := p.RegisterReadPath(ctx, map[string]interface{}{"path": "/tmp/b2", "reason": "r"}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -262,7 +262,7 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 		sm, p, ctx := setupPolicyTest(t)
 		sm.SetBypassActive(true)
 		sm.SetInteractor(&MockInteractor{Answer: "n"})
-		res, err := p.RemoveReadPath(ctx, map[string]interface{}{"path": "/tmp/b2"})
+		res, err := p.RemoveReadPath(ctx, map[string]interface{}{"path": "/tmp/b2"}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

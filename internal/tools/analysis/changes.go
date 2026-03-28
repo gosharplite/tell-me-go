@@ -24,7 +24,7 @@ func newChangeAnalyzer(cache *astCache, exec tools.CommandExecutor) *defaultChan
 	}
 }
 
-func (a *defaultChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *defaultChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Target string `json:"target"`
 	}
@@ -44,7 +44,13 @@ func (a *defaultChangeAnalyzer) SemanticDiff(ctx context.Context, args map[strin
 
 	sb.WriteString("\nLogical Code Changes:\n")
 	fset := token.NewFileSet()
-	for _, relPath := range changedFiles {
+	for i, relPath := range changedFiles {
+		if i%5 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
 		if a.isGoFile(relPath) {
 			changes, _ := a.analyzeFileChange(ctx, params.Target, relPath, fset)
 			a.renderChanges(&sb, relPath, changes)

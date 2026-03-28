@@ -21,7 +21,7 @@ type fileReader struct {
 	fs persistence.FileSystem
 }
 
-func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
@@ -57,7 +57,7 @@ func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{})
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path     string `json:"path"`
 		MaxDepth int    `json:"max_depth"`
@@ -82,17 +82,31 @@ func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (
 	}
 
 	var sb strings.Builder
-	err = buildTree(ctx, r.fs, resolvedPath, "", 0, maxDepth, &sb)
+	err = buildTree(ctx, r.fs, resolvedPath, "", 0, maxDepth, &sb, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder) error {
+func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder, hb chan<- struct{}) error {
 	if depth > maxDepth {
 		return nil
 	}
+
+	// Check cancellation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Emit heartbeat
+	if hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
+	}
+
 	entries, err := fs.ReadDir(ctx, path)
 	if err != nil {
 		return err
@@ -115,7 +129,7 @@ func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent stri
 			if entry.Name() == ".git" {
 				continue
 			}
-			if err := buildTree(ctx, fs, filepath.Join(path, entry.Name()), newIndent, depth+1, maxDepth, sb); err != nil {
+			if err := buildTree(ctx, fs, filepath.Join(path, entry.Name()), newIndent, depth+1, maxDepth, sb, hb); err != nil {
 				return err
 			}
 		}
@@ -144,7 +158,7 @@ func (r *fileReader) readBoundedContent(ctx context.Context, path string) ([]byt
 	return content, false, nil
 }
 
-func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 	}
@@ -229,7 +243,7 @@ func (r *fileReader) processSingleFile(ctx context.Context, path string, sb *str
 	return nil
 }
 
-func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePaths []string `json:"filepaths"`
 	}
@@ -247,7 +261,14 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{})
 	}
 
 	var sb strings.Builder
-	for _, path := range params.FilePaths {
+	for i, path := range params.FilePaths {
+		// Emit heartbeat every 5 files
+		if i%5 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
 		if err := r.processSingleFile(ctx, path, &sb); err != nil {
 			return tools.ToolResult{}, err
 		}
@@ -256,7 +277,7 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{})
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path    string `json:"path"`
 		Pattern string `json:"pattern"`
@@ -281,7 +302,7 @@ func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) 
 		return nil
 	}
 
-	if err := walkAndProcess(ctx, r.sm, r.fs, params.Path, processor); err != nil {
+	if err := walkAndProcess(ctx, r.sm, r.fs, params.Path, hb, processor); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -307,7 +328,7 @@ func (r *fileReader) validateDiffPrerequisites(ctx context.Context, resolved1, r
 	return nil
 }
 
-func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		File1 string `json:"file1"`
 		File2 string `json:"file2"`

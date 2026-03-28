@@ -28,7 +28,7 @@ func newnetworkTool(sm security.TerminalController, client tools.HTTPClient) *ne
 	return &networkTool{sm: sm, client: client}
 }
 
-func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Method  string            `json:"method"`
 		URL     string            `json:"url"`
@@ -58,6 +58,27 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	for k, v := range params.Headers {
 		req.Header.Set(k, v)
 	}
+
+	// Heartbeat while waiting for response
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
 
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -89,7 +110,7 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		URL string `json:"url"`
 	}
@@ -103,6 +124,28 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 	}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+
+	// Heartbeat while waiting for response
+	doneDocs := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-doneDocs:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(doneDocs)
+
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to fetch URL: %w", err)

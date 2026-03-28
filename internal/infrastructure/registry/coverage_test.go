@@ -24,7 +24,7 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 			name: "update existing tool",
 			actions: func(t *testing.T, r tools.Registry) {
 				def1 := &tools.ToolDeclaration{Name: "tool1", Description: "desc1"}
-				h1 := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				h1 := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 					return tools.ToolResult{Text: "v1"}, nil
 				}
 				if err := r.Register(def1, h1); err != nil {
@@ -32,7 +32,7 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 				}
 
 				def2 := &tools.ToolDeclaration{Name: "tool1", Description: "desc2"}
-				h2 := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				h2 := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 					return tools.ToolResult{Text: "v2"}, nil
 				}
 				if err := r.RegisterWithOptions(def2, h2, registry.ToolOptions{Serial: true}); err != nil {
@@ -50,7 +50,7 @@ func TestRegistry_DuplicateRegistration(t *testing.T) {
 				if !r.IsSerial("tool1") {
 					t.Errorf("expected tool1 to be serial after update")
 				}
-				res, _ := r.Execute(context.Background(), "tool1", nil)
+				res, _ := r.Execute(context.Background(), "tool1", nil, nil)
 				if res.Text != "v2" {
 					t.Errorf("expected updated handler to return 'v2', got '%s'", res.Text)
 				}
@@ -90,7 +90,7 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 					defer wg.Done()
 					name := fmt.Sprintf("tool-%d", id)
 					def := &tools.ToolDeclaration{Name: name}
-					handler := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+					handler := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 						return tools.ToolResult{Text: fmt.Sprintf("res-%d", id)}, nil
 					}
 
@@ -104,10 +104,10 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 						prevName := fmt.Sprintf("tool-%d", id-1)
 						_ = reg.IsSerial(prevName)
 						_ = reg.IsLongRunning(prevName)
-						_, _ = reg.Execute(context.Background(), prevName, nil)
+						_, _ = reg.Execute(context.Background(), prevName, nil, nil)
 					}
 
-					_, _ = reg.Execute(context.Background(), name, nil)
+					_, _ = reg.Execute(context.Background(), name, nil, nil)
 					_ = reg.GetDeclarations()
 				}(i)
 			}

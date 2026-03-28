@@ -27,7 +27,7 @@ func BenchmarkConcurrentSearch_FullProject(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(ctx)
-		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) (string, bool) {
+		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 			return "", strings.Contains(line, "func ")
 		})
 
@@ -62,7 +62,7 @@ func BenchmarkConcurrentSearch_EarlyStop(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(ctx)
-		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) (string, bool) {
+		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 			return "", strings.Contains(line, "func ")
 		})
 

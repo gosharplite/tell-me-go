@@ -55,7 +55,7 @@ func TestAuthDecorator(t *testing.T) {
 			auth := &mockToolAuthService{AuthorizeFunc: tt.authFunc}
 			decorator := newAuthDecorator(next, auth)
 
-			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
+			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"}, nil)
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.nextCalled, next.Called)
@@ -112,7 +112,7 @@ func TestCircuitBreakerDecorator(t *testing.T) {
 			}
 			decorator := newCircuitBreakerDecorator(next, cb)
 
-			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
+			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"}, nil)
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.nextCalled, next.Called)
@@ -179,7 +179,7 @@ func TestSafetyDecorator(t *testing.T) {
 				func() time.Duration { return tt.timeout },
 			)
 
-			res, _ := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
+			res, _ := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"}, nil)
 
 			if tt.expectedErrSubstr != "" {
 				assert.Error(t, res.Error)
@@ -199,7 +199,7 @@ func TestTracingDecorator(t *testing.T) {
 	next := &mockExecutor{Result: tools.ToolResult{Text: "ok"}}
 	decorator := newTracingDecorator(next, registry, logger)
 
-	res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
+	res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"}, nil)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "ok", res.Text)

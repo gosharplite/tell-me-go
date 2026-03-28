@@ -22,7 +22,7 @@ import (
 type fileProcessor func(filePath string) error
 
 // walkAndProcess handles the generic filesystem traversal, safety checks, and directory filtering.
-func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs persistence.FileSystem, path string, fn fileProcessor) error {
+func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs persistence.FileSystem, path string, hb chan<- struct{}, fn fileProcessor) error {
 	if path == "" {
 		path = "."
 	}
@@ -32,6 +32,7 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 		return err
 	}
 
+	count := 0
 	return fs.Walk(ctx, path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip items we can't access
@@ -47,12 +48,20 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 			return nil
 		}
 
+		count++
+		if count%50 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		return fn(filePath)
 	})
 }
 
 // ConcurrentSearch walks the path and processes files in parallel using workers.
-func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, matcher func(path, line string) (string, bool)) (<-chan string, <-chan error) {
+func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, hb chan<- struct{}, matcher func(path, line string) (string, bool)) (<-chan string, <-chan error) {
 	errChan := make(chan error, 1)
 	if ctx.Err() != nil {
 		errChan <- ctx.Err()
@@ -78,6 +87,7 @@ func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs 
 		pathsChan:   make(chan string, 100),
 		resultsChan: make(chan string, 100),
 		errChan:     errChan,
+		hb:          hb,
 		root:        resolvedRoot,
 		ctx:         ctx,
 	}
@@ -91,6 +101,7 @@ type searchPipeline struct {
 	pathsChan   chan string
 	resultsChan chan string
 	errChan     chan error
+	hb          chan<- struct{}
 	root        string
 	ctx         context.Context
 }
@@ -143,6 +154,14 @@ func (p *searchPipeline) walkFunc(path string, info os.FileInfo, err error) erro
 		return nil
 	}
 
+	// Heartbeat while walking
+	if p.hb != nil {
+		select {
+		case p.hb <- struct{}{}:
+		default:
+		}
+	}
+
 	select {
 	case p.pathsChan <- path:
 	case <-p.ctx.Done():
@@ -177,6 +196,14 @@ func (p *searchPipeline) scanFile(path string) error {
 		return nil
 	}
 	defer func() { _ = file.Close() }()
+
+	// Heartbeat before scanning a file
+	if p.hb != nil {
+		select {
+		case p.hb <- struct{}{}:
+		default:
+		}
+	}
 
 	if isBin, err := checkBinary(file); err == nil && !isBin {
 		const maxScannerCapacity = 10 * 1024 * 1024

@@ -19,7 +19,7 @@ import (
 func TestToolPanicSerial(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			panic("simulated serial tool panic")
 		},
 		isSerial: true,
@@ -55,7 +55,7 @@ func TestToolPanicSerial(t *testing.T) {
 func TestToolPanicParallel(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			if name == "panic_tool" {
 				panic("simulated parallel tool panic")
 			}
@@ -147,7 +147,7 @@ func TestZombieToolTimeout(t *testing.T) {
 	stopCh := make(chan struct{})
 	// Mock registry that blocks indefinitely until stopCh is closed
 	reg := &mockZombieRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			<-stopCh // Block until we release it
 			return tools.ToolResult{Text: "finally done"}, nil
 		},
@@ -171,7 +171,7 @@ func TestZombieToolTimeout(t *testing.T) {
 		defer close(doneCh)
 		fc := &llm.FunctionCall{Name: hangingTool.Name}
 		tool, _ := exec.resolver.Resolve(fc)
-		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc)
+		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc, nil)
 	}()
 
 	select {

@@ -132,7 +132,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 		// Create log file
 		_ = os.WriteFile(logFile, []byte(`{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500}`+"\n"), 0644)
 
-		res, err := handler(context.Background(), nil)
+		res, err := handler(context.Background(), nil, nil)
 		if err != nil {
 			t.Fatalf("estimate_cost failed: %v", err)
 		}
@@ -153,7 +153,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 		data, _ := json.Marshal(history)
 		_ = os.WriteFile(historyPath, data, 0644)
 
-		res, err := handler(context.Background(), nil)
+		res, err := handler(context.Background(), nil, nil)
 		if err != nil {
 			t.Fatalf("get_cost_summary failed: %v", err)
 		}
@@ -379,4 +379,8 @@ func TestIsStale_NonExistent(t *testing.T) {
 	if isStale("/nonexistent/path/to/lock") {
 		t.Error("Non-existent file should not be stale")
 	}
+}
+
+func (m *mockRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

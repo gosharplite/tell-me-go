@@ -88,7 +88,7 @@ func TestToolExecution(t *testing.T) {
 
 	ctx := context.Background()
 	// list_files is registered by workspace.Register
-	_, err := r.Execute(ctx, "list_files", map[string]interface{}{"path": "."})
+	_, err := r.Execute(ctx, "list_files", map[string]interface{}{"path": "."}, nil)
 	if err != nil {
 		t.Errorf("failed to execute list_files: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 		"pkg2": []string{"pkg3"},
 	}
 
-	res, err := r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{"graph": graph})
+	res, err := r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{"graph": graph}, nil)
 	if err != nil {
 		t.Fatalf("failed to execute generate_mermaid_diagram: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 	}
 
 	// Test invalid graph
-	res, err = r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{"graph": 123})
+	res, err = r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{"graph": 123}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 	}
 
 	// Test missing graph
-	res, err = r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{})
+	res, err = r.Execute(ctx, "generate_mermaid_diagram", map[string]interface{}{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,7 +168,7 @@ func (m *MockRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, fn 
 
 func (m *MockRegistry) GetDeclarations() []*domaintools.ToolDeclaration { return nil }
 
-func (m *MockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
+func (m *MockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (domaintools.ToolResult, error) {
 	return domaintools.ToolResult{}, errors.New("not implemented")
 }
 
@@ -234,4 +234,8 @@ func TestRegisterAll_Errors(t *testing.T) {
 			assert.Contains(t, err.Error(), "simulated registration failure")
 		})
 	}
+}
+
+func (m *MockRegistry) GetOptions(name string) domaintools.ToolOptions {
+	return domaintools.ToolOptions{}
 }

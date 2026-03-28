@@ -47,7 +47,7 @@ func unexported() {}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			syms, err := idx.SearchSymbols(ctx, tmpDir, tt.name, false)
+			syms, err := idx.SearchSymbols(ctx, tmpDir, tt.name, false, nil)
 			require.NoError(t, err)
 
 			var found *symbolLocation
@@ -75,7 +75,7 @@ func setupIndexerWorkspace(t *testing.T, code string) (string, *indexer) {
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
 
-	require.NoError(t, idx.Refresh(context.Background()))
+	require.NoError(t, idx.Refresh(context.Background(), nil))
 
 	return tmpDir, idx
 }
@@ -93,9 +93,9 @@ func (s S) M() {}
 
 	idx, _ := newIndexer(tmpDir)
 	ctx := context.Background()
-	_ = idx.Refresh(ctx)
+	_ = idx.Refresh(ctx, nil)
 
-	implementors, err := idx.FindImplementors(ctx, "I")
+	implementors, err := idx.FindImplementors(ctx, "I", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,9 +123,9 @@ type T struct{}
 
 	idx, _ := newIndexer(tmpDir)
 	ctx := context.Background()
-	_ = idx.Refresh(ctx)
+	_ = idx.Refresh(ctx, nil)
 
-	locs, err := idx.Lookup(ctx, "T")
+	locs, err := idx.Lookup(ctx, "T", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,9 +147,9 @@ func TestIndexer_ErrorPersistence(t *testing.T) {
 
 	idx, _ := newIndexer(tmpDir)
 	ctx := context.Background()
-	_ = idx.Refresh(ctx)
+	_ = idx.Refresh(ctx, nil)
 
-	syms, _ := idx.SearchSymbols(ctx, tmpDir, "F", false)
+	syms, _ := idx.SearchSymbols(ctx, tmpDir, "F", false, nil)
 	if len(syms) != 1 {
 		t.Fatal("Expected to find F")
 	}
@@ -162,9 +162,9 @@ func TestIndexer_ErrorPersistence(t *testing.T) {
 	idx.lastRefresh = time.Time{}
 	idx.mu.Unlock()
 
-	_ = idx.Refresh(ctx)
+	_ = idx.Refresh(ctx, nil)
 
-	syms, _ = idx.SearchSymbols(ctx, tmpDir, "F", false)
+	syms, _ = idx.SearchSymbols(ctx, tmpDir, "F", false, nil)
 	if len(syms) == 0 {
 		t.Error("Expected to still have F in despite other file errors")
 	}

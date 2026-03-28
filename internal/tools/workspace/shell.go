@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -29,7 +30,7 @@ func newshellTool(sm shellSecurity, validator domain_security.CommandValidator) 
 	}
 }
 
-func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Command    string `json:"command"`
 		Reason     string `json:"reason"`
@@ -87,6 +88,27 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 
 	// 3. Execute
 	feedback := &warnWriter{sm: t.sm}
+
+	// Heartbeat while command is running
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
 	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
 		return t.executor.RunCommand(ctx, parts, executionConfig{
 			OutputFile: outputFile,
@@ -95,6 +117,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 			MaxCapture: t.maxOutput,
 		})
 	})
+	close(done)
 
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -103,7 +126,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: t.formatResult(res, false)}, nil
 }
 
-func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Commands   []string `json:"commands"`
 		Reason     string   `json:"reason"`
@@ -146,6 +169,26 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
+	// Heartbeat while pipeline is running
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
 	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
 		feedback := &warnWriter{sm: t.sm}
 		return t.executor.RunPipeline(ctx, pipedParts, executionConfig{
@@ -155,6 +198,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 			MaxCapture: t.maxOutput,
 		})
 	})
+	close(done)
 
 	if err != nil {
 		return tools.ToolResult{}, err

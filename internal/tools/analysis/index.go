@@ -41,21 +41,21 @@ type typeName struct {
 // SymbolIndex provides methods to query symbols and their relationships in a Go workspace.
 type symbolIndex interface {
 	// Lookup returns the locations where the given symbol is defined.
-	Lookup(ctx context.Context, symbol string) ([]location, error)
+	Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error)
 	// FindImplementors returns the types that implement the given interface.
-	FindImplementors(ctx context.Context, interfaceName string) ([]typeName, error)
+	FindImplementors(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]typeName, error)
 	// SearchSymbols searches for symbols matching the query in the given path.
-	SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error)
+	SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool, hb chan<- struct{}) ([]symbolLocation, error)
 	// GetUsages returns all locations where the given symbol name is used.
-	GetUsages(ctx context.Context, symbol string, path string) ([]location, error)
+	GetUsages(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error)
 	// IsSymbolUsed returns true if the provided name exists in the index with at least one usage.
-	IsSymbolUsed(ctx context.Context, name string) bool
+	IsSymbolUsed(ctx context.Context, name string, hb chan<- struct{}) bool
 	// GetImplementations returns the concrete method identities that implement the given interface method.
-	GetImplementations(ctx context.Context, interfaceMethodId string) []string
+	GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string
 	// Packages returns the loaded packages.
-	Packages(ctx context.Context) ([]*packages.Package, error)
+	Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error)
 	// Refresh re-scans the workspace to update the index.
-	Refresh(ctx context.Context) error
+	Refresh(ctx context.Context, hb chan<- struct{}) error
 }
 
 // Indexer implements SymbolIndex using go/packages and go/types.
@@ -84,7 +84,7 @@ func newIndexer(dir string) (*indexer, error) {
 	}, nil
 }
 
-func (idx *indexer) Refresh(ctx context.Context) error {
+func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 	if !idx.needsRefresh() {
 		return nil
 	}
@@ -98,13 +98,34 @@ func (idx *indexer) Refresh(ctx context.Context) error {
 		return nil
 	}
 
+	// Heartbeat while loading and harvesting packages
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
+
 	fset := token.NewFileSet()
 	pkgs, err := idx.loadPackages(ctx, fset)
 	if err != nil {
 		return err
 	}
 
-	symbolsByPath, usagesByName, err := idx.harvestPackages(ctx, fset, pkgs)
+	symbolsByPath, usagesByName, err := idx.harvestPackages(ctx, fset, pkgs, hb)
 	if err != nil {
 		return err
 	}
@@ -119,7 +140,7 @@ type pkgResult struct {
 	usages  map[string][]location
 }
 
-func (idx *indexer) harvestPackages(ctx context.Context, fset *token.FileSet, pkgs []*packages.Package) (map[string][]symbolLocation, map[string][]location, error) {
+func (idx *indexer) harvestPackages(ctx context.Context, fset *token.FileSet, pkgs []*packages.Package, hb chan<- struct{}) (map[string][]symbolLocation, map[string][]location, error) {
 	results := make(chan pkgResult, len(pkgs))
 	g, gCtx := errgroup.WithContext(ctx)
 
@@ -132,6 +153,12 @@ func (idx *indexer) harvestPackages(ctx context.Context, fset *token.FileSet, pk
 			}
 			select {
 			case results <- res:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
 			case <-gCtx.Done():
 				return gCtx.Err()
 			}
@@ -227,8 +254,8 @@ func (idx *indexer) toLocation(pos token.Pos) location {
 	}
 }
 
-func (idx *indexer) Lookup(ctx context.Context, symbol string) ([]location, error) {
-	if err := idx.Refresh(ctx); err != nil {
+func (idx *indexer) Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
+	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil, err
 	}
 	idx.mu.RLock()
@@ -244,8 +271,8 @@ func (idx *indexer) Lookup(ctx context.Context, symbol string) ([]location, erro
 	return locations, nil
 }
 
-func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) ([]typeName, error) {
-	if err := idx.Refresh(ctx); err != nil {
+func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]typeName, error) {
+	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil, err
 	}
 	idx.mu.RLock()
@@ -297,8 +324,8 @@ func (idx *indexer) collectImplementors(iface *types.Interface) []typeName {
 	return implementors
 }
 
-func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error) {
-	if err := idx.Refresh(ctx); err != nil {
+func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool, hb chan<- struct{}) ([]symbolLocation, error) {
+	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil, err
 	}
 	idx.mu.RLock()
@@ -347,8 +374,8 @@ func (idx *indexer) matchesQuery(sym symbolLocation, query string, exportedOnly 
 	return true
 }
 
-func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) ([]location, error) {
-	if err := idx.Refresh(ctx); err != nil {
+func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
+	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil, err
 	}
 	idx.mu.RLock()
@@ -381,8 +408,8 @@ func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) (
 	return results, nil
 }
 
-func (idx *indexer) Packages(ctx context.Context) ([]*packages.Package, error) {
-	if err := idx.Refresh(ctx); err != nil {
+func (idx *indexer) Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
+	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil, err
 	}
 	idx.mu.RLock()
@@ -652,8 +679,8 @@ func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string]
 	return impls
 }
 
-func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId string) []string {
-	if err := idx.Refresh(ctx); err != nil {
+func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {
+	if err := idx.Refresh(ctx, hb); err != nil {
 		return nil
 	}
 	idx.mu.RLock()
@@ -661,8 +688,8 @@ func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId st
 	return idx.implementations[interfaceMethodId]
 }
 
-func (idx *indexer) IsSymbolUsed(ctx context.Context, name string) bool {
-	if err := idx.Refresh(ctx); err != nil {
+func (idx *indexer) IsSymbolUsed(ctx context.Context, name string, hb chan<- struct{}) bool {
+	if err := idx.Refresh(ctx, hb); err != nil {
 		return false
 	}
 	idx.mu.RLock()

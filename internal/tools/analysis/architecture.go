@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -53,7 +54,7 @@ type indexedPackageProvider struct {
 }
 
 func (p *indexedPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
-	pkgs, err := p.idx.Packages(ctx)
+	pkgs, err := p.idx.Packages(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load architecture packages: %w", err)
 	}
@@ -161,7 +162,7 @@ type rule struct {
 	Reason      string
 }
 
-func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if m.Loader == nil {
 		if m.idx != nil {
 			m.Loader = &indexedPackageProvider{m: m, idx: m.idx}
@@ -170,13 +171,42 @@ func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[s
 		}
 	}
 
+	// Heartbeat while loading packages
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
 	pkgs, err := m.Loader.LoadPackages(ctx)
+	close(done)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	violations := m.checkLayerViolations(pkgs)
-	violations = append(violations, m.checkCircularDependencies(pkgs)...)
+	// Final heartbeat before processing
+	if hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
+	}
+
+	violations := m.checkLayerViolations(pkgs, hb)
+	violations = append(violations, m.checkCircularDependencies(pkgs, hb)...)
 
 	if len(violations) == 0 {
 		return tools.ToolResult{Text: "✅ Architectural integrity verified. No layer violations or circular dependencies detected."}, nil
@@ -216,7 +246,7 @@ func (m *architectureManager) isCmd(pkgPath string) bool {
 	return strings.Contains(pkgPath, "/cmd/") || strings.HasSuffix(pkgPath, "/cmd")
 }
 
-func (m *architectureManager) checkLayerViolations(pkgs map[string][]string) []violation {
+func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb chan<- struct{}) []violation {
 	rules := []rule{
 		{
 			SourceLayer: layerDomain,
@@ -254,7 +284,13 @@ func (m *architectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	}
 	sort.Strings(sortedPkgs)
 
-	for _, pkg := range sortedPkgs {
+	for i, pkg := range sortedPkgs {
+		if i%10 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
 		imports := pkgs[pkg]
 		violations = append(violations, m.checkSinglePackageViolations(pkg, imports, rules)...)
 		violations = append(violations, m.checkGeneralCmdImport(pkg, imports, violations)...)
@@ -328,15 +364,24 @@ func isAlreadyReported(v violation, list []violation) bool {
 	return false
 }
 
-func (m *architectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {
+func (m *architectureManager) checkCircularDependencies(pkgs map[string][]string, hb chan<- struct{}) []violation {
 	var violations []violation
 
 	visited := make(map[string]bool)
 	onStack := make(map[string]bool)
 	var path []string
 
+	var count int
 	var findCycles func(string)
 	findCycles = func(u string) {
+		count++
+		if count%10 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		visited[u] = true
 		onStack[u] = true
 		path = append(path, u)

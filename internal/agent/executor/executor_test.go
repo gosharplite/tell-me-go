@@ -20,7 +20,7 @@ import (
 )
 
 type mockToolRegistry struct {
-	executeFn         func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error)
+	executeFn         func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
 	getDeclarationsFn func() []*tools.ToolDeclaration
 	isSerial          bool
 }
@@ -35,9 +35,9 @@ func (m *mockToolRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) 
 func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	return m.Register(def, handler)
 }
-func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if m.executeFn != nil {
-		return m.executeFn(ctx, name, args)
+		return m.executeFn(ctx, name, args, hb)
 	}
 	return tools.ToolResult{Text: "ok"}, nil
 }
@@ -52,7 +52,7 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 	toolFinished := make(chan struct{})
 
 	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			close(toolStarted)
 			timer := time.NewTimer(ciSafeTimeout)
 			defer timer.Stop()
@@ -256,7 +256,7 @@ func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc)
 func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	return nil
 }
-func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
 func (m *orderMockRegistry) IsSerial(name string) bool      { return m.serialTools[name] }
@@ -294,7 +294,7 @@ func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
@@ -453,4 +453,12 @@ func TestResultCollector_EmitEvent(t *testing.T) {
 	// Assert
 	assert.True(t, mockLogger.errorCalled)
 	assert.Equal(t, "event_publish_failed", mockLogger.lastMsg)
+}
+
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *orderMockRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

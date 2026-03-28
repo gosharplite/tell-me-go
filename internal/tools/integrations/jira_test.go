@@ -168,7 +168,7 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 				ctx = context.Background()
 			}
 
-			result, err := m.jiraSearchIssues(ctx, tt.args)
+			result, err := m.jiraSearchIssues(ctx, tt.args, nil)
 
 			if tt.expectedError != "" {
 				assert.Error(t, err)
@@ -291,7 +291,7 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 				mockClient.On("Do", mock.Anything).Return(tt.mockResp, tt.mockErr)
 			}
 
-			result, err := m.jiraGetIssue(context.Background(), tt.args)
+			result, err := m.jiraGetIssue(context.Background(), tt.args, nil)
 
 			if tt.expectedError != "" {
 				assert.Error(t, err)
@@ -444,13 +444,13 @@ func TestJiraManager_EdgeCases(t *testing.T) {
 	m := newjiraManager(nil, nil)
 
 	t.Run("Invalid Base URL Search", func(t *testing.T) {
-		_, err := m.jiraSearchIssues(context.Background(), map[string]interface{}{"jql": "test"})
+		_, err := m.jiraSearchIssues(context.Background(), map[string]interface{}{"jql": "test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid base url")
 	})
 
 	t.Run("Invalid Base URL Get", func(t *testing.T) {
-		_, err := m.jiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"})
+		_, err := m.jiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid base url")
 	})

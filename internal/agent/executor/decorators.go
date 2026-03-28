@@ -30,12 +30,12 @@ func newAuthDecorator(next ToolExecutor, auth ToolAuthService) ToolExecutor {
 	return &authDecorator{next: next, auth: auth}
 }
 
-func (d *authDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
+func (d *authDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hb chan<- struct{}) (tools.ToolResult, error) {
 	if err := d.auth.Authorize(ctx, tool, call); err != nil {
 		return tools.ToolResult{Text: err.Error(), Error: err}, nil
 	}
 
-	return d.next.Execute(ctx, tool, call)
+	return d.next.Execute(ctx, tool, call, hb)
 }
 
 // circuitBreakerDecorator handles circuit breaking logic.
@@ -48,12 +48,12 @@ func newCircuitBreakerDecorator(next ToolExecutor, cb CircuitBreakerManager) Too
 	return &circuitBreakerDecorator{next: next, cb: cb}
 }
 
-func (d *circuitBreakerDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
+func (d *circuitBreakerDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hb chan<- struct{}) (tools.ToolResult, error) {
 	if err := d.cb.Check(call.Name); err != nil {
 		return tools.ToolResult{Text: err.Error(), Error: err}, nil
 	}
 
-	result, err := d.next.Execute(ctx, tool, call)
+	result, err := d.next.Execute(ctx, tool, call, hb)
 	d.cb.Record(call.Name, err == nil && result.Error == nil)
 	return result, err
 }
@@ -83,9 +83,10 @@ func newSafetyDecorator(next ToolExecutor, registry tools.Registry, logger ports
 	}
 }
 
-func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (result tools.ToolResult, err error) {
+func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, heartbeat chan<- struct{}) (result tools.ToolResult, err error) {
+	opts := d.registry.GetOptions(call.Name)
 	activeTimeout := d.toolTimeout()
-	if d.registry.IsLongRunning(call.Name) {
+	if opts.LongRunning {
 		activeTimeout = d.longRunningTimeout()
 	}
 
@@ -93,6 +94,56 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 	defer cancel()
 
 	outCh := make(chan tools.ToolOutput, 1)
+	hbCh := make(chan struct{}, 1)
+
+	// Liveness check monitoring
+	monitorCtx, monitorCancel := context.WithCancel(ctx)
+	defer monitorCancel()
+
+	go func() {
+		var timer *time.Timer
+		if opts.LivenessThreshold > 0 {
+			timer = time.NewTimer(opts.LivenessThreshold)
+			defer timer.Stop()
+		}
+
+		for {
+			select {
+			case v, ok := <-hbCh:
+				if !ok {
+					return
+				}
+				// Forward to upper layer if any
+				if heartbeat != nil {
+					select {
+					case heartbeat <- v:
+					default:
+					}
+				}
+
+				if timer != nil {
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
+					timer.Reset(opts.LivenessThreshold)
+				}
+			case <-func() <-chan time.Time {
+				if timer != nil {
+					return timer.C
+				}
+				return nil
+			}():
+				d.logger.Error("tool_liveness_timeout", "tool_name", call.Name, "threshold", opts.LivenessThreshold)
+				cancel()
+				return
+			case <-monitorCtx.Done():
+				return
+			}
+		}
+	}()
 
 	go func() {
 		// CRITICAL: This recover block protects the isolated tool execution thread.
@@ -105,8 +156,9 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 					Result: d.handlePanic(ctx, r, call.Name),
 				}
 			}
+			close(hbCh) // Signal monitor that tool finished
 		}()
-		res, execErr := d.next.Execute(ctx, tool, call)
+		res, execErr := d.next.Execute(ctx, tool, call, hbCh)
 		outCh <- tools.ToolOutput{Result: res, Err: execErr}
 	}()
 
@@ -158,7 +210,7 @@ func newTracingDecorator(next ToolExecutor, registry tools.Registry, logger port
 	return &tracingDecorator{next: next, registry: registry, logger: logger}
 }
 
-func (d *tracingDecorator) Execute(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
+func (d *tracingDecorator) Execute(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hb chan<- struct{}) (tools.ToolResult, error) {
 	ctx, span := otel.Tracer("agent").Start(parentCtx, "tool.execute."+call.Name)
 	ctx = domain_security.WithCurrentTool(ctx, call.Name)
 	span.SetAttributes(attribute.String("tool.name", call.Name))
@@ -167,7 +219,7 @@ func (d *tracingDecorator) Execute(parentCtx context.Context, tool *tools.ToolDe
 	startTime := time.Now()
 	trace := telemetry.TraceFromContext(ctx)
 
-	result, err := d.next.Execute(ctx, tool, call)
+	result, err := d.next.Execute(ctx, tool, call, hb)
 
 	duration := time.Since(startTime)
 	status, _ := classifyToolError(err, result.Error)

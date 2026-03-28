@@ -64,7 +64,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tool.maxOutput = tt.maxOutput
-			res, err := tool.ExecuteCommand(ctx, args)
+			res, err := tool.ExecuteCommand(ctx, args, nil)
 			if err != nil {
 				t.Fatalf("ExecuteCommand failed: %v", err)
 			}
@@ -171,7 +171,7 @@ func TestShellTool_ExecuteCommand_Validation(t *testing.T) {
 			_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
 				"command": tt.command,
 				"reason":  "testing validation",
-			})
+			}, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ExecuteCommand(%q) error = %v, wantErr %v", tt.command, err, tt.wantErr)
 			}
@@ -186,14 +186,14 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Empty command", func(t *testing.T) {
-		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": ""})
+		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": ""}, nil)
 		if err == nil {
 			t.Error("expected error for empty command")
 		}
 	})
 
 	t.Run("Invalid shlex", func(t *testing.T) {
-		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": "ls 'unclosed"})
+		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": "ls 'unclosed"}, nil)
 		if err == nil {
 			t.Error("expected error for invalid shlex")
 		}
@@ -203,7 +203,7 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
 			"command":     "ls",
 			"output_file": "/root/secret.txt",
-		})
+		}, nil)
 		if err == nil {
 			t.Error("expected error for invalid output path")
 		}
@@ -284,7 +284,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 			"commands": []interface{}{"echo hello world", "grep hello"},
 			"reason":   "test pipe",
 		}
-		res, err := tool.PipeCommands(ctx, args)
+		res, err := tool.PipeCommands(ctx, args, nil)
 		if err != nil {
 			t.Fatalf("PipeCommands failed: %v", err)
 		}
@@ -298,7 +298,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 			"commands": []interface{}{"echo hello", "invalid-cmd-12345"},
 			"reason":   "test pipe failure",
 		}
-		_, err := tool.PipeCommands(ctx, args)
+		_, err := tool.PipeCommands(ctx, args, nil)
 		if err == nil {
 			t.Error("expected error for invalid command in pipe")
 		}
@@ -309,21 +309,21 @@ func TestShellTool_PipeCommands(t *testing.T) {
 			"commands": []interface{}{"echo hello", "grep hi > out.txt"},
 			"reason":   "test pipe security",
 		}
-		_, err := tool.PipeCommands(ctx, args)
+		_, err := tool.PipeCommands(ctx, args, nil)
 		if err == nil {
 			t.Error("expected error for shell operator in pipe")
 		}
 	})
 
 	t.Run("Empty commands list", func(t *testing.T) {
-		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": []interface{}{}})
+		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": []interface{}{}}, nil)
 		if err == nil {
 			t.Error("expected error for empty commands list")
 		}
 	})
 
 	t.Run("Invalid commands type", func(t *testing.T) {
-		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": "not a list"})
+		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": "not a list"}, nil)
 		if err == nil {
 			t.Error("expected error for invalid commands type")
 		}
@@ -347,7 +347,7 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 			"append":      true,
 		}
 
-		_, err := tool.ExecuteCommand(ctx, args)
+		_, err := tool.ExecuteCommand(ctx, args, nil)
 		if err != nil {
 			t.Fatalf("ExecuteCommand failed: %v", err)
 		}
@@ -376,7 +376,7 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 			"append":      false,
 		}
 
-		_, err := tool.PipeCommands(ctx, args)
+		_, err := tool.PipeCommands(ctx, args, nil)
 		if err != nil {
 			t.Fatalf("PipeCommands failed: %v", err)
 		}
@@ -487,7 +487,7 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 				_, err := tool.ExecuteCommand(context.Background(), map[string]interface{}{
 					"command": "rm -rf /",
 					"reason":  "testing denial",
-				})
+				}, nil)
 
 				// 4. Assertion: Verify the exact sentinel error is returned
 				if !errors.Is(err, tt.expectedErr) {
@@ -498,7 +498,7 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 				_, err = tool.PipeCommands(context.Background(), map[string]interface{}{
 					"commands": []interface{}{"ls", "grep foo"},
 					"reason":   "testing denial",
-				})
+				}, nil)
 
 				// 6. Assertion: Verify the exact sentinel error is returned
 				if !errors.Is(err, tt.expectedErr) {

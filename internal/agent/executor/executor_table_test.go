@@ -47,7 +47,7 @@ func setupTestRegistry(t *testing.T, toolsMap map[string]toolBehavior) (tools.Re
 			Serial:      b.serial,
 			LongRunning: b.long,
 		}
-		if err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		if err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			if b.observe != nil {
 				b.observe()
 			}
@@ -465,7 +465,7 @@ func TestOrchestrator_ConcurrencyLimit_Strict(t *testing.T) {
 }
 
 func createTestToolFunc(activeCount, maxActive *int32, startedCh chan struct{}, blockCh <-chan struct{}) tools.ToolFunc {
-	return func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	return func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		current := atomic.AddInt32(activeCount, 1)
 		for {
 			old := atomic.LoadInt32(maxActive)
@@ -725,7 +725,7 @@ func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
 func TestOrchestrator_EventPublishing(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	err := reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err := reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "success"}, nil
 	})
 	require.NoError(t, err)
@@ -1108,7 +1108,7 @@ func TestOrchestrator_ZombieTool(t *testing.T) {
 
 	reg := registry.New()
 	zombieProceed := make(chan struct{})
-	err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "stubborn_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "stubborn_tool"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		<-zombieProceed // Ignores context!
 		return tools.ToolResult{Text: "finally finished"}, nil
 	}, registry.ToolOptions{LongRunning: true})

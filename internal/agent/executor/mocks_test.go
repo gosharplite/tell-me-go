@@ -24,7 +24,7 @@ type mockExecutor struct {
 	ExecuteHook func()
 }
 
-func (m *mockExecutor) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
+func (m *mockExecutor) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hb chan<- struct{}) (tools.ToolResult, error) {
 	m.mu.Lock()
 	m.Called = true
 	m.mu.Unlock()

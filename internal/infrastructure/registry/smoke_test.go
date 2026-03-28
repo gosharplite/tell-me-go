@@ -18,13 +18,13 @@ func TestRegistrySmoke(t *testing.T) {
 	if err := r.Register(&tools.ToolDeclaration{
 		Name:        "test_tool",
 		Description: "A test tool",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "OK"}, nil
 	}); err != nil {
 		t.Fatalf("failed to register tool: %v", err)
 	}
 
-	res, err := r.Execute(context.Background(), "test_tool", nil)
+	res, err := r.Execute(context.Background(), "test_tool", nil, nil)
 	if err != nil {
 		t.Fatalf("failed to execute tool: %v", err)
 	}

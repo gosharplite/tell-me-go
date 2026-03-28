@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -23,12 +24,33 @@ type healthManager struct {
 	Ana  *analysisManager
 }
 
-func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	select {
 	case <-ctx.Done():
 		return tools.ToolResult{Text: "Operation cancelled: " + ctx.Err().Error()}, nil
 	default:
 	}
+
+	// Heartbeat while waiting for all parallel health checks
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
 
 	var (
 		testStatus, testDetails, coverageStatus, coverageDetails string
@@ -54,13 +76,13 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 
 	// 4. Complexity
 	g.Go(func() error {
-		compStatus, compDetails, alerts = m.checkComplexity(gCtx)
+		compStatus, compDetails, alerts = m.checkComplexity(gCtx, hb)
 		return nil
 	})
 
 	// 5. Dead Code
 	g.Go(func() error {
-		deadStatus, deadDetails = m.checkDeadCode(gCtx)
+		deadStatus, deadDetails = m.checkDeadCode(gCtx, hb)
 		return nil
 	})
 
@@ -183,9 +205,9 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 	return fmt.Sprintf("%d Issues", count), fmt.Sprintf("Using %s", tool)
 }
 
-func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []string) {
+func (m *healthManager) checkComplexity(ctx context.Context, hb chan<- struct{}) (string, string, []string) {
 	// Complexity check is internal and doesn't need TerminalLock unless it uses a tool
-	complexities, err := m.Ana.Complexity.GatherComplexities(ctx, ".")
+	complexities, err := m.Ana.Complexity.GatherComplexities(ctx, ".", hb)
 	if err != nil {
 		return "ERROR", err.Error(), nil
 	}
@@ -209,8 +231,8 @@ func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []
 	return fmt.Sprintf("%d Alerts", highCount), fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold), alerts
 }
 
-func (m *healthManager) checkDeadCode(ctx context.Context) (string, string) {
-	reports, err := m.Ana.DeadCode.GatherOrphanReports(ctx, ".")
+func (m *healthManager) checkDeadCode(ctx context.Context, hb chan<- struct{}) (string, string) {
+	reports, err := m.Ana.DeadCode.GatherOrphanReports(ctx, ".", hb)
 	if err != nil {
 		return "ERROR", err.Error()
 	}
@@ -263,13 +285,13 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead strin
 	return strings.Join(recs, " ")
 }
 
-func (m *healthManager) getDetailedCoverage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *healthManager) getDetailedCoverage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok {
 		path = "./..."
 	}
 
-	report, err := getDetailedCoverageReport(ctx, path, m.Exec)
+	report, err := getDetailedCoverageReport(ctx, path, m.Exec, hb)
 	if err != nil {
 		return tools.ToolResult{Text: "Error: " + err.Error()}, nil
 	}

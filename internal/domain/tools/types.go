@@ -6,6 +6,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // ToolDeclaration represents a function that can be called by the model.
@@ -50,12 +51,13 @@ func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
 }
 
 // ToolFunc is the signature for Go functions that can be called by the model.
-type ToolFunc func(ctx context.Context, args map[string]interface{}) (ToolResult, error)
+type ToolFunc func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (ToolResult, error)
 
 // ToolOptions defines execution behavior for a tool.
 type ToolOptions struct {
-	Serial      bool // If true, the agent waits for this tool to finish before running others.
-	LongRunning bool // If true, the tool is exempt from default timeouts (e.g., interactive or heavy task).
+	Serial            bool          // If true, the agent waits for this tool to finish before running others.
+	LongRunning       bool          // If true, the tool is exempt from default timeouts (e.g., interactive or heavy task).
+	LivenessThreshold time.Duration // If > 0, the maximum allowed time between heartbeat signals.
 }
 
 // ToolRegistrar defines the interface for adding tools to the registry.
@@ -66,9 +68,10 @@ type ToolRegistrar interface {
 
 // ToolExecutor defines the interface for executing tools and checking their behavior.
 type ToolExecutor interface {
-	Execute(ctx context.Context, name string, args map[string]interface{}) (ToolResult, error)
+	Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (ToolResult, error)
 	IsSerial(name string) bool
 	IsLongRunning(name string) bool
+	GetOptions(name string) ToolOptions
 }
 
 // ToolMetadataProvider defines the interface for listing available tools.

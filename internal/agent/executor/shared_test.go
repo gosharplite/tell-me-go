@@ -61,9 +61,13 @@ func (r *panicRegistry) IsLongRunning(name string) bool {
 	return false
 }
 
-func (r *panicRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *panicRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if r.panicOnExec {
 		panic("registry Execute panic")
 	}
 	return tools.ToolResult{}, nil
+}
+
+func (r *panicRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{}
 }

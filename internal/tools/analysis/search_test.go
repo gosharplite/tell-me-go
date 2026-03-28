@@ -90,7 +90,7 @@ func TestListTodos(t *testing.T) {
 				path = tt.path
 			}
 
-			res, err := m.ListTodos(context.Background(), map[string]interface{}{"path": path})
+			res, err := m.ListTodos(context.Background(), map[string]interface{}{"path": path}, nil)
 			require.NoError(t, err)
 
 			for _, exp := range tt.expected {
@@ -143,7 +143,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	res, err := m.SearchUsagesGlobally(ctx, map[string]interface{}{
 		"query": "MyFunc",
 		"path":  tempDir,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("SearchUsagesGlobally failed: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	}
 
 	// Test invalid regex
-	_, err = m.SearchUsagesGlobally(ctx, map[string]interface{}{"query": "[", "is_regex": true})
+	_, err = m.SearchUsagesGlobally(ctx, map[string]interface{}{"query": "[", "is_regex": true}, nil)
 	if err == nil {
 		t.Error("expected error for invalid regex")
 	}
@@ -165,7 +165,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	res2, _ := m.SearchUsagesGlobally(ctx, map[string]interface{}{
 		"query": "NonExistentSymbol",
 		"path":  tempDir,
-	})
+	}, nil)
 	if !strings.Contains(res2.Text, "No matches found") {
 		t.Errorf("expected 'No matches found' message, got: %s", res2.Text)
 	}
@@ -183,7 +183,7 @@ func TestSearchManager_Errors(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		method  func(context.Context, map[string]interface{}) (tools.ToolResult, error)
+		method  func(context.Context, map[string]interface{}, chan<- struct{}) (tools.ToolResult, error)
 		args    map[string]interface{}
 		wantErr bool
 	}{
@@ -215,7 +215,7 @@ func TestSearchManager_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := tt.method(ctx, tt.args)
+			_, err := tt.method(ctx, tt.args, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("%s: error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}

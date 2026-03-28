@@ -42,7 +42,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 			},
 		}
 		m.Loader = &mockpackageProvider{pkgs: pkgs}
-		res, err := m.VerifyArchitecture(context.Background(), nil)
+		res, err := m.VerifyArchitecture(context.Background(), nil, nil)
 		if err != nil {
 			t.Fatalf("VerifyArchitecture failed: %v", err)
 		}
@@ -66,7 +66,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 			"github.com/gosharplite/tell-me-go/internal/domain": {},
 		}
 		m.Loader = &mockpackageProvider{pkgs: pkgs}
-		res, err := m.VerifyArchitecture(context.Background(), nil)
+		res, err := m.VerifyArchitecture(context.Background(), nil, nil)
 		if err != nil {
 			t.Fatalf("VerifyArchitecture failed: %v", err)
 		}
@@ -84,7 +84,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 		}
 
 		m.Loader = &mockpackageProvider{err: fmt.Errorf("load error")}
-		_, err := m.VerifyArchitecture(context.Background(), nil)
+		_, err := m.VerifyArchitecture(context.Background(), nil, nil)
 		if err == nil {
 			t.Error("expected error")
 		}
@@ -212,7 +212,7 @@ func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
 		},
 	}
 
-	violations := m.checkLayerViolations(pkgs)
+	violations := m.checkLayerViolations(pkgs, nil)
 	if len(violations) != 2 {
 		t.Errorf("expected 2 violations, got %d", len(violations))
 	}

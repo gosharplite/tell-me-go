@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -21,7 +22,7 @@ func newinteractionTool(sm domain_security.TerminalController) *interactionTool 
 	return &interactionTool{sm: sm}
 }
 
-func (t *interactionTool) askUser(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *interactionTool) askUser(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -36,6 +37,27 @@ func (t *interactionTool) askUser(ctx context.Context, args map[string]interface
 	if question == "" {
 		return tools.ToolResult{}, fmt.Errorf("question argument is required")
 	}
+
+	// Heartbeat while waiting for user input
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
 
 	// Tell-me style: Question, followed by "Answer > " prompt
 	t.sm.Warn(fmt.Sprintf("[AI Question] %s", question))

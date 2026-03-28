@@ -42,7 +42,7 @@ func newTypeManager(idx symbolIndex, cache *astCache, sp security.PathValidator)
 	}
 }
 
-func (m *defaultTypeManager) GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) GetTypeInfo(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Typename string `json:"typename"`
 		Path     string `json:"path"`
@@ -56,7 +56,7 @@ func (m *defaultTypeManager) GetTypeInfo(ctx context.Context, args map[string]in
 		return tools.ToolResult{Text: "Please provide a typename."}, nil
 	}
 
-	locs, err := m.Indexer.Lookup(ctx, typename)
+	locs, err := m.Indexer.Lookup(ctx, typename, hb)
 	if err != nil || len(locs) == 0 {
 		return tools.ToolResult{Text: "Type not found."}, nil
 	}
@@ -74,7 +74,7 @@ func (m *defaultTypeManager) GetTypeInfo(ctx context.Context, args map[string]in
 	}
 
 	def := m.extractDefinition(ts, gd, loc)
-	receivers, err := m.findMethodsInPackage(filepath.Dir(loc.Path), typename)
+	receivers, err := m.findMethodsInPackage(ctx, filepath.Dir(loc.Path), typename, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -82,7 +82,7 @@ func (m *defaultTypeManager) GetTypeInfo(ctx context.Context, args map[string]in
 	return tools.ToolResult{Text: m.renderTypeInfo(def, receivers)}, nil
 }
 
-func (m *defaultTypeManager) ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) ListSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path         string `json:"path"`
 		ExportedOnly bool   `json:"exported_only"`
@@ -96,7 +96,7 @@ func (m *defaultTypeManager) ListSymbols(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, err
 	}
 
-	results, err := m.collectSymbols(resolvedPath, "", params.ExportedOnly)
+	results, err := m.collectSymbols(ctx, resolvedPath, "", params.ExportedOnly, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -104,7 +104,7 @@ func (m *defaultTypeManager) ListSymbols(ctx context.Context, args map[string]in
 	return m.wrapResults(results, "No symbols found."), nil
 }
 
-func (m *defaultTypeManager) ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) ListImplementations(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		InterfaceName string `json:"interface_name"`
 	}
@@ -116,7 +116,7 @@ func (m *defaultTypeManager) ListImplementations(ctx context.Context, args map[s
 		return tools.ToolResult{Text: "Please provide an interface_name."}, nil
 	}
 
-	implementors, err := m.Indexer.FindImplementors(ctx, params.InterfaceName)
+	implementors, err := m.Indexer.FindImplementors(ctx, params.InterfaceName, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -134,7 +134,7 @@ func (m *defaultTypeManager) ListImplementations(ctx context.Context, args map[s
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *defaultTypeManager) FindUsages(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) FindUsages(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
 		Path  string `json:"path"`
@@ -154,7 +154,7 @@ func (m *defaultTypeManager) FindUsages(ctx context.Context, args map[string]int
 		return tools.ToolResult{}, err
 	}
 
-	locs, err := m.Indexer.GetUsages(ctx, query, resolvedPath)
+	locs, err := m.Indexer.GetUsages(ctx, query, resolvedPath, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -170,7 +170,7 @@ func (m *defaultTypeManager) FindUsages(ctx context.Context, args map[string]int
 	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *defaultTypeManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *defaultTypeManager) FindDefinitions(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
 		Path  string `json:"path"`
@@ -184,7 +184,7 @@ func (m *defaultTypeManager) FindDefinitions(ctx context.Context, args map[strin
 		return tools.ToolResult{}, err
 	}
 
-	results, err := m.collectSymbols(resolvedPath, params.Query, false)
+	results, err := m.collectSymbols(ctx, resolvedPath, params.Query, false, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -250,12 +250,27 @@ func (m *defaultTypeManager) parseInterfaceMethods(list *ast.FieldList) []string
 	return methods
 }
 
-func (m *defaultTypeManager) findMethodsInPackage(dir, typeName string) ([]string, error) {
+func (m *defaultTypeManager) findMethodsInPackage(ctx context.Context, dir, typeName string, hb chan<- struct{}) ([]string, error) {
 	var methods []string
+	count := 0
 	err := filepath.Walk(dir, func(p string, i os.FileInfo, e error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
 			return nil
 		}
+
+		count++
+		if count%10 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		ff, _, err := m.Cache.Get(p)
 		if err != nil {
 			return nil
@@ -372,12 +387,27 @@ func (m *defaultTypeManager) matchSymbolInFile(f *ast.File, fset *token.FileSet,
 	return results
 }
 
-func (m *defaultTypeManager) collectSymbols(root, query string, exportedOnly bool) ([]string, error) {
+func (m *defaultTypeManager) collectSymbols(ctx context.Context, root, query string, exportedOnly bool, hb chan<- struct{}) ([]string, error) {
 	var results []string
+	count := 0
 	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(p) != ".go" {
 			return nil
 		}
+
+		count++
+		if count%10 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		f, fset, err := m.Cache.Get(p)
 		if err != nil {
 			return nil

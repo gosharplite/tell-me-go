@@ -21,7 +21,7 @@ type fileWriter struct {
 	fs persistence.FileSystem
 }
 
-func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`
@@ -57,7 +57,7 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{})
 	return tools.ToolResult{Text: "File written successfully."}, nil
 }
 
-func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 		OldText  string `json:"old_text"`
@@ -104,7 +104,7 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 	return tools.ToolResult{Text: "File updated successfully."}, nil
 }
 
-func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}) (res tools.ToolResult, err error) {
+func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (res tools.ToolResult, err error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`
@@ -144,7 +144,7 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 	return tools.ToolResult{Text: "Text appended successfully."}, nil
 }
 
-func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		N      int    `json:"n"`
 		Reason string `json:"reason"`

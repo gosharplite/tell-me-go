@@ -43,7 +43,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 		"new_text": "replaced",
 		"reason":   "testing",
 	}
-	_, err = w.replaceText(ctx, args)
+	_, err = w.replaceText(ctx, args, nil)
 	if err == nil {
 		t.Error("expected error when old_text is not unique, got nil")
 	} else if !strings.Contains(err.Error(), "found 2 times") {
@@ -52,7 +52,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 
 	// 2. Test success when old_text is unique (with more context)
 	args["old_text"] = "line 1\ntarget"
-	_, err = w.replaceText(ctx, args)
+	_, err = w.replaceText(ctx, args, nil)
 	if err != nil {
 		t.Errorf("expected success with context, got error: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestWriteFile(t *testing.T) {
 		"filepath": path,
 		"content":  content,
 		"reason":   "testing",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestAppendText(t *testing.T) {
 		"filepath": path,
 		"content":  "line 1\n",
 		"reason":   "testing",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestAppendText(t *testing.T) {
 		"filepath": path,
 		"content":  "line 2",
 		"reason":   "testing",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestWriteFile_Failures(t *testing.T) {
 			"filepath": "/mock/any/file.txt",
 			"content":  "test",
 			"reason":   "testing",
-		})
+		}, nil)
 		if err == nil || !strings.Contains(err.Error(), "disk full") {
 			t.Errorf("expected disk full error, got %v", err)
 		}
@@ -181,7 +181,7 @@ func TestWriteFile_Failures(t *testing.T) {
 			"filepath": path,
 			"content":  "test",
 			"reason":   "testing",
-		})
+		}, nil)
 		if err == nil || !strings.Contains(err.Error(), "write error") {
 			t.Errorf("expected write error, got %v", err)
 		}
@@ -208,7 +208,7 @@ func TestUndoFileChange(t *testing.T) {
 		"filepath": path,
 		"content":  content2,
 		"reason":   "testing undo",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestUndoFileChange(t *testing.T) {
 	}
 
 	// Undo change
-	res, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1})
+	res, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestReplaceText_NotFound(t *testing.T) {
 		"old_text": "missing",
 		"new_text": "new",
 		"reason":   "testing",
-	})
+	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "old_text not found") {
 		t.Errorf("expected 'old_text not found' error, got %v", err)
 	}
@@ -272,7 +272,7 @@ func TestAppendText_Failures(t *testing.T) {
 			"filepath": "/mock/any.txt",
 			"content":  "test",
 			"reason":   "testing",
-		})
+		}, nil)
 		if err == nil || !strings.Contains(err.Error(), "open error") {
 			t.Errorf("expected open error, got %v", err)
 		}
@@ -296,14 +296,14 @@ func TestUndoFileChange_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("no backups", func(t *testing.T) {
-		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1})
+		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1}, nil)
 		if err == nil || !strings.Contains(err.Error(), "no history found") {
 			t.Errorf("expected 'no history found' error, got %v", err)
 		}
 	})
 
 	t.Run("invalid n", func(t *testing.T) {
-		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 0})
+		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 0}, nil)
 		if err == nil {
 			t.Error("expected error for n <= 0")
 		}
@@ -327,7 +327,7 @@ func TestAppendText_WriteError(t *testing.T) {
 		"filepath": path,
 		"content":  "test",
 		"reason":   "testing",
-	})
+	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "write error") {
 		t.Errorf("expected write error, got %v", err)
 	}

@@ -32,7 +32,7 @@ var defPatterns = []string{
 	`^type\s+\w+\s+interface`, // Go interface
 }
 
-func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path    string `json:"path"`
 		Query   string `json:"query"`
@@ -69,7 +69,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, matcher)
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher)
 
 	var results []string
 	limit := 100
@@ -97,7 +97,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 	return s.formatSearchResults(results, truncated, "No matches found.")
 }
 
-func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path  string `json:"path"`
 		Query string `json:"query"`
@@ -121,7 +121,7 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, matcher)
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher)
 
 	var results []string
 	limit := 100

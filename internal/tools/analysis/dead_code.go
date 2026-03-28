@@ -61,7 +61,7 @@ func newDeadCodeAnalyzer(sp security.PathValidator, idx symbolIndex) *defaultDea
 }
 
 // FindOrphanedSymbols identifies exported symbols with zero inbound references within the module.
-func (a *defaultDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *defaultDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path             string   `json:"path"`
 		ExcludedPackages []string `json:"excluded_packages"`
@@ -70,7 +70,7 @@ func (a *defaultDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args 
 		return tools.ToolResult{}, err
 	}
 
-	state, err := a.runAnalysisPipeline(ctx, params.Path, params.ExcludedPackages)
+	state, err := a.runAnalysisPipeline(ctx, params.Path, params.ExcludedPackages, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -78,13 +78,13 @@ func (a *defaultDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args 
 		return tools.ToolResult{Text: "No packages found."}, nil
 	}
 
-	findings := a.buildReport(ctx, state)
+	findings := a.buildReport(ctx, state, hb)
 	return a.formatToolResult(findings), nil
 }
 
 // GatherOrphanReports is an internal helper for health checks that returns structured findings.
-func (a *defaultDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error) {
-	state, err := a.runAnalysisPipeline(ctx, path, nil)
+func (a *defaultDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, hb chan<- struct{}) ([]orphanReport, error) {
+	state, err := a.runAnalysisPipeline(ctx, path, nil, hb)
 	if err != nil {
 		return nil, err
 	}
@@ -92,10 +92,10 @@ func (a *defaultDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path 
 		return nil, nil
 	}
 
-	return a.buildReport(ctx, state), nil
+	return a.buildReport(ctx, state, hb), nil
 }
 
-func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path string, excluded []string) (*scanState, error) {
+func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path string, excluded []string, hb chan<- struct{}) (*scanState, error) {
 	if path == "" {
 		path = "."
 	}
@@ -105,7 +105,7 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 		return nil, err
 	}
 
-	pkgs, err := a.idx.Packages(ctx)
+	pkgs, err := a.idx.Packages(ctx, hb)
 	if err != nil {
 		return nil, err
 	}
@@ -129,8 +129,8 @@ func (a *defaultDeadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path 
 	}
 
 	a.harvestExportedSymbols(state)
-	a.analyzeUsages(ctx, state, resolvedPath)
-	a.propagateInterfaceUsages(ctx, state)
+	a.analyzeUsages(ctx, state, resolvedPath, hb)
+	a.propagateInterfaceUsages(ctx, state, hb)
 
 	return state, nil
 }
@@ -155,7 +155,7 @@ func (a *defaultDeadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (stri
 	return "", fmt.Errorf("no go.mod found")
 }
 
-func (a *defaultDeadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, resolvedPath string) {
+func (a *defaultDeadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, resolvedPath string, hb chan<- struct{}) {
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
 	ids := make([]string, 0, len(state.declarations))
@@ -164,13 +164,20 @@ func (a *defaultDeadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scan
 	}
 	sort.Strings(ids)
 
-	for _, id := range ids {
+	for i, id := range ids {
+		if i%20 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		meta := state.declarations[id]
-		a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath)
+		a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath, hb)
 		if a.isInterfaceSymbol(meta) {
 			a.protectContractSymbol(state, id)
 		}
-		a.processImplementations(ctx, state, id)
+		a.processImplementations(ctx, state, id, hb)
 	}
 }
 
@@ -247,13 +254,13 @@ func (a *defaultDeadCodeAnalyzer) protectContractSymbol(state *scanState, id str
 	state.externalUses[id]++
 }
 
-func (a *defaultDeadCodeAnalyzer) trackExternalUsages(ctx context.Context, state *scanState, id string, meta *symMeta, fileToPkg map[string]string, resolvedPath string) {
-	if !a.idx.IsSymbolUsed(ctx, id) {
+func (a *defaultDeadCodeAnalyzer) trackExternalUsages(ctx context.Context, state *scanState, id string, meta *symMeta, fileToPkg map[string]string, resolvedPath string, hb chan<- struct{}) {
+	if !a.idx.IsSymbolUsed(ctx, id, hb) {
 		return
 	}
 
 	state.totalUses[id] = 1
-	allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath)
+	allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath, hb)
 	objBase := getBasePkgPath(meta.pkgPath)
 
 	for _, loc := range allUsages {
@@ -272,8 +279,8 @@ func (a *defaultDeadCodeAnalyzer) trackExternalUsages(ctx context.Context, state
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) processImplementations(ctx context.Context, state *scanState, id string) {
-	impls := a.idx.GetImplementations(ctx, id)
+func (a *defaultDeadCodeAnalyzer) processImplementations(ctx context.Context, state *scanState, id string, hb chan<- struct{}) {
+	impls := a.idx.GetImplementations(ctx, id, hb)
 	if len(impls) == 0 {
 		return
 	}
@@ -390,7 +397,7 @@ func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []orphanReport {
+func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanState, hb chan<- struct{}) []orphanReport {
 	var findings []orphanReport
 
 	// Sort IDs for deterministic iteration
@@ -400,7 +407,14 @@ func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanSt
 	}
 	sort.Strings(ids)
 
-	for _, id := range ids {
+	for i, id := range ids {
+		if i%20 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		if report := a.evaluateOrphan(id, state.declarations[id], state); report != nil {
 			findings = append(findings, *report)
 		}
@@ -566,7 +580,7 @@ func (a *defaultDeadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, 
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *scanState) {
+func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *scanState, hb chan<- struct{}) {
 	// Take a snapshot of the initial usages to prevent exponential overflow/corruption
 	// caused by cyclic implementations and in-place map mutation during iteration.
 	snapshotTotal := make(map[string]int, len(state.totalUses))
@@ -581,10 +595,17 @@ func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, 
 	}
 	sort.Strings(ids) // Ensure deterministic propagation order
 
-	for _, id := range ids {
+	for i, id := range ids {
+		if i%20 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		count := snapshotTotal[id]
 		if count > 0 {
-			for _, implId := range a.idx.GetImplementations(ctx, id) {
+			for _, implId := range a.idx.GetImplementations(ctx, id, hb) {
 				if id == implId {
 					continue // Prevent self-referential loops
 				}

@@ -75,7 +75,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 				"action": tt.action,
 				"index":  tt.index,
 			}
-			_, err := it.ManageHistory(ctx, args)
+			_, err := it.ManageHistory(ctx, args, nil)
 
 			if (err != nil) != tt.expectedErr {
 				t.Fatalf("expected error: %v, got: %v", tt.expectedErr, err)
@@ -179,7 +179,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 			"turns": 1.0,
 			"focus": "test focus",
 		}
-		res, err := it.summarizeHistory(ctx, args)
+		res, err := it.summarizeHistory(ctx, args, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -196,7 +196,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 		args := map[string]interface{}{
 			"turns": 0.0,
 		}
-		_, err := it.summarizeHistory(ctx, args)
+		_, err := it.summarizeHistory(ctx, args, nil)
 		if err == nil {
 			t.Fatal("expected error for 0 turns, got nil")
 		}
@@ -204,7 +204,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 
 	t.Run("missing arguments", func(t *testing.T) {
 		args := map[string]interface{}{}
-		_, err := it.summarizeHistory(ctx, args)
+		_, err := it.summarizeHistory(ctx, args, nil)
 		if err == nil {
 			t.Fatal("expected error for missing arguments, got nil")
 		}

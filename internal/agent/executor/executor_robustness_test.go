@@ -24,7 +24,7 @@ func TestOrchestrator_ConfigRace(t *testing.T) {
 		t.Skip("skipping slow robustness test in short mode")
 	}
 	reg := registry.New()
-	err := reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err := reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		runtime.Gosched()
 		return tools.ToolResult{Text: "ok"}, nil
 	})
@@ -73,7 +73,7 @@ func TestOrchestrator_ContextCancellation_MidBatch(t *testing.T) {
 	// Create a tool that blocks until told to proceed, so we can reliably cancel context mid-batch
 	blockCh := make(chan struct{})
 	toolStarted := make(chan struct{}, 1)
-	regErr := reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	regErr := reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
 		case toolStarted <- struct{}{}:
 		default:

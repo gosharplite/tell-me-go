@@ -56,7 +56,7 @@ func BenchmarkDeadCode_ColdScan(b *testing.B) {
 			b.Fatal(err)
 		}
 		analyzer := newDeadCodeAnalyzer(sm, idx)
-		_, err = analyzer.FindOrphanedSymbols(ctx, args)
+		_, err = analyzer.FindOrphanedSymbols(ctx, args, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -75,14 +75,14 @@ func BenchmarkDeadCode_CachedScan(b *testing.B) {
 	analyzer := newDeadCodeAnalyzer(sm, idx)
 
 	// Warm up cache
-	_, err = analyzer.FindOrphanedSymbols(ctx, args)
+	_, err = analyzer.FindOrphanedSymbols(ctx, args, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err = analyzer.FindOrphanedSymbols(ctx, args)
+		_, err = analyzer.FindOrphanedSymbols(ctx, args, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func BenchmarkCalculateImpactScore_ProjectWide(b *testing.B) {
 	idx, _ := newIndexer(".")
 	sm := &benchmarkSecurityManager{}
 	analyzer := newDeadCodeAnalyzer(sm, idx)
-	pkgs, _ := idx.Packages(ctx)
+	pkgs, _ := idx.Packages(ctx, nil)
 
 	// Collect all function objects in the project
 	var funcs []types.Object

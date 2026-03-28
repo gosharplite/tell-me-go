@@ -20,7 +20,7 @@ func TestInteractionTool(t *testing.T) {
 		sm.SetInteractor(&security.MockInteractor{Answer: "The answer is 42\n"})
 		res, err := it.askUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
-		})
+		}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -33,7 +33,7 @@ func TestInteractionTool(t *testing.T) {
 		sm.SetInteractor(&security.MockInteractor{Answer: ""}) // Immediate EOF
 		res, err := it.askUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
-		})
+		}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +46,7 @@ func TestInteractionTool(t *testing.T) {
 		sm.SetInteractor(&security.MockInteractor{Err: context.DeadlineExceeded})
 		_, err := it.askUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
-		})
+		}, nil)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -56,7 +56,7 @@ func TestInteractionTool(t *testing.T) {
 	})
 
 	t.Run("Missing Question", func(t *testing.T) {
-		_, err := it.askUser(ctx, map[string]interface{}{})
+		_, err := it.askUser(ctx, map[string]interface{}{}, nil)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
@@ -68,7 +68,7 @@ func TestInteractionTool(t *testing.T) {
 	t.Run("Invalid Args", func(t *testing.T) {
 		_, err := it.askUser(ctx, map[string]interface{}{
 			"question": 123,
-		})
+		}, nil)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}

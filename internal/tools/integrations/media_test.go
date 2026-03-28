@@ -42,7 +42,7 @@ func TestMediaTools(t *testing.T) {
 	}
 
 	// Test create_image
-	res, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"})
+	res, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"}, nil)
 	if err != nil {
 		t.Fatalf("create_image failed: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestMediaTools(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "test.png")
 	_ = os.WriteFile(tmpFile, []byte("fake-image"), 0644)
 
-	res, err = r.Execute(ctx, "read_image", map[string]interface{}{"filepath": tmpFile})
+	res, err = r.Execute(ctx, "read_image", map[string]interface{}{"filepath": tmpFile}, nil)
 	if err != nil {
 		t.Fatalf("read_image failed: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestMediaTools_NoClient(t *testing.T) {
 	}
 
 	// Test create_image
-	_, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"})
+	_, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"}, nil)
 	if err == nil {
 		t.Errorf("expected error, got nil")
 	}

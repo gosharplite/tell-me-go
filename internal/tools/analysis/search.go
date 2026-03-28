@@ -22,11 +22,11 @@ type searchManager struct {
 
 var todoRegex = regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
 
-func (m *searchManager) executeSearch(ctx context.Context, path string, limit int, emptyMsg string, matchFunc func(string, string) (string, bool)) (tools.ToolResult, error) {
+func (m *searchManager) executeSearch(ctx context.Context, path string, hb chan<- struct{}, limit int, emptyMsg string, matchFunc func(string, string) (string, bool)) (tools.ToolResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, matchFunc)
+	resChan, errChan := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, hb, matchFunc)
 
 	var results []string
 	truncated := false
@@ -60,7 +60,7 @@ func (m *searchManager) executeSearch(ctx context.Context, path string, limit in
 	return tools.ToolResult{Text: out}, nil
 }
 
-func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
@@ -73,7 +73,7 @@ func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface
 		path = "."
 	}
 
-	return m.executeSearch(ctx, path, 500, "No TODOs, FIXMEs, or BUGs found.", func(_, line string) (string, bool) {
+	return m.executeSearch(ctx, path, hb, 500, "No TODOs, FIXMEs, or BUGs found.", func(_, line string) (string, bool) {
 		match := todoRegex.FindString(line)
 		if match == "" {
 			return "", false
@@ -84,7 +84,7 @@ func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface
 	})
 }
 
-func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Query   string `json:"query"`
 		Path    string `json:"path"`
@@ -114,5 +114,5 @@ func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 		path = "."
 	}
 
-	return m.executeSearch(ctx, path, 100, "No matches found.", matcher)
+	return m.executeSearch(ctx, path, hb, 100, "No matches found.", matcher)
 }

@@ -16,7 +16,7 @@ func newRefactorManager(sp refactorSecurity) *refactorManager {
 	return &refactorManager{SP: sp}
 }
 
-func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Symbol  string `json:"symbol"`
 		SrcFile string `json:"src_file"`
@@ -67,7 +67,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully moved %s from %s to %s", plan.Symbol, plan.SrcFile, plan.DstFile)}, nil
 }
 
-func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	// For now, keeping the old implementation logic but structured within the new manager
 	// In a real implementation this would also use Transactions and Transforms
 	var params struct {

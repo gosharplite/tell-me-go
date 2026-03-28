@@ -38,7 +38,7 @@ func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handl
 	return m.Register(def, handler)
 }
 
-func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
 
@@ -265,3 +265,7 @@ func (m *mockSessionLoader) LoadSession(path string) (*config.SessionConfig, err
 }
 
 func (m *mockHistoryManager) GetFilePath() string { return "" }
+
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}

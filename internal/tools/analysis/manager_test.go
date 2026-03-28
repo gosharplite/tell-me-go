@@ -39,41 +39,41 @@ func assertDelegationSuccess(t *testing.T, res tools.ToolResult, err error, expe
 }
 
 func testMetricsDelegation(t *testing.T, mgr *analysisManager, ctx context.Context, tmpDir string) {
-	res, err := mgr.AnalyzeComplexity(ctx, map[string]interface{}{"path": tmpDir})
+	res, err := mgr.AnalyzeComplexity(ctx, map[string]interface{}{"path": tmpDir}, nil)
 	assertDelegationSuccess(t, res, err, "F - Complexity: 1", "AnalyzeComplexity")
 }
 
 func testSymbolDelegation(t *testing.T, mgr *analysisManager, ctx context.Context, tmpDir string) {
-	res, err := mgr.ListSymbols(ctx, map[string]interface{}{"path": tmpDir})
+	res, err := mgr.ListSymbols(ctx, map[string]interface{}{"path": tmpDir}, nil)
 	assertDelegationSuccess(t, res, err, "func F()", "ListSymbols")
 
-	res, err = mgr.FindOrphanedSymbols(ctx, map[string]interface{}{"path": tmpDir})
+	res, err = mgr.FindOrphanedSymbols(ctx, map[string]interface{}{"path": tmpDir}, nil)
 	assertDelegationSuccess(t, res, err, "F (Function)", "FindOrphanedSymbols")
 }
 
 func testTypeInfoDelegation(t *testing.T, mgr *analysisManager, ctx context.Context) {
-	res, err := mgr.GetTypeInfo(ctx, map[string]interface{}{"typename": "NonExistent"})
+	res, err := mgr.GetTypeInfo(ctx, map[string]interface{}{"typename": "NonExistent"}, nil)
 	assertDelegationSuccess(t, res, err, "Type not found.", "GetTypeInfo")
 }
 
 func testSearchDelegation(t *testing.T, mgr *analysisManager, ctx context.Context, tmpDir string) {
-	res, err := mgr.FindUsages(ctx, map[string]interface{}{"path": tmpDir, "query": "F"})
+	res, err := mgr.FindUsages(ctx, map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
 	assertDelegationSuccess(t, res, err, "test.go", "FindUsages")
 
-	res, err = mgr.FindDefinitions(ctx, map[string]interface{}{"path": tmpDir, "query": "F"})
+	res, err = mgr.FindDefinitions(ctx, map[string]interface{}{"path": tmpDir, "query": "F"}, nil)
 	assertDelegationSuccess(t, res, err, "func F()", "FindDefinitions")
 }
 
 func testDependencyDelegation(t *testing.T, mgr *analysisManager, ctx context.Context) {
 	// These don't have strong assertions in the original test, just checking they don't crash
-	_, _ = mgr.SemanticDiff(ctx, map[string]interface{}{"target": "HEAD"})
-	_, _ = mgr.ListImplementations(ctx, map[string]interface{}{"interface_name": "I"})
-	_, _ = mgr.GetPackageGraph(ctx, nil)
+	_, _ = mgr.SemanticDiff(ctx, map[string]interface{}{"target": "HEAD"}, nil)
+	_, _ = mgr.ListImplementations(ctx, map[string]interface{}{"interface_name": "I"}, nil)
+	_, _ = mgr.GetPackageGraph(ctx, nil, nil)
 }
 
 func testErrorDelegation(t *testing.T, mgr *analysisManager, ctx context.Context) {
 	// Passing an invalid type to path should trigger an error in UnmarshalArgs
-	_, err := mgr.AnalyzeComplexity(ctx, map[string]interface{}{"path": 123})
+	_, err := mgr.AnalyzeComplexity(ctx, map[string]interface{}{"path": 123}, nil)
 	if err == nil {
 		t.Error("Expected error for invalid argument type, got nil")
 	}
@@ -119,5 +119,5 @@ func TestAnalysisManager_AnalyzeSequenceFlow(t *testing.T) {
 	t.Parallel()
 	mgr, _ := setupAnalysisManager(t)
 	ctx := context.Background()
-	_, _ = mgr.AnalyzeSequenceFlow(ctx, map[string]interface{}{"start_symbol": "F"})
+	_, _ = mgr.AnalyzeSequenceFlow(ctx, map[string]interface{}{"start_symbol": "F"}, nil)
 }

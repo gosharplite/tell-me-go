@@ -39,7 +39,7 @@ func newpersistenceTools(state ports.SessionProvider) *persistenceTools {
 }
 
 // GetSessionInfo handles the get_session_info tool.
-func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	info := t.state.GetInfo()
 
 	data, err := json.MarshalIndent(info, "", "  ")
@@ -95,7 +95,7 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 }
 
 // ManageTasks handles the manage_tasks tool.
-func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Action  string  `json:"action"`
 		Content string  `json:"content"`

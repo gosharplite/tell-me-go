@@ -32,7 +32,7 @@ type funcComplexity struct {
 	FilePath   string
 }
 
-func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
@@ -45,7 +45,7 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 		return tools.ToolResult{}, err
 	}
 
-	complexities, err := a.GatherComplexities(ctx, resolvedPath)
+	complexities, err := a.GatherComplexities(ctx, resolvedPath, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -57,8 +57,9 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 	return tools.ToolResult{Text: a.formatResults(complexities)}, nil
 }
 
-func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string) ([]funcComplexity, error) {
+func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, error) {
 	var complexities []funcComplexity
+	count := 0
 	err := filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
 		select {
 		case <-ctx.Done():
@@ -67,6 +68,14 @@ func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root
 		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
+		}
+
+		count++
+		if count%10 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
 		}
 
 		fileComplexities := a.analyzeFile(filePath)

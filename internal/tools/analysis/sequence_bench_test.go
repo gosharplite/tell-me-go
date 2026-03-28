@@ -27,7 +27,7 @@ func BenchmarkAnalyzeSequenceFlow_Baseline(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := analyzer.AnalyzeSequenceFlow(ctx, args)
+		_, err := analyzer.AnalyzeSequenceFlow(ctx, args, nil)
 		if err != nil {
 			b.Fatal(err)
 		}

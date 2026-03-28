@@ -4,6 +4,8 @@
 package analysis
 
 import (
+	"time"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -29,7 +31,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				Description: "Map component dependencies and identify 'God Objects' or circular references. Verifies adherence to Hexagonal/Clean Architecture layers.",
 			},
 			handler: m.Arch.VerifyArchitecture,
-			opts:    &tools.ToolOptions{LongRunning: true},
+			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -37,7 +39,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				Description: "Returns a high-level summary of project health, including test status, coverage, linting issues, and complexity alerts. Use this to verify system integrity after major refactors.",
 			},
 			handler: m.Health.GetCodeHealth,
-			opts:    &tools.ToolOptions{LongRunning: true},
+			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -52,7 +54,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				},
 			},
 			handler: m.Health.getDetailedCoverage,
-			opts:    &tools.ToolOptions{LongRunning: true},
+			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -68,7 +70,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				},
 			},
 			handler: m.FindUsages,
-			opts:    &tools.ToolOptions{LongRunning: true},
+			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -84,7 +86,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				},
 			},
 			handler: m.FindDefinitions,
-			opts:    &tools.ToolOptions{LongRunning: true},
+			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -165,6 +167,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				},
 			},
 			handler: m.Search.SearchUsagesGlobally,
+			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -197,7 +200,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				},
 			},
 			handler: m.Refactor.RenameSymbol,
-			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -211,6 +214,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				},
 			},
 			handler: m.Search.ListTodos,
+			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{
@@ -285,7 +289,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 				},
 			},
 			handler: m.FindOrphanedSymbols,
-			opts:    &tools.ToolOptions{LongRunning: true},
+			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
 			decl: &tools.ToolDeclaration{

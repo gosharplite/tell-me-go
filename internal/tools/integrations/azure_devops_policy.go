@@ -31,7 +31,7 @@ type adoContext struct {
 	Genre string `json:"genre"`
 }
 
-func (m *adoManager) adoGetPrStatuses(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPrStatuses(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -142,7 +142,7 @@ type adoPolicyType struct {
 	Id          string `json:"id"`
 }
 
-func (m *adoManager) adoGetPrPolicyEvaluations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPrPolicyEvaluations(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -269,7 +269,7 @@ func (m *adoManager) formatPolicyEvaluations(pullRequestId int, policyData adoPo
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *adoManager) adoListBranchPolicies(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoListBranchPolicies(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
