@@ -62,23 +62,21 @@ func (t *globalPromptTracker) Append(prompt string) error {
 	}
 
 	t.mu.RLock()
+	defer t.mu.RUnlock()
+
 	f, err := os.OpenFile(t.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		t.mu.RUnlock()
 		return fmt.Errorf("failed to open global prompts file: %w", err)
 	}
+	defer f.Close()
 
-	_, writeErr := f.Write(append(data, '\n'))
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("failed to append prompt: %w", err)
+	}
 
 	var size int64
 	if info, err := f.Stat(); err == nil {
 		size = info.Size()
-	}
-	_ = f.Close()
-	t.mu.RUnlock()
-
-	if writeErr != nil {
-		return fmt.Errorf("failed to append prompt: %w", writeErr)
 	}
 
 	// Trigger async compaction if file size exceeds threshold and no compaction is already in progress
@@ -113,7 +111,10 @@ func (t *globalPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string
 func (t *globalPromptTracker) loadTopUniqueEntries(ctx context.Context, limit int) ([]promptEntry, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	return t.doLoadTopUniqueEntries(ctx, limit)
+}
 
+func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit int) ([]promptEntry, error) {
 	f, err := os.Open(t.filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -188,7 +189,10 @@ func (t *globalPromptTracker) loadTopUniqueEntries(ctx context.Context, limit in
 func (t *globalPromptTracker) compactLog() {
 	defer t.compacting.Store(false)
 
-	entries, err := t.loadTopUniqueEntries(context.Background(), maxGlobalPrompts)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	entries, err := t.doLoadTopUniqueEntries(context.Background(), maxGlobalPrompts)
 	if err != nil || len(entries) == 0 {
 		return
 	}
@@ -223,9 +227,7 @@ func (t *globalPromptTracker) compactLog() {
 		return
 	}
 
-	t.mu.Lock()
 	_ = os.Rename(tmpPath, t.filepath)
-	t.mu.Unlock()
 }
 
 func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSize int) ([]byte, error) {

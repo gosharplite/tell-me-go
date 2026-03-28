@@ -64,10 +64,9 @@ type rootBrowserModel struct {
 	turnOffsets      []int
 
 	// Render cache for expensive thought wrapping
-	cachedThoughts     string
-	lastThoughtProcess string
-	lastWidth          int
-	lastQuery          string
+	cachedThoughts map[int]string
+	lastWidth      int
+	lastQuery      string
 }
 
 // NewRootBrowserModel creates a new history browser root model.
@@ -80,10 +79,11 @@ func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvi
 		ctx:          ctx,
 		provider:     provider,
 		cmdService:   cmdService,
-		searchBar:    ti,
-		isLoading:    true,
-		showThoughts: true,
-		selectedTurn: -1,
+		searchBar:      ti,
+		isLoading:      true,
+		showThoughts:   true,
+		selectedTurn:   -1,
+		cachedThoughts: make(map[int]string),
 	}
 }
 
@@ -471,7 +471,7 @@ func (m *rootBrowserModel) renderHistory() string {
 		sb.WriteString(m.renderTurnHeader(dto, i == m.selectedTurn))
 
 		if m.showThoughts && dto.ThoughtProcess != "" {
-			sb.WriteString(m.renderThoughts(dto, prefix))
+			sb.WriteString(m.renderThoughts(dto, prefix, i))
 		}
 
 		if len(dto.ToolCalls) > 0 {
@@ -526,12 +526,17 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 	return prefix + styledLabel + "\n"
 }
 
-func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string) string {
+func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string, turnIndex int) string {
+	// Check for global layout/state changes
+	if m.lastWidth != m.width || m.lastQuery != m.currentQuery {
+		clear(m.cachedThoughts)
+		m.lastWidth = m.width
+		m.lastQuery = m.currentQuery
+	}
+
 	// Check cache
-	if m.lastThoughtProcess == dto.ThoughtProcess && m.lastWidth == m.width && m.lastQuery == m.currentQuery {
-		if m.cachedThoughts != "" {
-			return m.cachedThoughts
-		}
+	if cached, ok := m.cachedThoughts[turnIndex]; ok {
+		return cached
 	}
 
 	// Add a visual icon and newline for better separation
@@ -562,10 +567,7 @@ func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix strin
 	result := sb.String()
 
 	// Update Cache
-	m.lastThoughtProcess = dto.ThoughtProcess
-	m.lastWidth = m.width
-	m.lastQuery = m.currentQuery
-	m.cachedThoughts = result
+	m.cachedThoughts[turnIndex] = result
 
 	return result
 }
