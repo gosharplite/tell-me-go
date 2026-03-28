@@ -11,12 +11,12 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // ToolAuthorizer encapsulates consent and authorization logic for tool execution.
 type ToolAuthorizer interface {
-	AuthorizeTool(tool *domaintools.ToolDeclaration, call *llm.FunctionCall) error
+	AuthorizeTool(tool *tools.ToolDeclaration, call *llm.FunctionCall) error
 	IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool)
 	RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
 }
@@ -24,18 +24,18 @@ type ToolAuthorizer interface {
 type securityAuthorizer struct {
 	mu       sync.RWMutex
 	sm       domain_security.Manager
-	registry domaintools.Registry
+	registry tools.Registry
 }
 
 // newSecurityAuthorizer creates a new ToolAuthorizer.
-func newSecurityAuthorizer(sm domain_security.Manager, registry domaintools.Registry) ToolAuthorizer {
+func newSecurityAuthorizer(sm domain_security.Manager, registry tools.Registry) ToolAuthorizer {
 	return &securityAuthorizer{
 		sm:       sm,
 		registry: registry,
 	}
 }
 
-func (a *securityAuthorizer) AuthorizeTool(tool *domaintools.ToolDeclaration, call *llm.FunctionCall) error {
+func (a *securityAuthorizer) AuthorizeTool(tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
 	a.mu.RLock()
 	sm := a.sm
 	a.mu.RUnlock()

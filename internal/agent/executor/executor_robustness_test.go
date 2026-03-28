@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestToolExecutor_ConfigRace(t *testing.T) {
+func TestOrchestrator_ConfigRace(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow robustness test in short mode")
@@ -30,7 +30,7 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 	ctx := context.Background()
@@ -63,7 +63,7 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 	wg.Wait()
 }
 
-func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
+func TestOrchestrator_ContextCancellation_MidBatch(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow robustness test in short mode")
@@ -87,7 +87,7 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 	})
 	require.NoError(t, regErr)
 
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 

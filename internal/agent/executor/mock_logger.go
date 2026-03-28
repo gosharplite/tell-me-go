@@ -3,7 +3,7 @@
 
 package executor
 
-// MockLogger is a mock implementation of the domaintools.ExecutionObserver interface for testing purposes.
+// MockLogger is a mock implementation of the tools.ExecutionObserver interface for testing purposes.
 type MockLogger struct {
 	CriticalLogs chan string
 }
