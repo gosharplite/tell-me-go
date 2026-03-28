@@ -21,14 +21,15 @@ type ToolAuthorizer interface {
 	RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
 }
 
+// ToolAuthService abstracts the security authorization/consent logic.
 type securityAuthorizer struct {
 	mu       sync.RWMutex
 	sm       domain_security.Manager
 	registry tools.Registry
 }
 
-// newSecurityAuthorizer creates a new ToolAuthorizer.
-func newSecurityAuthorizer(sm domain_security.Manager, registry tools.Registry) ToolAuthorizer {
+// newSecurityAuthorizer creates a new ToolAuthService.
+func newSecurityAuthorizer(sm domain_security.Manager, registry tools.Registry) *securityAuthorizer {
 	return &securityAuthorizer{
 		sm:       sm,
 		registry: registry,
@@ -36,6 +37,10 @@ func newSecurityAuthorizer(sm domain_security.Manager, registry tools.Registry) 
 }
 
 func (a *securityAuthorizer) AuthorizeTool(tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
+	return a.Authorize(context.Background(), tool, call)
+}
+
+func (a *securityAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
 	a.mu.RLock()
 	sm := a.sm
 	a.mu.RUnlock()

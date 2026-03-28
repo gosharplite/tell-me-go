@@ -156,13 +156,9 @@ func TestZombieToolTimeout(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithToolTimeout(200*time.Millisecond), WithZombieTimeout(300*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
-
-	// Set generous timeouts for CI/race mode
-	exec.toolTimeout = 200 * time.Millisecond
-	exec.zombieTimeout = 300 * time.Millisecond
 
 	ctx := context.Background()
 
@@ -173,7 +169,7 @@ func TestZombieToolTimeout(t *testing.T) {
 	start := time.Now()
 	go func() {
 		defer close(doneCh)
-		result, timeoutErr = exec.runWithTimeout(ctx, hangingTool, &llm.FunctionCall{Name: hangingTool.Name})
+		result, timeoutErr = exec.runtime.Execute(ctx, &llm.FunctionCall{Name: hangingTool.Name})
 	}()
 
 	select {

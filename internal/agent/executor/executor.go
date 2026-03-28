@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -15,11 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -60,8 +56,8 @@ func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	}
 }
 
-// withZombieTimeout sets the timeout for zombie tool detection.
-func withZombieTimeout(timeout time.Duration) executorOption {
+// WithZombieTimeout sets the timeout for zombie tool detection.
+func WithZombieTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
 		e.zombieTimeout = timeout
 	}
@@ -81,7 +77,6 @@ func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus ev
 
 	e := &Orchestrator{
 		registry:           registry,
-		authorizer:         newSecurityAuthorizer(sm, registry),
 		events:             bus,
 		logger:             logger,
 		maxConcurrentTools: 5,
@@ -93,9 +88,6 @@ func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus ev
 		failures:           newFailureTracker(3), // Default threshold of 3
 		observer:           observer,
 	}
-
-	e.resolver = NewToolResolutionService(registry)
-	e.runtime = NewBaseRuntime(e.resolver, registry)
 
 	for _, opt := range opts {
 		opt(e)
@@ -109,6 +101,37 @@ func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus ev
 			return nil, err
 		}
 	}
+
+	e.resolver = NewToolResolutionService(registry)
+	authService := newSecurityAuthorizer(sm, registry)
+	e.authorizer = authService // Still used for Batch Consent
+
+	// Wire the ToolExecutor chain
+	var exec ToolExecutor = NewBaseRuntime(e.resolver, registry)
+	exec = NewAuthDecorator(exec, authService, e.resolver)
+	exec = NewCircuitBreakerDecorator(exec, e.failures)
+	exec = NewTracingDecorator(exec, registry, logger)
+
+	// Use functions to provide dynamic timeouts from the Orchestrator
+	getToolTimeout := func() time.Duration {
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+		return e.toolTimeout
+	}
+	getLongRunningTimeout := func() time.Duration {
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+		return e.longRunningTimeout
+	}
+	getZombieTimeout := func() time.Duration {
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+		return e.zombieTimeout
+	}
+
+	exec = NewSafetyDecorator(exec, registry, logger, bus, e.zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
+
+	e.runtime = exec
 
 	return e, nil
 }
@@ -138,10 +161,25 @@ func (f *failureTracker) recordSuccess(toolName string) {
 	f.failures[toolName] = 0
 }
 
+func (f *failureTracker) Record(toolName string, success bool) {
+	if success {
+		f.recordSuccess(toolName)
+	} else {
+		f.recordFailure(toolName)
+	}
+}
+
 func (f *failureTracker) isOpen(toolName string) bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.failures[toolName] >= f.threshold
+}
+
+func (f *failureTracker) Check(toolName string) error {
+	if f.isOpen(toolName) {
+		return fmt.Errorf("%w: Error: Tool %q is temporarily disabled due to multiple consecutive failures.", tools.ErrToolCircuitOpen, toolName)
+	}
+	return nil
 }
 
 func (e *Orchestrator) SetConcurrency(maxConcurrent int, timeout time.Duration) {
@@ -501,15 +539,7 @@ func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declined
 }
 
 func (e *Orchestrator) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult) bool {
-	var tr tools.ToolResult
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				tr = e.handlePanic(ctx, r, fc.Name)
-			}
-		}()
-		tr = e.executeTool(ctx, fc)
-	}()
+	tr := e.executeTool(ctx, fc)
 	resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
 
 	// If the serial tool failed, timed out, or context was cancelled, we CANNOT safely
@@ -536,15 +566,6 @@ func (e *Orchestrator) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 			return
 		}
 
-		defer func() {
-			if r := recover(); r != nil {
-				resChan <- toolExecResult{
-					index: i,
-					name:  fc.Name,
-					tr:    e.handlePanic(ctx, r, fc.Name),
-				}
-			}
-		}()
 		tr := e.executeTool(ctx, fc)
 		resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
 	}
@@ -559,245 +580,25 @@ func (e *Orchestrator) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 	}
 }
 
-func (e *Orchestrator) handlePanic(ctx context.Context, r interface{}, toolName string) tools.ToolResult {
-	stack := debug.Stack()
-
-	e.mu.RLock()
-	bus := e.events
-	e.mu.RUnlock()
-
-	msg := fmt.Sprintf("CRITICAL: Panic in tool executor while running %q: %v\n%s", toolName, r, string(stack))
-	evt := events.SystemMessageEvent{
-		Message: msg,
-		Level:   "error",
-	}
-	e.emitEvent(ctx, bus, evt)
-
-	return tools.ToolResult{
-		Text:  fmt.Sprintf("Tool %q encountered an internal fatal error (panic) and was terminated.", toolName),
-		Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
-	}
-}
-
 func (e *Orchestrator) executeTool(parentCtx context.Context, call *llm.FunctionCall) tools.ToolResult {
-	ctx, span := otel.Tracer("agent").Start(parentCtx, "tool.execute."+call.Name)
-	ctx = domain_security.WithCurrentTool(ctx, call.Name)
-	span.SetAttributes(attribute.String("tool.name", call.Name))
-	defer span.End()
-
-	startTime := time.Now()
-	trace := telemetry.TraceFromContext(ctx)
-
-	// Check Circuit Breaker
-	if e.failures.isOpen(call.Name) {
-		tr := tools.ToolResult{
-			Text:  fmt.Sprintf("Error: Tool %q is temporarily disabled due to multiple consecutive failures.", call.Name),
-			Error: tools.ErrToolCircuitOpen,
-		}
-		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  call.Name,
-			StartTime: startTime,
-			Duration:  time.Since(startTime),
-			Status:    "circuit_open",
-			Error:     tr.Text,
-		})
-		return tr
-	}
-
-	// 1. Resolve
-	tool, err := e.resolver.Resolve(call)
-	if err != nil {
-		tr := e.errorToToolResult(err)
-		return e.finalizeToolExecution(call.Name, tr, err, startTime, trace)
-	}
-
-	// 2. Authorize
-	e.mu.RLock()
-	auth := e.authorizer
-	e.mu.RUnlock()
-	if err := auth.AuthorizeTool(tool, call); err != nil {
-		tr := e.errorToToolResult(err)
-		return e.finalizeToolExecution(call.Name, tr, err, startTime, trace)
-	}
-
-	// 4. Execute (with recovery/timeout)
-	result, err := e.runWithTimeout(ctx, tool, call)
-
-	// 5. Finalize
-	return e.finalizeToolExecution(call.Name, result, err, startTime, trace)
-}
-
-func classifyToolError(err error, resultErr error) (string, string) {
-	if errors.Is(err, tools.ErrUserDeclined) || (resultErr != nil && errors.Is(resultErr, tools.ErrUserDeclined)) {
-		return "user_declined", "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach."
-	}
-	if errors.Is(err, tools.ErrSecurityPolicy) || (resultErr != nil && errors.Is(resultErr, tools.ErrSecurityPolicy)) {
-		return "security_blocked", "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
-	}
-	if err != nil || resultErr != nil {
-		return "error", ""
-	}
-	return "success", ""
-}
-
-func (e *Orchestrator) finalizeToolExecution(callName string, result tools.ToolResult, err error, startTime time.Time, trace *telemetry.TurnTrace) tools.ToolResult {
+	result, err := e.runtime.Execute(parentCtx, call)
 	status, msg := classifyToolError(err, result.Error)
-	duration := time.Since(startTime)
-
-	e.mu.RLock()
-	isSerial := e.registry.IsSerial(callName)
-	isLongRunning := e.registry.IsLongRunning(callName)
-	e.mu.RUnlock()
-
-	errStr := formatToolExecutionError(err, result.Error)
-	e.logToolExecution(callName, status, errStr, duration, isSerial, isLongRunning, err, result.Error)
 
 	if status == "user_declined" || status == "security_blocked" {
-		e.recordToolTrace(trace, callName, startTime, duration, status, "")
 		return tools.ToolResult{Text: msg, Error: nil}
 	}
 
-	e.updateCircuitBreaker(callName, status)
-	e.recordToolTrace(trace, callName, startTime, duration, status, errStr)
-
 	if err != nil {
-		msg := fmt.Sprintf("Error: %v", err)
-		return tools.ToolResult{
-			Text:  msg,
-			Error: fmt.Errorf("%w: %s", llm.ErrTerminal, msg),
+		if result.Error == nil {
+			result.Error = err
 		}
+		if result.Text == "" {
+			result.Text = fmt.Sprintf("Error: %v", err)
+		}
+		// Wrap in terminal error to signal orchestrator should stop this turn
+		result.Error = fmt.Errorf("%w: %v", llm.ErrTerminal, result.Error)
 	}
-
 	return result
-}
-
-func (e *Orchestrator) runWithTimeout(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
-	e.mu.RLock()
-	reg := e.registry
-	toolTimeout := e.toolTimeout
-	longRunningTimeout := e.longRunningTimeout
-	e.mu.RUnlock()
-
-	var ctx context.Context
-	var cancel context.CancelFunc
-
-	activeTimeout := toolTimeout
-	if reg.IsLongRunning(tool.Name) {
-		activeTimeout = longRunningTimeout
-	}
-	ctx, cancel = context.WithTimeout(parentCtx, activeTimeout)
-	defer cancel()
-
-	// Buffered channel prevents goroutine leak if the tool finishes after timeout
-	outCh := make(chan tools.ToolOutput, 1)
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				outCh <- tools.ToolOutput{
-					Result: e.handlePanic(ctx, r, tool.Name),
-					Err:    nil,
-				}
-			}
-		}()
-		res, execErr := e.runtime.Execute(ctx, call)
-		outCh <- tools.ToolOutput{Result: res, Err: execErr}
-	}()
-
-	select {
-	case <-ctx.Done():
-		// The context expired (timeout or parent cancellation) before the tool finished
-		errCtx := ctx.Err()
-		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
-		errorWrapMsg := "tool execution failed"
-		if errCtx == context.DeadlineExceeded {
-			msg = fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout)
-			errorWrapMsg = "tool execution timed out"
-		}
-
-		// SCALABLE (GOOD): Implementing a telemetry watchdog for abandoned goroutines
-		go e.monitorZombieTool(parentCtx, tool.Name, time.Now(), outCh)
-
-		return tools.ToolResult{
-			Text:  msg,
-			Error: fmt.Errorf("%w: %s: %w", llm.ErrTransient, errorWrapMsg, errCtx),
-		}, nil
-
-	case out := <-outCh:
-		// Tool finished successfully within the deadline
-		return out.Result, out.Err
-	}
-}
-
-func (e *Orchestrator) errorToToolResult(err error) tools.ToolResult {
-	msg := err.Error()
-	// Since we no longer use AgentError in subpackages, we don't need this check here
-	// unless we want to keep support for it if it comes from elsewhere.
-	// But to break cycle we can't use agent.AgentError.
-	return tools.ToolResult{
-		Text:  msg,
-		Error: err,
-	}
-}
-
-func (e *Orchestrator) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan tools.ToolOutput) {
-	e.mu.RLock()
-	zombieTimeout := e.zombieTimeout
-	zombie := e.zombie
-	e.mu.RUnlock()
-
-	zombie.Monitor(ctx, name, start, outCh, zombieTimeout)
-}
-
-func formatToolExecutionError(err error, resultErr error) string {
-	if err != nil {
-		return err.Error()
-	} else if resultErr != nil {
-		return resultErr.Error()
-	}
-	return ""
-}
-
-func (e *Orchestrator) logToolExecution(callName, status, errStr string, duration time.Duration, isSerial, isLongRunning bool, err, resultErr error) {
-	logAttrs := []any{
-		"tool_name", callName,
-		"is_serial", isSerial,
-		"is_long_running", isLongRunning,
-		"duration_ms", duration.Milliseconds(),
-		"status", status,
-	}
-	if errStr != "" {
-		logAttrs = append(logAttrs, "error_reason", errStr)
-	}
-
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(resultErr, context.DeadlineExceeded) {
-		e.logger.Debug("Tool execution timed out", logAttrs...)
-	} else if status == "error" {
-		e.logger.Debug("Tool execution failed", logAttrs...)
-	} else {
-		e.logger.Debug("Tool execution completed", logAttrs...)
-	}
-}
-
-func (e *Orchestrator) updateCircuitBreaker(callName, status string) {
-	if status == "error" {
-		e.failures.recordFailure(callName)
-	} else {
-		e.failures.recordSuccess(callName)
-	}
-}
-
-func (e *Orchestrator) recordToolTrace(trace *telemetry.TurnTrace, callName string, startTime time.Time, duration time.Duration, status, errStr string) {
-	if trace == nil {
-		return
-	}
-	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-		ToolName:  callName,
-		StartTime: startTime,
-		Duration:  duration,
-		Status:    status,
-		Error:     errStr,
-	})
 }
 
 func buildFunctionResponse(callID, name, output string) *llm.Part {
@@ -807,5 +608,12 @@ func buildFunctionResponse(callID, name, output string) *llm.Part {
 			Name:     name,
 			Response: map[string]interface{}{"result": output},
 		},
+	}
+}
+
+// WithToolTimeout sets the timeout for tools.
+func WithToolTimeout(timeout time.Duration) executorOption {
+	return func(e *Orchestrator) {
+		e.toolTimeout = timeout
 	}
 }

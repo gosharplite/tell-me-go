@@ -58,11 +58,9 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
-	// mock the toolTimeout since NewOrchestrator sets it to default
-	exec.toolTimeout = 200 * time.Millisecond
 
 	ctx := context.Background()
 
@@ -72,7 +70,7 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 
 	go func() {
 		defer close(doneCh)
-		result, timeoutErr = exec.runWithTimeout(ctx, hangingTool, &llm.FunctionCall{Name: hangingTool.Name})
+		result, timeoutErr = exec.runtime.Execute(ctx, &llm.FunctionCall{Name: hangingTool.Name})
 	}()
 
 	select {
@@ -111,11 +109,11 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 
 	// Use short zombie timeout, but generous enough for -race
 	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
-		withZombieTimeout(200*time.Millisecond),
+		WithZombieTimeout(200*time.Millisecond),
+		WithToolTimeout(200*time.Millisecond),
 	)
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
-	exec.toolTimeout = 200 * time.Millisecond
 
 	hangingTool := &tools.ToolDeclaration{Name: "hanging_tool"}
 
@@ -123,7 +121,7 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
-		_, _ = exec.runWithTimeout(context.Background(), hangingTool, &llm.FunctionCall{Name: hangingTool.Name})
+		_, _ = exec.runtime.Execute(context.Background(), &llm.FunctionCall{Name: hangingTool.Name})
 	}()
 
 	select {
