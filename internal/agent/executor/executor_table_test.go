@@ -600,8 +600,8 @@ func TestWorkerPool_SubmitFailure(t *testing.T) {
 	p := concurrency.NewWorkerPool(1)
 	p.Shutdown()
 
-	success := p.Submit(func(ctx context.Context) {})
-	if success {
+	err := p.Submit(func(ctx context.Context) {})
+	if err == nil {
 		t.Error("Expected Submit to fail on closed pool")
 	}
 }

@@ -28,62 +28,93 @@ func NewUnifiedProvider(archive ports.ArchiveReader, active ports.HistoryManager
 	}
 }
 
+// cursorState represents the decoded pagination cursor.
+type cursorState struct {
+	isArchive bool
+	offset    int64
+}
+
 // GetHistoryStream returns a unified, read-only stream of history.
 // It prioritizes active memory history and then paginates into the archive.
 func (p *unifiedProvider) GetHistoryStream(ctx context.Context, limit int, cursor string) ([]ports.HistoryViewDTO, string, error) {
-	// If cursor is empty, we start with active history.
+	state, err := p.parseCursor(cursor)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if !state.isArchive {
+		return p.fetchActiveHistory(ctx)
+	}
+
+	return p.fetchArchiveHistory(ctx, limit, state.offset)
+}
+
+func (p *unifiedProvider) parseCursor(cursor string) (*cursorState, error) {
 	if cursor == "" {
-		contents, err := p.active.GetWindow(ctx, 0, -1)
-		if err != nil {
-			return nil, "", fmt.Errorf("get active history: %w", err)
-		}
-
-		var dtos []ports.HistoryViewDTO
-		for i, c := range contents {
-			if c == nil {
-				continue
-			}
-
-			dto := p.toDTO(c, false)
-			dto.OriginalIndex = i
-			dtos = p.processHistoryItem(dto, true, dtos)
-		}
-
-		// After active history, we point to the END of the archive to read backwards.
-		return dtos, "archive:-1", nil
+		return &cursorState{isArchive: false}, nil
 	}
 
-	// If cursor points to the archive, we paginate from disk backwards.
-	if strings.HasPrefix(cursor, "archive:") {
-		offsetStr := strings.TrimPrefix(cursor, "archive:")
-		offset, err := strconv.ParseInt(offsetStr, 10, 64)
-		if err != nil {
-			return nil, "", fmt.Errorf("invalid archive cursor %q: %w", cursor, err)
-		}
-
-		if offset == 0 {
-			return nil, "EOF", nil
-		}
-
-		dtos, nextOffset, err := p.archive.ReadPrevious(ctx, limit, offset)
-		if err != nil {
-			return nil, "", fmt.Errorf("read archive page: %w", err)
-		}
-
-		if len(dtos) == 0 || nextOffset == 0 {
-			return dtos, "EOF", nil
-		}
-
-		var filtered []ports.HistoryViewDTO
-		for _, dto := range dtos {
-			filtered = p.processHistoryItem(dto, true, filtered)
-		}
-
-		nextCursor := fmt.Sprintf("archive:%d", nextOffset)
-		return filtered, nextCursor, nil
+	if !strings.HasPrefix(cursor, "archive:") {
+		return nil, fmt.Errorf("unsupported cursor format: %s", cursor)
 	}
 
-	return nil, "", fmt.Errorf("unsupported cursor format: %s", cursor)
+	offsetStr := strings.TrimPrefix(cursor, "archive:")
+	offset, err := strconv.ParseInt(offsetStr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid archive cursor %q: %w", cursor, err)
+	}
+
+	return &cursorState{isArchive: true, offset: offset}, nil
+}
+
+func (p *unifiedProvider) encodeNextCursor(nextOffset int64, items []ports.HistoryViewDTO) string {
+	if len(items) == 0 || nextOffset == 0 {
+		return "EOF"
+	}
+	return fmt.Sprintf("archive:%d", nextOffset)
+}
+
+func (p *unifiedProvider) fetchActiveHistory(ctx context.Context) ([]ports.HistoryViewDTO, string, error) {
+	contents, err := p.active.GetWindow(ctx, 0, -1)
+	if err != nil {
+		return nil, "", fmt.Errorf("get active history: %w", err)
+	}
+
+	var dtos []ports.HistoryViewDTO
+	for i, c := range contents {
+		if c == nil {
+			continue
+		}
+
+		dto := p.toDTO(c, false)
+		dto.OriginalIndex = i
+		dtos = p.processHistoryItem(dto, true, dtos)
+	}
+
+	// After active history, we point to the END of the archive to read backwards.
+	return dtos, "archive:-1", nil
+}
+
+func (p *unifiedProvider) fetchArchiveHistory(ctx context.Context, limit int, offset int64) ([]ports.HistoryViewDTO, string, error) {
+	if offset == 0 {
+		return nil, "EOF", nil
+	}
+
+	dtos, nextOffset, err := p.archive.ReadPrevious(ctx, limit, offset)
+	if err != nil {
+		return nil, "", fmt.Errorf("read archive page: %w", err)
+	}
+
+	if len(dtos) == 0 || nextOffset == 0 {
+		return dtos, "EOF", nil
+	}
+
+	var filtered []ports.HistoryViewDTO
+	for _, dto := range dtos {
+		filtered = p.processHistoryItem(dto, true, filtered)
+	}
+
+	return filtered, p.encodeNextCursor(nextOffset, dtos), nil
 }
 
 func (p *unifiedProvider) isAutoSummary(dto ports.HistoryViewDTO) bool {

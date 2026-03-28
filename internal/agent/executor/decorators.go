@@ -207,19 +207,40 @@ func (d *tracingDecorator) Execute(parentCtx context.Context, tool *tools.ToolDe
 }
 
 func classifyToolError(err error, resultErr error) (string, string) {
-	if errors.Is(err, tools.ErrUserDeclined) || (resultErr != nil && errors.Is(resultErr, tools.ErrUserDeclined)) {
+	if checkBoth(err, resultErr, isUserDeclined) {
 		return "user_declined", "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach."
 	}
-	if errors.Is(err, tools.ErrSecurityPolicy) || (resultErr != nil && errors.Is(resultErr, tools.ErrSecurityPolicy)) {
+	if checkBoth(err, resultErr, isSecurityError) {
 		return "security_blocked", "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
 	}
-	if errors.Is(err, tools.ErrToolCircuitOpen) || (resultErr != nil && errors.Is(resultErr, tools.ErrToolCircuitOpen)) {
+	if checkBoth(err, resultErr, isCircuitOpen) {
 		return "circuit_open", ""
 	}
-	if err != nil || resultErr != nil {
+	// Logic remains identical to original: cancellation and other errors both return "error"
+	if checkBoth(err, resultErr, isCancellationError) || err != nil || resultErr != nil {
 		return "error", ""
 	}
 	return "success", ""
+}
+
+func checkBoth(err1, err2 error, predicate func(error) bool) bool {
+	return predicate(err1) || predicate(err2)
+}
+
+func isSecurityError(err error) bool {
+	return errors.Is(err, tools.ErrSecurityPolicy)
+}
+
+func isUserDeclined(err error) bool {
+	return errors.Is(err, tools.ErrUserDeclined)
+}
+
+func isCircuitOpen(err error) bool {
+	return errors.Is(err, tools.ErrToolCircuitOpen)
+}
+
+func isCancellationError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func formatToolExecutionError(err error, resultErr error) string {

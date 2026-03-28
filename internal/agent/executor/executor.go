@@ -573,12 +573,18 @@ func (e *Orchestrator) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 		resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
 	}
 
-	if !pool.Submit(task) {
+	if err := pool.Submit(task); err != nil {
 		wg.Done()
+		var msg string
+		if errors.Is(err, concurrency.ErrPoolSaturated) {
+			msg = "Error: Tool execution queue is full (pool saturated). Please try again later."
+		} else {
+			msg = "Error: Task submission failed (pool closed or context cancelled)"
+		}
 		resChan <- toolExecResult{
 			index: i,
 			name:  fc.Name,
-			tr:    tools.ToolResult{Text: "Error: Task submission failed (pool closed or context cancelled)"},
+			tr:    tools.ToolResult{Text: msg},
 		}
 	}
 }
