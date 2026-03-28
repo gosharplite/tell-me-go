@@ -231,65 +231,7 @@ func (t *globalPromptTracker) compactLog(ctx context.Context) {
 	backoff := 100 * time.Millisecond
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		success := func() bool {
-			// Capture initial size for optimistic concurrency check
-			info, err := os.Stat(t.filepath)
-			if err != nil {
-				return false
-			}
-			initialSize := info.Size()
-
-			// 1. Read entries without holding the lock to allow concurrent appends
-			entries, err := t.doLoadTopUniqueEntries(ctx, maxGlobalPrompts)
-			if err != nil || len(entries) == 0 {
-				return false
-			}
-
-			// Reverse entries to chronological order (oldest first)
-			for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-				entries[i], entries[j] = entries[j], entries[i]
-			}
-
-			// 2. Write to temp file
-			tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
-			if err != nil {
-				return false
-			}
-			tmpPath := tmpFile.Name()
-
-			defer func() {
-				_ = tmpFile.Close()
-				_ = os.Remove(tmpPath)
-			}()
-
-			for _, entry := range entries {
-				data, err := json.Marshal(entry)
-				if err != nil {
-					continue
-				}
-				if _, err := tmpFile.Write(append(data, '\n')); err != nil {
-					return false
-				}
-			}
-
-			if err := tmpFile.Close(); err != nil {
-				return false
-			}
-
-			// 3. Final check and swap under exclusive lock
-			t.mu.Lock()
-			defer t.mu.Unlock()
-
-			// Check if file size has changed (meaning Append was called in the background)
-			newInfo, err := os.Stat(t.filepath)
-			if err != nil || newInfo.Size() != initialSize {
-				return false // Abort this pass
-			}
-
-			return os.Rename(tmpPath, t.filepath) == nil
-		}()
-
-		if success {
+		if t.performCompactionPass(ctx) {
 			return
 		}
 
@@ -310,6 +252,73 @@ func (t *globalPromptTracker) compactLog(ctx context.Context) {
 			backoff *= 2 // Exponential backoff is safer for I/O locks
 		}
 	}
+}
+
+// performCompactionPass attempts a single optimistic compaction pass.
+// It returns true if successful, false if aborted due to concurrent writes or errors.
+func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
+	// Capture initial size for optimistic concurrency check
+	info, err := os.Stat(t.filepath)
+	if err != nil {
+		return false
+	}
+	initialSize := info.Size()
+
+	// 1. Read entries without holding the lock to allow concurrent appends
+	entries, err := t.doLoadTopUniqueEntries(ctx, maxGlobalPrompts)
+	if err != nil || len(entries) == 0 {
+		return false
+	}
+
+	// Reverse entries to chronological order (oldest first)
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+
+	// 2. Write to temp file
+	tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
+	if err != nil {
+		return false
+	}
+	tmpPath := tmpFile.Name()
+
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	if !t.writeCompactedTempFile(tmpFile, entries) {
+		return false
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return false
+	}
+
+	// 3. Final check and swap under exclusive lock
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Check if file size has changed (meaning Append was called in the background)
+	newInfo, err := os.Stat(t.filepath)
+	if err != nil || newInfo.Size() != initialSize {
+		return false // Abort this pass
+	}
+
+	return os.Rename(tmpPath, t.filepath) == nil
+}
+
+func (t *globalPromptTracker) writeCompactedTempFile(f *os.File, entries []promptEntry) bool {
+	for _, entry := range entries {
+		data, err := json.Marshal(entry)
+		if err != nil {
+			continue
+		}
+		if _, err := f.Write(append(data, '\n')); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSize int) ([]byte, error) {
