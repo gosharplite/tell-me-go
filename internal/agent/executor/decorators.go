@@ -116,7 +116,7 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 			errorWrapMsg = "tool execution timed out"
 		}
 
-		go d.zombie.Monitor(parentCtx, call.Name, time.Now(), outCh, d.zombieTimeout())
+		go d.zombie.Monitor(context.WithoutCancel(parentCtx), call.Name, time.Now(), outCh, d.zombieTimeout())
 
 		return tools.ToolResult{
 			Text:  msg,

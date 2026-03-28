@@ -20,20 +20,20 @@ func TestAuthDecorator(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		authFunc      func(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error
-		nextResult    tools.ToolResult
-		nextCalled    bool
-		expectedText  string
-		expectedErr   error
+		name         string
+		authFunc     func(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error
+		nextResult   tools.ToolResult
+		nextCalled   bool
+		expectedText string
+		expectedErr  error
 	}{
 		{
 			name: "Authorized - Success",
 			authFunc: func(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
 				return nil
 			},
-			nextResult: tools.ToolResult{Text: "ok"},
-			nextCalled: true,
+			nextResult:   tools.ToolResult{Text: "ok"},
+			nextCalled:   true,
 			expectedText: "ok",
 		},
 		{
@@ -41,9 +41,9 @@ func TestAuthDecorator(t *testing.T) {
 			authFunc: func(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
 				return errors.New("unauthorized")
 			},
-			nextCalled: false,
+			nextCalled:   false,
 			expectedText: "unauthorized",
-			expectedErr: errors.New("unauthorized"),
+			expectedErr:  errors.New("unauthorized"),
 		},
 	}
 
@@ -73,28 +73,28 @@ func TestCircuitBreakerDecorator(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		checkErr      error
-		nextResult    tools.ToolResult
-		nextCalled    bool
-		expectedText  string
-		expectedErr   error
+		name            string
+		checkErr        error
+		nextResult      tools.ToolResult
+		nextCalled      bool
+		expectedText    string
+		expectedErr     error
 		recordedSuccess *bool
 	}{
 		{
-			name:     "Circuit Closed - Success",
-			checkErr: nil,
-			nextResult: tools.ToolResult{Text: "ok"},
-			nextCalled: true,
-			expectedText: "ok",
+			name:            "Circuit Closed - Success",
+			checkErr:        nil,
+			nextResult:      tools.ToolResult{Text: "ok"},
+			nextCalled:      true,
+			expectedText:    "ok",
 			recordedSuccess: func() *bool { b := true; return &b }(),
 		},
 		{
-			name:     "Circuit Open - Failure",
-			checkErr: errors.New("circuit open"),
-			nextCalled: false,
+			name:         "Circuit Open - Failure",
+			checkErr:     errors.New("circuit open"),
+			nextCalled:   false,
 			expectedText: "circuit open",
-			expectedErr: errors.New("circuit open"),
+			expectedErr:  errors.New("circuit open"),
 		},
 	}
 
@@ -139,10 +139,10 @@ func TestSafetyDecorator(t *testing.T) {
 	registry := &panicRegistry{}
 
 	tests := []struct {
-		name          string
-		nextPanic     bool
-		nextDelay     time.Duration
-		timeout       time.Duration
+		name              string
+		nextPanic         bool
+		nextDelay         time.Duration
+		timeout           time.Duration
 		expectedErrSubstr string
 	}{
 		{

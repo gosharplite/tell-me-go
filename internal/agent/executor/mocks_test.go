@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -13,6 +14,7 @@ import (
 )
 
 type mockExecutor struct {
+	mu     sync.Mutex
 	Result tools.ToolResult
 	Err    error
 	Panic  bool
@@ -21,7 +23,9 @@ type mockExecutor struct {
 }
 
 func (m *mockExecutor) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
+	m.mu.Lock()
 	m.Called = true
+	m.mu.Unlock()
 	if m.Delay > 0 {
 		select {
 		case <-time.After(m.Delay):
@@ -66,14 +70,17 @@ func (m *mockCircuitBreakerManager) Record(toolName string, success bool) {
 
 type mockEventBus struct {
 	events.EventBus
+	mu        sync.Mutex
 	Published []events.Event
 }
 
 func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.Published = append(m.Published, e)
 	return nil
 }
 
 func (m *mockEventBus) Subscribe(sub func(context.Context, events.Event)) {}
-func (m *mockEventBus) Shutdown(ctx context.Context) error { return nil }
-func (m *mockEventBus) Flush(ctx context.Context) error { return nil }
+func (m *mockEventBus) Shutdown(ctx context.Context) error                { return nil }
+func (m *mockEventBus) Flush(ctx context.Context) error                   { return nil }

@@ -227,7 +227,6 @@ func TestJSONSessionLoader_LoadSession(t *testing.T) {
 		},
 	}
 
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			loader := &JSONSessionLoader{}
@@ -278,4 +277,3 @@ func assertSessionState(t *testing.T, got *domain_config.SessionConfig, err erro
 	checkIntPtr(t, "tool turns", tt.wantToolTurns, got.MaxToolTurns)
 	checkIntPtr(t, "history turns", tt.wantHistoryTurns, got.MaxHistoryTurns)
 }
-

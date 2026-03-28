@@ -314,7 +314,6 @@ func assertReadPreviousResult(t *testing.T, dtos []ports.HistoryViewDTO, nextOff
 	}
 }
 
-
 func TestJSONLArchiveReader_ReadPrevious_Concurrency(t *testing.T) {
 	ctx := context.Background()
 	fs := persistence.NewOSFileSystem()
