@@ -100,7 +100,7 @@ func (s *multiSourceSuggestionService) GetSuggestions(ctx context.Context, query
 }
 
 // RecordPrompt records a user prompt into both the history and the global tracker.
-func (s *multiSourceSuggestionService) RecordPrompt(prompt string) error {
+func (s *multiSourceSuggestionService) RecordPrompt(ctx context.Context, prompt string) error {
 	if prompt == "" {
 		return nil
 	}
@@ -126,7 +126,7 @@ func (s *multiSourceSuggestionService) RecordPrompt(prompt string) error {
 	s.historyMu.Unlock()
 
 	// 2. Synchronous persistent update
-	return s.tracker.Append(prompt)
+	return s.tracker.Append(ctx, prompt)
 }
 
 func (s *multiSourceSuggestionService) scanFiles(ctx context.Context, query string) []string {

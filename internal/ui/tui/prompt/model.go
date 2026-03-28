@@ -86,7 +86,7 @@ func (m *promptModel) Destroy() {
 }
 
 // Init initializes the TUI prompt and triggers initial suggestions.
-func (m promptModel) Init() tea.Cmd {
+func (m *promptModel) Init() tea.Cmd {
 	return tea.Batch(
 		textarea.Blink,
 		m.getSuggestions(m.ctx, ""), // Load initial top prompts
@@ -199,7 +199,7 @@ func (m *promptModel) handleDebounceMsg(msg debounceMsg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the TUI prompt layout.
-func (m promptModel) View() string {
+func (m *promptModel) View() string {
 	if m.submitted || m.aborted {
 		return ""
 	}
