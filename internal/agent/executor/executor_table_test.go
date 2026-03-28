@@ -36,7 +36,8 @@ type toolBehavior struct {
 	observe func() // Callback to signal execution
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...executorOption) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
+func setupTestRegistry(t *testing.T, toolsMap map[string]toolBehavior) (tools.Registry, map[string]*toolBehavior) {
+	t.Helper()
 	reg := registry.New()
 	behaviors := make(map[string]*toolBehavior)
 	for name, behavior := range toolsMap {
@@ -67,18 +68,25 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 			t.Fatalf("failed to register tool %s: %v", name, err)
 		}
 	}
+	return reg, behaviors
+}
 
-	var sm *mockSecurityManager
+func setupMockSecurityManager(allowedTools []string) *mockSecurityManager {
 	if allowedTools != nil {
-		sm = &mockSecurityManager{
+		sm := &mockSecurityManager{
 			allowedCommands: make(map[string]bool),
 		}
 		for _, tool := range allowedTools {
 			sm.allowedCommands[tool] = true
 		}
-	} else {
-		sm = &mockSecurityManager{allowAll: true}
+		return sm
 	}
+	return &mockSecurityManager{allowAll: true}
+}
+
+func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...executorOption) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
+	reg, behaviors := setupTestRegistry(t, toolsMap)
+	sm := setupMockSecurityManager(allowedTools)
 
 	bus := &inframock.TestEventBus{}
 	exec, err := NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
@@ -86,6 +94,38 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	t.Cleanup(exec.Shutdown)
 
 	return exec, bus, behaviors
+}
+
+func assertExecutionSuccess(t *testing.T, resp *llm.Content, err error, expectedResults ...string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp == nil || len(resp.Parts) != len(expectedResults) {
+		t.Fatalf("expected %d response parts, got %v", len(expectedResults), resp)
+	}
+
+	for i, expected := range expectedResults {
+		if resp.Parts[i].FunctionResponse == nil {
+			t.Fatalf("part %d: expected FunctionResponse, got %v", i, resp.Parts[i])
+		}
+		res := resp.Parts[i].FunctionResponse.Response["result"].(string)
+		if res != expected {
+			t.Errorf("part %d: unexpected result: %s, want %s", i, res, expected)
+		}
+	}
+}
+
+func assertExecutionError(t *testing.T, resp *llm.Content, err error, bus *inframock.TestEventBus, expectedMsg string, expectedErr error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	verifyErrorResponse(t, resp, expectedMsg)
+	if bus != nil && expectedErr != nil {
+		verifyToolEventError(t, bus, expectedErr)
+	}
 }
 
 func verifyErrorResponse(t *testing.T, resp *llm.Content, expectedMsg string) {
@@ -128,18 +168,7 @@ func TestToolExecutor_Success(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if resp == nil || len(resp.Parts) != 2 {
-			t.Fatalf("expected 2 response parts, got %v", resp)
-		}
-		res1 := resp.Parts[0].FunctionResponse.Response["result"].(string)
-		res2 := resp.Parts[1].FunctionResponse.Response["result"].(string)
-		if res1 != "res1" || res2 != "res2" {
-			t.Errorf("unexpected results: %s, %s", res1, res2)
-		}
+		assertExecutionSuccess(t, resp, err, "res1", "res2")
 	})
 
 	t.Run("Sequential Execution", func(t *testing.T) {
@@ -157,12 +186,7 @@ func TestToolExecutor_Success(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(resp.Parts) != 2 {
-			t.Fatalf("expected 2 response parts, got %d", len(resp.Parts))
-		}
+		assertExecutionSuccess(t, resp, err, "serial_res", "res2")
 	})
 }
 
@@ -180,12 +204,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		verifyErrorResponse(t, resp, "Tool \"missing\" is not defined")
-		verifyToolEventError(t, bus, llm.ErrTerminal)
+		assertExecutionError(t, resp, err, bus, "Tool \"missing\" is not defined", llm.ErrTerminal)
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -199,10 +218,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "Did you mean \"list_files\"?")
+		assertExecutionError(t, resp, err, nil, "Did you mean \"list_files\"?", nil)
 	})
 
 	t.Run("Security Violation", func(t *testing.T) {
@@ -216,11 +232,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "Security policy: command \"forbidden\" is not allowed")
-		verifyToolEventError(t, bus, llm.ErrTerminal)
+		assertExecutionError(t, resp, err, bus, "Security policy: command \"forbidden\" is not allowed", llm.ErrTerminal)
 	})
 
 	t.Run("Tool Returns Error", func(t *testing.T) {
@@ -234,11 +246,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "tool execution failed: fail_tool: tool failed")
-		verifyToolEventError(t, bus, llm.ErrTerminal)
+		assertExecutionError(t, resp, err, bus, "tool execution failed: fail_tool: tool failed", llm.ErrTerminal)
 	})
 }
 
@@ -258,11 +266,7 @@ func TestToolExecutor_SafetyLimits(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "Tool execution timed out")
-		verifyToolEventError(t, bus, llm.ErrTransient)
+		assertExecutionError(t, resp, err, bus, "Tool execution timed out", llm.ErrTransient)
 	})
 
 	t.Run("Max Turns Reached", func(t *testing.T) {
@@ -321,11 +325,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "Tool \"panic_tool\" encountered an internal fatal error (panic) and was terminated.")
-		verifyToolEventError(t, bus, llm.ErrTerminal)
+		assertExecutionError(t, resp, err, bus, "Tool \"panic_tool\" encountered an internal fatal error (panic) and was terminated.", llm.ErrTerminal)
 	})
 
 	t.Run("Serial Panic", func(t *testing.T) {
@@ -378,12 +378,7 @@ func TestToolExecutor_Concurrency(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(resp.Parts) != 3 {
-			t.Fatalf("expected 3 results, got %d", len(resp.Parts))
-		}
+		assertExecutionSuccess(t, resp, err, "r1", "r2", "r3")
 	})
 
 	t.Run("Mixed Path - Parallel then Serial", func(t *testing.T) {
@@ -403,12 +398,7 @@ func TestToolExecutor_Concurrency(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(resp.Parts) != 3 {
-			t.Fatalf("expected 3 results, got %d", len(resp.Parts))
-		}
+		assertExecutionSuccess(t, resp, err, "pr1", "pr2", "sr1")
 	})
 }
 
@@ -862,10 +852,7 @@ func TestToolExecutor_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach.")
+		assertExecutionError(t, resp, err, nil, "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach.", nil)
 	})
 
 	t.Run("Security Policy Blocked Return Error", func(t *testing.T) {
@@ -879,10 +866,7 @@ func TestToolExecutor_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.")
+		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", nil)
 	})
 
 	t.Run("User Declined Result Error", func(t *testing.T) {
@@ -896,10 +880,7 @@ func TestToolExecutor_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach.")
+		assertExecutionError(t, resp, err, nil, "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach.", nil)
 	})
 
 	t.Run("Security Policy Blocked Result Error", func(t *testing.T) {
@@ -913,10 +894,7 @@ func TestToolExecutor_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		verifyErrorResponse(t, resp, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.")
+		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", nil)
 	})
 }
 

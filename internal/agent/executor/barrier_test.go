@@ -40,12 +40,7 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(resp.Parts) != 2 {
-			t.Fatalf("expected 2 results, got %d", len(resp.Parts))
-		}
+		assertExecutionResponse(t, resp, err, 2)
 	})
 
 	t.Run("Serial Before Parallel", func(t *testing.T) {
@@ -58,12 +53,7 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(resp.Parts) != 2 {
-			t.Fatalf("expected 2 results, got %d", len(resp.Parts))
-		}
+		assertExecutionResponse(t, resp, err, 2)
 	})
 
 	t.Run("Sequential Integrity - Serial First", func(t *testing.T) {
@@ -110,8 +100,23 @@ func TestToolExecutor_ConcurrentSerialAndParallelTools(t *testing.T) {
 
 		mu.Lock()
 		defer mu.Unlock()
-		if !parallelStartedAfterSerial {
-			t.Errorf("Sequential Integrity failed: parallel tool started before serial tool finished")
-		}
+		assertSequentialIntegrity(t, parallelStartedAfterSerial)
 	})
+}
+
+func assertExecutionResponse(t *testing.T, resp *llm.Content, err error, expectedParts int) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || len(resp.Parts) != expectedParts {
+		t.Fatalf("expected %d results, got %v", expectedParts, resp)
+	}
+}
+
+func assertSequentialIntegrity(t *testing.T, parallelStartedAfterSerial bool) {
+	t.Helper()
+	if !parallelStartedAfterSerial {
+		t.Errorf("Sequential Integrity failed: parallel tool started before serial tool finished")
+	}
 }
