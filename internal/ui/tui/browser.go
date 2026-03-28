@@ -183,18 +183,26 @@ func (m *rootBrowserModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	switch msg.String() {
 	case "enter":
 		m.isSearching = false
+		if m.currentQuery != m.searchBar.Value() {
+			m.cachedThoughts = make(map[int]string)
+			m.lastQuery = m.searchBar.Value()
+		}
 		m.currentQuery = m.searchBar.Value()
 		m.currentMatch = 0
-		m.viewport.SetContent(m.renderHistory())
+		m.updateViewportContent()
 		m.updateViewportHeight()
 		m.viewport.GotoTop()
 		return m, nil
 	case "esc":
 		m.isSearching = false
 		m.searchBar.SetValue("")
+		if m.currentQuery != "" {
+			m.cachedThoughts = make(map[int]string)
+			m.lastQuery = ""
+		}
 		m.currentQuery = ""
 		m.matches = nil
-		m.viewport.SetContent(m.renderHistory())
+		m.updateViewportContent()
 		m.updateViewportHeight()
 		return m, nil
 	}
@@ -210,7 +218,7 @@ func (m *rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.
 			if m.selectedTurn >= len(m.history) {
 				m.selectedTurn = len(m.history) - 1
 			}
-			m.viewport.SetContent(m.renderHistory())
+			m.updateViewportContent()
 
 			if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
 				targetLine := m.turnOffsets[m.selectedTurn]
@@ -228,7 +236,7 @@ func (m *rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.
 			if m.selectedTurn < 0 {
 				m.selectedTurn = 0
 			}
-			m.viewport.SetContent(m.renderHistory())
+			m.updateViewportContent()
 
 			if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
 				targetLine := m.turnOffsets[m.selectedTurn]
@@ -278,7 +286,7 @@ func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 					}
 				}
 				m.lastMutationTime = time.Now()
-				m.viewport.SetContent(m.renderHistory())
+				m.updateViewportContent()
 				m.updateViewportHeight()
 			}
 		}
@@ -320,7 +328,7 @@ func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		}
 	case " ":
 		m.showThoughts = !m.showThoughts
-		m.viewport.SetContent(m.renderHistory())
+		m.updateViewportContent()
 		return m, nil
 	case "/":
 		m.isSearching = true
@@ -332,15 +340,20 @@ func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 }
 
 func (m *rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	if m.width != msg.Width {
+		m.cachedThoughts = make(map[int]string)
+		m.lastWidth = msg.Width
+	}
 	m.width = msg.Width
 	m.height = msg.Height
 	if !m.ready {
 		m.viewport = viewport.New(msg.Width, msg.Height-m.calculateFooterHeight())
-		m.viewport.SetContent(m.renderHistory())
+		m.updateViewportContent()
 		m.ready = true
 	} else {
 		m.viewport.Width = msg.Width
 		m.updateViewportHeight()
+		m.updateViewportContent()
 	}
 	return m.handleViewportUpdate(msg)
 }
@@ -365,7 +378,7 @@ func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Mod
 			m.history = append(msg.dtos, m.history...)
 
 			// Update viewport and maintain scroll position
-			m.viewport.SetContent(m.renderHistory())
+			m.updateViewportContent()
 			addedLines := m.turnOffsets[numAdded]
 			m.viewport.SetYOffset(m.viewport.YOffset + addedLines)
 
@@ -375,7 +388,7 @@ func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Mod
 	}
 
 	m.cursor = msg.nextCursor
-	m.viewport.SetContent(m.renderHistory())
+	m.updateViewportContent()
 	m.updateViewportHeight()
 
 	if isInitialLoad && len(m.history) > 0 {
@@ -413,11 +426,48 @@ func (m *rootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 	// Infinite pagination trigger (Older history from archive)
 	if m.viewport.YOffset == 0 && !m.isLoading && m.cursor != "" && m.cursor != "EOF" && m.ready && !m.isSearching {
 		m.isLoading = true
-		m.viewport.SetContent(m.renderHistory())
+		m.updateViewportContent()
 		return m, tea.Batch(append(cmds, fetchHistoryCmd(m.provider, m.cursor))...)
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *rootBrowserModel) updateViewportContent() {
+	// 1. Invalidate cache if needed
+	if m.lastWidth != m.width || m.lastQuery != m.currentQuery {
+		m.cachedThoughts = make(map[int]string)
+		m.lastWidth = m.width
+		m.lastQuery = m.currentQuery
+	}
+
+	// 2. Populate cache for all history turns
+	for i, dto := range m.history {
+		if _, ok := m.cachedThoughts[i]; !ok && m.showThoughts && dto.ThoughtProcess != "" {
+			m.cachedThoughts[i] = m.preRenderThought(dto)
+		}
+	}
+
+	// 3. Render and update state
+	rendered, offsets := m.renderHistory()
+	m.turnOffsets = offsets
+	m.recalculateSearchMatches(rendered)
+	m.viewport.SetContent(rendered)
+}
+
+func (m *rootBrowserModel) preRenderThought(dto ports.HistoryViewDTO) string {
+	thoughtText := "💭 [THOUGHTS]\n" + dto.ThoughtProcess
+	if m.currentQuery != "" {
+		thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
+	}
+
+	prefixLen := 2 // standard prefix "  " or "> "
+	maxWidth := m.width - prefixLen
+	if maxWidth < 20 {
+		maxWidth = 20
+	}
+
+	return thoughtStyle.Width(maxWidth).Render(thoughtText)
 }
 
 // View renders the current state of the model.
@@ -443,15 +493,15 @@ func (m *rootBrowserModel) View() string {
 	return sb.String()
 }
 
-func (m *rootBrowserModel) renderHistory() string {
+func (m *rootBrowserModel) renderHistory() (string, []int) {
 	if len(m.history) == 0 && m.isLoading {
-		return "Loading history..."
+		return "Loading history...", nil
 	}
 	if len(m.history) == 0 && m.cursor == "EOF" {
-		return "No history found."
+		return "No history found.", nil
 	}
 
-	m.turnOffsets = make([]int, 0, len(m.history))
+	turnOffsets := make([]int, 0, len(m.history))
 	var sb strings.Builder
 
 	if m.isLoading {
@@ -461,7 +511,7 @@ func (m *rootBrowserModel) renderHistory() string {
 	}
 
 	for i, dto := range m.history {
-		m.turnOffsets = append(m.turnOffsets, strings.Count(sb.String(), "\n"))
+		turnOffsets = append(turnOffsets, strings.Count(sb.String(), "\n"))
 
 		prefix := "  "
 		if i == m.selectedTurn {
@@ -485,9 +535,7 @@ func (m *rootBrowserModel) renderHistory() string {
 		}
 	}
 
-	rendered := sb.String()
-	m.recalculateSearchMatches(rendered)
-	return rendered
+	return sb.String(), turnOffsets
 }
 
 func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected bool) string {
@@ -527,20 +575,13 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 }
 
 func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string, turnIndex int) string {
-	// 1. Check for global layout/state changes
-	if m.lastWidth != m.width || m.lastQuery != m.currentQuery {
-		clear(m.cachedThoughts)
-		m.lastWidth = m.width
-		m.lastQuery = m.currentQuery
-	}
-
 	var wrappedText string
 
-	// 2. Check cache for the wrapped text (excluding the prefix)
+	// Pure read from cache
 	if cached, ok := m.cachedThoughts[turnIndex]; ok {
 		wrappedText = cached
 	} else {
-		// 3. Expensive operations: String concatenation, highlighting, and Lipgloss rendering
+		// Computation only, no storage in m.cachedThoughts to keep this pure
 		thoughtText := "💭 [THOUGHTS]\n" + dto.ThoughtProcess
 		if m.currentQuery != "" {
 			thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
@@ -548,16 +589,13 @@ func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix strin
 
 		maxWidth := m.width - len(prefix)
 		if maxWidth < 20 {
-			maxWidth = 20 // Fallback minimum width
+			maxWidth = 20
 		}
 
 		wrappedText = thoughtStyle.Width(maxWidth).Render(thoughtText)
-
-		// Cache ONLY the expensive render step
-		m.cachedThoughts[turnIndex] = wrappedText
 	}
 
-	// 4. Apply the dynamic prefix on every UI loop
+	// Apply the dynamic prefix
 	var sb strings.Builder
 	lines := strings.Split(wrappedText, "\n")
 	for _, line := range lines {

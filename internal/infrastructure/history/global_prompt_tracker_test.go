@@ -191,39 +191,40 @@ func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
 	tr, _ := NewGlobalPromptTracker(tmpDir)
 	tracker := tr.(*globalPromptTracker)
 
+	done := make(chan struct{})
+	tracker.testCompactionHook = func() {
+		select {
+		case <-done:
+			// Already closed
+		default:
+			close(done)
+		}
+	}
+
 	// Append a lot of duplicates to exceed 150KB
 	largePrompt := string(bytes.Repeat([]byte("A"), 1000))
 	for i := 0; i < 200; i++ {
 		_ = tracker.Append(largePrompt)
 	}
 
-	// Verify size crossed threshold (eventually, during the loop)
-	// We don't check it here because compaction might have already started and shrunk the file.
-
-	// Wait up to 3 seconds for async compaction
-	timeout := time.After(3 * time.Second)
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
-	var finalLines int
-loop:
-	for {
-		select {
-		case <-timeout:
-			t.Fatalf("timed out waiting for file to compact: got %d lines", finalLines)
-		case <-ticker.C:
-			content, err := os.ReadFile(tracker.filepath)
-			if err != nil {
-				continue // File might be locked/in-transition briefly
-			}
-			lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
-			finalLines = len(lines)
-			if finalLines < 200 {
-				break loop
-			}
-		}
+	// Wait for async compaction
+	select {
+	case <-done:
+		// Success
+	case <-time.After(3 * time.Second):
+		t.Fatal("compaction deadlock or timeout")
 	}
 
+	content, err := os.ReadFile(tracker.filepath)
+	if err != nil {
+		t.Fatalf("failed to read file: %v", err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
+	finalLines := len(lines)
+
+	if finalLines >= 200 {
+		t.Errorf("expected compaction to reduce lines, got %d", finalLines)
+	}
 	if finalLines == 0 {
 		t.Errorf("file should not be empty")
 	}

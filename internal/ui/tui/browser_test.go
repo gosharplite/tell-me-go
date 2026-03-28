@@ -492,7 +492,7 @@ func TestBrowserModel_View(t *testing.T) {
 	m.showThoughts = true
 
 	// Trigger render
-	rendered := m.renderHistory()
+	rendered, _ := m.renderHistory()
 	m.viewport.SetContent(rendered)
 
 	_ = m.View()
@@ -540,14 +540,14 @@ func TestBrowserModel_RenderHistory_Paths(t *testing.T) {
 	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
 
 	m.isLoading = true
-	got := m.renderHistory()
+	got, _ := m.renderHistory()
 	if !strings.Contains(got, "Loading history...") {
 		t.Errorf("expected Loading history..., got %q", got)
 	}
 
 	m.isLoading = false
 	m.cursor = "EOF"
-	got = m.renderHistory()
+	got, _ = m.renderHistory()
 	if !strings.Contains(got, "No history found.") {
 		t.Errorf("expected No history found., got %q", got)
 	}
@@ -556,14 +556,14 @@ func TestBrowserModel_RenderHistory_Paths(t *testing.T) {
 	m.history = []ports.HistoryViewDTO{
 		{Role: "user", ContentPreview: "Line 1\nLine 2", OriginalIndex: 0},
 	}
-	got = m.renderHistory()
+	got, _ = m.renderHistory()
 	if !strings.Contains(got, "Line 1") || !strings.Contains(got, "Line 2") {
 		t.Errorf("expected multi-line content, got %q", got)
 	}
 
 	// Loading more messages at bottom
 	m.isLoading = true
-	got = m.renderHistory()
+	got, _ = m.renderHistory()
 	if !strings.Contains(got, "Loading more messages...") {
 		t.Errorf("expected Loading more messages..., got %q", got)
 	}
@@ -571,14 +571,14 @@ func TestBrowserModel_RenderHistory_Paths(t *testing.T) {
 	// Start of History at top
 	m.isLoading = false
 	m.cursor = "EOF"
-	got = m.renderHistory()
+	got, _ = m.renderHistory()
 	if !strings.Contains(got, "Start of History") {
 		t.Errorf("expected Start of History, got %q", got)
 	}
 
 	// Highlight in renderHistory
 	m.currentQuery = "Line"
-	_ = m.renderHistory()
+	m.updateViewportContent()
 	if len(m.matches) == 0 {
 		t.Error("expected matches to be populated")
 	}

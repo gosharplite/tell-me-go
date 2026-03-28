@@ -33,9 +33,10 @@ const (
 
 // globalPromptTracker handles atomic recording of user prompts.
 type globalPromptTracker struct {
-	filepath   string
-	compacting atomic.Bool
-	mu         sync.RWMutex
+	filepath           string
+	compacting         atomic.Bool
+	mu                 sync.RWMutex
+	testCompactionHook func()
 }
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
@@ -214,6 +215,9 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 
 func (t *globalPromptTracker) compactLog() {
 	defer t.compacting.Store(false)
+	if t.testCompactionHook != nil {
+		defer t.testCompactionHook()
+	}
 
 	for {
 		// Capture initial size for optimistic concurrency check
