@@ -137,7 +137,8 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 		close(finished)
 	}
 
-	pool.Submit(task)
+	err := pool.Submit(task)
+	require.NoError(t, err)
 	<-started
 
 	cancel() // Cancel the task context
@@ -154,9 +155,10 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 
 	// Pool should still be functional for other tasks
 	task2Started := make(chan struct{})
-	pool.Submit(func(ctx context.Context) {
+	err = pool.Submit(func(ctx context.Context) {
 		close(task2Started)
 	})
+	assert.NoError(t, err)
 
 	timer4 := time.NewTimer(100 * time.Millisecond)
 	defer timer4.Stop()

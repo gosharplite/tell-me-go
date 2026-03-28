@@ -93,7 +93,7 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 		block := make(chan struct{})
 		done := make(chan struct{})
 
-		p.Submit(func(ctx context.Context) {
+		err := p.Submit(func(ctx context.Context) {
 			close(start)
 			select {
 			case <-block:
@@ -101,6 +101,9 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 			}
 			close(done)
 		})
+		if err != nil {
+			t.Errorf("failed to submit: %v", err)
+		}
 
 		<-start
 		close(block)
@@ -124,11 +127,14 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 		taskStarted := make(chan struct{})
 		taskDone := make(chan struct{})
 
-		p.Submit(func(ctx context.Context) {
+		err := p.Submit(func(ctx context.Context) {
 			close(taskStarted)
 			<-ctx.Done()
 			close(taskDone)
 		})
+		if err != nil {
+			t.Errorf("failed to submit: %v", err)
+		}
 
 		<-taskStarted
 		p.Shutdown() // This cancels p.ctx
@@ -204,7 +210,7 @@ func TestWorkerPool_SubmitFailFast(t *testing.T) {
 	startCh := make(chan struct{})
 	blockCh := make(chan struct{}) // 1. Create the blocking channel
 
-	p.Submit(func(ctx context.Context) {
+	err1 := p.Submit(func(ctx context.Context) {
 		close(startCh)
 
 		// 2. Safely block until test finishes or context cancels
@@ -213,6 +219,9 @@ func TestWorkerPool_SubmitFailFast(t *testing.T) {
 		case <-ctx.Done():
 		}
 	})
+	if err1 != nil {
+		t.Fatalf("Expected task 1 to be submitted successfully, got %v", err1)
+	}
 	<-startCh
 
 	// Task 2 & 3: fill the channel buffer (size is 1*2 = 2)
