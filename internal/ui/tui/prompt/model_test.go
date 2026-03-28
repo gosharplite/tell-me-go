@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -398,4 +399,52 @@ func TestModel_Update_AdditionalCases(t *testing.T) {
 			t.Error("expected nil cmd for unhandled message")
 		}
 	})
+}
+
+type integrationMockSuggestionSvc struct {
+	suggestion string
+}
+
+func (m *integrationMockSuggestionSvc) GetSuggestions(ctx context.Context, prefix string) ([]string, error) {
+	return []string{m.suggestion}, nil
+}
+
+func (m *integrationMockSuggestionSvc) RecordPrompt(prompt string) error {
+	return nil
+}
+
+func TestPromptModel_Integration_SuggestionsAreRendered(t *testing.T) {
+	mockSvc := &integrationMockSuggestionSvc{
+		suggestion: "guaranteed-suggestion-item",
+	}
+
+	m := NewModel(mockSvc, 1*time.Millisecond).(*promptModel)
+	defer m.Destroy()
+
+	cmd := m.Init()
+	// Execute the command to simulate the background fetch completing.
+	// Since Init() returns a tea.Batch, we execute the batch and find the suggestions message.
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			if res := c(); res != nil {
+				if s, ok := res.(suggestionsMsg); ok {
+					msg = s
+					break
+				}
+			}
+		}
+	}
+
+	suggMsg, ok := msg.(suggestionsMsg)
+	if !ok {
+		t.Fatalf("CRITICAL REGRESSION: The TUI failed to render the suggestion. Expected suggestionsMsg, got %T", msg)
+	}
+
+	m.Update(suggMsg)
+
+	output := m.View()
+	if !strings.Contains(output, "guaranteed-suggestion-item") {
+		t.Errorf("CRITICAL REGRESSION: The TUI failed to render the suggestion.")
+	}
 }
