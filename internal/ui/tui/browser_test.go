@@ -731,7 +731,7 @@ func TestBrowserModel_RenderThoughts_Cache(t *testing.T) {
 
 	thought := "Thinking about the meaning of life..."
 	m.history = []ports.HistoryViewDTO{
-		{Role: "user", ThoughtProcess: thought, OriginalIndex: 0},
+		{ID: "msg1", Role: "user", ThoughtProcess: thought, OriginalIndex: 0},
 	}
 	m.showThoughts = true
 	m.width = 80
@@ -746,8 +746,8 @@ func TestBrowserModel_RenderThoughts_Cache(t *testing.T) {
 		t.Fatal("Expected cachedThoughts to be populated")
 	}
 
-	if _, ok := m.cachedThoughts[0]; !ok {
-		t.Errorf("Expected index 0 to be cached")
+	if _, ok := m.cachedThoughts["msg1"]; !ok {
+		t.Errorf("Expected msg1 to be cached")
 	}
 
 	// Verify final render
@@ -758,17 +758,68 @@ func TestBrowserModel_RenderThoughts_Cache(t *testing.T) {
 
 	// Test case: currentQuery is not empty
 	m.currentQuery = "life"
-	m.cachedThoughts = make(map[int]string) // Invalidate cache manually
+	m.cachedThoughts = make(map[string]string) // Invalidate cache manually
 	m.updateViewportContent()
-	if !strings.Contains(m.cachedThoughts[0], "life") {
+	if !strings.Contains(m.cachedThoughts["msg1"], "life") {
 		t.Errorf("Expected highlighted query in thoughts")
 	}
 
 	// Test case: width < 20
 	m.width = 10
-	m.cachedThoughts = make(map[int]string) // Invalidate cache manually
+	m.cachedThoughts = make(map[string]string) // Invalidate cache manually
 	m.updateViewportContent()
 	if len(m.cachedThoughts) == 0 {
 		t.Fatal("Expected cachedThoughts to be populated for small width")
+	}
+}
+
+func TestStaleCachePrepend(t *testing.T) {
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), mockProvider, mockModifier)
+	m.width = 80
+	m.ready = true
+	m.showThoughts = true
+
+	// 1. Initial history: one message with unique thought
+	m.history = []ports.HistoryViewDTO{
+		{ID: "msg1", ThoughtProcess: "THOUGHT_ONE", Role: "assistant"},
+	}
+	m.selectedTurn = 0
+
+	// 2. Warm cache
+	m.updateViewportContent()
+
+	// Verify msg1 is cached (uses ID)
+	if !strings.Contains(m.cachedThoughts["msg1"], "THOUGHT_ONE") {
+		t.Fatalf("expected THOUGHT_ONE in cache['msg1'], got %q", m.cachedThoughts["msg1"])
+	}
+
+	// 3. Prepend older history: another message with a different thought
+	newDtos := []ports.HistoryViewDTO{
+		{ID: "msg0", ThoughtProcess: "THOUGHT_ZERO", Role: "assistant"},
+	}
+	
+	// Simulate historyLoadedMsg which prepends
+	m.handleHistoryLoadedMsg(historyLoadedMsg{dtos: newDtos})
+
+	// Now m.history is [msg0, msg1]
+	// msg0 is at index 0, msg1 is at index 1
+
+	// 4. Update viewport content (this is where the fix is verified)
+	m.updateViewportContent()
+
+	// With the fix (using stable ID):
+	// m.cachedThoughts["msg1"] still contains "THOUGHT_ONE"
+	// m.cachedThoughts["msg0"] should be rendered and contain "THOUGHT_ZERO"
+
+	// Let's check m.cachedThoughts["msg0"]
+	if !strings.Contains(m.cachedThoughts["msg0"], "THOUGHT_ZERO") {
+		t.Errorf("msg0 (THOUGHT_ZERO) NOT found in cache correctly")
+	}
+	
+	// Let's check m.cachedThoughts["msg1"]
+	if !strings.Contains(m.cachedThoughts["msg1"], "THOUGHT_ONE") {
+		t.Errorf("msg1 (THOUGHT_ONE) lost or corrupted in cache")
 	}
 }

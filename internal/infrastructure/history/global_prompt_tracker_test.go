@@ -341,3 +341,86 @@ func TestCopyFile(t *testing.T) {
 		t.Error("expected error for invalid destination, got nil")
 	}
 }
+
+
+func TestNewNoOpTracker(t *testing.T) {
+	tracker := NewNoOpTracker()
+	if tracker == nil {
+		t.Fatal("expected non-nil tracker")
+	}
+
+	err := tracker.Append(context.Background(), "test")
+	if err != nil {
+		t.Errorf("Append failed: %v", err)
+	}
+
+	got, err := tracker.LoadTopN(context.Background(), 10)
+	if err != nil {
+		t.Errorf("LoadTopN failed: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d prompts; want 0", len(got))
+	}
+}
+
+func TestNewGlobalPromptTracker_MkdirError(t *testing.T) {
+	// Create a file where a directory should be
+	tmpDir := t.TempDir()
+	conflictFile := filepath.Join(tmpDir, ".tellmego")
+	if err := os.WriteFile(conflictFile, []byte("not a dir"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tracker, err := NewGlobalPromptTracker(tmpDir)
+	if err == nil {
+		t.Fatal("expected error when MkdirAll fails, got nil")
+	}
+	if tracker != nil {
+		t.Error("expected nil tracker when initialization fails")
+	}
+}
+
+
+func TestGlobalPromptTracker_CompactionIgnoresContextCancellation(t *testing.T) {
+	tmpDir := t.TempDir()
+	tr, _ := NewGlobalPromptTracker(tmpDir)
+	tracker := tr.(*globalPromptTracker)
+
+	// Set a small threshold for testing to trigger compaction quickly
+	// We'll use a large prompt to trigger it
+	largePrompt := string(bytes.Repeat([]byte("B"), 1000))
+	
+	// Prepare synchronization for the hook
+	compactionDone := make(chan struct{})
+	tracker.testCompactionHook = func() {
+		close(compactionDone)
+	}
+
+	// Create a context and cancel it immediately after triggering Append
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	// We need enough entries to trigger the size threshold (> 150KB)
+	for i := 0; i < 160; i++ {
+		_ = tracker.Append(ctx, largePrompt)
+	}
+	
+	// Cancel the context that was used for Append
+	cancel()
+
+	// Wait for compaction to finish
+	select {
+	case <-compactionDone:
+		// Compaction finished successfully despite context cancellation
+	case <-time.After(5 * time.Second):
+		t.Fatal("Compaction timed out or was aborted by context cancellation")
+	}
+
+	// Final verification: file should exist and have unique content
+	content, err := tracker.LoadTopN(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Failed to load after compaction: %v", err)
+	}
+	if len(content) == 0 || content[0] != largePrompt {
+		t.Errorf("Data loss or corruption detected after compaction")
+	}
+}

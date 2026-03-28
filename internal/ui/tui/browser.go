@@ -64,7 +64,7 @@ type rootBrowserModel struct {
 	turnOffsets      []int
 
 	// Render cache for expensive thought wrapping
-	cachedThoughts map[int]string
+	cachedThoughts map[string]string
 	lastWidth      int
 	lastQuery      string
 }
@@ -83,7 +83,7 @@ func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvi
 		isLoading:      true,
 		showThoughts:   true,
 		selectedTurn:   -1,
-		cachedThoughts: make(map[int]string),
+		cachedThoughts: make(map[string]string),
 	}
 }
 
@@ -184,7 +184,7 @@ func (m *rootBrowserModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	case "enter":
 		m.isSearching = false
 		if m.currentQuery != m.searchBar.Value() {
-			m.cachedThoughts = make(map[int]string)
+			m.cachedThoughts = make(map[string]string)
 			m.lastQuery = m.searchBar.Value()
 		}
 		m.currentQuery = m.searchBar.Value()
@@ -197,7 +197,7 @@ func (m *rootBrowserModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		m.isSearching = false
 		m.searchBar.SetValue("")
 		if m.currentQuery != "" {
-			m.cachedThoughts = make(map[int]string)
+			m.cachedThoughts = make(map[string]string)
 			m.lastQuery = ""
 		}
 		m.currentQuery = ""
@@ -341,7 +341,7 @@ func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 
 func (m *rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	if m.width != msg.Width {
-		m.cachedThoughts = make(map[int]string)
+		m.cachedThoughts = make(map[string]string)
 		m.lastWidth = msg.Width
 	}
 	m.width = msg.Width
@@ -436,15 +436,15 @@ func (m *rootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 func (m *rootBrowserModel) updateViewportContent() {
 	// 1. Invalidate cache if needed
 	if m.lastWidth != m.width || m.lastQuery != m.currentQuery {
-		m.cachedThoughts = make(map[int]string)
+		m.cachedThoughts = make(map[string]string)
 		m.lastWidth = m.width
 		m.lastQuery = m.currentQuery
 	}
 
 	// 2. Populate cache for all history turns
-	for i, dto := range m.history {
-		if _, ok := m.cachedThoughts[i]; !ok && m.showThoughts && dto.ThoughtProcess != "" {
-			m.cachedThoughts[i] = m.preRenderThought(dto)
+	for _, dto := range m.history {
+		if _, ok := m.cachedThoughts[dto.ID]; !ok && m.showThoughts && dto.ThoughtProcess != "" {
+			m.cachedThoughts[dto.ID] = m.preRenderThought(dto)
 		}
 	}
 
@@ -521,7 +521,7 @@ func (m *rootBrowserModel) renderHistory() (string, []int) {
 		sb.WriteString(m.renderTurnHeader(dto, i == m.selectedTurn))
 
 		if m.showThoughts && dto.ThoughtProcess != "" {
-			sb.WriteString(m.renderThoughts(dto, prefix, i))
+			sb.WriteString(m.renderThoughts(dto, prefix))
 		}
 
 		if len(dto.ToolCalls) > 0 {
@@ -574,11 +574,11 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 	return prefix + styledLabel + "\n"
 }
 
-func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string, turnIndex int) string {
+func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string) string {
 	var wrappedText string
 
 	// Pure read from cache
-	if cached, ok := m.cachedThoughts[turnIndex]; ok {
+	if cached, ok := m.cachedThoughts[dto.ID]; ok {
 		wrappedText = cached
 	} else {
 		// Computation only, no storage in m.cachedThoughts to keep this pure

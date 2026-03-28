@@ -43,7 +43,9 @@ type globalPromptTracker struct {
 func NewGlobalPromptTracker(homeDir string) (ports.PromptTracker, error) {
 	// Ensure the directory exists
 	dir := filepath.Join(homeDir, ".tellmego")
-	_ = os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory for prompt tracker: %w", err)
+	}
 
 	trackerPath := filepath.Join(dir, "prompts.jsonl")
 	oldTrackerPath := filepath.Join(homeDir, "global_prompts.jsonl")
@@ -109,7 +111,7 @@ func (t *globalPromptTracker) Append(ctx context.Context, prompt string) error {
 	// Trigger async compaction if file size exceeds threshold and no compaction is already in progress
 	if size > compactionThresholdBytes {
 		if t.compacting.CompareAndSwap(false, true) {
-			go t.compactLog(ctx)
+			go t.compactLog(context.WithoutCancel(ctx))
 		}
 	}
 
@@ -335,4 +337,16 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return destination.Sync()
+}
+
+
+// noOpPromptTracker is a fail-safe implementation that does nothing.
+type noOpPromptTracker struct{}
+
+func (n *noOpPromptTracker) Append(ctx context.Context, prompt string) error   { return nil }
+func (n *noOpPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) { return nil, nil }
+
+// NewNoOpTracker returns a PromptTracker that performs no operations.
+func NewNoOpTracker() ports.PromptTracker {
+	return &noOpPromptTracker{}
 }

@@ -108,7 +108,11 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		tracker, err := history.NewGlobalPromptTracker(c.HomeDir)
 		if err != nil {
 			// Not critical enough to fail the whole app, but should be logged to stderr
-			_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to initialize prompt tracker: %v\n", err)
+			_, _ = fmt.Fprintf(c.Stderr, "Warning: %v\n", err)
+		}
+		if tracker == nil {
+			// Prevent nil pointer panics if initialization completely fails
+			tracker = history.NewNoOpTracker()
 		}
 
 		// Try to get at least the last user message for the trie
