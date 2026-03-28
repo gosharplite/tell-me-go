@@ -12,7 +12,7 @@ import (
 
 // ToolExecutor is the unified interface for both the base runtime and all future decorators.
 type ToolExecutor interface {
-	Execute(ctx context.Context, call *llm.FunctionCall) (tools.ToolResult, error)
+	Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error)
 }
 
 // ToolResolutionService abstracts the tool lookup logic.

@@ -18,7 +18,6 @@ import (
 
 func TestAuthDecorator(t *testing.T) {
 	t.Parallel()
-	resolver := &mockResolver{}
 
 	tests := []struct {
 		name          string
@@ -54,9 +53,9 @@ func TestAuthDecorator(t *testing.T) {
 			t.Parallel()
 			next := &mockExecutor{Result: tt.nextResult}
 			auth := &mockToolAuthService{AuthorizeFunc: tt.authFunc}
-			decorator := NewAuthDecorator(next, auth, resolver)
+			decorator := NewAuthDecorator(next, auth)
 
-			res, err := decorator.Execute(context.Background(), &llm.FunctionCall{Name: "test"})
+			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.nextCalled, next.Called)
@@ -113,7 +112,7 @@ func TestCircuitBreakerDecorator(t *testing.T) {
 			}
 			decorator := NewCircuitBreakerDecorator(next, cb)
 
-			res, err := decorator.Execute(context.Background(), &llm.FunctionCall{Name: "test"})
+			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.nextCalled, next.Called)
@@ -180,7 +179,7 @@ func TestSafetyDecorator(t *testing.T) {
 				func() time.Duration { return tt.timeout },
 			)
 
-			res, _ := decorator.Execute(context.Background(), &llm.FunctionCall{Name: "test"})
+			res, _ := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
 
 			if tt.expectedErrSubstr != "" {
 				assert.Error(t, res.Error)
@@ -200,7 +199,7 @@ func TestTracingDecorator(t *testing.T) {
 	next := &mockExecutor{Result: tools.ToolResult{Text: "ok"}}
 	decorator := NewTracingDecorator(next, registry, logger)
 
-	res, err := decorator.Execute(context.Background(), &llm.FunctionCall{Name: "test"})
+	res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
 
 	assert.NoError(t, err)
 	assert.Equal(t, "ok", res.Text)

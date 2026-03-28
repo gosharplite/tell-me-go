@@ -169,7 +169,9 @@ func TestZombieToolTimeout(t *testing.T) {
 	start := time.Now()
 	go func() {
 		defer close(doneCh)
-		result, timeoutErr = exec.runtime.Execute(ctx, &llm.FunctionCall{Name: hangingTool.Name})
+		fc := &llm.FunctionCall{Name: hangingTool.Name}
+		tool, _ := exec.resolver.Resolve(fc)
+		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc)
 	}()
 
 	select {

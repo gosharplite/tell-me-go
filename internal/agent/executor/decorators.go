@@ -22,26 +22,20 @@ import (
 
 // authDecorator handles security authorization.
 type authDecorator struct {
-	next     ToolExecutor
-	auth     ToolAuthService
-	resolver ToolResolutionService
+	next ToolExecutor
+	auth ToolAuthService
 }
 
-func NewAuthDecorator(next ToolExecutor, auth ToolAuthService, resolver ToolResolutionService) ToolExecutor {
-	return &authDecorator{next: next, auth: auth, resolver: resolver}
+func NewAuthDecorator(next ToolExecutor, auth ToolAuthService) ToolExecutor {
+	return &authDecorator{next: next, auth: auth}
 }
 
-func (d *authDecorator) Execute(ctx context.Context, call *llm.FunctionCall) (tools.ToolResult, error) {
-	tool, err := d.resolver.Resolve(call)
-	if err != nil {
-		return tools.ToolResult{Text: err.Error(), Error: err}, nil
-	}
-
+func (d *authDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
 	if err := d.auth.Authorize(ctx, tool, call); err != nil {
 		return tools.ToolResult{Text: err.Error(), Error: err}, nil
 	}
 
-	return d.next.Execute(ctx, call)
+	return d.next.Execute(ctx, tool, call)
 }
 
 // circuitBreakerDecorator handles circuit breaking logic.
@@ -54,12 +48,12 @@ func NewCircuitBreakerDecorator(next ToolExecutor, cb CircuitBreakerManager) Too
 	return &circuitBreakerDecorator{next: next, cb: cb}
 }
 
-func (d *circuitBreakerDecorator) Execute(ctx context.Context, call *llm.FunctionCall) (tools.ToolResult, error) {
+func (d *circuitBreakerDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
 	if err := d.cb.Check(call.Name); err != nil {
 		return tools.ToolResult{Text: err.Error(), Error: err}, nil
 	}
 
-	result, err := d.next.Execute(ctx, call)
+	result, err := d.next.Execute(ctx, tool, call)
 	d.cb.Record(call.Name, err == nil && result.Error == nil)
 	return result, err
 }
@@ -89,7 +83,7 @@ func NewSafetyDecorator(next ToolExecutor, registry tools.Registry, logger ports
 	}
 }
 
-func (d *safetyDecorator) Execute(parentCtx context.Context, call *llm.FunctionCall) (result tools.ToolResult, err error) {
+func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (result tools.ToolResult, err error) {
 	activeTimeout := d.toolTimeout()
 	if d.registry.IsLongRunning(call.Name) {
 		activeTimeout = d.longRunningTimeout()
@@ -108,7 +102,7 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, call *llm.FunctionC
 				}
 			}
 		}()
-		res, execErr := d.next.Execute(ctx, call)
+		res, execErr := d.next.Execute(ctx, tool, call)
 		outCh <- tools.ToolOutput{Result: res, Err: execErr}
 	}()
 
@@ -160,7 +154,7 @@ func NewTracingDecorator(next ToolExecutor, registry tools.Registry, logger port
 	return &tracingDecorator{next: next, registry: registry, logger: logger}
 }
 
-func (d *tracingDecorator) Execute(parentCtx context.Context, call *llm.FunctionCall) (tools.ToolResult, error) {
+func (d *tracingDecorator) Execute(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
 	ctx, span := otel.Tracer("agent").Start(parentCtx, "tool.execute."+call.Name)
 	ctx = domain_security.WithCurrentTool(ctx, call.Name)
 	span.SetAttributes(attribute.String("tool.name", call.Name))
@@ -169,7 +163,7 @@ func (d *tracingDecorator) Execute(parentCtx context.Context, call *llm.Function
 	startTime := time.Now()
 	trace := telemetry.TraceFromContext(ctx)
 
-	result, err := d.next.Execute(ctx, call)
+	result, err := d.next.Execute(ctx, tool, call)
 
 	duration := time.Since(startTime)
 	status, _ := classifyToolError(err, result.Error)

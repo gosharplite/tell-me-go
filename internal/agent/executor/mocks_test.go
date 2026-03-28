@@ -20,7 +20,7 @@ type mockExecutor struct {
 	Called bool
 }
 
-func (m *mockExecutor) Execute(ctx context.Context, call *llm.FunctionCall) (tools.ToolResult, error) {
+func (m *mockExecutor) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
 	m.Called = true
 	if m.Delay > 0 {
 		select {

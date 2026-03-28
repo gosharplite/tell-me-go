@@ -107,8 +107,8 @@ func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus ev
 	e.authorizer = authService // Still used for Batch Consent
 
 	// Wire the ToolExecutor chain
-	var exec ToolExecutor = NewBaseRuntime(e.resolver, registry)
-	exec = NewAuthDecorator(exec, authService, e.resolver)
+	var exec ToolExecutor = NewBaseRuntime(registry)
+	exec = NewAuthDecorator(exec, authService)
 	exec = NewCircuitBreakerDecorator(exec, e.failures)
 	exec = NewTracingDecorator(exec, registry, logger)
 
@@ -580,8 +580,22 @@ func (e *Orchestrator) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 	}
 }
 
-func (e *Orchestrator) executeTool(parentCtx context.Context, call *llm.FunctionCall) tools.ToolResult {
-	result, err := e.runtime.Execute(parentCtx, call)
+func (e *Orchestrator) executeTool(parentCtx context.Context, call *llm.FunctionCall) (result tools.ToolResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = tools.ToolResult{
+				Text:  fmt.Sprintf("Tool %q encountered an internal fatal error (panic) and was terminated.", call.Name),
+				Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
+			}
+		}
+	}()
+
+	tool, err := e.resolver.Resolve(call)
+	if err != nil {
+		return tools.ToolResult{Text: err.Error(), Error: fmt.Errorf("%w: %v", llm.ErrTerminal, err)}
+	}
+
+	result, err = e.runtime.Execute(parentCtx, tool, call)
 	status, msg := classifyToolError(err, result.Error)
 
 	if status == "user_declined" || status == "security_blocked" {

@@ -82,7 +82,9 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 
 	go func() {
 		defer close(doneCh)
-		result, timeoutErr = exec.runtime.Execute(ctx, &llm.FunctionCall{Name: hangingTool.Name})
+		fc := &llm.FunctionCall{Name: hangingTool.Name}
+		tool, _ := exec.resolver.Resolve(fc)
+		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc)
 	}()
 
 	select {
@@ -133,7 +135,9 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
-		_, _ = exec.runtime.Execute(context.Background(), &llm.FunctionCall{Name: hangingTool.Name})
+		fc := &llm.FunctionCall{Name: hangingTool.Name}
+		tool, _ := exec.resolver.Resolve(fc)
+		_, _ = exec.runtime.Execute(context.Background(), tool, fc)
 	}()
 
 	select {
