@@ -25,6 +25,9 @@ type toolExecResult struct {
 	tr    tools.ToolResult
 }
 
+// ExecutionPlanFunc defines the signature for the tool execution plan.
+type ExecutionPlanFunc func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error
+
 // Orchestrator handles the execution of tools, using a WorkerPool for concurrency.
 type Orchestrator struct {
 	mu                 sync.RWMutex
@@ -41,6 +44,7 @@ type Orchestrator struct {
 	failures           *failureTracker
 	observer           tools.ExecutionObserver
 	zombie             *tools.ZombieTool
+	execPlan           ExecutionPlanFunc
 
 	resolver ToolResolutionService
 	runtime  ToolExecutor
@@ -53,6 +57,13 @@ type executorOption func(*Orchestrator)
 func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
 		e.longRunningTimeout = timeout
+	}
+}
+
+// WithExecutionPlan allows injecting a custom execution plan for testing or strategy changes.
+func WithExecutionPlan(fn ExecutionPlanFunc) executorOption {
+	return func(e *Orchestrator) {
+		e.execPlan = fn
 	}
 }
 
@@ -297,8 +308,8 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	// This ensures that all goroutines started by the plan are properly joined.
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		if testExecutionPlanFn != nil {
-			return testExecutionPlanFn(e, gCtx, calls, collector.ch, declinedMap)
+		if e.execPlan != nil {
+			return e.execPlan(e, gCtx, calls, collector.ch, declinedMap)
 		}
 		return e.runExecutionPlan(gCtx, calls, collector.ch, declinedMap)
 	})
@@ -643,7 +654,3 @@ func withToolTimeout(timeout time.Duration) executorOption {
 		e.toolTimeout = timeout
 	}
 }
-
-
-// testExecutionPlanFn is a test hook for injecting a mocked execution plan.
-var testExecutionPlanFn func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error

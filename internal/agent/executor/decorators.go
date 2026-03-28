@@ -172,6 +172,12 @@ func (d *safetyDecorator) monitorLiveness(
 			cancel()
 			return
 		case <-ctx.Done():
+			// FIX: Start a background drainer to prevent the tool from blocking on hbCh
+			go func() {
+				for range hbCh {
+					// Draining until hbCh is closed by the tool's defer block
+				}
+			}()
 			return
 		}
 	}

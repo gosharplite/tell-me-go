@@ -16,7 +16,7 @@ import (
 
 // ToolAuthorizer encapsulates consent and authorization logic for tool execution.
 type ToolAuthorizer interface {
-	AuthorizeTool(tool *tools.ToolDeclaration, call *llm.FunctionCall) error
+	Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error
 	IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool)
 	RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
 }
@@ -34,10 +34,6 @@ func newSecurityAuthorizer(sm domain_security.Manager, registry tools.Registry) 
 		sm:       sm,
 		registry: registry,
 	}
-}
-
-func (a *securityAuthorizer) AuthorizeTool(tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
-	return a.Authorize(context.Background(), tool, call)
 }
 
 func (a *securityAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {

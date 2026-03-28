@@ -16,26 +16,17 @@ import (
 
 func TestOrchestrator_ErrGroupFallback(t *testing.T) {
 	reg := &mockToolRegistry{
-        getDeclarationsFn: func() []*tools.ToolDeclaration {
-            return []*tools.ToolDeclaration{
-                {Name: "test_tool"},
-            }
-        },
-	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	respContent := &llm.Content{
-		Parts: []*llm.Part{
-			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{
+				{Name: "test_tool"},
+			}
 		},
 	}
 
-	// Inject a mocked execution plan that returns an explicit error      
-	// without signaling the channels or canceling the context.           
+	// Inject a mocked execution plan that returns an explicit error
+	// without signaling the channels or canceling the context.
 	injectedErr := errors.New("mock worker error")
-	testExecutionPlanFn = func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
+	mockPlan := func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
 		// Populate the results cleanly so collector.Wait exits without error
 		resChan <- toolExecResult{
 			index: 0,
@@ -45,11 +36,20 @@ func TestOrchestrator_ErrGroupFallback(t *testing.T) {
 		// Return the error synchronously
 		return injectedErr
 	}
-	defer func() { testExecutionPlanFn = nil }()
+
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, WithExecutionPlan(mockPlan))
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		},
+	}
 
 	_, execErr := exec.Execute(context.Background(), respContent, 0, 10)
-	
-	// Because collector.Wait returns nil (all results are in), 
+
+	// Because collector.Wait returns nil (all results are in),
 	// waitErr == nil is true. Then g.Wait() returns injectedErr,
 	// so waitErr is updated to injectedErr.
 	require.ErrorIs(t, execErr, injectedErr)
