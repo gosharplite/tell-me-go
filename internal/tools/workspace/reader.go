@@ -230,26 +230,24 @@ func (r *fileReader) processSingleFile(ctx context.Context, path string, sb *str
 }
 
 func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	pathsIf, ok := args["filepaths"].([]interface{})
-	if !ok {
-		return tools.ToolResult{}, fmt.Errorf("filepaths argument is required and must be an array")
+	var params struct {
+		FilePaths []string `json:"filepaths"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	if len(pathsIf) == 0 {
+	if len(params.FilePaths) == 0 {
 		return tools.ToolResult{}, fmt.Errorf("filepaths argument is required and cannot be empty")
 	}
 
 	const maxFilesPerCall = 50
-	if len(pathsIf) > maxFilesPerCall {
-		return tools.ToolResult{}, fmt.Errorf("requested too many files (%d). Maximum allowed per call is %d", len(pathsIf), maxFilesPerCall)
+	if len(params.FilePaths) > maxFilesPerCall {
+		return tools.ToolResult{}, fmt.Errorf("requested too many files (%d). Maximum allowed per call is %d", len(params.FilePaths), maxFilesPerCall)
 	}
 
 	var sb strings.Builder
-	for _, pathIf := range pathsIf {
-		path, ok := pathIf.(string)
-		if !ok {
-			continue
-		}
+	for _, path := range params.FilePaths {
 		if err := r.processSingleFile(ctx, path, &sb); err != nil {
 			return tools.ToolResult{}, err
 		}

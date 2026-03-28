@@ -305,6 +305,16 @@ func TestReadFiles(t *testing.T) {
 			t.Errorf("expected binary message for fbin: %s", res.Text)
 		}
 	})
+
+	t.Run("using []string instead of []interface{}", func(t *testing.T) {
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []string{f1, f2}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, content1) {
+			t.Errorf("f1 missing: %s", res.Text)
+		}
+	})
 }
 
 func TestReadFile_UTF8Truncation(t *testing.T) {
