@@ -24,6 +24,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 )
 
+// ErrExitZero signals that the command should exit with code 0 immediately.
+var ErrExitZero = errors.New("exit zero")
+
 func init() {
 	register("chat", func(ctx *context) command {
 		return newChatCommand(ctx)
@@ -71,23 +74,12 @@ func newChatCommand(ctx *context) *chatCommand {
 
 // Execute runs the chat command logic.
 func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
-	// 1. Parsing command-line flags and arguments
-	opts, fs, err := c.parseConfiguration(args)
+	opts, fs, err := c.resolveOptions(args)
 	if err != nil {
+		if errors.Is(err, ErrExitZero) {
+			return nil
+		}
 		return err
-	}
-	if opts.showVersion {
-		_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
-		return nil
-	}
-
-	// 2. Configuration Merge
-	// Load configuration early to merge with CLI options
-	loader := &infra_config.YAMLConfigLoader{}
-	cfg, _ := loader.Load(opts.configPath)
-	// Only auto-enable TUI from config if no other actions are requested
-	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
-		opts.tuiPrompt = true
 	}
 
 	var prompt string
@@ -122,6 +114,27 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		UseTUIPrompt: opts.tuiPrompt,
 		Prompt:       prompt,
 	}, capturer)
+}
+
+func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet, error) {
+	opts, fs, err := c.parseConfiguration(args)
+	if err != nil {
+		return nil, nil, err
+	}
+	if opts.showVersion {
+		_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
+		return nil, nil, ErrExitZero
+	}
+
+	// Configuration Merge
+	loader := &infra_config.YAMLConfigLoader{}
+	cfg, _ := loader.Load(opts.configPath)
+	// Only auto-enable TUI from config if no other actions are requested
+	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
+		opts.tuiPrompt = true
+	}
+
+	return opts, fs, nil
 }
 
 func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) ports.Capturer {

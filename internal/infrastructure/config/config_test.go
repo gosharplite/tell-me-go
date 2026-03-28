@@ -247,6 +247,16 @@ func TestJSONSessionLoader_LoadSession(t *testing.T) {
 	}
 }
 
+func checkIntPtr(t *testing.T, fieldName string, expected, actual *int) {
+	t.Helper()
+	if expected == nil {
+		return
+	}
+	if actual == nil || *actual != *expected {
+		t.Errorf("expected %s %d, got %v", fieldName, *expected, actual)
+	}
+}
+
 func assertSessionState(t *testing.T, got *domain_config.SessionConfig, err error, tt sessionTestCase) {
 	t.Helper()
 	if (err != nil) != tt.wantErr {
@@ -264,20 +274,8 @@ func assertSessionState(t *testing.T, got *domain_config.SessionConfig, err erro
 		return
 	}
 
-	if tt.wantHistoryTokens != nil {
-		if got.MaxHistoryTokens == nil || *got.MaxHistoryTokens != *tt.wantHistoryTokens {
-			t.Errorf("expected %d tokens, got %v", *tt.wantHistoryTokens, got.MaxHistoryTokens)
-		}
-	}
-	if tt.wantToolTurns != nil {
-		if got.MaxToolTurns == nil || *got.MaxToolTurns != *tt.wantToolTurns {
-			t.Errorf("expected %d tool turns, got %v", *tt.wantToolTurns, got.MaxToolTurns)
-		}
-	}
-	if tt.wantHistoryTurns != nil {
-		if got.MaxHistoryTurns == nil || *got.MaxHistoryTurns != *tt.wantHistoryTurns {
-			t.Errorf("expected %d history turns, got %v", *tt.wantHistoryTurns, got.MaxHistoryTurns)
-		}
-	}
+	checkIntPtr(t, "history tokens", tt.wantHistoryTokens, got.MaxHistoryTokens)
+	checkIntPtr(t, "tool turns", tt.wantToolTurns, got.MaxToolTurns)
+	checkIntPtr(t, "history turns", tt.wantHistoryTurns, got.MaxHistoryTurns)
 }
 
