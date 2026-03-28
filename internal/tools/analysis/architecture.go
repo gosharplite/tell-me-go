@@ -173,23 +173,7 @@ func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[s
 
 	// Heartbeat while loading packages
 	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	go m.runHeartbeat(hb, done)
 
 	pkgs, err := m.Loader.LoadPackages(ctx)
 	close(done)
@@ -198,12 +182,7 @@ func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[s
 	}
 
 	// Final heartbeat before processing
-	if hb != nil {
-		select {
-		case hb <- struct{}{}:
-		default:
-		}
-	}
+	m.sendHeartbeat(hb)
 
 	violations := m.checkLayerViolations(pkgs, hb)
 	violations = append(violations, m.checkCircularDependencies(pkgs, hb)...)
@@ -213,6 +192,28 @@ func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[s
 	}
 
 	return tools.ToolResult{Text: m.formatReport(violations)}, nil
+}
+
+func (m *architectureManager) runHeartbeat(hb chan<- struct{}, done <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			m.sendHeartbeat(hb)
+		}
+	}
+}
+
+func (m *architectureManager) sendHeartbeat(hb chan<- struct{}) {
+	if hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func isLayer(pkgPath, layerName string) bool {
@@ -365,55 +366,15 @@ func isAlreadyReported(v violation, list []violation) bool {
 }
 
 func (m *architectureManager) checkCircularDependencies(pkgs map[string][]string, hb chan<- struct{}) []violation {
-	var violations []violation
-
-	visited := make(map[string]bool)
-	onStack := make(map[string]bool)
-	var path []string
-
-	var count int
-	var findCycles func(string)
-	findCycles = func(u string) {
-		count++
-		if count%10 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
-
-		visited[u] = true
-		onStack[u] = true
-		path = append(path, u)
-
-		for _, v := range pkgs[u] {
-			if !visited[v] {
-				findCycles(v)
-			} else if onStack[v] {
-				// Cycle detected
-				cycleStart := -1
-				for i, node := range path {
-					if node == v {
-						cycleStart = i
-						break
-					}
-				}
-				if cycleStart != -1 {
-					cyclePath := append(path[cycleStart:], v)
-					violations = append(violations, violation{
-						pkg:      m.shorten(u),
-						category: "[CIRCULAR REFERENCE]",
-						target:   m.shorten(v),
-						reason:   "Cycle: " + strings.Join(m.shortenList(cyclePath), " -> "),
-					})
-				}
-			}
-		}
-
-		onStack[u] = false
-		path = path[:len(path)-1]
+	detector := &circularDetector{
+		m:       m,
+		pkgs:    pkgs,
+		visited: make(map[string]bool),
+		onStack: make(map[string]bool),
+		hb:      hb,
 	}
 
+	// Sort packages for deterministic iteration
 	var sortedPkgs []string
 	for p := range pkgs {
 		sortedPkgs = append(sortedPkgs, p)
@@ -421,12 +382,64 @@ func (m *architectureManager) checkCircularDependencies(pkgs map[string][]string
 	sort.Strings(sortedPkgs)
 
 	for _, p := range sortedPkgs {
-		if !visited[p] {
-			findCycles(p)
+		if !detector.visited[p] {
+			detector.findCycles(p)
 		}
 	}
 
-	return violations
+	return detector.violations
+}
+
+type circularDetector struct {
+	m          *architectureManager
+	pkgs       map[string][]string
+	visited    map[string]bool
+	onStack    map[string]bool
+	path       []string
+	violations []violation
+	hb         chan<- struct{}
+	count      int
+}
+
+func (d *circularDetector) findCycles(u string) {
+	d.count++
+	if d.count%10 == 0 {
+		d.m.sendHeartbeat(d.hb)
+	}
+
+	d.visited[u] = true
+	d.onStack[u] = true
+	d.path = append(d.path, u)
+
+	for _, v := range d.pkgs[u] {
+		if !d.visited[v] {
+			d.findCycles(v)
+		} else if d.onStack[v] {
+			d.reportCycle(u, v)
+		}
+	}
+
+	d.onStack[u] = false
+	d.path = d.path[:len(d.path)-1]
+}
+
+func (d *circularDetector) reportCycle(u, v string) {
+	cycleStart := -1
+	for i, node := range d.path {
+		if node == v {
+			cycleStart = i
+			break
+		}
+	}
+	if cycleStart != -1 {
+		cyclePath := append(d.path[cycleStart:], v)
+		d.violations = append(d.violations, violation{
+			pkg:      d.m.shorten(u),
+			category: "[CIRCULAR REFERENCE]",
+			target:   d.m.shorten(v),
+			reason:   "Cycle: " + strings.Join(d.m.shortenList(cyclePath), " -> "),
+		})
+	}
 }
 
 func (m *architectureManager) shorten(pkg string) string {

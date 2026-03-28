@@ -70,6 +70,7 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 
 	// Execute
 	result, err := exec.runtime.Execute(ctx, tool, fc, nil)
+	require.NoError(t, err)
 
 	// Should have timed out due to heartbeat missing
 	assert.Error(t, result.Error)

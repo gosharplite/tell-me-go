@@ -158,17 +158,15 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 		return nil, fmt.Errorf("failed to stat global prompts file: %w", err)
 	}
 
-	pos := info.Size()
-	if pos == 0 {
-		return nil, nil
+	scanner := &reverseScanner{
+		file: f,
+		pos:  info.Size(),
 	}
 
-	const chunkSize = 4096
 	seen := make(map[string]bool)
 	result := make([]promptEntry, 0, limit)
-	var leftover []byte
 
-	for pos > 0 && len(result) < limit {
+	for scanner.pos > 0 && len(result) < limit {
 		// Periodically check for context cancellation
 		select {
 		case <-ctx.Done():
@@ -176,20 +174,9 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 		default:
 		}
 
-		chunk, err := t.readPreviousChunk(f, &pos, chunkSize)
+		lines, err := scanner.scanChunk()
 		if err != nil {
 			return nil, err
-		}
-
-		// Combine with leftover from previous chunk
-		data := append(chunk, leftover...)
-		lines := bytes.Split(data, []byte{'\n'})
-
-		if pos > 0 {
-			leftover = lines[0]
-			lines = lines[1:]
-		} else {
-			leftover = nil
 		}
 
 		// Process lines in reverse order (most recent first)
@@ -197,6 +184,37 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 	}
 
 	return result, nil
+}
+
+type reverseScanner struct {
+	file     *os.File
+	pos      int64
+	leftover []byte
+}
+
+func (s *reverseScanner) scanChunk() ([][]byte, error) {
+	const chunkSize = 4096
+	readSize := chunkSize
+	if s.pos < int64(readSize) {
+		readSize = int(s.pos)
+	}
+	s.pos -= int64(readSize)
+
+	chunk := make([]byte, readSize)
+	if _, err := s.file.ReadAt(chunk, s.pos); err != nil {
+		return nil, fmt.Errorf("failed to read global prompts at %d: %w", s.pos, err)
+	}
+
+	// Combine with leftover from previous chunk
+	data := append(chunk, s.leftover...)
+	lines := bytes.Split(data, []byte{'\n'})
+
+	if s.pos > 0 {
+		s.leftover = lines[0]
+		return lines[1:], nil
+	}
+	s.leftover = nil
+	return lines, nil
 }
 
 // processReversedLines iterates through the lines backwards, unmarshals them, deduplicates, and appends to results.
@@ -319,20 +337,6 @@ func (t *globalPromptTracker) writeCompactedTempFile(w io.Writer, entries []prom
 		}
 	}
 	return true
-}
-
-func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSize int) ([]byte, error) {
-	readSize := chunkSize
-	if *pos < int64(readSize) {
-		readSize = int(*pos)
-	}
-	*pos -= int64(readSize)
-
-	chunk := make([]byte, readSize)
-	if _, err := f.ReadAt(chunk, *pos); err != nil {
-		return nil, fmt.Errorf("failed to read global prompts at %d: %w", *pos, err)
-	}
-	return chunk, nil
 }
 
 func copyFile(src, dst string) error {

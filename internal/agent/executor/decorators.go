@@ -149,11 +149,8 @@ func (d *safetyDecorator) monitorLiveness(
 	heartbeat chan<- struct{},
 	cancel context.CancelFunc,
 ) {
-	var timer *time.Timer
-	if opts.LivenessThreshold > 0 {
-		timer = time.NewTimer(opts.LivenessThreshold)
-		defer timer.Stop()
-	}
+	timer := newLivenessTimer(opts.LivenessThreshold)
+	defer timer.stop()
 
 	for {
 		select {
@@ -169,21 +166,8 @@ func (d *safetyDecorator) monitorLiveness(
 				}
 			}
 
-			if timer != nil {
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				timer.Reset(opts.LivenessThreshold)
-			}
-		case <-func() <-chan time.Time {
-			if timer != nil {
-				return timer.C
-			}
-			return nil
-		}():
+			timer.reset()
+		case <-timer.channel():
 			d.logger.Error("tool_liveness_timeout", "tool_name", toolName, "threshold", opts.LivenessThreshold)
 			cancel()
 			return
@@ -191,6 +175,49 @@ func (d *safetyDecorator) monitorLiveness(
 			return
 		}
 	}
+}
+
+// livenessTimer encapsulates the timer logic for tool liveness checks.
+type livenessTimer struct {
+	timer     *time.Timer
+	threshold time.Duration
+}
+
+func newLivenessTimer(threshold time.Duration) *livenessTimer {
+	var t *time.Timer
+	if threshold > 0 {
+		t = time.NewTimer(threshold)
+	}
+	return &livenessTimer{
+		timer:     t,
+		threshold: threshold,
+	}
+}
+
+func (t *livenessTimer) reset() {
+	if t.timer == nil {
+		return
+	}
+	if !t.timer.Stop() {
+		select {
+		case <-t.timer.C:
+		default:
+		}
+	}
+	t.timer.Reset(t.threshold)
+}
+
+func (t *livenessTimer) stop() {
+	if t.timer != nil {
+		t.timer.Stop()
+	}
+}
+
+func (t *livenessTimer) channel() <-chan time.Time {
+	if t.timer == nil {
+		return nil
+	}
+	return t.timer.C
 }
 
 func (d *safetyDecorator) handlePanic(ctx context.Context, r interface{}, toolName string) tools.ToolResult {

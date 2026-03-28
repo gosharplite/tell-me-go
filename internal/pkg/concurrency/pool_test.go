@@ -81,8 +81,8 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 		p.Shutdown()
 
 		err := p.Submit(func(ctx context.Context) {})
-		if !errors.Is(err, ErrPoolClosed) {
-			t.Errorf("Expected ErrPoolClosed after Shutdown, got %v", err)
+		if !errors.Is(err, errPoolClosed) {
+			t.Errorf("Expected errPoolClosed after Shutdown, got %v", err)
 		}
 	})
 
@@ -154,8 +154,8 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 		p.Shutdown()
 
 		err := p.Submit(func(ctx context.Context) {})
-		if !errors.Is(err, ErrPoolClosed) {
-			t.Errorf("Expected ErrPoolClosed after pool context is cancelled via Shutdown, got %v", err)
+		if !errors.Is(err, errPoolClosed) {
+			t.Errorf("Expected errPoolClosed after pool context is cancelled via Shutdown, got %v", err)
 		}
 	})
 }
