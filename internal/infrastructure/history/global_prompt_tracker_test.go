@@ -14,7 +14,7 @@ import (
 
 func TestGlobalPromptTracker(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker := NewGlobalPromptTracker(tmpDir)
+	tracker, _ := NewGlobalPromptTracker(tmpDir)
 
 	prompts := []string{"hello", "world", "hello", "foo", "bar", "hello"}
 	for _, p := range prompts {
@@ -55,7 +55,7 @@ func TestGlobalPromptTracker(t *testing.T) {
 
 func TestGlobalPromptTrackerNoFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker := NewGlobalPromptTracker(filepath.Join(tmpDir, "non-existent"))
+	tracker, _ := NewGlobalPromptTracker(filepath.Join(tmpDir, "non-existent"))
 
 	got, err := tracker.LoadTopN(context.Background(), 10)
 	if err != nil {
@@ -68,7 +68,7 @@ func TestGlobalPromptTrackerNoFile(t *testing.T) {
 
 func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker := NewGlobalPromptTracker(tmpDir)
+	tracker, _ := NewGlobalPromptTracker(tmpDir)
 
 	// Create a payload larger than 64KB (e.g., 70,000 chars)
 	// We'll use a string that's clearly larger than bufio.MaxScanTokenSize (64*1024)
@@ -101,7 +101,7 @@ func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 
 func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker := NewGlobalPromptTracker(tmpDir)
+	tracker, _ := NewGlobalPromptTracker(tmpDir)
 
 	// Add 10 "duplicate" prompts
 	for i := 0; i < 10; i++ {
@@ -114,7 +114,7 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	uniquePrompts := []string{"p1", "p2", "p3", "p4", "p5"}
 	// We append them first, so they are at the beginning of the file.
 	// But to test that it returns them even if they are far back:
-	tracker = NewGlobalPromptTracker(t.TempDir()) // Reset
+	tracker, _ = NewGlobalPromptTracker(t.TempDir()) // Reset
 	for _, p := range uniquePrompts {
 		if err := tracker.Append(p); err != nil {
 			t.Fatalf("Append failed: %v", err)
@@ -146,7 +146,8 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 
 func TestGlobalPromptTracker_Compaction(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker := NewGlobalPromptTracker(tmpDir).(*globalPromptTracker)
+	tr, _ := NewGlobalPromptTracker(tmpDir)
+	tracker := tr.(*globalPromptTracker)
 
 	// Add duplicates and many entries
 	for i := 0; i < 10; i++ {
@@ -187,7 +188,8 @@ func TestGlobalPromptTracker_Compaction(t *testing.T) {
 
 func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker := NewGlobalPromptTracker(tmpDir).(*globalPromptTracker)
+	tr, _ := NewGlobalPromptTracker(tmpDir)
+	tracker := tr.(*globalPromptTracker)
 
 	// Append a lot of duplicates to exceed 150KB
 	largePrompt := string(bytes.Repeat([]byte("A"), 1000))
@@ -198,25 +200,104 @@ func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
 	// Verify size crossed threshold (eventually, during the loop)
 	// We don't check it here because compaction might have already started and shrunk the file.
 
-	// Wait for async compaction to reduce the file to 1 unique line.
-	// Since compaction is async and there's a race between Append and Rename,
-	// we might end up with more than 1 line if an Append happened after the last Rename.
-	// But it should definitely be much less than 200.
+	// Wait up to 3 seconds for async compaction
+	timeout := time.After(3 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
 	var finalLines int
-	for i := 0; i < 50; i++ {
-		content, _ := os.ReadFile(tracker.filepath)
-		lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
-		finalLines = len(lines)
-		if finalLines < 200 {
-			break
+loop:
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("timed out waiting for file to compact: got %d lines", finalLines)
+		case <-ticker.C:
+			content, err := os.ReadFile(tracker.filepath)
+			if err != nil {
+				continue // File might be locked/in-transition briefly
+			}
+			lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
+			finalLines = len(lines)
+			if finalLines < 200 {
+				break loop
+			}
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
 
-	if finalLines >= 200 {
-		t.Errorf("file was not compacted: got %d lines; want < 200", finalLines)
-	}
 	if finalLines == 0 {
 		t.Errorf("file should not be empty")
 	}
+}
+
+func TestGlobalPromptTracker_Migration(t *testing.T) {
+	t.Run("successful migration", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		legacyFile := filepath.Join(tmpDir, "global_prompts.jsonl")
+		newFile := filepath.Join(tmpDir, ".tellmego", "prompts.jsonl")
+
+		// 1. Setup legacy data
+		legacyContent := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
+		if err := os.WriteFile(legacyFile, legacyContent, 0644); err != nil {
+			t.Fatalf("failed to write legacy file: %v", err)
+		}
+
+		// 2. Trigger migration
+		_, _ = NewGlobalPromptTracker(tmpDir)
+
+		// 3. Verify legacy file is gone
+		if _, err := os.Stat(legacyFile); !os.IsNotExist(err) {
+			t.Errorf("expected legacy file to be removed, got err: %v", err)
+		}
+
+		// 4. Verify new file exists and content matches
+		if _, err := os.Stat(newFile); os.IsNotExist(err) {
+			t.Fatalf("expected new file to exist at %s", newFile)
+		}
+
+		migratedContent, err := os.ReadFile(newFile)
+		if err != nil {
+			t.Fatalf("failed to read migrated file: %v", err)
+		}
+
+		if !bytes.Equal(legacyContent, migratedContent) {
+			t.Errorf("content mismatch.\nwant: %s\ngot:  %s", legacyContent, migratedContent)
+		}
+	})
+
+	t.Run("no migration if new file exists", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		legacyFile := filepath.Join(tmpDir, "global_prompts.jsonl")
+		newDir := filepath.Join(tmpDir, ".tellmego")
+		newFile := filepath.Join(newDir, "prompts.jsonl")
+
+		// 1. Setup legacy and existing data
+		legacyContent := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
+		if err := os.WriteFile(legacyFile, legacyContent, 0644); err != nil {
+			t.Fatalf("failed to write legacy file: %v", err)
+		}
+
+		_ = os.MkdirAll(newDir, 0755)
+		newContent := []byte(`{"timestamp":"2024-01-01T00:00:00Z","prompt":"new test"}` + "\n")
+		if err := os.WriteFile(newFile, newContent, 0644); err != nil {
+			t.Fatalf("failed to write new file: %v", err)
+		}
+
+		// 2. Trigger migration attempt
+		_, _ = NewGlobalPromptTracker(tmpDir)
+
+		// 3. Verify legacy file is STILL THERE (no migration)
+		if _, err := os.Stat(legacyFile); os.IsNotExist(err) {
+			t.Errorf("expected legacy file to still exist")
+		}
+
+		// 4. Verify new file content is NOT overwritten
+		migratedContent, err := os.ReadFile(newFile)
+		if err != nil {
+			t.Fatalf("failed to read new file: %v", err)
+		}
+
+		if !bytes.Equal(newContent, migratedContent) {
+			t.Errorf("content mismatch.\nwant: %s\ngot:  %s", newContent, migratedContent)
+		}
+	})
 }

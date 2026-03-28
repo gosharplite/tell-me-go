@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -38,7 +39,7 @@ type globalPromptTracker struct {
 }
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
-func NewGlobalPromptTracker(homeDir string) ports.PromptTracker {
+func NewGlobalPromptTracker(homeDir string) (ports.PromptTracker, error) {
 	// Ensure the directory exists
 	dir := filepath.Join(homeDir, ".tellmego")
 	_ = os.MkdirAll(dir, 0755)
@@ -46,16 +47,27 @@ func NewGlobalPromptTracker(homeDir string) ports.PromptTracker {
 	trackerPath := filepath.Join(dir, "prompts.jsonl")
 	oldTrackerPath := filepath.Join(homeDir, "global_prompts.jsonl")
 
+	tracker := &globalPromptTracker{
+		filepath: trackerPath,
+	}
+
 	// Migrate old prompts file to the new location to prevent data loss
 	if _, err := os.Stat(trackerPath); os.IsNotExist(err) {
 		if _, err := os.Stat(oldTrackerPath); err == nil {
-			_ = os.Rename(oldTrackerPath, trackerPath)
+			// Robust: Attempt rename, fallback to copy+delete
+			err := os.Rename(oldTrackerPath, trackerPath)
+			if err != nil {
+				// Fallback for EXDEV (cross-device link) or other rename failures
+				if copyErr := copyFile(oldTrackerPath, trackerPath); copyErr != nil {
+					return tracker, fmt.Errorf("failed to migrate history file: %w", copyErr)
+				}
+				// Only remove the old file if the copy was successful
+				_ = os.Remove(oldTrackerPath)
+			}
 		}
 	}
 
-	return &globalPromptTracker{
-		filepath: trackerPath,
-	}
+	return tracker, nil
 }
 
 // Append records a new prompt to the global log file.
@@ -289,4 +301,23 @@ func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSiz
 		return nil, fmt.Errorf("failed to read global prompts at %d: %w", *pos, err)
 	}
 	return chunk, nil
+}
+
+func copyFile(src, dst string) error {
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = source.Close() }()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = destination.Close() }()
+
+	if _, err := io.Copy(destination, source); err != nil {
+		return err
+	}
+	return destination.Sync()
 }
