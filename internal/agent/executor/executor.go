@@ -581,6 +581,9 @@ func (e *Orchestrator) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 }
 
 func (e *Orchestrator) executeTool(parentCtx context.Context, call *llm.FunctionCall) (result tools.ToolResult) {
+	// CRITICAL: This recover block protects the Orchestrator's main resolution loop.
+	// It catches panics that occur during synchronous routing, decorator setup,
+	// or telemetry wrapping, ensuring the agent does not crash before the tool is even dispatched.
 	defer func() {
 		if r := recover(); r != nil {
 			result = tools.ToolResult{

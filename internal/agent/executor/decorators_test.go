@@ -205,3 +205,29 @@ func TestTracingDecorator(t *testing.T) {
 	assert.Equal(t, "ok", res.Text)
 	assert.True(t, next.Called)
 }
+
+func TestFormatToolExecutionError(t *testing.T) {
+	err1 := errors.New("system error")
+	err2 := errors.New("tool error")
+
+	t.Run("both errors", func(t *testing.T) {
+		got := formatToolExecutionError(err1, err2)
+		assert.Contains(t, got, "system error")
+		assert.Contains(t, got, "tool error")
+	})
+
+	t.Run("only system error", func(t *testing.T) {
+		got := formatToolExecutionError(err1, nil)
+		assert.Equal(t, "system error", got)
+	})
+
+	t.Run("only tool error", func(t *testing.T) {
+		got := formatToolExecutionError(nil, err2)
+		assert.Equal(t, "tool error", got)
+	})
+
+	t.Run("no errors", func(t *testing.T) {
+		got := formatToolExecutionError(nil, nil)
+		assert.Equal(t, "", got)
+	})
+}

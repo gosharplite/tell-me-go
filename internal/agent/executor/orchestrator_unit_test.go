@@ -106,7 +106,7 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	releaseCh1 := make(chan struct{})
 	releaseCh2 := make(chan struct{})
 	var startedCount atomic.Int32
-	
+
 	mock := &mockExecutor{
 		Result: tools.ToolResult{Text: "done"},
 		Delay:  1, // Trigger block
@@ -124,15 +124,15 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	// Actually, the current mockExecutor only has one BlockCh.
 	// Let's refactor mockExecutor to support a channel provider or just use a single one that we close in stages?
 	// No, once closed, it's closed.
-	
+
 	// Better: use a channel per call?
-	// Let's use a simpler approach for serial: 
+	// Let's use a simpler approach for serial:
 	// The first call starts, we wait for it to be "started", then we release it.
 	// THEN we wait for second call to start.
-	
+
 	currentReleaseCh := make(chan struct{})
 	mock.BlockCh = currentReleaseCh
-	
+
 	exec.runtime = mock
 
 	content := &llm.Content{
@@ -149,7 +149,7 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 		assert.Equal(t, int32(1), startedCount.Load())
 		// Release first call
 		close(currentReleaseCh)
-		
+
 		// Wait for second call
 		<-releaseCh2
 		// Second call is active

@@ -95,6 +95,10 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 	outCh := make(chan tools.ToolOutput, 1)
 
 	go func() {
+		// CRITICAL: This recover block protects the isolated tool execution thread.
+		// It catches panics originating inside the actual tool implementation (e.g., nil pointer dereferences
+		// in a third-party SDK) and safely converts them into tool execution errors.
+		// Do NOT remove this, as the Orchestrator's main recover block cannot catch panics in this detached goroutine.
 		defer func() {
 			if r := recover(); r != nil {
 				outCh <- tools.ToolOutput{
@@ -219,7 +223,9 @@ func classifyToolError(err error, resultErr error) (string, string) {
 }
 
 func formatToolExecutionError(err error, resultErr error) string {
-	if err != nil {
+	if err != nil && resultErr != nil {
+		return errors.Join(err, resultErr).Error()
+	} else if err != nil {
 		return err.Error()
 	} else if resultErr != nil {
 		return resultErr.Error()
