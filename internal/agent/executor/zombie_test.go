@@ -70,7 +70,7 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithToolTimeout(200*time.Millisecond))
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -123,8 +123,8 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 
 	// Use short zombie timeout, but generous enough for -race
 	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
-		WithZombieTimeout(200*time.Millisecond),
-		WithToolTimeout(200*time.Millisecond),
+		withZombieTimeout(200*time.Millisecond),
+		withToolTimeout(200*time.Millisecond),
 	)
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)

@@ -56,8 +56,8 @@ func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	}
 }
 
-// WithZombieTimeout sets the timeout for zombie tool detection.
-func WithZombieTimeout(timeout time.Duration) executorOption {
+// withZombieTimeout sets the timeout for zombie tool detection.
+func withZombieTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
 		e.zombieTimeout = timeout
 	}
@@ -625,8 +625,8 @@ func buildFunctionResponse(callID, name, output string) *llm.Part {
 	}
 }
 
-// WithToolTimeout sets the timeout for tools.
-func WithToolTimeout(timeout time.Duration) executorOption {
+// withToolTimeout sets the timeout for tools.
+func withToolTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
 		e.toolTimeout = timeout
 	}
