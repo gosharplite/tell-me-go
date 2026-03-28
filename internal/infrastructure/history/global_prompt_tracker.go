@@ -39,8 +39,23 @@ type globalPromptTracker struct {
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
 func NewGlobalPromptTracker(homeDir string) ports.PromptTracker {
+	// Ensure the directory exists
+	dir := filepath.Join(homeDir, ".tellmego")
+	_ = os.MkdirAll(dir, 0755)
+
+	trackerPath := filepath.Join(dir, "prompts.jsonl")
+
+	// --- NEW CODE: Cleanup orphaned temp files from previous hard crashes ---
+	pattern := filepath.Join(dir, filepath.Base(trackerPath)+".tmp-*")
+	if matches, err := filepath.Glob(pattern); err == nil {
+		for _, match := range matches {
+			_ = os.Remove(match) // Best-effort cleanup
+		}
+	}
+	// --- END NEW CODE ---
+
 	return &globalPromptTracker{
-		filepath: filepath.Join(homeDir, "global_prompts.jsonl"),
+		filepath: trackerPath,
 	}
 }
 

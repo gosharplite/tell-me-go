@@ -527,34 +527,37 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 }
 
 func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string, turnIndex int) string {
-	// Check for global layout/state changes
+	// 1. Check for global layout/state changes
 	if m.lastWidth != m.width || m.lastQuery != m.currentQuery {
 		clear(m.cachedThoughts)
 		m.lastWidth = m.width
 		m.lastQuery = m.currentQuery
 	}
 
-	// Check cache
+	var wrappedText string
+
+	// 2. Check cache for the wrapped text (excluding the prefix)
 	if cached, ok := m.cachedThoughts[turnIndex]; ok {
-		return cached
+		wrappedText = cached
+	} else {
+		// 3. Expensive operations: String concatenation, highlighting, and Lipgloss rendering
+		thoughtText := "💭 [THOUGHTS]\n" + dto.ThoughtProcess
+		if m.currentQuery != "" {
+			thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
+		}
+
+		maxWidth := m.width - len(prefix)
+		if maxWidth < 20 {
+			maxWidth = 20 // Fallback minimum width
+		}
+
+		wrappedText = thoughtStyle.Width(maxWidth).Render(thoughtText)
+
+		// Cache ONLY the expensive render step
+		m.cachedThoughts[turnIndex] = wrappedText
 	}
 
-	// Add a visual icon and newline for better separation
-	thoughtText := "💭 [THOUGHTS]\n" + dto.ThoughtProcess
-
-	if m.currentQuery != "" {
-		thoughtText = m.highlightMatches(thoughtText, m.currentQuery)
-	}
-
-	// Calculate safe bounds for text wrapping
-	maxWidth := m.width - len(prefix)
-	if maxWidth < 20 {
-		maxWidth = 20 // Fallback minimum width
-	}
-
-	// Lipgloss handles ANSI sequences correctly when word-wrapping
-	wrappedText := thoughtStyle.Width(maxWidth).Render(thoughtText)
-
+	// 4. Apply the dynamic prefix on every UI loop
 	var sb strings.Builder
 	lines := strings.Split(wrappedText, "\n")
 	for _, line := range lines {
@@ -564,12 +567,7 @@ func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix strin
 	}
 	sb.WriteString("\n")
 
-	result := sb.String()
-
-	// Update Cache
-	m.cachedThoughts[turnIndex] = result
-
-	return result
+	return sb.String()
 }
 
 func (m *rootBrowserModel) renderToolCalls(dto ports.HistoryViewDTO, prefix string) string {
