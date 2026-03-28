@@ -64,17 +64,6 @@ func (m *mockCircuitBreakerManager) Record(toolName string, success bool) {
 	}
 }
 
-type mockResolver struct {
-	ResolveFunc func(call *llm.FunctionCall) (*tools.ToolDeclaration, error)
-}
-
-func (m *mockResolver) Resolve(call *llm.FunctionCall) (*tools.ToolDeclaration, error) {
-	if m.ResolveFunc != nil {
-		return m.ResolveFunc(call)
-	}
-	return &tools.ToolDeclaration{Name: call.Name}, nil
-}
-
 type mockEventBus struct {
 	events.EventBus
 	Published []events.Event
