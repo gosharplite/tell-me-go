@@ -193,26 +193,32 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 		}
 
 		// Process lines in reverse order (most recent first)
-		for i := len(lines) - 1; i >= 0; i-- {
-			if len(lines[i]) == 0 {
-				continue
-			}
+		result = t.processReversedLines(lines, seen, result, limit)
+	}
 
-			var entry promptEntry
-			if err := json.Unmarshal(lines[i], &entry); err == nil {
-				p := entry.Prompt
-				if p != "" && !seen[p] {
-					seen[p] = true
-					result = append(result, entry)
-					if len(result) >= limit {
-						break
-					}
+	return result, nil
+}
+
+// processReversedLines iterates through the lines backwards, unmarshals them, deduplicates, and appends to results.
+func (t *globalPromptTracker) processReversedLines(lines [][]byte, seen map[string]bool, result []promptEntry, limit int) []promptEntry {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if len(lines[i]) == 0 {
+			continue
+		}
+
+		var entry promptEntry
+		if err := json.Unmarshal(lines[i], &entry); err == nil {
+			p := entry.Prompt
+			if p != "" && !seen[p] {
+				seen[p] = true
+				result = append(result, entry)
+				if len(result) >= limit {
+					break
 				}
 			}
 		}
 	}
-
-	return result, nil
+	return result
 }
 
 func (t *globalPromptTracker) compactLog(ctx context.Context) {
