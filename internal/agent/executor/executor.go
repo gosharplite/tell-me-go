@@ -297,6 +297,9 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	// This ensures that all goroutines started by the plan are properly joined.
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
+		if testExecutionPlanFn != nil {
+			return testExecutionPlanFn(e, gCtx, calls, collector.ch, declinedMap)
+		}
 		return e.runExecutionPlan(gCtx, calls, collector.ch, declinedMap)
 	})
 
@@ -634,3 +637,7 @@ func withToolTimeout(timeout time.Duration) executorOption {
 		e.toolTimeout = timeout
 	}
 }
+
+
+// testExecutionPlanFn is a test hook for injecting a mocked execution plan.
+var testExecutionPlanFn func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error

@@ -6,6 +6,7 @@ package history
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -418,5 +419,22 @@ func TestGlobalPromptTracker_CompactionIgnoresContextCancellation(t *testing.T) 
 	}
 	if len(content) == 0 || content[0] != largePrompt {
 		t.Errorf("Data loss or corruption detected after compaction")
+	}
+}
+
+type errorWriter struct{}
+
+func (e *errorWriter) Write(p []byte) (n int, err error) {
+	return 0, io.ErrShortWrite
+}
+
+func TestPromptTracker_CompactionWriteFailure(t *testing.T) {
+	tracker := &globalPromptTracker{}
+	entries := []promptEntry{
+		{Timestamp: "now", Prompt: "test"},
+	}
+	success := tracker.writeCompactedTempFile(&errorWriter{}, entries)
+	if success {
+		t.Errorf("Expected writeCompactedTempFile to fail with errorWriter")
 	}
 }

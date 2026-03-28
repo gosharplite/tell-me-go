@@ -308,13 +308,13 @@ func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
 	return os.Rename(tmpPath, t.filepath) == nil
 }
 
-func (t *globalPromptTracker) writeCompactedTempFile(f *os.File, entries []promptEntry) bool {
+func (t *globalPromptTracker) writeCompactedTempFile(w io.Writer, entries []promptEntry) bool {
 	for _, entry := range entries {
 		data, err := json.Marshal(entry)
 		if err != nil {
 			continue
 		}
-		if _, err := f.Write(append(data, '\n')); err != nil {
+		if _, err := w.Write(append(data, '\n')); err != nil {
 			return false
 		}
 	}
