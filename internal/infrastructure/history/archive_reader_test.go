@@ -217,6 +217,16 @@ func TestJSONLArchiveReader_ReadPage_NonExistent(t *testing.T) {
 	}
 }
 
+type readPreviousTestCase struct {
+	name           string
+	limit          int
+	offset         int64
+	expectedLen    int
+	expectedFirst  string
+	expectedSecond string
+	expectedNext   int64
+}
+
 func TestJSONLArchiveReader_ReadPrevious(t *testing.T) {
 	ctx := context.Background()
 	fs := persistence.NewOSFileSystem()
@@ -244,51 +254,63 @@ func TestJSONLArchiveReader_ReadPrevious(t *testing.T) {
 
 	reader := history.NewJSONLArchiveReader(fs, archivePath)
 
-	t.Run("read last page (limit 2)", func(t *testing.T) {
-		dtos, nextOffset, err := reader.ReadPrevious(ctx, 2, -1)
-		if err != nil {
-			t.Fatalf("failed: %v", err)
-		}
-		if len(dtos) != 2 {
-			t.Fatalf("expected 2, got %d", len(dtos))
-		}
-		if dtos[0].ContentPreview != "Msg 3" || dtos[1].ContentPreview != "Msg 4" {
-			t.Errorf("unexpected content: %+v", dtos)
-		}
-		if nextOffset != offsets[2] {
-			t.Errorf("expected offset %d, got %d", offsets[2], nextOffset)
-		}
-	})
+	tests := []readPreviousTestCase{
+		{
+			name:           "read last page (limit 2)",
+			limit:          2,
+			offset:         -1,
+			expectedLen:    2,
+			expectedFirst:  "Msg 3",
+			expectedSecond: "Msg 4",
+			expectedNext:   offsets[2],
+		},
+		{
+			name:           "read previous page from offset",
+			limit:          2,
+			offset:         offsets[2],
+			expectedLen:    2,
+			expectedFirst:  "Msg 1",
+			expectedSecond: "Msg 2",
+			expectedNext:   0,
+		},
+		{
+			name:           "read with limit larger than available",
+			limit:          10,
+			offset:         offsets[2],
+			expectedLen:    2,
+			expectedFirst:  "Msg 1",
+			expectedSecond: "Msg 2",
+			expectedNext:   0,
+		},
+	}
 
-	t.Run("read previous page from offset", func(t *testing.T) {
-		dtos, nextOffset, err := reader.ReadPrevious(ctx, 2, offsets[2])
-		if err != nil {
-			t.Fatalf("failed: %v", err)
-		}
-		if len(dtos) != 2 {
-			t.Fatalf("expected 2, got %d", len(dtos))
-		}
-		if dtos[0].ContentPreview != "Msg 1" || dtos[1].ContentPreview != "Msg 2" {
-			t.Errorf("unexpected content: %+v", dtos)
-		}
-		if nextOffset != 0 {
-			t.Errorf("expected offset 0, got %d", nextOffset)
-		}
-	})
-
-	t.Run("read with limit larger than available", func(t *testing.T) {
-		dtos, nextOffset, err := reader.ReadPrevious(ctx, 10, offsets[2])
-		if err != nil {
-			t.Fatalf("failed: %v", err)
-		}
-		if len(dtos) != 2 {
-			t.Fatalf("expected 2, got %d", len(dtos))
-		}
-		if nextOffset != 0 {
-			t.Errorf("expected offset 0, got %d", nextOffset)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dtos, nextOffset, err := reader.ReadPrevious(ctx, tt.limit, tt.offset)
+			assertReadPreviousResult(t, dtos, nextOffset, err, tt)
+		})
+	}
 }
+
+func assertReadPreviousResult(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, err error, tt readPreviousTestCase) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%s: failed: %v", tt.name, err)
+	}
+	if len(dtos) != tt.expectedLen {
+		t.Fatalf("%s: expected %d, got %d", tt.name, tt.expectedLen, len(dtos))
+	}
+	if tt.expectedLen >= 1 && dtos[0].ContentPreview != tt.expectedFirst {
+		t.Errorf("%s: unexpected first content: got %q, want %q", tt.name, dtos[0].ContentPreview, tt.expectedFirst)
+	}
+	if tt.expectedLen >= 2 && dtos[1].ContentPreview != tt.expectedSecond {
+		t.Errorf("%s: unexpected second content: got %q, want %q", tt.name, dtos[1].ContentPreview, tt.expectedSecond)
+	}
+	if nextOffset != tt.expectedNext {
+		t.Errorf("%s: expected offset %d, got %d", tt.name, tt.expectedNext, nextOffset)
+	}
+}
+
 
 func TestJSONLArchiveReader_ReadPrevious_Concurrency(t *testing.T) {
 	ctx := context.Background()
