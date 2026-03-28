@@ -16,6 +16,8 @@ import (
 type mockZombieRegistry struct {
 	executeFn         func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error)
 	getDeclarationsFn func() []*tools.ToolDeclaration
+	isSerialFn        func(name string) bool
+	isLongRunningFn   func(name string) bool
 }
 
 func (m *mockZombieRegistry) GetDeclarations() []*tools.ToolDeclaration {
@@ -36,8 +38,18 @@ func (m *mockZombieRegistry) Execute(ctx context.Context, name string, args map[
 	}
 	return tools.ToolResult{Text: "ok"}, nil
 }
-func (m *mockZombieRegistry) IsLongRunning(name string) bool { return false }
-func (m *mockZombieRegistry) IsSerial(name string) bool      { return false }
+func (m *mockZombieRegistry) IsLongRunning(name string) bool {
+	if m.isLongRunningFn != nil {
+		return m.isLongRunningFn(name)
+	}
+	return false
+}
+func (m *mockZombieRegistry) IsSerial(name string) bool {
+	if m.isSerialFn != nil {
+		return m.isSerialFn(name)
+	}
+	return false
+}
 
 func TestOrchestrator_GoroutineLeak(t *testing.T) {
 	t.Parallel()
