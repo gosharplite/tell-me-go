@@ -26,7 +26,7 @@ type authDecorator struct {
 	auth ToolAuthService
 }
 
-func NewAuthDecorator(next ToolExecutor, auth ToolAuthService) ToolExecutor {
+func newAuthDecorator(next ToolExecutor, auth ToolAuthService) ToolExecutor {
 	return &authDecorator{next: next, auth: auth}
 }
 
@@ -44,7 +44,7 @@ type circuitBreakerDecorator struct {
 	cb   CircuitBreakerManager
 }
 
-func NewCircuitBreakerDecorator(next ToolExecutor, cb CircuitBreakerManager) ToolExecutor {
+func newCircuitBreakerDecorator(next ToolExecutor, cb CircuitBreakerManager) ToolExecutor {
 	return &circuitBreakerDecorator{next: next, cb: cb}
 }
 
@@ -70,7 +70,7 @@ type safetyDecorator struct {
 	zombieTimeout      func() time.Duration
 }
 
-func NewSafetyDecorator(next ToolExecutor, registry tools.Registry, logger ports.Logger, bus events.EventBus, zombie *tools.ZombieTool, toolTimeout, longRunningTimeout, zombieTimeout func() time.Duration) ToolExecutor {
+func newSafetyDecorator(next ToolExecutor, registry tools.Registry, logger ports.Logger, bus events.EventBus, zombie *tools.ZombieTool, toolTimeout, longRunningTimeout, zombieTimeout func() time.Duration) ToolExecutor {
 	return &safetyDecorator{
 		next:               next,
 		registry:           registry,
@@ -150,7 +150,7 @@ type tracingDecorator struct {
 	logger   ports.Logger
 }
 
-func NewTracingDecorator(next ToolExecutor, registry tools.Registry, logger ports.Logger) ToolExecutor {
+func newTracingDecorator(next ToolExecutor, registry tools.Registry, logger ports.Logger) ToolExecutor {
 	return &tracingDecorator{next: next, registry: registry, logger: logger}
 }
 

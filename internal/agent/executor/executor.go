@@ -102,15 +102,15 @@ func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus ev
 		}
 	}
 
-	e.resolver = NewToolResolutionService(registry)
+	e.resolver = newToolResolutionService(registry)
 	authService := newSecurityAuthorizer(sm, registry)
 	e.authorizer = authService // Still used for Batch Consent
 
 	// Wire the ToolExecutor chain
-	var exec ToolExecutor = NewBaseRuntime(registry)
-	exec = NewAuthDecorator(exec, authService)
-	exec = NewCircuitBreakerDecorator(exec, e.failures)
-	exec = NewTracingDecorator(exec, registry, logger)
+	var exec ToolExecutor = newBaseRuntime(registry)
+	exec = newAuthDecorator(exec, authService)
+	exec = newCircuitBreakerDecorator(exec, e.failures)
+	exec = newTracingDecorator(exec, registry, logger)
 
 	// Use functions to provide dynamic timeouts from the Orchestrator
 	getToolTimeout := func() time.Duration {
@@ -129,7 +129,7 @@ func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus ev
 		return e.zombieTimeout
 	}
 
-	exec = NewSafetyDecorator(exec, registry, logger, bus, e.zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
+	exec = newSafetyDecorator(exec, registry, logger, bus, e.zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
 
 	e.runtime = exec
 

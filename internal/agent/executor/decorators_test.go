@@ -53,7 +53,7 @@ func TestAuthDecorator(t *testing.T) {
 			t.Parallel()
 			next := &mockExecutor{Result: tt.nextResult}
 			auth := &mockToolAuthService{AuthorizeFunc: tt.authFunc}
-			decorator := NewAuthDecorator(next, auth)
+			decorator := newAuthDecorator(next, auth)
 
 			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
 
@@ -110,7 +110,7 @@ func TestCircuitBreakerDecorator(t *testing.T) {
 					lastRecordedSuccess = &success
 				},
 			}
-			decorator := NewCircuitBreakerDecorator(next, cb)
+			decorator := newCircuitBreakerDecorator(next, cb)
 
 			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
 
@@ -168,7 +168,7 @@ func TestSafetyDecorator(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			next := &mockExecutor{Panic: tt.nextPanic, Delay: tt.nextDelay}
-			decorator := NewSafetyDecorator(
+			decorator := newSafetyDecorator(
 				next,
 				registry,
 				logger,
@@ -197,7 +197,7 @@ func TestTracingDecorator(t *testing.T) {
 	logger := &ports.NoOpLogger{}
 
 	next := &mockExecutor{Result: tools.ToolResult{Text: "ok"}}
-	decorator := NewTracingDecorator(next, registry, logger)
+	decorator := newTracingDecorator(next, registry, logger)
 
 	res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"})
 

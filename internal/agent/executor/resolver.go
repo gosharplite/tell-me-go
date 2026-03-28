@@ -17,8 +17,8 @@ type defaultResolver struct {
 	registry tools.Registry
 }
 
-// NewToolResolutionService creates a new ToolResolutionService based on a registry.
-func NewToolResolutionService(registry tools.Registry) ToolResolutionService {
+// newToolResolutionService creates a new ToolResolutionService based on a registry.
+func newToolResolutionService(registry tools.Registry) ToolResolutionService {
 	return &defaultResolver{registry: registry}
 }
 
