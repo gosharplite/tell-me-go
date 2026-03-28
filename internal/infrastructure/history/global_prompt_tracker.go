@@ -339,12 +339,13 @@ func copyFile(src, dst string) error {
 	return destination.Sync()
 }
 
-
 // noOpPromptTracker is a fail-safe implementation that does nothing.
 type noOpPromptTracker struct{}
 
-func (n *noOpPromptTracker) Append(ctx context.Context, prompt string) error   { return nil }
-func (n *noOpPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) { return nil, nil }
+func (n *noOpPromptTracker) Append(ctx context.Context, prompt string) error { return nil }
+func (n *noOpPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
+	return nil, nil
+}
 
 // NewNoOpTracker returns a PromptTracker that performs no operations.
 func NewNoOpTracker() ports.PromptTracker {

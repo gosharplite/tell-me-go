@@ -177,7 +177,7 @@ func TestGlobalPromptTracker_Compaction(t *testing.T) {
 		}
 	}
 
-	// Verify that the file actually shrunk (though with few entries it's hard to see, 
+	// Verify that the file actually shrunk (though with few entries it's hard to see,
 	// but we can check the number of lines)
 	content, _ := os.ReadFile(tracker.filepath)
 	lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
@@ -342,7 +342,6 @@ func TestCopyFile(t *testing.T) {
 	}
 }
 
-
 func TestNewNoOpTracker(t *testing.T) {
 	tracker := NewNoOpTracker()
 	if tracker == nil {
@@ -380,7 +379,6 @@ func TestNewGlobalPromptTracker_MkdirError(t *testing.T) {
 	}
 }
 
-
 func TestGlobalPromptTracker_CompactionIgnoresContextCancellation(t *testing.T) {
 	tmpDir := t.TempDir()
 	tr, _ := NewGlobalPromptTracker(tmpDir)
@@ -389,7 +387,7 @@ func TestGlobalPromptTracker_CompactionIgnoresContextCancellation(t *testing.T) 
 	// Set a small threshold for testing to trigger compaction quickly
 	// We'll use a large prompt to trigger it
 	largePrompt := string(bytes.Repeat([]byte("B"), 1000))
-	
+
 	// Prepare synchronization for the hook
 	compactionDone := make(chan struct{})
 	tracker.testCompactionHook = func() {
@@ -398,12 +396,12 @@ func TestGlobalPromptTracker_CompactionIgnoresContextCancellation(t *testing.T) 
 
 	// Create a context and cancel it immediately after triggering Append
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// We need enough entries to trigger the size threshold (> 150KB)
 	for i := 0; i < 160; i++ {
 		_ = tracker.Append(ctx, largePrompt)
 	}
-	
+
 	// Cancel the context that was used for Append
 	cancel()
 

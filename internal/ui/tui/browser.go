@@ -76,9 +76,9 @@ func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvi
 	ti.Prompt = "🔍 "
 
 	return &rootBrowserModel{
-		ctx:          ctx,
-		provider:     provider,
-		cmdService:   cmdService,
+		ctx:            ctx,
+		provider:       provider,
+		cmdService:     cmdService,
 		searchBar:      ti,
 		isLoading:      true,
 		showThoughts:   true,

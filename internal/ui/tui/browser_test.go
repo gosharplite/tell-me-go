@@ -799,7 +799,7 @@ func TestStaleCachePrepend(t *testing.T) {
 	newDtos := []ports.HistoryViewDTO{
 		{ID: "msg0", ThoughtProcess: "THOUGHT_ZERO", Role: "assistant"},
 	}
-	
+
 	// Simulate historyLoadedMsg which prepends
 	m.handleHistoryLoadedMsg(historyLoadedMsg{dtos: newDtos})
 
@@ -817,7 +817,7 @@ func TestStaleCachePrepend(t *testing.T) {
 	if !strings.Contains(m.cachedThoughts["msg0"], "THOUGHT_ZERO") {
 		t.Errorf("msg0 (THOUGHT_ZERO) NOT found in cache correctly")
 	}
-	
+
 	// Let's check m.cachedThoughts["msg1"]
 	if !strings.Contains(m.cachedThoughts["msg1"], "THOUGHT_ONE") {
 		t.Errorf("msg1 (THOUGHT_ONE) lost or corrupted in cache")
