@@ -103,7 +103,28 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// 3. Invoking a Use Case / Service interface
-	var capturer ports.Capturer
+	capturer := c.buildCapturer(ctx, opts)
+
+	if !opts.retry {
+		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Delegate all business logic and orchestration to the ChatService
+	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
+		ConfigPath:   opts.configPath,
+		NewSession:   opts.newSession,
+		LastN:        opts.lastN,
+		BackN:        opts.backN,
+		RawOutput:    opts.rawOutput,
+		UseTUIPrompt: opts.tuiPrompt,
+		Prompt:       prompt,
+	}, capturer)
+}
+
+func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) ports.Capturer {
 	if opts.tuiPrompt {
 		tracker, err := history.NewGlobalPromptTracker(c.HomeDir)
 		if err != nil {
@@ -126,33 +147,15 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 
 		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
 
-		capturer = tui.NewPromptCapturer(baseCapturer, svc)
+		var capturer ports.Capturer = tui.NewPromptCapturer(baseCapturer, svc)
 		if sm, ok := c.SM.(interface {
 			SetInteractor(domain_security.UserInteractor)
 		}); ok {
 			sm.SetInteractor(capturer.(domain_security.UserInteractor))
 		}
-	} else {
-		capturer = c.setupCapturer()
+		return capturer
 	}
-
-	if !opts.retry {
-		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Delegate all business logic and orchestration to the ChatService
-	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
-		ConfigPath:   opts.configPath,
-		NewSession:   opts.newSession,
-		LastN:        opts.lastN,
-		BackN:        opts.backN,
-		RawOutput:    opts.rawOutput,
-		UseTUIPrompt: opts.tuiPrompt,
-		Prompt:       prompt,
-	}, capturer)
+	return c.setupCapturer()
 }
 
 func (c *chatCommand) setupCapturer() ports.Capturer {

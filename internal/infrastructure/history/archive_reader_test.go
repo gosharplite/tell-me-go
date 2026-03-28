@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
@@ -49,61 +50,112 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 
 	reader := history.NewJSONLArchiveReader(fs, archivePath)
 
-	t.Run("read first page", func(t *testing.T) {
-		dtos, nextOffset, err := reader.ReadPage(ctx, 2, 0)
-		if err != nil {
-			t.Fatalf("failed to read first page: %v", err)
-		}
-		if len(dtos) != 2 {
-			t.Fatalf("expected 2 DTOs, got %d", len(dtos))
-		}
-		if dtos[0].ContentPreview != "Hello 1" || dtos[1].ContentPreview != "Response 1" {
-			t.Errorf("unexpected DTO content: %+v", dtos)
-		}
-		if nextOffset != offsets[2] {
-			t.Errorf("expected offset %d, got %d", offsets[2], nextOffset)
-		}
-	})
+	type testCase struct {
+		name           string
+		limit          int
+		offset         int64
+		setup          func()
+		expectedLen    int
+		expectedNext   int64
+		expectedFirst  string
+		expectedSecond string
+		validate       func(t *testing.T, dtos []ports.HistoryViewDTO)
+	}
 
-	t.Run("read second page from offset", func(t *testing.T) {
-		dtos, _, err := reader.ReadPage(ctx, 2, offsets[2])
-		if err != nil {
-			t.Fatalf("failed to read second page: %v", err)
-		}
-		if len(dtos) != 2 {
-			t.Fatalf("expected 2 DTOs, got %d", len(dtos))
-		}
-		if dtos[0].ContentPreview != "Hello 2" || dtos[1].ContentPreview != "Response 2" {
-			t.Errorf("unexpected DTO content: %+v", dtos)
-		}
-	})
-
-	t.Run("masking large binary data", func(t *testing.T) {
-		// Append a content with binary data
-		c := &llm.Content{
-			Role: "user",
-			Parts: []*llm.Part{
-				{Text: "A picture:"},
-				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("fake binary data")}},
+	tests := []testCase{
+		{
+			name:           "read first page",
+			limit:          2,
+			offset:         0,
+			expectedLen:    2,
+			expectedFirst:  "Hello 1",
+			expectedSecond: "Response 1",
+			expectedNext:   offsets[2],
+		},
+		{
+			name:           "read second page from offset",
+			limit:          2,
+			offset:         offsets[2],
+			expectedLen:    2,
+			expectedFirst:  "Hello 2",
+			expectedSecond: "Response 2",
+		},
+		{
+			name:   "masking large binary data",
+			limit:  1,
+			offset: currentOffset,
+			setup: func() {
+				c := &llm.Content{
+					Role: "user",
+					Parts: []*llm.Part{
+						{Text: "A picture:"},
+						{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("fake binary data")}},
+					},
+				}
+				f, _ := os.OpenFile(archivePath, os.O_APPEND|os.O_WRONLY, 0644)
+				data, _ := json.Marshal(c)
+				data = append(data, '\n')
+				_, _ = f.Write(data)
+				_ = f.Close()
 			},
-		}
-		f, _ := os.OpenFile(archivePath, os.O_APPEND|os.O_WRONLY, 0644)
-		data, _ := json.Marshal(c)
-		data = append(data, '\n')
-		_, _ = f.Write(data)
-		_ = f.Close()
+			expectedLen: 1,
+			validate: func(t *testing.T, dtos []ports.HistoryViewDTO) {
+				if !strings.Contains(dtos[0].ContentPreview, "[Attached Image]") {
+					t.Errorf("expected masked image, got: %s", dtos[0].ContentPreview)
+				}
+			},
+		},
+	}
 
-		dtos, _, err := reader.ReadPage(ctx, 1, currentOffset)
-		if err != nil {
-			t.Fatalf("failed to read binary content: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setup != nil {
+				tt.setup()
+			}
+			dtos, nextOffset, err := reader.ReadPage(ctx, tt.limit, tt.offset)
+			assertArchivePage(t, dtos, nextOffset, err, tt)
+		})
+	}
+}
+
+func assertArchivePage(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, err error, tt struct {
+	name           string
+	limit          int
+	offset         int64
+	setup          func()
+	expectedLen    int
+	expectedNext   int64
+	expectedFirst  string
+	expectedSecond string
+	validate       func(t *testing.T, dtos []ports.HistoryViewDTO)
+}) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%s: ReadPage() unexpected error: %v", tt.name, err)
+	}
+
+	if len(dtos) != tt.expectedLen {
+		t.Fatalf("%s: expected %d DTOs, got %d", tt.name, tt.expectedLen, len(dtos))
+	}
+
+	if tt.expectedLen >= 1 && tt.expectedFirst != "" {
+		if dtos[0].ContentPreview != tt.expectedFirst {
+			t.Errorf("%s: unexpected first DTO content: got %q, want %q", tt.name, dtos[0].ContentPreview, tt.expectedFirst)
 		}
-		if len(dtos) != 1 {
-			t.Fatalf("expected 1 DTO, got %d", len(dtos))
+	}
+	if tt.expectedLen >= 2 && tt.expectedSecond != "" {
+		if dtos[1].ContentPreview != tt.expectedSecond {
+			t.Errorf("%s: unexpected second DTO content: got %q, want %q", tt.name, dtos[1].ContentPreview, tt.expectedSecond)
 		}
-		if !strings.Contains(dtos[0].ContentPreview, "[Attached Image]") {
-			t.Errorf("expected masked image, got: %s", dtos[0].ContentPreview)
-		}
-	})
+	}
+
+	if tt.expectedNext != 0 && nextOffset != tt.expectedNext {
+		t.Errorf("%s: expected nextOffset %d, got %d", tt.name, tt.expectedNext, nextOffset)
+	}
+
+	if tt.validate != nil {
+		tt.validate(t, dtos)
+	}
 }
 
 func BenchmarkReadPage(b *testing.B) {

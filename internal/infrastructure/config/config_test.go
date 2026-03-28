@@ -174,13 +174,15 @@ PROVIDERS:
 }
 
 func TestJSONSessionLoader_LoadSession(t *testing.T) {
-	tests := []struct {
+	type sessionTestCase struct {
 		name        string
 		fileContent string
 		setupFile   bool
 		wantErr     bool
 		validate    func(*testing.T, *domain_config.SessionConfig)
-	}{
+	}
+
+	tests := []sessionTestCase{
 		{
 			name:        "ValidAllFields",
 			fileContent: `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`,
@@ -247,13 +249,24 @@ func TestJSONSessionLoader_LoadSession(t *testing.T) {
 			}
 
 			cfg, err := loader.LoadSession(path)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("LoadSession() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if !tt.wantErr && tt.validate != nil {
-				tt.validate(t, cfg)
-			}
+			assertSessionState(t, cfg, err, tt)
 		})
+	}
+}
+
+func assertSessionState(t *testing.T, got *domain_config.SessionConfig, err error, tt struct {
+	name        string
+	fileContent string
+	setupFile   bool
+	wantErr     bool
+	validate    func(*testing.T, *domain_config.SessionConfig)
+}) {
+	t.Helper()
+	if (err != nil) != tt.wantErr {
+		t.Fatalf("LoadSession() error = %v, wantErr %v", err, tt.wantErr)
+	}
+
+	if !tt.wantErr && tt.validate != nil {
+		tt.validate(t, got)
 	}
 }
