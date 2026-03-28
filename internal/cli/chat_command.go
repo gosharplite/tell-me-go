@@ -24,8 +24,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 )
 
-// ErrExitZero signals that the command should exit with code 0 immediately.
-var ErrExitZero = errors.New("exit zero")
+// errExitZero signals that the command should exit with code 0 immediately.
+var errExitZero = errors.New("exit zero")
 
 func init() {
 	register("chat", func(ctx *context) command {
@@ -76,7 +76,7 @@ func newChatCommand(ctx *context) *chatCommand {
 func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	opts, fs, err := c.resolveOptions(args)
 	if err != nil {
-		if errors.Is(err, ErrExitZero) {
+		if errors.Is(err, errExitZero) {
 			return nil
 		}
 		return err
@@ -123,7 +123,7 @@ func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet,
 	}
 	if opts.showVersion {
 		_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
-		return nil, nil, ErrExitZero
+		return nil, nil, errExitZero
 	}
 
 	// Configuration Merge
