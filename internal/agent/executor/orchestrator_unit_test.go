@@ -112,9 +112,10 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 		Delay:  1, // Trigger block
 		ExecuteHook: func() {
 			count := startedCount.Add(1)
-			if count == 1 {
+			switch count {
+			case 1:
 				close(releaseCh1)
-			} else if count == 2 {
+			case 2:
 				close(releaseCh2)
 			}
 		},
