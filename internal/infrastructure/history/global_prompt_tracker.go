@@ -44,6 +44,14 @@ func NewGlobalPromptTracker(homeDir string) ports.PromptTracker {
 	_ = os.MkdirAll(dir, 0755)
 
 	trackerPath := filepath.Join(dir, "prompts.jsonl")
+	oldTrackerPath := filepath.Join(homeDir, "global_prompts.jsonl")
+
+	// Migrate old prompts file to the new location to prevent data loss
+	if _, err := os.Stat(trackerPath); os.IsNotExist(err) {
+		if _, err := os.Stat(oldTrackerPath); err == nil {
+			_ = os.Rename(oldTrackerPath, trackerPath)
+		}
+	}
 
 	// --- NEW CODE: Cleanup orphaned temp files from previous hard crashes ---
 	pattern := filepath.Join(dir, filepath.Base(trackerPath)+".tmp-*")
@@ -204,10 +212,8 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 func (t *globalPromptTracker) compactLog() {
 	defer t.compacting.Store(false)
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	entries, err := t.doLoadTopUniqueEntries(context.Background(), maxGlobalPrompts)
+	// 1. Read entries without blocking concurrent Appends/Reads
+	entries, err := t.loadTopUniqueEntries(context.Background(), maxGlobalPrompts)
 	if err != nil || len(entries) == 0 {
 		return
 	}
@@ -217,7 +223,7 @@ func (t *globalPromptTracker) compactLog() {
 		entries[i], entries[j] = entries[j], entries[i]
 	}
 
-	// Use a unique temporary file to avoid races between multiple compaction attempts
+	// 2. Write to temp file lock-free (it is a distinct file descriptor)
 	tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
 	if err != nil {
 		return
@@ -242,6 +248,9 @@ func (t *globalPromptTracker) compactLog() {
 		return
 	}
 
+	// 3. Atomically swap file with an exclusive lock (Critical Section)
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	_ = os.Rename(tmpPath, t.filepath)
 }
 
