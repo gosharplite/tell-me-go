@@ -8,8 +8,6 @@ SPDX-License-Identifier: MIT
 ### Objective
 This SOP defines the automated workflow for publishing a new public release of the `tell-me-go` project.
 
-**⚠️ SECURITY NOTE**: This SOP MUST be executed with `bypass_confirmation` enabled to allow for automated checks.
-
 ---
 
 ### Prerequisites
@@ -24,12 +22,11 @@ This SOP defines the automated workflow for publishing a new public release of t
 
 #### 1. Task Initialization
 1.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
-2.  **Enable Automation**: Execute `bypass_confirmation`.
-3.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: 
+2.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: 
     ```bash
     git fetch origin && git checkout dev && git pull origin dev
     ```
-4.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `v1.1.0`).
+3.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `v1.1.0`).
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
@@ -101,7 +98,6 @@ go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
 ---
 
 ### Implementation Checklist
-- [x] Workspace is clean and `bypass_confirmation` is active.
 - [x] Target version `vX.Y.Z` is confirmed by user.
 - [x] `verify_release_readiness` returned all **[OK]**.
 - [x] `go mod tidy` executed.
@@ -109,4 +105,3 @@ go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
 - [x] Git tag `vX.Y.Z` created and verified locally.
 - [x] Binary built with correct `ldflags` and version verified.
 - [x] Changes and tags pushed to remote origin.
-- [x] `revoke_bypass` executed.
