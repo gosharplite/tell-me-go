@@ -23,16 +23,13 @@ This SOP defines the automated workflow for publishing a new public release of t
 ### Step-by-Step Instructions
 
 #### 1. Task Initialization
-1.  **Anchor Tasking**: Use `manage_tasks` (action: add) to set the anchor: `"SOP Compliance: public_release.md"`.
-2.  **Clear Workspace State**: Use `manage_tasks` (action: clear) to ensure a fresh environment.
-3.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
-4.  **Enable Automation**: Execute `bypass_confirmation`.
-5.  **Initialize Milestone**: Use `manage_tasks` (action: add) to track the release: `"Public Release vX.Y.Z Readiness"`.
-6.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: 
+1.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
+2.  **Enable Automation**: Execute `bypass_confirmation`.
+3.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: 
     ```bash
     git fetch origin && git checkout dev && git pull origin dev
     ```
-7.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `v1.1.0`). Store this in the `manage_tasks`.
+4.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `v1.1.0`).
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
@@ -74,9 +71,6 @@ verify_release_readiness
 
 #### 5. Cleanup and Security Restoration
 1.  **Verify Sync**: Run `git status` to ensure all branches are clean and synced.
-2.  **Finalize Task**: Use `manage_tasks` (action: update) to mark the release task as `completed`.
-3.  **Final Cleanup**: Execute `manage_tasks` (action: clear) to leave a clean environment for the next session.
-4.  **Revoke Automation**: Execute `revoke_bypass` to restore security prompts.
 
 ---
 
@@ -94,7 +88,7 @@ go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
 1.  **Tag Existence**: `git tag -l vX.Y.Z` must return the new tag.
 2.  **Binary Integrity**: `./tell-me-go --version` must output exactly `vX.Y.Z`.
 3.  **Remote State**: Check the remote repository (e.g., GitHub/Azure DevOps) to ensure tags and branch updates are visible.
-4.  **Readiness Audit**: The `verify_release_readiness` report must be attached or noted in the release task.
+4.  **Readiness Audit**: The `verify_release_readiness` report must be reviewed.
 
 ---
 
