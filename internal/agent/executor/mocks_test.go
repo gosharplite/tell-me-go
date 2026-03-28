@@ -14,21 +14,28 @@ import (
 )
 
 type mockExecutor struct {
-	mu     sync.Mutex
-	Result tools.ToolResult
-	Err    error
-	Panic  bool
-	Delay  time.Duration
-	Called bool
+	mu          sync.Mutex
+	Result      tools.ToolResult
+	Err         error
+	Panic       bool
+	Delay       time.Duration
+	Called      bool
+	BlockCh     chan struct{}
+	ExecuteHook func()
 }
 
 func (m *mockExecutor) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) (tools.ToolResult, error) {
 	m.mu.Lock()
 	m.Called = true
 	m.mu.Unlock()
+
+	if m.ExecuteHook != nil {
+		m.ExecuteHook()
+	}
+
 	if m.Delay > 0 {
 		select {
-		case <-time.After(m.Delay):
+		case <-m.BlockCh:
 		case <-ctx.Done():
 			return tools.ToolResult{}, ctx.Err()
 		}

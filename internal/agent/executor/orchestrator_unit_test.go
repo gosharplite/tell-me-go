@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,9 +41,15 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 	require.NoError(t, err)
 	defer exec.Shutdown()
 
+	releaseCh := make(chan struct{})
+	var startedCount atomic.Int32
 	mock := &mockExecutor{
-		Result: tools.ToolResult{Text: "done"},
-		Delay:  50 * time.Millisecond,
+		Result:  tools.ToolResult{Text: "done"},
+		Delay:   1, // Trigger block
+		BlockCh: releaseCh,
+		ExecuteHook: func() {
+			startedCount.Add(1)
+		},
 	}
 	exec.runtime = mock
 
@@ -56,16 +63,21 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 		},
 	}
 
-	start := time.Now()
+	// Wait for all 5 to be started (indicating they are parallel)
+	go func() {
+		for startedCount.Load() < 5 {
+			time.Sleep(1 * time.Millisecond)
+		}
+		close(releaseCh)
+	}()
+
 	resp, err := exec.Execute(context.Background(), content, 0, 10)
-	duration := time.Since(start)
 
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Len(t, resp.Parts, 5)
 
-	// Since they run in parallel (max 5), it should take roughly 50ms + overhead
-	assert.True(t, duration < 200*time.Millisecond, "Expected parallel execution but it took too long")
+	assert.Equal(t, int32(5), startedCount.Load(), "Expected 5 tools to have started in parallel")
 }
 
 func TestOrchestrator_SerialBatching(t *testing.T) {
@@ -91,10 +103,36 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	require.NoError(t, err)
 	defer exec.Shutdown()
 
+	releaseCh1 := make(chan struct{})
+	releaseCh2 := make(chan struct{})
+	var startedCount atomic.Int32
+	
 	mock := &mockExecutor{
 		Result: tools.ToolResult{Text: "done"},
-		Delay:  50 * time.Millisecond,
+		Delay:  1, // Trigger block
+		ExecuteHook: func() {
+			count := startedCount.Add(1)
+			if count == 1 {
+				close(releaseCh1)
+			} else if count == 2 {
+				close(releaseCh2)
+			}
+		},
 	}
+	// Note: mock.BlockCh is problematic if we want different ones for different calls.
+	// Let's use a smarter hook or just update BlockCh dynamically if possible.
+	// Actually, the current mockExecutor only has one BlockCh.
+	// Let's refactor mockExecutor to support a channel provider or just use a single one that we close in stages?
+	// No, once closed, it's closed.
+	
+	// Better: use a channel per call?
+	// Let's use a simpler approach for serial: 
+	// The first call starts, we wait for it to be "started", then we release it.
+	// THEN we wait for second call to start.
+	
+	currentReleaseCh := make(chan struct{})
+	mock.BlockCh = currentReleaseCh
+	
 	exec.runtime = mock
 
 	content := &llm.Content{
@@ -104,14 +142,25 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 		},
 	}
 
-	start := time.Now()
+	go func() {
+		// Wait for first call
+		<-releaseCh1
+		// First call is active, verify second HAS NOT started
+		assert.Equal(t, int32(1), startedCount.Load())
+		// Release first call
+		close(currentReleaseCh)
+		
+		// Wait for second call
+		<-releaseCh2
+		// Second call is active
+		assert.Equal(t, int32(2), startedCount.Load())
+		// Wait, we closed currentReleaseCh, so the second call will also unblock immediately.
+		// That's fine for serial verification.
+	}()
+
 	resp, err := exec.Execute(context.Background(), content, 0, 10)
-	duration := time.Since(start)
 
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Len(t, resp.Parts, 2)
-
-	// Since they run in serial, it should take at least 100ms
-	assert.True(t, duration >= 100*time.Millisecond, "Expected serial execution but it took too short")
 }
