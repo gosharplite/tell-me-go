@@ -53,15 +53,6 @@ func NewGlobalPromptTracker(homeDir string) ports.PromptTracker {
 		}
 	}
 
-	// --- NEW CODE: Cleanup orphaned temp files from previous hard crashes ---
-	pattern := filepath.Join(dir, filepath.Base(trackerPath)+".tmp-*")
-	if matches, err := filepath.Glob(pattern); err == nil {
-		for _, match := range matches {
-			_ = os.Remove(match) // Best-effort cleanup
-		}
-	}
-	// --- END NEW CODE ---
-
 	return &globalPromptTracker{
 		filepath: trackerPath,
 	}
@@ -84,14 +75,14 @@ func (t *globalPromptTracker) Append(prompt string) error {
 		return fmt.Errorf("failed to marshal prompt entry: %w", err)
 	}
 
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	f, err := os.OpenFile(t.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open global prompts file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("failed to append prompt: %w", err)
@@ -212,46 +203,78 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 func (t *globalPromptTracker) compactLog() {
 	defer t.compacting.Store(false)
 
-	// 1. Read entries without blocking concurrent Appends/Reads
-	entries, err := t.loadTopUniqueEntries(context.Background(), maxGlobalPrompts)
-	if err != nil || len(entries) == 0 {
-		return
-	}
-
-	// Reverse entries to chronological order (oldest first)
-	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-		entries[i], entries[j] = entries[j], entries[i]
-	}
-
-	// 2. Write to temp file lock-free (it is a distinct file descriptor)
-	tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
-	if err != nil {
-		return
-	}
-	tmpPath := tmpFile.Name()
-	defer func() {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
-	}()
-
-	for _, entry := range entries {
-		data, err := json.Marshal(entry)
+	for {
+		// Capture initial size for optimistic concurrency check
+		info, err := os.Stat(t.filepath)
 		if err != nil {
-			continue
+			return
 		}
-		if _, err := tmpFile.Write(append(data, '\n')); err != nil {
+		initialSize := info.Size()
+
+		// 1. Read entries without holding the lock to allow concurrent appends
+		entries, err := t.doLoadTopUniqueEntries(context.Background(), maxGlobalPrompts)
+		if err != nil || len(entries) == 0 {
+			return
+		}
+
+		// Reverse entries to chronological order (oldest first)
+		for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+			entries[i], entries[j] = entries[j], entries[i]
+		}
+
+		// 2. Write to temp file
+		tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
+		if err != nil {
+			return
+		}
+		tmpPath := tmpFile.Name()
+
+		success := func() bool {
+			defer func() {
+				_ = tmpFile.Close()
+				_ = os.Remove(tmpPath)
+			}()
+
+			for _, entry := range entries {
+				data, err := json.Marshal(entry)
+				if err != nil {
+					continue
+				}
+				if _, err := tmpFile.Write(append(data, '\n')); err != nil {
+					return false
+				}
+			}
+
+			if err := tmpFile.Close(); err != nil {
+				return false
+			}
+
+			// 3. Final check and swap under exclusive lock
+			t.mu.Lock()
+			defer t.mu.Unlock()
+
+			// Check if file size has changed (meaning Append was called in the background)
+			newInfo, err := os.Stat(t.filepath)
+			if err != nil || newInfo.Size() != initialSize {
+				return false // Abort this pass
+			}
+
+			return os.Rename(tmpPath, t.filepath) == nil
+		}()
+
+		if success {
+			return
+		}
+
+		// If we aborted because of concurrent writes, check if we still need compaction.
+		// If so, loop and try again. This ensures that a burst of appends doesn't
+		// leave the file uncompacted just because the last append arrived while
+		// a previous compaction attempt was finishing.
+		newInfo, err := os.Stat(t.filepath)
+		if err != nil || newInfo.Size() <= compactionThresholdBytes {
 			return
 		}
 	}
-
-	if err := tmpFile.Close(); err != nil {
-		return
-	}
-
-	// 3. Atomically swap file with an exclusive lock (Critical Section)
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	_ = os.Rename(tmpPath, t.filepath)
 }
 
 func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSize int) ([]byte, error) {

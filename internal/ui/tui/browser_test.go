@@ -82,14 +82,14 @@ func newHistoryState(userContent, modelContent string) []ports.HistoryViewDTO {
 	}
 }
 
-func verifyScrollInteraction(t *testing.T, m rootBrowserModel, expectedTurn int) {
+func verifyScrollInteraction(t *testing.T, m *rootBrowserModel, expectedTurn int) {
 	t.Helper()
 	if m.selectedTurn != expectedTurn {
 		t.Errorf("expected selectedTurn %d, got %d", expectedTurn, m.selectedTurn)
 	}
 }
 
-func verifyPinInteraction(t *testing.T, m rootBrowserModel, mock *mockHistoryModifier, expectedIndex int, expectedState bool) {
+func verifyPinInteraction(t *testing.T, m *rootBrowserModel, mock *mockHistoryModifier, expectedIndex int, expectedState bool) {
 	t.Helper()
 	if !mock.SetPinnedCalled {
 		t.Error("expected SetPinned to be called")
@@ -115,7 +115,7 @@ func verifyPinInteraction(t *testing.T, m rootBrowserModel, mock *mockHistoryMod
 	}
 }
 
-func verifyRollbackInteraction(t *testing.T, m rootBrowserModel, mock *mockHistoryModifier, expectedTurns int) {
+func verifyRollbackInteraction(t *testing.T, m *rootBrowserModel, mock *mockHistoryModifier, expectedTurns int) {
 	t.Helper()
 	if !mock.RollbackCalled {
 		t.Error("expected RollbackTurns to be called")
@@ -128,7 +128,7 @@ func verifyRollbackInteraction(t *testing.T, m rootBrowserModel, mock *mockHisto
 	}
 }
 
-func verifySearchInteraction(t *testing.T, m rootBrowserModel, expectedSearching bool, expectedQuery string) {
+func verifySearchInteraction(t *testing.T, m *rootBrowserModel, expectedSearching bool, expectedQuery string) {
 	t.Helper()
 	if m.isSearching != expectedSearching {
 		t.Errorf("expected isSearching %v, got %v", expectedSearching, m.isSearching)
@@ -145,7 +145,7 @@ type updateTestCase struct {
 	name         string
 	initialState func(*rootBrowserModel)
 	msg          tea.Msg
-	check        func(*testing.T, rootBrowserModel, tea.Cmd, *mockHistoryModifier)
+	check        func(*testing.T, *rootBrowserModel, tea.Cmd, *mockHistoryModifier)
 	expectedQuit bool
 }
 
@@ -158,7 +158,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.selectedTurn = 0
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifyScrollInteraction(t, m, 1)
 			},
 		},
@@ -169,7 +169,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.selectedTurn = 1
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifyScrollInteraction(t, m, 1)
 			},
 		},
@@ -180,7 +180,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.selectedTurn = 1
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifyScrollInteraction(t, m, 0)
 			},
 		},
@@ -191,7 +191,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.selectedTurn = 0
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifyPinInteraction(t, m, mock, 0, true)
 			},
 		},
@@ -204,7 +204,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.selectedTurn = 0
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifyPinInteraction(t, m, mock, 0, false)
 			},
 		},
@@ -217,7 +217,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.selectedTurn = 0
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if mock.SetPinnedCalled {
 					t.Error("expected SetPinned NOT to be called for archived messages")
 				}
@@ -235,7 +235,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.selectedTurn = 2 // Selected second turn
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifyRollbackInteraction(t, m, mock, 1)
 			},
 		},
@@ -248,7 +248,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.selectedTurn = 0
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if mock.RollbackCalled {
 					t.Error("expected RollbackTurns NOT to be called")
 				}
@@ -260,7 +260,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.isSearching = false
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifySearchInteraction(t, m, true, "")
 			},
 		},
@@ -271,7 +271,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.searchBar.Focus()
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("abc")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if m.searchBar.Value() != "abc" {
 					t.Errorf("expected search bar value 'abc', got %q", m.searchBar.Value())
 				}
@@ -284,7 +284,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.searchBar.SetValue("test")
 			},
 			msg: tea.KeyMsg{Type: tea.KeyEsc},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifySearchInteraction(t, m, false, "")
 				if m.searchBar.Value() != "" {
 					t.Error("expected search bar value to be cleared")
@@ -301,7 +301,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.viewport = viewport.New(80, 24)
 			},
 			msg: tea.KeyMsg{Type: tea.KeyEnter},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				verifySearchInteraction(t, m, false, "test")
 			},
 		},
@@ -312,13 +312,13 @@ func getUpdateTestCases() []updateTestCase {
 				m.currentMatch = 0
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if m.currentMatch != 1 {
 					t.Errorf("expected currentMatch 1, got %d", m.currentMatch)
 				}
 				// Test N (previous)
 				m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")})
-				updated2 := m2.(rootBrowserModel)
+				updated2 := m2.(*rootBrowserModel)
 				if updated2.currentMatch != 0 {
 					t.Errorf("expected currentMatch 0 after N, got %d", updated2.currentMatch)
 				}
@@ -330,7 +330,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.showThoughts = true
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if m.showThoughts {
 					t.Error("expected showThoughts to be false")
 				}
@@ -346,7 +346,7 @@ func getUpdateTestCases() []updateTestCase {
 		{
 			name: "WindowSizeMsg updates dimensions",
 			msg:  tea.WindowSizeMsg{Width: 100, Height: 50},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if m.width != 100 || m.height != 50 {
 					t.Errorf("expected 100x50, got %dx%d", m.width, m.height)
 				}
@@ -363,7 +363,7 @@ func getUpdateTestCases() []updateTestCase {
 				},
 				nextCursor: "next",
 			},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if len(m.history) != 1 {
 					t.Errorf("expected 1 history item, got %d", len(m.history))
 				}
@@ -380,7 +380,7 @@ func getUpdateTestCases() []updateTestCase {
 			msg: historyLoadedMsg{
 				err: errors.New("boom"),
 			},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if m.err == nil || m.err.Error() != "boom" {
 					t.Error("expected error 'boom'")
 				}
@@ -393,7 +393,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.history = []ports.HistoryViewDTO{{Role: "user"}}
 			},
 			msg: fileChangedMsg{},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if len(m.history) != 0 {
 					t.Error("expected history to be cleared for reload")
 				}
@@ -409,7 +409,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.history = []ports.HistoryViewDTO{{Role: "user"}}
 			},
 			msg: fileChangedMsg{},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				if len(m.history) != 1 {
 					t.Error("expected history NOT to be cleared (debounced)")
 				}
@@ -427,7 +427,7 @@ func getUpdateTestCases() []updateTestCase {
 				m.viewport.SetYOffset(0) // At top
 			},
 			msg: tea.KeyMsg{Type: tea.KeyUp},
-			check: func(t *testing.T, m rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
+			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
 				// The trigger happens at the end of Update
 				if !m.isLoading {
 					t.Error("expected isLoading to be true (pagination triggered)")
@@ -448,7 +448,7 @@ func TestBrowserModel_Update(t *testing.T) {
 			}
 
 			newModel, cmd := m.Update(tt.msg)
-			updatedModel := newModel.(rootBrowserModel)
+			updatedModel := newModel.(*rootBrowserModel)
 
 			if tt.expectedQuit {
 				if cmd == nil {

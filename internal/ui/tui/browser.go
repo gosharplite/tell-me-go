@@ -88,7 +88,7 @@ func NewRootBrowserModel(ctx context.Context, provider ports.UnifiedHistoryProvi
 }
 
 // Init initializes the model with an asynchronous disk read.
-func (m rootBrowserModel) Init() tea.Cmd {
+func (m *rootBrowserModel) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		fetchHistoryCmd(m.provider, ""),
@@ -146,7 +146,7 @@ func (m *rootBrowserModel) updateViewportHeight() {
 }
 
 // Update handles incoming messages and updates the model state.
-func (m rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
@@ -161,7 +161,7 @@ func (m rootBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.handleViewportUpdate(msg)
 }
 
-func (m rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.isSearching {
 		return m.handleSearchInput(msg)
 	}
@@ -178,7 +178,7 @@ func (m rootBrowserModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleViewportUpdate(msg)
 }
 
-func (m rootBrowserModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg.String() {
 	case "enter":
@@ -202,7 +202,7 @@ func (m rootBrowserModel) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	return m, cmd
 }
 
-func (m rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j":
 		if len(m.history) > 0 {
@@ -257,7 +257,7 @@ func (m rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.C
 	return m, nil
 }
 
-func (m rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "p":
 		if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
@@ -331,7 +331,7 @@ func (m rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-func (m rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 	if !m.ready {
@@ -345,7 +345,7 @@ func (m rootBrowserModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) (tea.Model,
 	return m.handleViewportUpdate(msg)
 }
 
-func (m rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Model, tea.Cmd) {
 	m.isLoading = false
 	if msg.err != nil {
 		log.Printf("failed to load history: %v", msg.err)
@@ -385,7 +385,7 @@ func (m rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Mode
 	return m, nil
 }
 
-func (m rootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, tea.Cmd) {
 	// Debounce: ignore changes if we just mutated the file
 	if time.Since(m.lastMutationTime) < 500*time.Millisecond {
 		return m, watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath())
@@ -400,7 +400,7 @@ func (m rootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, t
 	)
 }
 
-func (m rootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *rootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -421,7 +421,7 @@ func (m rootBrowserModel) handleViewportUpdate(msg tea.Msg) (tea.Model, tea.Cmd)
 }
 
 // View renders the current state of the model.
-func (m rootBrowserModel) View() string {
+func (m *rootBrowserModel) View() string {
 	if m.err != nil {
 		return errorStyle.Render(fmt.Sprintf("Error: %v\nPress 'q' to quit.", m.err))
 	}
