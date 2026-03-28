@@ -118,6 +118,13 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 	}
 }
 
+func assertPreviewMatches(t *testing.T, name, label string, actual string, expected string) {
+	t.Helper()
+	if expected != "" && actual != expected {
+		t.Errorf("%s: unexpected %s DTO content: got %q, want %q", name, label, actual, expected)
+	}
+}
+
 func assertArchivePage(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, err error, tt struct {
 	name           string
 	limit          int
@@ -138,15 +145,11 @@ func assertArchivePage(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int
 		t.Fatalf("%s: expected %d DTOs, got %d", tt.name, tt.expectedLen, len(dtos))
 	}
 
-	if tt.expectedLen >= 1 && tt.expectedFirst != "" {
-		if dtos[0].ContentPreview != tt.expectedFirst {
-			t.Errorf("%s: unexpected first DTO content: got %q, want %q", tt.name, dtos[0].ContentPreview, tt.expectedFirst)
-		}
+	if tt.expectedLen >= 1 {
+		assertPreviewMatches(t, tt.name, "first", dtos[0].ContentPreview, tt.expectedFirst)
 	}
-	if tt.expectedLen >= 2 && tt.expectedSecond != "" {
-		if dtos[1].ContentPreview != tt.expectedSecond {
-			t.Errorf("%s: unexpected second DTO content: got %q, want %q", tt.name, dtos[1].ContentPreview, tt.expectedSecond)
-		}
+	if tt.expectedLen >= 2 {
+		assertPreviewMatches(t, tt.name, "second", dtos[1].ContentPreview, tt.expectedSecond)
 	}
 
 	if tt.expectedNext != 0 && nextOffset != tt.expectedNext {

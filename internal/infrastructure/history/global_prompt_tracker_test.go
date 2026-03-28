@@ -12,6 +12,18 @@ import (
 	"time"
 )
 
+func assertPromptsMatch(t *testing.T, got, expected []string) {
+	t.Helper()
+	if len(got) != len(expected) {
+		t.Errorf("got %d prompts; want %d", len(got), len(expected))
+	}
+	for i, v := range got {
+		if i < len(expected) && v != expected[i] {
+			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
+		}
+	}
+}
+
 func TestGlobalPromptTracker(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracker, _ := NewGlobalPromptTracker(tmpDir)
@@ -31,14 +43,7 @@ func TestGlobalPromptTracker(t *testing.T) {
 	}
 
 	expected := []string{"hello", "bar", "foo", "world"}
-	if len(got) != len(expected) {
-		t.Errorf("got %d prompts; want %d", len(got), len(expected))
-	}
-	for i, v := range got {
-		if v != expected[i] {
-			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
-		}
-	}
+	assertPromptsMatch(t, got, expected)
 
 	// Test with smaller limit
 	got2, err := tracker.LoadTopN(context.Background(), 2)
@@ -134,14 +139,7 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	}
 
 	expected := []string{"duplicate", "p5", "p4", "p3", "p2"}
-	if len(got) != len(expected) {
-		t.Errorf("got %d prompts; want %d", len(got), len(expected))
-	}
-	for i, v := range got {
-		if i < len(expected) && v != expected[i] {
-			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
-		}
-	}
+	assertPromptsMatch(t, got, expected)
 }
 
 func TestGlobalPromptTracker_Compaction(t *testing.T) {
