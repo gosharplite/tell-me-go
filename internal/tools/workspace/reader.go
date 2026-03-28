@@ -187,63 +187,72 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 	return tools.ToolResult{Text: string(content)}, nil
 }
 
-func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		FilePaths []string `json:"filepaths"`
-	}
-	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+func (r *fileReader) processSingleFile(ctx context.Context, path string, sb *strings.Builder) error {
+	fmt.Fprintf(sb, "--- File: %s ---\n", path)
+
+	resolvedPath, err := r.sm.IsPathSafe(path)
+	if err != nil {
+		fmt.Fprintf(sb, "ERROR: %v\n\n", err)
+		return nil
 	}
 
-	if len(params.FilePaths) == 0 {
+	info, err := r.fs.Stat(ctx, resolvedPath)
+	if err != nil {
+		fmt.Fprintf(sb, "ERROR: failed to read file: %v\n\n", err)
+		return nil
+	}
+	if info.IsDir() {
+		sb.WriteString("ERROR: path is a directory, use list_files instead\n\n")
+		return nil
+	}
+
+	content, truncated, err := r.readBoundedContent(ctx, resolvedPath)
+	if err != nil {
+		fmt.Fprintf(sb, "ERROR: failed to read file: %v\n\n", err)
+		return nil
+	}
+
+	if persistence.IsBinary(content) {
+		sb.WriteString("(Binary file, cannot display as text)\n\n")
+		return nil
+	}
+
+	if truncated {
+		truncatedStr := string(content)
+		sb.WriteString(strings.ToValidUTF8(truncatedStr, ""))
+		sb.WriteString("\n... (truncated)\n\n")
+		return nil
+	}
+
+	sb.Write(content)
+	sb.WriteString("\n\n")
+	return nil
+}
+
+func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	pathsIf, ok := args["filepaths"].([]interface{})
+	if !ok {
+		return tools.ToolResult{}, fmt.Errorf("filepaths argument is required and must be an array")
+	}
+
+	if len(pathsIf) == 0 {
 		return tools.ToolResult{}, fmt.Errorf("filepaths argument is required and cannot be empty")
 	}
 
 	const maxFilesPerCall = 50
-	if len(params.FilePaths) > maxFilesPerCall {
-		return tools.ToolResult{}, fmt.Errorf("requested too many files (%d). Maximum allowed per call is %d", len(params.FilePaths), maxFilesPerCall)
+	if len(pathsIf) > maxFilesPerCall {
+		return tools.ToolResult{}, fmt.Errorf("requested too many files (%d). Maximum allowed per call is %d", len(pathsIf), maxFilesPerCall)
 	}
 
 	var sb strings.Builder
-	for _, path := range params.FilePaths {
-		fmt.Fprintf(&sb, "--- File: %s ---\n", path)
-
-		resolvedPath, err := r.sm.IsPathSafe(path)
-		if err != nil {
-			fmt.Fprintf(&sb, "ERROR: %v\n\n", err)
+	for _, pathIf := range pathsIf {
+		path, ok := pathIf.(string)
+		if !ok {
 			continue
 		}
-
-		info, err := r.fs.Stat(ctx, resolvedPath)
-		if err != nil {
-			fmt.Fprintf(&sb, "ERROR: failed to read file: %v\n\n", err)
-			continue
+		if err := r.processSingleFile(ctx, path, &sb); err != nil {
+			return tools.ToolResult{}, err
 		}
-		if info.IsDir() {
-			sb.WriteString("ERROR: path is a directory, use list_files instead\n\n")
-			continue
-		}
-
-		content, truncated, err := r.readBoundedContent(ctx, resolvedPath)
-		if err != nil {
-			fmt.Fprintf(&sb, "ERROR: failed to read file: %v\n\n", err)
-			continue
-		}
-
-		if persistence.IsBinary(content) {
-			sb.WriteString("(Binary file, cannot display as text)\n\n")
-			continue
-		}
-
-		if truncated {
-			truncatedStr := string(content)
-			sb.WriteString(strings.ToValidUTF8(truncatedStr, ""))
-			sb.WriteString("\n... (truncated)\n\n")
-			continue
-		}
-
-		sb.Write(content)
-		sb.WriteString("\n\n")
 	}
 
 	return tools.ToolResult{Text: sb.String()}, nil

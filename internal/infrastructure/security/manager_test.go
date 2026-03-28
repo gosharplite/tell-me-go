@@ -74,45 +74,42 @@ func TestSecurityManager_IsCommandAllowed(t *testing.T) {
 	}
 }
 
+func assertAuthorization(t *testing.T, name string, ok bool, err error, expectedOk bool) {
+	t.Helper()
+	if (err != nil) || (ok != expectedOk) {
+		t.Errorf("%s: Authorize() = %v, %v; want %v, nil", name, ok, err, expectedOk)
+	}
+}
+
 func TestSecurityManager_Authorize(t *testing.T) {
 	t.Parallel()
 	// 1. Authorize when isSafe=true
 
 	sm := NewSecurityManager(nil)
 	ok, err := sm.Authorize(context.Background(), "label", "detail", "reason", true)
-	if err != nil || !ok {
-		t.Errorf("Authorize(isSafe=true) = %v, %v; want true, nil", ok, err)
-	}
+	assertAuthorization(t, "Authorize(isSafe=true)", ok, err, true)
 
 	// 2. Authorize when bypass=true
 	sm.SetBypassActive(true)
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
-	if err != nil || !ok {
-		t.Errorf("Authorize(bypass=true) = %v, %v; want true, nil", ok, err)
-	}
+	assertAuthorization(t, "Authorize(bypass=true)", ok, err, true)
 
 	// 3. Authorize with user interaction (Yes)
 	sm.SetBypassActive(false)
 	sm.SetInteractor(&MockInteractor{Answer: "y"})
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
-	if err != nil || !ok {
-		t.Errorf("Authorize(user=y) = %v, %v; want true, nil", ok, err)
-	}
+	assertAuthorization(t, "Authorize(user=y)", ok, err, true)
 
 	// 4. Authorize with user interaction (No)
 	sm.SetInteractor(&MockInteractor{Answer: "n"})
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
-	if err != nil || ok {
-		t.Errorf("Authorize(user=n) = %v, %v; want false, nil", ok, err)
-	}
+	assertAuthorization(t, "Authorize(user=n)", ok, err, false)
 
 	// 5. Authorize with context-based approval
 	ctxApproved := domain.WithApprovedTools(context.Background(), []string{"test_tool"})
 	ctxApproved = domain.WithCurrentTool(ctxApproved, "test_tool")
 	ok, err = sm.Authorize(ctxApproved, "label", "detail", "reason", false)
-	if err != nil || !ok {
-		t.Errorf("Authorize(ctx_approved=true) = %v, %v; want true, nil", ok, err)
-	}
+	assertAuthorization(t, "Authorize(ctx_approved=true)", ok, err, true)
 }
 
 func TestSecurityManager_PathManagement(t *testing.T) {

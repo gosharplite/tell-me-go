@@ -44,14 +44,9 @@ func (p *unifiedProvider) GetHistoryStream(ctx context.Context, limit int, curso
 				continue
 			}
 
-			// CRITICAL FILTER: Drop auto-summary messages.
-			if p.isAutoSummary(c) {
-				continue
-			}
-
 			dto := p.toDTO(c, false)
 			dto.OriginalIndex = i
-			dtos = append(dtos, dto)
+			dtos = p.processHistoryItem(dto, true, dtos)
 		}
 
 		// After active history, we point to the END of the archive to read backwards.
@@ -79,21 +74,29 @@ func (p *unifiedProvider) GetHistoryStream(ctx context.Context, limit int, curso
 			return dtos, "EOF", nil
 		}
 
+		var filtered []ports.HistoryViewDTO
+		for _, dto := range dtos {
+			filtered = p.processHistoryItem(dto, true, filtered)
+		}
+
 		nextCursor := fmt.Sprintf("archive:%d", nextOffset)
-		return dtos, nextCursor, nil
+		return filtered, nextCursor, nil
 	}
 
 	return nil, "", fmt.Errorf("unsupported cursor format: %s", cursor)
 }
 
-func (p *unifiedProvider) isAutoSummary(c *llm.Content) bool {
-	for _, part := range c.Parts {
-		// Filter both the injected summary block and the agent's synthetic acknowledgment
-		if strings.Contains(part.Text, "System Auto-Summary") || part.Text == "Understood. Context compressed." {
-			return true
-		}
+func (p *unifiedProvider) isAutoSummary(dto ports.HistoryViewDTO) bool {
+	// Filter both the injected summary block and the agent's synthetic acknowledgment
+	return strings.Contains(dto.ContentPreview, "System Auto-Summary") ||
+		dto.ContentPreview == "Understood. Context compressed."
+}
+
+func (p *unifiedProvider) processHistoryItem(dto ports.HistoryViewDTO, skipSummaries bool, results []ports.HistoryViewDTO) []ports.HistoryViewDTO {
+	if skipSummaries && p.isAutoSummary(dto) {
+		return results
 	}
-	return false
+	return append(results, dto)
 }
 
 func (p *unifiedProvider) toDTO(c *llm.Content, archived bool) ports.HistoryViewDTO {
