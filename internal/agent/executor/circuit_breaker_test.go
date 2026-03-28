@@ -11,6 +11,7 @@ import (
 )
 
 func TestFailureTracker_Boundaries(t *testing.T) {
+	t.Parallel()
 	tool := "test-tool"
 	threshold := 3
 
@@ -42,7 +43,9 @@ func TestFailureTracker_Boundaries(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt // Explicitly capture range variable
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ft := newFailureTracker(threshold)
 			for _, success := range tt.results {
 				ft.Record(tool, success)

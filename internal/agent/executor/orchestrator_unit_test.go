@@ -5,9 +5,9 @@ package executor
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -43,12 +43,16 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 
 	releaseCh := make(chan struct{})
 	var startedCount atomic.Int32
+	var wg sync.WaitGroup
+	wg.Add(5)
+
 	mock := &mockExecutor{
 		Result:  tools.ToolResult{Text: "done"},
 		Delay:   1, // Trigger block
 		BlockCh: releaseCh,
 		ExecuteHook: func() {
 			startedCount.Add(1)
+			wg.Done()
 		},
 	}
 	exec.runtime = mock
@@ -65,9 +69,7 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 
 	// Wait for all 5 to be started (indicating they are parallel)
 	go func() {
-		for startedCount.Load() < 5 {
-			time.Sleep(1 * time.Millisecond)
-		}
+		wg.Wait()
 		close(releaseCh)
 	}()
 
