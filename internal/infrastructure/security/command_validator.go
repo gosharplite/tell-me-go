@@ -109,26 +109,34 @@ func (v *commandValidator) ValidateStructure(parts []string) error {
 				"This tool executes binaries directly and does not support shell features. "+
 				"To use shell features, wrap the command: sh -c \"your command\"", desc)
 		}
-	}
 
-	for i, part := range parts {
-		// Check for interpolation characters in any token to prevent shell-like behavior
-		// in binaries that might evaluate their arguments.
-		if !isShell && v.safety.HasUnsafeInterpolation(part) {
-			return fmt.Errorf("shell interpolation character detected in token '%s'. "+
-				"This tool executes binaries directly and does not support shell expansion. "+
-				"To use shell features, wrap the command: sh -c \"your command\"", part)
-		}
-
-		// Check for attached operators like "ls;echo" or "ls>out"
-		// We only apply this to the first token (the command) to minimize false positives
-		// in arguments (e.g., grep "a;b") while still catching common mistakes.
-		if i == 0 && !isShell && v.safety.HasForbiddenCharsInCommand(part) {
-			return fmt.Errorf("shell operator detected inside command token '%s'. "+
-				"This tool executes binaries directly and does not support shell features. "+
-				"To use shell features, wrap the command: sh -c \"your command\"", part)
+		for i, part := range parts {
+			if err := v.validateTokenStructure(part, i == 0); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
+}
+
+func (v *commandValidator) validateTokenStructure(token string, isFirstToken bool) error {
+	// Check for interpolation characters in any token to prevent shell-like behavior
+	// in binaries that might evaluate their arguments.
+	if v.safety.HasUnsafeInterpolation(token) {
+		return fmt.Errorf("shell interpolation character detected in token '%s'. "+
+			"This tool executes binaries directly and does not support shell expansion. "+
+			"To use shell features, wrap the command: sh -c \"your command\"", token)
+	}
+
+	// Check for attached operators like "ls;echo" or "ls>out"
+	// We only apply this to the first token (the command) to minimize false positives
+	// in arguments (e.g., grep "a;b") while still catching common mistakes.
+	if isFirstToken && v.safety.HasForbiddenCharsInCommand(token) {
+		return fmt.Errorf("shell operator detected inside command token '%s'. "+
+			"This tool executes binaries directly and does not support shell features. "+
+			"To use shell features, wrap the command: sh -c \"your command\"", token)
+	}
+
 	return nil
 }
 
