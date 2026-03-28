@@ -177,7 +177,7 @@ func (f *failureTracker) isOpen(toolName string) bool {
 
 func (f *failureTracker) Check(toolName string) error {
 	if f.isOpen(toolName) {
-		return fmt.Errorf("%w: Error: Tool %q is temporarily disabled due to multiple consecutive failures.", tools.ErrToolCircuitOpen, toolName)
+		return fmt.Errorf("%w: tool %q is temporarily disabled due to multiple consecutive failures", tools.ErrToolCircuitOpen, toolName)
 	}
 	return nil
 }
