@@ -345,7 +345,7 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 		},
 	}
 
-	messages, _ := c.toOpenAIMessages(context.Background(), history, nil)
+	_, messages, _ := c.toOpenAIMessages(context.Background(), history, nil, false)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}
@@ -381,7 +381,7 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 		},
 	}
 
-	messages, _ := client.toOpenAIMessages(context.Background(), history, nil)
+	_, messages, _ := client.toOpenAIMessages(context.Background(), history, nil, false)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}
@@ -496,7 +496,7 @@ func TestToOpenAISchema(t *testing.T) {
 func TestInjectPersona(t *testing.T) {
 	t.Run("OpenAI Reasoner Persona", func(t *testing.T) {
 		c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0, 0, nil)
-		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
+		_, messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil, false)
 		if len(messages) != 2 || messages[0].Role != "developer" {
 			t.Errorf("expected developer role for persona in OpenAI reasoner, got %+v", messages[0])
 		}
@@ -504,7 +504,7 @@ func TestInjectPersona(t *testing.T) {
 
 	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
 		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0, nil)
-		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
+		_, messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil, false)
 		if len(messages) != 2 || messages[0].Role != "system" || messages[0].Content != "Be helpful" {
 			t.Errorf("expected system role for persona in DeepSeek, got %+v", messages[0])
 		}
@@ -579,7 +579,7 @@ func TestToOpenAIMessages_MultiToolResponse(t *testing.T) {
 		},
 	}
 
-	messages, err := c.toOpenAIMessages(context.Background(), history, nil)
+	_, messages, err := c.toOpenAIMessages(context.Background(), history, nil, false)
 	if err != nil {
 		t.Fatalf("toOpenAIMessages failed: %v", err)
 	}
@@ -730,7 +730,7 @@ func TestOpenAI_EdgeCase_ToOpenAITools(t *testing.T) {
 			},
 		},
 	}
-	res := c.toOpenAITools(decls)
+	res := c.toOpenAITools(decls, false)
 	if len(res) != 1 || res[0].Function.Name != "test" {
 		t.Errorf("unexpected tools: %+v", res)
 	}
@@ -775,7 +775,7 @@ func TestDeepSeekEmptyReasoningContent(t *testing.T) {
 		},
 	}
 
-	messages, _ := client.toOpenAIMessages(context.Background(), history, nil)
+	_, messages, _ := client.toOpenAIMessages(context.Background(), history, nil, false)
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))
 	}
