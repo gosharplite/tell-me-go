@@ -62,7 +62,7 @@ type bootstrapper struct {
 	Logger           *slog.Logger
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
-	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
+	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
 	RotateSession    func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
@@ -159,6 +159,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		CommandValidator: internal_security.NewCommandValidator(b.SM, capturer),
 		SessionProvider:  sessionProvider,
 		LogFile:          paths.LogPath,
+		TraceFile:        paths.TracePath,
 		Model:            cfg.Model,
 		Mode:             cfg.Mode,
 		PricingOverrides: pricingOverrides,
@@ -196,7 +197,7 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	}
 
 	// Infrastructure-specific tool registration
-	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
+	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.TraceFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
 		return nil, fmt.Errorf("error registering metrics tools: %w", err)
 	}
 	if err := b.SM.RegisterPolicyTools(reg, params.SessionProvider); err != nil {
@@ -402,6 +403,7 @@ func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, conf
 		CommandValidator: internal_security.NewCommandValidator(b.SM, nil),
 		SessionProvider:  state,
 		LogFile:          paths.LogPath,
+		TraceFile:        paths.TracePath,
 		Model:            cfg.Model,
 		Mode:             cfg.Mode,
 		PricingOverrides: pricingOverrides,

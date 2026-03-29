@@ -129,6 +129,7 @@ func TestNewChatter(t *testing.T) {
 		ProviderName: "test-provider",
 		Model:        "test-model",
 		LogPath:      filepath.Join(tmpDir, "trace.log"),
+		TracePath:    filepath.Join(tmpDir, "trace.jsonl"),
 	}
 
 	t.Run("successful initialization", func(t *testing.T) {

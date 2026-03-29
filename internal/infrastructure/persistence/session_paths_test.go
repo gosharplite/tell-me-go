@@ -42,7 +42,13 @@ func TestRotateSession(t *testing.T) {
 	}
 
 	// Create dummy files
-	files := []string{paths.HistoryPath, paths.LogPath, paths.CommandsLogPath}
+	files := []string{
+		paths.HistoryPath,
+		paths.HistoryArchivePath,
+		paths.LogPath,
+		paths.TracePath,
+		paths.CommandsLogPath,
+	}
 	for _, f := range files {
 		if err := os.WriteFile(f, []byte("test data"), 0644); err != nil {
 			t.Fatal(err)

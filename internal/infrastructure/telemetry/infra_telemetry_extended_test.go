@@ -117,8 +117,9 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	outputDir := filepath.Join(tempDir, "output")
 	_ = os.Mkdir(outputDir, 0755)
 	logFile := filepath.Join(outputDir, "test.log")
+	traceFile := filepath.Join(outputDir, "test.trace.jsonl")
 
-	if err := RegisterMetrics(reg, sm, logFile, "test-model", "test-mode", nil); err != nil {
+	if err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil); err != nil {
 		t.Fatalf("RegisterMetrics failed: %v", err)
 	}
 
@@ -197,15 +198,14 @@ func TestRecordSessionCost_Extended(t *testing.T) {
 func TestTraceTelemetry(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	logFile := filepath.Join(tempDir, "test.log")
+	traceFile := filepath.Join(tempDir, "test.trace.jsonl")
 
 	trace := &domain_telemetry.TurnTrace{
 		FinalStatus: "success",
 	}
 
-	logTrace(context.Background(), logFile, trace)
+	logTrace(context.Background(), traceFile, trace)
 
-	traceFile := filepath.Join(tempDir, "test.trace.jsonl")
 	if _, err := os.Stat(traceFile); os.IsNotExist(err) {
 		t.Error("trace file not created")
 	}
@@ -218,7 +218,7 @@ func TestTraceTelemetry(t *testing.T) {
 			defer cancel()
 			_ = bus.Shutdown(ctx)
 		})
-		RegisterTraceSubscriber(bus, logFile)
+		RegisterTraceSubscriber(bus, traceFile)
 
 		_ = bus.Publish(context.Background(), events.TraceEvent{Trace: trace})
 

@@ -142,6 +142,7 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		Model:        activeModel,
 		Mode:         cfg.Mode,
 		LogPath:      paths.LogPath,
+		TracePath:    paths.TracePath,
 	}
 	chatAgent, err := o.AgentFactory(ctx, sd, chatterCfg)
 	if err != nil {

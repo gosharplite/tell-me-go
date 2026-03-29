@@ -421,6 +421,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 		Model:        "test-model",
 		Mode:         "assistant",
 		LogPath:      "tokens.log",
+		TracePath:    "tokens.trace.jsonl",
 	}
 	agent, err := factory(context.Background(), mockDeps, cfg)
 	assert.NoError(t, err)
@@ -619,7 +620,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "TelemetryRegistrationFails",
 			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
+				b.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
 					return simulatedErr
 				}
 			},

@@ -29,6 +29,7 @@ func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.P
 		HistoryPath:        filepath.Join(modeDir, "history.jsonl"),
 		HistoryArchivePath: filepath.Join(modeDir, "history.archive.jsonl"),
 		LogPath:            filepath.Join(modeDir, "tokens.log"),
+		TracePath:          filepath.Join(modeDir, "tokens.trace.jsonl"),
 		CommandsLogPath:    filepath.Join(modeDir, "commands.log"),
 	}, nil
 }
@@ -39,7 +40,13 @@ func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentio
 	outputDir := filepath.Dir(paths.ModeDir)
 
 	// Archive files
-	filesToMove := []string{paths.HistoryPath, paths.LogPath, paths.CommandsLogPath}
+	filesToMove := []string{
+		paths.HistoryPath,
+		paths.HistoryArchivePath,
+		paths.LogPath,
+		paths.TracePath,
+		paths.CommandsLogPath,
+	}
 	backupDir := filepath.Join(outputDir, "backups", timestamp)
 
 	var errs []error

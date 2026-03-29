@@ -63,6 +63,7 @@ type ChatterConfig struct {
 	Model        string
 	Mode         string
 	LogPath      string
+	TracePath    string
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.

@@ -211,6 +211,7 @@ type metricsManager struct {
 	sm               domain_security.Manager
 	metricsMu        sync.Mutex
 	logFile          string
+	traceFile        string
 	model            string
 	mode             string
 	pricingOverrides map[string]domain_pricing.ModelPricing
@@ -228,10 +229,11 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
+func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
+		traceFile:        traceFile,
 		model:            model,
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
@@ -835,8 +837,8 @@ func generateSessionID(mode, logFile string) string {
 }
 
 // logTrace writes a TurnTrace to a trace log file.
-func logTrace(ctx context.Context, logFile string, trace *domain_telemetry.TurnTrace) {
-	if logFile == "" || trace == nil {
+func logTrace(ctx context.Context, traceFile string, trace *domain_telemetry.TurnTrace) {
+	if traceFile == "" || trace == nil {
 		return
 	}
 
@@ -847,7 +849,6 @@ func logTrace(ctx context.Context, logFile string, trace *domain_telemetry.TurnT
 	default:
 	}
 
-	traceFile := strings.TrimSuffix(logFile, filepath.Ext(logFile)) + ".trace.jsonl"
 	data, err := json.Marshal(trace)
 	if err != nil {
 		log.Printf("Warning: Failed to marshal TurnTrace: %v", err)
@@ -872,10 +873,10 @@ func logTrace(ctx context.Context, logFile string, trace *domain_telemetry.TurnT
 }
 
 // RegisterTraceSubscriber subscribes a listener to TraceEvents.
-func RegisterTraceSubscriber(bus events.EventBus, logFile string) {
+func RegisterTraceSubscriber(bus events.EventBus, traceFile string) {
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if te, ok := e.(events.TraceEvent); ok {
-			logTrace(ctx, logFile, te.Trace)
+			logTrace(ctx, traceFile, te.Trace)
 		}
 	})
 }

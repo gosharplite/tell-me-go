@@ -9,5 +9,6 @@ type Paths struct {
 	HistoryPath        string
 	HistoryArchivePath string
 	LogPath            string
+	TracePath          string
 	CommandsLogPath    string
 }

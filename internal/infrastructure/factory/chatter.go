@@ -18,7 +18,7 @@ import (
 
 // NewChatter builds the object graph for the orchestration layer.
 func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
-	telemetry.RegisterTraceSubscriber(deps.GetEventBus(), cfg.LogPath)
+	telemetry.RegisterTraceSubscriber(deps.GetEventBus(), cfg.TracePath)
 
 	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus(), infra_llm.WithLogger(deps.GetLogger()))
 

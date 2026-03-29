@@ -27,6 +27,7 @@ type ToolRegistrationParams struct {
 	CommandValidator domain_security.CommandValidator
 	SessionProvider  ports.SessionProvider
 	LogFile          string
+	TraceFile        string
 	Model            string
 	Mode             string
 	PricingOverrides map[string]pricing.ModelPricing
