@@ -239,7 +239,7 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 		reqPayload.Reasoning = &reasoningConfig{Effort: effort}
 	} else {
 		reqPayload.Messages = messages
-		if hasEffort {
+		if hasEffort && c.capabilities.SupportsReasoningEffort {
 			reqPayload.ReasoningEffort = effort
 		}
 	}

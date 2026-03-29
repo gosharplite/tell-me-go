@@ -180,8 +180,8 @@ func TestDynamicEndpointIntegration(t *testing.T) {
 		if capturedPath != "/chat/completions" {
 			t.Errorf("expected path /chat/completions, got %s", capturedPath)
 		}
-		if !strings.Contains(capturedBody, `"reasoning_effort":"low"`) {
-			t.Errorf("expected body to contain top-level 'reasoning_effort', got %s", capturedBody)
+		if strings.Contains(capturedBody, `"reasoning_effort"`) {
+			t.Errorf("expected body NOT to contain top-level 'reasoning_effort' for GPT-4, got %s", capturedBody)
 		}
 		if strings.Contains(capturedBody, `"reasoning":`) {
 			t.Errorf("expected body to NOT contain nested 'reasoning', got %s", capturedBody)
