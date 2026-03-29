@@ -10,15 +10,40 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/stretchr/testify/mock"
 )
 
-func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
-	tempDir := t.TempDir()
-	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
-	sm.SetSafePathsFile(filepath.Join(tempDir, "safepaths.json"))
-	sm.SetReadOnlyPathsFile(filepath.Join(tempDir, "readonlypaths.json"))
+type mockKVStore struct {
+	mock.Mock
+}
 
-	p := newPolicyTool(sm)
+func (m *mockKVStore) Get(ctx context.Context, key string) (string, error) {
+	args := m.Called(ctx, key)
+	return args.String(0), args.Error(1)
+}
+func (m *mockKVStore) Set(ctx context.Context, key, val string) error {
+	args := m.Called(ctx, key, val)
+	return args.Error(0)
+}
+func (m *mockKVStore) Delete(ctx context.Context, key string) error {
+	args := m.Called(ctx, key)
+	return args.Error(0)
+}
+func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(map[string]string), args.Error(1)
+}
+
+func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
+	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
+
+	mockKV := new(mockKVStore)
+	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	p, err := newPolicyTool(sm, mockKV)
+	if err != nil {
+		t.Fatalf("failed to create policyTool: %v", err)
+	}
 	ctx := context.Background()
 	return sm, p, ctx
 }
@@ -140,6 +165,45 @@ func TestPolicyTool_BypassManagement(t *testing.T) {
 	if sm.IsBypassActive() {
 		t.Error("expected bypass to be inactive after revoke")
 	}
+}
+
+func TestPolicyTool_SessionSettings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Update Session Setting", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		mockKV := p.kv.(*mockKVStore)
+		mockKV.On("Set", ctx, "test_key", "test_val").Return(nil)
+
+		res, err := p.UpdateSessionSetting(ctx, map[string]interface{}{
+			"key":   "test_key",
+			"value": "test_val",
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "updated to 'test_val'") {
+			t.Errorf("Unexpected result text: %q", res.Text)
+		}
+		mockKV.AssertExpectations(t)
+	})
+
+	t.Run("List Session Settings", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		mockKV := p.kv.(*mockKVStore)
+		mockKV.On("GetAll", ctx).Return(map[string]string{"k1": "v1", "k2": "v2"}, nil)
+
+		res, err := p.ListSessionSettings(ctx, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "k1") || !strings.Contains(res.Text, "v2") {
+			t.Error("Expected settings k1 and v2 in list")
+		}
+		mockKV.AssertExpectations(t)
+	})
 }
 
 func TestPolicyTool_ValidationErrors(t *testing.T) {
@@ -274,9 +338,9 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 
 func TestPolicy_Register(t *testing.T) {
 	t.Parallel()
-	sm, _, _ := setupPolicyTest(t)
+	sm, p, _ := setupPolicyTest(t)
 	r := registry.New()
-	if err := sm.RegisterPolicyTools(r); err != nil {
+	if err := sm.RegisterPolicyTools(r, p.kv); err != nil {
 		t.Fatalf("RegisterPolicyTools failed: %v", err)
 	}
 }

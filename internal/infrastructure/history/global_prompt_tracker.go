@@ -41,31 +41,47 @@ type globalPromptTracker struct {
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
 func NewGlobalPromptTracker(homeDir string) (ports.PromptTracker, error) {
-	// Ensure the directory exists
-	dir := filepath.Join(homeDir, ".tellmego")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	// 1. Define Paths
+	globalDir := filepath.Join(homeDir, "output")
+	trackerPath := filepath.Join(globalDir, "global_prompts.jsonl")
+
+	// Legacy paths for migration
+	legacyHiddenPath := filepath.Join(homeDir, ".tellmego", "prompts.jsonl")
+	legacyRootPath := filepath.Join(homeDir, "global_prompts.jsonl")
+
+	// 2. Ensure the output directory exists
+	if err := os.MkdirAll(globalDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory for prompt tracker: %w", err)
 	}
-
-	trackerPath := filepath.Join(dir, "prompts.jsonl")
-	oldTrackerPath := filepath.Join(homeDir, "global_prompts.jsonl")
 
 	tracker := &globalPromptTracker{
 		filepath: trackerPath,
 	}
 
-	// Migrate old prompts file to the new location to prevent data loss
+	// 3. Multi-Stage Migration Logic
 	if _, err := os.Stat(trackerPath); os.IsNotExist(err) {
-		if _, err := os.Stat(oldTrackerPath); err == nil {
-			// Robust: Attempt rename, fallback to copy+delete
-			err := os.Rename(oldTrackerPath, trackerPath)
-			if err != nil {
-				// Fallback for EXDEV (cross-device link) or other rename failures
-				if copyErr := copyFile(oldTrackerPath, trackerPath); copyErr != nil {
-					return tracker, fmt.Errorf("failed to migrate history file: %w", copyErr)
+		var srcPath string
+
+		// Check .tellmego/prompts.jsonl first
+		if _, err := os.Stat(legacyHiddenPath); err == nil {
+			srcPath = legacyHiddenPath
+		} else if _, err := os.Stat(legacyRootPath); err == nil {
+			// Check global_prompts.jsonl in root second
+			srcPath = legacyRootPath
+		}
+
+		if srcPath != "" {
+			// Perform robust migration (rename or copy+delete)
+			if err := os.Rename(srcPath, trackerPath); err != nil {
+				if copyErr := copyFile(srcPath, trackerPath); copyErr != nil {
+					return tracker, fmt.Errorf("failed to migrate history file from %s: %w", srcPath, copyErr)
 				}
-				// Only remove the old file if the copy was successful
-				_ = os.Remove(oldTrackerPath)
+				_ = os.Remove(srcPath)
+			}
+
+			// Cleanup the .tellmego folder if it's now empty
+			if srcPath == legacyHiddenPath {
+				_ = os.Remove(filepath.Dir(legacyHiddenPath))
 			}
 		}
 	}
@@ -339,22 +355,30 @@ func (t *globalPromptTracker) writeCompactedTempFile(w io.Writer, entries []prom
 	return true
 }
 
-func copyFile(src, dst string) error {
-	source, err := os.Open(src)
-	if err != nil {
-		return err
+func copyFile(src, dst string) (err error) {
+	source, openErr := os.Open(src)
+	if openErr != nil {
+		return openErr
 	}
 	defer func() { _ = source.Close() }()
 
-	destination, err := os.Create(dst)
-	if err != nil {
-		return err
+	destination, createErr := os.Create(dst)
+	if createErr != nil {
+		return createErr
 	}
-	defer func() { _ = destination.Close() }()
 
-	if _, err := io.Copy(destination, source); err != nil {
+	// Capture Close error for the writable destination
+	defer func() {
+		closeErr := destination.Close()
+		if err == nil {
+			err = closeErr
+		}
+	}()
+
+	if _, err = io.Copy(destination, source); err != nil {
 		return err
 	}
+
 	return destination.Sync()
 }
 

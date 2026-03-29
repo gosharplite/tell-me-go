@@ -37,7 +37,7 @@ func TestOrchestrator_ErrGroupFallback(t *testing.T) {
 		return injectedErr
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, WithExecutionPlan(mockPlan))
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, withExecutionPlan(mockPlan))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 

@@ -69,7 +69,7 @@ The agent must monitor resource limits during the orchestration loop to allow th
     - Call `filepath.Clean` to resolve traversal attempts.
     - Call `filepath.EvalSymlinks` to prevent symlink-based boundary escapes.
 - **Confirmation Gates**: Tools that perform destructive actions (`write_file`, `replace_text`) or system execution (`execute_command`) MUST implement the `Manager.Authorize` handshake.
-    - The `bypass_confirmation` tool allows the user (via the AI) to disable these prompts for the duration of the **current session**. This state is persistent until the session ends or `revoke_bypass` is called.
+    - The `bypass_confirmation` tool allows the user (via the AI) to disable these prompts for the current mode. This state is stored in the `settings` table of `tellmego.db` and is **persistent across sessions** (not cleared by the `-new` flag) until manually revoked via `revoke_bypass`.
 - **Interactive Handling**: Tools requiring user input MUST attempt to use `/dev/tty` for interaction to remain functional even when `os.Stdin` is redirected (e.g., in piped command workflows).
 - **Error Handling**: Tool execution errors must be caught and sent back to the model as a string response so the model can attempt a fix.
 

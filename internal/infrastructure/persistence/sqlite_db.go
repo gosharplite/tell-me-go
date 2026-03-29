@@ -21,9 +21,15 @@ func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
 
-	// Apply WAL pragma
-	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
-		return nil, fmt.Errorf("failed to set WAL mode: %w", err)
+	// Apply pragmas for resilience
+	pragmas := []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA busy_timeout=5000",
+	}
+	for _, p := range pragmas {
+		if _, err := db.ExecContext(ctx, p); err != nil {
+			return nil, fmt.Errorf("failed to set pragma %q: %w", p, err)
+		}
 	}
 
 	// Run schema migrations
@@ -42,6 +48,10 @@ func createTables(ctx context.Context, db *sql.DB) error {
 			content TEXT NOT NULL,
 			status TEXT NOT NULL,
 			created_at DATETIME NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
 		);`,
 	}
 
@@ -71,9 +81,11 @@ func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem,
 }
 
 func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string) error {
-	if stat, _ := fs.Stat(ctx, tasksPath); stat == nil {
-		return nil
+	stat, err := fs.Stat(ctx, tasksPath)
+	if err != nil || stat == nil || stat.IsDir() {
+		return nil // Nothing to migrate, or not a file
 	}
+
 	oldTasks := newTaskRepository(fs, tasksPath)
 	tasks, err := oldTasks.ReadAll(ctx)
 	if err != nil {
@@ -87,11 +99,14 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 	if err != nil {
 		return fmt.Errorf("starting tasks migration transaction: %w", err)
 	}
+	// Defer rollback to ensure it's called on error
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	for _, t := range tasks {
 		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES (?, ?, ?, ?)",
 			int64(t.ID), t.Content, t.Status, t.CreatedAt.Format(time.RFC3339Nano)); err != nil {
-			_ = tx.Rollback()
 			return fmt.Errorf("inserting legacy task %d: %w", int(t.ID), err)
 		}
 	}

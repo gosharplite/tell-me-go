@@ -94,7 +94,10 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, finalErr
 	}
 
-	return s.formatSearchResults(results, truncated, "No matches found.")
+	if len(results) == 0 {
+		return tools.ToolResult{Text: fmt.Sprintf("0 matches found for literal string/regex '%s' in '%s'. If you are searching for a Go symbol, use 'get_definitions' or 'list_symbols' instead.", params.Query, path)}, nil
+	}
+	return s.formatSearchResults(results, truncated, "")
 }
 
 func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

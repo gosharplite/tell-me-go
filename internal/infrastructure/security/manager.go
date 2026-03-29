@@ -6,12 +6,9 @@ package security
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"sync"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // SecurityManager coordinates path validation, user interaction, and auditing.
@@ -22,7 +19,6 @@ type SecurityManager struct {
 	domainPolicy *domain.Policy
 	safety       *domain.SafetyService
 
-	bypassFile   string
 	bypassActive bool
 	bypassMu     sync.RWMutex
 }
@@ -113,48 +109,11 @@ func (sm *SecurityManager) SetInteractor(interactor domain.UserInteractor) {
 	sm.auditor.SetInteractor(interactor)
 }
 
-// SetBypassFile sets the file where persistent bypass state is stored.
-func (sm *SecurityManager) SetBypassFile(path string) {
-	sm.bypassMu.Lock()
-	defer sm.bypassMu.Unlock()
-	sm.bypassFile = path
-}
-
-// LoadBypassState reads the persistent bypass state from disk.
-func (sm *SecurityManager) LoadBypassState() {
-	sm.bypassMu.Lock()
-	defer sm.bypassMu.Unlock()
-	if sm.bypassFile == "" {
-		return
-	}
-	data, err := os.ReadFile(sm.bypassFile)
-	if err == nil {
-		sm.bypassActive = strings.TrimSpace(string(data)) == "true"
-	}
-}
-
 // IsBypassActive returns the current state of bypass_confirmation.
 func (sm *SecurityManager) IsBypassActive() bool {
 	sm.bypassMu.RLock()
 	defer sm.bypassMu.RUnlock()
 	return sm.bypassActive
-}
-
-// saveBypassState writes the persistent bypass state to disk.
-func (sm *SecurityManager) saveBypassState(ctx context.Context) {
-	sm.bypassMu.RLock()
-	file := sm.bypassFile
-	active := sm.bypassActive
-	sm.bypassMu.RUnlock()
-
-	if file == "" {
-		return
-	}
-	val := "false"
-	if active {
-		val = "true"
-	}
-	_ = persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, file, []byte(val), 0644)
 }
 
 // SetBypassActive sets the bypass state.
@@ -194,11 +153,6 @@ func (sm *SecurityManager) RegisterSafePath(path string) {
 	sm.policy.RegisterPath(path, true)
 }
 
-// saveSafePaths saves safe paths.
-func (sm *SecurityManager) saveSafePaths(ctx context.Context) error {
-	return sm.policy.SavePaths(ctx, true)
-}
-
 // removeSafePath removes a safe path.
 func (sm *SecurityManager) removeSafePath(path string) error {
 	return sm.policy.RemovePath(path, true)
@@ -207,31 +161,6 @@ func (sm *SecurityManager) removeSafePath(path string) error {
 // SetCommandsLogFile sets the commands log file.
 func (sm *SecurityManager) SetCommandsLogFile(path string) {
 	sm.auditor.SetLogFile(path)
-}
-
-// SetSafePathsFile sets the safe paths file.
-func (sm *SecurityManager) SetSafePathsFile(path string) {
-	sm.policy.SetConfigFile(path, true)
-}
-
-// SetReadOnlyPathsFile sets the read-only paths file.
-func (sm *SecurityManager) SetReadOnlyPathsFile(path string) {
-	sm.policy.SetConfigFile(path, false)
-}
-
-// LoadSafePaths loads safe paths.
-func (sm *SecurityManager) LoadSafePaths() error {
-	return sm.policy.LoadPaths(true)
-}
-
-// LoadReadOnlyPaths loads read-only paths.
-func (sm *SecurityManager) LoadReadOnlyPaths() error {
-	return sm.policy.LoadPaths(false)
-}
-
-// saveReadOnlyPaths saves read-only paths.
-func (sm *SecurityManager) saveReadOnlyPaths(ctx context.Context) error {
-	return sm.policy.SavePaths(ctx, false)
 }
 
 // RegisterReadOnlyPath registers a read-only path.

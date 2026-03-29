@@ -25,8 +25,8 @@ type toolExecResult struct {
 	tr    tools.ToolResult
 }
 
-// ExecutionPlanFunc defines the signature for the tool execution plan.
-type ExecutionPlanFunc func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error
+// executionPlanFunc defines the signature for the tool execution plan.
+type executionPlanFunc func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error
 
 // Orchestrator handles the execution of tools, using a WorkerPool for concurrency.
 type Orchestrator struct {
@@ -44,7 +44,7 @@ type Orchestrator struct {
 	failures           *failureTracker
 	observer           tools.ExecutionObserver
 	zombie             *tools.ZombieTool
-	execPlan           ExecutionPlanFunc
+	execPlan           executionPlanFunc
 
 	resolver ToolResolutionService
 	runtime  ToolExecutor
@@ -60,8 +60,8 @@ func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	}
 }
 
-// WithExecutionPlan allows injecting a custom execution plan for testing or strategy changes.
-func WithExecutionPlan(fn ExecutionPlanFunc) executorOption {
+// withExecutionPlan allows injecting a custom execution plan for testing or strategy changes.
+func withExecutionPlan(fn executionPlanFunc) executorOption {
 	return func(e *Orchestrator) {
 		e.execPlan = fn
 	}

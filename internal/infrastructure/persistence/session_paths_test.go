@@ -42,7 +42,13 @@ func TestRotateSession(t *testing.T) {
 	}
 
 	// Create dummy files
-	files := []string{paths.HistoryPath, paths.LogPath, paths.CommandsLogPath}
+	files := []string{
+		paths.HistoryPath,
+		paths.HistoryArchivePath,
+		paths.LogPath,
+		paths.TracePath,
+		paths.CommandsLogPath,
+	}
 	for _, f := range files {
 		if err := os.WriteFile(f, []byte("test data"), 0644); err != nil {
 			t.Fatal(err)
@@ -109,27 +115,6 @@ func TestCleanupOldBackups(t *testing.T) {
 	}
 	if _, err := os.Stat(newDir); os.IsNotExist(err) {
 		t.Errorf("new backup %s should still exist", newDir)
-	}
-}
-
-func TestLoadBackupRetentionDays(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	paths := paths{
-		PersistentConfigPath: filepath.Join(tmp, "config.json"),
-	}
-
-	// Test default
-	if days := LoadBackupRetentionDays(&OSFileSystem{}, paths); days != 30 {
-		t.Errorf("expected default 30, got %d", days)
-	}
-
-	// Test override
-	if err := os.WriteFile(paths.PersistentConfigPath, []byte(`{"backup_retention_days": "15"}`), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if days := LoadBackupRetentionDays(&OSFileSystem{}, paths); days != 15 {
-		t.Errorf("expected overridden 15, got %d", days)
 	}
 }
 

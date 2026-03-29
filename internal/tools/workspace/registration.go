@@ -107,7 +107,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "search_files",
-				Description: "Performs a recursive regex search for a text pattern within a specific subdirectory. Use this when the search scope is restricted to a known module or folder.",
+				Description: "**[TEXT-ONLY SEARCH]** Performs a raw recursive regex search for a literal string or pattern within a specific subdirectory.\n\n**CRITICAL RESTRICTION**: Do **NOT** use this tool to find Go functions, types, or variable declarations; use `get_definitions` or `list_symbols` for 100% accuracy.\n\n**APPROPRIATE USE CASES**:\n1. Finding strings in non-code files (e.g., `.yaml`, `.md`, `.json`, `.sql`).\n2. Searching for hardcoded error messages, log strings, or specific TODO comments.\n3. Verifying the presence of a unique configuration value across multiple files.",
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{

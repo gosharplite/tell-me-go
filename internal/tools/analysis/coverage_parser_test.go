@@ -885,7 +885,6 @@ func TestGetModuleName_WithTrailingSlash(t *testing.T) {
 }
 
 func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	mock := &mockExecutor{}
 

@@ -11,8 +11,11 @@ import (
 	"testing"
 	"time"
 
+	_ "modernc.org/sqlite"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
@@ -33,6 +36,18 @@ func (m *mockSM) IsPathWritable(path string) (string, error) {
 }
 
 func (m *mockSM) Close() error { return nil }
+
+func (m *mockSM) IsBypassActive() bool { return false }
+
+type mockKV struct {
+	ports.KVStore
+	val string
+	err error
+}
+
+func (m *mockKV) Get(ctx context.Context, key string) (string, error) {
+	return m.val, m.err
+}
 
 // Mock Tool Registry
 type mockRegistry struct {
@@ -114,8 +129,9 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	outputDir := filepath.Join(tempDir, "output")
 	_ = os.Mkdir(outputDir, 0755)
 	logFile := filepath.Join(outputDir, "test.log")
+	traceFile := filepath.Join(outputDir, "test.trace.jsonl")
 
-	if err := RegisterMetrics(reg, sm, logFile, "test-model", "test-mode", nil); err != nil {
+	if err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil, nil); err != nil {
 		t.Fatalf("RegisterMetrics failed: %v", err)
 	}
 
@@ -194,15 +210,14 @@ func TestRecordSessionCost_Extended(t *testing.T) {
 func TestTraceTelemetry(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	logFile := filepath.Join(tempDir, "test.log")
+	traceFile := filepath.Join(tempDir, "test.trace.jsonl")
 
 	trace := &domain_telemetry.TurnTrace{
 		FinalStatus: "success",
 	}
 
-	logTrace(context.Background(), logFile, trace)
+	logTrace(context.Background(), traceFile, trace)
 
-	traceFile := filepath.Join(tempDir, "test.trace.jsonl")
 	if _, err := os.Stat(traceFile); os.IsNotExist(err) {
 		t.Error("trace file not created")
 	}
@@ -215,7 +230,7 @@ func TestTraceTelemetry(t *testing.T) {
 			defer cancel()
 			_ = bus.Shutdown(ctx)
 		})
-		RegisterTraceSubscriber(bus, logFile)
+		RegisterTraceSubscriber(bus, traceFile)
 
 		_ = bus.Publish(context.Background(), events.TraceEvent{Trace: trace})
 
@@ -343,19 +358,24 @@ func TestMetricsManager_Retention(t *testing.T) {
 
 func TestMetricsManager_LoadRetentionDays(t *testing.T) {
 	t.Parallel()
-	tempDir := t.TempDir()
+	ctx := context.Background()
 	m := &metricsManager{}
 
-	// Case 1: No config file
-	if days := m.loadRetentionDays(tempDir); days != 30 {
-		t.Errorf("Expected default 30 days, got %d", days)
+	// Case 1: No KVStore
+	if days := m.loadRetentionDays(ctx); days != 30 {
+		t.Errorf("Expected default 30 days when KVStore is nil, got %d", days)
 	}
 
-	// Case 2: Config file with retention days
-	configPath := filepath.Join(tempDir, "config.json")
-	_ = os.WriteFile(configPath, []byte(`{"cost_retention_days": "60"}`), 0644)
-	if days := m.loadRetentionDays(tempDir); days != 60 {
+	// Case 2: KVStore with retention days
+	m.kvStore = &mockKV{val: "60"}
+	if days := m.loadRetentionDays(ctx); days != 60 {
 		t.Errorf("Expected 60 days, got %d", days)
+	}
+
+	// Case 3: KVStore with invalid value
+	m.kvStore = &mockKV{val: "abc"}
+	if days := m.loadRetentionDays(ctx); days != 30 {
+		t.Errorf("Expected default 30 days for invalid value, got %d", days)
 	}
 }
 

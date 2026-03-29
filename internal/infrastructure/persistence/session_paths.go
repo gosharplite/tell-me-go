@@ -4,13 +4,11 @@
 package persistence
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -27,15 +25,12 @@ func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.P
 	}
 
 	return &persistence.Paths{
-		ModeDir:              modeDir,
-		HistoryPath:          filepath.Join(modeDir, "history.jsonl"),
-		HistoryArchivePath:   filepath.Join(modeDir, "history.archive.jsonl"),
-		LogPath:              filepath.Join(modeDir, "tokens.log"),
-		CommandsLogPath:      filepath.Join(modeDir, "commands.log"),
-		SafePathsPath:        filepath.Join(modeDir, "safepaths.json"),
-		ReadPathsPath:        filepath.Join(modeDir, "readpaths.json"),
-		BypassPath:           filepath.Join(modeDir, "bypass.log"),
-		PersistentConfigPath: filepath.Join(modeDir, "config.json"),
+		ModeDir:            modeDir,
+		HistoryPath:        filepath.Join(modeDir, "history.jsonl"),
+		HistoryArchivePath: filepath.Join(modeDir, "history.archive.jsonl"),
+		LogPath:            filepath.Join(modeDir, "tokens.log"),
+		TracePath:          filepath.Join(modeDir, "tokens.trace.jsonl"),
+		CommandsLogPath:    filepath.Join(modeDir, "commands.log"),
 	}, nil
 }
 
@@ -45,7 +40,13 @@ func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentio
 	outputDir := filepath.Dir(paths.ModeDir)
 
 	// Archive files
-	filesToMove := []string{paths.HistoryPath, paths.LogPath, paths.CommandsLogPath}
+	filesToMove := []string{
+		paths.HistoryPath,
+		paths.HistoryArchivePath,
+		paths.LogPath,
+		paths.TracePath,
+		paths.CommandsLogPath,
+	}
 	backupDir := filepath.Join(outputDir, "backups", timestamp)
 
 	var errs []error
@@ -113,23 +114,4 @@ func cleanupOldBackups(fs FileSystem, paths persistence.Paths, retentionDays int
 	}
 
 	return nil
-}
-
-// LoadBackupRetentionDays loads the retention days from the persistent config.
-func LoadBackupRetentionDays(fs FileSystem, paths persistence.Paths) int {
-	retentionDays := 30
-	data, err := fs.ReadFile(paths.PersistentConfigPath)
-	if err != nil {
-		return retentionDays
-	}
-
-	var cfg map[string]string
-	if err := json.Unmarshal(data, &cfg); err == nil {
-		if val, ok := cfg["backup_retention_days"]; ok {
-			if days, err := strconv.Atoi(val); err == nil {
-				return days
-			}
-		}
-	}
-	return retentionDays
 }

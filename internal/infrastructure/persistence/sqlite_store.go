@@ -84,3 +84,65 @@ func (s *sqliteTaskStore) Append(ctx context.Context, item ports.Task) error {
 	}
 	return nil
 }
+
+type sqliteKVStore struct {
+	db *sql.DB
+}
+
+func newSQLiteKVStore(db *sql.DB) *sqliteKVStore {
+	return &sqliteKVStore{db: db}
+}
+
+func (s *sqliteKVStore) Get(ctx context.Context, key string) (string, error) {
+	var val string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&val)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("getting setting %s: %w", key, err)
+	}
+	return val, nil
+}
+
+func (s *sqliteKVStore) Set(ctx context.Context, key string, val string) error {
+	_, err := s.db.ExecContext(ctx, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, val)
+	if err != nil {
+		return fmt.Errorf("setting %s: %w", key, err)
+	}
+	return nil
+}
+
+func (s *sqliteKVStore) Delete(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+	if err != nil {
+		return fmt.Errorf("deleting setting %s: %w", key, err)
+	}
+	return nil
+}
+
+func (s *sqliteKVStore) GetAll(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT key, value FROM settings")
+	if err != nil {
+		return nil, fmt.Errorf("querying all settings: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	res := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, fmt.Errorf("scanning setting row: %w", err)
+		}
+		res[k] = v
+	}
+
+	// Check for errors that occurred during iteration
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating settings rows: %w", err)
+	}
+
+	return res, nil
+}

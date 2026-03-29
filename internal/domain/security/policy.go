@@ -163,6 +163,8 @@ func DefaultPolicy() *Policy {
 			"verify_release_readiness": true,
 			"summarize_history":        true,
 			"manage_history":           true,
+			"update_session_setting":   true,
+			"list_session_settings":    true,
 
 			// Media Tools
 			"create_image": true,

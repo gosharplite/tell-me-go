@@ -5,11 +5,13 @@ package di
 
 import (
 	stdctx "context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -35,15 +37,10 @@ import (
 type ConfigurableSecurityManager interface {
 	security.Manager
 	SetCommandsLogFile(path string)
-	SetSafePathsFile(path string)
-	SetReadOnlyPathsFile(path string)
-	SetBypassFile(path string)
-	LoadSafePaths() error
-	LoadReadOnlyPaths() error
-	LoadBypassState()
 	RegisterSafePath(path string)
 	RegisterReadOnlyPath(path string)
-	RegisterPolicyTools(r tools.Registry) error
+	SetBypassActive(active bool)
+	RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error
 }
 
 // Container defines the interface for building session dependencies and provides factories.
@@ -66,7 +63,7 @@ type bootstrapper struct {
 	Logger           *slog.Logger
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
-	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
+	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
 	RotateSession    func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
@@ -105,10 +102,19 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	if err := b.setupSecurity(paths, configPath); err != nil {
 		return nil, nil, nil, err
 	}
+
+	sessionProvider, cleanup, err := b.buildSessionProvider(ctx, paths, cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	b.applySessionSecuritySettings(ctx, sessionProvider)
+
 	if newSession {
 		// Hard dependency: session rotation must complete before we continue.
 		// Errors here MUST halt execution to prevent state corruption.
-		if err := b.handleNewSession(ctx, paths, cfg, pricingOverrides); err != nil {
+		if err := b.handleNewSession(ctx, paths, cfg, pricingOverrides, sessionProvider.GetSettings()); err != nil {
+			cleanup()
 			return nil, nil, nil, fmt.Errorf("session initialization failed during rotation: %w", err)
 		}
 	}
@@ -118,6 +124,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	hManager, err := b.buildHistoryManager(ctx, paths)
 	if err != nil {
+		cleanup()
 		return nil, nil, nil, err
 	}
 
@@ -127,12 +134,8 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.Logger))
 	if err != nil {
+		cleanup()
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
-	}
-
-	sessionProvider, cleanup, err := b.buildSessionProvider(ctx, paths, cfg)
-	if err != nil {
-		return nil, nil, nil, err
 	}
 
 	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
@@ -141,6 +144,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		CommandValidator: internal_security.NewCommandValidator(b.SM, capturer),
 		SessionProvider:  sessionProvider,
 		LogFile:          paths.LogPath,
+		TraceFile:        paths.TracePath,
 		Model:            cfg.Model,
 		Mode:             cfg.Mode,
 		PricingOverrides: pricingOverrides,
@@ -178,10 +182,10 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	}
 
 	// Infrastructure-specific tool registration
-	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
+	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.TraceFile, params.Model, params.Mode, params.PricingOverrides, params.SessionProvider.GetSettings()); err != nil {
 		return nil, fmt.Errorf("error registering metrics tools: %w", err)
 	}
-	if err := b.SM.RegisterPolicyTools(reg); err != nil {
+	if err := b.SM.RegisterPolicyTools(reg, params.SessionProvider.GetSettings()); err != nil {
 		return nil, fmt.Errorf("error registering policy tools: %w", err)
 	}
 	return reg, nil
@@ -208,6 +212,33 @@ func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persisten
 		}
 	}
 	return sessionProvider, cleanup, nil
+}
+
+func (b *bootstrapper) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider) {
+	if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
+		b.SM.SetBypassActive(true)
+	}
+
+	// Load authorized paths from settings
+	loadPathsFromSettings(ctx, sessionProvider.GetSettings(), "authorized_safe_paths", b.SM.RegisterSafePath, b.Logger)
+	loadPathsFromSettings(ctx, sessionProvider.GetSettings(), "authorized_read_paths", b.SM.RegisterReadOnlyPath, b.Logger)
+}
+
+func loadPathsFromSettings(ctx stdctx.Context, kv ports.KVStore, key string, register func(string), logger *slog.Logger) {
+	val, err := kv.Get(ctx, key)
+	if err != nil || val == "" {
+		return
+	}
+
+	var paths []string
+	if err := json.Unmarshal([]byte(val), &paths); err != nil {
+		logger.Error("failed to unmarshal "+key, "error", err, "value", val)
+		return
+	}
+
+	for _, p := range paths {
+		register(p)
+	}
 }
 
 func (b *bootstrapper) buildAgentOrchestrator(
@@ -302,25 +333,15 @@ func (b *bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 	return pricingOverrides
 }
 
-// setupSecurity configures the security manager with necessary paths and bypass states.
+// setupSecurity configures the security manager with necessary paths.
 func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) error {
-	b.SM.SetSafePathsFile(paths.SafePathsPath)
-	b.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
-	b.SM.SetBypassFile(paths.BypassPath)
-	if err := b.SM.LoadSafePaths(); err != nil {
-		return fmt.Errorf("failed to load safe paths: %w", err)
-	}
-	if err := b.SM.LoadReadOnlyPaths(); err != nil {
-		return fmt.Errorf("failed to load read-only paths: %w", err)
-	}
-	b.SM.LoadBypassState()
 	b.SM.RegisterSafePath(filepath.Join(b.HomeDir, "output"))
 	b.SM.RegisterReadOnlyPath(configPath)
 	return nil
 }
 
 // handleNewSession manages session rotation and cost recording for new sessions.
-func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) error {
+func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, b.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
@@ -328,7 +349,12 @@ func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 	}
 
 	// Critical path: always attempt to rotate the session
-	retentionDays := infra_persistence.LoadBackupRetentionDays(&infra_persistence.OSFileSystem{}, *paths)
+	retentionDays := 30
+	if val, err := kvStore.Get(ctx, "backup_retention_days"); err == nil && val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			retentionDays = parsed
+		}
+	}
 	if err := b.RotateSession(&infra_persistence.OSFileSystem{}, b.Stdout, *paths, retentionDays); err != nil {
 		return fmt.Errorf("session rotation failed: %w", err)
 	}
@@ -393,6 +419,7 @@ func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, conf
 		CommandValidator: internal_security.NewCommandValidator(b.SM, nil),
 		SessionProvider:  state,
 		LogFile:          paths.LogPath,
+		TraceFile:        paths.TracePath,
 		Model:            cfg.Model,
 		Mode:             cfg.Mode,
 		PricingOverrides: pricingOverrides,

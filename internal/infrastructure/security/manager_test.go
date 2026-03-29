@@ -15,10 +15,7 @@ import (
 
 func TestSecurityManager_Bypass(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
-	bypassFile := filepath.Join(tmpDir, "bypass")
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
-	sm.SetBypassFile(bypassFile)
 
 	// Default
 	if sm.IsBypassActive() {
@@ -29,24 +26,6 @@ func TestSecurityManager_Bypass(t *testing.T) {
 	sm.SetBypassActive(true)
 	if !sm.IsBypassActive() {
 		t.Error("Expected bypass to be active")
-	}
-
-	// Save
-	sm.saveBypassState(context.Background())
-	data, err := os.ReadFile(bypassFile)
-	if err != nil {
-		t.Fatalf("Failed to read bypass file: %v", err)
-	}
-	if string(data) != "true" {
-		t.Errorf("Expected 'true' in bypass file, got %q", string(data))
-	}
-
-	// Load
-	sm2 := NewSecurityManager(nil)
-	sm2.SetBypassFile(bypassFile)
-	sm2.LoadBypassState()
-	if !sm2.IsBypassActive() {
-		t.Error("Expected sm2 to have bypass active after loading")
 	}
 }
 
@@ -171,14 +150,6 @@ func TestSecurityManager_Misc(t *testing.T) {
 	if !strings.Contains(logContent, "AUDIT: TEST_ACTION") || !strings.Contains(logContent, "ACTION=test") {
 		t.Errorf("Audit log content mismatch: %q", logContent)
 	}
-
-	// Read/Write paths
-	sm.SetSafePathsFile(filepath.Join(tmpDir, "safe.json"))
-	sm.SetReadOnlyPathsFile(filepath.Join(tmpDir, "readonly.json"))
-	_ = sm.saveSafePaths(context.Background())
-	_ = sm.saveReadOnlyPaths(context.Background())
-	_ = sm.LoadSafePaths()
-	_ = sm.LoadReadOnlyPaths()
 
 	sm.RegisterReadOnlyPath("/tmp/ro")
 	_ = sm.removeReadOnlyPath("/tmp/ro")

@@ -5,20 +5,29 @@ package security
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 type policyTool struct {
 	sm *SecurityManager
+	kv ports.KVStore
 }
 
 // newPolicyTool creates a new policyTool.
-func newPolicyTool(sm *SecurityManager) *policyTool {
-	return &policyTool{sm: sm}
+func newPolicyTool(sm *SecurityManager, kv ports.KVStore) (*policyTool, error) {
+	if sm == nil {
+		return nil, fmt.Errorf("SecurityManager dependency is required")
+	}
+	if kv == nil {
+		return nil, fmt.Errorf("KVStore dependency is required")
+	}
+	return &policyTool{sm: sm, kv: kv}, nil
 }
 
 func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -56,7 +65,7 @@ func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 
 	// Register and Persist
 	t.sm.RegisterSafePath(absPath)
-	if err := t.sm.saveSafePaths(ctx); err != nil {
+	if err := t.persistPaths(ctx, true); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path authorized but failed to persist: %v", err)}, nil
 	}
 
@@ -97,7 +106,7 @@ func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := t.sm.saveSafePaths(ctx); err != nil {
+	if err := t.persistPaths(ctx, true); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -153,7 +162,7 @@ func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 
 	// Register and Persist
 	t.sm.RegisterReadOnlyPath(absPath)
-	if err := t.sm.saveReadOnlyPaths(ctx); err != nil {
+	if err := t.persistPaths(ctx, false); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path authorized for reading but failed to persist: %v", err)}, nil
 	}
 
@@ -194,7 +203,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := t.sm.saveReadOnlyPaths(ctx); err != nil {
+	if err := t.persistPaths(ctx, false); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -213,6 +222,25 @@ func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interfac
 		fmt.Fprintf(&sb, "- %s\n", p)
 	}
 	return tools.ToolResult{Text: sb.String()}, nil
+}
+
+func (t *policyTool) persistPaths(ctx context.Context, safe bool) error {
+	var key string
+	var paths []string
+	if safe {
+		key = "authorized_safe_paths"
+		paths = t.sm.GetSafePaths()
+	} else {
+		key = "authorized_read_paths"
+		paths = t.sm.getReadOnlyPaths()
+	}
+
+	data, err := json.Marshal(paths)
+	if err != nil {
+		return fmt.Errorf("failed to marshal paths: %w", err)
+	}
+
+	return t.kv.Set(ctx, key, string(data))
 }
 
 func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -234,10 +262,13 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 
 	t.sm.SetBypassActive(true)
 
-	t.sm.saveBypassState(ctx)
-	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.")
-	// t.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
-	return tools.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
+	if err := t.kv.Set(ctx, "bypass_confirmation", "true"); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to persist bypass status: %w", err)
+	}
+
+	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS MODE.")
+	// t.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this mode.")
+	return tools.ToolResult{Text: "All future confirmations for this mode will be bypassed. This setting is now **persistent across session rotations** until manually revoked."}, nil
 }
 
 func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -246,10 +277,65 @@ func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface
 
 	t.sm.SetBypassActive(false)
 
-	t.sm.saveBypassState(ctx)
+	if err := t.kv.Set(ctx, "bypass_confirmation", "false"); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to persist bypass revocation: %w", err)
+	}
+
 	t.sm.Warn("[SECURITY] Interactive security prompts have been RE-ENABLED.")
 	// t.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return tools.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
+}
+
+func (t *policyTool) UpdateSessionSetting(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	t.sm.TerminalLock()
+	defer t.sm.TerminalUnlock()
+
+	var params struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Key == "" {
+		return tools.ToolResult{}, fmt.Errorf("key argument is required")
+	}
+
+	// Confirmation
+	confirmed, err := t.confirmAction(ctx, "to update session setting:", params.Key, fmt.Sprintf("New Value: %s", params.Value), false)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if !confirmed {
+		return tools.ToolResult{Text: "Update denied by user."}, nil
+	}
+
+	if err := t.kv.Set(ctx, params.Key, params.Value); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to update setting: %w", err)
+	}
+
+	return tools.ToolResult{Text: fmt.Sprintf("Session setting '%s' has been updated to '%s'. This change is persistent across sessions.", params.Key, params.Value)}, nil
+}
+
+func (t *policyTool) ListSessionSettings(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	settings, err := t.kv.GetAll(ctx)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to retrieve settings: %w", err)
+	}
+
+	if len(settings) == 0 {
+		return tools.ToolResult{Text: "No persistent session settings are currently defined."}, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Current persistent session settings:\n")
+	sb.WriteString("| Key | Value |\n")
+	sb.WriteString("| :--- | :--- |\n")
+	for k, v := range settings {
+		fmt.Fprintf(&sb, "| %s | %s |\n", k, v)
+	}
+	return tools.ToolResult{Text: sb.String()}, nil
 }
 
 func (t *policyTool) confirmAction(ctx context.Context, title, path, reason string, doubleConfirm bool) (bool, error) {
@@ -319,8 +405,11 @@ func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 }
 
 // RegisterPolicyTools adds security policy management tools to the registry.
-func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry) error {
-	p := newPolicyTool(sm)
+func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error {
+	p, err := newPolicyTool(sm, kv)
+	if err != nil {
+		return err
+	}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_safepath",
@@ -414,7 +503,7 @@ func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry) error {
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "bypass_confirmation",
-		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
+		Description: "Disables all interactive security prompts for the current mode. This setting is **persistent across sessions** and remains active until manually revoked.",
 	}, p.BypassConfirmation, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
 		return err
 	}
@@ -423,6 +512,34 @@ func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry) error {
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
 	}, p.RevokeBypass, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
+
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "update_session_setting",
+		Description: "Updates a persistent session configuration setting. These settings persist across session rotations and system restarts.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"key": {
+					Type:        "STRING",
+					Description: "The name of the setting to update (e.g., 'backup_retention_days', 'bypass_confirmation').",
+				},
+				"value": {
+					Type:        "STRING",
+					Description: "The new value for the setting.",
+				},
+			},
+			Required: []string{"key", "value"},
+		},
+	}, p.UpdateSessionSetting, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+
+	if err := r.Register(&tools.ToolDeclaration{
+		Name:        "list_session_settings",
+		Description: "Lists all current persistent session settings and their values.",
+	}, p.ListSessionSettings); err != nil {
 		return err
 	}
 

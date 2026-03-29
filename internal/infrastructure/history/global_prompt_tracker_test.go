@@ -230,10 +230,11 @@ func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
 }
 
 func TestGlobalPromptTracker_Migration(t *testing.T) {
-	t.Run("successful migration", func(t *testing.T) {
+	t.Run("successful migration from hidden folder", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		legacyFile := filepath.Join(tmpDir, "global_prompts.jsonl")
-		newFile := filepath.Join(tmpDir, ".tellmego", "prompts.jsonl")
+		legacyFile := filepath.Join(tmpDir, ".tellmego", "prompts.jsonl")
+		_ = os.MkdirAll(filepath.Dir(legacyFile), 0755)
+		newFile := filepath.Join(tmpDir, "output", "global_prompts.jsonl")
 
 		// 1. Setup legacy data
 		legacyContent := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
@@ -264,11 +265,36 @@ func TestGlobalPromptTracker_Migration(t *testing.T) {
 		}
 	})
 
+	t.Run("successful migration from root folder", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		legacyFile := filepath.Join(tmpDir, "global_prompts.jsonl")
+		newFile := filepath.Join(tmpDir, "output", "global_prompts.jsonl")
+
+		// 1. Setup legacy data
+		legacyContent := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
+		if err := os.WriteFile(legacyFile, legacyContent, 0644); err != nil {
+			t.Fatalf("failed to write legacy file: %v", err)
+		}
+
+		// 2. Trigger migration
+		_, _ = NewGlobalPromptTracker(tmpDir)
+
+		// 3. Verify legacy file is gone
+		if _, err := os.Stat(legacyFile); !os.IsNotExist(err) {
+			t.Errorf("expected legacy file to be removed, got err: %v", err)
+		}
+
+		// 4. Verify new file exists and content matches
+		if _, err := os.Stat(newFile); os.IsNotExist(err) {
+			t.Fatalf("expected new file to exist at %s", newFile)
+		}
+	})
+
 	t.Run("no migration if new file exists", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		legacyFile := filepath.Join(tmpDir, "global_prompts.jsonl")
-		newDir := filepath.Join(tmpDir, ".tellmego")
-		newFile := filepath.Join(newDir, "prompts.jsonl")
+		newDir := filepath.Join(tmpDir, "output")
+		newFile := filepath.Join(newDir, "global_prompts.jsonl")
 
 		// 1. Setup legacy and existing data
 		legacyContent := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
@@ -364,7 +390,7 @@ func TestNewNoOpTracker(t *testing.T) {
 func TestNewGlobalPromptTracker_MkdirError(t *testing.T) {
 	// Create a file where a directory should be
 	tmpDir := t.TempDir()
-	conflictFile := filepath.Join(tmpDir, ".tellmego")
+	conflictFile := filepath.Join(tmpDir, "output")
 	if err := os.WriteFile(conflictFile, []byte("not a dir"), 0644); err != nil {
 		t.Fatal(err)
 	}
