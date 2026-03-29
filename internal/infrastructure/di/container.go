@@ -131,27 +131,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
-		b.SM.SetBypassActive(true)
-	}
-
-	// Load authorized paths from settings
-	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_safe_paths"); err == nil && val != "" {
-		var safePaths []string
-		if err := json.Unmarshal([]byte(val), &safePaths); err == nil {
-			for _, p := range safePaths {
-				b.SM.RegisterSafePath(p)
-			}
-		}
-	}
-	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_read_paths"); err == nil && val != "" {
-		var readPaths []string
-		if err := json.Unmarshal([]byte(val), &readPaths); err == nil {
-			for _, p := range readPaths {
-				b.SM.RegisterReadOnlyPath(p)
-			}
-		}
-	}
+	b.applySessionSecuritySettings(ctx, sessionProvider)
 
 	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
 		SecurityManager:  b.SM,
@@ -227,6 +207,30 @@ func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persisten
 		}
 	}
 	return sessionProvider, cleanup, nil
+}
+
+func (b *bootstrapper) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider) {
+	if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
+		b.SM.SetBypassActive(true)
+	}
+
+	// Load authorized paths from settings
+	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_safe_paths"); err == nil && val != "" {
+		var safePaths []string
+		if err := json.Unmarshal([]byte(val), &safePaths); err == nil {
+			for _, p := range safePaths {
+				b.SM.RegisterSafePath(p)
+			}
+		}
+	}
+	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_read_paths"); err == nil && val != "" {
+		var readPaths []string
+		if err := json.Unmarshal([]byte(val), &readPaths); err == nil {
+			for _, p := range readPaths {
+				b.SM.RegisterReadOnlyPath(p)
+			}
+		}
+	}
 }
 
 func (b *bootstrapper) buildAgentOrchestrator(
