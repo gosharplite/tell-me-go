@@ -27,6 +27,7 @@ type client struct {
 	authenticator  auth.Authenticator
 	baseURL        string
 	model          string
+	capabilities   llm.Capabilities
 	headers        map[string]string
 	persona        string
 	thinkingBudget int
@@ -59,6 +60,7 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 		authenticator:  authenticator,
 		baseURL:        strings.TrimSuffix(baseURL, "/"),
 		model:          model,
+		capabilities:   llm.ResolveCapabilities(model),
 		headers:        headers,
 		persona:        persona,
 		thinkingBudget: thinkingBudget,
@@ -67,25 +69,77 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 }
 
 type chatRequest struct {
-	Model               string    `json:"model"`
-	Messages            []message `json:"messages"`
-	Tools               []tool    `json:"tools,omitempty"`
-	MaxTokens           int       `json:"max_tokens,omitempty"`
-	MaxCompletionTokens int       `json:"max_completion_tokens,omitempty"`
-	ReasoningEffort     string    `json:"reasoning_effort,omitempty"`
+	Model               string           `json:"model"`
+	Messages            []message        `json:"messages,omitempty"`
+	Input               []message        `json:"input,omitempty"`
+	Tools               []tool           `json:"tools,omitempty"`
+	MaxTokens           int              `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int              `json:"max_completion_tokens,omitempty"`
+	Reasoning           *reasoningConfig `json:"reasoning,omitempty"`
+	ReasoningEffort     string           `json:"reasoning_effort,omitempty"`
+}
+
+type reasoningConfig struct {
+	Effort string `json:"effort,omitempty"`
+}
+
+type responsesAPIResponse struct {
+	ID     string `json:"id"`
+	Output []struct {
+		Type string `json:"type"`
+		// Nested Message format
+		Message *struct {
+			Role      string         `json:"role"`
+			Content   []contentBlock `json:"content"`
+			ToolCalls []toolCall     `json:"tool_calls"`
+		} `json:"message"`
+		// Direct Content Block format (fallback for heterogeneous items)
+		Role       string         `json:"role"`
+		Content    []contentBlock `json:"content"`
+		ToolCalls  []toolCall     `json:"tool_calls"`
+		Text       interface{}    `json:"text"`
+		InputText  string         `json:"input_text"`
+		OutputText string         `json:"output_text"`
+		Thought    string         `json:"thought"`
+		Reasoning  string         `json:"reasoning"`
+		Refusal    string         `json:"refusal"`
+		Usage      *usage         `json:"usage"`
+	} `json:"output"`
+	Usage usage `json:"usage"`
+}
+
+type contentBlock struct {
+	Type       string                 `json:"type"`
+	Text       interface{}            `json:"text,omitempty"`
+	InputText  string                 `json:"input_text,omitempty"`
+	OutputText string                 `json:"output_text,omitempty"`
+	Thought    string                 `json:"thought,omitempty"`
+	Reasoning  string                 `json:"reasoning,omitempty"` // Support 'reasoning' key
+	Refusal    string                 `json:"refusal,omitempty"`   // Support model refusals
+	ID         string                 `json:"id,omitempty"`        // For 'tool_use' blocks
+	Name       string                 `json:"name,omitempty"`      // For 'tool_use' blocks
+	Input      map[string]interface{} `json:"input,omitempty"`     // For 'tool_use' blocks
+}
+
+type requestContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
 }
 
 type message struct {
 	Role             string      `json:"role"`
-	Content          interface{} `json:"content"` // Never null for DeepSeek
+	Content          interface{} `json:"content,omitempty"` // string or []requestContentBlock
 	ToolCalls        []toolCall  `json:"tool_calls,omitempty"`
 	ToolCallID       string      `json:"tool_call_id,omitempty"`
 	ReasoningContent *string     `json:"reasoning_content,omitempty"`
 }
 
 type tool struct {
-	Type     string               `json:"type"`
-	Function *functionDeclaration `json:"function"`
+	Type        string               `json:"type"`
+	Name        string               `json:"name,omitempty"`
+	Description string               `json:"description,omitempty"`
+	Parameters  *schema              `json:"parameters,omitempty"`
+	Function    *functionDeclaration `json:"function,omitempty"`
 }
 
 type functionDeclaration struct {
@@ -128,6 +182,8 @@ type choice struct {
 type usage struct {
 	PromptTokens     int32 `json:"prompt_tokens"`
 	CompletionTokens int32 `json:"completion_tokens"`
+	InputTokens      int32 `json:"input_tokens,omitempty"`  // Alternative
+	OutputTokens     int32 `json:"output_tokens,omitempty"` // Alternative
 	TotalTokens      int32 `json:"total_tokens"`
 	// OpenAI standard
 	PromptTokensDetails     *promptTokensDetails     `json:"prompt_tokens_details,omitempty"`
@@ -148,28 +204,34 @@ type completionTokensDetails struct {
 // prepareChatRequest constructs the chat request payload.
 // It returns an error if message conversion or JSON serialization fails.
 func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
-	messages, err := c.toOpenAIMessages(ctx, history, resolver)
+	effort, hasEffort := c.headers["reasoning_effort"]
+	// useResponsesAPI requires gpt-5.4+, tools, and reasoning_effort
+	useResponsesAPI := c.capabilities.RequiresResponsesAPI && len(toolDecls) > 0 && hasEffort
+
+	messages, err := c.toOpenAIMessages(ctx, history, resolver, useResponsesAPI)
 	if err != nil {
 		return nil, err
 	}
 
 	reqPayload := chatRequest{
-		Model:    c.model,
-		Messages: messages,
-		Tools:    c.toOpenAITools(toolDecls),
+		Model: c.model,
+		Tools: c.toOpenAITools(toolDecls, useResponsesAPI),
 	}
 
-	// OpenAI reasoning models (o1, o3, gpt-5) use 'max_completion_tokens' instead of 'max_tokens'
-	isOpenAIReasoner := strings.HasPrefix(c.model, "o1") ||
-		strings.HasPrefix(c.model, "o3") ||
-		strings.HasPrefix(c.model, "gpt-5")
-
-	if isOpenAIReasoner {
-		reqPayload.MaxCompletionTokens = c.thinkingBudget
-		if effort, ok := c.headers["reasoning_effort"]; ok {
+	// Dynamic selection for Messages/Input
+	if useResponsesAPI {
+		reqPayload.Input = messages
+		reqPayload.Reasoning = &reasoningConfig{Effort: effort}
+	} else {
+		reqPayload.Messages = messages
+		if hasEffort {
 			reqPayload.ReasoningEffort = effort
 		}
-	} else if strings.Contains(c.model, "reasoner") {
+	}
+
+	if c.capabilities.UseMaxCompletionTokens {
+		reqPayload.MaxCompletionTokens = c.thinkingBudget
+	} else if c.capabilities.IsDeepSeek {
 		// DeepSeek Reasoner still uses 'max_tokens'
 		reqPayload.MaxTokens = c.thinkingBudget
 	}
@@ -177,13 +239,21 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 	return &reqPayload, nil
 }
 
-func (c *client) createHTTPRequest(ctx context.Context, payload interface{}) (*http.Request, error) {
+func (c *client) resolveEndpoint(req *chatRequest) string {
+	if c.capabilities.RequiresResponsesAPI && len(req.Tools) > 0 && (req.Reasoning != nil || req.ReasoningEffort != "") {
+		return "/responses"
+	}
+	return "/chat/completions"
+}
+
+func (c *client) createHTTPRequest(ctx context.Context, payload *chatRequest) (*http.Request, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(body))
+	endpoint := c.resolveEndpoint(payload)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -212,6 +282,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	if err != nil {
 		return nil, nil, err
 	}
+	endpoint := c.resolveEndpoint(reqPayload)
 	req, err := c.createHTTPRequest(ctx, reqPayload)
 	if err != nil {
 		return nil, nil, err
@@ -236,6 +307,14 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		return nil, nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
 
+	if endpoint == "/responses" {
+		var chatResp responsesAPIResponse
+		if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		return c.fromResponsesAPIResponse(&chatResp, duration)
+	}
+
 	var chatResp chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
@@ -244,28 +323,43 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	return c.fromOpenAIResponse(&chatResp, duration)
 }
 
+func (c *client) resolveBlockType(role string) string {
+	if role == "assistant" {
+		return "output_text"
+	}
+	return "input_text"
+}
+
 // toOpenAIMessages converts domain-level history to OpenAI-compatible messages.
 // It returns an error if any part of the history cannot be classified or marshalled to JSON.
-func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]message, error) {
+func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver, useBlocks bool) ([]message, error) {
 	var messages []message
-	isDeepSeek, isOpenAI := c.getModelCapabilities()
-
-	personaInjected := c.maybeInjectInitialPersona(&messages, isDeepSeek, isOpenAI)
+	personaInjected := c.maybeInjectInitialPersona(&messages, useBlocks)
 
 	for _, h := range history {
-		if err := c.appendMessagesFromHistoryItem(ctx, &messages, h, resolver, isDeepSeek, isOpenAI, &personaInjected); err != nil {
+		if err := c.appendMessagesFromHistoryItem(ctx, &messages, h, resolver, &personaInjected, useBlocks); err != nil {
 			return nil, err
 		}
 	}
 	return messages, nil
 }
 
-func (c *client) maybeInjectInitialPersona(messages *[]message, isDeepSeek, isOpenAI bool) (personaInjected bool) {
-	if c.persona != "" && !isOpenAI { // DeepSeek supports 'system' at start
-		*messages = append(*messages, message{
-			Role:    "system",
-			Content: c.persona,
-		})
+func (c *client) maybeInjectInitialPersona(messages *[]message, useBlocks bool) (personaInjected bool) {
+	if c.persona != "" && !c.capabilities.UseDeveloperRole { // Non-OpenAI reasoners use 'system' at start
+		role := "system"
+		msg := message{
+			Role: role,
+		}
+		if useBlocks {
+			if c.persona == "" {
+				msg.Content = nil
+			} else {
+				msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
+			}
+		} else {
+			msg.Content = c.persona
+		}
+		*messages = append(*messages, msg)
 		return true
 	}
 	return false
@@ -276,14 +370,14 @@ func (c *client) appendMessagesFromHistoryItem(
 	messages *[]message,
 	h *llm.Content,
 	resolver llm.AssetResolver,
-	isDeepSeek, isOpenAI bool,
 	personaInjected *bool,
+	useBlocks bool,
 ) error {
 	role := normalizeRole(h.Role)
 
 	toolResponseParts, otherParts := partitionParts(h.Parts)
 
-	if err := c.appendToolResponseMessages(messages, toolResponseParts); err != nil {
+	if err := c.appendToolResponseMessages(messages, toolResponseParts, useBlocks); err != nil {
 		return err
 	}
 
@@ -291,26 +385,37 @@ func (c *client) appendMessagesFromHistoryItem(
 		return nil
 	}
 
-	text, reasoning, toolCalls, err := c.classifyParts(otherParts, isDeepSeek)
+	text, reasoning, toolCalls, err := c.classifyParts(otherParts)
 	if err != nil {
 		return err
 	}
 
-	c.injectPersona(messages, personaInjected, role, &text, isOpenAI, isDeepSeek)
+	c.injectPersona(messages, personaInjected, role, &text, useBlocks)
 
 	var reasoningPtr *string
-	if isDeepSeek && role == "assistant" {
+	if c.capabilities.IsDeepSeek && role == "assistant" {
 		reasoningPtr = &reasoning
 	} else if reasoning != "" {
 		reasoningPtr = &reasoning
 	}
 
-	*messages = append(*messages, message{
+	msg := message{
 		Role:             role,
 		ToolCalls:        toolCalls,
-		Content:          text,
 		ReasoningContent: reasoningPtr,
-	})
+	}
+
+	if useBlocks {
+		if text == "" && len(toolCalls) > 0 {
+			msg.Content = nil // Omit content field for pure tool-calling turns
+		} else {
+			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: text}}
+		}
+	} else {
+		msg.Content = text
+	}
+
+	*messages = append(*messages, msg)
 	return nil
 }
 
@@ -334,7 +439,7 @@ func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherPart
 	return
 }
 
-func (c *client) appendToolResponseMessages(messages *[]message, toolResponseParts []*llm.Part) error {
+func (c *client) appendToolResponseMessages(messages *[]message, toolResponseParts []*llm.Part, useBlocks bool) error {
 	for _, p := range toolResponseParts {
 		// Fail fast if tool response has an empty ID - it violates protocol and indicates state corruption
 		if p.FunctionResponse.ID == "" {
@@ -345,26 +450,28 @@ func (c *client) appendToolResponseMessages(messages *[]message, toolResponsePar
 		if err != nil {
 			return fmt.Errorf("failed to marshal tool response: %w", err)
 		}
-		*messages = append(*messages, message{
-			Role:       "tool",
+		role := "tool"
+		msg := message{
+			Role:       role,
 			ToolCallID: p.FunctionResponse.ID,
-			Content:    res,
-		})
+		}
+		if useBlocks {
+			if res == "" {
+				msg.Content = nil
+			} else {
+				msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: res}}
+			}
+		} else {
+			msg.Content = res
+		}
+		*messages = append(*messages, msg)
 	}
 	return nil
 }
 
-func (c *client) getModelCapabilities() (isDeepSeek bool, isOpenAI bool) {
-	isDeepSeek = strings.Contains(c.model, "deepseek-reasoner")
-	isOpenAI = strings.HasPrefix(c.model, "o1") ||
-		strings.HasPrefix(c.model, "o3") ||
-		strings.HasPrefix(c.model, "gpt-5")
-	return
-}
-
 // classifyParts categorizes different parts of a message.
 // It returns an error if tool arguments cannot be marshalled to JSON.
-func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string, reasoning string, toolCalls []toolCall, err error) {
+func (c *client) classifyParts(parts []*llm.Part) (text string, reasoning string, toolCalls []toolCall, err error) {
 	var textParts []string
 	var reasoningParts []string
 	for _, p := range parts {
@@ -388,7 +495,7 @@ func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string,
 			})
 		} else if p.Text != "" {
 			if p.IsThought {
-				if isDeepSeek {
+				if c.capabilities.IsDeepSeek {
 					reasoningParts = append(reasoningParts, p.Text)
 				} else {
 					textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Text))
@@ -401,34 +508,51 @@ func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string,
 	return strings.Join(textParts, "\n"), strings.Join(reasoningParts, ""), toolCalls, nil
 }
 
-func (c *client) injectPersona(messages *[]message, personaInjected *bool, role string, text *string, isOpenAI, isDeepSeek bool) {
+func (c *client) injectPersona(messages *[]message, personaInjected *bool, role string, text *string, useBlocks bool) {
 	if role != "user" || *personaInjected || c.persona == "" {
 		return
 	}
 
-	if isOpenAI {
-		*messages = append(*messages, message{
-			Role:    "developer",
-			Content: c.persona,
-		})
+	if c.capabilities.UseDeveloperRole {
+		role := "developer"
+		msg := message{
+			Role: role,
+		}
+		if useBlocks {
+			if c.persona == "" {
+				msg.Content = nil
+			} else {
+				msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
+			}
+		} else {
+			msg.Content = c.persona
+		}
+		*messages = append(*messages, msg)
 		*personaInjected = true
 	}
 }
 
-func (c *client) toOpenAITools(decls []*tools.ToolDeclaration) []tool {
+func (c *client) toOpenAITools(decls []*tools.ToolDeclaration, flattened bool) []tool {
 	if len(decls) == 0 {
 		return nil
 	}
 	var res []tool
 	for _, d := range decls {
-		res = append(res, tool{
+		t := tool{
 			Type: "function",
-			Function: &functionDeclaration{
+		}
+		if flattened {
+			t.Name = d.Name
+			t.Description = d.Description
+			t.Parameters = toOpenAISchema(d.Parameters)
+		} else {
+			t.Function = &functionDeclaration{
 				Name:        d.Name,
 				Description: d.Description,
 				Parameters:  toOpenAISchema(d.Parameters),
-			},
-		})
+			}
+		}
+		res = append(res, t)
 	}
 	return res
 }
@@ -451,6 +575,148 @@ func toOpenAISchema(s *tools.Schema) *schema {
 		}
 	}
 	return res
+}
+
+func (c *client) fromResponsesAPIResponse(resp *responsesAPIResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
+	content := &llm.Content{
+		Role: "model",
+	}
+
+	mergedUsage := resp.Usage
+
+	for _, out := range resp.Output {
+		if out.Usage != nil {
+			if mergedUsage.PromptTokens == 0 {
+				mergedUsage.PromptTokens = out.Usage.PromptTokens
+			}
+			if mergedUsage.CompletionTokens == 0 {
+				mergedUsage.CompletionTokens = out.Usage.CompletionTokens
+			}
+			if mergedUsage.InputTokens == 0 {
+				mergedUsage.InputTokens = out.Usage.InputTokens
+			}
+			if mergedUsage.OutputTokens == 0 {
+				mergedUsage.OutputTokens = out.Usage.OutputTokens
+			}
+		}
+
+		if out.Message != nil {
+			for _, cb := range out.Message.Content {
+				c.appendPartsFromBlock(content, cb)
+			}
+			if err := c.parseResponseToolCalls(out.Message.ToolCalls, content); err != nil {
+				return nil, nil, err
+			}
+		} else {
+			// Process as direct content block based on type
+			cb := contentBlock{
+				Type:       out.Type,
+				Text:       out.Text,
+				InputText:  out.InputText,
+				OutputText: out.OutputText,
+				Thought:    out.Thought,
+				Reasoning:  out.Reasoning,
+				Refusal:    out.Refusal,
+			}
+			c.appendPartsFromBlock(content, cb)
+
+			// Fallback for items that put blocks in a top-level array
+			for _, childCb := range out.Content {
+				c.appendPartsFromBlock(content, childCb)
+			}
+
+			// Top-level tool calls in output item
+			if err := c.parseResponseToolCalls(out.ToolCalls, content); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
+	content.Validate()
+
+	promptTokens := mergedUsage.PromptTokens
+	if promptTokens == 0 {
+		promptTokens = mergedUsage.InputTokens
+	}
+	completionTokens := mergedUsage.CompletionTokens
+	if completionTokens == 0 {
+		completionTokens = mergedUsage.OutputTokens
+	}
+	totalTokens := mergedUsage.TotalTokens
+	if totalTokens == 0 {
+		totalTokens = promptTokens + completionTokens
+	}
+
+	metrics := &llm.Metrics{
+		Model:          c.model,
+		PromptTokens:   promptTokens,
+		ResponseTokens: completionTokens,
+		TotalTokens:    totalTokens,
+		Duration:       duration,
+	}
+
+	if mergedUsage.PromptTokensDetails != nil {
+		metrics.CachedTokens = mergedUsage.PromptTokensDetails.CachedTokens
+	}
+	if mergedUsage.CompletionTokensDetails != nil {
+		metrics.ThinkingTokens = mergedUsage.CompletionTokensDetails.ReasoningTokens
+	}
+
+	return content, metrics, nil
+}
+
+func (c *client) appendPartsFromBlock(content *llm.Content, cb contentBlock) {
+	switch cb.Type {
+	case "text", "output_text", "input_text":
+		val := cb.OutputText
+		if val == "" {
+			val = cb.InputText
+		}
+		if val == "" {
+			val = c.extractBlockText(cb.Text)
+		}
+		if val != "" {
+			content.Parts = append(content.Parts, &llm.Part{Text: val})
+		}
+	case "thought", "reasoning":
+		val := cb.Thought
+		if val == "" {
+			val = cb.Reasoning
+		}
+		// Some models use type: "thought" with a "text" field
+		if val == "" && cb.Type == "thought" {
+			val = c.extractBlockText(cb.Text)
+		}
+		if val != "" {
+			content.Parts = append(content.Parts, &llm.Part{Text: val, IsThought: true})
+		}
+	case "tool_use":
+		if cb.Name != "" && cb.ID != "" {
+			content.Parts = append(content.Parts, &llm.Part{
+				FunctionCall: &llm.FunctionCall{
+					ID:   cb.ID,
+					Name: cb.Name,
+					Args: cb.Input,
+				},
+			})
+		}
+	case "refusal":
+		if cb.Refusal != "" {
+			content.Parts = append(content.Parts, &llm.Part{Text: cb.Refusal})
+		}
+	}
+}
+
+func (c *client) extractBlockText(txt interface{}) string {
+	switch v := txt.(type) {
+	case string:
+		return v
+	case map[string]interface{}:
+		if val, ok := v["value"].(string); ok {
+			return val
+		}
+	}
+	return ""
 }
 
 func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
