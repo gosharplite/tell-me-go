@@ -223,10 +223,10 @@ func TestSQLiteKVStore(t *testing.T) {
 	})
 
 	t.Run("GetAll", func(t *testing.T) {
-		// Clear table first if needed, but since it's a fresh DB in setupTestDB 
+		// Clear table first if needed, but since it's a fresh DB in setupTestDB
 		// (actually it's the same DB instance if I don't call setupTestDB again)
 		// I'll just use unique keys or check counts.
-		
+
 		settings := map[string]string{
 			"key1": "val1",
 			"key2": "val2",

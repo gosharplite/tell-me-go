@@ -25,7 +25,7 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 	}
 
 	reg := &mockZombieRegistry{
-		isLongRunningFn: func(name string) bool { return true },
+		isLongRunningFn:   func(name string) bool { return true },
 		livenessThreshold: 100 * time.Millisecond,
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			return []*tools.ToolDeclaration{hangingTool}
@@ -37,15 +37,15 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 			case <-ctx.Done():
 				return tools.ToolResult{Text: "cancelled"}, ctx.Err()
 			}
-			
+
 			time.Sleep(50 * time.Millisecond)
-			
+
 			select {
 			case hb <- struct{}{}:
 			case <-ctx.Done():
 				return tools.ToolResult{Text: "cancelled"}, ctx.Err()
 			}
-			
+
 			// Now hang longer than the threshold (100ms)
 			select {
 			case <-ctx.Done():
@@ -57,7 +57,7 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 	}
 
 	// Orchestrator with safety decorator
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, 
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)
@@ -86,7 +86,7 @@ func TestOrchestrator_HeartbeatSuccess(t *testing.T) {
 	}
 
 	reg := &mockZombieRegistry{
-		isLongRunningFn: func(name string) bool { return true },
+		isLongRunningFn:   func(name string) bool { return true },
 		livenessThreshold: 100 * time.Millisecond,
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			return []*tools.ToolDeclaration{livelyTool}

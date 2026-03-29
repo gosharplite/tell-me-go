@@ -760,7 +760,7 @@ func TestCrossSessionPersistence(t *testing.T) {
 
 func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Setup mocks
 	sm := new(mockConfigurableSecurityManager)
 	mockKV := new(mockKVStore)
@@ -775,7 +775,7 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 	// Capture logs
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-	
+
 	bootstrapper := &bootstrapper{
 		SM:     sm,
 		Logger: logger,

@@ -21,9 +21,9 @@ type sessionState struct {
 	db       *sql.DB
 }
 
-func (s *sessionState) GetTasks() ports.TaskStore    { return s.Tasks }
+func (s *sessionState) GetTasks() ports.TaskStore  { return s.Tasks }
 func (s *sessionState) GetSettings() ports.KVStore { return s.Settings }
-func (s *sessionState) GetInfo() ports.SessionInfo   { return s.Info }
+func (s *sessionState) GetInfo() ports.SessionInfo { return s.Info }
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	s.Info = info

@@ -172,7 +172,7 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 	t.Parallel()
 
 	mockLog := &MockLogger{CriticalLogs: make(chan string, 10)}
-	
+
 	// Create a tool that emits heartbeats for a while, then goes "zombie"
 	reg := &mockZombieRegistry{
 		livenessThreshold: 100 * time.Millisecond,
@@ -186,7 +186,7 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 				}
 				time.Sleep(50 * time.Millisecond)
 			}
-			
+
 			// Become a zombie: infinite loop without heartbeats
 			// Must still check ctx.Done() to allow clean exit when orchestrator cancels it.
 			for {
