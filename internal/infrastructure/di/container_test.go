@@ -70,8 +70,8 @@ func (m *mockConfigurableSecurityManager) RegisterSafePath(path string)     { m.
 func (m *mockConfigurableSecurityManager) RegisterReadOnlyPath(path string) { m.Called(path) }
 func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string)   { m.Called(path) }
 func (m *mockConfigurableSecurityManager) SetBypassActive(active bool)      { m.Called(active) }
-func (m *mockConfigurableSecurityManager) RegisterPolicyTools(r tools.Registry, sp ports.SessionProvider) error {
-	args := m.Called(r, sp)
+func (m *mockConfigurableSecurityManager) RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error {
+	args := m.Called(r, kv)
 	return args.Error(0)
 }
 

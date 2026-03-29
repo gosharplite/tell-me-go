@@ -53,10 +53,8 @@ func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Conte
 
 	mockKV := new(mockKVStore)
 	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	mockSP := new(mockSessionProvider)
-	mockSP.On("GetSettings").Return(mockKV).Maybe()
 
-	p := newPolicyTool(sm, mockSP)
+	p := newPolicyTool(sm, mockKV)
 	ctx := context.Background()
 	return sm, p, ctx
 }
@@ -186,7 +184,7 @@ func TestPolicyTool_SessionSettings(t *testing.T) {
 	t.Run("Update Session Setting", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
-		mockKV := p.sp.GetSettings().(*mockKVStore)
+		mockKV := p.kv.(*mockKVStore)
 		mockKV.On("Set", ctx, "test_key", "test_val").Return(nil)
 
 		res, err := p.UpdateSessionSetting(ctx, map[string]interface{}{
@@ -205,7 +203,7 @@ func TestPolicyTool_SessionSettings(t *testing.T) {
 	t.Run("List Session Settings", func(t *testing.T) {
 		t.Parallel()
 		_, p, ctx := setupPolicyTest(t)
-		mockKV := p.sp.GetSettings().(*mockKVStore)
+		mockKV := p.kv.(*mockKVStore)
 		mockKV.On("GetAll", ctx).Return(map[string]string{"k1": "v1", "k2": "v2"}, nil)
 
 		res, err := p.ListSessionSettings(ctx, nil, nil)
@@ -353,7 +351,7 @@ func TestPolicy_Register(t *testing.T) {
 	t.Parallel()
 	sm, p, _ := setupPolicyTest(t)
 	r := registry.New()
-	if err := sm.RegisterPolicyTools(r, p.sp); err != nil {
+	if err := sm.RegisterPolicyTools(r, p.kv); err != nil {
 		t.Fatalf("RegisterPolicyTools failed: %v", err)
 	}
 }

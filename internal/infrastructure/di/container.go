@@ -39,7 +39,7 @@ type ConfigurableSecurityManager interface {
 	RegisterSafePath(path string)
 	RegisterReadOnlyPath(path string)
 	SetBypassActive(active bool)
-	RegisterPolicyTools(r tools.Registry, sp ports.SessionProvider) error
+	RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error
 }
 
 // Container defines the interface for building session dependencies and provides factories.
@@ -180,7 +180,7 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.TraceFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
 		return nil, fmt.Errorf("error registering metrics tools: %w", err)
 	}
-	if err := b.SM.RegisterPolicyTools(reg, params.SessionProvider); err != nil {
+	if err := b.SM.RegisterPolicyTools(reg, params.SessionProvider.GetSettings()); err != nil {
 		return nil, fmt.Errorf("error registering policy tools: %w", err)
 	}
 	return reg, nil
