@@ -40,7 +40,10 @@ func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Conte
 	mockKV := new(mockKVStore)
 	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	p := newPolicyTool(sm, mockKV)
+	p, err := newPolicyTool(sm, mockKV)
+	if err != nil {
+		t.Fatalf("failed to create policyTool: %v", err)
+	}
 	ctx := context.Background()
 	return sm, p, ctx
 }

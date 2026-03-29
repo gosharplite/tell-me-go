@@ -20,8 +20,14 @@ type policyTool struct {
 }
 
 // newPolicyTool creates a new policyTool.
-func newPolicyTool(sm *SecurityManager, kv ports.KVStore) *policyTool {
-	return &policyTool{sm: sm, kv: kv}
+func newPolicyTool(sm *SecurityManager, kv ports.KVStore) (*policyTool, error) {
+	if sm == nil {
+		return nil, fmt.Errorf("SecurityManager dependency is required")
+	}
+	if kv == nil {
+		return nil, fmt.Errorf("KVStore dependency is required")
+	}
+	return &policyTool{sm: sm, kv: kv}, nil
 }
 
 func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -219,10 +225,6 @@ func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interfac
 }
 
 func (t *policyTool) persistPaths(ctx context.Context, safe bool) error {
-	if t.kv == nil {
-		return fmt.Errorf("session provider not initialized")
-	}
-
 	var key string
 	var paths []string
 	if safe {
@@ -260,10 +262,8 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 
 	t.sm.SetBypassActive(true)
 
-	if t.kv != nil {
-		if err := t.kv.Set(ctx, "bypass_confirmation", "true"); err != nil {
-			return tools.ToolResult{}, fmt.Errorf("failed to persist bypass status: %w", err)
-		}
+	if err := t.kv.Set(ctx, "bypass_confirmation", "true"); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to persist bypass status: %w", err)
 	}
 
 	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS MODE.")
@@ -277,10 +277,8 @@ func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface
 
 	t.sm.SetBypassActive(false)
 
-	if t.kv != nil {
-		if err := t.kv.Set(ctx, "bypass_confirmation", "false"); err != nil {
-			return tools.ToolResult{}, fmt.Errorf("failed to persist bypass revocation: %w", err)
-		}
+	if err := t.kv.Set(ctx, "bypass_confirmation", "false"); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to persist bypass revocation: %w", err)
 	}
 
 	t.sm.Warn("[SECURITY] Interactive security prompts have been RE-ENABLED.")
@@ -313,10 +311,6 @@ func (t *policyTool) UpdateSessionSetting(ctx context.Context, args map[string]i
 		return tools.ToolResult{Text: "Update denied by user."}, nil
 	}
 
-	if t.kv == nil {
-		return tools.ToolResult{}, fmt.Errorf("session provider not initialized")
-	}
-
 	if err := t.kv.Set(ctx, params.Key, params.Value); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to update setting: %w", err)
 	}
@@ -325,10 +319,6 @@ func (t *policyTool) UpdateSessionSetting(ctx context.Context, args map[string]i
 }
 
 func (t *policyTool) ListSessionSettings(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	if t.kv == nil {
-		return tools.ToolResult{}, fmt.Errorf("session provider not initialized")
-	}
-
 	settings, err := t.kv.GetAll(ctx)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to retrieve settings: %w", err)
@@ -416,7 +406,10 @@ func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 
 // RegisterPolicyTools adds security policy management tools to the registry.
 func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error {
-	p := newPolicyTool(sm, kv)
+	p, err := newPolicyTool(sm, kv)
+	if err != nil {
+		return err
+	}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_safepath",
