@@ -494,8 +494,8 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 		}
 	}
 	
-	if !strings.Contains(capturedBody, `"type":"tool_call"`) || !strings.Contains(capturedBody, `"id":"call_123"`) {
-		t.Errorf("expected JSON to contain tool_call block, got %s", capturedBody)
+	if !strings.Contains(capturedBody, `"type":"function_call"`) || !strings.Contains(capturedBody, `"id":"call_123"`) {
+		t.Errorf("expected JSON to contain function_call item, got %s", capturedBody)
 	}
 }
 
@@ -537,7 +537,7 @@ func TestToolResultBlocksInHistory(t *testing.T) {
 		t.Errorf("found forbidden top-level 'tool_call_id' in tool message in Responses API mode: %s", capturedBody)
 	}
 	
-	if !strings.Contains(capturedBody, `"type":"tool_result"`) || !strings.Contains(capturedBody, `"call_id":"call_123"`) || !strings.Contains(capturedBody, `"text":"Sunny"`) {
-		t.Errorf("expected JSON to contain tool_result block with call_id and text, got %s", capturedBody)
+	if !strings.Contains(capturedBody, `"type":"function_call_output"`) || !strings.Contains(capturedBody, `"call_id":"call_123"`) || !strings.Contains(capturedBody, `"output":"Sunny"`) {
+		t.Errorf("expected JSON to contain function_call_output item with call_id and output, got %s", capturedBody)
 	}
 }

@@ -71,12 +71,24 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 type chatRequest struct {
 	Model               string           `json:"model"`
 	Messages            []message        `json:"messages,omitempty"`
-	Input               []message        `json:"input,omitempty"`
+	Input               []historyItem    `json:"input,omitempty"`
 	Tools               []tool           `json:"tools,omitempty"`
 	MaxTokens           int              `json:"max_tokens,omitempty"`
 	MaxCompletionTokens int              `json:"max_completion_tokens,omitempty"`
 	Reasoning           *reasoningConfig `json:"reasoning,omitempty"`
 	ReasoningEffort     string           `json:"reasoning_effort,omitempty"`
+}
+
+type historyItem struct {
+	Type    string   `json:"type"`
+	Message *message `json:"message,omitempty"`
+	// for type: "function_call"
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	// for type: "function_call_output"
+	CallID string `json:"call_id,omitempty"`
+	Output string `json:"output,omitempty"`
 }
 
 type reasoningConfig struct {
@@ -127,12 +139,8 @@ type contentBlock struct {
 }
 
 type requestContentBlock struct {
-	Type      string `json:"type"`
-	Text      string `json:"text,omitempty"`      // For input_text / output_text / tool_result
-	ID        string `json:"id,omitempty"`        // For tool_call
-	CallID    string `json:"call_id,omitempty"`   // For tool_result
-	Name      string `json:"name,omitempty"`      // For tool_call
-	Arguments string `json:"arguments,omitempty"` // For tool_call
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"` // For input_text / output_text
 }
 
 type message struct {
@@ -217,7 +225,7 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 	// useResponsesAPI requires gpt-5.4+, tools, and reasoning_effort
 	useResponsesAPI := c.capabilities.RequiresResponsesAPI && len(toolDecls) > 0 && hasEffort
 
-	messages, err := c.toOpenAIMessages(ctx, history, resolver, useResponsesAPI)
+	items, messages, err := c.toOpenAIMessages(ctx, history, resolver, useResponsesAPI)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +237,7 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 
 	// Dynamic selection for Messages/Input
 	if useResponsesAPI {
-		reqPayload.Input = messages
+		reqPayload.Input = items
 		reqPayload.Reasoning = &reasoningConfig{Effort: effort}
 	} else {
 		reqPayload.Messages = messages
@@ -341,19 +349,20 @@ func (c *client) resolveBlockType(role string) string {
 
 // toOpenAIMessages converts domain-level history to OpenAI-compatible messages.
 // It returns an error if any part of the history cannot be classified or marshalled to JSON.
-func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver, useBlocks bool) ([]message, error) {
+func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver, useBlocks bool) ([]historyItem, []message, error) {
+	var items []historyItem
 	var messages []message
-	personaInjected := c.maybeInjectInitialPersona(&messages, useBlocks)
+	personaInjected := c.maybeInjectInitialPersona(&items, &messages, useBlocks)
 
 	for _, h := range history {
-		if err := c.appendMessagesFromHistoryItem(ctx, &messages, h, resolver, &personaInjected, useBlocks); err != nil {
-			return nil, err
+		if err := c.appendMessagesFromHistoryItem(ctx, &items, &messages, h, resolver, &personaInjected, useBlocks); err != nil {
+			return nil, nil, err
 		}
 	}
-	return messages, nil
+	return items, messages, nil
 }
 
-func (c *client) maybeInjectInitialPersona(messages *[]message, useBlocks bool) (personaInjected bool) {
+func (c *client) maybeInjectInitialPersona(items *[]historyItem, messages *[]message, useBlocks bool) (personaInjected bool) {
 	if c.persona != "" && !c.capabilities.UseDeveloperRole { // Non-OpenAI reasoners use 'system' at start
 		role := "system"
 		msg := message{
@@ -361,10 +370,11 @@ func (c *client) maybeInjectInitialPersona(messages *[]message, useBlocks bool) 
 		}
 		if useBlocks {
 			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
+			*items = append(*items, historyItem{Type: "message", Message: &msg})
 		} else {
 			msg.Content = c.persona
+			*messages = append(*messages, msg)
 		}
-		*messages = append(*messages, msg)
 		return true
 	}
 	return false
@@ -372,6 +382,7 @@ func (c *client) maybeInjectInitialPersona(messages *[]message, useBlocks bool) 
 
 func (c *client) appendMessagesFromHistoryItem(
 	ctx context.Context,
+	items *[]historyItem,
 	messages *[]message,
 	h *llm.Content,
 	resolver llm.AssetResolver,
@@ -382,7 +393,7 @@ func (c *client) appendMessagesFromHistoryItem(
 
 	toolResponseParts, otherParts := partitionParts(h.Parts)
 
-	if err := c.appendToolResponseMessages(messages, toolResponseParts, useBlocks); err != nil {
+	if err := c.appendToolResponseMessages(items, messages, toolResponseParts, useBlocks); err != nil {
 		return err
 	}
 
@@ -395,7 +406,7 @@ func (c *client) appendMessagesFromHistoryItem(
 		return err
 	}
 
-	c.injectPersona(messages, personaInjected, role, &text, useBlocks)
+	c.injectPersona(items, messages, personaInjected, role, &text, useBlocks)
 
 	var reasoningPtr *string
 	if c.capabilities.IsDeepSeek && role == "assistant" {
@@ -410,28 +421,24 @@ func (c *client) appendMessagesFromHistoryItem(
 	}
 
 	if useBlocks {
-		var blocks []requestContentBlock
-		// 1. Text block (if any)
-		if text != "" || len(toolCalls) == 0 {
-			blocks = append(blocks, requestContentBlock{Type: c.resolveBlockType(role), Text: text})
-		}
-		// 2. Tool call blocks
+		msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: text}}
+		*items = append(*items, historyItem{Type: "message", Message: &msg})
+
+		// Append tool calls as separate items
 		for _, tc := range toolCalls {
-			blocks = append(blocks, requestContentBlock{
-				Type:      "tool_call",
+			*items = append(*items, historyItem{
+				Type:      "function_call",
 				ID:        tc.ID,
 				Name:      tc.Function.Name,
 				Arguments: tc.Function.Arguments,
 			})
 		}
-		msg.Content = blocks
-		msg.ToolCalls = nil // Ensure top-level field is NOT sent
 	} else {
 		msg.Content = text
 		msg.ToolCalls = toolCalls
+		*messages = append(*messages, msg)
 	}
 
-	*messages = append(*messages, msg)
 	return nil
 }
 
@@ -455,7 +462,7 @@ func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherPart
 	return
 }
 
-func (c *client) appendToolResponseMessages(messages *[]message, toolResponseParts []*llm.Part, useBlocks bool) error {
+func (c *client) appendToolResponseMessages(items *[]historyItem, messages *[]message, toolResponseParts []*llm.Part, useBlocks bool) error {
 	for _, p := range toolResponseParts {
 		// Fail fast if tool response has an empty ID - it violates protocol and indicates state corruption
 		if p.FunctionResponse.ID == "" {
@@ -466,21 +473,20 @@ func (c *client) appendToolResponseMessages(messages *[]message, toolResponsePar
 		if err != nil {
 			return fmt.Errorf("failed to marshal tool response: %w", err)
 		}
-		role := "tool"
-		msg := message{
-			Role: role,
-		}
+
 		if useBlocks {
-			msg.Content = []requestContentBlock{{
-				Type:   "tool_result",
+			*items = append(*items, historyItem{
+				Type:   "function_call_output",
 				CallID: p.FunctionResponse.ID,
-				Text:   res,
-			}}
+				Output: res,
+			})
 		} else {
-			msg.Content = res
-			msg.ToolCallID = p.FunctionResponse.ID
+			*messages = append(*messages, message{
+				Role:       "tool",
+				ToolCallID: p.FunctionResponse.ID,
+				Content:    res,
+			})
 		}
-		*messages = append(*messages, msg)
 	}
 	return nil
 }
@@ -524,22 +530,23 @@ func (c *client) classifyParts(parts []*llm.Part) (text string, reasoning string
 	return strings.Join(textParts, "\n"), strings.Join(reasoningParts, ""), toolCalls, nil
 }
 
-func (c *client) injectPersona(messages *[]message, personaInjected *bool, role string, text *string, useBlocks bool) {
+func (c *client) injectPersona(items *[]historyItem, messages *[]message, personaInjected *bool, role string, text *string, useBlocks bool) {
 	if role != "user" || *personaInjected || c.persona == "" {
 		return
 	}
 
 	if c.capabilities.UseDeveloperRole {
-		role := "developer"
+		devRole := "developer"
 		msg := message{
-			Role: role,
+			Role: devRole,
 		}
 		if useBlocks {
-			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
+			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(devRole), Text: c.persona}}
+			*items = append(*items, historyItem{Type: "message", Message: &msg})
 		} else {
 			msg.Content = c.persona
+			*messages = append(*messages, msg)
 		}
-		*messages = append(*messages, msg)
 		*personaInjected = true
 	}
 }
