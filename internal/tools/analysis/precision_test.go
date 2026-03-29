@@ -94,7 +94,7 @@ func Dead() {}
 			}
 			tt.args["path"] = tmpDir
 
-			result, err := analyzer.FindOrphanedSymbols(context.Background(), tt.args)
+			result, err := analyzer.FindOrphanedSymbols(context.Background(), tt.args, nil)
 			require.NoError(t, err)
 
 			for _, exp := range tt.expected {
@@ -119,7 +119,7 @@ func setupPrecisionWorkspace(t *testing.T, files map[string]string) (string, *in
 
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
-	require.NoError(t, idx.Refresh(context.Background()))
+	require.NoError(t, idx.Refresh(context.Background(), nil))
 
 	return tmpDir, idx
 }

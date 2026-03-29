@@ -58,7 +58,7 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 		executor: executor,
 	}
 
-	res, err := m.verifyReleaseReadiness(context.Background(), nil)
+	res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -162,7 +162,7 @@ func runReleaseReadinessTest(t *testing.T, sm domain_security.Manager, name stri
 		executor: executor,
 	}
 
-	res, err := m.verifyReleaseReadiness(context.Background(), nil)
+	res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 			fs.Files = map[string][]byte{"go.mod": []byte("module test")}
 			executor := &mockCommandExecutor{runFunc: tt.runFunc}
 			m := &releaseManager{sm: sm, fs: fs, executor: executor}
-			res, err := m.verifyReleaseReadiness(context.Background(), nil)
+			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 			require.NoError(t, err)
 			assert.Contains(t, res.Text, tt.wantSubstr)
 		})

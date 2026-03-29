@@ -22,7 +22,7 @@ type mediaManager struct {
 	assetsDir string
 }
 
-func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if m.client == nil {
 		return tools.ToolResult{}, tools.ErrNotImplemented
 	}
@@ -44,6 +44,27 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 	if a.AspectRatio != "" {
 		prompt = fmt.Sprintf("%s (aspect ratio %s)", prompt, a.AspectRatio)
 	}
+
+	// Heartbeat while image is generating
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
 
 	images, err := m.client.GenerateImages(ctx, a.Model, prompt, "image/png")
 	if err != nil {
@@ -70,7 +91,7 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 	return result, nil
 }
 
-func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var a struct {
 		Filepath string `json:"filepath"`
 	}

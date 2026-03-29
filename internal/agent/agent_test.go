@@ -379,7 +379,7 @@ func TestAgent_PinningFlow(t *testing.T) {
 
 func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h ports.HistoryManager, ctx context.Context, action string, index float64) {
 	t.Helper()
-	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": action, "index": index})
+	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": action, "index": index}, nil)
 	if err != nil {
 		t.Fatalf("ManageHistory failed: %v", err)
 	}
@@ -907,7 +907,7 @@ func (m *mockToolRegistryWithExpectations) RegisterInternal(declaration interfac
 	return args.Error(0)
 }
 
-func (m *mockToolRegistryWithExpectations) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mockToolRegistryWithExpectations) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	call := m.Called(ctx, name, args)
 	return call.Get(0).(tools.ToolResult), call.Error(1)
 }
@@ -952,4 +952,8 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 	output := buf.String()
 	require.Contains(t, output, "event bus flush incomplete during shutdown")
 	require.Contains(t, output, "flush failed")
+}
+
+func (m *mockToolRegistryWithExpectations) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

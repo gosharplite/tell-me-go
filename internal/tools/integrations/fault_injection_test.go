@@ -74,7 +74,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"repository":   "repo",
 				}
-				_, err := m.adoListRepositoryItems(ctx, args)
+				_, err := m.adoListRepositoryItems(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -109,7 +109,7 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 					"pipeline_id":  1,
 					"run_id":       1,
 				}
-				_, err := m.adoGetPipelineRun(ctx, args)
+				_, err := m.adoGetPipelineRun(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -245,7 +245,7 @@ func TestConfluenceManager_ErrorPaths(t *testing.T) {
 			},
 			call: func(ctx context.Context, m *confluenceManager) error {
 				args := map[string]interface{}{"page_id": "123"}
-				_, err := m.confluenceRead(ctx, args)
+				_, err := m.confluenceRead(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -294,7 +294,7 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 			},
 			call: func(ctx context.Context, m *jiraManager) error {
 				args := map[string]interface{}{"jql": "project=PROJ"}
-				_, err := m.jiraSearchIssues(ctx, args)
+				_, err := m.jiraSearchIssues(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -311,7 +311,7 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 			},
 			call: func(ctx context.Context, m *jiraManager) error {
 				args := map[string]interface{}{"issue_key": "PROJ-1"}
-				_, err := m.jiraGetIssue(ctx, args)
+				_, err := m.jiraGetIssue(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -364,7 +364,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"pipeline_id":  1,
 				}
-				_, err := m.adoListPipelineRuns(ctx, args)
+				_, err := m.adoListPipelineRuns(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -386,7 +386,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"pipeline_id":  1,
 					"run_id":       1,
 				}
-				_, err := m.adoGetPipelineLogs(ctx, args)
+				_, err := m.adoGetPipelineLogs(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode logs list",
@@ -407,7 +407,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"build_id":     1,
 				}
-				_, err := m.adoGetBuildTimeline(ctx, args)
+				_, err := m.adoGetBuildTimeline(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -428,7 +428,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"pipeline_id":  1,
 				}
-				_, err := m.adoGetPipelineDefinition(ctx, args)
+				_, err := m.adoGetPipelineDefinition(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -450,7 +450,7 @@ func TestADOManager_MoreErrorPaths(t *testing.T) {
 					"definition_id": 1,
 					"variables":     map[string]interface{}{"K": map[string]interface{}{"value": "V"}},
 				}
-				_, err := m.adoUpdateBuildDefinitionVariables(ctx, args)
+				_, err := m.adoUpdateBuildDefinitionVariables(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode definition",
@@ -504,7 +504,7 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 					"repository":      "repo",
 					"pull_request_id": 123,
 				}
-				_, err := m.adoGetPrStatuses(ctx, args)
+				_, err := m.adoGetPrStatuses(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -526,7 +526,7 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 					"repository":      "repo",
 					"pull_request_id": 123,
 				}
-				_, err := m.adoGetPrPolicyEvaluations(ctx, args)
+				_, err := m.adoGetPrPolicyEvaluations(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode PR metadata",
@@ -554,7 +554,7 @@ func TestADOManager_PolicyErrorPaths(t *testing.T) {
 					"repository":      "repo",
 					"pull_request_id": 123,
 				}
-				_, err := m.adoGetPrPolicyEvaluations(ctx, args)
+				_, err := m.adoGetPrPolicyEvaluations(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -607,7 +607,7 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 					"project":      "proj",
 					"repository":   "repo",
 				}
-				_, err := m.adoListPullRequests(ctx, args)
+				_, err := m.adoListPullRequests(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",
@@ -629,7 +629,7 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 					"repository":      "repo",
 					"pull_request_id": 123,
 				}
-				_, err := m.adoGetPrThreads(ctx, args)
+				_, err := m.adoGetPrThreads(ctx, args, nil)
 				return err
 			},
 			wantErrMsg: "failed to decode response",

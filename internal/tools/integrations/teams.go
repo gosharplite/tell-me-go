@@ -28,7 +28,7 @@ func newteamsManager(sm teamsSecurity, client tools.HTTPClient) *teamsManager {
 	return &teamsManager{sm: sm, client: client}
 }
 
-func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		WebhookURL string `json:"webhook_url"`
 		Message    string `json:"message"`

@@ -32,7 +32,7 @@ func TestListFiles(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("list root", func(t *testing.T) {
-		res, err := r.listFiles(ctx, map[string]interface{}{"path": tempDir})
+		res, err := r.listFiles(ctx, map[string]interface{}{"path": tempDir}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,7 +42,7 @@ func TestListFiles(t *testing.T) {
 	})
 
 	t.Run("non-existent path", func(t *testing.T) {
-		_, err := r.listFiles(ctx, map[string]interface{}{"path": filepath.Join(tempDir, "missing")})
+		_, err := r.listFiles(ctx, map[string]interface{}{"path": filepath.Join(tempDir, "missing")}, nil)
 		if err == nil {
 			t.Error("expected error for missing path")
 		}
@@ -61,7 +61,7 @@ func TestReadFile(t *testing.T) {
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})
+	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestGetTree(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("basic tree", func(t *testing.T) {
-		res, err := r.getTree(ctx, map[string]interface{}{"path": tempDir, "max_depth": 2})
+		res, err := r.getTree(ctx, map[string]interface{}{"path": tempDir, "max_depth": 2}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,7 +114,7 @@ func TestFindFile(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("find .go files", func(t *testing.T) {
-		res, err := r.findFile(ctx, map[string]interface{}{"path": tempDir, "pattern": "*.go"})
+		res, err := r.findFile(ctx, map[string]interface{}{"path": tempDir, "pattern": "*.go"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,7 +125,7 @@ func TestFindFile(t *testing.T) {
 	})
 
 	t.Run("no matches", func(t *testing.T) {
-		res, err := r.findFile(ctx, map[string]interface{}{"path": tempDir, "pattern": "*.md"})
+		res, err := r.findFile(ctx, map[string]interface{}{"path": tempDir, "pattern": "*.md"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -151,7 +151,7 @@ func TestGetFileDiff(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("diff existing files", func(t *testing.T) {
-		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": f2})
+		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": f2}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,7 +161,7 @@ func TestGetFileDiff(t *testing.T) {
 	})
 
 	t.Run("identical files", func(t *testing.T) {
-		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": f1})
+		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": f1}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -183,7 +183,7 @@ func TestReadFile_Truncation(t *testing.T) {
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})
+	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestReadFile_Binary(t *testing.T) {
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})
+	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestGetFileDiff_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("missing file2", func(t *testing.T) {
-		_, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": "missing.txt"})
+		_, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": "missing.txt"}, nil)
 		if err == nil {
 			t.Error("expected error for missing file2")
 		}
@@ -239,7 +239,7 @@ func TestGetFileDiff_Errors(t *testing.T) {
 		if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
 			t.Fatal(err)
 		}
-		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": fbin})
+		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": fbin}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -267,7 +267,7 @@ func TestReadFiles(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("read multiple files", func(t *testing.T) {
-		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, f2}})
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, f2}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -280,7 +280,7 @@ func TestReadFiles(t *testing.T) {
 	})
 
 	t.Run("partial success", func(t *testing.T) {
-		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, "missing.txt"}})
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, "missing.txt"}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -297,12 +297,22 @@ func TestReadFiles(t *testing.T) {
 		if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
 			t.Fatal(err)
 		}
-		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, fbin}})
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{f1, fbin}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(res.Text, "(Binary file, cannot display as text)") {
 			t.Errorf("expected binary message for fbin: %s", res.Text)
+		}
+	})
+
+	t.Run("using []string instead of []interface{}", func(t *testing.T) {
+		res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []string{f1, f2}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, content1) {
+			t.Errorf("f1 missing: %s", res.Text)
 		}
 	})
 }
@@ -326,7 +336,7 @@ func TestReadFile_UTF8Truncation(t *testing.T) {
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})
+	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +372,7 @@ func TestReadFiles_UTF8Truncation(t *testing.T) {
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}})
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +405,7 @@ func TestReadFile_Directory(t *testing.T) {
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
-	_, err := r.readFile(ctx, map[string]interface{}{"filepath": subDir})
+	_, err := r.readFile(ctx, map[string]interface{}{"filepath": subDir}, nil)
 	if err == nil {
 		t.Error("expected error when reading a directory")
 	} else if !strings.Contains(err.Error(), "path is a directory") {
@@ -414,7 +424,7 @@ func TestReadFiles_Directory(t *testing.T) {
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
-	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{subDir}})
+	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{subDir}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +444,7 @@ func TestReadFiles_Limit(t *testing.T) {
 		paths[i] = "f" + string(rune(i)) + ".txt"
 	}
 
-	_, err := r.readFiles(ctx, map[string]interface{}{"filepaths": paths})
+	_, err := r.readFiles(ctx, map[string]interface{}{"filepaths": paths}, nil)
 	if err == nil {
 		t.Fatal("expected error for exceeding file limit")
 	}

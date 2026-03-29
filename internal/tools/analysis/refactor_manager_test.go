@@ -79,7 +79,7 @@ func TestMoveDefinition(t *testing.T) {
 			"dst_file": "dst.go",
 			"reason":   "testing",
 		}
-		_, err := mgr.MoveDefinition(ctx, args)
+		_, err := mgr.MoveDefinition(ctx, args, nil)
 		assert.Error(t, err)
 	})
 
@@ -148,7 +148,7 @@ func TestMoveDefinition(t *testing.T) {
 				"reason":   "refactoring",
 			}
 
-			_, err := mgr.MoveDefinition(ctx, args)
+			_, err := mgr.MoveDefinition(ctx, args, nil)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
@@ -204,7 +204,7 @@ func TestRenameSymbol(t *testing.T) {
 			"reason":   "testing",
 		}
 
-		res, err := mgr.RenameSymbol(ctx, args)
+		res, err := mgr.RenameSymbol(ctx, args, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

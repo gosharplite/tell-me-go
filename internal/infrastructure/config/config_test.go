@@ -173,41 +173,39 @@ PROVIDERS:
 	}
 }
 
+type sessionTestCase struct {
+	name              string
+	fileContent       string
+	setupFile         bool
+	wantErr           bool
+	wantHistoryTokens *int
+	wantToolTurns     *int
+	wantHistoryTurns  *int
+	expectAllNil      bool
+}
+
 func TestJSONSessionLoader_LoadSession(t *testing.T) {
-	tests := []struct {
-		name        string
-		fileContent string
-		setupFile   bool
-		wantErr     bool
-		validate    func(*testing.T, *domain_config.SessionConfig)
-	}{
+	i500 := 500
+	i15 := 15
+	i25 := 25
+	i10 := 10
+
+	tests := []sessionTestCase{
 		{
-			name:        "ValidAllFields",
-			fileContent: `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`,
-			setupFile:   true,
-			wantErr:     false,
-			validate: func(t *testing.T, cfg *domain_config.SessionConfig) {
-				if cfg.MaxHistoryTokens == nil || *cfg.MaxHistoryTokens != 500 {
-					t.Errorf("expected 500 tokens, got %v", cfg.MaxHistoryTokens)
-				}
-				if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 15 {
-					t.Errorf("expected 15 tool turns, got %v", cfg.MaxToolTurns)
-				}
-				if cfg.MaxHistoryTurns == nil || *cfg.MaxHistoryTurns != 25 {
-					t.Errorf("expected 25 history turns, got %v", cfg.MaxHistoryTurns)
-				}
-			},
+			name:              "ValidAllFields",
+			fileContent:       `{"MAX_HISTORY_TOKENS": 500, "MAX_TURNS": 15, "MAX_HISTORY_TURNS": 25}`,
+			setupFile:         true,
+			wantErr:           false,
+			wantHistoryTokens: &i500,
+			wantToolTurns:     &i15,
+			wantHistoryTurns:  &i25,
 		},
 		{
-			name:        "EmptyJSON",
-			fileContent: `{}`,
-			setupFile:   true,
-			wantErr:     false,
-			validate: func(t *testing.T, cfg *domain_config.SessionConfig) {
-				if cfg.MaxHistoryTokens != nil || cfg.MaxToolTurns != nil || cfg.MaxHistoryTurns != nil {
-					t.Error("expected all fields to be nil for empty JSON")
-				}
-			},
+			name:         "EmptyJSON",
+			fileContent:  `{}`,
+			setupFile:    true,
+			wantErr:      false,
+			expectAllNil: true,
 		},
 		{
 			name:        "InvalidJSON",
@@ -221,15 +219,11 @@ func TestJSONSessionLoader_LoadSession(t *testing.T) {
 			wantErr:   true,
 		},
 		{
-			name:        "LegacyToolTurns",
-			fileContent: `{"MAX_TOOL_TURNS": 10}`,
-			setupFile:   true,
-			wantErr:     false,
-			validate: func(t *testing.T, cfg *domain_config.SessionConfig) {
-				if cfg.MaxToolTurns == nil || *cfg.MaxToolTurns != 10 {
-					t.Errorf("expected 10 tool turns from legacy key, got %v", cfg.MaxToolTurns)
-				}
-			},
+			name:          "LegacyToolTurns",
+			fileContent:   `{"MAX_TOOL_TURNS": 10}`,
+			setupFile:     true,
+			wantErr:       false,
+			wantToolTurns: &i10,
 		},
 	}
 
@@ -247,13 +241,39 @@ func TestJSONSessionLoader_LoadSession(t *testing.T) {
 			}
 
 			cfg, err := loader.LoadSession(path)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("LoadSession() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if !tt.wantErr && tt.validate != nil {
-				tt.validate(t, cfg)
-			}
+			assertSessionState(t, cfg, err, tt)
 		})
 	}
+}
+
+func checkIntPtr(t *testing.T, fieldName string, expected, actual *int) {
+	t.Helper()
+	if expected == nil {
+		return
+	}
+	if actual == nil || *actual != *expected {
+		t.Errorf("expected %s %d, got %v", fieldName, *expected, actual)
+	}
+}
+
+func assertSessionState(t *testing.T, got *domain_config.SessionConfig, err error, tt sessionTestCase) {
+	t.Helper()
+	if (err != nil) != tt.wantErr {
+		t.Fatalf("LoadSession() error = %v, wantErr %v", err, tt.wantErr)
+	}
+
+	if tt.wantErr || got == nil {
+		return
+	}
+
+	if tt.expectAllNil {
+		if got.MaxHistoryTokens != nil || got.MaxToolTurns != nil || got.MaxHistoryTurns != nil {
+			t.Error("expected all fields to be nil for empty JSON")
+		}
+		return
+	}
+
+	checkIntPtr(t, "history tokens", tt.wantHistoryTokens, got.MaxHistoryTokens)
+	checkIntPtr(t, "tool turns", tt.wantToolTurns, got.MaxToolTurns)
+	checkIntPtr(t, "history turns", tt.wantHistoryTurns, got.MaxHistoryTurns)
 }

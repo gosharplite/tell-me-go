@@ -201,7 +201,7 @@ type filterResult struct {
 	TotalLines int
 }
 
-func (m *adoManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseListPipelineRunsArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing list pipeline runs args: %w", err)
@@ -288,7 +288,7 @@ func (m *adoManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRu
 	return resultText.String()
 }
 
-func (m *adoManager) adoGetPipelineRun(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPipelineRun(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -337,7 +337,7 @@ func (m *adoManager) adoGetPipelineRun(ctx context.Context, args map[string]inte
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *adoManager) adoGetPipelineLogs(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPipelineLogs(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -364,7 +364,7 @@ func (m *adoManager) adoGetPipelineLogs(ctx context.Context, args map[string]int
 		return m.listPipelineLogs(ctx, params.Organization, params.Project, params.PipelineId, params.RunId)
 	}
 
-	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
+	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
 }
 
 func (m *adoManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
@@ -401,7 +401,7 @@ func (m *adoManager) listPipelineLogs(ctx context.Context, org, project string, 
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int) (tools.ToolResult, error) {
+func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int, hb chan<- struct{}) (tools.ToolResult, error) {
 	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
 		m.baseURL, url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
 
@@ -411,7 +411,7 @@ func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project s
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	res, err := m.processLogContent(resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
+	res, err := m.processLogContent(ctx, resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines, hb)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
 	}
@@ -424,7 +424,7 @@ func (m *adoManager) fetchPipelineLogContent(ctx context.Context, org, project s
 	return tools.ToolResult{Text: text}, nil
 }
 
-func (m *adoManager) adoGetBuildTimeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetBuildTimeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -464,7 +464,7 @@ func (m *adoManager) adoGetBuildTimeline(ctx context.Context, args map[string]in
 	return tools.ToolResult{Text: string(output)}, nil
 }
 
-func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -495,7 +495,7 @@ func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interfac
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	res, err := m.processLogContent(resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
+	res, err := m.processLogContent(ctx, resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines, hb)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
 	}
@@ -508,26 +508,26 @@ func (m *adoManager) adoGetTaskLog(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: text}, nil
 }
 
-func (m *adoManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) (filterResult, error) {
+func (m *adoManager) processLogContent(ctx context.Context, reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int, hb chan<- struct{}) (filterResult, error) {
 	if filterQuery != "" {
-		return m.streamRegexFilter(reader, filterQuery, logFilterOptions{MaxLines: maxLines, ContextLines: contextLines})
+		return m.streamRegexFilter(ctx, reader, filterQuery, logFilterOptions{MaxLines: maxLines, ContextLines: contextLines}, hb)
 	}
 
 	if startLine > 0 || maxLines > 0 {
-		return m.streamPagination(reader, startLine, maxLines)
+		return m.streamPagination(ctx, reader, startLine, maxLines, hb)
 	}
 
 	if headLines > 0 {
-		return m.streamHead(reader, headLines)
+		return m.streamHead(ctx, reader, headLines, hb)
 	}
 
 	if tailLines <= 0 {
 		tailLines = 200
 	}
-	return m.streamTail(reader, tailLines)
+	return m.streamTail(ctx, reader, tailLines, hb)
 }
 
-func (m *adoManager) streamRegexFilter(reader io.Reader, query string, opts logFilterOptions) (filterResult, error) {
+func (m *adoManager) streamRegexFilter(ctx context.Context, reader io.Reader, query string, opts logFilterOptions, hb chan<- struct{}) (filterResult, error) {
 	re, err := regexp.Compile(query)
 	if err != nil {
 		return filterResult{}, fmt.Errorf("invalid filter_query regex: %w", err)
@@ -545,8 +545,23 @@ func (m *adoManager) streamRegexFilter(reader io.Reader, query string, opts logF
 	}
 	matchCount := 0
 	truncated := false
+	count := 0
 
 	for scanner.Scan() {
+		// Respect cancellation
+		if ctx.Err() != nil {
+			return filterResult{}, ctx.Err()
+		}
+
+		// Emit heartbeat every 1000 lines
+		count++
+		if count%1000 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		line := scanner.Text()
 		if re.MatchString(line) {
 			if matchCount >= maxMatchedLines {
@@ -660,7 +675,7 @@ func (s *logFilterState) printLine(line string, lineNum int) {
 	s.lastPrintedLineNum = lineNum
 }
 
-func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int) (filterResult, error) {
+func (m *adoManager) streamPagination(ctx context.Context, reader io.Reader, startLine, maxLines int, hb chan<- struct{}) (filterResult, error) {
 	if startLine <= 0 {
 		startLine = 1
 	}
@@ -674,7 +689,20 @@ func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int)
 	printed := 0
 	truncated := false
 	for scanner.Scan() {
+		// Respect cancellation
+		if ctx.Err() != nil {
+			return filterResult{}, ctx.Err()
+		}
+
+		// Emit heartbeat every 1000 lines
 		count++
+		if count%1000 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		if count < startLine {
 			continue
 		}
@@ -705,7 +733,7 @@ func (m *adoManager) streamPagination(reader io.Reader, startLine, maxLines int)
 	}, nil
 }
 
-func (m *adoManager) streamHead(reader io.Reader, n int) (filterResult, error) {
+func (m *adoManager) streamHead(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}) (filterResult, error) {
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
 	buf := make([]byte, 64*1024)
@@ -715,6 +743,19 @@ func (m *adoManager) streamHead(reader io.Reader, n int) (filterResult, error) {
 	count := 0
 	truncated := false
 	for scanner.Scan() && count < n {
+		// Respect cancellation
+		if ctx.Err() != nil {
+			return filterResult{}, ctx.Err()
+		}
+
+		// Emit heartbeat every 1000 lines
+		if count > 0 && count%1000 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		if count > 0 {
 			result.WriteString("\n")
 		}
@@ -736,7 +777,7 @@ func (m *adoManager) streamHead(reader io.Reader, n int) (filterResult, error) {
 	}, nil
 }
 
-func (m *adoManager) streamTail(reader io.Reader, n int) (filterResult, error) {
+func (m *adoManager) streamTail(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}) (filterResult, error) {
 	if n <= 0 {
 		return filterResult{}, nil
 	}
@@ -751,6 +792,19 @@ func (m *adoManager) streamTail(reader io.Reader, n int) (filterResult, error) {
 	ring := make([]string, n)
 	count := 0
 	for scanner.Scan() {
+		// Respect cancellation
+		if ctx.Err() != nil {
+			return filterResult{}, ctx.Err()
+		}
+
+		// Emit heartbeat every 1000 lines
+		if count > 0 && count%1000 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
 		ring[count%n] = scanner.Text()
 		count++
 	}
@@ -846,7 +900,7 @@ func (m *adoManager) parseBuildChangesResponse(body io.Reader) (string, error) {
 	return string(output), nil
 }
 
-func (m *adoManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseGetBuildChangesArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -921,7 +975,7 @@ func (m *adoManager) fetchPipelines(ctx context.Context, org, project string) ([
 	return val.([]adoPipeline), nil
 }
 
-func (m *adoManager) adoListPipelines(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoListPipelines(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -988,7 +1042,7 @@ func filterAndLimitRuns(runs []adoPipelineRun, repoFilter string, limit int) []a
 	return result
 }
 
-func (m *adoManager) adoCreatePipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoCreatePipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseCreatePipelineArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing create pipeline args: %w", err)
@@ -1038,7 +1092,7 @@ func (m *adoManager) checkPipelineExists(ctx context.Context, org, project, name
 	return 0, nil
 }
 
-func (m *adoManager) adoRunPipeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoRunPipeline(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseRunPipelineArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("parsing run pipeline args: %w", err)
@@ -1161,7 +1215,7 @@ func (m *adoManager) executeRunPipeline(ctx context.Context, org, project string
 	return runResponse.Id, runResponse.Links.Web.Href, nil
 }
 
-func (m *adoManager) adoGetPipelineDefinition(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPipelineDefinition(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -1239,7 +1293,7 @@ func buildVariablesUpdatePayload(existingDef map[string]interface{}, inputVars m
 	return json.Marshal(existingDef)
 }
 
-func (m *adoManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	params, err := parseUpdateBuildDefArgs(args)
 	if err != nil {
 		return tools.ToolResult{}, err

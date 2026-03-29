@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -17,12 +18,12 @@ type gitManager struct {
 	Exec tools.CommandExecutor
 }
 
-func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	res, err := m.runGitCommand(ctx, "status", "--short")
+func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	res, err := m.runGitCommand(ctx, hb, "status", "--short")
 	return tools.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Staged bool `json:"staged"`
 	}
@@ -33,14 +34,14 @@ func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}
 	var res string
 	var err error
 	if params.Staged {
-		res, err = m.runGitCommand(ctx, "diff", "--staged")
+		res, err = m.runGitCommand(ctx, hb, "diff", "--staged")
 	} else {
-		res, err = m.runGitCommand(ctx, "diff")
+		res, err = m.runGitCommand(ctx, hb, "diff")
 	}
 	return tools.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Limit int `json:"limit"`
 	}
@@ -52,11 +53,11 @@ func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{})
 	if limit <= 0 {
 		limit = 10
 	}
-	res, err := m.runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
+	res, err := m.runGitCommand(ctx, hb, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
 	return tools.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Hash string `json:"hash"`
 	}
@@ -69,7 +70,7 @@ func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, fmt.Errorf("hash argument is required")
 	}
 	// Truncate output to prevent hitting token limits on very large diffs
-	out, err := m.runGitCommand(ctx, "show", "--stat", "--patch", hash)
+	out, err := m.runGitCommand(ctx, hb, "show", "--stat", "--patch", hash)
 	if err != nil {
 		return tools.ToolResult{Text: out}, err
 	}
@@ -80,7 +81,7 @@ func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface
 	return tools.ToolResult{Text: out}, nil
 }
 
-func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 	}
@@ -98,11 +99,11 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	res, err := m.runGitCommand(ctx, "blame", "-w", resolvedPath)
+	res, err := m.runGitCommand(ctx, hb, "blame", "-w", resolvedPath)
 	return tools.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Message string `json:"message"`
 		Reason  string `json:"reason"`
@@ -116,7 +117,7 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, fmt.Errorf("message is required")
 	}
 
-	res, err := m.runGitCommand(ctx, "commit", "-m", message)
+	res, err := m.runGitCommand(ctx, hb, "commit", "-m", message)
 	if err != nil {
 		// If git failed and the output indicates no staged changes, return an actionable error
 		if strings.Contains(res, "nothing to commit") || strings.Contains(res, "no changes added to commit") {
@@ -128,7 +129,7 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 	return tools.ToolResult{Text: res}, nil
 }
 
-func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Name   string `json:"name"`
 		Reason string `json:"reason"`
@@ -142,11 +143,32 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 		return tools.ToolResult{}, fmt.Errorf("branch name is required")
 	}
 
-	res, err := m.runGitCommand(ctx, "checkout", "-b", name)
+	res, err := m.runGitCommand(ctx, hb, "checkout", "-b", name)
 	return tools.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) runGitCommand(ctx context.Context, args ...string) (string, error) {
+func (m *gitManager) runGitCommand(ctx context.Context, hb chan<- struct{}, args ...string) (string, error) {
+	// Heartbeat while git is running
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
+
 	out, err := m.Exec.CombinedOutput(ctx, "git", args...)
 	if err != nil {
 		return string(out), fmt.Errorf("git command failed: %w", err)

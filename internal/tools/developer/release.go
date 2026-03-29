@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -36,7 +37,7 @@ type checkResult struct {
 	Message string
 }
 
-func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[string]interface{}) (tools.ToolResult, error) {
+func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	pipeline := []readinessCheck{
 		&secretScanner{sm: m.sm, fs: m.fs},
 		&dependencyChecker{fs: m.fs},
@@ -47,6 +48,27 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 
 	var report strings.Builder
 	report.WriteString("### Release Readiness Report\n\n")
+
+	// Heartbeat while waiting for all parallel health checks
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
 
 	results := make([]checkResult, len(pipeline))
 	g, gCtx := errgroup.WithContext(ctx)

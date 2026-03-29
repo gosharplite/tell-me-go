@@ -189,7 +189,7 @@ func testConcurrentSearchTable(t *testing.T) {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
-			resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) (string, bool) {
+			resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 				return "", strings.Contains(line, tt.query)
 			})
 
@@ -228,7 +228,7 @@ func testConcurrentSearchBinaryLarge(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) (string, bool) {
+	resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 		return "", strings.Contains(line, "todo")
 	})
 
@@ -259,7 +259,7 @@ func testConcurrentSearchCancellation(t *testing.T) {
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, errChan := ConcurrentSearch(cancelCtx, sp, fs, ".", func(_, line string) (string, bool) {
+	_, errChan := ConcurrentSearch(cancelCtx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 		return "", true
 	})
 
@@ -278,7 +278,7 @@ func testConcurrentSearchRace(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				resChan, _ := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) (string, bool) {
+				resChan, _ := ConcurrentSearch(ctx, sp, fs, ".", nil, func(_, line string) (string, bool) {
 					return "", true
 				})
 				for range resChan {

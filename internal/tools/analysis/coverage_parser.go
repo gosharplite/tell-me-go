@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -330,7 +331,7 @@ func parseDetailedCoverage(ctx context.Context, r io.Reader, exec tools.CommandE
 }
 
 // getDetailedCoverage executes the coverage test and parses the profile.
-func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.CommandExecutor) ([]uncoveredBlock, error) {
+func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.CommandExecutor, hb chan<- struct{}) ([]uncoveredBlock, error) {
 	f, err := os.CreateTemp("", "coverage-*.out")
 	if err != nil {
 		return nil, err
@@ -341,7 +342,28 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 	}()
 	_ = f.Close()
 
+	// Heartbeat while running tests
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
 	_, _ = exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, packagePath)
+	close(done)
 
 	info, err := os.Stat(tempPath)
 	if err != nil {
@@ -363,8 +385,8 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 }
 
 // getDetailedCoverageReport generates a formatted report optimized for LLM consumption.
-func getDetailedCoverageReport(ctx context.Context, packagePath string, exec tools.CommandExecutor) (string, error) {
-	blocks, err := getDetailedCoverage(ctx, packagePath, exec)
+func getDetailedCoverageReport(ctx context.Context, packagePath string, exec tools.CommandExecutor, hb chan<- struct{}) (string, error) {
+	blocks, err := getDetailedCoverage(ctx, packagePath, exec, hb)
 	if err != nil {
 		return "", err
 	}
@@ -446,8 +468,8 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock,
 }
 
 // getDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
-func getDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, exec tools.CommandExecutor) (string, error) {
-	blocks, err := getDetailedCoverage(ctx, packagePath, exec)
+func getDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, exec tools.CommandExecutor, hb chan<- struct{}) (string, error) {
+	blocks, err := getDetailedCoverage(ctx, packagePath, exec, hb)
 	if err != nil {
 		return "", err
 	}

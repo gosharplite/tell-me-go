@@ -192,7 +192,7 @@ func TestSequenceAnalyzer_AnalyzeSequenceFlow_Basic(t *testing.T) {
 
 	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
 		"start_symbol": pkgA.PkgPath + ".StartFunc",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func LoopFunc() {}`
 	res, _ := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
 		"start_symbol": pkgA.PkgPath + ".StartFunc",
 		"max_depth":    2.0,
-	})
+	}, nil)
 	if !strings.Contains(res.Text, "pkgB->>+pkgB: SubFunc") {
 		t.Errorf("SubFunc should be present with max_depth=2, got: %s", res.Text)
 	}
@@ -302,7 +302,7 @@ func TestSequenceAnalyzer_InterfaceTracing(t *testing.T) {
 	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, mockIdx)
 	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
 		"start_symbol": pkgPath + ".Start",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

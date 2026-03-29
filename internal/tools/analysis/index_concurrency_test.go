@@ -72,7 +72,7 @@ func F2() {}
 	ctx := context.Background()
 
 	// Pre-warm the index
-	if err := idx.Refresh(ctx); err != nil {
+	if err := idx.Refresh(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 	return tmpDir, idx, ctx
@@ -80,7 +80,7 @@ func F2() {}
 
 func runSearchLoop(ctx context.Context, idx *indexer, tmpDir string, iterations int, t *testing.T) {
 	for j := 0; j < iterations; j++ {
-		syms, err := idx.SearchSymbols(ctx, tmpDir, "F1", false)
+		syms, err := idx.SearchSymbols(ctx, tmpDir, "F1", false, nil)
 		if err != nil {
 			t.Errorf("SearchSymbols error: %v", err)
 		}
@@ -92,7 +92,7 @@ func runSearchLoop(ctx context.Context, idx *indexer, tmpDir string, iterations 
 
 func runRefreshLoop(ctx context.Context, idx *indexer, iterations int, t *testing.T) {
 	for j := 0; j < iterations; j++ {
-		if err := idx.Refresh(ctx); err != nil {
+		if err := idx.Refresh(ctx, nil); err != nil {
 			t.Errorf("Refresh error: %v", err)
 		}
 	}

@@ -19,13 +19,13 @@ import (
 func TestToolPanicSerial(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			panic("simulated serial tool panic")
 		},
 		isSerial: true,
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -55,7 +55,7 @@ func TestToolPanicSerial(t *testing.T) {
 func TestToolPanicParallel(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			if name == "panic_tool" {
 				panic("simulated parallel tool panic")
 			}
@@ -70,7 +70,7 @@ func TestToolPanicParallel(t *testing.T) {
 		isSerial: false,
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -120,7 +120,7 @@ func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
 		},
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -147,19 +147,18 @@ func TestZombieToolTimeout(t *testing.T) {
 	stopCh := make(chan struct{})
 	// Mock registry that blocks indefinitely until stopCh is closed
 	reg := &mockZombieRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			<-stopCh // Block until we release it
 			return tools.ToolResult{Text: "finally done"}, nil
 		},
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{hangingTool}
+		},
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond), withZombieTimeout(300*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
-
-	// Set generous timeouts for CI/race mode
-	exec.toolTimeout = 200 * time.Millisecond
-	exec.zombieTimeout = 300 * time.Millisecond
 
 	ctx := context.Background()
 
@@ -170,7 +169,9 @@ func TestZombieToolTimeout(t *testing.T) {
 	start := time.Now()
 	go func() {
 		defer close(doneCh)
-		result, timeoutErr = exec.runWithTimeout(ctx, hangingTool, nil)
+		fc := &llm.FunctionCall{Name: hangingTool.Name}
+		tool, _ := exec.resolver.Resolve(fc)
+		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc, nil)
 	}()
 
 	select {
@@ -206,7 +207,7 @@ func TestExecuteSerialTaskRecovery(t *testing.T) {
 			panic("panic during serial resolve")
 		},
 	}
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -235,7 +236,7 @@ func TestEnqueueParallelTaskRecovery(t *testing.T) {
 			panic("panic during parallel resolve")
 		},
 	}
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 

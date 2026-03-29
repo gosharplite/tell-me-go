@@ -5,6 +5,7 @@ package concurrency
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -23,12 +24,12 @@ func TestWorkerPool_BoundaryConditions(t *testing.T) {
 		}
 
 		done := make(chan struct{})
-		ok := p.Submit(func(ctx context.Context) {
+		err := p.Submit(func(ctx context.Context) {
 			close(done)
 		})
 
-		if !ok {
-			t.Error("Submit should return true for zero-worker pool (defaulted to 1)")
+		if err != nil {
+			t.Errorf("Submit should return nil for zero-worker pool (defaulted to 1), got %v", err)
 		}
 
 		select {
@@ -48,12 +49,12 @@ func TestWorkerPool_BoundaryConditions(t *testing.T) {
 		}
 
 		done := make(chan struct{})
-		ok := p.Submit(func(ctx context.Context) {
+		err := p.Submit(func(ctx context.Context) {
 			close(done)
 		})
 
-		if !ok {
-			t.Error("Submit should return true for negative-worker pool (defaulted to 1)")
+		if err != nil {
+			t.Errorf("Submit should return nil for negative-worker pool (defaulted to 1), got %v", err)
 		}
 
 		select {
@@ -79,9 +80,9 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 		p := NewWorkerPool(2)
 		p.Shutdown()
 
-		ok := p.Submit(func(ctx context.Context) {})
-		if ok {
-			t.Error("Submit should return false after Shutdown")
+		err := p.Submit(func(ctx context.Context) {})
+		if !errors.Is(err, errPoolClosed) {
+			t.Errorf("Expected errPoolClosed after Shutdown, got %v", err)
 		}
 	})
 
@@ -92,7 +93,7 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 		block := make(chan struct{})
 		done := make(chan struct{})
 
-		p.Submit(func(ctx context.Context) {
+		err := p.Submit(func(ctx context.Context) {
 			close(start)
 			select {
 			case <-block:
@@ -100,6 +101,9 @@ func TestWorkerPool_ShutdownBehavior(t *testing.T) {
 			}
 			close(done)
 		})
+		if err != nil {
+			t.Errorf("failed to submit: %v", err)
+		}
 
 		<-start
 		close(block)
@@ -123,11 +127,14 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 		taskStarted := make(chan struct{})
 		taskDone := make(chan struct{})
 
-		p.Submit(func(ctx context.Context) {
+		err := p.Submit(func(ctx context.Context) {
 			close(taskStarted)
 			<-ctx.Done()
 			close(taskDone)
 		})
+		if err != nil {
+			t.Errorf("failed to submit: %v", err)
+		}
 
 		<-taskStarted
 		p.Shutdown() // This cancels p.ctx
@@ -146,9 +153,9 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 		// We can't directly cancel p.ctx since it's private, but Shutdown calls cancel().
 		p.Shutdown()
 
-		ok := p.Submit(func(ctx context.Context) {})
-		if ok {
-			t.Error("Submit should return false after pool context is cancelled via Shutdown")
+		err := p.Submit(func(ctx context.Context) {})
+		if !errors.Is(err, errPoolClosed) {
+			t.Errorf("Expected errPoolClosed after pool context is cancelled via Shutdown, got %v", err)
 		}
 	})
 }
@@ -167,11 +174,18 @@ func TestWorkerPool_Concurrency(t *testing.T) {
 	taskStarted := make(chan struct{}, numTasks)
 
 	for i := 0; i < numTasks; i++ {
-		for !p.Submit(func(ctx context.Context) {
-			defer wg.Done()
-			taskStarted <- struct{}{}
-			counter <- 1
-		}) {
+		for {
+			err := p.Submit(func(ctx context.Context) {
+				defer wg.Done()
+				taskStarted <- struct{}{}
+				counter <- 1
+			})
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, ErrPoolSaturated) {
+				t.Fatalf("Unexpected error submitting task %d: %v", i, err)
+			}
 			// Wait for at least one task to start processing and free up space in the queue
 			select {
 			case <-taskStarted:
@@ -196,7 +210,7 @@ func TestWorkerPool_SubmitFailFast(t *testing.T) {
 	startCh := make(chan struct{})
 	blockCh := make(chan struct{}) // 1. Create the blocking channel
 
-	p.Submit(func(ctx context.Context) {
+	err1 := p.Submit(func(ctx context.Context) {
 		close(startCh)
 
 		// 2. Safely block until test finishes or context cancels
@@ -205,20 +219,23 @@ func TestWorkerPool_SubmitFailFast(t *testing.T) {
 		case <-ctx.Done():
 		}
 	})
+	if err1 != nil {
+		t.Fatalf("Expected task 1 to be submitted successfully, got %v", err1)
+	}
 	<-startCh
 
 	// Task 2 & 3: fill the channel buffer (size is 1*2 = 2)
-	ok2 := p.Submit(func(ctx context.Context) {})
-	ok3 := p.Submit(func(ctx context.Context) {})
+	err2 := p.Submit(func(ctx context.Context) {})
+	err3 := p.Submit(func(ctx context.Context) {})
 
-	if !ok2 || !ok3 {
-		t.Errorf("Expected tasks 2 and 3 to be submitted successfully, got %v, %v", ok2, ok3)
+	if err2 != nil || err3 != nil {
+		t.Errorf("Expected tasks 2 and 3 to be submitted successfully, got %v, %v", err2, err3)
 	}
 
 	// Task 4: Should fail fast
-	ok4 := p.Submit(func(ctx context.Context) {})
-	if ok4 {
-		t.Error("Expected task 4 to fail fast and return false")
+	err4 := p.Submit(func(ctx context.Context) {})
+	if !errors.Is(err4, ErrPoolSaturated) {
+		t.Errorf("Expected task 4 to fail with ErrPoolSaturated, got %v", err4)
 	}
 
 	// 3. Unblock the worker at the very end of the test so it can exit cleanly

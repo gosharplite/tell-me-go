@@ -146,7 +146,7 @@ func TestInfoManager_CollectFileStats(t *testing.T) {
 	_ = fs.WriteFile(ctx, "README.md", []byte("# README\n"), 0644)
 	_ = fs.WriteFile(ctx, ".git/config", []byte("git data"), 0644) // Should be skipped
 
-	fileCounts, packages, totalLOC, err := m.collectFileStats(ctx)
+	fileCounts, packages, totalLOC, err := m.collectFileStats(ctx, nil)
 	if err != nil {
 		t.Fatalf("collectFileStats failed: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestInfoManager_GetProjectSummary(t *testing.T) {
 	_ = fs.WriteFile(ctx, "go.mod", []byte("module example.com/test\ngo 1.25\n"), 0644)
 	_ = fs.WriteFile(ctx, "main.go", []byte("package main\n"), 0644)
 
-	res, err := m.GetProjectSummary(ctx, nil)
+	res, err := m.GetProjectSummary(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("GetProjectSummary failed: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("empty directory", func(t *testing.T) {
-		fileCounts, packages, totalLOC, err := m.collectFileStats(ctx)
+		fileCounts, packages, totalLOC, err := m.collectFileStats(ctx, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -214,7 +214,7 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 		_ = fs.WriteFile(ctx, "LICENSE", []byte("MIT"), 0644)
 		_ = fs.WriteFile(ctx, "Makefile", []byte("all: test"), 0644)
 
-		fileCounts, _, _, _ := m.collectFileStats(ctx)
+		fileCounts, _, _, _ := m.collectFileStats(ctx, nil)
 		if fileCounts["(no ext)"] != 2 {
 			t.Errorf("expected 2 files with (no ext), got %d", fileCounts["(no ext)"])
 		}
@@ -224,7 +224,7 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 		_ = fs.WriteFile(ctx, "vendor/pkg/v.go", []byte("package v"), 0644)
 		_ = fs.WriteFile(ctx, "node_modules/lib/n.js", []byte("const x = 1"), 0644)
 
-		fileCounts, packages, _, _ := m.collectFileStats(ctx)
+		fileCounts, packages, _, _ := m.collectFileStats(ctx, nil)
 		if fileCounts[".go"] != 0 {
 			t.Errorf("expected 0 .go files (vendor skipped), got %d", fileCounts[".go"])
 		}
@@ -245,7 +245,7 @@ func TestInfoManager_GoDoc(t *testing.T) {
 		"symbol": "fmt.Println",
 	}
 
-	res, err := m.GoDoc(ctx, args)
+	res, err := m.GoDoc(ctx, args, nil)
 	if err != nil {
 		t.Fatalf("GoDoc failed: %v", err)
 	}

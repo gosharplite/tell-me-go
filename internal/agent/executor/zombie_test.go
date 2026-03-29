@@ -8,67 +8,84 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type mockZombieRegistry struct {
-	executeFn func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error)
+	executeFn         func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
+	getDeclarationsFn func() []*tools.ToolDeclaration
+	isSerialFn        func(name string) bool
+	isLongRunningFn   func(name string) bool
+	livenessThreshold time.Duration
 }
 
-func (m *mockZombieRegistry) GetDeclarations() []*domaintools.ToolDeclaration {
-	return []*domaintools.ToolDeclaration{{Name: "hanging_tool"}}
-}
-func (m *mockZombieRegistry) Register(d *domaintools.ToolDeclaration, f domaintools.ToolFunc) error {
-	return nil
-}
-func (m *mockZombieRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, handler domaintools.ToolFunc, opts domaintools.ToolOptions) error {
-	return nil
-}
-func (m *mockZombieRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
-	if m.executeFn != nil {
-		return m.executeFn(ctx, name, args)
+func (m *mockZombieRegistry) GetDeclarations() []*tools.ToolDeclaration {
+	if m.getDeclarationsFn != nil {
+		return m.getDeclarationsFn()
 	}
-	return domaintools.ToolResult{Text: "ok"}, nil
+	return []*tools.ToolDeclaration{{Name: "hanging_tool"}}
 }
-func (m *mockZombieRegistry) IsLongRunning(name string) bool { return false }
-func (m *mockZombieRegistry) IsSerial(name string) bool      { return false }
+func (m *mockZombieRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) error {
+	return nil
+}
+func (m *mockZombieRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return nil
+}
+func (m *mockZombieRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	if m.executeFn != nil {
+		return m.executeFn(ctx, name, args, hb)
+	}
+	return tools.ToolResult{Text: "ok"}, nil
+}
+func (m *mockZombieRegistry) IsLongRunning(name string) bool {
+	if m.isLongRunningFn != nil {
+		return m.isLongRunningFn(name)
+	}
+	return false
+}
+func (m *mockZombieRegistry) IsSerial(name string) bool {
+	if m.isSerialFn != nil {
+		return m.isSerialFn(name)
+	}
+	return false
+}
 
-func TestToolExecutor_GoroutineLeak(t *testing.T) {
+func TestOrchestrator_GoroutineLeak(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")
 	}
 	// A simple tool that sleeps longer than the timeout
 
-	hangingTool := &domaintools.ToolDeclaration{
+	hangingTool := &tools.ToolDeclaration{
 		Name:        "hanging_tool",
 		Description: "I hang forever",
 	}
 
 	reg := &mockZombieRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			<-ctx.Done() // Block until context canceled
-			return domaintools.ToolResult{Text: "done"}, nil
+			return tools.ToolResult{Text: "done"}, nil
 		},
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
-	// mock the toolTimeout since NewToolExecutor sets it to default
-	exec.toolTimeout = 200 * time.Millisecond
 
 	ctx := context.Background()
 
 	doneCh := make(chan struct{})
-	var result domaintools.ToolResult
+	var result tools.ToolResult
 	var timeoutErr error
 
 	go func() {
 		defer close(doneCh)
-		result, timeoutErr = exec.runWithTimeout(ctx, hangingTool, nil)
+		fc := &llm.FunctionCall{Name: hangingTool.Name}
+		tool, _ := exec.resolver.Resolve(fc)
+		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc, nil)
 	}()
 
 	select {
@@ -89,7 +106,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	}
 }
 
-func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
+func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	t.Parallel()
 
 	mockLog := &MockLogger{CriticalLogs: make(chan string, 1)}
@@ -97,29 +114,31 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 	defer close(finishCh)
 
 	reg := &mockZombieRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			// Simulate a tool that blocks indefinitely even if context is canceled
 			// but we use a channel so we can clean it up for goleak
 			<-finishCh
-			return domaintools.ToolResult{}, nil
+			return tools.ToolResult{}, nil
 		},
 	}
 
 	// Use short zombie timeout, but generous enough for -race
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
 		withZombieTimeout(200*time.Millisecond),
+		withToolTimeout(200*time.Millisecond),
 	)
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
-	exec.toolTimeout = 200 * time.Millisecond
 
-	hangingTool := &domaintools.ToolDeclaration{Name: "hanging_tool"}
+	hangingTool := &tools.ToolDeclaration{Name: "hanging_tool"}
 
 	// Should timeout
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
-		_, _ = exec.runWithTimeout(context.Background(), hangingTool, nil)
+		fc := &llm.FunctionCall{Name: hangingTool.Name}
+		tool, _ := exec.resolver.Resolve(fc)
+		_, _ = exec.runtime.Execute(context.Background(), tool, fc, nil)
 	}()
 
 	select {
@@ -138,5 +157,79 @@ func TestToolExecutor_ZombieTool_LogCritical(t *testing.T) {
 		assert.Contains(t, msg, "hanging_tool")
 	case <-timer.C:
 		t.Fatal("Timeout waiting for critical log")
+	}
+}
+
+func (m *mockZombieRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{
+		LongRunning:       m.IsLongRunning(name),
+		Serial:            m.IsSerial(name),
+		LivenessThreshold: m.livenessThreshold,
+	}
+}
+
+func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
+	t.Parallel()
+
+	mockLog := &MockLogger{CriticalLogs: make(chan string, 10)}
+	
+	// Create a tool that emits heartbeats for a while, then goes "zombie"
+	reg := &mockZombieRegistry{
+		livenessThreshold: 100 * time.Millisecond,
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			// Initially active: emit 2 heartbeats
+			for i := 0; i < 2; i++ {
+				select {
+				case hb <- struct{}{}:
+				case <-ctx.Done():
+					return tools.ToolResult{}, ctx.Err()
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			
+			// Become a zombie: infinite loop without heartbeats
+			// Must still check ctx.Done() to allow clean exit when orchestrator cancels it.
+			for {
+				select {
+				case <-ctx.Done():
+					return tools.ToolResult{Text: "cancelled"}, ctx.Err()
+				default:
+					// Simulate heavy computation or hanging I/O
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+		},
+	}
+
+	// Orchestrator with long global timeout (5s) but short liveness threshold (100ms)
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
+		withToolTimeout(5*time.Second),
+		WithLongRunningTimeout(5*time.Second),
+	)
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
+
+	fc := &llm.FunctionCall{Name: "hanging_tool"}
+	tool, _ := exec.resolver.Resolve(fc)
+
+	start := time.Now()
+	doneCh := make(chan struct{})
+	var result tools.ToolResult
+	go func() {
+		defer close(doneCh)
+		result, _ = exec.runtime.Execute(context.Background(), tool, fc, nil)
+	}()
+
+	select {
+	case <-doneCh:
+		duration := time.Since(start)
+		// Should have been cancelled after:
+		// ~100ms (2 heartbeats * 50ms) + ~100ms (threshold) = ~200ms
+		// We assert it's less than 1 second, proving it didn't wait for 5s global timeout.
+		assert.Less(t, duration, 1*time.Second, "Zombie tool should be cancelled by liveness threshold (%v), not global timeout (5s)", duration)
+		assert.Error(t, result.Error)
+		assert.Contains(t, result.Error.Error(), "failed")
+	case <-time.After(6 * time.Second):
+		t.Fatal("Test timed out: Orchestrator failed to cancel the zombie tool")
 	}
 }

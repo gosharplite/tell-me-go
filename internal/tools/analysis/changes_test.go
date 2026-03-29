@@ -21,7 +21,7 @@ func TestChangeAnalyzer_SemanticDiff(t *testing.T) {
 	defer restoreDir(t, oldDir)
 
 	analyzer := newChangeAnalyzer(cache, mockExec)
-	res, err := analyzer.SemanticDiff(context.Background(), map[string]interface{}{"target": "HEAD~1"})
+	res, err := analyzer.SemanticDiff(context.Background(), map[string]interface{}{"target": "HEAD~1"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

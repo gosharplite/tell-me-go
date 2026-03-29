@@ -30,7 +30,7 @@ func Complex(a, b bool) {
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
-	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir})
+	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
 		t.Fatalf("Analyze failed: %v", err)
 	}
@@ -61,7 +61,7 @@ func C() {} // 1
 	sp := &mockSecurityProvider{}
 	analyzer := newComplexityAnalyzer(cache, sp)
 
-	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir})
+	res, err := analyzer.Analyze(context.Background(), map[string]interface{}{"path": tmpDir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

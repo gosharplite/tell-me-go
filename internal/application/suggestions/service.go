@@ -157,26 +157,34 @@ func (s *multiSourceSuggestionService) scanFiles(ctx context.Context, query stri
 			return results
 		}
 
-		for _, entry := range entries {
-			name := entry.Name()
-			if entry.IsDir() && isIgnoredDir(name) {
-				continue
-			}
-
-			if matcher.IsSubsequence(fileQuery, name) {
-				fullPath := filepath.Join(dir, name)
-				if entry.IsDir() {
-					fullPath += string(os.PathSeparator)
-				}
-				results = append(results, fullPath)
-				if len(results) >= 10 {
-					return results
-				}
-			}
+		results = s.processEntriesBatch(entries, dir, fileQuery, results)
+		if len(results) >= 10 {
+			return results
 		}
 	}
 
 	return results
+}
+
+func (s *multiSourceSuggestionService) processEntriesBatch(entries []os.DirEntry, dir string, fileQuery string, currentResults []string) []string {
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() && isIgnoredDir(name) {
+			continue
+		}
+
+		if matcher.IsSubsequence(fileQuery, name) {
+			fullPath := filepath.Join(dir, name)
+			if entry.IsDir() {
+				fullPath += string(os.PathSeparator)
+			}
+			currentResults = append(currentResults, fullPath)
+			if len(currentResults) >= 10 {
+				return currentResults
+			}
+		}
+	}
+	return currentResults
 }
 
 func (s *multiSourceSuggestionService) mergeSuggestions(s1, s2 []string, limit int) []string {

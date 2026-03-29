@@ -169,7 +169,7 @@ func TestGitTools(t *testing.T) {
 				t.Fatalf("Register failed: %v", err)
 			}
 
-			res, err := reg.Execute(context.Background(), tt.toolName, tt.args)
+			res, err := reg.Execute(context.Background(), tt.toolName, tt.args, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -267,7 +267,7 @@ func TestGitDestructiveActions(t *testing.T) {
 				t.Fatalf("Register failed: %v", err)
 			}
 
-			res, err := reg.Execute(context.Background(), tt.toolName, tt.args)
+			res, err := reg.Execute(context.Background(), tt.toolName, tt.args, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -300,7 +300,7 @@ func TestGitBlameSafety(t *testing.T) {
 	}
 
 	// Try to blame a file outside of allowed paths (assuming default policy denies it)
-	_, err := reg.Execute(context.Background(), "get_git_blame", map[string]interface{}{"filepath": "/etc/passwd"})
+	_, err := reg.Execute(context.Background(), "get_git_blame", map[string]interface{}{"filepath": "/etc/passwd"}, nil)
 	if err == nil {
 		t.Error("Expected error for unauthorized path, got nil")
 	}
@@ -316,7 +316,7 @@ func TestGitManagerInternal(t *testing.T) {
 			},
 		},
 	}
-	out, err := m.runGitCommand(context.Background(), "status")
+	out, err := m.runGitCommand(context.Background(), nil, "status")
 	if err == nil {
 		t.Error("expected error, got nil")
 	}

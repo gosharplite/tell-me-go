@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -38,7 +39,7 @@ func (e *realExecutor) LookPath(file string) (string, error) {
 	return exec.LookPath(file)
 }
 
-func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Command string `json:"command"`
 	}
@@ -61,6 +62,27 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 	}
 
 	m.logToolAction("Running Tests: %s", params.Command)
+
+	// Heartbeat while waiting for tests to run
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
 
 	// Execute the command directly without shell wrapper
 	output, err := m.executor.Execute(ctx, parts[0], parts[1:]...)
@@ -131,7 +153,7 @@ func (m *devManager) authorizeAction(ctx context.Context, action, command, detai
 	return true, nil
 }
 
-func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	command := "go mod tidy && go fmt ./..."
 	approved, err := m.authorizeAction(ctx, "Go Tidy", command, "Tidying project dependencies and formatting")
 	if err != nil {
@@ -142,6 +164,27 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 	}
 
 	m.logToolAction("Running go mod tidy and go fmt")
+
+	// Heartbeat while tidy and fmt are running
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", stringsutil.TruncateOutput(string(out), 50))
@@ -154,7 +197,7 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 	return tools.ToolResult{Text: "Success: Project tidied and formatted."}, nil
 }
 
-func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
@@ -187,6 +230,27 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	_ = f.Close()
 	defer func() { _ = os.Remove(tempName) }()
 
+	// Heartbeat while tests and tool cover are running
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
+
 	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, path)
 
 	if err != nil {
@@ -202,7 +266,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	return tools.ToolResult{Text: stringsutil.TruncateOutput(string(summaryOut), 100)}, nil
 }
 
-func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	// Try golangci-lint first, fallback to staticcheck
 	var command string
 	var argsList []string
@@ -227,6 +291,27 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 
 	m.logToolAction("Running linter: %s", fullCmd)
 
+	// Heartbeat while linter is running
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
+
 	out, err := m.executor.Execute(ctx, command, argsList...)
 	if err != nil && len(out) == 0 {
 		return tools.ToolResult{}, fmt.Errorf("linter execution failed: %w", err)
@@ -244,7 +329,7 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 	return tools.ToolResult{Text: outStr}, nil
 }
 
-func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Path  string `json:"path"`
 		Bench string `json:"bench"`
@@ -273,6 +358,27 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 
 	m.logToolAction("Running benchmarks (%s) in %s", bench, path)
 
+	// Heartbeat while benchmarks are running
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
+
 	out, err := m.executor.Execute(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("benchmark failed: %w\n%s", err, stringsutil.TruncateOutput(string(out), 100))
@@ -281,7 +387,7 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 	return tools.ToolResult{Text: string(out)}, nil
 }
 
-func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if _, err := m.executor.LookPath("govulncheck"); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest")
 	}
@@ -296,6 +402,27 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 	}
 
 	m.logToolAction("Checking for vulnerabilities: %s", command)
+
+	// Heartbeat while govulncheck is running
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	defer close(done)
 
 	out, err := m.executor.Execute(ctx, "govulncheck", "./...")
 

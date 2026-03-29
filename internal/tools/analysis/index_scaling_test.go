@@ -16,9 +16,9 @@ func TestIndexer_Scaling(t *testing.T) {
 	ctx := context.Background()
 
 	// 2. Performance Check: SearchSymbols should be O(1) in-memory
-	_ = idx.Refresh(ctx)
+	_ = idx.Refresh(ctx, nil)
 	start := time.Now()
-	symbols, err := idx.SearchSymbols(ctx, ".", "", false)
+	symbols, err := idx.SearchSymbols(ctx, ".", "", false, nil)
 	duration := time.Since(start)
 	t.Logf("SearchSymbols took %v", duration)
 
@@ -52,9 +52,9 @@ func TestIndexer_GetUsages_Scaling(t *testing.T) {
 	idx := getSharedIndexer(t)
 	ctx := context.Background()
 
-	_ = idx.Refresh(ctx)
+	_ = idx.Refresh(ctx, nil)
 	start := time.Now()
-	usages, err := idx.GetUsages(ctx, "indexer", ".")
+	usages, err := idx.GetUsages(ctx, "indexer", ".", nil)
 	duration := time.Since(start)
 
 	if err != nil {

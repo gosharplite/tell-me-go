@@ -51,7 +51,7 @@ func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.PathValidator, 
 }
 
 // AnalyzeSequenceFlow is the entry point for the analyze_sequence_flow tool.
-func (a *defaultSequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *defaultSequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	startSymbol, _ := args["start_symbol"].(string)
 	maxDepthVal, ok := args["max_depth"]
 	var maxDepth int
@@ -72,7 +72,7 @@ func (a *defaultSequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args 
 		return tools.ToolResult{Text: "Error: missing 'start_symbol' argument"}, nil
 	}
 
-	frames, err := a.traceFlow(ctx, startSymbol, maxDepth)
+	frames, err := a.traceFlow(ctx, startSymbol, maxDepth, hb)
 	if err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error tracing flow: %v", err)}, nil
 	}
@@ -80,7 +80,7 @@ func (a *defaultSequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args 
 	return tools.ToolResult{Text: a.Formatter.Format(frames)}, nil
 }
 
-func (a *defaultSequenceAnalyzer) loadPackages(ctx context.Context) error {
+func (a *defaultSequenceAnalyzer) loadPackages(ctx context.Context, hb chan<- struct{}) error {
 	a.pkgMu.RLock()
 	if a.pkgs != nil && time.Since(a.lastLoad) < a.cacheTTL {
 		a.pkgMu.RUnlock()
@@ -95,7 +95,7 @@ func (a *defaultSequenceAnalyzer) loadPackages(ctx context.Context) error {
 		return nil
 	}
 
-	pkgs, err := a.idx.Packages(ctx)
+	pkgs, err := a.idx.Packages(ctx, hb)
 	if err != nil {
 		return fmt.Errorf("getting packages from indexer: %w", err)
 	}
@@ -130,8 +130,8 @@ func (a *defaultSequenceAnalyzer) mapSymbols(pkgs []*packages.Package) map[strin
 	return funcMap
 }
 
-func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]callFrame, error) {
-	if err := a.loadPackages(ctx); err != nil {
+func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int, hb chan<- struct{}) ([]callFrame, error) {
+	if err := a.loadPackages(ctx, hb); err != nil {
 		return nil, err
 	}
 
@@ -173,12 +173,12 @@ func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol str
 	var frames []callFrame
 	visited := make(map[string]bool)
 
-	a.walk(ctx, startPkg, startFunc, 0, maxDepth, &frames, visited, modName)
+	a.walk(ctx, startPkg, startFunc, 0, maxDepth, &frames, visited, modName, hb)
 
 	return frames, nil
 }
 
-func (a *defaultSequenceAnalyzer) walk(ctx context.Context, pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]callFrame, visited map[string]bool, modName string) {
+func (a *defaultSequenceAnalyzer) walk(ctx context.Context, pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]callFrame, visited map[string]bool, modName string, hb chan<- struct{}) {
 	if depth >= maxDepth || fn.Body == nil {
 		return
 	}
@@ -193,6 +193,14 @@ func (a *defaultSequenceAnalyzer) walk(ctx context.Context, pkg *packages.Packag
 	}
 	visited[key] = true
 
+	// Emit heartbeat for each node in the walk
+	if hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
+	}
+
 	v := &sequenceVisitor{
 		ctx:      ctx,
 		pkg:      pkg,
@@ -202,6 +210,7 @@ func (a *defaultSequenceAnalyzer) walk(ctx context.Context, pkg *packages.Packag
 		frames:   frames,
 		visited:  visited,
 		analyzer: a,
+		hb:       hb,
 	}
 	ast.Walk(v, fn.Body)
 }
@@ -215,12 +224,18 @@ type sequenceVisitor struct {
 	frames   *[]callFrame
 	visited  map[string]bool
 	analyzer *defaultSequenceAnalyzer
+	hb       chan<- struct{}
 	inLoop   int
 	inGo     bool
 }
 
 func (v *sequenceVisitor) Visit(n ast.Node) ast.Visitor {
 	if n == nil {
+		return nil
+	}
+
+	// Check context cancellation to avoid unbounded CPU burn
+	if v.ctx.Err() != nil {
 		return nil
 	}
 
@@ -289,7 +304,7 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 	*v.frames = append(*v.frames, frame)
 
 	if targetId != "" {
-		v.tryRecurse(v.ctx, targetId, v.depth, v.maxDepth)
+		v.tryRecurse(v.ctx, targetId, v.depth, v.maxDepth, v.hb)
 	}
 }
 
@@ -518,7 +533,7 @@ func (v *sequenceVisitor) resolveCallDetails(call *ast.CallExpr, targetFunc stri
 	return displayFunc, retType
 }
 
-func (v *sequenceVisitor) tryRecurse(ctx context.Context, targetId string, depth, maxDepth int) {
+func (v *sequenceVisitor) tryRecurse(ctx context.Context, targetId string, depth, maxDepth int, hb chan<- struct{}) {
 	if depth+1 >= maxDepth {
 		return
 	}
@@ -528,16 +543,16 @@ func (v *sequenceVisitor) tryRecurse(ctx context.Context, targetId string, depth
 
 	// 1. Direct match
 	if info, ok := v.analyzer.funcMap[targetId]; ok {
-		v.analyzer.walk(ctx, info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName)
+		v.analyzer.walk(ctx, info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName, hb)
 		return
 	}
 
 	// 2. Interface implementation tracing
-	impls := v.analyzer.idx.GetImplementations(ctx, targetId)
+	impls := v.analyzer.idx.GetImplementations(ctx, targetId, hb)
 	if len(impls) == 1 {
 		implId := impls[0]
 		if info, ok := v.analyzer.funcMap[implId]; ok {
-			v.analyzer.walk(ctx, info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName)
+			v.analyzer.walk(ctx, info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName, hb)
 		}
 	}
 }

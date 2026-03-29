@@ -9,7 +9,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 )
 
-// TelemetryLogger implements the domaintools.ExecutionObserver interface using the global telemetry functions.
+// TelemetryLogger implements the tools.ExecutionObserver interface using the global telemetry functions.
 type TelemetryLogger struct{}
 
 // ExecutionTimedOut logs a critical event when a tool goroutine leaks.

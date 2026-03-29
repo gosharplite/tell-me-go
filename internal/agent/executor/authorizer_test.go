@@ -45,14 +45,14 @@ func TestIdentifyConsentItems_Panic(t *testing.T) {
 
 func TestAuthorizationPanic(t *testing.T) {
 	t.Parallel()
-	// Not really a panic in AuthorizeTool itself as it stands, but good to have if we add more logic.
+	// Not really a panic in Authorize itself as it stands, but good to have if we add more logic.
 	// For now, let's just test basic authorization denial.
 
 	reg := &mockToolRegistry{}
 	sm := &mockSecurityManager{allowedCommands: map[string]bool{"allowed": true}}
 	auth := newSecurityAuthorizer(sm, reg)
 
-	err := auth.AuthorizeTool(&tools.ToolDeclaration{Name: "forbidden"}, &llm.FunctionCall{Name: "forbidden"})
+	err := auth.Authorize(context.Background(), &tools.ToolDeclaration{Name: "forbidden"}, &llm.FunctionCall{Name: "forbidden"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not allowed")
 }

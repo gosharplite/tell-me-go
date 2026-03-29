@@ -242,7 +242,7 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile strin
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		var eArgs estimateCostArgs
 		if err := tools.UnmarshalArgs(args, &eArgs); err != nil {
 			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
@@ -281,7 +281,7 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile strin
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		var sArgs costSummaryArgs
 		if err := tools.UnmarshalArgs(args, &sArgs); err != nil {
 			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)

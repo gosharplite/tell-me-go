@@ -6,11 +6,24 @@ package history
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func assertPromptsMatch(t *testing.T, got, expected []string) {
+	t.Helper()
+	if len(got) != len(expected) {
+		t.Errorf("got %d prompts; want %d", len(got), len(expected))
+	}
+	for i, v := range got {
+		if i < len(expected) && v != expected[i] {
+			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
+		}
+	}
+}
 
 func TestGlobalPromptTracker(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -31,14 +44,7 @@ func TestGlobalPromptTracker(t *testing.T) {
 	}
 
 	expected := []string{"hello", "bar", "foo", "world"}
-	if len(got) != len(expected) {
-		t.Errorf("got %d prompts; want %d", len(got), len(expected))
-	}
-	for i, v := range got {
-		if v != expected[i] {
-			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
-		}
-	}
+	assertPromptsMatch(t, got, expected)
 
 	// Test with smaller limit
 	got2, err := tracker.LoadTopN(context.Background(), 2)
@@ -134,14 +140,7 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	}
 
 	expected := []string{"duplicate", "p5", "p4", "p3", "p2"}
-	if len(got) != len(expected) {
-		t.Errorf("got %d prompts; want %d", len(got), len(expected))
-	}
-	for i, v := range got {
-		if i < len(expected) && v != expected[i] {
-			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
-		}
-	}
+	assertPromptsMatch(t, got, expected)
 }
 
 func TestGlobalPromptTracker_Compaction(t *testing.T) {
@@ -420,5 +419,22 @@ func TestGlobalPromptTracker_CompactionIgnoresContextCancellation(t *testing.T) 
 	}
 	if len(content) == 0 || content[0] != largePrompt {
 		t.Errorf("Data loss or corruption detected after compaction")
+	}
+}
+
+type errorWriter struct{}
+
+func (e *errorWriter) Write(p []byte) (n int, err error) {
+	return 0, io.ErrShortWrite
+}
+
+func TestPromptTracker_CompactionWriteFailure(t *testing.T) {
+	tracker := &globalPromptTracker{}
+	entries := []promptEntry{
+		{Timestamp: "now", Prompt: "test"},
+	}
+	success := tracker.writeCompactedTempFile(&errorWriter{}, entries)
+	if success {
+		t.Errorf("Expected writeCompactedTempFile to fail with errorWriter")
 	}
 }

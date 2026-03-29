@@ -11,7 +11,7 @@ import (
 
 // generateMermaidDiagram transforms a dependency map into a Mermaid.js diagram.
 // It is registered as a tool.
-func generateMermaidDiagram(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func generateMermaidDiagram(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	rawGraph, ok := args["graph"]
 	if !ok {
 		return tools.ToolResult{Text: "Error: missing 'graph' argument"}, nil

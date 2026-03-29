@@ -20,7 +20,7 @@ import (
 )
 
 type mockToolRegistry struct {
-	executeFn         func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error)
+	executeFn         func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
 	getDeclarationsFn func() []*tools.ToolDeclaration
 	isSerial          bool
 }
@@ -35,16 +35,16 @@ func (m *mockToolRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) 
 func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	return m.Register(def, handler)
 }
-func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if m.executeFn != nil {
-		return m.executeFn(ctx, name, args)
+		return m.executeFn(ctx, name, args, hb)
 	}
 	return tools.ToolResult{Text: "ok"}, nil
 }
 func (m *mockToolRegistry) IsSerial(name string) bool      { return m.isSerial }
 func (m *mockToolRegistry) IsLongRunning(name string) bool { return false }
 
-func TestToolExecutor_ContextCancellation(t *testing.T) {
+func TestOrchestrator_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	// Setup a tool that blocks until context is cancelled
 
@@ -52,7 +52,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 	toolFinished := make(chan struct{})
 
 	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			close(toolStarted)
 			timer := time.NewTimer(ciSafeTimeout)
 			defer timer.Stop()
@@ -66,7 +66,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -137,7 +137,8 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 		close(finished)
 	}
 
-	pool.Submit(task)
+	err := pool.Submit(task)
+	require.NoError(t, err)
 	<-started
 
 	cancel() // Cancel the task context
@@ -154,9 +155,10 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 
 	// Pool should still be functional for other tasks
 	task2Started := make(chan struct{})
-	pool.Submit(func(ctx context.Context) {
+	err = pool.Submit(func(ctx context.Context) {
 		close(task2Started)
 	})
+	assert.NoError(t, err)
 
 	timer4 := time.NewTimer(100 * time.Millisecond)
 	defer timer4.Stop()
@@ -172,7 +174,7 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -211,7 +213,7 @@ func TestBuildExecutionBatches_PreservesOrder(t *testing.T) {
 			"S2": true,
 		},
 	}
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -256,16 +258,16 @@ func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc)
 func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
 	return nil
 }
-func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
 func (m *orderMockRegistry) IsSerial(name string) bool      { return m.serialTools[name] }
 func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
 
-func TestToolExecutor_PoolClosed_FailsGracefully(t *testing.T) {
+func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.Shutdown() // Deterministically close the pool
 
@@ -291,14 +293,14 @@ func TestToolExecutor_PoolClosed_FailsGracefully(t *testing.T) {
 	assert.Contains(t, resultStr, "pool closed or context cancelled")
 }
 
-func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
+func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -322,24 +324,24 @@ func TestToolExecutor_WithActiveTrace_RecordsExecution(t *testing.T) {
 	assert.Equal(t, "success", trace.ToolExecutions[0].Status)
 }
 
-func TestNewToolExecutor_NilObserver(t *testing.T) {
+func TestNewOrchestrator_NilObserver(t *testing.T) {
 	reg := &mockToolRegistry{}
-	_, err := NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, nil)
+	_, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 
 	// Coverage for lines 95-97: error from NewZombieTool
-	sabotageOpt := func(e *ToolExecutor) {
+	sabotageOpt := func(e *Orchestrator) {
 		e.observer = nil
 	}
-	_, err = NewToolExecutor(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, sabotageOpt)
+	_, err = NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, sabotageOpt)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
 
-func TestNewToolExecutor_NilRegistry(t *testing.T) {
+func TestNewOrchestrator_NilRegistry(t *testing.T) {
 	// Call with nil registry
-	executor, err := NewToolExecutor(nil, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	executor, err := NewOrchestrator(nil, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)
@@ -347,13 +349,13 @@ func TestNewToolExecutor_NilRegistry(t *testing.T) {
 	require.Nil(t, executor)
 }
 
-func TestNewToolExecutor_NilLogger(t *testing.T) {
+func TestNewOrchestrator_NilLogger(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
 	observer := &MockLogger{}
 
 	// Explicitly pass nil for the logger
-	_, err := NewToolExecutor(reg, nil, nil, nil, observer)
+	_, err := NewOrchestrator(reg, nil, nil, nil, observer)
 	require.Error(t, err)
 	assert.Equal(t, "logger is required", err.Error())
 }
@@ -380,13 +382,13 @@ func (m *errorEventBus) Subscribe(sub func(context.Context, events.Event)) {}
 func (m *errorEventBus) Shutdown(ctx context.Context) error                { return nil }
 func (m *errorEventBus) Flush(ctx context.Context) error                   { return nil }
 
-func TestToolExecutor_EmitEvent_ErrorLogging(t *testing.T) {
+func TestOrchestrator_EmitEvent_ErrorLogging(t *testing.T) {
 	// Setup
 	mockLogger := &capturingLogger{}
 	genericErr := errors.New("generic publish error")
 	mockBus := &errorEventBus{err: genericErr}
 
-	exec := &ToolExecutor{
+	exec := &Orchestrator{
 		logger: mockLogger,
 	}
 
@@ -415,12 +417,12 @@ func TestToolExecutor_EmitEvent_ErrorLogging(t *testing.T) {
 	assert.ErrorContains(t, attrs["error"].(error), "generic publish error")
 }
 
-func TestToolExecutor_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
+func TestOrchestrator_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
 	// Setup
 	mockLogger := &capturingLogger{}
 	mockBus := &errorEventBus{err: events.ErrBusNotInitialized}
 
-	exec := &ToolExecutor{
+	exec := &Orchestrator{
 		logger: mockLogger,
 	}
 
@@ -440,7 +442,7 @@ func TestResultCollector_EmitEvent(t *testing.T) {
 	genericErr := errors.New("publish error")
 	mockBus := &errorEventBus{err: genericErr}
 
-	exec, err := NewToolExecutor(&mockToolRegistry{}, nil, mockBus, mockLogger, &MockLogger{})
+	exec, err := NewOrchestrator(&mockToolRegistry{}, nil, mockBus, mockLogger, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -453,4 +455,12 @@ func TestResultCollector_EmitEvent(t *testing.T) {
 	// Assert
 	assert.True(t, mockLogger.errorCalled)
 	assert.Equal(t, "event_publish_failed", mockLogger.lastMsg)
+}
+
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *orderMockRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

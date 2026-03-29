@@ -414,7 +414,7 @@ func TestGetDetailedCoverageReport(t *testing.T) {
 		},
 	}
 
-	_, err := getDetailedCoverageReport(ctx, "./non-existent", mock)
+	_, err := getDetailedCoverageReport(ctx, "./non-existent", mock, nil)
 	if err == nil {
 		t.Error("expected error for non-existent package, got nil")
 	}
@@ -429,7 +429,7 @@ func TestGetDetailedCoverageJSON(t *testing.T) {
 		},
 	}
 
-	_, err := getDetailedCoverageJSON(ctx, "./non-existent", "High", mock)
+	_, err := getDetailedCoverageJSON(ctx, "./non-existent", "High", mock, nil)
 	if err == nil {
 		t.Error("expected error for non-existent package, got nil")
 	}
@@ -602,7 +602,7 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 	}
 	defer func() { _ = os.Remove("file.go") }()
 
-	blocks, err := getDetailedCoverage(ctx, ".", mock)
+	blocks, err := getDetailedCoverage(ctx, ".", mock, nil)
 	if err != nil {
 		t.Fatalf("getDetailedCoverage failed: %v", err)
 	}
@@ -653,7 +653,7 @@ func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
 		},
 	}
 
-	_, err := getDetailedCoverage(ctx, ".", mock)
+	_, err := getDetailedCoverage(ctx, ".", mock, nil)
 	if err == nil || !strings.Contains(err.Error(), "coverage profile is empty") {
 		t.Errorf("expected empty profile error, got %v", err)
 	}
@@ -705,7 +705,7 @@ func TestGetDetailedCoverageReport_Success(t *testing.T) {
 	}
 	defer func() { _ = os.Remove("file.go") }()
 
-	report, err := getDetailedCoverageReport(ctx, ".", mock)
+	report, err := getDetailedCoverageReport(ctx, ".", mock, nil)
 	if err != nil {
 		t.Fatalf("getDetailedCoverageReport failed: %v", err)
 	}
@@ -738,7 +738,7 @@ func TestGetDetailedCoverageJSON_Success(t *testing.T) {
 	}
 	defer func() { _ = os.Remove("file.go") }()
 
-	jsonStr, err := getDetailedCoverageJSON(ctx, ".", "Low", mock)
+	jsonStr, err := getDetailedCoverageJSON(ctx, ".", "Low", mock, nil)
 	if err != nil {
 		t.Fatalf("getDetailedCoverageJSON failed: %v", err)
 	}
@@ -894,7 +894,7 @@ func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
 	_ = os.Setenv("TMPDIR", "/non-existent-directory-12345")
 	defer func() { _ = os.Setenv("TMPDIR", oldTmp) }()
 
-	_, err := getDetailedCoverage(ctx, ".", mock)
+	_, err := getDetailedCoverage(ctx, ".", mock, nil)
 	if err == nil {
 		t.Error("expected error from os.CreateTemp, got nil")
 	}

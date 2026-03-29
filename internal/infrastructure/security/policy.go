@@ -21,7 +21,7 @@ func newPolicyTool(sm *SecurityManager) *policyTool {
 	return &policyTool{sm: sm}
 }
 
-func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -63,7 +63,7 @@ func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully authorized and persisted.", absPath)}, nil
 }
 
-func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -104,7 +104,7 @@ func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 	return tools.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully removed from authorized boundaries.", absPath)}, nil
 }
 
-func (t *policyTool) ListSafePaths(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) ListSafePaths(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	paths := t.sm.GetSafePaths()
 	if len(paths) == 0 {
 		return tools.ToolResult{Text: "No additional safe paths are currently registered."}, nil
@@ -118,7 +118,7 @@ func (t *policyTool) ListSafePaths(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -160,7 +160,7 @@ func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully authorized for reading and persisted.", absPath)}, nil
 }
 
-func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -201,7 +201,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 	return tools.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully removed from read-only authorized boundaries.", absPath)}, nil
 }
 
-func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	paths := t.sm.getReadOnlyPaths()
 	if len(paths) == 0 {
 		return tools.ToolResult{Text: "No additional read-only paths are currently registered."}, nil
@@ -215,7 +215,7 @@ func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -240,7 +240,7 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 	return tools.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
 }
 
-func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 

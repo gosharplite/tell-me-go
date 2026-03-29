@@ -5,7 +5,17 @@ package concurrency
 
 import (
 	"context"
+	"errors"
 	"sync"
+)
+
+var (
+	// errPoolClosed is returned when submitting a task to a closed pool.
+	errPoolClosed = errors.New("worker pool is closed")
+	// ErrPoolSaturated is returned when the pool queue is full and cannot accept more tasks.
+	ErrPoolSaturated = errors.New("worker pool is saturated")
+	// errContextCancelled is returned when the submission context is cancelled.
+	errContextCancelled = errors.New("submission context cancelled")
 )
 
 // WorkerPool manages a fixed number of workers to execute tasks concurrently.
@@ -51,12 +61,12 @@ func (p *WorkerPool) start() {
 	}
 }
 
-// Submit adds a task to the pool. Returns true if the task was successfully queued.
-func (p *WorkerPool) Submit(task func(ctx context.Context)) bool {
+// Submit adds a task to the pool. Returns nil if the task was successfully queued.
+func (p *WorkerPool) Submit(task func(ctx context.Context)) error {
 	p.mu.RLock()
 	if p.closed {
 		p.mu.RUnlock()
-		return false
+		return errPoolClosed
 	}
 	p.submitWg.Add(1)
 	p.mu.RUnlock()
@@ -64,14 +74,14 @@ func (p *WorkerPool) Submit(task func(ctx context.Context)) bool {
 
 	select {
 	case p.tasks <- task:
-		return true
+		return nil
 	case <-p.closing:
-		return false
+		return errPoolClosed
 	case <-p.ctx.Done():
-		return false
+		return errContextCancelled
 	default:
 		// [SCALABILITY FIX] Fail-fast: prevents caller deadlock when pool is saturated.
-		return false
+		return ErrPoolSaturated
 	}
 }
 

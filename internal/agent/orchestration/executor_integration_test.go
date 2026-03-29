@@ -64,14 +64,14 @@ func (m *integrationToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration
 	return m.Register(def, handler)
 }
 
-func (m *integrationToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *integrationToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	m.mu.RLock()
 	handler, ok := m.handlers[name]
 	m.mu.RUnlock()
 	if !ok {
 		return tools.ToolResult{}, errors.New("tool not found")
 	}
-	return handler(ctx, args)
+	return handler(ctx, args, nil)
 }
 
 func (m *integrationToolRegistry) IsSerial(name string) bool {
@@ -109,7 +109,7 @@ func (s *integrationSecurityManager) IsCommandAllowed(command string) bool      
 func (s *integrationSecurityManager) IsBypassActive() bool                         { return false }
 func (s *integrationSecurityManager) Close() error                                 { return nil }
 
-func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
+func TestOrchestrator_EndToEnd_BarrierPattern(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")
 	}
@@ -118,7 +118,7 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	bus := &mockEventBus{} // from mocks_test.go
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
+	exec, err := executor.NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -128,7 +128,7 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 
 	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_parallel",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&parallelOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "parallel done"}, nil
 	}, tools.ToolOptions{Serial: false, LongRunning: false})
@@ -136,7 +136,7 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 
 	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&serialOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "serial done"}, nil
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
@@ -163,7 +163,7 @@ func TestToolExecutor_EndToEnd_BarrierPattern(t *testing.T) {
 	assert.True(t, pOrder < sOrder, "Sequential Integrity Failure: Parallel tool must finish BEFORE subsequent serial tool starts.")
 }
 
-func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
+func TestOrchestrator_EndToEnd_SequentialOrder(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")
 	}
@@ -172,7 +172,7 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
+	exec, err := executor.NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -182,7 +182,7 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 
 	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&serialOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "serial done"}, nil
 	}, tools.ToolOptions{Serial: true, LongRunning: true})
@@ -190,7 +190,7 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 
 	err = reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_parallel",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		atomic.StoreInt32(&parallelOrder, atomic.AddInt32(&executionCounter, 1))
 		return tools.ToolResult{Text: "parallel done"}, nil
 	}, tools.ToolOptions{Serial: false, LongRunning: false})
@@ -215,7 +215,7 @@ func TestToolExecutor_EndToEnd_SequentialOrder(t *testing.T) {
 	assert.True(t, sOrder < pOrder, "Sequential Integrity Failure: Serial tool must finish BEFORE subsequent parallel tool starts.")
 }
 
-func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
+func TestOrchestrator_EndToEnd_ContextCancellation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")
 	}
@@ -225,7 +225,7 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(timeout))
+	exec, err := executor.NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(timeout))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -233,7 +233,7 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 
 	regErr := reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "mock_serial",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
 		case <-time.After(500 * time.Millisecond):
 			return tools.ToolResult{Text: "finished late"}, nil
@@ -279,4 +279,8 @@ func TestToolExecutor_EndToEnd_ContextCancellation(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Tool goroutine leaked after parent context cancellation")
 	}
+}
+
+func (m *integrationToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

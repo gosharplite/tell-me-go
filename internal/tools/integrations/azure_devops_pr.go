@@ -18,7 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func (m *adoManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -82,7 +82,7 @@ func (m *adoManager) formatPullRequestDetail(pullRequestId int, prData adoPullRe
 	return resultText.String()
 }
 
-func (m *adoManager) adoListPullRequests(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoListPullRequests(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -171,7 +171,7 @@ func (m *adoManager) formatPullRequestsList(prs []adoPullRequestShort) string {
 	return resultText.String()
 }
 
-func (m *adoManager) adoGetPrDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPrDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
@@ -239,7 +239,7 @@ type adoThreadResponse struct {
 	} `json:"value"`
 }
 
-func (m *adoManager) adoGetPrThreads(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetPrThreads(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`

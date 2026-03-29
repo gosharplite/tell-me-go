@@ -4,6 +4,8 @@
 package developer
 
 import (
+	"time"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -26,14 +28,14 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 			},
 			Required: []string{"command"},
 		},
-	}, dev.runTests, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+	}, dev.runTests, tools.ToolOptions{Serial: true, LongRunning: true, LivenessThreshold: 30 * time.Second}); err != nil {
 		return err
 	}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "go_tidy",
 		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
-	}, dev.goTidy, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+	}, dev.goTidy, tools.ToolOptions{Serial: true, LongRunning: true, LivenessThreshold: 30 * time.Second}); err != nil {
 		return err
 	}
 
@@ -49,14 +51,14 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 				},
 			},
 		},
-	}, dev.getCoverage, tools.ToolOptions{LongRunning: true}); err != nil {
+	}, dev.getCoverage, tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second}); err != nil {
 		return err
 	}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_linter",
 		Description: "Runs the first available linter (golangci-lint or staticcheck). Returns a list of findings or success message.",
-	}, dev.runLinter, tools.ToolOptions{LongRunning: true}); err != nil {
+	}, dev.runLinter, tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second}); err != nil {
 		return err
 	}
 
@@ -76,14 +78,14 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 				},
 			},
 		},
-	}, dev.runBenchmark, tools.ToolOptions{LongRunning: true}); err != nil {
+	}, dev.runBenchmark, tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second}); err != nil {
 		return err
 	}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "check_vulnerabilities",
 		Description: "Runs 'govulncheck'.",
-	}, dev.checkVulnerabilities, tools.ToolOptions{LongRunning: true}); err != nil {
+	}, dev.checkVulnerabilities, tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second}); err != nil {
 		return err
 	}
 
@@ -96,7 +98,7 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_release_readiness",
 		Description: "Performs an automated check of all SOP release requirements (clean build, secret scanning, go.mod check, and test execution).",
-	}, rel.verifyReleaseReadiness, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+	}, rel.verifyReleaseReadiness, tools.ToolOptions{Serial: true, LongRunning: true, LivenessThreshold: 30 * time.Second}); err != nil {
 		return err
 	}
 	return nil

@@ -112,7 +112,7 @@ func TestAdoListPipelines(t *testing.T) {
 			m := newADOManager(sm, opts...)
 
 			ctx := context.Background()
-			result, err := m.adoListPipelines(ctx, tt.args)
+			result, err := m.adoListPipelines(ctx, tt.args, nil)
 
 			if tt.wantError {
 				assert.Error(t, err)
@@ -190,7 +190,7 @@ func TestAdoCreatePipeline_WithVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.adoCreatePipeline(ctx, args)
+	result, err := m.adoCreatePipeline(ctx, args, nil)
 	require.NoError(t, err)
 	assert.Contains(t, result.Text, "Successfully created pipeline 'new-pipeline' with ID: 789")
 }
@@ -239,7 +239,7 @@ func TestAdoCreatePipeline_WithOverrideControl(t *testing.T) {
 		},
 	}
 
-	result, err := m.adoCreatePipeline(ctx, args)
+	result, err := m.adoCreatePipeline(ctx, args, nil)
 	require.NoError(t, err)
 	assert.Contains(t, result.Text, "Successfully created pipeline 'locked-pipeline' with ID: 888")
 }
@@ -318,7 +318,7 @@ func TestAdoGetPipelineDefinition(t *testing.T) {
 		"pipeline_id":  123,
 	}
 
-	result, err := m.adoGetPipelineDefinition(ctx, args)
+	result, err := m.adoGetPipelineDefinition(ctx, args, nil)
 	require.NoError(t, err)
 
 	var def map[string]interface{}
@@ -405,7 +405,7 @@ func TestAdoUpdateBuildDefinitionVariables(t *testing.T) {
 		},
 	}
 
-	result, err := m.adoUpdateBuildDefinitionVariables(ctx, args)
+	result, err := m.adoUpdateBuildDefinitionVariables(ctx, args, nil)
 	require.NoError(t, err)
 	assert.Contains(t, result.Text, "Successfully updated variables for build definition 123")
 	assert.True(t, getCalled)
@@ -453,7 +453,7 @@ func TestStreamRegexFilter_Truncation(t *testing.T) {
 				input.WriteString("match line\n")
 			}
 
-			res, err := m.streamRegexFilter(strings.NewReader(input.String()), "match", logFilterOptions{MaxLines: tt.maxLines})
+			res, err := m.streamRegexFilter(context.Background(), strings.NewReader(input.String()), "match", logFilterOptions{MaxLines: tt.maxLines}, nil)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantTruncated, res.Truncated)

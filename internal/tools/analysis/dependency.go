@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -27,7 +28,7 @@ func newDependencyAnalyzer(exec tools.CommandExecutor, sp domain_security.Policy
 	}
 }
 
-func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if a.Events != nil {
 		evt := events.SystemMessageEvent{
 			Message: "[Tool Action] Analyzing package dependencies",
@@ -44,7 +45,28 @@ func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args ma
 
 	format, _ := args["format"].(string)
 
+	// Heartbeat while building graph
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
 	graph, err := a.buildGraph(ctx)
+	close(done)
 	if err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error building graph: %v", err)}, nil
 	}

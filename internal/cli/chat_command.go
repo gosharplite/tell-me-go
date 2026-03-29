@@ -24,6 +24,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 )
 
+// errExitZero signals that the command should exit with code 0 immediately.
+var errExitZero = errors.New("exit zero")
+
 func init() {
 	register("chat", func(ctx *context) command {
 		return newChatCommand(ctx)
@@ -71,23 +74,12 @@ func newChatCommand(ctx *context) *chatCommand {
 
 // Execute runs the chat command logic.
 func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
-	// 1. Parsing command-line flags and arguments
-	opts, fs, err := c.parseConfiguration(args)
+	opts, fs, err := c.resolveOptions(args)
 	if err != nil {
+		if errors.Is(err, errExitZero) {
+			return nil
+		}
 		return err
-	}
-	if opts.showVersion {
-		_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
-		return nil
-	}
-
-	// 2. Configuration Merge
-	// Load configuration early to merge with CLI options
-	loader := &infra_config.YAMLConfigLoader{}
-	cfg, _ := loader.Load(opts.configPath)
-	// Only auto-enable TUI from config if no other actions are requested
-	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
-		opts.tuiPrompt = true
 	}
 
 	var prompt string
@@ -103,7 +95,49 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// 3. Invoking a Use Case / Service interface
-	var capturer ports.Capturer
+	capturer := c.buildCapturer(ctx, opts)
+
+	if !opts.retry {
+		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Delegate all business logic and orchestration to the ChatService
+	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
+		ConfigPath:   opts.configPath,
+		NewSession:   opts.newSession,
+		LastN:        opts.lastN,
+		BackN:        opts.backN,
+		RawOutput:    opts.rawOutput,
+		UseTUIPrompt: opts.tuiPrompt,
+		Prompt:       prompt,
+	}, capturer)
+}
+
+func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet, error) {
+	opts, fs, err := c.parseConfiguration(args)
+	if err != nil {
+		return nil, nil, err
+	}
+	if opts.showVersion {
+		_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
+		return nil, nil, errExitZero
+	}
+
+	// Configuration Merge
+	loader := &infra_config.YAMLConfigLoader{}
+	cfg, _ := loader.Load(opts.configPath)
+	// Only auto-enable TUI from config if no other actions are requested
+	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
+		opts.tuiPrompt = true
+	}
+
+	return opts, fs, nil
+}
+
+func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) ports.Capturer {
 	if opts.tuiPrompt {
 		tracker, err := history.NewGlobalPromptTracker(c.HomeDir)
 		if err != nil {
@@ -126,33 +160,15 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 
 		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
 
-		capturer = tui.NewPromptCapturer(baseCapturer, svc)
+		var capturer ports.Capturer = tui.NewPromptCapturer(baseCapturer, svc)
 		if sm, ok := c.SM.(interface {
 			SetInteractor(domain_security.UserInteractor)
 		}); ok {
 			sm.SetInteractor(capturer.(domain_security.UserInteractor))
 		}
-	} else {
-		capturer = c.setupCapturer()
+		return capturer
 	}
-
-	if !opts.retry {
-		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Delegate all business logic and orchestration to the ChatService
-	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
-		ConfigPath:   opts.configPath,
-		NewSession:   opts.newSession,
-		LastN:        opts.lastN,
-		BackN:        opts.backN,
-		RawOutput:    opts.rawOutput,
-		UseTUIPrompt: opts.tuiPrompt,
-		Prompt:       prompt,
-	}, capturer)
+	return c.setupCapturer()
 }
 
 func (c *chatCommand) setupCapturer() ports.Capturer {

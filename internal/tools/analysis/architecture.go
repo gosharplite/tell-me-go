@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -53,7 +54,7 @@ type indexedPackageProvider struct {
 }
 
 func (p *indexedPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
-	pkgs, err := p.idx.Packages(ctx)
+	pkgs, err := p.idx.Packages(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load architecture packages: %w", err)
 	}
@@ -161,7 +162,7 @@ type rule struct {
 	Reason      string
 }
 
-func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if m.Loader == nil {
 		if m.idx != nil {
 			m.Loader = &indexedPackageProvider{m: m, idx: m.idx}
@@ -170,19 +171,49 @@ func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[s
 		}
 	}
 
+	// Heartbeat while loading packages
+	done := make(chan struct{})
+	go m.runHeartbeat(hb, done)
+
 	pkgs, err := m.Loader.LoadPackages(ctx)
+	close(done)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	violations := m.checkLayerViolations(pkgs)
-	violations = append(violations, m.checkCircularDependencies(pkgs)...)
+	// Final heartbeat before processing
+	m.sendHeartbeat(hb)
+
+	violations := m.checkLayerViolations(pkgs, hb)
+	violations = append(violations, m.checkCircularDependencies(pkgs, hb)...)
 
 	if len(violations) == 0 {
 		return tools.ToolResult{Text: "✅ Architectural integrity verified. No layer violations or circular dependencies detected."}, nil
 	}
 
 	return tools.ToolResult{Text: m.formatReport(violations)}, nil
+}
+
+func (m *architectureManager) runHeartbeat(hb chan<- struct{}, done <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			m.sendHeartbeat(hb)
+		}
+	}
+}
+
+func (m *architectureManager) sendHeartbeat(hb chan<- struct{}) {
+	if hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func isLayer(pkgPath, layerName string) bool {
@@ -216,7 +247,7 @@ func (m *architectureManager) isCmd(pkgPath string) bool {
 	return strings.Contains(pkgPath, "/cmd/") || strings.HasSuffix(pkgPath, "/cmd")
 }
 
-func (m *architectureManager) checkLayerViolations(pkgs map[string][]string) []violation {
+func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb chan<- struct{}) []violation {
 	rules := []rule{
 		{
 			SourceLayer: layerDomain,
@@ -254,7 +285,13 @@ func (m *architectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	}
 	sort.Strings(sortedPkgs)
 
-	for _, pkg := range sortedPkgs {
+	for i, pkg := range sortedPkgs {
+		if i%10 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
 		imports := pkgs[pkg]
 		violations = append(violations, m.checkSinglePackageViolations(pkg, imports, rules)...)
 		violations = append(violations, m.checkGeneralCmdImport(pkg, imports, violations)...)
@@ -328,47 +365,16 @@ func isAlreadyReported(v violation, list []violation) bool {
 	return false
 }
 
-func (m *architectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {
-	var violations []violation
-
-	visited := make(map[string]bool)
-	onStack := make(map[string]bool)
-	var path []string
-
-	var findCycles func(string)
-	findCycles = func(u string) {
-		visited[u] = true
-		onStack[u] = true
-		path = append(path, u)
-
-		for _, v := range pkgs[u] {
-			if !visited[v] {
-				findCycles(v)
-			} else if onStack[v] {
-				// Cycle detected
-				cycleStart := -1
-				for i, node := range path {
-					if node == v {
-						cycleStart = i
-						break
-					}
-				}
-				if cycleStart != -1 {
-					cyclePath := append(path[cycleStart:], v)
-					violations = append(violations, violation{
-						pkg:      m.shorten(u),
-						category: "[CIRCULAR REFERENCE]",
-						target:   m.shorten(v),
-						reason:   "Cycle: " + strings.Join(m.shortenList(cyclePath), " -> "),
-					})
-				}
-			}
-		}
-
-		onStack[u] = false
-		path = path[:len(path)-1]
+func (m *architectureManager) checkCircularDependencies(pkgs map[string][]string, hb chan<- struct{}) []violation {
+	detector := &circularDetector{
+		m:       m,
+		pkgs:    pkgs,
+		visited: make(map[string]bool),
+		onStack: make(map[string]bool),
+		hb:      hb,
 	}
 
+	// Sort packages for deterministic iteration
 	var sortedPkgs []string
 	for p := range pkgs {
 		sortedPkgs = append(sortedPkgs, p)
@@ -376,12 +382,64 @@ func (m *architectureManager) checkCircularDependencies(pkgs map[string][]string
 	sort.Strings(sortedPkgs)
 
 	for _, p := range sortedPkgs {
-		if !visited[p] {
-			findCycles(p)
+		if !detector.visited[p] {
+			detector.findCycles(p)
 		}
 	}
 
-	return violations
+	return detector.violations
+}
+
+type circularDetector struct {
+	m          *architectureManager
+	pkgs       map[string][]string
+	visited    map[string]bool
+	onStack    map[string]bool
+	path       []string
+	violations []violation
+	hb         chan<- struct{}
+	count      int
+}
+
+func (d *circularDetector) findCycles(u string) {
+	d.count++
+	if d.count%10 == 0 {
+		d.m.sendHeartbeat(d.hb)
+	}
+
+	d.visited[u] = true
+	d.onStack[u] = true
+	d.path = append(d.path, u)
+
+	for _, v := range d.pkgs[u] {
+		if !d.visited[v] {
+			d.findCycles(v)
+		} else if d.onStack[v] {
+			d.reportCycle(u, v)
+		}
+	}
+
+	d.onStack[u] = false
+	d.path = d.path[:len(d.path)-1]
+}
+
+func (d *circularDetector) reportCycle(u, v string) {
+	cycleStart := -1
+	for i, node := range d.path {
+		if node == v {
+			cycleStart = i
+			break
+		}
+	}
+	if cycleStart != -1 {
+		cyclePath := append(d.path[cycleStart:], v)
+		d.violations = append(d.violations, violation{
+			pkg:      d.m.shorten(u),
+			category: "[CIRCULAR REFERENCE]",
+			target:   d.m.shorten(v),
+			reason:   "Cycle: " + strings.Join(d.m.shortenList(cyclePath), " -> "),
+		})
+	}
 }
 
 func (m *architectureManager) shorten(pkg string) string {

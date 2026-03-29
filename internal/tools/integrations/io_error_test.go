@@ -68,12 +68,12 @@ func TestJira_IOError(t *testing.T) {
 	ctx := context.Background()
 
 	// Test jiraSearchIssues
-	_, err := m.jiraSearchIssues(ctx, map[string]interface{}{"jql": "project=PROJ"})
+	_, err := m.jiraSearchIssues(ctx, map[string]interface{}{"jql": "project=PROJ"}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read response body")
 
 	// Test jiraGetIssue
-	_, err = m.jiraGetIssue(ctx, map[string]interface{}{"issue_key": "PROJ-1"})
+	_, err = m.jiraGetIssue(ctx, map[string]interface{}{"issue_key": "PROJ-1"}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read response body")
 }

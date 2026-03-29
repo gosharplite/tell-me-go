@@ -143,7 +143,7 @@ func (m *adoManager) checkResponseError(resp *http.Response, requestURL string) 
 	}
 }
 
-func (m *adoManager) adoGetFileContent(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoGetFileContent(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
@@ -199,7 +199,7 @@ type adoRepositoryItemsResponse struct {
 	Count int `json:"count"`
 }
 
-func (m *adoManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *adoManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization   string `json:"organization"`
 		Project        string `json:"project"`

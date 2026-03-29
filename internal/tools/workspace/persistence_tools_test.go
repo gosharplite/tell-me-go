@@ -102,7 +102,7 @@ func TestPersistenceTools_GetSessionInfo(t *testing.T) {
 	pt, provider := setupPersistenceTools()
 	provider.info.Model = "test-model"
 
-	res, err := pt.GetSessionInfo(context.Background(), nil)
+	res, err := pt.GetSessionInfo(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("GetSessionInfo failed: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			pt, provider := setupPersistenceTools()
 			setupManageTasks(t, tt.setup, provider)
 
-			res, err := pt.ManageTasks(context.Background(), tt.args)
+			res, err := pt.ManageTasks(context.Background(), tt.args, nil)
 
 			assertManageTasksResult(t, res, err, tt.expectedResult, tt.expectError)
 		})
@@ -240,12 +240,12 @@ func TestPersistenceTools_StoreErrors(t *testing.T) {
 	// Inject error into list store
 	provider.listStore.err = fmt.Errorf("list store error")
 
-	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": "task"})
+	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": "task"}, nil)
 	if err == nil {
 		t.Error("Expected error from addTask")
 	}
 
-	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "clear"})
+	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "clear"}, nil)
 	if err == nil {
 		t.Error("Expected error from clearTasks")
 	}
@@ -305,19 +305,19 @@ func TestPersistenceTools_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	// addTask error (empty content)
-	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": ""})
+	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": ""}, nil)
 	if err == nil {
 		t.Error("Expected error for empty content in addTask")
 	}
 
 	// updateTask error (not found)
-	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "update", "task_id": 999.0, "status": "completed"})
+	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "update", "task_id": 999.0, "status": "completed"}, nil)
 	if err == nil {
 		t.Error("Expected error for non-existent task in updateTask")
 	}
 
 	// deleteTask error (not found)
-	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "delete", "task_id": 999.0})
+	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "delete", "task_id": 999.0}, nil)
 	if err == nil {
 		t.Error("Expected error for non-existent task in deleteTask")
 	}

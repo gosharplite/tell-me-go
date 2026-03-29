@@ -44,7 +44,7 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 		"query": "hello",
 	}
 
-	result, err := s.searchFiles(ctx, args)
+	result, err := s.searchFiles(ctx, args, nil)
 	if err != nil {
 		t.Fatalf("searchFiles failed: %v", err)
 	}
@@ -132,7 +132,7 @@ func testGrepFunctions(t *testing.T) {
 		"main.go":   "func main() {}",
 	})
 	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
-	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root})
+	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func testGrepStructs(t *testing.T) {
 		"app.py":  "class App:\n    pass",
 	})
 	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
-	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root})
+	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func testGrepInterfaces(t *testing.T) {
 		"service.go": "type Service interface {\n    Run()\n}",
 	})
 	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
-	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root})
+	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func testGrepComplexPatterns(t *testing.T) {
 	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
 
 	t.Run("with query", func(t *testing.T) {
-		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "my_func"})
+		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "my_func"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -200,7 +200,7 @@ func testGrepErrorPaths(t *testing.T) {
 	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
 
 	t.Run("no results", func(t *testing.T) {
-		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "nonexistent"})
+		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "nonexistent"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -227,7 +227,7 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 		"query": "match",
 	}
 
-	res, err := s.searchFiles(ctx, args)
+	res, err := s.searchFiles(ctx, args, nil)
 	if err != nil {
 		t.Fatalf("searchFiles failed: %v", err)
 	}

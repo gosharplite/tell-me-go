@@ -35,7 +35,7 @@ func TestAdoManager_LiveNetwork_Integration(t *testing.T) {
 
 	// We don't expect this to necessarily succeed without a real PAT that has access,
 	// but we want to verify it actually tries to hit the network.
-	result, err := m.adoListPullRequests(ctx, args)
+	result, err := m.adoListPullRequests(ctx, args, nil)
 
 	// If it fails with unauthorized, it means it reached the server!
 	if err != nil {

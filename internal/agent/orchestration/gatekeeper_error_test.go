@@ -112,17 +112,17 @@ func TestInternalTools_Errors(t *testing.T) {
 
 	it := NewInternalTools(cm)
 
-	_, err := it.summarizeHistory(context.Background(), map[string]interface{}{"turns": "invalid"})
+	_, err := it.summarizeHistory(context.Background(), map[string]interface{}{"turns": "invalid"}, nil)
 	if err == nil {
 		t.Error("Expected error from unmarshal in summarizeHistory")
 	}
 
-	_, err = it.summarizeHistory(context.Background(), map[string]interface{}{"turns": float64(1)})
+	_, err = it.summarizeHistory(context.Background(), map[string]interface{}{"turns": float64(1)}, nil)
 	if err == nil || err.Error() != "terminal error: summarizer not initialized" {
 		t.Errorf("Expected summarizer error, got: %v", err)
 	}
 
-	_, err = it.ManageHistory(context.Background(), map[string]interface{}{"index": "invalid"})
+	_, err = it.ManageHistory(context.Background(), map[string]interface{}{"index": "invalid"}, nil)
 	if err == nil {
 		t.Error("Expected error from unmarshal in ManageHistory")
 	}

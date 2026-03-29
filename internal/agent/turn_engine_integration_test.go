@@ -250,9 +250,9 @@ func (m *cancelIntegrationRegistry) RegisterWithOptions(def *tools.ToolDeclarati
 	return m.Register(def, handler)
 }
 
-func (m *cancelIntegrationRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *cancelIntegrationRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	if h, ok := m.handlers[name]; ok {
-		return h(ctx, args)
+		return h(ctx, args, nil)
 	}
 	return tools.ToolResult{}, errors.New("not found")
 }
@@ -277,14 +277,14 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	// Tool 1 & 2: Blocking
 	var wgStart sync.WaitGroup
 	wgStart.Add(2)
-	regErr := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool1"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
+	regErr := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool1"}, func(ctx context.Context, args map[string]any, hb chan<- struct{}) (tools.ToolResult, error) {
 		wgStart.Done()
 		<-ctx.Done()
 		return tools.ToolResult{}, ctx.Err()
 	}, tools.ToolOptions{})
 	require.NoError(t, regErr)
 
-	regErr = reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool2"}, func(ctx context.Context, args map[string]any) (tools.ToolResult, error) {
+	regErr = reg.RegisterWithOptions(&tools.ToolDeclaration{Name: "tool2"}, func(ctx context.Context, args map[string]any, hb chan<- struct{}) (tools.ToolResult, error) {
 		wgStart.Done()
 		<-ctx.Done()
 		return tools.ToolResult{}, ctx.Err()
@@ -307,7 +307,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	gw := &integrationMockLLMGateway{}
 	// Real executor
-	exec, err := executor.NewToolExecutor(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewOrchestrator(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -379,4 +379,8 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 		assert.NotNil(t, part.FunctionResponse)
 		assert.Equal(t, "Execution was interrupted or cancelled by the user.", part.FunctionResponse.Response["result"])
 	}
+}
+
+func (m *cancelIntegrationRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

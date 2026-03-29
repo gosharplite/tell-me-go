@@ -468,6 +468,18 @@ func TestScanFiles_RespectsCancellationBetweenChunks(t *testing.T) {
 	}
 }
 
+func assertSuggestionsMatch(t *testing.T, got, expected []string) {
+	t.Helper()
+	if len(got) != len(expected) {
+		t.Fatalf("expected %d suggestions, got %d: %v", len(expected), len(got), got)
+	}
+	for i, v := range got {
+		if v != expected[i] {
+			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
+		}
+	}
+}
+
 func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	tracker := &mockPromptTracker{}
 	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
@@ -481,27 +493,13 @@ func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	// 2. Check MRU order (newest first)
 	got, _ := service.GetSuggestions(context.Background(), "")
 	expected := []string{"p3", "p2", "p1"}
-	if len(got) != 3 {
-		t.Fatalf("expected 3 suggestions, got %d: %v", len(got), got)
-	}
-	for i, v := range got {
-		if v != expected[i] {
-			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
-		}
-	}
+	assertSuggestionsMatch(t, got, expected)
 
 	// 3. Re-record an existing prompt (should move to top)
 	_ = service.RecordPrompt(context.Background(), "p1")
 	got, _ = service.GetSuggestions(context.Background(), "")
 	expected = []string{"p1", "p3", "p2"}
-	if len(got) != 3 {
-		t.Fatalf("expected 3 suggestions, got %d: %v", len(got), got)
-	}
-	for i, v := range got {
-		if v != expected[i] {
-			t.Errorf("at index %d: got %q; want %q", i, v, expected[i])
-		}
-	}
+	assertSuggestionsMatch(t, got, expected)
 
 	// 4. Test bounded capacity
 	for i := 0; i < 150; i++ {

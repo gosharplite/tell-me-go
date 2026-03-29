@@ -377,7 +377,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 	idx, err := newIndexer(rootTmpDir)
 	require.NoError(t, err)
 	ctx := context.Background()
-	err = idx.Refresh(ctx)
+	err = idx.Refresh(ctx, nil)
 	require.NoError(t, err)
 
 	for _, tt := range tests {
@@ -393,7 +393,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 				"path": caseDir,
 			}
 
-			result, err := analyzer.FindOrphanedSymbols(ctx, args)
+			result, err := analyzer.FindOrphanedSymbols(ctx, args, nil)
 			require.NoError(t, err)
 
 			for _, exp := range tt.expected {
@@ -434,7 +434,7 @@ func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
 	ctx := context.Background()
-	err = idx.Refresh(ctx)
+	err = idx.Refresh(ctx, nil)
 	require.NoError(t, err)
 
 	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
@@ -444,7 +444,7 @@ func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
 		"excluded_packages": []string{"pkg2"},
 	}
 
-	result, err := analyzer.FindOrphanedSymbols(ctx, args)
+	result, err := analyzer.FindOrphanedSymbols(ctx, args, nil)
 	require.NoError(t, err)
 
 	assert.Contains(t, result.Text, "example.com/test/pkg1")
@@ -472,14 +472,14 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_PackageError(t *testing.T) {
 	idx, err := newIndexer(tmpDir)
 	require.NoError(t, err)
 	ctx := context.Background()
-	_ = idx.Refresh(ctx) // Might fail due to syntax error, but that's fine
+	_ = idx.Refresh(ctx, nil) // Might fail due to syntax error, but that's fine
 
 	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
 	args := map[string]interface{}{
 		"path": tmpDir,
 	}
 
-	_, err = analyzer.FindOrphanedSymbols(ctx, args)
+	_, err = analyzer.FindOrphanedSymbols(ctx, args, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "package load error in")
 	assert.Contains(t, err.Error(), "syntax error")
@@ -501,7 +501,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_NoGoMod(t *testing.T) {
 		"path": tmpDir,
 	}
 
-	_, err = analyzer.FindOrphanedSymbols(ctx, args)
+	_, err = analyzer.FindOrphanedSymbols(ctx, args, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no go.mod found")
 }
@@ -510,27 +510,31 @@ type mockSymbolIndex struct {
 	GetImplementationsFunc func(ctx context.Context, id string) []string
 }
 
-func (m *mockSymbolIndex) Lookup(ctx context.Context, symbol string) ([]location, error) {
+func (m *mockSymbolIndex) Lookup(ctx context.Context, symbol string, hb chan<- struct{}) ([]location, error) {
 	return nil, nil
 }
-func (m *mockSymbolIndex) FindImplementors(ctx context.Context, interfaceName string) ([]typeName, error) {
+func (m *mockSymbolIndex) FindImplementors(ctx context.Context, interfaceName string, hb chan<- struct{}) ([]typeName, error) {
 	return nil, nil
 }
-func (m *mockSymbolIndex) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error) {
+func (m *mockSymbolIndex) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool, hb chan<- struct{}) ([]symbolLocation, error) {
 	return nil, nil
 }
-func (m *mockSymbolIndex) GetUsages(ctx context.Context, symbol string, path string) ([]location, error) {
+func (m *mockSymbolIndex) GetUsages(ctx context.Context, symbol string, path string, hb chan<- struct{}) ([]location, error) {
 	return nil, nil
 }
-func (m *mockSymbolIndex) IsSymbolUsed(ctx context.Context, name string) bool { return false }
-func (m *mockSymbolIndex) GetImplementations(ctx context.Context, interfaceMethodId string) []string {
+func (m *mockSymbolIndex) IsSymbolUsed(ctx context.Context, name string, hb chan<- struct{}) bool {
+	return false
+}
+func (m *mockSymbolIndex) GetImplementations(ctx context.Context, interfaceMethodId string, hb chan<- struct{}) []string {
 	if m.GetImplementationsFunc != nil {
 		return m.GetImplementationsFunc(ctx, interfaceMethodId)
 	}
 	return nil
 }
-func (m *mockSymbolIndex) Packages(ctx context.Context) ([]*packages.Package, error) { return nil, nil }
-func (m *mockSymbolIndex) Refresh(ctx context.Context) error                         { return nil }
+func (m *mockSymbolIndex) Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
+	return nil, nil
+}
+func (m *mockSymbolIndex) Refresh(ctx context.Context, hb chan<- struct{}) error { return nil }
 
 func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 	tests := []struct {
@@ -596,7 +600,7 @@ func TestPropagateInterfaceUsages_Regression(t *testing.T) {
 				},
 			}
 			analyzer := &defaultDeadCodeAnalyzer{idx: mockIdx}
-			analyzer.propagateInterfaceUsages(ctx, state)
+			analyzer.propagateInterfaceUsages(ctx, state, nil)
 
 			for id, count := range tt.expectedTotal {
 				assert.Equal(t, count, state.totalUses[id], "Total uses for %s mismatch", id)

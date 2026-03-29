@@ -65,7 +65,7 @@ func (m *mockRegistry) RegisterWithOptions(tool *tools.ToolDeclaration, handler 
 	return nil
 }
 
-func (m *mockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
 
@@ -152,4 +152,8 @@ func TestNewChatter(t *testing.T) {
 			t.Error("expected error due to nil registry, got nil")
 		}
 	})
+}
+
+func (m *mockRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

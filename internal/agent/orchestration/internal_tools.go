@@ -6,6 +6,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -21,7 +22,7 @@ func NewInternalTools(cm *ContextManager) *InternalTools {
 }
 
 // summarizeHistory wraps ContextManager.SummarizeRange as a tool.
-func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Turns float64 `json:"turns"`
 		Focus string  `json:"focus"`
@@ -35,6 +36,27 @@ func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, fmt.Errorf("invalid 'turns' parameter: must be > 0")
 	}
 
+	// Emit heartbeat while waiting for the slow summarization process
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
 	res, metrics, err := t.ctxManager.SummarizeRange(ctx, targetTurns, params.Focus)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -47,7 +69,7 @@ func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]in
 }
 
 // ManageHistory manages conversation history by pinning or unpinning specific turns.
-func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Action string  `json:"action"`
 		Index  float64 `json:"index"`

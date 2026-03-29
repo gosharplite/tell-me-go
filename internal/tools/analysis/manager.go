@@ -14,33 +14,33 @@ import (
 
 // Analyzer interfaces for segregation and testing
 type complexityAnalyzer interface {
-	Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
-	GatherComplexities(ctx context.Context, root string) ([]funcComplexity, error)
+	Analyze(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
+	GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, error)
 }
 
 type dependencyAnalyzer interface {
-	GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+	GetPackageGraph(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
 }
 
 type sequenceAnalyzer interface {
-	AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+	AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
 }
 
 type changeAnalyzer interface {
-	SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+	SemanticDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
 }
 
 type typeManager interface {
-	GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
-	ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
-	ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
-	FindUsages(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
-	FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+	GetTypeInfo(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
+	ListSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
+	ListImplementations(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
+	FindUsages(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
+	FindDefinitions(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
 }
 
 type deadCodeAnalyzer interface {
-	FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
-	GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error)
+	FindOrphanedSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error)
+	GatherOrphanReports(ctx context.Context, path string, hb chan<- struct{}) ([]orphanReport, error)
 }
 
 // analysisManager is the consolidated hub for all code analysis, refactoring, and development tools.
@@ -90,42 +90,42 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 
 // Delegated methods for registration
 
-func (m *analysisManager) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.DeadCode.FindOrphanedSymbols(ctx, args)
+func (m *analysisManager) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.DeadCode.FindOrphanedSymbols(ctx, args, hb)
 }
 
-func (m *analysisManager) AnalyzeComplexity(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Complexity.Analyze(ctx, args)
+func (m *analysisManager) AnalyzeComplexity(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Complexity.Analyze(ctx, args, hb)
 }
 
-func (m *analysisManager) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Dependency.GetPackageGraph(ctx, args)
+func (m *analysisManager) GetPackageGraph(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Dependency.GetPackageGraph(ctx, args, hb)
 }
 
-func (m *analysisManager) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Sequence.AnalyzeSequenceFlow(ctx, args)
+func (m *analysisManager) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Sequence.AnalyzeSequenceFlow(ctx, args, hb)
 }
 
-func (m *analysisManager) SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Change.SemanticDiff(ctx, args)
+func (m *analysisManager) SemanticDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Change.SemanticDiff(ctx, args, hb)
 }
 
-func (m *analysisManager) ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Types.ListImplementations(ctx, args)
+func (m *analysisManager) ListImplementations(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Types.ListImplementations(ctx, args, hb)
 }
 
-func (m *analysisManager) FindUsages(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Types.FindUsages(ctx, args)
+func (m *analysisManager) FindUsages(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Types.FindUsages(ctx, args, hb)
 }
 
-func (m *analysisManager) ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Types.ListSymbols(ctx, args)
+func (m *analysisManager) ListSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Types.ListSymbols(ctx, args, hb)
 }
 
-func (m *analysisManager) GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Types.GetTypeInfo(ctx, args)
+func (m *analysisManager) GetTypeInfo(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Types.GetTypeInfo(ctx, args, hb)
 }
 
-func (m *analysisManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	return m.Types.FindDefinitions(ctx, args)
+func (m *analysisManager) FindDefinitions(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return m.Types.FindDefinitions(ctx, args, hb)
 }

@@ -153,7 +153,7 @@ func TestAdoManager_AdoGetPipelineRun_Errors(t *testing.T) {
 				"pipeline_id":  1,
 				"run_id":       101,
 			}
-			_, err := m.adoGetPipelineRun(context.Background(), args)
+			_, err := m.adoGetPipelineRun(context.Background(), args, nil)
 
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
@@ -224,7 +224,7 @@ func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := newADOManager(sm)
-		_, err := m.adoListRepositoryItems(context.Background(), map[string]interface{}{})
+		_, err := m.adoListRepositoryItems(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -237,7 +237,7 @@ func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
-		_, err := m.adoListRepositoryItems(context.Background(), args)
+		_, err := m.adoListRepositoryItems(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -251,7 +251,7 @@ func TestAdoManager_AdoListRepositoryItems_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
-		_, err := m.adoListRepositoryItems(context.Background(), args)
+		_, err := m.adoListRepositoryItems(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode response")
 	})
@@ -262,7 +262,7 @@ func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := newADOManager(sm)
-		_, err := m.adoListPipelineRuns(context.Background(), map[string]interface{}{})
+		_, err := m.adoListPipelineRuns(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -275,7 +275,7 @@ func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.adoListPipelineRuns(context.Background(), args)
+		_, err := m.adoListPipelineRuns(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -289,7 +289,7 @@ func TestAdoManager_AdoListPipelineRuns_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.adoListPipelineRuns(context.Background(), args)
+		_, err := m.adoListPipelineRuns(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode response")
 	})
@@ -300,7 +300,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := newADOManager(sm)
-		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{})
+		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -313,7 +313,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		_, err := m.adoGetPipelineLogs(context.Background(), args)
+		_, err := m.adoGetPipelineLogs(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -327,7 +327,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
-		_, err := m.adoGetPipelineLogs(context.Background(), args)
+		_, err := m.adoGetPipelineLogs(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode logs list")
 	})
@@ -340,7 +340,7 @@ func TestAdoManager_AdoGetPipelineLogs_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
-		_, err := m.adoGetPipelineLogs(context.Background(), args)
+		_, err := m.adoGetPipelineLogs(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -351,7 +351,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := newADOManager(sm)
-		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{})
+		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -364,7 +364,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
-		_, err := m.adoListBranchPolicies(context.Background(), args)
+		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -382,7 +382,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
-		_, err := m.adoListBranchPolicies(context.Background(), args)
+		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to fetch policy configurations")
 	})
@@ -401,7 +401,7 @@ func TestAdoManager_AdoListBranchPolicies_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"}
-		_, err := m.adoListBranchPolicies(context.Background(), args)
+		_, err := m.adoListBranchPolicies(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode policy configurations")
 	})
@@ -412,7 +412,7 @@ func TestAdoManager_AdoListPullRequests_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := newADOManager(sm)
-		_, err := m.adoListPullRequests(context.Background(), map[string]interface{}{})
+		_, err := m.adoListPullRequests(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -425,7 +425,7 @@ func TestAdoManager_AdoListPullRequests_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
-		_, err := m.adoListPullRequests(context.Background(), args)
+		_, err := m.adoListPullRequests(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 502")
 	})
@@ -439,7 +439,7 @@ func TestAdoManager_AdoListPullRequests_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r"}
-		_, err := m.adoListPullRequests(context.Background(), args)
+		_, err := m.adoListPullRequests(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode response")
 	})
@@ -450,7 +450,7 @@ func TestAdoManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := newADOManager(sm)
-		_, err := m.adoGetPrPolicyEvaluations(context.Background(), map[string]interface{}{})
+		_, err := m.adoGetPrPolicyEvaluations(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -463,7 +463,7 @@ func TestAdoManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123}
-		_, err := m.adoGetPrPolicyEvaluations(context.Background(), args)
+		_, err := m.adoGetPrPolicyEvaluations(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -481,7 +481,7 @@ func TestAdoManager_AdoGetPrPolicyEvaluations_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123}
-		_, err := m.adoGetPrPolicyEvaluations(context.Background(), args)
+		_, err := m.adoGetPrPolicyEvaluations(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unauthorized")
 	})
@@ -492,7 +492,7 @@ func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := newADOManager(sm)
-		_, err := m.adoGetPipelineDefinition(context.Background(), map[string]interface{}{})
+		_, err := m.adoGetPipelineDefinition(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -505,7 +505,7 @@ func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.adoGetPipelineDefinition(context.Background(), args)
+		_, err := m.adoGetPipelineDefinition(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
@@ -519,7 +519,7 @@ func TestAdoManager_AdoGetPipelineDefinition_Errors(t *testing.T) {
 
 		m := newADOManager(sm, withBaseURL(ts.URL), withHTTPClient(ts.Client()), withToken("test-pat"))
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
-		_, err := m.adoGetPipelineDefinition(context.Background(), args)
+		_, err := m.adoGetPipelineDefinition(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode response")
 	})
@@ -530,7 +530,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 
 	t.Run("Missing Parameters", func(t *testing.T) {
 		m := newADOManager(sm)
-		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), map[string]interface{}{})
+		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), map[string]interface{}{}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "required")
 	})
@@ -550,7 +550,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args)
+		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -571,7 +571,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args)
+		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode definition")
 	})
@@ -596,7 +596,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args)
+		_, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 400")
 	})
@@ -618,7 +618,7 @@ func TestAdoManager_AdoUpdateBuildDefinitionVariables_Errors(t *testing.T) {
 				"TEST": map[string]interface{}{"value": "val"},
 			},
 		}
-		res, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args)
+		res, err := m.adoUpdateBuildDefinitionVariables(context.Background(), args, nil)
 		assert.NoError(t, err)
 		assert.Contains(t, res.Text, "cancelled by user")
 	})

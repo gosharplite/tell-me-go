@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"errors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -47,9 +48,9 @@ var genericSkeletonPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^package\s+`),
 }
 
-func (m *infoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *infoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	modInfo := m.resolveModuleInfo(ctx)
-	fileCounts, packages, totalLOC, err := m.collectFileStats(ctx)
+	fileCounts, packages, totalLOC, err := m.collectFileStats(ctx, hb)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -70,17 +71,18 @@ func (m *infoManager) resolveModuleInfo(ctx context.Context) string {
 	return sb.String()
 }
 
-func (m *infoManager) collectFileStats(ctx context.Context) (map[string]int, map[string]bool, int, error) {
+func (m *infoManager) collectFileStats(ctx context.Context, hb chan<- struct{}) (map[string]int, map[string]bool, int, error) {
 	stats := &projectStats{
 		fileCounts: make(map[string]int),
 		packages:   make(map[string]bool),
 	}
 
-	err := m.FS.Walk(ctx, ".", m.makeWalkFunc(ctx, stats))
+	err := m.FS.Walk(ctx, ".", m.makeWalkFunc(ctx, stats, hb))
 	return stats.fileCounts, stats.packages, stats.totalLOC, err
 }
 
-func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats) persistence.WalkFunc {
+func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats, hb chan<- struct{}) persistence.WalkFunc {
+	count := 0
 	return func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -90,6 +92,14 @@ func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats) per
 				return filepath.SkipDir
 			}
 			return nil
+		}
+
+		count++
+		if count%50 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
 		}
 
 		ext := filepath.Ext(path)
@@ -146,7 +156,7 @@ func (m *infoManager) renderProjectSummary(modInfo string, fileCounts map[string
 	return sb.String()
 }
 
-func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Symbol string `json:"symbol"`
 	}
@@ -169,7 +179,28 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 		}
 	}
 
+	// Heartbeat while running go doc
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
 	out, err := m.Exec.CombinedOutput(ctx, "go", "doc", symbol)
+	close(done)
 	if err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil
 	}
@@ -177,7 +208,7 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	return tools.ToolResult{Text: string(out)}, nil
 }
 
-func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Filepath string `json:"filepath"`
 	}

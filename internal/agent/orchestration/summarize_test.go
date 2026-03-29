@@ -114,7 +114,7 @@ func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
 		args["focus"] = "refactoring"
 	}
 
-	resp, err := it.summarizeHistory(ctx, args)
+	resp, err := it.summarizeHistory(ctx, args, nil)
 	verifySummarizeResult(t, tt, resp, err, hManager)
 }
 
@@ -319,7 +319,7 @@ func TestSummarizeHistory_ContextCancellation(t *testing.T) {
 
 	// Call the tool with the cancelled context
 	args := map[string]interface{}{"turns": 5.0}
-	_, err := it.summarizeHistory(ctx, args)
+	_, err := it.summarizeHistory(ctx, args, nil)
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)

@@ -21,7 +21,7 @@ func BenchmarkVerifyArchitecture_Baseline(b *testing.B) {
 			SP:   sm,
 			Exec: executor,
 		}
-		_, err := m.VerifyArchitecture(ctx, nil)
+		_, err := m.VerifyArchitecture(ctx, nil, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -35,7 +35,7 @@ func BenchmarkVerifyArchitecture_Optimized(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	if err := idx.Refresh(ctx); err != nil {
+	if err := idx.Refresh(ctx, nil); err != nil {
 		b.Fatal(err)
 	}
 
@@ -45,7 +45,7 @@ func BenchmarkVerifyArchitecture_Optimized(b *testing.B) {
 			SP:  sm,
 			idx: idx,
 		}
-		_, err := m.VerifyArchitecture(ctx, nil)
+		_, err := m.VerifyArchitecture(ctx, nil, nil)
 		if err != nil {
 			b.Fatal(err)
 		}

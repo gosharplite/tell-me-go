@@ -20,11 +20,11 @@ type mockDeadCodeAnalyzer struct {
 	err     error
 }
 
-func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error) {
+func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string, hb chan<- struct{}) ([]orphanReport, error) {
 	return m.reports, m.err
 }
 
-func (m *mockDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *mockDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
 
@@ -57,7 +57,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec}
 
 	ctx := context.Background()
-	res, err := hea.GetCodeHealth(ctx, nil)
+	res, err := hea.GetCodeHealth(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("GetCodeHealth failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	res, err := hea.GetCodeHealth(ctx, nil)
+	res, err := hea.GetCodeHealth(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("GetCodeHealth failed: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestHealthManager_CheckDeadCode(t *testing.T) {
 				Ana: &analysisManager{DeadCode: mockAna},
 			}
 
-			status, details := hea.checkDeadCode(context.Background())
+			status, details := hea.checkDeadCode(context.Background(), nil)
 			if status != tt.wantStatus {
 				t.Errorf("got status %q, want %q", status, tt.wantStatus)
 			}
@@ -266,7 +266,7 @@ func TestHealthManager_GetDetailedCoverage(t *testing.T) {
 
 	ctx := context.Background()
 	args := map[string]interface{}{"path": "./internal/domain/events/..."}
-	res, err := hea.getDetailedCoverage(ctx, args)
+	res, err := hea.getDetailedCoverage(ctx, args, nil)
 	if err != nil {
 		t.Fatalf("getDetailedCoverage failed: %v", err)
 	}

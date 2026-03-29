@@ -92,7 +92,7 @@ func (r *registry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 // Execute looks up and runs a tool handler with the provided JSON-parsed arguments.
-func (r *registry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *registry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	r.mu.RLock()
 	entry, ok := r.entries[name]
 	r.mu.RUnlock()
@@ -100,11 +100,21 @@ func (r *registry) Execute(ctx context.Context, name string, args map[string]int
 	if !ok {
 		return tools.ToolResult{}, fmt.Errorf("tool not found: %s", name)
 	}
-	res, err := entry.Handler(ctx, args)
+	res, err := entry.Handler(ctx, args, hb)
 	if err != nil {
 		return res, fmt.Errorf("tool execution failed: %s: %w", name, err)
 	}
 	return res, nil
+}
+
+// GetOptions returns the options associated with a tool.
+func (r *registry) GetOptions(name string) tools.ToolOptions {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if entry, ok := r.entries[name]; ok {
+		return entry.Options
+	}
+	return tools.ToolOptions{}
 }
 
 // IsSerial returns true if the tool is configured for serial execution.

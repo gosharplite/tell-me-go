@@ -42,7 +42,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	defer close(toolProceed) // Ensure it's closed to prevent deadlock
 	err := reg.Register(&tools.ToolDeclaration{
 		Name: "slow_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
 		case <-toolProceed:
 		case <-ctx.Done():
@@ -115,7 +115,7 @@ func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content
 	return m.sendChatFn(ctx, input, tools, resolver)
 }
 
-func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
+func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow stress test in short mode")
@@ -123,14 +123,14 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
-	exec, err := executor.NewToolExecutor(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
 	toolProceedTask := make(chan struct{})
 	defer close(toolProceedTask)
 
-	err = reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	err = reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
 		case <-toolProceedTask:
 		case <-ctx.Done():

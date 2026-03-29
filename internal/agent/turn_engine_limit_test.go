@@ -119,7 +119,7 @@ func (m *limitMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, hand
 	return nil
 }
 
-func (m *limitMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *limitMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
 
@@ -220,4 +220,8 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (m *limitMockRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }

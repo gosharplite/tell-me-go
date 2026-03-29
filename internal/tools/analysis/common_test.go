@@ -20,7 +20,7 @@ func getSharedIndexer(t *testing.T) *indexer {
 		if err != nil {
 			t.Fatalf("failed to create shared indexer: %v", err)
 		}
-		if err := sharedIdx.Refresh(context.Background()); err != nil {
+		if err := sharedIdx.Refresh(context.Background(), nil); err != nil {
 			t.Fatalf("failed to refresh shared indexer: %v", err)
 		}
 	})
@@ -60,18 +60,18 @@ type mockIndexer struct {
 	err   error
 }
 
-func (m *mockIndexer) Packages(ctx context.Context) ([]*packages.Package, error) {
+func (m *mockIndexer) Packages(ctx context.Context, hb chan<- struct{}) ([]*packages.Package, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.pkgs, nil
 }
 
-func (m *mockIndexer) Refresh(ctx context.Context) error {
+func (m *mockIndexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 	return m.err
 }
 
-func (m *mockIndexer) GetImplementations(ctx context.Context, id string) []string {
+func (m *mockIndexer) GetImplementations(ctx context.Context, id string, hb chan<- struct{}) []string {
 	return m.impls[id]
 }
 

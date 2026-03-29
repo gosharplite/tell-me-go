@@ -158,17 +158,15 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 		return nil, fmt.Errorf("failed to stat global prompts file: %w", err)
 	}
 
-	pos := info.Size()
-	if pos == 0 {
-		return nil, nil
+	scanner := &reverseScanner{
+		file: f,
+		pos:  info.Size(),
 	}
 
-	const chunkSize = 4096
 	seen := make(map[string]bool)
 	result := make([]promptEntry, 0, limit)
-	var leftover []byte
 
-	for pos > 0 && len(result) < limit {
+	for scanner.pos > 0 && len(result) < limit {
 		// Periodically check for context cancellation
 		select {
 		case <-ctx.Done():
@@ -176,43 +174,69 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 		default:
 		}
 
-		chunk, err := t.readPreviousChunk(f, &pos, chunkSize)
+		lines, err := scanner.scanChunk()
 		if err != nil {
 			return nil, err
 		}
 
-		// Combine with leftover from previous chunk
-		data := append(chunk, leftover...)
-		lines := bytes.Split(data, []byte{'\n'})
+		// Process lines in reverse order (most recent first)
+		result = t.processReversedLines(lines, seen, result, limit)
+	}
 
-		if pos > 0 {
-			leftover = lines[0]
-			lines = lines[1:]
-		} else {
-			leftover = nil
+	return result, nil
+}
+
+type reverseScanner struct {
+	file     *os.File
+	pos      int64
+	leftover []byte
+}
+
+func (s *reverseScanner) scanChunk() ([][]byte, error) {
+	const chunkSize = 4096
+	readSize := chunkSize
+	if s.pos < int64(readSize) {
+		readSize = int(s.pos)
+	}
+	s.pos -= int64(readSize)
+
+	chunk := make([]byte, readSize)
+	if _, err := s.file.ReadAt(chunk, s.pos); err != nil {
+		return nil, fmt.Errorf("failed to read global prompts at %d: %w", s.pos, err)
+	}
+
+	// Combine with leftover from previous chunk
+	data := append(chunk, s.leftover...)
+	lines := bytes.Split(data, []byte{'\n'})
+
+	if s.pos > 0 {
+		s.leftover = lines[0]
+		return lines[1:], nil
+	}
+	s.leftover = nil
+	return lines, nil
+}
+
+// processReversedLines iterates through the lines backwards, unmarshals them, deduplicates, and appends to results.
+func (t *globalPromptTracker) processReversedLines(lines [][]byte, seen map[string]bool, result []promptEntry, limit int) []promptEntry {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if len(lines[i]) == 0 {
+			continue
 		}
 
-		// Process lines in reverse order (most recent first)
-		for i := len(lines) - 1; i >= 0; i-- {
-			if len(lines[i]) == 0 {
-				continue
-			}
-
-			var entry promptEntry
-			if err := json.Unmarshal(lines[i], &entry); err == nil {
-				p := entry.Prompt
-				if p != "" && !seen[p] {
-					seen[p] = true
-					result = append(result, entry)
-					if len(result) >= limit {
-						break
-					}
+		var entry promptEntry
+		if err := json.Unmarshal(lines[i], &entry); err == nil {
+			p := entry.Prompt
+			if p != "" && !seen[p] {
+				seen[p] = true
+				result = append(result, entry)
+				if len(result) >= limit {
+					break
 				}
 			}
 		}
 	}
-
-	return result, nil
+	return result
 }
 
 func (t *globalPromptTracker) compactLog(ctx context.Context) {
@@ -225,65 +249,7 @@ func (t *globalPromptTracker) compactLog(ctx context.Context) {
 	backoff := 100 * time.Millisecond
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		success := func() bool {
-			// Capture initial size for optimistic concurrency check
-			info, err := os.Stat(t.filepath)
-			if err != nil {
-				return false
-			}
-			initialSize := info.Size()
-
-			// 1. Read entries without holding the lock to allow concurrent appends
-			entries, err := t.doLoadTopUniqueEntries(ctx, maxGlobalPrompts)
-			if err != nil || len(entries) == 0 {
-				return false
-			}
-
-			// Reverse entries to chronological order (oldest first)
-			for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-				entries[i], entries[j] = entries[j], entries[i]
-			}
-
-			// 2. Write to temp file
-			tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
-			if err != nil {
-				return false
-			}
-			tmpPath := tmpFile.Name()
-
-			defer func() {
-				_ = tmpFile.Close()
-				_ = os.Remove(tmpPath)
-			}()
-
-			for _, entry := range entries {
-				data, err := json.Marshal(entry)
-				if err != nil {
-					continue
-				}
-				if _, err := tmpFile.Write(append(data, '\n')); err != nil {
-					return false
-				}
-			}
-
-			if err := tmpFile.Close(); err != nil {
-				return false
-			}
-
-			// 3. Final check and swap under exclusive lock
-			t.mu.Lock()
-			defer t.mu.Unlock()
-
-			// Check if file size has changed (meaning Append was called in the background)
-			newInfo, err := os.Stat(t.filepath)
-			if err != nil || newInfo.Size() != initialSize {
-				return false // Abort this pass
-			}
-
-			return os.Rename(tmpPath, t.filepath) == nil
-		}()
-
-		if success {
+		if t.performCompactionPass(ctx) {
 			return
 		}
 
@@ -306,18 +272,71 @@ func (t *globalPromptTracker) compactLog(ctx context.Context) {
 	}
 }
 
-func (t *globalPromptTracker) readPreviousChunk(f *os.File, pos *int64, chunkSize int) ([]byte, error) {
-	readSize := chunkSize
-	if *pos < int64(readSize) {
-		readSize = int(*pos)
+// performCompactionPass attempts a single optimistic compaction pass.
+// It returns true if successful, false if aborted due to concurrent writes or errors.
+func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
+	// Capture initial size for optimistic concurrency check
+	info, err := os.Stat(t.filepath)
+	if err != nil {
+		return false
 	}
-	*pos -= int64(readSize)
+	initialSize := info.Size()
 
-	chunk := make([]byte, readSize)
-	if _, err := f.ReadAt(chunk, *pos); err != nil {
-		return nil, fmt.Errorf("failed to read global prompts at %d: %w", *pos, err)
+	// 1. Read entries without holding the lock to allow concurrent appends
+	entries, err := t.doLoadTopUniqueEntries(ctx, maxGlobalPrompts)
+	if err != nil || len(entries) == 0 {
+		return false
 	}
-	return chunk, nil
+
+	// Reverse entries to chronological order (oldest first)
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+
+	// 2. Write to temp file
+	tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
+	if err != nil {
+		return false
+	}
+	tmpPath := tmpFile.Name()
+
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	if !t.writeCompactedTempFile(tmpFile, entries) {
+		return false
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return false
+	}
+
+	// 3. Final check and swap under exclusive lock
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Check if file size has changed (meaning Append was called in the background)
+	newInfo, err := os.Stat(t.filepath)
+	if err != nil || newInfo.Size() != initialSize {
+		return false // Abort this pass
+	}
+
+	return os.Rename(tmpPath, t.filepath) == nil
+}
+
+func (t *globalPromptTracker) writeCompactedTempFile(w io.Writer, entries []promptEntry) bool {
+	for _, entry := range entries {
+		data, err := json.Marshal(entry)
+		if err != nil {
+			continue
+		}
+		if _, err := w.Write(append(data, '\n')); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func copyFile(src, dst string) error {
