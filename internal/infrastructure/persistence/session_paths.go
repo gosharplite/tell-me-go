@@ -25,13 +25,11 @@ func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.P
 	}
 
 	return &persistence.Paths{
-		ModeDir:              modeDir,
-		HistoryPath:          filepath.Join(modeDir, "history.jsonl"),
-		HistoryArchivePath:   filepath.Join(modeDir, "history.archive.jsonl"),
-		LogPath:              filepath.Join(modeDir, "tokens.log"),
-		CommandsLogPath:      filepath.Join(modeDir, "commands.log"),
-		SafePathsPath:      filepath.Join(modeDir, "safepaths.json"),
-		ReadPathsPath:      filepath.Join(modeDir, "readpaths.json"),
+		ModeDir:            modeDir,
+		HistoryPath:        filepath.Join(modeDir, "history.jsonl"),
+		HistoryArchivePath: filepath.Join(modeDir, "history.archive.jsonl"),
+		LogPath:            filepath.Join(modeDir, "tokens.log"),
+		CommandsLogPath:    filepath.Join(modeDir, "commands.log"),
 	}, nil
 }
 

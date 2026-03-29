@@ -5,6 +5,7 @@ package security
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -58,7 +59,7 @@ func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 
 	// Register and Persist
 	t.sm.RegisterSafePath(absPath)
-	if err := t.sm.saveSafePaths(ctx); err != nil {
+	if err := t.persistPaths(ctx, true); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path authorized but failed to persist: %v", err)}, nil
 	}
 
@@ -99,7 +100,7 @@ func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := t.sm.saveSafePaths(ctx); err != nil {
+	if err := t.persistPaths(ctx, true); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -155,7 +156,7 @@ func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 
 	// Register and Persist
 	t.sm.RegisterReadOnlyPath(absPath)
-	if err := t.sm.saveReadOnlyPaths(ctx); err != nil {
+	if err := t.persistPaths(ctx, false); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path authorized for reading but failed to persist: %v", err)}, nil
 	}
 
@@ -196,7 +197,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := t.sm.saveReadOnlyPaths(ctx); err != nil {
+	if err := t.persistPaths(ctx, false); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -204,7 +205,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 }
 
 func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	paths := t.sm.getReadOnlyPaths()
+	paths := t.sm.GetReadOnlyPaths()
 	if len(paths) == 0 {
 		return tools.ToolResult{Text: "No additional read-only paths are currently registered."}, nil
 	}
@@ -215,6 +216,29 @@ func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interfac
 		fmt.Fprintf(&sb, "- %s\n", p)
 	}
 	return tools.ToolResult{Text: sb.String()}, nil
+}
+
+func (t *policyTool) persistPaths(ctx context.Context, safe bool) error {
+	if t.sp == nil {
+		return fmt.Errorf("session provider not initialized")
+	}
+
+	var key string
+	var paths []string
+	if safe {
+		key = "authorized_safe_paths"
+		paths = t.sm.GetSafePaths()
+	} else {
+		key = "authorized_read_paths"
+		paths = t.sm.GetReadOnlyPaths()
+	}
+
+	data, err := json.Marshal(paths)
+	if err != nil {
+		return fmt.Errorf("failed to marshal paths: %w", err)
+	}
+
+	return t.sp.GetSettings().Set(ctx, key, string(data))
 }
 
 func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

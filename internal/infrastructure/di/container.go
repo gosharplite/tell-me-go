@@ -5,6 +5,7 @@ package di
 
 import (
 	stdctx "context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -35,10 +36,6 @@ import (
 type ConfigurableSecurityManager interface {
 	security.Manager
 	SetCommandsLogFile(path string)
-	SetSafePathsFile(path string)
-	SetReadOnlyPathsFile(path string)
-	LoadSafePaths() error
-	LoadReadOnlyPaths() error
 	RegisterSafePath(path string)
 	RegisterReadOnlyPath(path string)
 	SetBypassActive(active bool)
@@ -136,6 +133,24 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
 		b.SM.SetBypassActive(true)
+	}
+
+	// Load authorized paths from settings
+	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_safe_paths"); err == nil && val != "" {
+		var safePaths []string
+		if err := json.Unmarshal([]byte(val), &safePaths); err == nil {
+			for _, p := range safePaths {
+				b.SM.RegisterSafePath(p)
+			}
+		}
+	}
+	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_read_paths"); err == nil && val != "" {
+		var readPaths []string
+		if err := json.Unmarshal([]byte(val), &readPaths); err == nil {
+			for _, p := range readPaths {
+				b.SM.RegisterReadOnlyPath(p)
+			}
+		}
 	}
 
 	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
@@ -305,16 +320,8 @@ func (b *bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 	return pricingOverrides
 }
 
-// setupSecurity configures the security manager with necessary paths and bypass states.
+// setupSecurity configures the security manager with necessary paths.
 func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) error {
-	b.SM.SetSafePathsFile(paths.SafePathsPath)
-	b.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
-	if err := b.SM.LoadSafePaths(); err != nil {
-		return fmt.Errorf("failed to load safe paths: %w", err)
-	}
-	if err := b.SM.LoadReadOnlyPaths(); err != nil {
-		return fmt.Errorf("failed to load read-only paths: %w", err)
-	}
 	b.SM.RegisterSafePath(filepath.Join(b.HomeDir, "output"))
 	b.SM.RegisterReadOnlyPath(configPath)
 	return nil

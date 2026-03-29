@@ -100,7 +100,7 @@ func TestSecurityManager_PathManagement(t *testing.T) {
 	if !contains(sm.GetSafePaths(), "/tmp/safe") {
 		t.Error("Expected /tmp/safe in safe paths")
 	}
-	if !contains(sm.getReadOnlyPaths(), "/tmp/readonly") {
+	if !contains(sm.GetReadOnlyPaths(), "/tmp/readonly") {
 		t.Error("Expected /tmp/readonly in read-only paths")
 	}
 
@@ -150,14 +150,6 @@ func TestSecurityManager_Misc(t *testing.T) {
 	if !strings.Contains(logContent, "AUDIT: TEST_ACTION") || !strings.Contains(logContent, "ACTION=test") {
 		t.Errorf("Audit log content mismatch: %q", logContent)
 	}
-
-	// Read/Write paths
-	sm.SetSafePathsFile(filepath.Join(tmpDir, "safe.json"))
-	sm.SetReadOnlyPathsFile(filepath.Join(tmpDir, "readonly.json"))
-	_ = sm.saveSafePaths(context.Background())
-	_ = sm.saveReadOnlyPaths(context.Background())
-	_ = sm.LoadSafePaths()
-	_ = sm.LoadReadOnlyPaths()
 
 	sm.RegisterReadOnlyPath("/tmp/ro")
 	_ = sm.removeReadOnlyPath("/tmp/ro")

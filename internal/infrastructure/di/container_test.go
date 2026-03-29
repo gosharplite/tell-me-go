@@ -66,17 +66,7 @@ type mockConfigurableSecurityManager struct {
 func (m *mockConfigurableSecurityManager) RegisterSafePath(path string)     { m.Called(path) }
 func (m *mockConfigurableSecurityManager) RegisterReadOnlyPath(path string) { m.Called(path) }
 func (m *mockConfigurableSecurityManager) SetCommandsLogFile(path string)   { m.Called(path) }
-func (m *mockConfigurableSecurityManager) SetSafePathsFile(path string)     { m.Called(path) }
-func (m *mockConfigurableSecurityManager) SetReadOnlyPathsFile(path string) { m.Called(path) }
 func (m *mockConfigurableSecurityManager) SetBypassActive(active bool)      { m.Called(active) }
-func (m *mockConfigurableSecurityManager) LoadSafePaths() error {
-	args := m.Called()
-	return args.Error(0)
-}
-func (m *mockConfigurableSecurityManager) LoadReadOnlyPaths() error {
-	args := m.Called()
-	return args.Error(0)
-}
 func (m *mockConfigurableSecurityManager) RegisterPolicyTools(r tools.Registry, sp ports.SessionProvider) error {
 	args := m.Called(r, sp)
 	return args.Error(0)
@@ -113,8 +103,6 @@ func (m *mockConfigurableSecurityManager) IsBypassActive() bool {
 }
 
 func setupDefaultSMExpectations(m *mockConfigurableSecurityManager) {
-	m.On("SetSafePathsFile", mock.Anything).Return().Maybe()
-	m.On("SetReadOnlyPathsFile", mock.Anything).Return().Maybe()
 	m.On("SetCommandsLogFile", mock.Anything).Return().Maybe()
 	m.On("RegisterSafePath", mock.Anything).Return().Maybe()
 	m.On("RegisterReadOnlyPath", mock.Anything).Return().Maybe()
@@ -128,8 +116,6 @@ func TestBuildSessionDependencies(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	sm.On("LoadSafePaths").Return(nil).Maybe()
-	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
@@ -215,8 +201,6 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return home
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(nil).Maybe()
-				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 			},
 			wantErr: "error loading history",
 		},
@@ -229,32 +213,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return nil, simulatedErr
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(nil).Maybe()
-				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 			},
-			targetErr: simulatedErr,
-		},
-		{
-			name: "FailsOnLoadSafePathsError",
-			setup: func(t *testing.T) string {
-				return filepath.Join(tempDir, "safepaths-err-home")
-			},
-			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(simulatedErr)
-			},
-			wantErr:   "failed to load safe paths",
-			targetErr: simulatedErr,
-		},
-		{
-			name: "FailsOnLoadReadOnlyPathsError",
-			setup: func(t *testing.T) string {
-				return filepath.Join(tempDir, "readonly-err-home")
-			},
-			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(nil)
-				sm.On("LoadReadOnlyPaths").Return(simulatedErr)
-			},
-			wantErr:   "failed to load read-only paths",
 			targetErr: simulatedErr,
 		},
 		{
@@ -263,8 +222,6 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return filepath.Join(tempDir, "policy-err-home")
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(nil).Maybe()
-				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(simulatedErr)
 				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 			},
@@ -285,8 +242,6 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return home
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
-				sm.On("LoadSafePaths").Return(nil).Maybe()
-				sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 			},
 			wantErr: "failed to initialize session state",
 		},
@@ -337,8 +292,6 @@ func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	sm.On("LoadSafePaths").Return(nil).Maybe()
-	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 	// RecordSessionCost -> EstimateCost -> IsPathSafe
@@ -389,8 +342,6 @@ func TestFinalizeSession(t *testing.T) {
 		return client, nil
 	})
 
-	sm.On("LoadSafePaths").Return(nil).Maybe()
-	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
@@ -526,8 +477,6 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	sm.On("LoadSafePaths").Return(nil).Maybe()
-	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
@@ -691,7 +640,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
 				mockSP := new(mockSessionProvider)
 				mockKV := new(mockKVStore)
-				mockKV.On("Get", mock.Anything, "bypass_confirmation").Return("false", nil).Maybe()
+				mockKV.On("Get", mock.Anything, mock.Anything).Return("", nil).Maybe()
 				mockSP.On("GetSettings").Return(mockKV).Maybe()
 				mockSP.On("GetInfo").Return(ports.SessionInfo{}).Maybe()
 				mockSP.On("SetInfo", mock.Anything).Return().Maybe()
@@ -709,8 +658,6 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sm := new(mockConfigurableSecurityManager)
 			setupDefaultSMExpectations(sm)
-			sm.On("LoadSafePaths").Return(nil).Maybe()
-			sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 			sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 			sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
@@ -750,8 +697,6 @@ func TestGetToolNames(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	sm.On("LoadSafePaths").Return(nil).Maybe()
-	sm.On("LoadReadOnlyPaths").Return(nil).Maybe()
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 

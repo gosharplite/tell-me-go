@@ -153,11 +153,6 @@ func (sm *SecurityManager) RegisterSafePath(path string) {
 	sm.policy.RegisterPath(path, true)
 }
 
-// saveSafePaths saves safe paths.
-func (sm *SecurityManager) saveSafePaths(ctx context.Context) error {
-	return sm.policy.SavePaths(ctx, true)
-}
-
 // removeSafePath removes a safe path.
 func (sm *SecurityManager) removeSafePath(path string) error {
 	return sm.policy.RemovePath(path, true)
@@ -166,31 +161,6 @@ func (sm *SecurityManager) removeSafePath(path string) error {
 // SetCommandsLogFile sets the commands log file.
 func (sm *SecurityManager) SetCommandsLogFile(path string) {
 	sm.auditor.SetLogFile(path)
-}
-
-// SetSafePathsFile sets the safe paths file.
-func (sm *SecurityManager) SetSafePathsFile(path string) {
-	sm.policy.SetConfigFile(path, true)
-}
-
-// SetReadOnlyPathsFile sets the read-only paths file.
-func (sm *SecurityManager) SetReadOnlyPathsFile(path string) {
-	sm.policy.SetConfigFile(path, false)
-}
-
-// LoadSafePaths loads safe paths.
-func (sm *SecurityManager) LoadSafePaths() error {
-	return sm.policy.LoadPaths(true)
-}
-
-// LoadReadOnlyPaths loads read-only paths.
-func (sm *SecurityManager) LoadReadOnlyPaths() error {
-	return sm.policy.LoadPaths(false)
-}
-
-// saveReadOnlyPaths saves read-only paths.
-func (sm *SecurityManager) saveReadOnlyPaths(ctx context.Context) error {
-	return sm.policy.SavePaths(ctx, false)
 }
 
 // RegisterReadOnlyPath registers a read-only path.
@@ -203,8 +173,8 @@ func (sm *SecurityManager) GetSafePaths() []string {
 	return sm.policy.GetPaths(true)
 }
 
-// getReadOnlyPaths returns read-only paths.
-func (sm *SecurityManager) getReadOnlyPaths() []string {
+// GetReadOnlyPaths returns read-only paths.
+func (sm *SecurityManager) GetReadOnlyPaths() []string {
 	return sm.policy.GetPaths(false)
 }
 

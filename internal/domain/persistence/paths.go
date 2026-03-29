@@ -5,11 +5,9 @@ package persistence
 
 // Paths holds the filesystem paths for a session.
 type Paths struct {
-	ModeDir              string
-	HistoryPath          string
-	HistoryArchivePath   string
-	LogPath              string
-	CommandsLogPath      string
-	SafePathsPath      string
-	ReadPathsPath      string
+	ModeDir            string
+	HistoryPath        string
+	HistoryArchivePath string
+	LogPath            string
+	CommandsLogPath    string
 }

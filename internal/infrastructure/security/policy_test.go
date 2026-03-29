@@ -49,13 +49,10 @@ func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {}
 func (m *mockSessionProvider) Close() error { return nil }
 
 func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
-	tempDir := t.TempDir()
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
-	sm.SetSafePathsFile(filepath.Join(tempDir, "safepaths.json"))
-	sm.SetReadOnlyPathsFile(filepath.Join(tempDir, "readonlypaths.json"))
 
 	mockKV := new(mockKVStore)
-	mockKV.On("Set", mock.Anything, "bypass_confirmation", mock.Anything).Return(nil).Maybe()
+	mockKV.On("Set", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	mockSP := new(mockSessionProvider)
 	mockSP.On("GetSettings").Return(mockKV).Maybe()
 
