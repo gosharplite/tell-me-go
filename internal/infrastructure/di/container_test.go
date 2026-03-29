@@ -623,7 +623,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "TelemetryRegistrationFails",
 			mockSetup: func(b *bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error {
+				b.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 					return simulatedErr
 				}
 			},

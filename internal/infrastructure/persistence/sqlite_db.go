@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -116,37 +115,4 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 		return fmt.Errorf("committing tasks migration: %w", err)
 	}
 	return nil
-}
-
-// GetRetentionDays reads the backup retention setting directly from the database file.
-// This allows the system to discover its policy before a full session initialization.
-func GetRetentionDays(dbPath string) int {
-	const defaultDays = 30
-
-	// Check if file exists to avoid creating an empty database file during the probe.
-	if _, err := os.Stat(dbPath); err != nil {
-		return defaultDays
-	}
-
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		return defaultDays
-	}
-	defer db.Close()
-
-	// Apply busy_timeout to prevent the probe from failing during concurrent sessions or migrations.
-	_, _ = db.Exec("PRAGMA busy_timeout = 5000;")
-
-	var value string
-	err = db.QueryRow("SELECT value FROM settings WHERE key = 'backup_retention_days'").Scan(&value)
-	if err != nil {
-		return defaultDays
-	}
-
-	var days int
-	if _, err := fmt.Sscanf(value, "%d", &days); err != nil {
-		return defaultDays
-	}
-
-	return days
 }

@@ -5,7 +5,6 @@ package telemetry
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
@@ -36,6 +36,18 @@ func (m *mockSM) IsPathWritable(path string) (string, error) {
 }
 
 func (m *mockSM) Close() error { return nil }
+
+func (m *mockSM) IsBypassActive() bool { return false }
+
+type mockKV struct {
+	ports.KVStore
+	val string
+	err error
+}
+
+func (m *mockKV) Get(ctx context.Context, key string) (string, error) {
+	return m.val, m.err
+}
 
 // Mock Tool Registry
 type mockRegistry struct {
@@ -119,7 +131,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	logFile := filepath.Join(outputDir, "test.log")
 	traceFile := filepath.Join(outputDir, "test.trace.jsonl")
 
-	if err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil); err != nil {
+	if err := RegisterMetrics(reg, sm, logFile, traceFile, "test-model", "test-mode", nil, nil); err != nil {
 		t.Fatalf("RegisterMetrics failed: %v", err)
 	}
 
@@ -346,33 +358,24 @@ func TestMetricsManager_Retention(t *testing.T) {
 
 func TestMetricsManager_LoadRetentionDays(t *testing.T) {
 	t.Parallel()
-	tempDir := t.TempDir()
+	ctx := context.Background()
 	m := &metricsManager{}
 
-	// Case 1: No database file
-	if days := m.loadRetentionDays(tempDir); days != 30 {
-		t.Errorf("Expected default 30 days, got %d", days)
+	// Case 1: No KVStore
+	if days := m.loadRetentionDays(ctx); days != 30 {
+		t.Errorf("Expected default 30 days when KVStore is nil, got %d", days)
 	}
 
-	// Case 2: Database file with retention days
-	dbPath := filepath.Join(tempDir, "tellmego.db")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec("INSERT INTO settings (key, value) VALUES ('backup_retention_days', '60')")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if days := m.loadRetentionDays(tempDir); days != 60 {
+	// Case 2: KVStore with retention days
+	m.kvStore = &mockKV{val: "60"}
+	if days := m.loadRetentionDays(ctx); days != 60 {
 		t.Errorf("Expected 60 days, got %d", days)
+	}
+
+	// Case 3: KVStore with invalid value
+	m.kvStore = &mockKV{val: "abc"}
+	if days := m.loadRetentionDays(ctx); days != 30 {
+		t.Errorf("Expected default 30 days for invalid value, got %d", days)
 	}
 }
 

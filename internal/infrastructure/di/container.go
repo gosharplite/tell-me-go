@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -62,7 +63,7 @@ type bootstrapper struct {
 	Logger           *slog.Logger
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
-	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) error
+	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
 	RotateSession    func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
@@ -101,10 +102,19 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	if err := b.setupSecurity(paths, configPath); err != nil {
 		return nil, nil, nil, err
 	}
+
+	sessionProvider, cleanup, err := b.buildSessionProvider(ctx, paths, cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	b.applySessionSecuritySettings(ctx, sessionProvider)
+
 	if newSession {
 		// Hard dependency: session rotation must complete before we continue.
 		// Errors here MUST halt execution to prevent state corruption.
-		if err := b.handleNewSession(ctx, paths, cfg, pricingOverrides); err != nil {
+		if err := b.handleNewSession(ctx, paths, cfg, pricingOverrides, sessionProvider.GetSettings()); err != nil {
+			cleanup()
 			return nil, nil, nil, fmt.Errorf("session initialization failed during rotation: %w", err)
 		}
 	}
@@ -114,6 +124,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	hManager, err := b.buildHistoryManager(ctx, paths)
 	if err != nil {
+		cleanup()
 		return nil, nil, nil, err
 	}
 
@@ -123,15 +134,9 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.Logger))
 	if err != nil {
+		cleanup()
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
-
-	sessionProvider, cleanup, err := b.buildSessionProvider(ctx, paths, cfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	b.applySessionSecuritySettings(ctx, sessionProvider)
 
 	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
 		SecurityManager:  b.SM,
@@ -177,7 +182,7 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	}
 
 	// Infrastructure-specific tool registration
-	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.TraceFile, params.Model, params.Mode, params.PricingOverrides); err != nil {
+	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.TraceFile, params.Model, params.Mode, params.PricingOverrides, params.SessionProvider.GetSettings()); err != nil {
 		return nil, fmt.Errorf("error registering metrics tools: %w", err)
 	}
 	if err := b.SM.RegisterPolicyTools(reg, params.SessionProvider.GetSettings()); err != nil {
@@ -337,7 +342,7 @@ func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string
 }
 
 // handleNewSession manages session rotation and cost recording for new sessions.
-func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) error {
+func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, b.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
@@ -345,8 +350,12 @@ func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 	}
 
 	// Critical path: always attempt to rotate the session
-	dbPath := filepath.Join(paths.ModeDir, "tellmego.db")
-	retentionDays := infra_persistence.GetRetentionDays(dbPath)
+	retentionDays := 30
+	if val, err := kvStore.Get(ctx, "backup_retention_days"); err == nil && val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			retentionDays = parsed
+		}
+	}
 	if err := b.RotateSession(&infra_persistence.OSFileSystem{}, b.Stdout, *paths, retentionDays); err != nil {
 		return fmt.Errorf("session rotation failed: %w", err)
 	}

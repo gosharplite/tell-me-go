@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -216,6 +218,7 @@ type metricsManager struct {
 	mode             string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	ledger           *ledgerStore
+	kvStore          ports.KVStore
 }
 
 type costSummaryArgs struct {
@@ -229,7 +232,7 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
+func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, kvStore ports.KVStore) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -238,6 +241,7 @@ func RegisterMetrics(r tools.Registry, sm domain_security.Manager, logFile, trac
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
 		ledger:           newLedgerStore(sm, model, pricingOverrides),
+		kvStore:          kvStore,
 	}
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -465,7 +469,7 @@ func (m *metricsManager) triggerLedgerRecovery(ctx context.Context, historyPath,
 func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, globalDir, outputDir string, record sessionCostRecord) {
 	history := m.loadHistory(ctx, historyPath, globalDir)
 	history = upsertRecord(history, record)
-	history = m.applyRetentionPolicy(history, m.loadRetentionDays(outputDir))
+	history = m.applyRetentionPolicy(history, m.loadRetentionDays(ctx))
 
 	// Write back atomically
 	bytes, err := json.Marshal(history)
@@ -609,9 +613,16 @@ func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakd
 	return sb.String()
 }
 
-func (m *metricsManager) loadRetentionDays(outputDir string) int {
-	dbPath := filepath.Join(outputDir, "tellmego.db")
-	return persistence.GetRetentionDays(dbPath)
+func (m *metricsManager) loadRetentionDays(ctx context.Context) int {
+	retentionDays := 30
+	if m.kvStore != nil {
+		if val, err := m.kvStore.Get(ctx, "backup_retention_days"); err == nil && val != "" {
+			if parsed, err := strconv.Atoi(val); err == nil {
+				retentionDays = parsed
+			}
+		}
+	}
+	return retentionDays
 }
 
 func (m *metricsManager) applyRetentionPolicy(history []sessionCostRecord, retentionDays int) []sessionCostRecord {
