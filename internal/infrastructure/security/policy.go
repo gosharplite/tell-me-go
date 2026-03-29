@@ -240,9 +240,9 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 		_ = t.sp.GetSettings().Set(ctx, "bypass_confirmation", "true")
 	}
 
-	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.")
-	// t.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
-	return tools.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
+	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS MODE.")
+	// t.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this mode.")
+	return tools.ToolResult{Text: "All future confirmations for this mode will be bypassed. This setting is now **persistent across session rotations** until manually revoked."}, nil
 }
 
 func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -422,7 +422,7 @@ func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry, sp ports.Sessio
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "bypass_confirmation",
-		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
+		Description: "Disables all interactive security prompts for the current mode. This setting is **persistent across sessions** and remains active until manually revoked.",
 	}, p.BypassConfirmation, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
 		return err
 	}

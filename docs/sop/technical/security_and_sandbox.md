@@ -50,10 +50,9 @@ The assistant must never perform destructive or high-risk actions without explic
 For trusted environments or highly repetitive automated tasks, a `bypass_confirmation` tool is available.
 
 *   **Scope**: Disables all interactive security prompts.
-*   **Persistence**: The bypass state is **persistent for the current session** (stored in `output/<MODE>/bypass.log`).
-*   **Archival**: When a new session is started (`--new`), the bypass state is **not** archived. It persists across new sessions to allow uninterrupted automation until manually revoked via `revoke_bypass`.
+*   **Persistence**: The `bypass_confirmation` state is stored in the `settings` table of `tellmego.db`. Unlike conversation history, it is **not cleared** by the `-new` flag, ensuring a consistent developer experience across restarts.
 *   **Revocation**: Use the `revoke_bypass` tool to re-enable confirmations.
-*   **AI Awareness**: The AI "remembers" it has enabled bypass via chat history. Because the state is persistent, the AI's mental model and the process state will remain in sync across multiple runs within the same session.
+*   **AI Awareness**: The AI "remembers" it has enabled bypass via chat history. Because the state is persistent, the AI's mental model and the process state will remain in sync across multiple runs (sessions) within the same mode.
 
 ### 4. Terminal Interaction (Stdin Independence)
 To support piped workflows (e.g., `cat logs.txt | tell-me-go "analyze"`), interactive tools must not rely solely on `os.Stdin`.
