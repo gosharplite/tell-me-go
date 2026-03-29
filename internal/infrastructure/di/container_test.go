@@ -735,7 +735,7 @@ func TestCrossSessionPersistence(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec("INSERT INTO settings VALUES ('bypass_confirmation', 'true')")
 	require.NoError(t, err)
-	db.Close()
+	require.NoError(t, db.Close())
 
 	// 2. Setup SM Mock
 	sm := new(mockConfigurableSecurityManager)

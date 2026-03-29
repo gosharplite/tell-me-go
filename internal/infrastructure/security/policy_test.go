@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/stretchr/testify/mock"
 )
@@ -34,19 +33,6 @@ func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(map[string]string), args.Error(1)
 }
-
-type mockSessionProvider struct {
-	mock.Mock
-}
-
-func (m *mockSessionProvider) GetTasks() ports.TaskStore { return nil }
-func (m *mockSessionProvider) GetSettings() ports.KVStore {
-	args := m.Called()
-	return args.Get(0).(ports.KVStore)
-}
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo { return ports.SessionInfo{} }
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {}
-func (m *mockSessionProvider) Close() error { return nil }
 
 func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
