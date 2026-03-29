@@ -387,3 +387,53 @@ func TestModernTextTypesAndPerItemUsage(t *testing.T) {
 		t.Errorf("expected 5/10 tokens from per-item usage, got %d/%d", metrics.PromptTokens, metrics.ResponseTokens)
 	}
 }
+
+func TestTopLevelToolCallsInResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// Heterogeneous output: thought then top-level call
+		_, _ = w.Write([]byte(`{
+			"id": "resp_top_call",
+			"output": [
+				{
+					"type": "thought",
+					"thought": "I need to call a tool."
+				},
+				{
+					"type": "call",
+					"id": "c123",
+					"function": {
+						"name": "get_time",
+						"arguments": "{}"
+					}
+				}
+			],
+			"usage": {"total_tokens": 20}
+		}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	resp, _, err := c.SendChat(context.Background(), nil, []*tools.ToolDeclaration{{Name: "get_time"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var hasThought, hasCall bool
+	for _, p := range resp.Parts {
+		if p.IsThought && p.Text == "I need to call a tool." {
+			hasThought = true
+		}
+		if p.FunctionCall != nil && p.FunctionCall.Name == "get_time" && p.FunctionCall.ID == "c123" {
+			hasCall = true
+		}
+	}
+
+	if !hasThought {
+		t.Error("missing expected thought part")
+	}
+	if !hasCall {
+		t.Error("missing expected tool call part")
+	}
+}

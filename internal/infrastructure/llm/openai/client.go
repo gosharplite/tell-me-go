@@ -87,12 +87,13 @@ type responsesAPIResponse struct {
 	ID     string `json:"id"`
 	Output []struct {
 		Type string `json:"type"`
+		ID   string `json:"id,omitempty"` // For top-level calls
 		// Nested Message format
 		Message *struct {
 			Role      string         `json:"role"`
 			Content   []contentBlock `json:"content"`
 			ToolCalls []toolCall     `json:"tool_calls"`
-		} `json:"message"`
+		} `json:"message,omitempty"`
 		// Direct Content Block format (fallback for heterogeneous items)
 		Role       string         `json:"role"`
 		Content    []contentBlock `json:"content"`
@@ -104,6 +105,10 @@ type responsesAPIResponse struct {
 		Reasoning  string         `json:"reasoning"`
 		Refusal    string         `json:"refusal"`
 		Usage      *usage         `json:"usage"`
+		// Top-level Call support
+		Function *functionCall `json:"function,omitempty"`
+		Name     string        `json:"name,omitempty"`      // Flattened fallback
+		Arguments string       `json:"arguments,omitempty"` // Flattened fallback
 	} `json:"output"`
 	Usage usage `json:"usage"`
 }
@@ -629,6 +634,17 @@ func (c *client) fromResponsesAPIResponse(resp *responsesAPIResponse, duration f
 			if err := c.parseResponseToolCalls(out.ToolCalls, content); err != nil {
 				return nil, nil, err
 			}
+
+			// Detection logic for top-level tool call (type: "call")
+			targetName := out.Name
+			targetArgs := out.Arguments
+			if out.Function != nil {
+				targetName = out.Function.Name
+				targetArgs = out.Function.Arguments
+			}
+			if targetName != "" {
+				_ = c.appendToolCall(content, out.ID, targetName, targetArgs)
+			}
 		}
 	}
 
@@ -797,21 +813,33 @@ func (c *client) parseContentPart(part interface{}, content *llm.Content) {
 	}
 }
 
+func (c *client) appendToolCall(content *llm.Content, id, name, argsStr string) error {
+	var args map[string]interface{}
+	if argsStr != "" && argsStr != "{}" {
+		if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+			return fmt.Errorf("failed to unmarshal tool arguments: %w", err)
+		}
+	}
+	if name == "" && args == nil {
+		return nil
+	}
+	content.Parts = append(content.Parts, &llm.Part{
+		FunctionCall: &llm.FunctionCall{
+			ID:   id,
+			Name: name,
+			Args: args,
+		},
+	})
+	return nil
+}
+
 // parseResponseToolCalls extracts tool calls from the API response.
 // It returns an error if tool arguments cannot be unmarshalled from JSON.
 func (c *client) parseResponseToolCalls(toolCalls []toolCall, content *llm.Content) error {
 	for _, tc := range toolCalls {
-		var args map[string]interface{}
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-			return fmt.Errorf("failed to unmarshal tool arguments: %w", err)
+		if err := c.appendToolCall(content, tc.ID, tc.Function.Name, tc.Function.Arguments); err != nil {
+			return err
 		}
-		content.Parts = append(content.Parts, &llm.Part{
-			FunctionCall: &llm.FunctionCall{
-				ID:   tc.ID,
-				Name: tc.Function.Name,
-				Args: args,
-			},
-		})
 	}
 	return nil
 }
