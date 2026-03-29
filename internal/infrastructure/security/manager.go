@@ -173,8 +173,8 @@ func (sm *SecurityManager) GetSafePaths() []string {
 	return sm.policy.GetPaths(true)
 }
 
-// GetReadOnlyPaths returns read-only paths.
-func (sm *SecurityManager) GetReadOnlyPaths() []string {
+// getReadOnlyPaths returns read-only paths.
+func (sm *SecurityManager) getReadOnlyPaths() []string {
 	return sm.policy.GetPaths(false)
 }
 

@@ -100,7 +100,7 @@ func TestSecurityManager_PathManagement(t *testing.T) {
 	if !contains(sm.GetSafePaths(), "/tmp/safe") {
 		t.Error("Expected /tmp/safe in safe paths")
 	}
-	if !contains(sm.GetReadOnlyPaths(), "/tmp/readonly") {
+	if !contains(sm.getReadOnlyPaths(), "/tmp/readonly") {
 		t.Error("Expected /tmp/readonly in read-only paths")
 	}
 

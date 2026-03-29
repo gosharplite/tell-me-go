@@ -205,7 +205,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 }
 
 func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	paths := t.sm.GetReadOnlyPaths()
+	paths := t.sm.getReadOnlyPaths()
 	if len(paths) == 0 {
 		return tools.ToolResult{Text: "No additional read-only paths are currently registered."}, nil
 	}
@@ -230,7 +230,7 @@ func (t *policyTool) persistPaths(ctx context.Context, safe bool) error {
 		paths = t.sm.GetSafePaths()
 	} else {
 		key = "authorized_read_paths"
-		paths = t.sm.GetReadOnlyPaths()
+		paths = t.sm.getReadOnlyPaths()
 	}
 
 	data, err := json.Marshal(paths)
