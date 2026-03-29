@@ -80,15 +80,13 @@ type chatRequest struct {
 }
 
 type historyItem struct {
-	Type    string   `json:"type"`
-	Message *message `json:"message,omitempty"`
-	// for type: "function_call"
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-	// for type: "function_call_output"
-	CallID string `json:"call_id,omitempty"`
-	Output string `json:"output,omitempty"`
+	Type      string                `json:"type"`
+	Role      *string               `json:"role,omitempty"`
+	Content   []requestContentBlock `json:"content,omitempty"`
+	CallID    *string               `json:"call_id,omitempty"`
+	Name      *string               `json:"name,omitempty"`      // For function_call
+	Arguments *string               `json:"arguments,omitempty"` // For function_call
+	Output    *string               `json:"output,omitempty"`    // For function_call_output
 }
 
 type reasoningConfig struct {
@@ -140,7 +138,7 @@ type contentBlock struct {
 
 type requestContentBlock struct {
 	Type string `json:"type"`
-	Text string `json:"text,omitempty"` // For input_text / output_text
+	Text string `json:"text"` // Required field for input_text / output_text
 }
 
 type message struct {
@@ -365,14 +363,18 @@ func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 func (c *client) maybeInjectInitialPersona(items *[]historyItem, messages *[]message, useBlocks bool) (personaInjected bool) {
 	if c.persona != "" && !c.capabilities.UseDeveloperRole { // Non-OpenAI reasoners use 'system' at start
 		role := "system"
-		msg := message{
-			Role: role,
-		}
 		if useBlocks {
-			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
-			*items = append(*items, historyItem{Type: "message", Message: &msg})
+			r := role
+			*items = append(*items, historyItem{
+				Type:    "message",
+				Role:    &r,
+				Content: []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}},
+			})
 		} else {
-			msg.Content = c.persona
+			msg := message{
+				Role:    role,
+				Content: c.persona,
+			}
 			*messages = append(*messages, msg)
 		}
 		return true
@@ -415,27 +417,35 @@ func (c *client) appendMessagesFromHistoryItem(
 		reasoningPtr = &reasoning
 	}
 
-	msg := message{
-		Role:             role,
-		ReasoningContent: reasoningPtr,
-	}
-
 	if useBlocks {
-		msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: text}}
-		*items = append(*items, historyItem{Type: "message", Message: &msg})
+		r := role
+		t := text
+		// Append message item
+		*items = append(*items, historyItem{
+			Type:    "message",
+			Role:    &r,
+			Content: []requestContentBlock{{Type: c.resolveBlockType(role), Text: t}},
+		})
 
 		// Append tool calls as separate items
 		for _, tc := range toolCalls {
+			cid := tc.ID
+			name := tc.Function.Name
+			args := tc.Function.Arguments
 			*items = append(*items, historyItem{
 				Type:      "function_call",
-				ID:        tc.ID,
-				Name:      tc.Function.Name,
-				Arguments: tc.Function.Arguments,
+				CallID:    &cid,
+				Name:      &name,
+				Arguments: &args,
 			})
 		}
 	} else {
-		msg.Content = text
-		msg.ToolCalls = toolCalls
+		msg := message{
+			Role:             role,
+			ToolCalls:        toolCalls,
+			ReasoningContent: reasoningPtr,
+			Content:          text,
+		}
 		*messages = append(*messages, msg)
 	}
 
@@ -475,10 +485,12 @@ func (c *client) appendToolResponseMessages(items *[]historyItem, messages *[]me
 		}
 
 		if useBlocks {
+			cid := p.FunctionResponse.ID
+			out := res
 			*items = append(*items, historyItem{
 				Type:   "function_call_output",
-				CallID: p.FunctionResponse.ID,
-				Output: res,
+				CallID: &cid,
+				Output: &out,
 			})
 		} else {
 			*messages = append(*messages, message{
@@ -537,14 +549,18 @@ func (c *client) injectPersona(items *[]historyItem, messages *[]message, person
 
 	if c.capabilities.UseDeveloperRole {
 		devRole := "developer"
-		msg := message{
-			Role: devRole,
-		}
 		if useBlocks {
-			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(devRole), Text: c.persona}}
-			*items = append(*items, historyItem{Type: "message", Message: &msg})
+			dr := devRole
+			*items = append(*items, historyItem{
+				Type:    "message",
+				Role:    &dr,
+				Content: []requestContentBlock{{Type: c.resolveBlockType(devRole), Text: c.persona}},
+			})
 		} else {
-			msg.Content = c.persona
+			msg := message{
+				Role:    devRole,
+				Content: c.persona,
+			}
 			*messages = append(*messages, msg)
 		}
 		*personaInjected = true
@@ -698,15 +714,15 @@ func (c *client) fromResponsesAPIResponse(resp *responsesAPIResponse, duration f
 func (c *client) appendPartsFromBlock(content *llm.Content, cb contentBlock) {
 	switch cb.Type {
 	case "text", "output_text", "input_text":
-		val := cb.OutputText
-		if val == "" {
-			val = cb.InputText
+		text := c.extractBlockText(cb.Text)
+		if text == "" {
+			text = cb.OutputText
 		}
-		if val == "" {
-			val = c.extractBlockText(cb.Text)
+		if text == "" {
+			text = cb.InputText
 		}
-		if val != "" {
-			content.Parts = append(content.Parts, &llm.Part{Text: val})
+		if text != "" {
+			content.Parts = append(content.Parts, &llm.Part{Text: text})
 		}
 	case "thought", "reasoning":
 		val := cb.Thought

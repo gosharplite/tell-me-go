@@ -494,8 +494,8 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 		}
 	}
 	
-	if !strings.Contains(capturedBody, `"type":"function_call"`) || !strings.Contains(capturedBody, `"id":"call_123"`) {
-		t.Errorf("expected JSON to contain function_call item, got %s", capturedBody)
+	if !strings.Contains(capturedBody, `"type":"function_call"`) || !strings.Contains(capturedBody, `"call_id":"call_123"`) || !strings.Contains(capturedBody, `"name":"get_weather"`) {
+		t.Errorf("expected JSON to contain function_call item with call_id and name, got %s", capturedBody)
 	}
 }
 
