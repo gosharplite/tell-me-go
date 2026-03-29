@@ -128,8 +128,9 @@ type contentBlock struct {
 
 type requestContentBlock struct {
 	Type      string `json:"type"`
-	Text      string `json:"text,omitempty"`      // For input_text / output_text
+	Text      string `json:"text,omitempty"`      // For input_text / output_text / tool_result
 	ID        string `json:"id,omitempty"`        // For tool_call
+	CallID    string `json:"call_id,omitempty"`   // For tool_result
 	Name      string `json:"name,omitempty"`      // For tool_call
 	Arguments string `json:"arguments,omitempty"` // For tool_call
 }
@@ -467,13 +468,17 @@ func (c *client) appendToolResponseMessages(messages *[]message, toolResponsePar
 		}
 		role := "tool"
 		msg := message{
-			Role:       role,
-			ToolCallID: p.FunctionResponse.ID,
+			Role: role,
 		}
 		if useBlocks {
-			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: res}}
+			msg.Content = []requestContentBlock{{
+				Type:   "tool_result",
+				CallID: p.FunctionResponse.ID,
+				Text:   res,
+			}}
 		} else {
 			msg.Content = res
+			msg.ToolCallID = p.FunctionResponse.ID
 		}
 		*messages = append(*messages, msg)
 	}

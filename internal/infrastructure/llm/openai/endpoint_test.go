@@ -498,3 +498,46 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 		t.Errorf("expected JSON to contain tool_call block, got %s", capturedBody)
 	}
 }
+
+func TestToolResultBlocksInHistory(t *testing.T) {
+	var capturedBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		capturedBody = string(body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","message":{"role":"assistant","content":[]}}]}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	
+	// History item: tool response
+	history := []*llm.Content{
+		{
+			Role: "tool",
+			Parts: []*llm.Part{
+				{
+					FunctionResponse: &llm.FunctionResponse{
+						ID:   "call_123",
+						Name: "get_weather",
+						Response: map[string]interface{}{"result": "Sunny"},
+					},
+				},
+			},
+		},
+	}
+	
+	_, _, err := c.SendChat(context.Background(), history, []*tools.ToolDeclaration{{Name: "get_weather"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	// Verify that tool_call_id is NOT at top level of the message in input array
+	if strings.Contains(capturedBody, `"tool_call_id":"call_123"`) && strings.Contains(capturedBody, `"role":"tool"`) {
+		t.Errorf("found forbidden top-level 'tool_call_id' in tool message in Responses API mode: %s", capturedBody)
+	}
+	
+	if !strings.Contains(capturedBody, `"type":"tool_result"`) || !strings.Contains(capturedBody, `"call_id":"call_123"`) || !strings.Contains(capturedBody, `"text":"Sunny"`) {
+		t.Errorf("expected JSON to contain tool_result block with call_id and text, got %s", capturedBody)
+	}
+}
