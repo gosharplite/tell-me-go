@@ -134,9 +134,15 @@ func (s *sqliteKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 	for rows.Next() {
 		var k, v string
 		if err := rows.Scan(&k, &v); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scanning setting row: %w", err)
 		}
 		res[k] = v
 	}
+
+	// Check for errors that occurred during iteration
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating settings rows: %w", err)
+	}
+
 	return res, nil
 }

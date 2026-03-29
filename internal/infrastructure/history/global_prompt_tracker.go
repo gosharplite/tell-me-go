@@ -355,22 +355,30 @@ func (t *globalPromptTracker) writeCompactedTempFile(w io.Writer, entries []prom
 	return true
 }
 
-func copyFile(src, dst string) error {
-	source, err := os.Open(src)
-	if err != nil {
-		return err
+func copyFile(src, dst string) (err error) {
+	source, openErr := os.Open(src)
+	if openErr != nil {
+		return openErr
 	}
 	defer func() { _ = source.Close() }()
 
-	destination, err := os.Create(dst)
-	if err != nil {
-		return err
+	destination, createErr := os.Create(dst)
+	if createErr != nil {
+		return createErr
 	}
-	defer func() { _ = destination.Close() }()
 
-	if _, err := io.Copy(destination, source); err != nil {
+	// Capture Close error for the writable destination
+	defer func() {
+		closeErr := destination.Close()
+		if err == nil {
+			err = closeErr
+		}
+	}()
+
+	if _, err = io.Copy(destination, source); err != nil {
 		return err
 	}
+
 	return destination.Sync()
 }
 

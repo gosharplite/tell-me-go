@@ -261,7 +261,9 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 	t.sm.SetBypassActive(true)
 
 	if t.sp != nil {
-		_ = t.sp.GetSettings().Set(ctx, "bypass_confirmation", "true")
+		if err := t.sp.GetSettings().Set(ctx, "bypass_confirmation", "true"); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("failed to persist bypass status: %w", err)
+		}
 	}
 
 	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS MODE.")
@@ -276,7 +278,9 @@ func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface
 	t.sm.SetBypassActive(false)
 
 	if t.sp != nil {
-		_ = t.sp.GetSettings().Set(ctx, "bypass_confirmation", "false")
+		if err := t.sp.GetSettings().Set(ctx, "bypass_confirmation", "false"); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("failed to persist bypass revocation: %w", err)
+		}
 	}
 
 	t.sm.Warn("[SECURITY] Interactive security prompts have been RE-ENABLED.")
