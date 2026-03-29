@@ -273,7 +273,7 @@ func TestRefusalHandling(t *testing.T) {
 	}
 }
 
-func TestContentSanitization(t *testing.T) {
+func TestMandatoryContentField(t *testing.T) {
 	var capturedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -296,10 +296,10 @@ func TestContentSanitization(t *testing.T) {
 	
 	_, _, _ = c.SendChat(context.Background(), history, []*tools.ToolDeclaration{{Name: "tool"}}, nil)
 	
-	// We expect the assistant message to NOT have a content field because it only has tool_calls
-	// and no text.
-	if strings.Contains(capturedBody, `"role":"assistant","content":`) {
-		t.Errorf("expected assistant message to have no content field when only tool calls are present, got %s", capturedBody)
+	// We expect the assistant message to ALWAYS have a content field in Responses API mode,
+	// even if it only has tool_calls and no text.
+	if !strings.Contains(capturedBody, `"role":"assistant","content":[{`) {
+		t.Errorf("expected assistant message to have content array even when only tool calls are present, got %s", capturedBody)
 	}
 }
 

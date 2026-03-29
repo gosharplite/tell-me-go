@@ -356,11 +356,7 @@ func (c *client) maybeInjectInitialPersona(messages *[]message, useBlocks bool) 
 			Role: role,
 		}
 		if useBlocks {
-			if c.persona == "" {
-				msg.Content = nil
-			} else {
-				msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
-			}
+			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
 		} else {
 			msg.Content = c.persona
 		}
@@ -411,11 +407,7 @@ func (c *client) appendMessagesFromHistoryItem(
 	}
 
 	if useBlocks {
-		if text == "" && len(toolCalls) > 0 {
-			msg.Content = nil // Omit content field for pure tool-calling turns
-		} else {
-			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: text}}
-		}
+		msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: text}}
 	} else {
 		msg.Content = text
 	}
@@ -461,11 +453,7 @@ func (c *client) appendToolResponseMessages(messages *[]message, toolResponsePar
 			ToolCallID: p.FunctionResponse.ID,
 		}
 		if useBlocks {
-			if res == "" {
-				msg.Content = nil
-			} else {
-				msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: res}}
-			}
+			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: res}}
 		} else {
 			msg.Content = res
 		}
@@ -524,11 +512,7 @@ func (c *client) injectPersona(messages *[]message, personaInjected *bool, role 
 			Role: role,
 		}
 		if useBlocks {
-			if c.persona == "" {
-				msg.Content = nil
-			} else {
-				msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
-			}
+			msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}}
 		} else {
 			msg.Content = c.persona
 		}
