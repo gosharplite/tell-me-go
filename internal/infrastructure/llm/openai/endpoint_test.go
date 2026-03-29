@@ -437,3 +437,64 @@ func TestTopLevelToolCallsInResponses(t *testing.T) {
 		t.Error("missing expected tool call part")
 	}
 }
+
+func TestBlockBasedToolCallsInHistory(t *testing.T) {
+	var capturedBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		capturedBody = string(body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","message":{"role":"assistant","content":[]}}]}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	
+	// History item: assistant message with a tool call
+	history := []*llm.Content{
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{Text: "Thinking..."},
+				{FunctionCall: &llm.FunctionCall{ID: "call_123", Name: "get_weather", Args: map[string]interface{}{"loc": "London"}}},
+			},
+		},
+	}
+	
+	_, _, err := c.SendChat(context.Background(), history, []*tools.ToolDeclaration{{Name: "get_weather"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	// Verify the structure of the first message in the input array (the assistant message)
+	// For Responses API, tool calls must be in content blocks, not at top level
+	if strings.Contains(capturedBody, `"input":[{"role":"assistant","content":`) {
+		// It's in block mode. Ensure tool_calls is NOT at top level of this message.
+		// A simple check: if we see "assistant" followed by "tool_calls" before the next message or end of object
+		// But "tool_calls" IS valid at the TOP level of the request (the tool declarations).
+		// We care about the message in the "input" array.
+		
+		// In block mode, we specifically set msg.ToolCalls = nil
+		
+		// Let's check for the absence of "tool_calls" specifically within the assistant message object
+		// Assistant message starts with {"role":"assistant"
+		idx := strings.Index(capturedBody, `"role":"assistant"`)
+		if idx != -1 {
+			// Find the end of this message object (next message or end of array)
+			endIdx := strings.Index(capturedBody[idx:], `},{"role"`)
+			if endIdx == -1 {
+				endIdx = strings.Index(capturedBody[idx:], `]}],"tools"`)
+			}
+			if endIdx != -1 {
+				msgSegment := capturedBody[idx : idx+endIdx]
+				if strings.Contains(msgSegment, `"tool_calls":`) {
+					t.Errorf("found forbidden top-level 'tool_calls' in assistant message in Responses API mode: %s", msgSegment)
+				}
+			}
+		}
+	}
+	
+	if !strings.Contains(capturedBody, `"type":"tool_call"`) || !strings.Contains(capturedBody, `"id":"call_123"`) {
+		t.Errorf("expected JSON to contain tool_call block, got %s", capturedBody)
+	}
+}

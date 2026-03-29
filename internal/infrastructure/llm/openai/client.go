@@ -127,8 +127,11 @@ type contentBlock struct {
 }
 
 type requestContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`      // For input_text / output_text
+	ID        string `json:"id,omitempty"`        // For tool_call
+	Name      string `json:"name,omitempty"`      // For tool_call
+	Arguments string `json:"arguments,omitempty"` // For tool_call
 }
 
 type message struct {
@@ -402,14 +405,29 @@ func (c *client) appendMessagesFromHistoryItem(
 
 	msg := message{
 		Role:             role,
-		ToolCalls:        toolCalls,
 		ReasoningContent: reasoningPtr,
 	}
 
 	if useBlocks {
-		msg.Content = []requestContentBlock{{Type: c.resolveBlockType(role), Text: text}}
+		var blocks []requestContentBlock
+		// 1. Text block (if any)
+		if text != "" || len(toolCalls) == 0 {
+			blocks = append(blocks, requestContentBlock{Type: c.resolveBlockType(role), Text: text})
+		}
+		// 2. Tool call blocks
+		for _, tc := range toolCalls {
+			blocks = append(blocks, requestContentBlock{
+				Type:      "tool_call",
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			})
+		}
+		msg.Content = blocks
+		msg.ToolCalls = nil // Ensure top-level field is NOT sent
 	} else {
 		msg.Content = text
+		msg.ToolCalls = toolCalls
 	}
 
 	*messages = append(*messages, msg)
