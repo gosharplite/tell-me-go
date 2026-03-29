@@ -4,13 +4,11 @@
 package persistence
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -32,9 +30,8 @@ func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.P
 		HistoryArchivePath:   filepath.Join(modeDir, "history.archive.jsonl"),
 		LogPath:              filepath.Join(modeDir, "tokens.log"),
 		CommandsLogPath:      filepath.Join(modeDir, "commands.log"),
-		SafePathsPath:        filepath.Join(modeDir, "safepaths.json"),
-		ReadPathsPath:        filepath.Join(modeDir, "readpaths.json"),
-		PersistentConfigPath: filepath.Join(modeDir, "config.json"),
+		SafePathsPath:      filepath.Join(modeDir, "safepaths.json"),
+		ReadPathsPath:      filepath.Join(modeDir, "readpaths.json"),
 	}, nil
 }
 
@@ -112,23 +109,4 @@ func cleanupOldBackups(fs FileSystem, paths persistence.Paths, retentionDays int
 	}
 
 	return nil
-}
-
-// LoadBackupRetentionDays loads the retention days from the persistent config.
-func LoadBackupRetentionDays(fs FileSystem, paths persistence.Paths) int {
-	retentionDays := 30
-	data, err := fs.ReadFile(paths.PersistentConfigPath)
-	if err != nil {
-		return retentionDays
-	}
-
-	var cfg map[string]string
-	if err := json.Unmarshal(data, &cfg); err == nil {
-		if val, ok := cfg["backup_retention_days"]; ok {
-			if days, err := strconv.Atoi(val); err == nil {
-				return days
-			}
-		}
-	}
-	return retentionDays
 }

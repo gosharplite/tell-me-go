@@ -329,7 +329,8 @@ func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 	}
 
 	// Critical path: always attempt to rotate the session
-	retentionDays := infra_persistence.LoadBackupRetentionDays(&infra_persistence.OSFileSystem{}, *paths)
+	dbPath := filepath.Join(paths.ModeDir, "tellmego.db")
+	retentionDays := infra_persistence.GetRetentionDays(dbPath)
 	if err := b.RotateSession(&infra_persistence.OSFileSystem{}, b.Stdout, *paths, retentionDays); err != nil {
 		return fmt.Errorf("session rotation failed: %w", err)
 	}

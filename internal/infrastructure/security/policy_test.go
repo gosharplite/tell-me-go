@@ -183,6 +183,45 @@ func TestPolicyTool_BypassManagement(t *testing.T) {
 	}
 }
 
+func TestPolicyTool_SessionSettings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Update Session Setting", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		mockKV := p.sp.GetSettings().(*mockKVStore)
+		mockKV.On("Set", ctx, "test_key", "test_val").Return(nil)
+
+		res, err := p.UpdateSessionSetting(ctx, map[string]interface{}{
+			"key":   "test_key",
+			"value": "test_val",
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "updated to 'test_val'") {
+			t.Errorf("Unexpected result text: %q", res.Text)
+		}
+		mockKV.AssertExpectations(t)
+	})
+
+	t.Run("List Session Settings", func(t *testing.T) {
+		t.Parallel()
+		_, p, ctx := setupPolicyTest(t)
+		mockKV := p.sp.GetSettings().(*mockKVStore)
+		mockKV.On("GetAll", ctx).Return(map[string]string{"k1": "v1", "k2": "v2"}, nil)
+
+		res, err := p.ListSessionSettings(ctx, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "k1") || !strings.Contains(res.Text, "v2") {
+			t.Error("Expected settings k1 and v2 in list")
+		}
+		mockKV.AssertExpectations(t)
+	})
+}
+
 func TestPolicyTool_ValidationErrors(t *testing.T) {
 	t.Parallel()
 

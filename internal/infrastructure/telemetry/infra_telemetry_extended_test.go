@@ -5,11 +5,14 @@ package telemetry
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -346,14 +349,28 @@ func TestMetricsManager_LoadRetentionDays(t *testing.T) {
 	tempDir := t.TempDir()
 	m := &metricsManager{}
 
-	// Case 1: No config file
+	// Case 1: No database file
 	if days := m.loadRetentionDays(tempDir); days != 30 {
 		t.Errorf("Expected default 30 days, got %d", days)
 	}
 
-	// Case 2: Config file with retention days
-	configPath := filepath.Join(tempDir, "config.json")
-	_ = os.WriteFile(configPath, []byte(`{"cost_retention_days": "60"}`), 0644)
+	// Case 2: Database file with retention days
+	dbPath := filepath.Join(tempDir, "tellmego.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec("INSERT INTO settings (key, value) VALUES ('backup_retention_days', '60')")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if days := m.loadRetentionDays(tempDir); days != 60 {
 		t.Errorf("Expected 60 days, got %d", days)
 	}

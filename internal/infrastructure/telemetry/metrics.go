@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -609,19 +608,8 @@ func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakd
 }
 
 func (m *metricsManager) loadRetentionDays(outputDir string) int {
-	retentionDays := 30
-	configPath := filepath.Join(outputDir, "config.json")
-	if data, err := os.ReadFile(configPath); err == nil {
-		var cfg map[string]string
-		if err := json.Unmarshal(data, &cfg); err == nil {
-			if val, ok := cfg["cost_retention_days"]; ok {
-				if days, err := strconv.Atoi(val); err == nil {
-					retentionDays = days
-				}
-			}
-		}
-	}
-	return retentionDays
+	dbPath := filepath.Join(outputDir, "tellmego.db")
+	return persistence.GetRetentionDays(dbPath)
 }
 
 func (m *metricsManager) applyRetentionPolicy(history []sessionCostRecord, retentionDays int) []sessionCostRecord {

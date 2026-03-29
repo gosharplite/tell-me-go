@@ -112,27 +112,6 @@ func TestCleanupOldBackups(t *testing.T) {
 	}
 }
 
-func TestLoadBackupRetentionDays(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	paths := paths{
-		PersistentConfigPath: filepath.Join(tmp, "config.json"),
-	}
-
-	// Test default
-	if days := LoadBackupRetentionDays(&OSFileSystem{}, paths); days != 30 {
-		t.Errorf("expected default 30, got %d", days)
-	}
-
-	// Test override
-	if err := os.WriteFile(paths.PersistentConfigPath, []byte(`{"backup_retention_days": "15"}`), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if days := LoadBackupRetentionDays(&OSFileSystem{}, paths); days != 15 {
-		t.Errorf("expected overridden 15, got %d", days)
-	}
-}
-
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
 	t.Parallel()
 	err := cleanupOldBackups(&OSFileSystem{}, paths{}, 0)

@@ -260,6 +260,66 @@ func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface
 	return tools.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
 }
 
+func (t *policyTool) UpdateSessionSetting(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	t.sm.TerminalLock()
+	defer t.sm.TerminalUnlock()
+
+	var params struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Key == "" {
+		return tools.ToolResult{}, fmt.Errorf("key argument is required")
+	}
+
+	// Confirmation
+	confirmed, err := t.confirmAction(ctx, "to update session setting:", params.Key, fmt.Sprintf("New Value: %s", params.Value), false)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if !confirmed {
+		return tools.ToolResult{Text: "Update denied by user."}, nil
+	}
+
+	if t.sp == nil {
+		return tools.ToolResult{}, fmt.Errorf("session provider not initialized")
+	}
+
+	if err := t.sp.GetSettings().Set(ctx, params.Key, params.Value); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to update setting: %w", err)
+	}
+
+	return tools.ToolResult{Text: fmt.Sprintf("Session setting '%s' has been updated to '%s'. This change is persistent across sessions.", params.Key, params.Value)}, nil
+}
+
+func (t *policyTool) ListSessionSettings(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	if t.sp == nil {
+		return tools.ToolResult{}, fmt.Errorf("session provider not initialized")
+	}
+
+	settings, err := t.sp.GetSettings().GetAll(ctx)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to retrieve settings: %w", err)
+	}
+
+	if len(settings) == 0 {
+		return tools.ToolResult{Text: "No persistent session settings are currently defined."}, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Current persistent session settings:\n")
+	sb.WriteString("| Key | Value |\n")
+	sb.WriteString("| :--- | :--- |\n")
+	for k, v := range settings {
+		fmt.Fprintf(&sb, "| %s | %s |\n", k, v)
+	}
+	return tools.ToolResult{Text: sb.String()}, nil
+}
+
 func (t *policyTool) confirmAction(ctx context.Context, title, path, reason string, doubleConfirm bool) (bool, error) {
 	lowerTitle := strings.ToLower(title)
 	if t.sm.IsBypassActive() {
@@ -431,6 +491,34 @@ func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry, sp ports.Sessio
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
 	}, p.RevokeBypass, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
+		return err
+	}
+
+	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "update_session_setting",
+		Description: "Updates a persistent session configuration setting. These settings persist across session rotations and system restarts.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"key": {
+					Type:        "STRING",
+					Description: "The name of the setting to update (e.g., 'backup_retention_days', 'bypass_confirmation').",
+				},
+				"value": {
+					Type:        "STRING",
+					Description: "The new value for the setting.",
+				},
+			},
+			Required: []string{"key", "value"},
+		},
+	}, p.UpdateSessionSetting, tools.ToolOptions{Serial: true}); err != nil {
+		return err
+	}
+
+	if err := r.Register(&tools.ToolDeclaration{
+		Name:        "list_session_settings",
+		Description: "Lists all current persistent session settings and their values.",
+	}, p.ListSessionSettings); err != nil {
 		return err
 	}
 

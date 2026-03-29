@@ -10,7 +10,6 @@ type Paths struct {
 	HistoryArchivePath   string
 	LogPath              string
 	CommandsLogPath      string
-	SafePathsPath        string
-	ReadPathsPath        string
-	PersistentConfigPath string
+	SafePathsPath      string
+	ReadPathsPath      string
 }
