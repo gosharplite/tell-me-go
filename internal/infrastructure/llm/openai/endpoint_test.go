@@ -541,3 +541,65 @@ func TestToolResultBlocksInHistory(t *testing.T) {
 		t.Errorf("expected JSON to contain function_call_output item with call_id and output, got %s", capturedBody)
 	}
 }
+
+func TestHistoryItemSequencing(t *testing.T) {
+	var capturedBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		capturedBody = string(body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","message":{"role":"assistant","content":[]}}]}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	
+	// History: User -> Model (thought + call) -> Tool Result
+	history := []*llm.Content{
+		{
+			Role: "user",
+			Parts: []*llm.Part{{Text: "Hello"}},
+		},
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{Text: "Thinking..."},
+				{FunctionCall: &llm.FunctionCall{ID: "c1", Name: "t1", Args: map[string]interface{}{}}},
+			},
+		},
+		{
+			Role: "tool",
+			Parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{ID: "c1", Name: "t1", Response: map[string]interface{}{"result": "ok"}}},
+			},
+		},
+	}
+	
+	_, _, _ = c.SendChat(context.Background(), history, []*tools.ToolDeclaration{{Name: "t1"}}, nil)
+	
+	// Verify input array sequence: message (user) -> message (assistant) -> function_call -> function_call_output
+	// We check for the sequence of "type" fields in the "input" array.
+	
+	// JSON should look like: "input":[{"type":"message",...},{"type":"message",...},{"type":"function_call",...},{"type":"function_call_output",...}]
+	expectedSequence := []string{
+		`"type":"message"`,              // user
+		`"type":"message"`,              // assistant text
+		`"type":"function_call"`,       // assistant call
+		`"type":"function_call_output"`, // tool response
+	}
+	
+	currentIdx := 0
+	for _, expectedType := range expectedSequence {
+		foundIdx := strings.Index(capturedBody[currentIdx:], expectedType)
+		if foundIdx == -1 {
+			t.Errorf("failed to find expected type %s in sequence in JSON: %s", expectedType, capturedBody)
+			break
+		}
+		currentIdx += foundIdx + len(expectedType)
+	}
+	
+	// Verify NO content block with type tool_call or tool_result
+	if strings.Contains(capturedBody, `"type":"tool_call"`) || strings.Contains(capturedBody, `"type":"tool_result"`) {
+		t.Errorf("found invalid block type 'tool_call' or 'tool_result' in JSON: %s", capturedBody)
+	}
+}
