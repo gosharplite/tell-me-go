@@ -285,9 +285,7 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	modeStr := ""
 	if status.Mode != "" {
-		// Title case the mode
-		modeTitle := strings.ToUpper(status.Mode[:1]) + strings.ToLower(status.Mode[1:])
-		modeStr = fmt.Sprintf(" - %s", modeTitle)
+		modeStr = fmt.Sprintf(" - %s", status.Mode)
 	}
 
 	printSystemLine := func(tks int, isActual bool) {
