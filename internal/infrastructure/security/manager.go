@@ -6,12 +6,9 @@ package security
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"sync"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // SecurityManager coordinates path validation, user interaction, and auditing.
@@ -22,7 +19,6 @@ type SecurityManager struct {
 	domainPolicy *domain.Policy
 	safety       *domain.SafetyService
 
-	bypassFile   string
 	bypassActive bool
 	bypassMu     sync.RWMutex
 }
@@ -113,48 +109,11 @@ func (sm *SecurityManager) SetInteractor(interactor domain.UserInteractor) {
 	sm.auditor.SetInteractor(interactor)
 }
 
-// SetBypassFile sets the file where persistent bypass state is stored.
-func (sm *SecurityManager) SetBypassFile(path string) {
-	sm.bypassMu.Lock()
-	defer sm.bypassMu.Unlock()
-	sm.bypassFile = path
-}
-
-// LoadBypassState reads the persistent bypass state from disk.
-func (sm *SecurityManager) LoadBypassState() {
-	sm.bypassMu.Lock()
-	defer sm.bypassMu.Unlock()
-	if sm.bypassFile == "" {
-		return
-	}
-	data, err := os.ReadFile(sm.bypassFile)
-	if err == nil {
-		sm.bypassActive = strings.TrimSpace(string(data)) == "true"
-	}
-}
-
 // IsBypassActive returns the current state of bypass_confirmation.
 func (sm *SecurityManager) IsBypassActive() bool {
 	sm.bypassMu.RLock()
 	defer sm.bypassMu.RUnlock()
 	return sm.bypassActive
-}
-
-// saveBypassState writes the persistent bypass state to disk.
-func (sm *SecurityManager) saveBypassState(ctx context.Context) {
-	sm.bypassMu.RLock()
-	file := sm.bypassFile
-	active := sm.bypassActive
-	sm.bypassMu.RUnlock()
-
-	if file == "" {
-		return
-	}
-	val := "false"
-	if active {
-		val = "true"
-	}
-	_ = persistence.AtomicWrite(ctx, &persistence.OSFileSystem{}, file, []byte(val), 0644)
 }
 
 // SetBypassActive sets the bypass state.

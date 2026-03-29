@@ -9,16 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 type policyTool struct {
 	sm *SecurityManager
+	sp ports.SessionProvider
 }
 
 // newPolicyTool creates a new policyTool.
-func newPolicyTool(sm *SecurityManager) *policyTool {
-	return &policyTool{sm: sm}
+func newPolicyTool(sm *SecurityManager, sp ports.SessionProvider) *policyTool {
+	return &policyTool{sm: sm, sp: sp}
 }
 
 func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -234,7 +236,10 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 
 	t.sm.SetBypassActive(true)
 
-	t.sm.saveBypassState(ctx)
+	if t.sp != nil {
+		_ = t.sp.GetSettings().Set(ctx, "bypass_confirmation", "true")
+	}
+
 	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.")
 	// t.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
 	return tools.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
@@ -246,7 +251,10 @@ func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface
 
 	t.sm.SetBypassActive(false)
 
-	t.sm.saveBypassState(ctx)
+	if t.sp != nil {
+		_ = t.sp.GetSettings().Set(ctx, "bypass_confirmation", "false")
+	}
+
 	t.sm.Warn("[SECURITY] Interactive security prompts have been RE-ENABLED.")
 	// t.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return tools.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
@@ -319,8 +327,8 @@ func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 }
 
 // RegisterPolicyTools adds security policy management tools to the registry.
-func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry) error {
-	p := newPolicyTool(sm)
+func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry, sp ports.SessionProvider) error {
+	p := newPolicyTool(sm, sp)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_safepath",

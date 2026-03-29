@@ -43,6 +43,10 @@ func createTables(ctx context.Context, db *sql.DB) error {
 			status TEXT NOT NULL,
 			created_at DATETIME NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);`,
 	}
 
 	for _, query := range queries {

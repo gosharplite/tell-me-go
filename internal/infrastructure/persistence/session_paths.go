@@ -34,7 +34,6 @@ func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.P
 		CommandsLogPath:      filepath.Join(modeDir, "commands.log"),
 		SafePathsPath:        filepath.Join(modeDir, "safepaths.json"),
 		ReadPathsPath:        filepath.Join(modeDir, "readpaths.json"),
-		BypassPath:           filepath.Join(modeDir, "bypass.log"),
 		PersistentConfigPath: filepath.Join(modeDir, "config.json"),
 	}, nil
 }

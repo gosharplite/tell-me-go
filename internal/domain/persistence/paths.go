@@ -12,6 +12,5 @@ type Paths struct {
 	CommandsLogPath      string
 	SafePathsPath        string
 	ReadPathsPath        string
-	BypassPath           string
 	PersistentConfigPath string
 }

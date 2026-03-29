@@ -74,6 +74,7 @@ type Initializer interface {
 // PersistenceProvider provides access to domain-specific persistence services.
 type PersistenceProvider interface {
 	GetTasks() TaskStore
+	GetSettings() KVStore
 }
 
 // SessionStateProvider manages session-level metadata and state.

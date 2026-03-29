@@ -9,8 +9,44 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/stretchr/testify/mock"
 )
+
+type mockKVStore struct {
+	mock.Mock
+}
+
+func (m *mockKVStore) Get(ctx context.Context, key string) (string, error) {
+	args := m.Called(ctx, key)
+	return args.String(0), args.Error(1)
+}
+func (m *mockKVStore) Set(ctx context.Context, key, val string) error {
+	args := m.Called(ctx, key, val)
+	return args.Error(0)
+}
+func (m *mockKVStore) Delete(ctx context.Context, key string) error {
+	args := m.Called(ctx, key)
+	return args.Error(0)
+}
+func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(map[string]string), args.Error(1)
+}
+
+type mockSessionProvider struct {
+	mock.Mock
+}
+
+func (m *mockSessionProvider) GetTasks() ports.TaskStore { return nil }
+func (m *mockSessionProvider) GetSettings() ports.KVStore {
+	args := m.Called()
+	return args.Get(0).(ports.KVStore)
+}
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo { return ports.SessionInfo{} }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {}
+func (m *mockSessionProvider) Close() error { return nil }
 
 func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Context) {
 	tempDir := t.TempDir()
@@ -18,7 +54,12 @@ func setupPolicyTest(t *testing.T) (*SecurityManager, *policyTool, context.Conte
 	sm.SetSafePathsFile(filepath.Join(tempDir, "safepaths.json"))
 	sm.SetReadOnlyPathsFile(filepath.Join(tempDir, "readonlypaths.json"))
 
-	p := newPolicyTool(sm)
+	mockKV := new(mockKVStore)
+	mockKV.On("Set", mock.Anything, "bypass_confirmation", mock.Anything).Return(nil).Maybe()
+	mockSP := new(mockSessionProvider)
+	mockSP.On("GetSettings").Return(mockKV).Maybe()
+
+	p := newPolicyTool(sm, mockSP)
 	ctx := context.Background()
 	return sm, p, ctx
 }
@@ -274,9 +315,9 @@ func TestPolicyTool_BypassBehavior(t *testing.T) {
 
 func TestPolicy_Register(t *testing.T) {
 	t.Parallel()
-	sm, _, _ := setupPolicyTest(t)
+	sm, p, _ := setupPolicyTest(t)
 	r := registry.New()
-	if err := sm.RegisterPolicyTools(r); err != nil {
+	if err := sm.RegisterPolicyTools(r, p.sp); err != nil {
 		t.Fatalf("RegisterPolicyTools failed: %v", err)
 	}
 }
