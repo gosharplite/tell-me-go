@@ -6,6 +6,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -99,7 +100,8 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 	tasksFile := filepath.Join(tempDir, "tasks.json")
 	dbPath := filepath.Join(tempDir, "test3.db")
 
-	if err := fs.WriteFile(ctx, tasksFile, []byte("{invalid json"), 0644); err != nil {
+	// 1. Binary garbage/invalid json
+	if err := fs.WriteFile(ctx, tasksFile, []byte("{invalid json garbage \x00\x01\x02"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -109,9 +111,47 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	// This should log an error internally but not return err in migrateFromJSON, or log it
+	// Migration should log an error but not fail the boot process
 	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
 		t.Fatalf("migrateFromJSON failed with invalid json: %v", err)
+	}
+
+	// Verify table is empty but exists
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count); err != nil {
+		t.Fatalf("QueryRowContext failed: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("Expected 0 tasks, got %d", count)
+	}
+
+	// Idempotency: second call should still work
+	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
+		t.Fatalf("migrateFromJSON second run failed: %v", err)
+	}
+}
+
+func TestSQLiteMigrations_DirectoryAsFile(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := NewOSFileSystem()
+
+	tempDir := t.TempDir()
+	tasksDir := filepath.Join(tempDir, "tasks_is_dir")
+	if err := os.MkdirAll(tasksDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(tempDir, "test4.db")
+
+	db, err := initSQLiteDB(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Migration should handle directory as file path gracefully
+	if err := migrateFromJSON(ctx, db, fs, tasksDir); err != nil {
+		t.Fatalf("migrateFromJSON failed with directory as path: %v", err)
 	}
 }
 
@@ -121,4 +161,83 @@ func TestSQLiteMigrations_InvalidDBPath(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid db path")
 	}
+}
+
+func TestGetRetentionDays(t *testing.T) {
+	t.Run("Missing Database File", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dbPath := filepath.Join(tmpDir, "missing.db")
+		got := GetRetentionDays(dbPath)
+		if got != 30 {
+			t.Errorf("GetRetentionDays() = %d; want 30", got)
+		}
+	})
+
+	t.Run("Valid Retention Setting", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dbPath := filepath.Join(tmpDir, "valid.db")
+
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			t.Fatalf("failed to open sqlite: %v", err)
+		}
+		_, err = db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+		if err != nil {
+			t.Fatalf("failed to create table: %v", err)
+		}
+		_, err = db.Exec("INSERT INTO settings (key, value) VALUES ('backup_retention_days', '15')")
+		if err != nil {
+			t.Fatalf("failed to insert setting: %v", err)
+		}
+		db.Close()
+
+		got := GetRetentionDays(dbPath)
+		if got != 15 {
+			t.Errorf("GetRetentionDays() = %d; want 15", got)
+		}
+	})
+
+	t.Run("Missing Key", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dbPath := filepath.Join(tmpDir, "missing_key.db")
+
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			t.Fatalf("failed to open sqlite: %v", err)
+		}
+		_, err = db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+		if err != nil {
+			t.Fatalf("failed to create table: %v", err)
+		}
+		db.Close()
+
+		got := GetRetentionDays(dbPath)
+		if got != 30 {
+			t.Errorf("GetRetentionDays() = %d; want 30", got)
+		}
+	})
+
+	t.Run("Invalid Non-Numeric Value", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		dbPath := filepath.Join(tmpDir, "invalid_val.db")
+
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			t.Fatalf("failed to open sqlite: %v", err)
+		}
+		_, err = db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+		if err != nil {
+			t.Fatalf("failed to create table: %v", err)
+		}
+		_, err = db.Exec("INSERT INTO settings (key, value) VALUES ('backup_retention_days', 'abc')")
+		if err != nil {
+			t.Fatalf("failed to insert setting: %v", err)
+		}
+		db.Close()
+
+		got := GetRetentionDays(dbPath)
+		if got != 30 {
+			t.Errorf("GetRetentionDays() = %d; want 30", got)
+		}
+	})
 }

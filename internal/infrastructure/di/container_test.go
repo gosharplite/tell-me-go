@@ -6,6 +6,7 @@ package di
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"log/slog"
@@ -30,6 +31,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	_ "modernc.org/sqlite"
 )
 
 type mockLLMClient struct {
@@ -714,4 +717,74 @@ func TestGetToolNames(t *testing.T) {
 	// Check for a few common tools that should always be registered
 	assert.Contains(t, names, "list_files")
 	assert.Contains(t, names, "read_files")
+}
+
+func TestCrossSessionPersistence(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	mode := "assistant"
+
+	// 1. Manually create the DB and seed the bypass setting
+	dbDir := filepath.Join(tempDir, "output", mode)
+	err := os.MkdirAll(dbDir, 0755)
+	require.NoError(t, err)
+	dbPath := filepath.Join(dbDir, "tellmego.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	_, err = db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+	require.NoError(t, err)
+	_, err = db.Exec("INSERT INTO settings VALUES ('bypass_confirmation', 'true')")
+	require.NoError(t, err)
+	db.Close()
+
+	// 2. Setup SM Mock
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+	sm.On("SetBypassActive", true).Return() // Expect this!
+	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	// 3. Build Dependencies
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+	cfg := &config.Config{Mode: mode, Model: "test-model"}
+	_, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+
+	// 4. Verification
+	assert.NoError(t, err)
+	sm.AssertCalled(t, "SetBypassActive", true)
+	if cleanup != nil {
+		cleanup()
+	}
+}
+
+func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
+	ctx := context.Background()
+	
+	// Setup mocks
+	sm := new(mockConfigurableSecurityManager)
+	mockKV := new(mockKVStore)
+	mockSP := new(mockSessionProvider)
+	mockSP.On("GetSettings").Return(mockKV)
+
+	// Inject invalid JSON for paths
+	mockKV.On("Get", mock.Anything, "bypass_confirmation").Return("false", nil)
+	mockKV.On("Get", mock.Anything, "authorized_safe_paths").Return("invalid-json", nil)
+	mockKV.On("Get", mock.Anything, "authorized_read_paths").Return("invalid-json", nil)
+
+	// Capture logs
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	
+	bootstrapper := &bootstrapper{
+		SM:     sm,
+		Logger: logger,
+	}
+
+	bootstrapper.applySessionSecuritySettings(ctx, mockSP)
+
+	logOutput := logBuf.String()
+	assert.Contains(t, logOutput, "failed to unmarshal authorized_safe_paths")
+	assert.Contains(t, logOutput, "failed to unmarshal authorized_read_paths")
+	assert.Contains(t, logOutput, "invalid-json")
 }

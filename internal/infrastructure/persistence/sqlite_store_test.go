@@ -160,3 +160,94 @@ func TestStoreErrors(t *testing.T) {
 		t.Errorf("Expected error on closed db ReadAll")
 	}
 }
+
+func TestSQLiteKVStore(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	store := newSQLiteKVStore(db)
+	ctx := context.Background()
+
+	t.Run("Set and Get", func(t *testing.T) {
+		key, val := "theme", "dark"
+		if err := store.Set(ctx, key, val); err != nil {
+			t.Fatalf("Set failed: %v", err)
+		}
+
+		got, err := store.Get(ctx, key)
+		if err != nil {
+			t.Fatalf("Get failed: %v", err)
+		}
+		if got != val {
+			t.Errorf("Get = %q; want %q", got, val)
+		}
+	})
+
+	t.Run("Missing Key", func(t *testing.T) {
+		got, err := store.Get(ctx, "non_existent")
+		if err != nil {
+			t.Fatalf("Get failed: %v", err)
+		}
+		if got != "" {
+			t.Errorf("Get = %q; want empty string", got)
+		}
+	})
+
+	t.Run("Overwrite (Upsert)", func(t *testing.T) {
+		key := "theme"
+		if err := store.Set(ctx, key, "light"); err != nil {
+			t.Fatalf("Set failed: %v", err)
+		}
+
+		got, err := store.Get(ctx, key)
+		if err != nil {
+			t.Fatalf("Get failed: %v", err)
+		}
+		if got != "light" {
+			t.Errorf("Get = %q; want %q", got, "light")
+		}
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		key := "theme"
+		if err := store.Delete(ctx, key); err != nil {
+			t.Fatalf("Delete failed: %v", err)
+		}
+
+		got, err := store.Get(ctx, key)
+		if err != nil {
+			t.Fatalf("Get failed: %v", err)
+		}
+		if got != "" {
+			t.Errorf("Get = %q; want empty string after delete", got)
+		}
+	})
+
+	t.Run("GetAll", func(t *testing.T) {
+		// Clear table first if needed, but since it's a fresh DB in setupTestDB 
+		// (actually it's the same DB instance if I don't call setupTestDB again)
+		// I'll just use unique keys or check counts.
+		
+		settings := map[string]string{
+			"key1": "val1",
+			"key2": "val2",
+			"key3": "val3",
+		}
+
+		for k, v := range settings {
+			if err := store.Set(ctx, k, v); err != nil {
+				t.Fatalf("Set %s failed: %v", k, err)
+			}
+		}
+
+		all, err := store.GetAll(ctx)
+		if err != nil {
+			t.Fatalf("GetAll failed: %v", err)
+		}
+
+		for k, v := range settings {
+			if got, ok := all[k]; !ok || got != v {
+				t.Errorf("GetAll[%q] = %q; want %q", k, got, v)
+			}
+		}
+	})
+}

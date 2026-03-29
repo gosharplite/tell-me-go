@@ -217,7 +217,9 @@ func (b *bootstrapper) applySessionSecuritySettings(ctx stdctx.Context, sessionP
 	// Load authorized paths from settings
 	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_safe_paths"); err == nil && val != "" {
 		var safePaths []string
-		if err := json.Unmarshal([]byte(val), &safePaths); err == nil {
+		if err := json.Unmarshal([]byte(val), &safePaths); err != nil {
+			b.Logger.Error("failed to unmarshal authorized_safe_paths", "error", err, "value", val)
+		} else {
 			for _, p := range safePaths {
 				b.SM.RegisterSafePath(p)
 			}
@@ -225,7 +227,9 @@ func (b *bootstrapper) applySessionSecuritySettings(ctx stdctx.Context, sessionP
 	}
 	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_read_paths"); err == nil && val != "" {
 		var readPaths []string
-		if err := json.Unmarshal([]byte(val), &readPaths); err == nil {
+		if err := json.Unmarshal([]byte(val), &readPaths); err != nil {
+			b.Logger.Error("failed to unmarshal authorized_read_paths", "error", err, "value", val)
+		} else {
 			for _, p := range readPaths {
 				b.SM.RegisterReadOnlyPath(p)
 			}

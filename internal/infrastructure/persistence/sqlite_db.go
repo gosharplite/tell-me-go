@@ -22,9 +22,15 @@ func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
 
-	// Apply WAL pragma
-	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
-		return nil, fmt.Errorf("failed to set WAL mode: %w", err)
+	// Apply pragmas for resilience
+	pragmas := []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA busy_timeout=5000",
+	}
+	for _, p := range pragmas {
+		if _, err := db.ExecContext(ctx, p); err != nil {
+			return nil, fmt.Errorf("failed to set pragma %q: %w", p, err)
+		}
 	}
 
 	// Run schema migrations
@@ -76,9 +82,11 @@ func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem,
 }
 
 func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string) error {
-	if stat, _ := fs.Stat(ctx, tasksPath); stat == nil {
-		return nil
+	stat, err := fs.Stat(ctx, tasksPath)
+	if err != nil || stat == nil || stat.IsDir() {
+		return nil // Nothing to migrate, or not a file
 	}
+
 	oldTasks := newTaskRepository(fs, tasksPath)
 	tasks, err := oldTasks.ReadAll(ctx)
 	if err != nil {
@@ -92,11 +100,14 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 	if err != nil {
 		return fmt.Errorf("starting tasks migration transaction: %w", err)
 	}
+	// Defer rollback to ensure it's called on error
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	for _, t := range tasks {
 		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES (?, ?, ?, ?)",
 			int64(t.ID), t.Content, t.Status, t.CreatedAt.Format(time.RFC3339Nano)); err != nil {
-			_ = tx.Rollback()
 			return fmt.Errorf("inserting legacy task %d: %w", int(t.ID), err)
 		}
 	}
@@ -122,6 +133,9 @@ func GetRetentionDays(dbPath string) int {
 		return defaultDays
 	}
 	defer db.Close()
+
+	// Apply busy_timeout to prevent the probe from failing during concurrent sessions or migrations.
+	_, _ = db.Exec("PRAGMA busy_timeout = 5000;")
 
 	var value string
 	err = db.QueryRow("SELECT value FROM settings WHERE key = 'backup_retention_days'").Scan(&value)
