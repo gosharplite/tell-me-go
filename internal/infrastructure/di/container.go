@@ -220,25 +220,24 @@ func (b *bootstrapper) applySessionSecuritySettings(ctx stdctx.Context, sessionP
 	}
 
 	// Load authorized paths from settings
-	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_safe_paths"); err == nil && val != "" {
-		var safePaths []string
-		if err := json.Unmarshal([]byte(val), &safePaths); err != nil {
-			b.Logger.Error("failed to unmarshal authorized_safe_paths", "error", err, "value", val)
-		} else {
-			for _, p := range safePaths {
-				b.SM.RegisterSafePath(p)
-			}
-		}
+	loadPathsFromSettings(ctx, sessionProvider.GetSettings(), "authorized_safe_paths", b.SM.RegisterSafePath, b.Logger)
+	loadPathsFromSettings(ctx, sessionProvider.GetSettings(), "authorized_read_paths", b.SM.RegisterReadOnlyPath, b.Logger)
+}
+
+func loadPathsFromSettings(ctx stdctx.Context, kv ports.KVStore, key string, register func(string), logger *slog.Logger) {
+	val, err := kv.Get(ctx, key)
+	if err != nil || val == "" {
+		return
 	}
-	if val, err := sessionProvider.GetSettings().Get(ctx, "authorized_read_paths"); err == nil && val != "" {
-		var readPaths []string
-		if err := json.Unmarshal([]byte(val), &readPaths); err != nil {
-			b.Logger.Error("failed to unmarshal authorized_read_paths", "error", err, "value", val)
-		} else {
-			for _, p := range readPaths {
-				b.SM.RegisterReadOnlyPath(p)
-			}
-		}
+
+	var paths []string
+	if err := json.Unmarshal([]byte(val), &paths); err != nil {
+		logger.Error("failed to unmarshal "+key, "error", err, "value", val)
+		return
+	}
+
+	for _, p := range paths {
+		register(p)
 	}
 }
 

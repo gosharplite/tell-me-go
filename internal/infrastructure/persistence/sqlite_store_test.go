@@ -38,8 +38,8 @@ func TestSQLiteTaskStore(t *testing.T) {
 }
 
 func testTaskStoreReadEmpty(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -53,8 +53,8 @@ func testTaskStoreReadEmpty(t *testing.T) {
 }
 
 func testTaskStoreAppendAndRead(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -85,8 +85,8 @@ func testTaskStoreAppendAndRead(t *testing.T) {
 }
 
 func testTaskStoreUpdate(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -108,8 +108,8 @@ func testTaskStoreUpdate(t *testing.T) {
 }
 
 func testTaskStoreDelete(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -129,8 +129,8 @@ func testTaskStoreDelete(t *testing.T) {
 }
 
 func testTaskStoreDeleteAll(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
-	defer func() { _ = db.Close() }()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -149,25 +149,69 @@ func testTaskStoreDeleteAll(t *testing.T) {
 
 func TestStoreErrors(t *testing.T) {
 	t.Parallel()
-	db := setupTestDB(t)
-	_ = db.Close() // Close DB to force errors
 
-	ctx := context.Background()
+	t.Run("TaskStore Errors", func(t *testing.T) {
+		t.Parallel()
+		db := setupTestDB(t)
+		_ = db.Close() // Simulate connection drop
+		store := newSQLiteTaskStore(db)
+		ctx := context.Background()
 
-	// Task Store Errors
-	taskStore := newSQLiteTaskStore(db)
-	if _, err := taskStore.ReadAll(ctx); err == nil {
-		t.Errorf("Expected error on closed db ReadAll")
-	}
+		if _, err := store.ReadAll(ctx); err == nil {
+			t.Errorf("Expected error on ReadAll with closed DB")
+		}
+
+		if err := store.Append(ctx, ports.Task{ID: 1}); err == nil {
+			t.Errorf("Expected error on Append with closed DB")
+		}
+
+		if err := store.Update(ctx, 1, ports.Task{ID: 1}); err == nil {
+			t.Errorf("Expected error on Update with closed DB")
+		}
+
+		if err := store.Delete(ctx, 1); err == nil {
+			t.Errorf("Expected error on Delete with closed DB")
+		}
+
+		if err := store.DeleteAll(ctx); err == nil {
+			t.Errorf("Expected error on DeleteAll with closed DB")
+		}
+	})
+
+	t.Run("KVStore Errors", func(t *testing.T) {
+		t.Parallel()
+		db := setupTestDB(t)
+		_ = db.Close() // Simulate connection drop
+		store := newSQLiteKVStore(db)
+		ctx := context.Background()
+
+		if _, err := store.Get(ctx, "key"); err == nil {
+			t.Errorf("Expected error on Get with closed DB")
+		}
+
+		if err := store.Set(ctx, "key", "val"); err == nil {
+			t.Errorf("Expected error on Set with closed DB")
+		}
+
+		if err := store.Delete(ctx, "key"); err == nil {
+			t.Errorf("Expected error on Delete with closed DB")
+		}
+
+		if _, err := store.GetAll(ctx); err == nil {
+			t.Errorf("Expected error on GetAll with closed DB")
+		}
+	})
 }
 
 func TestSQLiteKVStore(t *testing.T) {
 	t.Parallel()
-	db := setupTestDB(t)
-	store := newSQLiteKVStore(db)
-	ctx := context.Background()
 
 	t.Run("Set and Get", func(t *testing.T) {
+		t.Parallel()
+		db := setupTestDB(t)
+		store := newSQLiteKVStore(db)
+		ctx := context.Background()
+
 		key, val := "theme", "dark"
 		if err := store.Set(ctx, key, val); err != nil {
 			t.Fatalf("Set failed: %v", err)
@@ -183,6 +227,11 @@ func TestSQLiteKVStore(t *testing.T) {
 	})
 
 	t.Run("Missing Key", func(t *testing.T) {
+		t.Parallel()
+		db := setupTestDB(t)
+		store := newSQLiteKVStore(db)
+		ctx := context.Background()
+
 		got, err := store.Get(ctx, "non_existent")
 		if err != nil {
 			t.Fatalf("Get failed: %v", err)
@@ -193,6 +242,11 @@ func TestSQLiteKVStore(t *testing.T) {
 	})
 
 	t.Run("Overwrite (Upsert)", func(t *testing.T) {
+		t.Parallel()
+		db := setupTestDB(t)
+		store := newSQLiteKVStore(db)
+		ctx := context.Background()
+
 		key := "theme"
 		if err := store.Set(ctx, key, "light"); err != nil {
 			t.Fatalf("Set failed: %v", err)
@@ -208,6 +262,11 @@ func TestSQLiteKVStore(t *testing.T) {
 	})
 
 	t.Run("Delete", func(t *testing.T) {
+		t.Parallel()
+		db := setupTestDB(t)
+		store := newSQLiteKVStore(db)
+		ctx := context.Background()
+
 		key := "theme"
 		if err := store.Delete(ctx, key); err != nil {
 			t.Fatalf("Delete failed: %v", err)
@@ -223,9 +282,10 @@ func TestSQLiteKVStore(t *testing.T) {
 	})
 
 	t.Run("GetAll", func(t *testing.T) {
-		// Clear table first if needed, but since it's a fresh DB in setupTestDB
-		// (actually it's the same DB instance if I don't call setupTestDB again)
-		// I'll just use unique keys or check counts.
+		t.Parallel()
+		db := setupTestDB(t)
+		store := newSQLiteKVStore(db)
+		ctx := context.Background()
 
 		settings := map[string]string{
 			"key1": "val1",
