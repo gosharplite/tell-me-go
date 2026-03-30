@@ -510,6 +510,7 @@ func TestSanitizeHTML(t *testing.T) {
 func TestHeartbeatConcurrency(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	tool := newnetworkTool(sm, nil)
+	tool.heartbeatInterval = 100 * time.Millisecond
 
 	// Use a buffered channel to avoid blocking
 	hb := make(chan struct{}, 10)
@@ -519,24 +520,28 @@ func TestHeartbeatConcurrency(t *testing.T) {
 	select {
 	case <-hb:
 		// Good
-	case <-time.After(3 * time.Second):
+	case <-time.After(1 * time.Second):
 		t.Fatal("Timeout waiting for heartbeat")
 	}
 
-	// Call stop twice - should not panic
-	stop()
+	// Call stop
 	stop()
 
-	// Ensure goroutine terminates (heartbeat stops)
-	select {
-	case <-hb:
-		t.Fatal("Heartbeat still active after stop")
-	default:
-		// Expected - no heartbeat
+	// Drain any existing heartbeats
+Loop:
+	for {
+		select {
+		case <-hb:
+		default:
+			break Loop
+		}
 	}
 
-	// Additional safety: wait a bit and ensure no more heartbeats
-	time.Sleep(100 * time.Millisecond)
+	// Call stop again - should not panic
+	stop()
+
+	// Ensure no new heartbeats are sent
+	time.Sleep(200 * time.Millisecond)
 	select {
 	case <-hb:
 		t.Fatal("Unexpected heartbeat after stop")
@@ -623,5 +628,142 @@ func TestTruncateUTF8Negative(t *testing.T) {
 	got := truncateUTF8("hello", -1)
 	if got != "" {
 		t.Errorf("truncateUTF8(\"hello\", -1) = %q, want \"\"", got)
+	}
+}
+
+func TestHttpRequest_ContextCancellation(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	mock := &mockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			// Wait for cancellation
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		},
+	}
+
+	tool := newnetworkTool(sm, mock)
+	tool.heartbeatInterval = 50 * time.Millisecond
+	args := map[string]interface{}{
+		"method": "GET",
+		"url":    "https://example.com",
+	}
+
+	hb := make(chan struct{}, 10)
+
+	// Start request in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := tool.HttpRequest(ctx, args, hb)
+		errCh <- err
+	}()
+
+	// Wait for at least one heartbeat
+	select {
+	case <-hb:
+		// Good
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for first heartbeat")
+	}
+
+	// Cancel context
+	cancel()
+
+	// Wait for error
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Expected context.Canceled error, got %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for HttpRequest to return after cancellation")
+	}
+
+	// Drain heartbeat
+Loop:
+	for {
+		select {
+		case <-hb:
+		default:
+			break Loop
+		}
+	}
+
+	// Verify no new heartbeats
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-hb:
+		t.Fatal("Heartbeat still running after cancellation")
+	default:
+		// OK
+	}
+}
+
+func TestReadExternalDocs_ContextCancellation(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	mock := &mockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			// Wait for cancellation
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		},
+	}
+
+	tool := newnetworkTool(sm, mock)
+	tool.heartbeatInterval = 50 * time.Millisecond
+	args := map[string]interface{}{
+		"url": "https://example.com/docs",
+	}
+
+	hb := make(chan struct{}, 10)
+
+	// Start request in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := tool.ReadExternalDocs(ctx, args, hb)
+		errCh <- err
+	}()
+
+	// Wait for at least one heartbeat
+	select {
+	case <-hb:
+		// Good
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for first heartbeat")
+	}
+
+	// Cancel context
+	cancel()
+
+	// Wait for error
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Expected context.Canceled error, got %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for ReadExternalDocs to return after cancellation")
+	}
+
+	// Drain heartbeat
+Loop:
+	for {
+		select {
+		case <-hb:
+		default:
+			break Loop
+		}
+	}
+
+	// Verify no new heartbeats
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-hb:
+		t.Fatal("Heartbeat still running after cancellation")
+	default:
+		// OK
 	}
 }

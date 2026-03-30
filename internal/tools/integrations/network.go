@@ -29,22 +29,31 @@ var (
 )
 
 type networkTool struct {
-	sm     security.TerminalController
-	client tools.HTTPClient
+	sm                security.TerminalController
+	client            tools.HTTPClient
+	heartbeatInterval time.Duration
 }
 
 func newnetworkTool(sm security.TerminalController, client tools.HTTPClient) *networkTool {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	return &networkTool{sm: sm, client: client}
+	return &networkTool{
+		sm:                sm,
+		client:            client,
+		heartbeatInterval: 2 * time.Second,
+	}
 }
 
 func (t *networkTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 	done := make(chan struct{})
 	var once sync.Once
+	interval := t.heartbeatInterval
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
