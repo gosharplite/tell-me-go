@@ -87,17 +87,21 @@ func (t *networkTool) readResponseWithLimit(r io.Reader, limit int64) (string, b
 // truncateUTF8 truncates a string to at most maxBytes bytes, ensuring the result
 // is valid UTF-8 by removing bytes from the end until valid.
 func truncateUTF8(s string, maxBytes int) string {
-	if maxBytes < 0 {
+	if maxBytes <= 0 {
 		return ""
 	}
 	if len(s) <= maxBytes {
 		return s
 	}
 	s = s[:maxBytes]
-	for len(s) > 0 && !utf8.ValidString(s) {
+	for len(s) > 0 {
+		r, size := utf8.DecodeLastRuneInString(s)
+		if r != utf8.RuneError || size == 3 {
+			return s
+		}
 		s = s[:len(s)-1]
 	}
-	return s
+	return ""
 }
 
 func (t *networkTool) sanitizeHTML(content string) string {
