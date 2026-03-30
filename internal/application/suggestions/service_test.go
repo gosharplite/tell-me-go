@@ -21,8 +21,8 @@ import (
 )
 
 type mockPromptTracker struct {
-	mu      sync.RWMutex
-	prompts []string
+	mu       sync.RWMutex
+	prompts  []string
 	appended chan struct{}
 }
 
@@ -571,7 +571,7 @@ func TestMultiSourceSuggestionService_Close_WaitsForBackgroundTasks(t *testing.T
 
 func TestNewMultiSourceSuggestionService_NilLogger(t *testing.T) {
 	tracker := &errorPromptTracker{}
-	
+
 	// This should NOT panic even if tracker fails and logger is nil
 	defer func() {
 		if r := recover(); r != nil {
@@ -588,11 +588,11 @@ func TestNewMultiSourceSuggestionService_NilLogger(t *testing.T) {
 func TestRecordPrompt_NilLogger(t *testing.T) {
 	// We need a tracker that fails Append
 	failTracker := &failingAppendTracker{}
-	
+
 	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), failTracker, nil, nil)
-	
+
 	_ = service.RecordPrompt(context.Background(), "test")
-	
+
 	// Wait a bit for the goroutine to run and potentially panic
 	_ = service.Close(context.Background())
 }

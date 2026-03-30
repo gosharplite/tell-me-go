@@ -48,7 +48,7 @@ func (m *mockSuggestionService) GetSuggestions(ctx stdctx.Context, prefix string
 	return nil, nil
 }
 func (m *mockSuggestionService) RecordPrompt(ctx stdctx.Context, prompt string) error { return nil }
-func (m *mockSuggestionService) Close(ctx stdctx.Context) error                      { return nil }
+func (m *mockSuggestionService) Close(ctx stdctx.Context) error                       { return nil }
 
 type mockSM struct {
 	domain_security.Manager
