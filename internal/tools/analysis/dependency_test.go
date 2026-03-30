@@ -2,19 +2,48 @@ package analysis
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
 	t.Parallel()
+	tmpDir := t.TempDir()
 	module := "example.com/mod"
-	graphData := module + "/pkg1 -> [" + module + "/pkg2 " + module + "/pkg3]\n" +
-		module + "/pkg2 -> []\n" +
-		module + "/pkg3 -> [" + module + "/pkg2]"
 
-	mockExec := setupDependencyMock(module, graphData)
+	// Create a dummy project structure
+	pkg1 := filepath.Join(tmpDir, "pkg1")
+	pkg2 := filepath.Join(tmpDir, "pkg2")
+	pkg3 := filepath.Join(tmpDir, "pkg3")
+
+	_ = os.MkdirAll(pkg1, 0755)
+	_ = os.MkdirAll(pkg2, 0755)
+	_ = os.MkdirAll(pkg3, 0755)
+
+	_ = os.WriteFile(filepath.Join(pkg1, "f1.go"), []byte("package pkg1\nimport \"example.com/mod/pkg2\"\nimport \"example.com/mod/pkg3\""), 0644)
+	_ = os.WriteFile(filepath.Join(pkg2, "f2.go"), []byte("package pkg2"), 0644)
+	_ = os.WriteFile(filepath.Join(pkg3, "f3.go"), []byte("package pkg3\nimport \"example.com/mod/pkg2\""), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/mod"), 0644)
+
+	mockExec := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "-m" {
+				if len(args) > 2 && args[2] == "-f" {
+					return []byte(tmpDir), nil
+				}
+				return []byte(module), nil
+			}
+			return nil, nil
+		},
+	}
+
 	analyzer := newDependencyAnalyzer(mockExec, &mockSecurityProvider{}, nil)
+
+	// Set workdir to tmpDir so that go list -m works
+	// In a real scenario, the tool would run in the project root.
+	// Our mock handles the go list calls.
 
 	res, err := analyzer.GetPackageGraph(context.Background(), nil, nil)
 	if err != nil {
@@ -22,23 +51,6 @@ func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
 	}
 
 	verifyPackageGraphResults(t, res.Text, module)
-}
-
-func setupDependencyMock(moduleName, graphOutput string) *mockExecutor {
-	return &mockExecutor{
-		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "-m" {
-				return []byte(moduleName), nil
-			}
-			return nil, nil
-		},
-		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "-f" {
-				return []byte(graphOutput), nil
-			}
-			return nil, nil
-		},
-	}
 }
 
 func verifyPackageGraphResults(t *testing.T, output, module string) {

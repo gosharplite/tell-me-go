@@ -91,30 +91,25 @@ func TestResolveEndpoint(t *testing.T) {
 }
 
 func TestDynamicEndpointIntegration(t *testing.T) {
-	var capturedPath string
-	var capturedBody string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.Path
-		body, _ := io.ReadAll(r.Body)
-		capturedBody = string(body)
+	type testCase struct {
+		name            string
+		model           string
+		reasoningEffort string
+		history         []*llm.Content
+		toolDecls       []*tools.ToolDeclaration
+		mockResponse    string
+		expectedPath    string
+		validateBody    func(t *testing.T, body string)
+	}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		if capturedPath == "/responses" {
-			// Verify flattened tools for Responses API
-			if !strings.Contains(capturedBody, `"tools":`) {
-				t.Error("expected body to contain 'tools'")
-			}
-			if !strings.Contains(capturedBody, `"name":"test_tool"`) || strings.Contains(capturedBody, `"function":{`) {
-				t.Errorf("expected flattened tool structure in Responses API, got %s", capturedBody)
-			}
-			// Verify block-based input for Responses API
-			if !strings.Contains(capturedBody, `"type":"input_text"`) || !strings.Contains(capturedBody, `"text":"Hi"`) {
-				t.Errorf("expected block-based content in Responses API, got %s", capturedBody)
-			}
-
-			_, _ = w.Write([]byte(`{
+	tests := []testCase{
+		{
+			name:            "Uses /responses and 'input' field for GPT-5.4+",
+			model:           "gpt-5.4",
+			reasoningEffort: "high",
+			history:         []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}},
+			toolDecls:       []*tools.ToolDeclaration{{Name: "test_tool"}},
+			mockResponse: `{
 				"id": "resp_123",
 				"output": [{
 					"type": "message",
@@ -124,69 +119,92 @@ func TestDynamicEndpointIntegration(t *testing.T) {
 					}
 				}],
 				"usage": {"total_tokens": 100}
-			}`))
-		} else {
-			// Verify nested tools for legacy Chat API if tools are present
-			if strings.Contains(capturedBody, `"tools"`) {
-				if !strings.Contains(capturedBody, `"function":{`) || !strings.Contains(capturedBody, `"name":"test_tool"`) {
-					t.Errorf("expected nested tool structure in legacy API, got %s", capturedBody)
+			}`,
+			expectedPath: "/responses",
+			validateBody: func(t *testing.T, body string) {
+				t.Helper()
+				if !strings.Contains(body, `"input"`) || strings.Contains(body, `"messages"`) {
+					t.Errorf("expected body to contain 'input' and not 'messages', got %s", body)
 				}
+				if !strings.Contains(body, `"tools":`) {
+					t.Error("expected body to contain 'tools'")
+				}
+				if !strings.Contains(body, `"name":"test_tool"`) || strings.Contains(body, `"function":{`) {
+					t.Errorf("expected flattened tool structure in Responses API, got %s", body)
+				}
+				if !strings.Contains(body, `"type":"input_text"`) || !strings.Contains(body, `"text":"Hi"`) {
+					t.Errorf("expected block-based content in Responses API, got %s", body)
+				}
+				if !strings.Contains(body, `"reasoning":`) || !strings.Contains(body, `"effort":"high"`) {
+					t.Errorf("expected body to contain nested 'reasoning.effort', got %s", body)
+				}
+				if strings.Contains(body, `"reasoning_effort"`) {
+					t.Errorf("expected body to NOT contain top-level 'reasoning_effort', got %s", body)
+				}
+			},
+		},
+		{
+			name:            "Uses /chat/completions for GPT-4",
+			model:           "gpt-4",
+			reasoningEffort: "low",
+			history:         []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}},
+			mockResponse:    `{"choices":[{"message":{"role":"assistant","content":"chat-ok"}}],"usage":{"total_tokens":10}}`,
+			expectedPath:    "/chat/completions",
+			validateBody: func(t *testing.T, body string) {
+				t.Helper()
+				if strings.Contains(body, `"reasoning_effort"`) {
+					t.Errorf("expected body NOT to contain top-level 'reasoning_effort' for GPT-4, got %s", body)
+				}
+				if strings.Contains(body, `"reasoning":`) {
+					t.Errorf("expected body to NOT contain nested 'reasoning', got %s", body)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var capturedPath string
+			var capturedBody string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedPath = r.URL.Path
+				body, _ := io.ReadAll(r.Body)
+				capturedBody = string(body)
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(tt.mockResponse))
+			}))
+			defer server.Close()
+
+			headers := make(map[string]string)
+			if tt.reasoningEffort != "" {
+				headers["reasoning_effort"] = tt.reasoningEffort
 			}
 
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"chat-ok"}}]}`))
-		}
-	}))
-	defer server.Close()
+			c := NewClient(server.URL, tt.model, &auth.BearerAuth{Token: "key"}, headers, "", 0, 100, nil)
+			resp, _, err := c.SendChat(context.Background(), tt.history, tt.toolDecls, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	t.Run("Uses /responses and 'input' field for GPT-5.4+", func(t *testing.T) {
-		c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
-		
-		history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}
-		toolDecls := []*tools.ToolDeclaration{{Name: "test_tool"}}
-		
-		resp, _, err := c.SendChat(context.Background(), history, toolDecls, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+			if capturedPath != tt.expectedPath {
+				t.Errorf("expected path %s, got %s", tt.expectedPath, capturedPath)
+			}
+			tt.validateBody(t, capturedBody)
 
-		if capturedPath != "/responses" {
-			t.Errorf("expected path /responses, got %s", capturedPath)
-		}
-		if !strings.Contains(capturedBody, `"input"`) || strings.Contains(capturedBody, `"messages"`) {
-			t.Errorf("expected body to contain 'input' and not 'messages', got %s", capturedBody)
-		}
-		// Verify nested reasoning effort for Responses API
-		if !strings.Contains(capturedBody, `"reasoning":`) || !strings.Contains(capturedBody, `"effort":"high"`) {
-			t.Errorf("expected body to contain nested 'reasoning.effort', got %s", capturedBody)
-		}
-		if strings.Contains(capturedBody, `"reasoning_effort"`) {
-			t.Errorf("expected body to NOT contain top-level 'reasoning_effort', got %s", capturedBody)
-		}
-
-		if resp.Parts[0].Text != "responses-ok" {
-			t.Errorf("expected text responses-ok, got %s", resp.Parts[0].Text)
-		}
-	})
-
-	t.Run("Uses /chat/completions for GPT-4", func(t *testing.T) {
-		c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "low"}, "", 0, 100, nil)
-		history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}
-		
-		_, _, err := c.SendChat(context.Background(), history, nil, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if capturedPath != "/chat/completions" {
-			t.Errorf("expected path /chat/completions, got %s", capturedPath)
-		}
-		if strings.Contains(capturedBody, `"reasoning_effort"`) {
-			t.Errorf("expected body NOT to contain top-level 'reasoning_effort' for GPT-4, got %s", capturedBody)
-		}
-		if strings.Contains(capturedBody, `"reasoning":`) {
-			t.Errorf("expected body to NOT contain nested 'reasoning', got %s", capturedBody)
-		}
-	})
+			// Simple check that response was parsed correctly based on mock
+			if tt.expectedPath == "/responses" {
+				if resp.Parts[0].Text != "responses-ok" {
+					t.Errorf("expected text responses-ok, got %s", resp.Parts[0].Text)
+				}
+			} else {
+				if resp.Parts[0].Text != "chat-ok" {
+					t.Errorf("expected text chat-ok, got %s", resp.Parts[0].Text)
+				}
+			}
+		})
+	}
 }
 
 func TestAlternativeUsageAndPolymorphicText(t *testing.T) {

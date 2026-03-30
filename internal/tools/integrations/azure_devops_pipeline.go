@@ -534,39 +534,18 @@ func (m *adoManager) streamRegexFilter(ctx context.Context, reader io.Reader, qu
 	}
 
 	state := newLogFilterState(opts.ContextLines)
-	scanner := bufio.NewScanner(reader)
-	const maxCapacity = 1 * 1024 * 1024
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, maxCapacity)
-
 	maxMatchedLines := opts.MaxLines
 	if maxMatchedLines <= 0 {
 		maxMatchedLines = 1000
 	}
 	matchCount := 0
 	truncated := false
-	count := 0
 
-	for scanner.Scan() {
-		// Respect cancellation
-		if ctx.Err() != nil {
-			return filterResult{}, ctx.Err()
-		}
-
-		// Emit heartbeat every 1000 lines
-		count++
-		if count%1000 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
-
-		line := scanner.Text()
+	_, err = m.scanLog(ctx, reader, hb, func(line string) (bool, error) {
 		if re.MatchString(line) {
 			if matchCount >= maxMatchedLines {
 				truncated = true
-				break
+				return false, nil
 			}
 			state.addMatch(line)
 			matchCount++
@@ -574,10 +553,11 @@ func (m *adoManager) streamRegexFilter(ctx context.Context, reader io.Reader, qu
 			state.addNonMatch(line)
 		}
 		state.updateWindow(line)
-	}
+		return true, nil
+	})
 
-	if err := scanner.Err(); err != nil {
-		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+	if err != nil {
+		return filterResult{}, err
 	}
 
 	content := state.result.String()
@@ -679,51 +659,35 @@ func (m *adoManager) streamPagination(ctx context.Context, reader io.Reader, sta
 	if startLine <= 0 {
 		startLine = 1
 	}
-	scanner := bufio.NewScanner(reader)
-	const maxCapacity = 1 * 1024 * 1024
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, maxCapacity)
-
 	var result strings.Builder
-	count := 0
+	localCount := 0
 	printed := 0
 	truncated := false
-	for scanner.Scan() {
-		// Respect cancellation
-		if ctx.Err() != nil {
-			return filterResult{}, ctx.Err()
-		}
 
-		// Emit heartbeat every 1000 lines
-		count++
-		if count%1000 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
-
-		if count < startLine {
-			continue
+	totalLines, err := m.scanLog(ctx, reader, hb, func(line string) (bool, error) {
+		localCount++
+		if localCount < startLine {
+			return true, nil
 		}
 		if maxLines > 0 && printed >= maxLines {
 			truncated = true
-			break
+			return false, nil
 		}
 		if printed > 0 {
 			result.WriteString("\n")
 		}
-		result.WriteString(scanner.Text())
+		result.WriteString(line)
 		printed++
-	}
+		return true, nil
+	})
 
-	if err := scanner.Err(); err != nil {
-		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+	if err != nil {
+		return filterResult{}, err
 	}
 
 	content := result.String()
-	if count < startLine && count > 0 {
-		content = fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, count)
+	if totalLines < startLine && totalLines > 0 {
+		content = fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, totalLines)
 	}
 
 	return filterResult{
@@ -734,40 +698,25 @@ func (m *adoManager) streamPagination(ctx context.Context, reader io.Reader, sta
 }
 
 func (m *adoManager) streamHead(ctx context.Context, reader io.Reader, n int, hb chan<- struct{}) (filterResult, error) {
-	scanner := bufio.NewScanner(reader)
-	const maxCapacity = 1 * 1024 * 1024
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, maxCapacity)
-
 	var result strings.Builder
-	count := 0
+	localCount := 0
 	truncated := false
-	for scanner.Scan() && count < n {
-		// Respect cancellation
-		if ctx.Err() != nil {
-			return filterResult{}, ctx.Err()
-		}
 
-		// Emit heartbeat every 1000 lines
-		if count > 0 && count%1000 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
+	count, err := m.scanLog(ctx, reader, hb, func(line string) (bool, error) {
+		localCount++
+		if localCount > n {
+			truncated = true
+			return false, nil
 		}
-
-		if count > 0 {
+		if localCount > 1 {
 			result.WriteString("\n")
 		}
-		result.WriteString(scanner.Text())
-		count++
-	}
-	if scanner.Scan() {
-		truncated = true
-	}
+		result.WriteString(line)
+		return true, nil
+	})
 
-	if err := scanner.Err(); err != nil {
-		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+	if err != nil {
+		return filterResult{}, err
 	}
 
 	return filterResult{
@@ -784,59 +733,32 @@ func (m *adoManager) streamTail(ctx context.Context, reader io.Reader, n int, hb
 	if n > 10000 {
 		n = 10000
 	}
-	scanner := bufio.NewScanner(reader)
-	const maxCapacity = 1 * 1024 * 1024
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, maxCapacity)
 
 	ring := make([]string, n)
-	count := 0
-	for scanner.Scan() {
-		// Respect cancellation
-		if ctx.Err() != nil {
-			return filterResult{}, ctx.Err()
-		}
+	localCount := 0
+	count, err := m.scanLog(ctx, reader, hb, func(line string) (bool, error) {
+		ring[localCount%n] = line
+		localCount++
+		return true, nil
+	})
 
-		// Emit heartbeat every 1000 lines
-		if count > 0 && count%1000 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
-
-		ring[count%n] = scanner.Text()
-		count++
-	}
-
-	if err := scanner.Err(); err != nil {
-		return filterResult{}, fmt.Errorf("log stream interrupted: %w", err)
+	if err != nil {
+		return filterResult{}, err
 	}
 
 	if count == 0 {
 		return filterResult{}, nil
 	}
 
-	var result strings.Builder
-	start := 0
-	if count > n {
-		start = count % n
-	}
+	content := m.assembleTail(ring, count, n)
 
 	limit := n
 	if count < n {
 		limit = count
 	}
 
-	for i := 0; i < limit; i++ {
-		if i > 0 {
-			result.WriteString("\n")
-		}
-		result.WriteString(ring[(start+i)%n])
-	}
-
 	return filterResult{
-		Content:    result.String(),
+		Content:    content,
 		Truncated:  count > n,
 		TotalLines: limit,
 	}, nil
@@ -1337,4 +1259,61 @@ func (m *adoManager) adoUpdateBuildDefinitionVariables(ctx context.Context, args
 	defer func() { _ = putResp.Body.Close() }()
 
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully updated variables for build definition %d", params.DefinitionId)}, nil
+}
+
+func (m *adoManager) scanLog(ctx context.Context, reader io.Reader, hb chan<- struct{}, processFn func(line string) (bool, error)) (int, error) {
+	scanner := bufio.NewScanner(reader)
+	const maxCapacity = 1 * 1024 * 1024
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxCapacity)
+
+	count := 0
+	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return count, err
+		}
+
+		count++
+		if count%1000 == 0 && hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+
+		continueScan, err := processFn(scanner.Text())
+		if err != nil {
+			return count, err
+		}
+		if !continueScan {
+			break
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return count, fmt.Errorf("log stream interrupted: %w", err)
+	}
+
+	return count, nil
+}
+
+func (m *adoManager) assembleTail(ring []string, count, n int) string {
+	var result strings.Builder
+	start := 0
+	if count > n {
+		start = count % n
+	}
+
+	limit := n
+	if count < n {
+		limit = count
+	}
+
+	for i := 0; i < limit; i++ {
+		if i > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString(ring[(start+i)%n])
+	}
+	return result.String()
 }

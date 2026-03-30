@@ -24,19 +24,21 @@ func (m *mockSuggestionSvc) RecordPrompt(ctx context.Context, prompt string) err
 	return nil
 }
 
-func TestModel_Update(t *testing.T) {
-	tests := []struct {
-		name          string
-		initialInput  string
-		initialSuggs  []string
-		initialIdx    int
-		msg           tea.Msg
-		wantSubmitted bool
-		wantAborted   bool
-		wantCmd       bool
-		wantFinal     string
-		wantIdx       int
-	}{
+type promptUpdateTestCase struct {
+	name          string
+	initialInput  string
+	initialSuggs  []string
+	initialIdx    int
+	msg           tea.Msg
+	wantSubmitted bool
+	wantAborted   bool
+	wantCmd       bool
+	wantFinal     string
+	wantIdx       int
+}
+
+func submissionTestCases() []promptUpdateTestCase {
+	return []promptUpdateTestCase{
 		{
 			name:          "Empty input Alt+Enter",
 			initialInput:  "   ",
@@ -65,6 +67,11 @@ func TestModel_Update(t *testing.T) {
 			wantFinal:     "hello",
 			wantIdx:       -1,
 		},
+	}
+}
+
+func abortionTestCases() []promptUpdateTestCase {
+	return []promptUpdateTestCase{
 		{
 			name:        "Abort Esc",
 			initialIdx:  -1,
@@ -81,6 +88,11 @@ func TestModel_Update(t *testing.T) {
 			wantCmd:     true,
 			wantIdx:     -1,
 		},
+	}
+}
+
+func navigationTestCases() []promptUpdateTestCase {
+	return []promptUpdateTestCase{
 		{
 			name:         "Tab cycle 1",
 			initialIdx:   -1,
@@ -107,6 +119,11 @@ func TestModel_Update(t *testing.T) {
 			wantFinal:    "foo",
 			wantIdx:      0,
 		},
+	}
+}
+
+func systemTestCases() []promptUpdateTestCase {
+	return []promptUpdateTestCase{
 		{
 			name:       "Input changed (debounce)",
 			initialIdx: -1,
@@ -128,6 +145,14 @@ func TestModel_Update(t *testing.T) {
 			wantIdx:    -1,
 		},
 	}
+}
+
+func TestModel_Update(t *testing.T) {
+	var tests []promptUpdateTestCase
+	tests = append(tests, submissionTestCases()...)
+	tests = append(tests, abortionTestCases()...)
+	tests = append(tests, navigationTestCases()...)
+	tests = append(tests, systemTestCases()...)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

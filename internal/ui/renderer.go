@@ -277,92 +277,20 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	}
 
 	ui := r.getUIState()
-	timestamp := status.Timestamp.Format("15:04:05")
-	stderr := ui.stderr
 
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
-	modeStr := ""
-	if status.Mode != "" {
-		modeStr = fmt.Sprintf(" - %s", status.Mode)
-	}
-
-	printSystemLine := func(tks int, isActual bool) {
-		tokenColor := colorReset
-		if float64(tks) > float64(status.MaxHistoryTokens)*config.WarningRatio {
-			tokenColor = colorYellow // Yellow caution
-		}
-		if float64(tks) > float64(status.MaxHistoryTokens) {
-			tokenColor = colorRed // Red limit
-		}
-
-		if isActual {
-			_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: %s%d%s/%d tokens%s%s\n",
-				ui.c(colorGray), timestamp, ui.c(tokenColor), tks, ui.c(colorGray), status.MaxHistoryTokens, modeStr, ui.c(colorReset))
-		} else {
-			_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: ~%s%d%s/%d tokens%s%s\n",
-				ui.c(colorGray), timestamp, ui.c(tokenColor), tks, ui.c(colorGray), status.MaxHistoryTokens, modeStr, ui.c(colorReset))
-		}
-	}
-
 	if !status.IsPostCall && !status.IsFinal {
-		_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
-
-		if status.MaxHistoryTurns > 0 {
-			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d/%d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, modeStr, ui.c(colorGray))
-		} else {
-			_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, modeStr, ui.c(colorGray))
-		}
-
-		printSystemLine(status.Tokens, false)
-		_, _ = fmt.Fprintln(stderr) // Ensure visual gap before response
+		r.renderTurnHeader(ui, status)
 	}
 
 	if status.IsPostCall && status.Metrics != nil {
-		m := status.Metrics
-
-		if len(status.ToolReasons) > 0 {
-			for _, reason := range status.ToolReasons {
-				_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
-					ui.c(colorGray), status.Timestamp.Format("15:04:05"), reason, ui.c(colorReset))
-			}
-		}
-
-		printSystemLine(int(m.PromptTokens), true)
-		r.renderMetricsLineLocked(ui, m, status.StartTime)
+		r.renderPostCallStatus(ui, status)
 	}
 
 	if status.IsFinal {
-		costStr := ""
-		if status.SessionCost > 0 {
-			hitRate := 0.0
-			if total := status.TotalM + status.TotalH; total > 0 {
-				hitRate = float64(status.TotalH) / float64(total) * 100
-			}
-
-			// Safe access to metrics; metrics could be nil if the turn stopped before inference
-			turnCost := 0.0
-			if status.Metrics != nil {
-				turnCost = status.Metrics.Cost
-			}
-
-			// Format: (TurnCost TaskCost SessionCost DailyCost M: ... H: ... O: ...)
-			// Highlight ONLY the SessionCost ($1.4745 in user example).
-			costStr = fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
-				ui.c(colorGray),
-				turnCost, status.TaskCost,
-				ui.c(colorGreen), status.SessionCost,
-				ui.c(colorGray), status.DailyCost,
-				ui.c(colorGray),
-				status.TotalM,
-				status.TotalH,
-				hitRate,
-				status.TotalO,
-				ui.c(colorGray))
-		}
-
-		_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
+		r.renderFinalSummary(ui, status)
 	}
 }
 
@@ -627,4 +555,100 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string) {
 	r.drawLoadingIndicator(ui, frames[*idx], startTime, status)
 	*idx = (*idx + 1) % len(frames)
+}
+
+func (r *stdUIRenderer) printTokenLine(ui uiState, timestamp string, tokens int, maxTokens int, isActual bool, mode string) {
+	stderr := ui.stderr
+	tokenColor := colorReset
+	if float64(tokens) > float64(maxTokens)*config.WarningRatio {
+		tokenColor = colorYellow // Yellow caution
+	}
+	if float64(tokens) > float64(maxTokens) {
+		tokenColor = colorRed // Red limit
+	}
+
+	modeStr := ""
+	if mode != "" {
+		modeStr = fmt.Sprintf(" - %s", mode)
+	}
+
+	prefix := "~"
+	if isActual {
+		prefix = ""
+	}
+
+	_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: %s%s%s%d%s/%d tokens%s%s\n",
+		ui.c(colorGray), timestamp, prefix, ui.c(tokenColor), "", tokens, ui.c(colorGray), maxTokens, modeStr, ui.c(colorReset))
+}
+
+func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) string {
+	if status.SessionCost <= 0 {
+		return ""
+	}
+
+	hitRate := 0.0
+	if total := status.TotalM + status.TotalH; total > 0 {
+		hitRate = float64(status.TotalH) / float64(total) * 100
+	}
+
+	// Safe access to metrics; metrics could be nil if the turn stopped before inference
+	turnCost := 0.0
+	if status.Metrics != nil {
+		turnCost = status.Metrics.Cost
+	}
+
+	// Format: (TurnCost TaskCost SessionCost DailyCost M: ... H: ... O: ...)
+	return fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
+		ui.c(colorGray),
+		turnCost, status.TaskCost,
+		ui.c(colorGreen), status.SessionCost,
+		ui.c(colorGray), status.DailyCost,
+		ui.c(colorGray),
+		status.TotalM,
+		status.TotalH,
+		hitRate,
+		status.TotalO,
+		ui.c(colorGray))
+}
+
+func (r *stdUIRenderer) renderTurnHeader(ui uiState, status events.TurnStatus) {
+	stderr := ui.stderr
+	timestamp := status.Timestamp.Format("15:04:05")
+	modeStr := ""
+	if status.Mode != "" {
+		modeStr = fmt.Sprintf(" - %s", status.Mode)
+	}
+
+	_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
+
+	if status.MaxHistoryTurns > 0 {
+		_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d/%d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, modeStr, ui.c(colorGray))
+	} else {
+		_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, modeStr, ui.c(colorGray))
+	}
+
+	r.printTokenLine(ui, timestamp, status.Tokens, status.MaxHistoryTokens, false, status.Mode)
+	_, _ = fmt.Fprintln(stderr) // Ensure visual gap before response
+}
+
+func (r *stdUIRenderer) renderPostCallStatus(ui uiState, status events.TurnStatus) {
+	stderr := ui.stderr
+	timestamp := status.Timestamp.Format("15:04:05")
+	m := status.Metrics
+
+	if len(status.ToolReasons) > 0 {
+		for _, reason := range status.ToolReasons {
+			_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
+				ui.c(colorGray), timestamp, reason, ui.c(colorReset))
+		}
+	}
+
+	r.printTokenLine(ui, timestamp, int(m.PromptTokens), status.MaxHistoryTokens, true, status.Mode)
+	r.renderMetricsLineLocked(ui, m, status.StartTime)
+}
+
+func (r *stdUIRenderer) renderFinalSummary(ui uiState, status events.TurnStatus) {
+	stderr := ui.stderr
+	costStr := r.formatFinalCost(status, ui)
+	_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
 }
