@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -25,21 +26,30 @@ type multiSourceSuggestionService struct {
 	history   []string
 	tracker   ports.PromptTracker
 	fs        persistence.FileSystem
+	wg        sync.WaitGroup
+	stateMu   sync.RWMutex
+	closing   bool
+	logger    io.Writer
 }
 
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the history.
-func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string) (ports.SuggestionService, error) {
+func NewMultiSourceSuggestionService(ctx context.Context, fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string, logger io.Writer) (ports.SuggestionService, error) {
+	if logger == nil {
+		logger = io.Discard
+	}
+
 	s := &multiSourceSuggestionService{
 		history: make([]string, 0),
 		tracker: tracker,
 		fs:      fs,
+		logger:  logger,
 	}
 
 	// 1. Pre-load Global Top Prompts
-	topPrompts, err := tracker.LoadTopN(context.Background(), 50)
+	topPrompts, err := tracker.LoadTopN(ctx, 50)
 	if err != nil {
 		// Log error but continue with what we have
-		fmt.Fprintf(os.Stderr, "Warning: failed to load top prompts: %v\n", err)
+		_, _ = fmt.Fprintf(s.logger, "Warning: failed to load top prompts: %v\n", err)
 	}
 
 	seen := make(map[string]bool)
@@ -125,8 +135,51 @@ func (s *multiSourceSuggestionService) RecordPrompt(ctx context.Context, prompt 
 	s.history = updated
 	s.historyMu.Unlock()
 
-	// 2. Synchronous persistent update
-	return s.tracker.Append(ctx, prompt)
+	// 2. Asynchronous persistent update
+	// We use context.WithoutCancel to ensure the write completes even if the request context is cancelled.
+	// A goroutine is used to prevent blocking the UI thread.
+	s.stateMu.RLock()
+	if s.closing {
+		s.stateMu.RUnlock()
+		return nil
+	}
+	s.wg.Add(1)
+	s.stateMu.RUnlock()
+
+	go func(ctx context.Context, p string) {
+		defer s.wg.Done()
+
+		// Detach from user-cancellation but enforce a hard timeout to prevent leaks
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+
+		if err := s.tracker.Append(bgCtx, p); err != nil {
+			// Since this is background, we can only log the error
+			_, _ = fmt.Fprintf(s.logger, "Warning: failed to record prompt to global tracker: %v\n", err)
+		}
+	}(ctx, prompt)
+
+	return nil
+}
+
+// Close waits for all background tasks to finish or times out if the context is cancelled.
+func (s *multiSourceSuggestionService) Close(ctx context.Context) error {
+	s.stateMu.Lock()
+	s.closing = true
+	s.stateMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err() // Return context error (e.g., DeadlineExceeded) if it times out
+	}
 }
 
 func (s *multiSourceSuggestionService) scanFiles(ctx context.Context, query string) []string {

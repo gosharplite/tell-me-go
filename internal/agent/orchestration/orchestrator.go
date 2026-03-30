@@ -150,7 +150,9 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 	}
 
 	defer func() {
-		if err := chatAgent.Shutdown(ctx); err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
+		defer cancel()
+		if err := chatAgent.Shutdown(shutdownCtx); err != nil {
 			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)
 		}
 	}()

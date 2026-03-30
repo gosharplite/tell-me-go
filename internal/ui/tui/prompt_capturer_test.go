@@ -31,6 +31,7 @@ func (m *mockBaseCapturer) Prompt(message string) {
 }
 func (m *mockBaseCapturer) ReadLine(ctx context.Context) (string, error)      { return "", nil }
 func (m *mockBaseCapturer) ReadSingleKey(ctx context.Context) (string, error) { return "", nil }
+func (m *mockBaseCapturer) Close(ctx context.Context) error                   { return nil }
 
 type mockSuggestionService struct {
 	recordedPrompts []string
@@ -41,6 +42,9 @@ func (m *mockSuggestionService) GetSuggestions(ctx context.Context, prefix strin
 }
 func (m *mockSuggestionService) RecordPrompt(ctx context.Context, prompt string) error {
 	m.recordedPrompts = append(m.recordedPrompts, prompt)
+	return nil
+}
+func (m *mockSuggestionService) Close(ctx context.Context) error {
 	return nil
 }
 

@@ -788,3 +788,22 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 	assert.Contains(t, logOutput, "failed to unmarshal authorized_read_paths")
 	assert.Contains(t, logOutput, "invalid-json")
 }
+
+func TestGetSuggestionService(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
+
+	svc, err := bootstrapper.GetSuggestionService(ctx, []string{"test prompt"})
+	assert.NoError(t, err)
+	assert.NotNil(t, svc)
+
+	suggestions, err := svc.GetSuggestions(ctx, "test")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, suggestions)
+	assert.Contains(t, suggestions, "test prompt")
+}

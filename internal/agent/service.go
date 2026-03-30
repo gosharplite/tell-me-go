@@ -30,6 +30,7 @@ type Container interface {
 	GetHistoryManager(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
 	GetUnifiedHistoryProvider(ctx context.Context, cfg *domain_config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
 	GetToolNames(ctx context.Context, cfg *domain_config.Config, configPath string) ([]string, error)
+	GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error)
 }
 
 type chatService struct {
@@ -83,14 +84,20 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 
 	// 2. Build session dependencies
-	deps, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer.(domain_security.UserInteractor))
+	interactor, ok := capturer.(domain_security.UserInteractor)
+	if !ok {
+		return fmt.Errorf("internal error: capturer does not implement UserInteractor")
+	}
+	deps, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, interactor)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
 	defer func() {
-		if err := deps.GetEventBus().Shutdown(ctx); err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
+		defer cancel()
+		if err := deps.GetEventBus().Shutdown(shutdownCtx); err != nil {
 			if errors.Is(err, events.ErrBusNotInitialized) {
 				return
 			}
@@ -180,4 +187,9 @@ func (s *chatService) GetToolNames(ctx context.Context, configPath string) ([]st
 	}
 
 	return s.Container.GetToolNames(ctx, cfg, configPath)
+}
+
+// GetSuggestionService implements ChatService.
+func (s *chatService) GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error) {
+	return s.Container.GetSuggestionService(ctx, recentHistory)
 }

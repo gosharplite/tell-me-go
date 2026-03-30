@@ -131,6 +131,11 @@ func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts
 	return args.String(0), args.Error(1)
 }
 
+func (m *mockCapturer) Close(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 // --- Tests ---
 
 func TestOrchestrator_Run_Success(t *testing.T) {
@@ -548,6 +553,12 @@ func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagS
 	m.tracker.record("Capturer.CapturePrompt")
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
+}
+
+func (m *behaviorMockCapturer) Close(ctx context.Context) error {
+	m.tracker.record("Capturer.Close")
+	args := m.Called(ctx)
+	return args.Error(0)
 }
 
 func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {

@@ -43,4 +43,6 @@ func WithTUIPrompt(tui bool) CaptureOption {
 type Capturer interface {
 	IsTTY(v any) bool
 	CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error)
+	// Close performs any necessary cleanup, such as flushing suggestion buffers.
+	Close(ctx context.Context) error
 }

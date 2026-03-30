@@ -13,12 +13,9 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
@@ -95,7 +92,8 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// 3. Invoking a Use Case / Service interface
-	capturer := c.buildCapturer(ctx, opts)
+	capturer, cleanup := c.buildCapturer(ctx, opts)
+	defer cleanup()
 
 	if !opts.retry {
 		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
@@ -137,18 +135,8 @@ func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet,
 	return opts, fs, nil
 }
 
-func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) ports.Capturer {
+func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports.Capturer, func()) {
 	if opts.tuiPrompt {
-		tracker, err := history.NewGlobalPromptTracker(c.HomeDir)
-		if err != nil {
-			// Not critical enough to fail the whole app, but should be logged to stderr
-			_, _ = fmt.Fprintf(c.Stderr, "Warning: %v\n", err)
-		}
-		if tracker == nil {
-			// Prevent nil pointer panics if initialization completely fails
-			tracker = history.NewNoOpTracker()
-		}
-
 		// Try to get at least the last user message for the trie
 		lastMsg, _, _ := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
 		var recentHistory []string
@@ -156,29 +144,63 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) ports.
 			recentHistory = append(recentHistory, lastMsg)
 		}
 
-		svc, _ := suggestions.NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, recentHistory)
+		svc, err := c.ChatService.GetSuggestionService(ctx, recentHistory)
 
-		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
+		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer)
+		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
+		if !ok {
+			// Fallback: use a dummy cleanup or return an error if TUI requires BaseCapturer
+			c, ok := capturerInterface.(ports.Capturer)
+			if !ok {
+				return nil, func() {}
+			}
+			return c, func() {}
+		}
 
-		var capturer ports.Capturer = tui.NewPromptCapturer(baseCapturer, svc)
+		var capturer ports.Capturer
+		cleanup := func() {}
+
+		if err != nil {
+			// Log warning and fall back to the base capturer (no suggestions)
+			_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to initialize suggestions: %v\n", err)
+			capturer = baseCapturer
+		} else {
+			capturer = tui.NewPromptCapturer(baseCapturer, svc)
+			cleanup = func() {
+				// We use a separate context for shutdown to ensure it runs even if
+				// the main context is cancelled.
+				shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
+				defer cancel()
+				if err := capturer.Close(shutdownCtx); err != nil {
+					_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close suggestion service: %v\n", err)
+				}
+			}
+		}
+
 		if sm, ok := c.SM.(interface {
 			SetInteractor(domain_security.UserInteractor)
 		}); ok {
-			sm.SetInteractor(capturer.(domain_security.UserInteractor))
+			if interactor, ok := capturer.(domain_security.UserInteractor); ok {
+				sm.SetInteractor(interactor)
+			}
 		}
-		return capturer
+		return capturer, cleanup
 	}
 	return c.setupCapturer()
 }
 
-func (c *chatCommand) setupCapturer() ports.Capturer {
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(ports.Capturer)
+func (c *chatCommand) setupCapturer() (ports.Capturer, func()) {
+	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer)
+	capturer, ok := capturerInterface.(ports.Capturer)
+	if !ok {
+		return nil, func() {}
+	}
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
-		sm.SetInteractor(capturer.(domain_security.UserInteractor))
+		sm.SetInteractor(capturerInterface)
 	}
-	return capturer
+	return capturer, func() {}
 }
 
 func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer ports.Capturer) (string, error) {

@@ -128,6 +128,14 @@ func (m *mockServiceContainer) GetToolNames(ctx context.Context, cfg *config.Con
 	return args.Get(0).([]string), args.Error(1)
 }
 
+func (m *mockServiceContainer) GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error) {
+	args := m.Called(ctx, recentHistory)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.SuggestionService), args.Error(1)
+}
+
 // mockServiceSessionDependencies is a mock of SessionDependencies.
 type mockServiceSessionDependencies struct {
 	mock.Mock
@@ -219,6 +227,10 @@ func (m *mockServiceCapturer) ReadLine(ctx context.Context) (string, error) {
 	args := m.Called(ctx)
 	return args.String(0), args.Error(1)
 }
+func (m *mockServiceCapturer) Close(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
 
 func TestProcessMessage(t *testing.T) {
 	errFileNotFound := errors.New("file not found")
@@ -269,6 +281,7 @@ func TestProcessMessage(t *testing.T) {
 				agent.On("Shutdown", mock.Anything).Return(nil)
 
 				cap.On("IsTTY", mock.Anything).Return(true)
+				cap.On("Close", mock.Anything).Return(nil)
 
 				return func() {
 					assert.True(t, cleanupCalled)

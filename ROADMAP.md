@@ -107,8 +107,6 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [x] Implement **Multi-Source Suggestions**:
         - [x] History: Recent user prompts and top cross-session prompts from `global_prompts.jsonl`.
         - [x] Files: Local workspace paths with dynamic, chunked directory scanning (`ReadDir(100)`).
-        - [ ] Tools: Registered tool names from the `ToolRegistry` (Deferred).
-        - [ ] Prompts: Pre-defined templates from `docs/user/prompts.md` (Deferred).
     - [x] Add **Floating Dropdown** UI components for non-intrusive autocompletion.
     - [x] Map standard keybindings (`Tab` to cycle, `Ctrl+S` or `Alt+Enter` to submit, `Esc` to quit).
     - [x] Ensure rendering degrades gracefully on `TERM=dumb` and handles Windows line-endings (`\r\n`) securely.

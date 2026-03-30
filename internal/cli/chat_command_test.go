@@ -5,6 +5,7 @@ package cli
 
 import (
 	stdctx "context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -14,8 +15,9 @@ import (
 )
 
 type mockChatService struct {
-	chatCalled bool
-	lastParams agent.ChatOptions
+	chatCalled              bool
+	lastParams              agent.ChatOptions
+	getSuggestionServiceErr error
 }
 
 func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOptions, capturer ports.Capturer) error {
@@ -35,6 +37,18 @@ func (m *mockChatService) BrowseHistory(ctx stdctx.Context, configPath string, c
 func (m *mockChatService) GetToolNames(ctx stdctx.Context, configPath string) ([]string, error) {
 	return []string{"test_tool"}, nil
 }
+
+func (m *mockChatService) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
+	return &mockSuggestionService{}, m.getSuggestionServiceErr
+}
+
+type mockSuggestionService struct{}
+
+func (m *mockSuggestionService) GetSuggestions(ctx stdctx.Context, prefix string) ([]string, error) {
+	return nil, nil
+}
+func (m *mockSuggestionService) RecordPrompt(ctx stdctx.Context, prompt string) error { return nil }
+func (m *mockSuggestionService) Close(ctx stdctx.Context) error                       { return nil }
 
 type mockSM struct {
 	domain_security.Manager
@@ -246,7 +260,7 @@ func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 
 	ctx := stdctx.Background()
 	// Pass --tui flag
-	err := cmd.Execute(ctx, []string{"--tui"})
+	err := cmd.Execute(ctx, []string{"chat", "--tui"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -264,5 +278,44 @@ type trackingMockSM struct {
 func (m *trackingMockSM) SetInteractor(interactor domain_security.UserInteractor) {
 	if m.setInteractorCb != nil {
 		m.setInteractorCb()
+	}
+}
+
+func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mService := &mockChatService{
+		getSuggestionServiceErr: errors.New("initialization failed"),
+	}
+
+	cmd := &chatCommand{
+		Version:     "1.0.0",
+		Stdin:       strings.NewReader("fallback test\n"),
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		SM:          sm,
+		ChatService: mService,
+		HomeDir:     t.TempDir(),
+	}
+
+	ctx := stdctx.Background()
+	// Pass --tui flag to trigger suggestion service initialization
+	err := cmd.Execute(ctx, []string{"chat", "--tui"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(stderr.String(), "Warning: failed to initialize suggestions: initialization failed") {
+		t.Errorf("expected stderr to contain warning, got %q", stderr.String())
+	}
+
+	if !mService.chatCalled {
+		t.Error("expected chat service to be called despite suggestion service error")
+	}
+
+	if mService.lastParams.Prompt != "fallback test" {
+		t.Errorf("expected prompt 'fallback test', got %q", mService.lastParams.Prompt)
 	}
 }
