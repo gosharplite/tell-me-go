@@ -198,9 +198,7 @@ func (c *chatCommand) setupCapturer() (ports.Capturer, func()) {
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
-		if interactor, ok := capturerInterface.(domain_security.UserInteractor); ok {
-			sm.SetInteractor(interactor)
-		}
+		sm.SetInteractor(capturerInterface)
 	}
 	return capturer, func() {}
 }
