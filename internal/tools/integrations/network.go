@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	MaxHttpRequestSize = 5 * 1024 * 1024
-	MaxExternalDocSize = 50000
-	TruncatedDocSize   = 10000
+	maxHttpRequestSize = 5 * 1024 * 1024
+	maxExternalDocSize = 50000
+	truncatedDocSize   = 10000
 )
 
 type networkTool struct {
@@ -198,7 +198,7 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	bodyContent, truncated, err := t.readResponseWithLimit(resp.Body, MaxHttpRequestSize)
+	bodyContent, truncated, err := t.readResponseWithLimit(resp.Body, maxHttpRequestSize)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -249,7 +249,7 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	bodyContent, _, err := t.readResponseWithLimit(resp.Body, MaxExternalDocSize)
+	bodyContent, _, err := t.readResponseWithLimit(resp.Body, maxExternalDocSize)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to read response body: %w", err)
 	}
@@ -257,8 +257,8 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 	content := t.sanitizeHTML(bodyContent)
 
 	// Truncate to avoid huge inputs
-	if len(content) > TruncatedDocSize {
-		content = truncateUTF8(content, TruncatedDocSize) + "\n... (truncated)"
+	if len(content) > truncatedDocSize {
+		content = truncateUTF8(content, truncatedDocSize) + "\n... (truncated)"
 	}
 
 	return tools.ToolResult{Text: content}, nil

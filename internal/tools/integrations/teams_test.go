@@ -69,8 +69,8 @@ func TestTeamsManager_SendTeamsMessage(t *testing.T) {
 				"webhook_url": "https://example.com/webhook",
 				"message":     "Hello",
 			},
-			mockErr: errors.New("request creation error"),
-			wantErr: false, // Error is returned as Text in ToolResult
+			mockErr:    errors.New("request creation error"),
+			wantErr:    false, // Error is returned as Text in ToolResult
 			wantInText: []string{"failed to send message"},
 		},
 		{
@@ -163,7 +163,7 @@ func TestBuildTeamsRequestBody(t *testing.T) {
 func TestPostToWebhook_RequestError(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	m := newteamsManager(sm, nil)
-	
+
 	// Use an invalid URL that will cause NewRequestWithContext to fail if possible
 	// Actually, NewRequestWithContext rarely fails for just URL.
 	// But it fails if method is invalid.

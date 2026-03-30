@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/parser"
-	"go/token"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,6 +16,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/go/packages"
 )
 
 type defaultDependencyAnalyzer struct {
@@ -72,12 +71,12 @@ func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string]
 
 	graph := make(map[string][]string)
 	var mu sync.Mutex
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 
 	for _, p := range pkgPaths {
 		path := p
 		g.Go(func() error {
-			imports, err := a.getImports(path, modPrefix)
+			imports, err := a.getImports(groupCtx, path, modPrefix)
 			if err != nil {
 				return err
 			}
@@ -172,21 +171,22 @@ func (a *defaultDependencyAnalyzer) listInternalPackages(root string) ([]string,
 	return pkgs, err
 }
 
-func (a *defaultDependencyAnalyzer) getImports(pkgPath string, modPrefix string) ([]string, error) {
-	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, pkgPath, nil, parser.ImportsOnly)
+func (a *defaultDependencyAnalyzer) getImports(ctx context.Context, pkgPath string, modPrefix string) ([]string, error) {
+	cfg := &packages.Config{
+		Mode:    packages.NeedImports | packages.NeedFiles,
+		Context: ctx,
+		Dir:     pkgPath,
+	}
+	pkgs, err := packages.Load(cfg, ".")
 	if err != nil {
 		return nil, err
 	}
 
 	importMap := make(map[string]struct{})
 	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, imp := range file.Imports {
-				path := strings.Trim(imp.Path.Value, "\"")
-				if strings.HasPrefix(path, modPrefix) {
-					importMap[path] = struct{}{}
-				}
+		for impPath := range pkg.Imports {
+			if strings.HasPrefix(impPath, modPrefix) {
+				importMap[impPath] = struct{}{}
 			}
 		}
 	}
