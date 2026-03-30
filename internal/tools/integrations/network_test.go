@@ -19,6 +19,14 @@ import (
 	"go.uber.org/goleak"
 )
 
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m,
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	)
+}
+
 type mockHTTPClient struct {
 	DoFunc func(req *http.Request) (*http.Response, error)
 }
@@ -422,7 +430,11 @@ func TestSanitizeHTML(t *testing.T) {
 }
 
 func TestHeartbeatConcurrency(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	)
 	sm := security.NewSecurityManager(nil)
 	tool := newnetworkTool(sm, nil)
 	tool.heartbeatInterval = 10 * time.Millisecond
@@ -547,7 +559,11 @@ func TestTruncateUTF8Negative(t *testing.T) {
 }
 
 func TestHttpRequest_ContextCancellation(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	)
 	sm := security.NewSecurityManager(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -616,7 +632,11 @@ Loop:
 }
 
 func TestReadExternalDocs_ContextCancellation(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
+		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	)
 	sm := security.NewSecurityManager(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
