@@ -495,6 +495,11 @@ func TestSanitizeHTML(t *testing.T) {
 			input: "<p>Hello <span>world</span>!</p>",
 			want:  "Hello world !",
 		},
+		{
+			name:  "Malformed tag with attribute containing >",
+			input: `<img src="x" alt=">"> This text might be hidden or stripped incorrectly.`,
+			want:  `"> This text might be hidden or stripped incorrectly.`, // Documents current regex limitation
+		},
 	}
 
 	for _, tt := range tests {
