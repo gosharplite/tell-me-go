@@ -6,10 +6,13 @@ package integrations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"testing/iotest"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -382,4 +385,161 @@ func TestSendTeamsMessage_Errors(t *testing.T) {
 			t.Errorf("Expected HTTPS validation error, got: %v", err)
 		}
 	})
+}
+
+func TestReadResponseWithLimit(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	tool := newnetworkTool(sm, nil)
+
+	tests := []struct {
+		name      string
+		input     string
+		limit     int64
+		want      string
+		wantTrunc bool
+		wantErr   bool
+	}{
+		{
+			name:      "Exact Limit",
+			input:     strings.Repeat("A", 1024),
+			limit:     1024,
+			want:      strings.Repeat("A", 1024),
+			wantTrunc: false,
+		},
+		{
+			name:      "Over Limit",
+			input:     strings.Repeat("B", 1025),
+			limit:     1024,
+			want:      strings.Repeat("B", 1024),
+			wantTrunc: true,
+		},
+		{
+			name:      "Under Limit",
+			input:     "hello",
+			limit:     100,
+			want:      "hello",
+			wantTrunc: false,
+		},
+		{
+			name:    "IO Error",
+			input:   "",
+			limit:   100,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body io.ReadCloser
+			if tt.name == "IO Error" {
+				// Use an error reader
+				body = io.NopCloser(iotest.ErrReader(errors.New("read error")))
+			} else {
+				body = io.NopCloser(strings.NewReader(tt.input))
+			}
+			got, truncated, err := tool.readResponseWithLimit(body, tt.limit)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("readResponseWithLimit() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				return
+			}
+			if got != tt.want {
+				t.Errorf("readResponseWithLimit() got = %q, want %q", got, tt.want)
+			}
+			if truncated != tt.wantTrunc {
+				t.Errorf("readResponseWithLimit() truncated = %v, want %v", truncated, tt.wantTrunc)
+			}
+		})
+	}
+}
+
+func TestSanitizeHTML(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	tool := newnetworkTool(sm, nil)
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "Complex script tag",
+			input: `<script type="text/javascript" src="malicious.js">alert(1)</script>`,
+			want:  "",
+		},
+		{
+			name:  "Style with attributes",
+			input: `<style type="text/css">body { color: red; }</style>`,
+			want:  "",
+		},
+		{
+			name:  "Nested markup",
+			input: `<div><p>Text <b>Bold</b></p></div>`,
+			want:  "Text Bold",
+		},
+		{
+			name:  "Whitespace collapse",
+			input: "  Hello\n\n\tWorld  ",
+			want:  "Hello World",
+		},
+		{
+			name:  "Multiple newlines",
+			input: "Line1\n\n\nLine2\n\nLine3",
+			want:  "Line1 Line2 Line3",
+		},
+		{
+			name:  "Mixed tags and spaces",
+			input: "<p>Hello <span>world</span>!</p>",
+			want:  "Hello world !",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tool.sanitizeHTML(tt.input)
+			if got != tt.want {
+				t.Errorf("sanitizeHTML() got = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHeartbeatConcurrency(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	tool := newnetworkTool(sm, nil)
+
+	// Use a buffered channel to avoid blocking
+	hb := make(chan struct{}, 10)
+	stop := tool.startHeartbeat(hb)
+
+	// Wait for at least one heartbeat
+	select {
+	case <-hb:
+		// Good
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout waiting for heartbeat")
+	}
+
+	// Call stop twice - should not panic
+	stop()
+	stop()
+
+	// Ensure goroutine terminates (heartbeat stops)
+	select {
+	case <-hb:
+		t.Fatal("Heartbeat still active after stop")
+	default:
+		// Expected - no heartbeat
+	}
+
+	// Additional safety: wait a bit and ensure no more heartbeats
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-hb:
+		t.Fatal("Unexpected heartbeat after stop")
+	default:
+		// OK
+	}
 }

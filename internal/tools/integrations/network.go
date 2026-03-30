@@ -26,9 +26,14 @@ var (
 )
 
 func initRegex() {
-	styleRegex = regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
-	scriptRegex = regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
-	tagsRegex = regexp.MustCompile(`<.*?>`)
+	// initRegex initializes regex patterns for HTML sanitization.
+	// Patterns use [^>]* to match up to the first '>' to avoid catastrophic backtracking.
+	// The (?s) flag allows . to match newlines, needed for multiline tags.
+	// These patterns are safe for inputs up to the size limit (50KB).
+	styleRegex = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
+	scriptRegex = regexp.MustCompile(`(?s)<script[^>]*>.*?</script>`)
+	// Remove all HTML tags, non-greedy match
+	tagsRegex = regexp.MustCompile(`<[^>]*>`)
 	spaceRegex = regexp.MustCompile(`\n\s*\n`)
 }
 
@@ -46,6 +51,7 @@ func newnetworkTool(sm security.TerminalController, client tools.HTTPClient) *ne
 
 func (t *networkTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 	done := make(chan struct{})
+	var once sync.Once
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -63,10 +69,7 @@ func (t *networkTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 			}
 		}
 	}()
-
-	return func() {
-		close(done)
-	}
+	return func() { once.Do(func() { close(done) }) }
 }
 
 func (t *networkTool) readResponseWithLimit(body io.ReadCloser, limit int64) (string, bool, error) {
