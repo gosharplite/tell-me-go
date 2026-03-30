@@ -154,7 +154,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 
 		if err != nil {
 			// Log warning and fall back to the base capturer (no suggestions)
-			fmt.Fprintf(c.Stderr, "Warning: failed to initialize suggestions: %v\n", err)
+			_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to initialize suggestions: %v\n", err)
 			capturer = baseCapturer
 		} else {
 			capturer = tui.NewPromptCapturer(baseCapturer, svc)
@@ -164,7 +164,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 				shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), 2*time.Second)
 				defer cancel()
 				if err := svc.Close(shutdownCtx); err != nil {
-					fmt.Fprintf(c.Stderr, "Warning: failed to close suggestion service: %v\n", err)
+					_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close suggestion service: %v\n", err)
 				}
 			}
 		}
