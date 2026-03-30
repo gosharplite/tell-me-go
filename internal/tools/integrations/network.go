@@ -19,6 +19,12 @@ import (
 	"golang.org/x/net/html"
 )
 
+const (
+	MaxHttpRequestSize = 5 * 1024 * 1024
+	MaxExternalDocSize = 50000
+	TruncatedDocSize   = 10000
+)
+
 type networkTool struct {
 	sm                security.TerminalController
 	client            tools.HTTPClient
@@ -86,25 +92,27 @@ func (t *networkTool) readResponseWithLimit(r io.Reader, limit int64) (string, b
 }
 
 // truncateUTF8 truncates a string to at most maxBytes bytes, ensuring the result
-// is valid UTF-8 by removing bytes from the end until valid.
+// is valid UTF-8 and does not split a multi-byte rune.
 func truncateUTF8(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
 	}
-	if len(s) <= maxBytes {
-		return s
+	if len(s) > maxBytes {
+		// Backtrack to the start of a rune to avoid splitting a character boundary
+		for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+			maxBytes--
+		}
+		s = s[:maxBytes]
 	}
-	s = s[:maxBytes]
-	for len(s) > 0 && !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return s
+	// Clean any internal invalid UTF-8 bytes in O(N) time without discarding the whole string
+	return strings.ToValidUTF8(s, "")
 }
 
 func (t *networkTool) sanitizeHTML(content string) string {
 	var sb strings.Builder
 	tokenizer := html.NewTokenizer(strings.NewReader(content))
 	skip := 0
+	lastIsSpace := true // Start with true to avoid leading spaces
 
 	isForbidden := func(tagName []byte) bool {
 		return bytes.EqualFold(tagName, []byte("script")) || bytes.EqualFold(tagName, []byte("style"))
@@ -116,33 +124,38 @@ func (t *networkTool) sanitizeHTML(content string) string {
 			break
 		}
 		switch tt {
-		case html.StartTagToken:
+		case html.StartTagToken, html.EndTagToken, html.SelfClosingTagToken:
 			tagName, _ := tokenizer.TagName()
 			if isForbidden(tagName) {
-				skip++
-			}
-			sb.WriteByte(' ')
-		case html.EndTagToken:
-			tagName, _ := tokenizer.TagName()
-			if isForbidden(tagName) {
-				if skip > 0 {
+				if tt == html.StartTagToken {
+					skip++
+				} else if tt == html.EndTagToken && skip > 0 {
 					skip--
 				}
 			}
-			sb.WriteByte(' ')
+			if !lastIsSpace {
+				sb.WriteByte(' ')
+				lastIsSpace = true
+			}
 		case html.TextToken:
 			if skip == 0 {
-				sb.Write(tokenizer.Text())
+				text := tokenizer.Text()
+				for _, b := range text {
+					isSpace := b == ' ' || b == '\t' || b == '\n' || b == '\r'
+					if isSpace {
+						if !lastIsSpace {
+							sb.WriteByte(' ')
+							lastIsSpace = true
+						}
+					} else {
+						sb.WriteByte(b)
+						lastIsSpace = false
+					}
+				}
 			}
-		case html.SelfClosingTagToken:
-			tagName, _ := tokenizer.TagName()
-			if isForbidden(tagName) {
-				// Effectively skipping an empty script/style
-			}
-			sb.WriteByte(' ')
 		}
 	}
-	return strings.Join(strings.Fields(sb.String()), " ")
+	return strings.TrimSpace(sb.String())
 }
 
 func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -185,8 +198,7 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	const limit = 5 * 1024 * 1024
-	bodyContent, truncated, err := t.readResponseWithLimit(resp.Body, limit)
+	bodyContent, truncated, err := t.readResponseWithLimit(resp.Body, MaxHttpRequestSize)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -219,7 +231,10 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("url argument is required")
 	}
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create request for url %q: %w", url, err)
+	}
 
 	stopHB := t.startHeartbeat(hb)
 	defer stopHB()
@@ -234,8 +249,7 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	const limit = 50000
-	bodyContent, _, err := t.readResponseWithLimit(resp.Body, limit)
+	bodyContent, _, err := t.readResponseWithLimit(resp.Body, MaxExternalDocSize)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to read response body: %w", err)
 	}
@@ -243,8 +257,8 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 	content := t.sanitizeHTML(bodyContent)
 
 	// Truncate to avoid huge inputs
-	if len(content) > 10000 {
-		content = truncateUTF8(content, 10000) + "\n... (truncated)"
+	if len(content) > TruncatedDocSize {
+		content = truncateUTF8(content, TruncatedDocSize) + "\n... (truncated)"
 	}
 
 	return tools.ToolResult{Text: content}, nil
