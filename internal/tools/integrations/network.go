@@ -4,6 +4,7 @@
 package integrations
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -94,20 +95,21 @@ func truncateUTF8(s string, maxBytes int) string {
 		return s
 	}
 	s = s[:maxBytes]
-	for len(s) > 0 {
-		r, size := utf8.DecodeLastRuneInString(s)
-		if r != utf8.RuneError || size == 3 {
-			return s
-		}
+	for len(s) > 0 && !utf8.ValidString(s) {
 		s = s[:len(s)-1]
 	}
-	return ""
+	return s
 }
 
 func (t *networkTool) sanitizeHTML(content string) string {
 	var sb strings.Builder
 	tokenizer := html.NewTokenizer(strings.NewReader(content))
 	skip := 0
+
+	isForbidden := func(tagName []byte) bool {
+		return bytes.EqualFold(tagName, []byte("script")) || bytes.EqualFold(tagName, []byte("style"))
+	}
+
 	for {
 		tt := tokenizer.Next()
 		if tt == html.ErrorToken {
@@ -116,15 +118,13 @@ func (t *networkTool) sanitizeHTML(content string) string {
 		switch tt {
 		case html.StartTagToken:
 			tagName, _ := tokenizer.TagName()
-			name := string(tagName)
-			if name == "script" || name == "style" {
+			if isForbidden(tagName) {
 				skip++
 			}
 			sb.WriteByte(' ')
 		case html.EndTagToken:
 			tagName, _ := tokenizer.TagName()
-			name := string(tagName)
-			if name == "script" || name == "style" {
+			if isForbidden(tagName) {
 				if skip > 0 {
 					skip--
 				}
@@ -135,6 +135,10 @@ func (t *networkTool) sanitizeHTML(content string) string {
 				sb.Write(tokenizer.Text())
 			}
 		case html.SelfClosingTagToken:
+			tagName, _ := tokenizer.TagName()
+			if isForbidden(tagName) {
+				// Effectively skipping an empty script/style
+			}
 			sb.WriteByte(' ')
 		}
 	}

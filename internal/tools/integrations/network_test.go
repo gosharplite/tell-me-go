@@ -16,6 +16,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"go.uber.org/goleak"
 )
 
 type mockHTTPClient struct {
@@ -349,6 +350,36 @@ func TestSanitizeHTML(t *testing.T) {
 			want:  "",
 		},
 		{
+			name:  "Case insensitive tags",
+			input: `<SCRIPT>alert(1)</SCRIPT><StYlE>body{}</sTyLe>Keep this.`,
+			want:  "Keep this.",
+		},
+		{
+			name:  "Nested forbidden tags",
+			input: `<div>Outer<script>Inner<style>VeryInner</style>BackToInner</script>StillOuter</div>`,
+			want:  "Outer StillOuter",
+		},
+		{
+			name:  "Unclosed forbidden tag",
+			input: `<script>alert(1) <b>Bold</b>`,
+			want:  "",
+		},
+		{
+			name:  "Deeply nested HTML",
+			input: `<div><span><ul><li>Item 1</li><li>Item 2</li></ul></span></div>`,
+			want:  "Item 1 Item 2",
+		},
+		{
+			name:  "Malformed HTML with script",
+			input: `<script> <div> </script> <span>Visible</span>`,
+			want:  "Visible",
+		},
+		{
+			name:  "Self-closing forbidden tags",
+			input: `<script src="foo.js" />Next text`,
+			want:  "Next text",
+		},
+		{
 			name:  "Nested markup",
 			input: `<div><p>Text <b>Bold</b></p></div>`,
 			want:  "Text Bold",
@@ -384,13 +415,14 @@ func TestSanitizeHTML(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tool.sanitizeHTML(tt.input)
 			if got != tt.want {
-				t.Errorf("sanitizeHTML() got = %q, want %q", got, tt.want)
+				t.Errorf("sanitizeHTML() [%s] got = %q, want %q", tt.name, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestHeartbeatConcurrency(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	sm := security.NewSecurityManager(nil)
 	tool := newnetworkTool(sm, nil)
 	tool.heartbeatInterval = 10 * time.Millisecond
@@ -515,6 +547,7 @@ func TestTruncateUTF8Negative(t *testing.T) {
 }
 
 func TestHttpRequest_ContextCancellation(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	sm := security.NewSecurityManager(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -583,6 +616,7 @@ Loop:
 }
 
 func TestReadExternalDocs_ContextCancellation(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	sm := security.NewSecurityManager(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
