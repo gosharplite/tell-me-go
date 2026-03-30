@@ -43,6 +43,9 @@ func (m *mockSuggestionService) RecordPrompt(ctx context.Context, prompt string)
 	m.recordedPrompts = append(m.recordedPrompts, prompt)
 	return nil
 }
+func (m *mockSuggestionService) Close(ctx context.Context) error {
+	return nil
+}
 
 func TestPromptCapturer_CapturePrompt_Fallback(t *testing.T) {
 	base := &mockBaseCapturer{}

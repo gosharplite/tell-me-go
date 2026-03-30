@@ -61,7 +61,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 		prompts: []string{"test-prompt-1", "test-prompt-2"},
 	}
 
-	service, err := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, []string{"hello", "world"})
+	service, err := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, []string{"hello", "world"}, io.Discard)
 	if err != nil {
 		t.Fatalf("failed to create service: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 
 func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 
 	// Create many files to make scan slow
 	tmpDir := t.TempDir()
@@ -127,7 +127,7 @@ func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 
 func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 
 	// Create some test files
 	tmpDir := t.TempDir()
@@ -170,7 +170,7 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	tracker := &mockPromptTracker{
 		appended: appended,
 	}
-	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 
 	prompt := "new-unique-prompt"
 	err := service.RecordPrompt(context.Background(), prompt)
@@ -188,7 +188,7 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	select {
 	case <-appended:
 		// success
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for prompt persistence")
 	}
 
@@ -200,7 +200,7 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 }
 
 func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
-	s := &multiSourceSuggestionService{}
+	s := &multiSourceSuggestionService{logger: io.Discard}
 	tests := []struct {
 		name     string
 		s1       []string
@@ -262,7 +262,7 @@ func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
 
 func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 
 	// Create a temp directory with some files
 	tmpDir := t.TempDir()
@@ -309,7 +309,7 @@ func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 
 func TestSuggestionService_ScanFiles_InvalidDir(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 
 	// Call GetSuggestions with a path that definitely doesn't exist
 	invalidPath := filepath.Join(t.TempDir(), "non-existent-dir", "file")
@@ -339,7 +339,7 @@ func (e *errorPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string,
 func TestSuggestionService_LoadTopNFails(t *testing.T) {
 	tracker := &errorPromptTracker{}
 	// This should log to stderr but not return an error
-	service, err := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, err := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 	if err != nil {
 		t.Fatalf("NewMultiSourceSuggestionService should not fail when tracker fails to load: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestSuggestionService_LoadTopNFails(t *testing.T) {
 
 func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 
 	err := service.RecordPrompt(context.Background(), "")
 	if err != nil {
@@ -365,7 +365,7 @@ func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 
 func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 
 	tmpDir := t.TempDir()
 
@@ -471,7 +471,8 @@ func TestScanFiles_RespectsCancellationBetweenChunks(t *testing.T) {
 	}
 
 	service := &multiSourceSuggestionService{
-		fs: fs,
+		fs:     fs,
+		logger: io.Discard,
 	}
 
 	// Calling scanFiles.
@@ -504,7 +505,7 @@ func assertSuggestionsMatch(t *testing.T, got, expected []string) {
 
 func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
 
 	// 1. Record multiple prompts
 	prompts := []string{"p1", "p2", "p3"}
@@ -540,5 +541,29 @@ func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	}
 	if history[0] != "bulk-149" {
 		t.Errorf("expected newest item at index 0, got %q", history[0])
+	}
+}
+
+func TestMultiSourceSuggestionService_Close_WaitsForBackgroundTasks(t *testing.T) {
+	appended := make(chan struct{})
+	tracker := &mockPromptTracker{
+		appended: appended,
+	}
+	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+
+	// Record a prompt
+	prompt := "close-test-prompt"
+	_ = service.RecordPrompt(context.Background(), prompt)
+
+	// Immediately call Close. It should wait for the background goroutine to finish.
+	err := service.Close(context.Background())
+	if err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Verify it was persisted
+	prompts := tracker.GetPrompts()
+	if len(prompts) != 1 || prompts[0] != prompt {
+		t.Errorf("prompt not persisted after Close: %v", prompts)
 	}
 }

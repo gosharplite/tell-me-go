@@ -450,5 +450,5 @@ func (b *bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []
 		tracker = history.NewNoOpTracker()
 	}
 
-	return suggestions.NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, recentHistory)
+	return suggestions.NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, recentHistory, b.Stderr)
 }

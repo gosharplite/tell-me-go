@@ -24,6 +24,10 @@ func (m *mockSuggestionSvc) RecordPrompt(ctx context.Context, prompt string) err
 	return nil
 }
 
+func (m *mockSuggestionSvc) Close(ctx context.Context) error {
+	return nil
+}
+
 type promptUpdateTestCase struct {
 	name          string
 	initialInput  string
@@ -323,6 +327,10 @@ func (m *mockSuggestionSvcMultiLine) RecordPrompt(ctx context.Context, prompt st
 	return nil
 }
 
+func (m *mockSuggestionSvcMultiLine) Close(ctx context.Context) error {
+	return nil
+}
+
 func TestModel_TeaInterface(t *testing.T) {
 	// Silence dead_code_graph false positives for tea.Model implementations
 	m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
@@ -435,6 +443,10 @@ func (m *integrationMockSuggestionSvc) GetSuggestions(ctx context.Context, prefi
 }
 
 func (m *integrationMockSuggestionSvc) RecordPrompt(ctx context.Context, prompt string) error {
+	return nil
+}
+
+func (m *integrationMockSuggestionSvc) Close(ctx context.Context) error {
 	return nil
 }
 

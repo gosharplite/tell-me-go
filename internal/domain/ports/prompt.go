@@ -14,6 +14,9 @@ type SuggestionService interface {
 	// RecordPrompt records a user prompt for future suggestions.
 	// Fire-and-forget metric recording.
 	RecordPrompt(ctx context.Context, prompt string) error
+
+	// Close shuts down the suggestion service and waits for background tasks to finish.
+	Close(ctx context.Context) error
 }
 
 // PromptTracker defines the interface for persisting and loading cross-session prompts.

@@ -25,21 +25,24 @@ type multiSourceSuggestionService struct {
 	history   []string
 	tracker   ports.PromptTracker
 	fs        persistence.FileSystem
+	wg        sync.WaitGroup
+	logger    io.Writer
 }
 
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the history.
-func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string) (ports.SuggestionService, error) {
+func NewMultiSourceSuggestionService(fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string, logger io.Writer) (ports.SuggestionService, error) {
 	s := &multiSourceSuggestionService{
 		history: make([]string, 0),
 		tracker: tracker,
 		fs:      fs,
+		logger:  logger,
 	}
 
 	// 1. Pre-load Global Top Prompts
 	topPrompts, err := tracker.LoadTopN(context.Background(), 50)
 	if err != nil {
 		// Log error but continue with what we have
-		fmt.Fprintf(os.Stderr, "Warning: failed to load top prompts: %v\n", err)
+		fmt.Fprintf(s.logger, "Warning: failed to load top prompts: %v\n", err)
 	}
 
 	seen := make(map[string]bool)
@@ -128,15 +131,23 @@ func (s *multiSourceSuggestionService) RecordPrompt(ctx context.Context, prompt 
 	// 2. Asynchronous persistent update
 	// We use context.WithoutCancel to ensure the write completes even if the request context is cancelled.
 	// A goroutine is used to prevent blocking the UI thread.
+	s.wg.Add(1)
 	go func(ctx context.Context, p string) {
+		defer s.wg.Done()
 		// Use a detached context for the background write
 		bgCtx := context.WithoutCancel(ctx)
 		if err := s.tracker.Append(bgCtx, p); err != nil {
 			// Since this is background, we can only log the error
-			fmt.Fprintf(os.Stderr, "Warning: failed to record prompt to global tracker: %v\n", err)
+			fmt.Fprintf(s.logger, "Warning: failed to record prompt to global tracker: %v\n", err)
 		}
 	}(ctx, prompt)
 
+	return nil
+}
+
+// Close waits for all background tasks to finish.
+func (s *multiSourceSuggestionService) Close(ctx context.Context) error {
+	s.wg.Wait()
 	return nil
 }
 
