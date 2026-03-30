@@ -302,7 +302,7 @@ func TestMandatoryContentField(t *testing.T) {
 	defer server.Close()
 
 	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
-	
+
 	history := []*llm.Content{
 		{
 			Role: "model",
@@ -311,9 +311,9 @@ func TestMandatoryContentField(t *testing.T) {
 			},
 		},
 	}
-	
+
 	_, _, _ = c.SendChat(context.Background(), history, []*tools.ToolDeclaration{{Name: "tool"}}, nil)
-	
+
 	// We expect the assistant message to ALWAYS have a content field in Responses API mode,
 	// even if it only has tool_calls and no text.
 	if !strings.Contains(capturedBody, `"role":"assistant","content":[{`) {
@@ -467,7 +467,7 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 	defer server.Close()
 
 	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
-	
+
 	// History item: assistant message with a tool call
 	history := []*llm.Content{
 		{
@@ -478,12 +478,12 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 			},
 		},
 	}
-	
+
 	_, _, err := c.SendChat(context.Background(), history, []*tools.ToolDeclaration{{Name: "get_weather"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	// Verify the structure of the first message in the input array (the assistant message)
 	// For Responses API, tool calls must be in content blocks, not at top level
 	if strings.Contains(capturedBody, `"input":[{"role":"assistant","content":`) {
@@ -491,9 +491,9 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 		// A simple check: if we see "assistant" followed by "tool_calls" before the next message or end of object
 		// But "tool_calls" IS valid at the TOP level of the request (the tool declarations).
 		// We care about the message in the "input" array.
-		
+
 		// In block mode, we specifically set msg.ToolCalls = nil
-		
+
 		// Let's check for the absence of "tool_calls" specifically within the assistant message object
 		// Assistant message starts with {"role":"assistant"
 		idx := strings.Index(capturedBody, `"role":"assistant"`)
@@ -511,7 +511,7 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 			}
 		}
 	}
-	
+
 	if !strings.Contains(capturedBody, `"type":"function_call"`) || !strings.Contains(capturedBody, `"call_id":"call_123"`) || !strings.Contains(capturedBody, `"name":"get_weather"`) {
 		t.Errorf("expected JSON to contain function_call item with call_id and name, got %s", capturedBody)
 	}
@@ -528,7 +528,7 @@ func TestToolResultBlocksInHistory(t *testing.T) {
 	defer server.Close()
 
 	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
-	
+
 	// History item: tool response
 	history := []*llm.Content{
 		{
@@ -536,25 +536,25 @@ func TestToolResultBlocksInHistory(t *testing.T) {
 			Parts: []*llm.Part{
 				{
 					FunctionResponse: &llm.FunctionResponse{
-						ID:   "call_123",
-						Name: "get_weather",
+						ID:       "call_123",
+						Name:     "get_weather",
 						Response: map[string]interface{}{"result": "Sunny"},
 					},
 				},
 			},
 		},
 	}
-	
+
 	_, _, err := c.SendChat(context.Background(), history, []*tools.ToolDeclaration{{Name: "get_weather"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	// Verify that tool_call_id is NOT at top level of the message in input array
 	if strings.Contains(capturedBody, `"tool_call_id":"call_123"`) && strings.Contains(capturedBody, `"role":"tool"`) {
 		t.Errorf("found forbidden top-level 'tool_call_id' in tool message in Responses API mode: %s", capturedBody)
 	}
-	
+
 	if !strings.Contains(capturedBody, `"type":"function_call_output"`) || !strings.Contains(capturedBody, `"call_id":"call_123"`) || !strings.Contains(capturedBody, `"output":"Sunny"`) {
 		t.Errorf("expected JSON to contain function_call_output item with call_id and output, got %s", capturedBody)
 	}
@@ -571,11 +571,11 @@ func TestHistoryItemSequencing(t *testing.T) {
 	defer server.Close()
 
 	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
-	
+
 	// History: User -> Model (thought + call) -> Tool Result
 	history := []*llm.Content{
 		{
-			Role: "user",
+			Role:  "user",
 			Parts: []*llm.Part{{Text: "Hello"}},
 		},
 		{
@@ -592,20 +592,20 @@ func TestHistoryItemSequencing(t *testing.T) {
 			},
 		},
 	}
-	
+
 	_, _, _ = c.SendChat(context.Background(), history, []*tools.ToolDeclaration{{Name: "t1"}}, nil)
-	
+
 	// Verify input array sequence: message (user) -> message (assistant) -> function_call -> function_call_output
 	// We check for the sequence of "type" fields in the "input" array.
-	
+
 	// JSON should look like: "input":[{"type":"message",...},{"type":"message",...},{"type":"function_call",...},{"type":"function_call_output",...}]
 	expectedSequence := []string{
 		`"type":"message"`,              // user
 		`"type":"message"`,              // assistant text
-		`"type":"function_call"`,       // assistant call
+		`"type":"function_call"`,        // assistant call
 		`"type":"function_call_output"`, // tool response
 	}
-	
+
 	currentIdx := 0
 	for _, expectedType := range expectedSequence {
 		foundIdx := strings.Index(capturedBody[currentIdx:], expectedType)
@@ -615,7 +615,7 @@ func TestHistoryItemSequencing(t *testing.T) {
 		}
 		currentIdx += foundIdx + len(expectedType)
 	}
-	
+
 	// Verify NO content block with type tool_call or tool_result
 	if strings.Contains(capturedBody, `"type":"tool_call"`) || strings.Contains(capturedBody, `"type":"tool_result"`) {
 		t.Errorf("found invalid block type 'tool_call' or 'tool_result' in JSON: %s", capturedBody)

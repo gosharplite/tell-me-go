@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,16 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-)
-
-var (
-	// Regex patterns for HTML sanitization, compiled once at package initialization.
-	// Patterns use [^>]* to match up to the first '>' character for efficiency.
-	// The (?s) flag allows . to match newlines, needed for multiline tags.
-	// Note: Go's regex engine (RE2) guarantees linear time execution O(n).
-	styleRegex  = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
-	scriptRegex = regexp.MustCompile(`(?s)<script[^>]*>.*?</script>`)
-	tagsRegex   = regexp.MustCompile(`<[^>]*>`)
+	"golang.org/x/net/html"
 )
 
 type networkTool struct {
@@ -47,12 +37,14 @@ func newnetworkTool(sm security.TerminalController, client tools.HTTPClient) *ne
 
 func (t *networkTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 	done := make(chan struct{})
+	exited := make(chan struct{})
 	var once sync.Once
 	interval := t.heartbeatInterval
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
 	go func() {
+		defer close(exited)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -69,7 +61,12 @@ func (t *networkTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 			}
 		}
 	}()
-	return func() { once.Do(func() { close(done) }) }
+	return func() {
+		once.Do(func() {
+			close(done)
+		})
+		<-exited
+	}
 }
 
 func (t *networkTool) readResponseWithLimit(r io.Reader, limit int64) (string, bool, error) {
@@ -104,11 +101,40 @@ func truncateUTF8(s string, maxBytes int) string {
 }
 
 func (t *networkTool) sanitizeHTML(content string) string {
-	content = styleRegex.ReplaceAllString(content, "")
-	content = scriptRegex.ReplaceAllString(content, "")
-	content = tagsRegex.ReplaceAllString(content, " ")
-	content = strings.Join(strings.Fields(content), " ")
-	return content
+	var sb strings.Builder
+	tokenizer := html.NewTokenizer(strings.NewReader(content))
+	skip := 0
+	for {
+		tt := tokenizer.Next()
+		if tt == html.ErrorToken {
+			break
+		}
+		switch tt {
+		case html.StartTagToken:
+			tagName, _ := tokenizer.TagName()
+			name := string(tagName)
+			if name == "script" || name == "style" {
+				skip++
+			}
+			sb.WriteByte(' ')
+		case html.EndTagToken:
+			tagName, _ := tokenizer.TagName()
+			name := string(tagName)
+			if name == "script" || name == "style" {
+				if skip > 0 {
+					skip--
+				}
+			}
+			sb.WriteByte(' ')
+		case html.TextToken:
+			if skip == 0 {
+				sb.Write(tokenizer.Text())
+			}
+		case html.SelfClosingTagToken:
+			sb.WriteByte(' ')
+		}
+	}
+	return strings.Join(strings.Fields(sb.String()), " ")
 }
 
 func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

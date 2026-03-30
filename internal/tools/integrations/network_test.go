@@ -496,9 +496,14 @@ func TestSanitizeHTML(t *testing.T) {
 			want:  "Hello world !",
 		},
 		{
+			name:  "HTML entities",
+			input: "<div>&lt;b&gt;Hello &amp; World&lt;/b&gt;</div>",
+			want:  "<b>Hello & World</b>",
+		},
+		{
 			name:  "Malformed tag with attribute containing >",
-			input: `<img src="x" alt=">"> This text might be hidden or stripped incorrectly.`,
-			want:  `"> This text might be hidden or stripped incorrectly.`, // Documents current regex limitation
+			input: `<img src="x" alt=">"> This text should be correctly handled.`,
+			want:  `This text should be correctly handled.`,
 		},
 	}
 
@@ -529,10 +534,10 @@ func TestHeartbeatConcurrency(t *testing.T) {
 		t.Fatal("Timeout waiting for heartbeat")
 	}
 
-	// Call stop
+	// Call stop - this now waits for the goroutine to exit.
 	stop()
 
-	// Drain any existing heartbeats
+	// Drain any existing heartbeats that were sent before stop returned.
 Loop:
 	for {
 		select {
@@ -545,8 +550,8 @@ Loop:
 	// Call stop again - should not panic
 	stop()
 
-	// Ensure no new heartbeats are sent
-	time.Sleep(200 * time.Millisecond)
+	// Ensure no new heartbeats are sent.
+	// No sleep needed because stop() guaranteed goroutine exit.
 	select {
 	case <-hb:
 		t.Fatal("Unexpected heartbeat after stop")
@@ -685,7 +690,7 @@ func TestHttpRequest_ContextCancellation(t *testing.T) {
 		t.Fatal("Timeout waiting for HttpRequest to return after cancellation")
 	}
 
-	// Drain heartbeat
+	// Drain heartbeat - HttpRequest has returned, so stopHB() was called and waited for exit.
 Loop:
 	for {
 		select {
@@ -696,7 +701,6 @@ Loop:
 	}
 
 	// Verify no new heartbeats
-	time.Sleep(100 * time.Millisecond)
 	select {
 	case <-hb:
 		t.Fatal("Heartbeat still running after cancellation")
@@ -753,7 +757,7 @@ func TestReadExternalDocs_ContextCancellation(t *testing.T) {
 		t.Fatal("Timeout waiting for ReadExternalDocs to return after cancellation")
 	}
 
-	// Drain heartbeat
+	// Drain heartbeat - ReadExternalDocs returned, stopHB() waited for exit.
 Loop:
 	for {
 		select {
@@ -764,7 +768,6 @@ Loop:
 	}
 
 	// Verify no new heartbeats
-	time.Sleep(100 * time.Millisecond)
 	select {
 	case <-hb:
 		t.Fatal("Heartbeat still running after cancellation")

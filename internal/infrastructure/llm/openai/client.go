@@ -120,9 +120,9 @@ type responseOutputItem struct {
 	Refusal    string         `json:"refusal"`
 	Usage      *usage         `json:"usage"`
 	// Top-level Call support
-	Function *functionCall `json:"function,omitempty"`
-	Name     string        `json:"name,omitempty"`      // Flattened fallback
-	Arguments string       `json:"arguments,omitempty"` // Flattened fallback
+	Function  *functionCall `json:"function,omitempty"`
+	Name      string        `json:"name,omitempty"`      // Flattened fallback
+	Arguments string        `json:"arguments,omitempty"` // Flattened fallback
 }
 
 type contentBlock struct {
