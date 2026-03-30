@@ -5,6 +5,7 @@ package suggestions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -565,5 +566,92 @@ func TestMultiSourceSuggestionService_Close_WaitsForBackgroundTasks(t *testing.T
 	prompts := tracker.GetPrompts()
 	if len(prompts) != 1 || prompts[0] != prompt {
 		t.Errorf("prompt not persisted after Close: %v", prompts)
+	}
+}
+
+func TestNewMultiSourceSuggestionService_NilLogger(t *testing.T) {
+	tracker := &errorPromptTracker{}
+	
+	// This should NOT panic even if tracker fails and logger is nil
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("The code panicked with nil logger in constructor: %v", r)
+		}
+	}()
+
+	_, err := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, nil)
+	if err != nil {
+		t.Fatalf("NewMultiSourceSuggestionService failed: %v", err)
+	}
+}
+
+func TestRecordPrompt_NilLogger(t *testing.T) {
+	// We need a tracker that fails Append
+	failTracker := &failingAppendTracker{}
+	
+	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), failTracker, nil, nil)
+	
+	_ = service.RecordPrompt(context.Background(), "test")
+	
+	// Wait a bit for the goroutine to run and potentially panic
+	_ = service.Close(context.Background())
+}
+
+type failingAppendTracker struct {
+	mockPromptTracker
+}
+
+func (f *failingAppendTracker) Append(ctx context.Context, prompt string) error {
+	return fmt.Errorf("append failed")
+}
+
+func TestMultiSourceSuggestionService_Close_Timeout(t *testing.T) {
+	service := &multiSourceSuggestionService{}
+	service.wg.Add(1) // Simulate a task that won't call Done()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	err := service.Close(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected DeadlineExceeded, got %v", err)
+	}
+}
+
+func TestMultiSourceSuggestionService_Close_ImmediateCancellation(t *testing.T) {
+	service := &multiSourceSuggestionService{}
+	service.wg.Add(1) // Simulate a task that won't call Done()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := service.Close(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected Canceled, got %v", err)
+	}
+}
+
+func TestRecordPrompt_AfterClose(t *testing.T) {
+	tracker := &mockPromptTracker{}
+	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+
+	// Call Close on the service
+	err := service.Close(context.Background())
+	if err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Attempt to call RecordPrompt
+	err = service.RecordPrompt(context.Background(), "should-not-be-persisted")
+	if err != nil {
+		t.Fatalf("RecordPrompt should not return an error even if closing: %v", err)
+	}
+
+	// Verify that the prompt was NOT appended to the global tracker
+	prompts := tracker.GetPrompts()
+	for _, p := range prompts {
+		if p == "should-not-be-persisted" {
+			t.Errorf("prompt was persisted to tracker after Close")
+		}
 	}
 }

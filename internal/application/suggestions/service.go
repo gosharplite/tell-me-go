@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -27,11 +28,16 @@ type multiSourceSuggestionService struct {
 	tracker   ports.PromptTracker
 	fs        persistence.FileSystem
 	wg        sync.WaitGroup
+	closing   atomic.Bool
 	logger    io.Writer
 }
 
 // NewMultiSourceSuggestionService creates a new suggestion service and pre-loads the history.
 func NewMultiSourceSuggestionService(ctx context.Context, fs persistence.FileSystem, tracker ports.PromptTracker, recentHistory []string, logger io.Writer) (ports.SuggestionService, error) {
+	if logger == nil {
+		logger = io.Discard
+	}
+
 	s := &multiSourceSuggestionService{
 		history: make([]string, 0),
 		tracker: tracker,
@@ -132,6 +138,10 @@ func (s *multiSourceSuggestionService) RecordPrompt(ctx context.Context, prompt 
 	// 2. Asynchronous persistent update
 	// We use context.WithoutCancel to ensure the write completes even if the request context is cancelled.
 	// A goroutine is used to prevent blocking the UI thread.
+	if s.closing.Load() {
+		return nil
+	}
+
 	s.wg.Add(1)
 	go func(ctx context.Context, p string) {
 		defer s.wg.Done()
@@ -151,6 +161,7 @@ func (s *multiSourceSuggestionService) RecordPrompt(ctx context.Context, prompt 
 
 // Close waits for all background tasks to finish or times out if the context is cancelled.
 func (s *multiSourceSuggestionService) Close(ctx context.Context) error {
+	s.closing.Store(true)
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
