@@ -36,6 +36,10 @@ func (m *mockChatService) GetToolNames(ctx stdctx.Context, configPath string) ([
 	return []string{"test_tool"}, nil
 }
 
+func (m *mockChatService) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
+	return nil, nil
+}
+
 type mockSM struct {
 	domain_security.Manager
 }

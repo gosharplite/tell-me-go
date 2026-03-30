@@ -30,6 +30,7 @@ type Container interface {
 	GetHistoryManager(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
 	GetUnifiedHistoryProvider(ctx context.Context, cfg *domain_config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
 	GetToolNames(ctx context.Context, cfg *domain_config.Config, configPath string) ([]string, error)
+	GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error)
 }
 
 type chatService struct {
@@ -180,4 +181,9 @@ func (s *chatService) GetToolNames(ctx context.Context, configPath string) ([]st
 	}
 
 	return s.Container.GetToolNames(ctx, cfg, configPath)
+}
+
+// GetSuggestionService implements ChatService.
+func (s *chatService) GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error) {
+	return s.Container.GetSuggestionService(ctx, recentHistory)
 }

@@ -128,6 +128,14 @@ func (m *mockServiceContainer) GetToolNames(ctx context.Context, cfg *config.Con
 	return args.Get(0).([]string), args.Error(1)
 }
 
+func (m *mockServiceContainer) GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error) {
+	args := m.Called(ctx, recentHistory)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.SuggestionService), args.Error(1)
+}
+
 // mockServiceSessionDependencies is a mock of SessionDependencies.
 type mockServiceSessionDependencies struct {
 	mock.Mock

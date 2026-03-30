@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -21,22 +22,32 @@ import (
 type mockPromptTracker struct {
 	mu      sync.RWMutex
 	prompts []string
+	appended chan struct{}
 }
 
 func (m *mockPromptTracker) Append(ctx context.Context, prompt string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prompts = append(m.prompts, prompt)
+	if m.appended != nil {
+		select {
+		case m.appended <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 
 func (m *mockPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if limit >= len(m.prompts) {
-		return m.prompts, nil
+	n := len(m.prompts)
+	if limit < n {
+		n = limit
 	}
-	return m.prompts[:limit], nil
+	res := make([]string, n)
+	copy(res, m.prompts[:n])
+	return res, nil
 }
 
 func (m *mockPromptTracker) GetPrompts() []string {
@@ -155,7 +166,10 @@ func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 }
 
 func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
-	tracker := &mockPromptTracker{}
+	appended := make(chan struct{}, 1)
+	tracker := &mockPromptTracker{
+		appended: appended,
+	}
 	service, _ := NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, nil)
 
 	prompt := "new-unique-prompt"
@@ -168,6 +182,14 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	got, _ := service.GetSuggestions(context.Background(), "new")
 	if len(got) != 1 || got[0] != prompt {
 		t.Errorf("prompt not immediately available in trie: %v", got)
+	}
+
+	// Wait for persistence in tracker (async)
+	select {
+	case <-appended:
+		// success
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timeout waiting for prompt persistence")
 	}
 
 	// Check persistence in tracker

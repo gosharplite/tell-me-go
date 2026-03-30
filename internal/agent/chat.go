@@ -35,4 +35,7 @@ type ChatService interface {
 
 	// GetToolNames retrieves the names of all available tools.
 	GetToolNames(ctx context.Context, configPath string) ([]string, error)
+
+	// GetSuggestionService initializes and returns the suggestion service.
+	GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error)
 }

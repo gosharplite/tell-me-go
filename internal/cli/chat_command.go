@@ -13,12 +13,9 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
@@ -139,16 +136,6 @@ func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet,
 
 func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) ports.Capturer {
 	if opts.tuiPrompt {
-		tracker, err := history.NewGlobalPromptTracker(c.HomeDir)
-		if err != nil {
-			// Not critical enough to fail the whole app, but should be logged to stderr
-			_, _ = fmt.Fprintf(c.Stderr, "Warning: %v\n", err)
-		}
-		if tracker == nil {
-			// Prevent nil pointer panics if initialization completely fails
-			tracker = history.NewNoOpTracker()
-		}
-
 		// Try to get at least the last user message for the trie
 		lastMsg, _, _ := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
 		var recentHistory []string
@@ -156,7 +143,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) ports.
 			recentHistory = append(recentHistory, lastMsg)
 		}
 
-		svc, _ := suggestions.NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, recentHistory)
+		svc, _ := c.ChatService.GetSuggestionService(ctx, recentHistory)
 
 		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
 

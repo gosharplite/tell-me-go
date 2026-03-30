@@ -125,8 +125,19 @@ func (s *multiSourceSuggestionService) RecordPrompt(ctx context.Context, prompt 
 	s.history = updated
 	s.historyMu.Unlock()
 
-	// 2. Synchronous persistent update
-	return s.tracker.Append(ctx, prompt)
+	// 2. Asynchronous persistent update
+	// We use context.WithoutCancel to ensure the write completes even if the request context is cancelled.
+	// A goroutine is used to prevent blocking the UI thread.
+	go func(ctx context.Context, p string) {
+		// Use a detached context for the background write
+		bgCtx := context.WithoutCancel(ctx)
+		if err := s.tracker.Append(bgCtx, p); err != nil {
+			// Since this is background, we can only log the error
+			fmt.Fprintf(os.Stderr, "Warning: failed to record prompt to global tracker: %v\n", err)
+		}
+	}(ctx, prompt)
+
+	return nil
 }
 
 func (s *multiSourceSuggestionService) scanFiles(ctx context.Context, query string) []string {

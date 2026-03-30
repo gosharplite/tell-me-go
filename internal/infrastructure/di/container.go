@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -51,6 +52,7 @@ type Container interface {
 	GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error)
 	GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
 	GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error)
+	GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error)
 }
 
 // bootstrapper handles the instantiation and wiring of system components.
@@ -438,4 +440,15 @@ func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, conf
 		names = append(names, d.Name)
 	}
 	return names, nil
+}
+
+// GetSuggestionService initializes and returns the suggestion service.
+func (b *bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
+	tracker, err := history.NewGlobalPromptTracker(b.HomeDir)
+	if err != nil {
+		b.Logger.Warn("failed to initialize global prompt tracker, falling back to no-op", "error", err)
+		tracker = history.NewNoOpTracker()
+	}
+
+	return suggestions.NewMultiSourceSuggestionService(infra_persistence.NewOSFileSystem(), tracker, recentHistory)
 }
