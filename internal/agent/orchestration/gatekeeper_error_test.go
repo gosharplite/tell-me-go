@@ -152,6 +152,7 @@ func (m *mockFailingCapturer) IsTTY(any) bool { return false }
 func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, ...ports.CaptureOption) (string, error) {
 	return "", nil
 }
+func (m *mockFailingCapturer) Close(context.Context) error { return nil }
 
 type mockFailingUIRenderer struct{}
 

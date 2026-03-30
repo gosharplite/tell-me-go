@@ -17,6 +17,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+const (
+	// DefaultShutdownTimeout defines the standard grace period for application cleanup and flushing
+	// asynchronous buffers (e.g., suggestion persistence, telemetry events).
+	DefaultShutdownTimeout = 7 * time.Second
+)
+
 // Session encapsulates the state of a single conversation session.
 type Session struct {
 	ID        string

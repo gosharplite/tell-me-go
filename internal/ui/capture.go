@@ -355,3 +355,8 @@ func (c *capturer) ReadLine(ctx context.Context) (string, error) {
 		return res.s, res.err
 	}
 }
+
+// Close is a no-op for the base capturer.
+func (c *capturer) Close(ctx context.Context) error {
+	return nil
+}

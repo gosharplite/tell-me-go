@@ -227,6 +227,10 @@ func (m *mockServiceCapturer) ReadLine(ctx context.Context) (string, error) {
 	args := m.Called(ctx)
 	return args.String(0), args.Error(1)
 }
+func (m *mockServiceCapturer) Close(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
 
 func TestProcessMessage(t *testing.T) {
 	errFileNotFound := errors.New("file not found")
@@ -277,6 +281,7 @@ func TestProcessMessage(t *testing.T) {
 				agent.On("Shutdown", mock.Anything).Return(nil)
 
 				cap.On("IsTTY", mock.Anything).Return(true)
+				cap.On("Close", mock.Anything).Return(nil)
 
 				return func() {
 					assert.True(t, cleanupCalled)

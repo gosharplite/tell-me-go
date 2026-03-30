@@ -11,7 +11,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -161,9 +160,9 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 			cleanup = func() {
 				// We use a separate context for shutdown to ensure it runs even if
 				// the main context is cancelled.
-				shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), 2*time.Second)
+				shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
 				defer cancel()
-				if err := svc.Close(shutdownCtx); err != nil {
+				if err := capturer.Close(shutdownCtx); err != nil {
 					_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close suggestion service: %v\n", err)
 				}
 			}

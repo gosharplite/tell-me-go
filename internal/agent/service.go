@@ -90,8 +90,19 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 	defer cleanup()
 
+	// Ensure the capturer is closed to flush any background writes (e.g., suggestions)
 	defer func() {
-		if err := deps.GetEventBus().Shutdown(ctx); err != nil {
+		closeCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
+		defer cancel()
+		if closeErr := capturer.Close(closeCtx); closeErr != nil {
+			_, _ = fmt.Fprintf(s.Stderr, "Warning: failed to close capturer: %v\n", closeErr)
+		}
+	}()
+
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
+		defer cancel()
+		if err := deps.GetEventBus().Shutdown(shutdownCtx); err != nil {
 			if errors.Is(err, events.ErrBusNotInitialized) {
 				return
 			}
