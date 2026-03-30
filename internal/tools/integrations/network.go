@@ -10,11 +10,27 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
+
+var (
+	styleRegex  *regexp.Regexp
+	scriptRegex *regexp.Regexp
+	tagsRegex   *regexp.Regexp
+	spaceRegex  *regexp.Regexp
+	regexOnce   sync.Once
+)
+
+func initRegex() {
+	styleRegex = regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
+	scriptRegex = regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
+	tagsRegex = regexp.MustCompile(`<.*?>`)
+	spaceRegex = regexp.MustCompile(`\n\s*\n`)
+}
 
 type networkTool struct {
 	sm     security.TerminalController
@@ -26,6 +42,55 @@ func newnetworkTool(sm security.TerminalController, client tools.HTTPClient) *ne
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &networkTool{sm: sm, client: client}
+}
+
+func (t *networkTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+	}
+}
+
+func (t *networkTool) readResponseWithLimit(body io.ReadCloser, limit int64) (string, bool, error) {
+	limitReader := io.LimitReader(body, limit+1)
+	data, err := io.ReadAll(limitReader)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read response: %w", err)
+	}
+	truncated := len(data) > int(limit)
+	content := string(data)
+	if truncated {
+		content = content[:limit]
+	}
+	return content, truncated, nil
+}
+
+func (t *networkTool) sanitizeHTML(content string) string {
+	regexOnce.Do(initRegex)
+	content = styleRegex.ReplaceAllString(content, "")
+	content = scriptRegex.ReplaceAllString(content, "")
+	content = tagsRegex.ReplaceAllString(content, " ")
+	content = spaceRegex.ReplaceAllString(content, "\n\n")
+	content = strings.Join(strings.Fields(content), " ")
+	return content
 }
 
 func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -59,26 +124,8 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 		req.Header.Set(k, v)
 	}
 
-	// Heartbeat while waiting for response
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-	defer close(done)
+	stopHB := t.startHeartbeat(hb)
+	defer stopHB()
 
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -86,11 +133,13 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Limit reader to 5MB to prevent DoS
-	limitReader := io.LimitReader(resp.Body, 5*1024*1024+1)
-	respBody, err := io.ReadAll(limitReader)
+	const limit = 5 * 1024 * 1024
+	bodyContent, truncated, err := t.readResponseWithLimit(resp.Body, limit)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to read response: %w", err)
+		return tools.ToolResult{}, err
+	}
+	if truncated {
+		bodyContent += "\n... (truncated due to size limit)"
 	}
 
 	var sb strings.Builder
@@ -100,12 +149,7 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 		_, _ = fmt.Fprintf(&sb, "  %s: %s\n", k, strings.Join(v, ", "))
 	}
 	sb.WriteString("\nBody:\n")
-
-	respBodyStr := string(respBody)
-	if len(respBodyStr) > 5*1024*1024 {
-		respBodyStr = respBodyStr[:5*1024*1024] + "\n... (truncated due to size limit)"
-	}
-	sb.WriteString(respBodyStr)
+	sb.WriteString(bodyContent)
 
 	return tools.ToolResult{Text: sb.String()}, nil
 }
@@ -125,26 +169,8 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 
-	// Heartbeat while waiting for response
-	doneDocs := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-doneDocs:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-	defer close(doneDocs)
+	stopHB := t.startHeartbeat(hb)
+	defer stopHB()
 
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -156,30 +182,13 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	// Limit reader to prevent DoS
-	limitReader := io.LimitReader(resp.Body, 50001)
-	body, err := io.ReadAll(limitReader)
+	const limit = 50000
+	bodyContent, _, err := t.readResponseWithLimit(resp.Body, limit)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	content := string(body)
-
-	// Basic HTML stripping
-	// 1. Remove script and style tags and their contents
-	reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
-	reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
-	content = reStyle.ReplaceAllString(content, "")
-	content = reScript.ReplaceAllString(content, "")
-
-	// 2. Remove all other HTML tags
-	reTags := regexp.MustCompile(`<.*?>`)
-	content = reTags.ReplaceAllString(content, " ")
-
-	// 3. Clean up whitespace
-	reSpace := regexp.MustCompile(`\n\s*\n`)
-	content = reSpace.ReplaceAllString(content, "\n\n")
-	content = strings.Join(strings.Fields(content), " ")
+	content := t.sanitizeHTML(bodyContent)
 
 	// Truncate to avoid huge inputs
 	if len(content) > 10000 {
