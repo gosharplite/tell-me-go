@@ -12,30 +12,21 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 var (
-	styleRegex  *regexp.Regexp
-	scriptRegex *regexp.Regexp
-	tagsRegex   *regexp.Regexp
-	spaceRegex  *regexp.Regexp
-	regexOnce   sync.Once
-)
-
-func initRegex() {
-	// initRegex initializes regex patterns for HTML sanitization.
-	// Patterns use [^>]* to match up to the first '>' to avoid catastrophic backtracking.
+	// Regex patterns for HTML sanitization, compiled once at package initialization.
+	// Patterns use [^>]* to match up to the first '>' character for efficiency.
 	// The (?s) flag allows . to match newlines, needed for multiline tags.
-	// These patterns are safe for inputs up to the size limit (50KB).
-	styleRegex = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
+	// Note: Go's regex engine (RE2) guarantees linear time execution O(n).
+	styleRegex  = regexp.MustCompile(`(?s)<style[^>]*>.*?</style>`)
 	scriptRegex = regexp.MustCompile(`(?s)<script[^>]*>.*?</script>`)
-	// Remove all HTML tags, non-greedy match
-	tagsRegex = regexp.MustCompile(`<[^>]*>`)
-	spaceRegex = regexp.MustCompile(`\n\s*\n`)
-}
+	tagsRegex   = regexp.MustCompile(`<[^>]*>`)
+)
 
 type networkTool struct {
 	sm     security.TerminalController
@@ -72,8 +63,8 @@ func (t *networkTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 	return func() { once.Do(func() { close(done) }) }
 }
 
-func (t *networkTool) readResponseWithLimit(body io.ReadCloser, limit int64) (string, bool, error) {
-	limitReader := io.LimitReader(body, limit+1)
+func (t *networkTool) readResponseWithLimit(r io.Reader, limit int64) (string, bool, error) {
+	limitReader := io.LimitReader(r, limit+1)
 	data, err := io.ReadAll(limitReader)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to read response: %w", err)
@@ -81,17 +72,32 @@ func (t *networkTool) readResponseWithLimit(body io.ReadCloser, limit int64) (st
 	truncated := len(data) > int(limit)
 	content := string(data)
 	if truncated {
-		content = content[:limit]
+		// Safe truncation that preserves UTF-8 validity
+		content = truncateUTF8(content, int(limit))
 	}
 	return content, truncated, nil
 }
 
+// truncateUTF8 truncates a string to at most maxBytes bytes, ensuring the result
+// is valid UTF-8 by removing bytes from the end until valid.
+func truncateUTF8(s string, maxBytes int) string {
+	if maxBytes < 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	s = s[:maxBytes]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
 func (t *networkTool) sanitizeHTML(content string) string {
-	regexOnce.Do(initRegex)
 	content = styleRegex.ReplaceAllString(content, "")
 	content = scriptRegex.ReplaceAllString(content, "")
 	content = tagsRegex.ReplaceAllString(content, " ")
-	content = spaceRegex.ReplaceAllString(content, "\n\n")
 	content = strings.Join(strings.Fields(content), " ")
 	return content
 }
@@ -195,7 +201,7 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 
 	// Truncate to avoid huge inputs
 	if len(content) > 10000 {
-		content = content[:10000] + "\n... (truncated)"
+		content = truncateUTF8(content, 10000) + "\n... (truncated)"
 	}
 
 	return tools.ToolResult{Text: content}, nil

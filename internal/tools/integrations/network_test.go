@@ -13,6 +13,7 @@ import (
 	"testing"
 	"testing/iotest"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -541,5 +542,86 @@ func TestHeartbeatConcurrency(t *testing.T) {
 		t.Fatal("Unexpected heartbeat after stop")
 	default:
 		// OK
+	}
+}
+
+func TestTruncateUTF8(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		max     int
+		want    string
+		wantLen int
+	}{
+		{
+			name:    "ASCII exact",
+			input:   "hello",
+			max:     5,
+			want:    "hello",
+			wantLen: 5,
+		},
+		{
+			name:    "ASCII truncate",
+			input:   "hello world",
+			max:     5,
+			want:    "hello",
+			wantLen: 5,
+		},
+		{
+			name:    "Multi-byte rune boundary",
+			input:   "café", // 'é' is 2 bytes
+			max:     4,      // cut after 'c','a','f' (3 bytes), 'é' is 2 bytes, can't split
+			want:    "caf",
+			wantLen: 3,
+		},
+		{
+			name:    "Emoji boundary",
+			input:   "Hello 🎉 World", // 🎉 is 4 bytes
+			max:     10,              // "Hello " is 6 bytes, 🎉 is 4 bytes -> exactly 10 bytes
+			want:    "Hello 🎉",
+			wantLen: 10,
+		},
+		{
+			name:    "Emoji split",
+			input:   "Hello 🎉 World",
+			max:     9, // "Hello " (6) + 3 bytes of 🎉 (invalid)
+			want:    "Hello ",
+			wantLen: 6,
+		},
+		{
+			name:    "Empty string",
+			input:   "",
+			max:     10,
+			want:    "",
+			wantLen: 0,
+		},
+		{
+			name:    "Max zero",
+			input:   "hello",
+			max:     0,
+			want:    "",
+			wantLen: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateUTF8(tt.input, tt.max)
+			if got != tt.want {
+				t.Errorf("truncateUTF8(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.want)
+			}
+			if len(got) != tt.wantLen {
+				t.Errorf("truncateUTF8(%q, %d) length = %d, want %d", tt.input, tt.max, len(got), tt.wantLen)
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("truncateUTF8(%q, %d) produced invalid UTF-8: %q", tt.input, tt.max, got)
+			}
+		})
+	}
+}
+
+func TestTruncateUTF8Negative(t *testing.T) {
+	got := truncateUTF8("hello", -1)
+	if got != "" {
+		t.Errorf("truncateUTF8(\"hello\", -1) = %q, want \"\"", got)
 	}
 }
