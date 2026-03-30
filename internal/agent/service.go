@@ -84,20 +84,15 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 
 	// 2. Build session dependencies
-	deps, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer.(domain_security.UserInteractor))
+	interactor, ok := capturer.(domain_security.UserInteractor)
+	if !ok {
+		return fmt.Errorf("internal error: capturer does not implement UserInteractor")
+	}
+	deps, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, interactor)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-
-	// Ensure the capturer is closed to flush any background writes (e.g., suggestions)
-	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
-		defer cancel()
-		if closeErr := capturer.Close(closeCtx); closeErr != nil {
-			_, _ = fmt.Fprintf(s.Stderr, "Warning: failed to close capturer: %v\n", closeErr)
-		}
-	}()
 
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)

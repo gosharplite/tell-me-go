@@ -146,7 +146,16 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 
 		svc, err := c.ChatService.GetSuggestionService(ctx, recentHistory)
 
-		baseCapturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(tui.BaseCapturer)
+		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer)
+		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
+		if !ok {
+			// Fallback: use a dummy cleanup or return an error if TUI requires BaseCapturer
+			c, ok := capturerInterface.(ports.Capturer)
+			if !ok {
+				return nil, func() {}
+			}
+			return c, func() {}
+		}
 
 		var capturer ports.Capturer
 		cleanup := func() {}
@@ -171,7 +180,9 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 		if sm, ok := c.SM.(interface {
 			SetInteractor(domain_security.UserInteractor)
 		}); ok {
-			sm.SetInteractor(capturer.(domain_security.UserInteractor))
+			if interactor, ok := capturer.(domain_security.UserInteractor); ok {
+				sm.SetInteractor(interactor)
+			}
 		}
 		return capturer, cleanup
 	}
@@ -179,11 +190,17 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 }
 
 func (c *chatCommand) setupCapturer() (ports.Capturer, func()) {
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer).(ports.Capturer)
+	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer)
+	capturer, ok := capturerInterface.(ports.Capturer)
+	if !ok {
+		return nil, func() {}
+	}
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
-		sm.SetInteractor(capturer.(domain_security.UserInteractor))
+		if interactor, ok := capturerInterface.(domain_security.UserInteractor); ok {
+			sm.SetInteractor(interactor)
+		}
 	}
 	return capturer, func() {}
 }

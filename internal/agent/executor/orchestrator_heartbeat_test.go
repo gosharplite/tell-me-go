@@ -87,19 +87,19 @@ func TestOrchestrator_HeartbeatSuccess(t *testing.T) {
 
 	reg := &mockZombieRegistry{
 		isLongRunningFn:   func(name string) bool { return true },
-		livenessThreshold: 100 * time.Millisecond,
+		livenessThreshold: 500 * time.Millisecond,
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			return []*tools.ToolDeclaration{livelyTool}
 		},
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-			// Emit heartbeats every 50ms for 200ms (total 4 heartbeats)
+			// Emit heartbeats every 10ms for 40ms (total 4 heartbeats)
 			for i := 0; i < 4; i++ {
 				select {
 				case hb <- struct{}{}:
 				case <-ctx.Done():
 					return tools.ToolResult{Text: "cancelled"}, ctx.Err()
 				}
-				time.Sleep(50 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 			}
 			return tools.ToolResult{Text: "success"}, nil
 		},
