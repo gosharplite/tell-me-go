@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-02-03T12:00:00Z",
+  "updated_at": "2026-03-30T12:00:00Z",
   "models": {
     "default": {
       "hit": 0.0,
@@ -8,9 +8,9 @@
       "thinking_budget": 0
     },
     "gpt-5": {
-      "hit": 0.175,
-      "miss": 1.75,
-      "comp": 14.00
+      "hit": 0.25,
+      "miss": 2.5,
+      "comp": 15.00
     },
     "deepseek-reasoner": {
       "hit": 0.028,
@@ -33,13 +33,6 @@
       "miss": 0.50,
       "comp": 3.00,
       "thinking_budget": 32768,
-      "search_query": 0.014
-    },
-    "gemini-3-pro-preview": {
-      "hit": 0.20,
-      "miss": 2.00,
-      "comp": 12.0,
-      "thinking_budget": 65536,
       "search_query": 0.014
     },
     "gemini-3.1-pro-preview": {

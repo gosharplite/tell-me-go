@@ -45,23 +45,8 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
-	// 1. Technical Validation: Split and check structure before authorization
-	parts, err := t.validator.Split(params.Command)
+	parts, err := t.prepareCommand(params.Command)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("error parsing command: %w", err)
-	}
-
-	// NEW: Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation)
-	// This prevents the AI from failing on valid shell commands that don't fit the direct-exec model.
-	if t.validator.HasShellFeatures(parts) {
-		if runtime.GOOS == "windows" {
-			parts = []string{"cmd.exe", "/c", params.Command}
-		} else {
-			parts = []string{"sh", "-c", params.Command}
-		}
-	}
-
-	if err := t.validator.ValidateStructure(parts); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -70,54 +55,25 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, err
 	}
 
-	// 2. Authorize
 	safe, _ := t.validator.IsSafe(params.Command)
 	approved, err := t.authorize(ctx, "Command", params.Command, params.Reason, safe, outputFile, params.Append)
 	if err != nil || !approved {
 		return t.handleAuthResult(approved, err, "command: "+params.Command)
 	}
 
-	argsAudit := []any{
-		"REASON", params.Reason,
-		"COMMAND", params.Command,
-	}
-	if params.OutputFile != "" {
-		argsAudit = append(argsAudit, "OUTPUT_FILE", params.OutputFile, "APPEND", params.Append)
-	}
-	t.sm.LogAudit("EXECUTE_COMMAND", argsAudit...)
+	t.auditExecution(params.Command, params.Reason, params.OutputFile, params.Append)
 
-	// 3. Execute
-	feedback := &warnWriter{sm: t.sm}
-
-	// Heartbeat while command is running
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	stopHB := t.startHeartbeat(hb)
+	defer stopHB()
 
 	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
 		return t.executor.RunCommand(ctx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
-			Feedback:   feedback,
+			Feedback:   &warnWriter{sm: t.sm},
 			MaxCapture: t.maxOutput,
 		})
 	})
-	close(done)
 
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -169,25 +125,8 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	// Heartbeat while pipeline is running
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	stopHB := t.startHeartbeat(hb)
+	defer stopHB()
 
 	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
 		feedback := &warnWriter{sm: t.sm}
@@ -198,7 +137,6 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 			MaxCapture: t.maxOutput,
 		})
 	})
-	close(done)
 
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -304,4 +242,62 @@ func (w *warnWriter) Write(p []byte) (n int, err error) {
 	msg := string(p)
 	w.sm.Warn(strings.TrimSuffix(msg, "\n"))
 	return len(p), nil
+}
+
+func (t *shellTool) prepareCommand(command string) ([]string, error) {
+	parts, err := t.validator.Split(command)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing command: %w", err)
+	}
+
+	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation)
+	if t.validator.HasShellFeatures(parts) {
+		if runtime.GOOS == "windows" {
+			parts = []string{"cmd.exe", "/c", command}
+		} else {
+			parts = []string{"sh", "-c", command}
+		}
+	}
+
+	if err := t.validator.ValidateStructure(parts); err != nil {
+		return nil, err
+	}
+
+	return parts, nil
+}
+
+func (t *shellTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if hb != nil {
+					select {
+					case hb <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+	}
+}
+
+func (t *shellTool) auditExecution(command, reason, outputFile string, isAppend bool) {
+	argsAudit := []any{
+		"REASON", reason,
+		"COMMAND", command,
+	}
+	if outputFile != "" {
+		argsAudit = append(argsAudit, "OUTPUT_FILE", outputFile, "APPEND", isAppend)
+	}
+	t.sm.LogAudit("EXECUTE_COMMAND", argsAudit...)
 }

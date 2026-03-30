@@ -219,16 +219,7 @@ func (m *rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.
 				m.selectedTurn = len(m.history) - 1
 			}
 			m.updateViewportContent()
-
-			if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
-				targetLine := m.turnOffsets[m.selectedTurn]
-				if targetLine < m.viewport.YOffset {
-					m.viewport.SetYOffset(targetLine)
-				}
-				if targetLine >= m.viewport.YOffset+m.viewport.Height {
-					m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
-				}
-			}
+			m.syncViewportToSelectedTurn()
 		}
 	case "k":
 		if len(m.history) > 0 {
@@ -237,16 +228,7 @@ func (m *rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.
 				m.selectedTurn = 0
 			}
 			m.updateViewportContent()
-
-			if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
-				targetLine := m.turnOffsets[m.selectedTurn]
-				if targetLine < m.viewport.YOffset {
-					m.viewport.SetYOffset(targetLine)
-				}
-				if targetLine >= m.viewport.YOffset+m.viewport.Height {
-					m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
-				}
-			}
+			m.syncViewportToSelectedTurn()
 		}
 	case "n":
 		if len(m.matches) > 0 {
@@ -268,64 +250,11 @@ func (m *rootBrowserModel) handleNavigationKeys(msg tea.KeyMsg) (tea.Model, tea.
 func (m *rootBrowserModel) handleActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "p":
-		if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
-			dto := m.history[m.selectedTurn]
-			if !dto.IsArchived {
-				// Toggle pin state
-				err := m.cmdService.SetPinned(context.Background(), dto.OriginalIndex/2, !dto.IsPinned)
-				if err != nil {
-					m.err = err
-					return m, nil
-				}
-				// Update local DTOs for the turn to reflect toggle
-				newPinState := !dto.IsPinned
-				turnStartIdx := dto.OriginalIndex & ^1
-				for idx := range m.history {
-					if !m.history[idx].IsArchived && (m.history[idx].OriginalIndex & ^1) == turnStartIdx {
-						m.history[idx].IsPinned = newPinState
-					}
-				}
-				m.lastMutationTime = time.Now()
-				m.updateViewportContent()
-				m.updateViewportHeight()
-			}
-		}
+		m.togglePin()
+		return m, nil
 	case "r":
-		if m.selectedTurn != -1 && m.selectedTurn < len(m.history) {
-			dto := m.history[m.selectedTurn]
-			if !dto.IsArchived {
-				// We need total active turns.
-				// Let's get it from the last active DTO.
-				lastActiveIdx := -1
-				for i := len(m.history) - 1; i >= 0; i-- {
-					if !m.history[i].IsArchived {
-						lastActiveIdx = m.history[i].OriginalIndex
-						break
-					}
-				}
-				if lastActiveIdx == -1 {
-					return m, nil
-				}
-
-				totalMsgs := lastActiveIdx + 1
-				targetStartIdx := dto.OriginalIndex & ^1
-				turnsToRemove := (totalMsgs - targetStartIdx + 1) / 2
-
-				_, _, _, err := m.cmdService.RollbackTurns(context.Background(), turnsToRemove)
-				if err != nil {
-					m.err = err
-					return m, nil
-				}
-
-				m.lastMutationTime = time.Now()
-				// Full Refresh
-				m.history = nil
-				m.cursor = ""
-				m.selectedTurn = -1
-				m.isLoading = true
-				return m, fetchHistoryCmd(m.provider, "")
-			}
-		}
+		cmd := m.rollbackToSelected()
+		return m, cmd
 	case " ":
 		m.showThoughts = !m.showThoughts
 		m.updateViewportContent()
@@ -765,4 +694,88 @@ func fetchHistoryCmd(provider ports.UnifiedHistoryProvider, cursor string) tea.C
 			err:        err,
 		}
 	}
+}
+
+func (m *rootBrowserModel) syncViewportToSelectedTurn() {
+	if m.selectedTurn >= 0 && m.selectedTurn < len(m.turnOffsets) {
+		targetLine := m.turnOffsets[m.selectedTurn]
+		if targetLine < m.viewport.YOffset {
+			m.viewport.SetYOffset(targetLine)
+		}
+		if targetLine >= m.viewport.YOffset+m.viewport.Height {
+			m.viewport.SetYOffset(targetLine - m.viewport.Height + 1)
+		}
+	}
+}
+
+func (m *rootBrowserModel) togglePin() {
+	if m.selectedTurn == -1 || m.selectedTurn >= len(m.history) {
+		return
+	}
+
+	dto := m.history[m.selectedTurn]
+	if dto.IsArchived {
+		return
+	}
+
+	// Toggle pin state
+	err := m.cmdService.SetPinned(context.Background(), dto.OriginalIndex/2, !dto.IsPinned)
+	if err != nil {
+		m.err = err
+		return
+	}
+
+	// Update local DTOs for the turn to reflect toggle
+	newPinState := !dto.IsPinned
+	turnStartIdx := dto.OriginalIndex & ^1
+	for idx := range m.history {
+		if !m.history[idx].IsArchived && (m.history[idx].OriginalIndex & ^1) == turnStartIdx {
+			m.history[idx].IsPinned = newPinState
+		}
+	}
+	m.lastMutationTime = time.Now()
+	m.updateViewportContent()
+	m.updateViewportHeight()
+}
+
+func (m *rootBrowserModel) rollbackToSelected() tea.Cmd {
+	if m.selectedTurn == -1 || m.selectedTurn >= len(m.history) {
+		return nil
+	}
+
+	dto := m.history[m.selectedTurn]
+	if dto.IsArchived {
+		return nil
+	}
+
+	// We need total active turns.
+	// Let's get it from the last active DTO.
+	lastActiveIdx := -1
+	for i := len(m.history) - 1; i >= 0; i-- {
+		if !m.history[i].IsArchived {
+			lastActiveIdx = m.history[i].OriginalIndex
+			break
+		}
+	}
+	if lastActiveIdx == -1 {
+		return nil
+	}
+
+	totalMsgs := lastActiveIdx + 1
+	targetStartIdx := dto.OriginalIndex & ^1
+	turnsToRemove := (totalMsgs - targetStartIdx + 1) / 2
+
+	_, _, _, err := m.cmdService.RollbackTurns(context.Background(), turnsToRemove)
+	if err != nil {
+		m.err = err
+		return nil
+	}
+
+	m.lastMutationTime = time.Now()
+	// Full Refresh
+	m.history = nil
+	m.cursor = ""
+	m.selectedTurn = -1
+	m.isLoading = true
+	return fetchHistoryCmd(m.provider, "")
 }

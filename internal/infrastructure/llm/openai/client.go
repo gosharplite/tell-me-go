@@ -94,33 +94,35 @@ type reasoningConfig struct {
 }
 
 type responsesAPIResponse struct {
-	ID     string `json:"id"`
-	Output []struct {
-		Type string `json:"type"`
-		ID   string `json:"id,omitempty"` // For top-level calls
-		// Nested Message format
-		Message *struct {
-			Role      string         `json:"role"`
-			Content   []contentBlock `json:"content"`
-			ToolCalls []toolCall     `json:"tool_calls"`
-		} `json:"message,omitempty"`
-		// Direct Content Block format (fallback for heterogeneous items)
-		Role       string         `json:"role"`
-		Content    []contentBlock `json:"content"`
-		ToolCalls  []toolCall     `json:"tool_calls"`
-		Text       interface{}    `json:"text"`
-		InputText  string         `json:"input_text"`
-		OutputText string         `json:"output_text"`
-		Thought    string         `json:"thought"`
-		Reasoning  string         `json:"reasoning"`
-		Refusal    string         `json:"refusal"`
-		Usage      *usage         `json:"usage"`
-		// Top-level Call support
-		Function *functionCall `json:"function,omitempty"`
-		Name     string        `json:"name,omitempty"`      // Flattened fallback
-		Arguments string       `json:"arguments,omitempty"` // Flattened fallback
-	} `json:"output"`
-	Usage usage `json:"usage"`
+	ID     string               `json:"id"`
+	Output []responseOutputItem `json:"output"`
+	Usage  usage                `json:"usage"`
+}
+
+type responseOutputItem struct {
+	Type string `json:"type"`
+	ID   string `json:"id,omitempty"` // For top-level calls
+	// Nested Message format
+	Message *struct {
+		Role      string         `json:"role"`
+		Content   []contentBlock `json:"content"`
+		ToolCalls []toolCall     `json:"tool_calls"`
+	} `json:"message,omitempty"`
+	// Direct Content Block format (fallback for heterogeneous items)
+	Role       string         `json:"role"`
+	Content    []contentBlock `json:"content"`
+	ToolCalls  []toolCall     `json:"tool_calls"`
+	Text       interface{}    `json:"text"`
+	InputText  string         `json:"input_text"`
+	OutputText string         `json:"output_text"`
+	Thought    string         `json:"thought"`
+	Reasoning  string         `json:"reasoning"`
+	Refusal    string         `json:"refusal"`
+	Usage      *usage         `json:"usage"`
+	// Top-level Call support
+	Function  *functionCall `json:"function,omitempty"`
+	Name      string        `json:"name,omitempty"`      // Flattened fallback
+	Arguments string        `json:"arguments,omitempty"` // Flattened fallback
 }
 
 type contentBlock struct {
@@ -620,75 +622,90 @@ func (c *client) fromResponsesAPIResponse(resp *responsesAPIResponse, duration f
 	mergedUsage := resp.Usage
 
 	for _, out := range resp.Output {
-		if out.Usage != nil {
-			if mergedUsage.PromptTokens == 0 {
-				mergedUsage.PromptTokens = out.Usage.PromptTokens
-			}
-			if mergedUsage.CompletionTokens == 0 {
-				mergedUsage.CompletionTokens = out.Usage.CompletionTokens
-			}
-			if mergedUsage.InputTokens == 0 {
-				mergedUsage.InputTokens = out.Usage.InputTokens
-			}
-			if mergedUsage.OutputTokens == 0 {
-				mergedUsage.OutputTokens = out.Usage.OutputTokens
-			}
-		}
-
-		if out.Message != nil {
-			for _, cb := range out.Message.Content {
-				c.appendPartsFromBlock(content, cb)
-			}
-			if err := c.parseResponseToolCalls(out.Message.ToolCalls, content); err != nil {
-				return nil, nil, err
-			}
-		} else {
-			// Process as direct content block based on type
-			cb := contentBlock{
-				Type:       out.Type,
-				Text:       out.Text,
-				InputText:  out.InputText,
-				OutputText: out.OutputText,
-				Thought:    out.Thought,
-				Reasoning:  out.Reasoning,
-				Refusal:    out.Refusal,
-			}
-			c.appendPartsFromBlock(content, cb)
-
-			// Fallback for items that put blocks in a top-level array
-			for _, childCb := range out.Content {
-				c.appendPartsFromBlock(content, childCb)
-			}
-
-			// Top-level tool calls in output item
-			if err := c.parseResponseToolCalls(out.ToolCalls, content); err != nil {
-				return nil, nil, err
-			}
-
-			// Detection logic for top-level tool call (type: "call")
-			targetName := out.Name
-			targetArgs := out.Arguments
-			if out.Function != nil {
-				targetName = out.Function.Name
-				targetArgs = out.Function.Arguments
-			}
-			if targetName != "" {
-				_ = c.appendToolCall(content, out.ID, targetName, targetArgs)
-			}
+		c.accumulateUsage(&mergedUsage, out.Usage)
+		if err := c.processOutputItem(content, &out); err != nil {
+			return nil, nil, err
 		}
 	}
 
 	content.Validate()
 
-	promptTokens := mergedUsage.PromptTokens
+	return content, c.calculateFinalMetrics(mergedUsage, duration), nil
+}
+
+func (c *client) accumulateUsage(merged *usage, itemUsage *usage) {
+	if itemUsage == nil {
+		return
+	}
+	if merged.PromptTokens == 0 {
+		merged.PromptTokens = itemUsage.PromptTokens
+	}
+	if merged.CompletionTokens == 0 {
+		merged.CompletionTokens = itemUsage.CompletionTokens
+	}
+	if merged.InputTokens == 0 {
+		merged.InputTokens = itemUsage.InputTokens
+	}
+	if merged.OutputTokens == 0 {
+		merged.OutputTokens = itemUsage.OutputTokens
+	}
+}
+
+func (c *client) processOutputItem(content *llm.Content, out *responseOutputItem) error {
+	if out.Message != nil {
+		for _, cb := range out.Message.Content {
+			c.appendPartsFromBlock(content, cb)
+		}
+		if err := c.parseResponseToolCalls(out.Message.ToolCalls, content); err != nil {
+			return err
+		}
+	} else {
+		// Process as direct content block based on type
+		cb := contentBlock{
+			Type:       out.Type,
+			Text:       out.Text,
+			InputText:  out.InputText,
+			OutputText: out.OutputText,
+			Thought:    out.Thought,
+			Reasoning:  out.Reasoning,
+			Refusal:    out.Refusal,
+		}
+		c.appendPartsFromBlock(content, cb)
+
+		// Fallback for items that put blocks in a top-level array
+		for _, childCb := range out.Content {
+			c.appendPartsFromBlock(content, childCb)
+		}
+
+		// Top-level tool calls in output item
+		if err := c.parseResponseToolCalls(out.ToolCalls, content); err != nil {
+			return err
+		}
+
+		// Detection logic for top-level tool call (type: "call")
+		targetName := out.Name
+		targetArgs := out.Arguments
+		if out.Function != nil {
+			targetName = out.Function.Name
+			targetArgs = out.Function.Arguments
+		}
+		if targetName != "" {
+			_ = c.appendToolCall(content, out.ID, targetName, targetArgs)
+		}
+	}
+	return nil
+}
+
+func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
+	promptTokens := u.PromptTokens
 	if promptTokens == 0 {
-		promptTokens = mergedUsage.InputTokens
+		promptTokens = u.InputTokens
 	}
-	completionTokens := mergedUsage.CompletionTokens
+	completionTokens := u.CompletionTokens
 	if completionTokens == 0 {
-		completionTokens = mergedUsage.OutputTokens
+		completionTokens = u.OutputTokens
 	}
-	totalTokens := mergedUsage.TotalTokens
+	totalTokens := u.TotalTokens
 	if totalTokens == 0 {
 		totalTokens = promptTokens + completionTokens
 	}
@@ -701,14 +718,14 @@ func (c *client) fromResponsesAPIResponse(resp *responsesAPIResponse, duration f
 		Duration:       duration,
 	}
 
-	if mergedUsage.PromptTokensDetails != nil {
-		metrics.CachedTokens = mergedUsage.PromptTokensDetails.CachedTokens
+	if u.PromptTokensDetails != nil {
+		metrics.CachedTokens = u.PromptTokensDetails.CachedTokens
 	}
-	if mergedUsage.CompletionTokensDetails != nil {
-		metrics.ThinkingTokens = mergedUsage.CompletionTokensDetails.ReasoningTokens
+	if u.CompletionTokensDetails != nil {
+		metrics.ThinkingTokens = u.CompletionTokensDetails.ReasoningTokens
 	}
 
-	return content, metrics, nil
+	return metrics
 }
 
 func (c *client) appendPartsFromBlock(content *llm.Content, cb contentBlock) {

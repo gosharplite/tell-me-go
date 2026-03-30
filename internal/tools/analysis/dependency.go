@@ -5,19 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/go/packages"
 )
 
 type defaultDependencyAnalyzer struct {
-	Exec   tools.CommandExecutor
-	SP     domain_security.PolicyEvaluator
-	Events events.EventBus
+	Exec      tools.CommandExecutor
+	SP        domain_security.PolicyEvaluator
+	Events    events.EventBus
+	modPrefix string
+	modMu     sync.Mutex
 }
 
 func newDependencyAnalyzer(exec tools.CommandExecutor, sp domain_security.PolicyEvaluator, bus events.EventBus) *defaultDependencyAnalyzer {
@@ -29,41 +36,12 @@ func newDependencyAnalyzer(exec tools.CommandExecutor, sp domain_security.Policy
 }
 
 func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	if a.Events != nil {
-		evt := events.SystemMessageEvent{
-			Message: "[Tool Action] Analyzing package dependencies",
-			Level:   "info",
-		}
-		if err := events.SafePublish(ctx, a.Events, evt); err != nil {
-			if !errors.Is(err, events.ErrBusNotInitialized) {
-				slog.Default().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
-			}
-		}
-	}
+	a.publishToolAction(ctx, "Analyzing package dependencies")
 
 	format, _ := args["format"].(string)
 
-	// Heartbeat while building graph
 	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	go a.startHeartbeat(hb, done)
 
 	graph, err := a.buildGraph(ctx)
 	close(done)
@@ -71,8 +49,175 @@ func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args ma
 		return tools.ToolResult{Text: fmt.Sprintf("Error building graph: %v", err)}, nil
 	}
 
+	return tools.ToolResult{Text: a.renderGraph(graph, format)}, nil
+}
+
+func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string][]string, error) {
+	modPrefix, err := a.resolveModulePrefix(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := a.Exec.Output(ctx, "go", "list", "-m", "-f", "{{.Dir}}")
+	if err != nil {
+		return nil, fmt.Errorf("getting module root: %w", err)
+	}
+	modRoot := strings.TrimSpace(string(out))
+
+	pkgPaths, err := a.listInternalPackages(modRoot)
+	if err != nil {
+		return nil, fmt.Errorf("listing packages: %w", err)
+	}
+
+	graph := make(map[string][]string)
+	var mu sync.Mutex
+	g, groupCtx := errgroup.WithContext(ctx)
+
+	for _, p := range pkgPaths {
+		path := p
+		g.Go(func() error {
+			imports, err := a.getImports(groupCtx, path, modPrefix)
+			if err != nil {
+				return err
+			}
+
+			rel, err := filepath.Rel(modRoot, path)
+			if err != nil {
+				return err
+			}
+			pkgImportPath := modPrefix
+			if rel != "." {
+				pkgImportPath = filepath.ToSlash(filepath.Join(modPrefix, rel))
+			}
+
+			mu.Lock()
+			graph[pkgImportPath] = imports
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return graph, nil
+}
+
+func (a *defaultDependencyAnalyzer) publishToolAction(ctx context.Context, msg string) {
+	if a.Events == nil {
+		return
+	}
+	evt := events.SystemMessageEvent{
+		Message: "[Tool Action] " + msg,
+		Level:   "info",
+	}
+	if err := events.SafePublish(ctx, a.Events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			slog.Default().Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
+		}
+	}
+}
+
+func (a *defaultDependencyAnalyzer) startHeartbeat(hb chan<- struct{}, done <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if hb != nil {
+				select {
+				case hb <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
+}
+
+func (a *defaultDependencyAnalyzer) listInternalPackages(root string) ([]string, error) {
+	var pkgs []string
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			name := info.Name()
+			if name == "vendor" || (len(name) > 1 && name[0] == '.') {
+				return filepath.SkipDir
+			}
+			// Check if directory contains .go files
+			hasGo := false
+			files, err := os.ReadDir(path)
+			if err != nil {
+				return err
+			}
+			for _, f := range files {
+				if !f.IsDir() && strings.HasSuffix(f.Name(), ".go") {
+					hasGo = true
+					break
+				}
+			}
+			if hasGo {
+				pkgs = append(pkgs, path)
+			}
+		}
+		return nil
+	})
+	return pkgs, err
+}
+
+func (a *defaultDependencyAnalyzer) getImports(ctx context.Context, pkgPath string, modPrefix string) ([]string, error) {
+	cfg := &packages.Config{
+		Mode:    packages.NeedImports | packages.NeedFiles,
+		Context: ctx,
+		Dir:     pkgPath,
+	}
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		return nil, err
+	}
+
+	importMap := make(map[string]struct{})
+	for _, pkg := range pkgs {
+		for impPath := range pkg.Imports {
+			if strings.HasPrefix(impPath, modPrefix) {
+				importMap[impPath] = struct{}{}
+			}
+		}
+	}
+
+	var imports []string
+	for imp := range importMap {
+		imports = append(imports, imp)
+	}
+	sort.Strings(imports)
+	return imports, nil
+}
+
+func (a *defaultDependencyAnalyzer) resolveModulePrefix(ctx context.Context) (string, error) {
+	a.modMu.Lock()
+	defer a.modMu.Unlock()
+
+	if a.modPrefix != "" {
+		return a.modPrefix, nil
+	}
+
+	out, err := a.Exec.Output(ctx, "go", "list", "-m")
+	if err != nil {
+		return "", fmt.Errorf("getting module name: %w", err)
+	}
+	a.modPrefix = strings.TrimSpace(string(out))
+	return a.modPrefix, nil
+}
+
+func (a *defaultDependencyAnalyzer) renderGraph(graph map[string][]string, format string) string {
 	if format == "mermaid" {
-		return tools.ToolResult{Text: generateMermaid(graph)}, nil
+		return generateMermaid(graph)
 	}
 
 	var sb strings.Builder
@@ -95,38 +240,5 @@ func (a *defaultDependencyAnalyzer) GetPackageGraph(ctx context.Context, args ma
 			_, _ = fmt.Fprintf(&sb, "%s (no internal dependencies)\n", pkg)
 		}
 	}
-
-	return tools.ToolResult{Text: sb.String()}, nil
-}
-
-func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string][]string, error) {
-	out, err := a.Exec.CombinedOutput(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
-	if err != nil {
-		return nil, fmt.Errorf("listing packages: %w (output: %s)", err, string(out))
-	}
-
-	// Get module name to filter for internal imports
-	modOut, _ := a.Exec.Output(ctx, "go", "list", "-m")
-	modName := strings.TrimSpace(string(modOut))
-
-	graph := make(map[string][]string)
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for _, line := range lines {
-		parts := strings.Split(line, " -> ")
-		if len(parts) != 2 {
-			continue
-		}
-		pkg := parts[0]
-		importsRaw := strings.Trim(parts[1], "[]")
-		imports := strings.Fields(importsRaw)
-
-		var internalImports []string
-		for _, imp := range imports {
-			if strings.HasPrefix(imp, modName) {
-				internalImports = append(internalImports, imp)
-			}
-		}
-		graph[pkg] = internalImports
-	}
-	return graph, nil
+	return sb.String()
 }
