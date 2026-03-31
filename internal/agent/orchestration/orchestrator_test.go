@@ -188,9 +188,11 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 
 func TestUIBridge_HandleEvent(t *testing.T) {
 	tests := []struct {
-		name  string
-		event events.Event
-		setup func(m *mockUIRenderer)
+		name     string
+		event    events.Event
+		setup    func(m *mockUIRenderer)
+		preSetup func(b *uiBridge)
+		verify   func(t *testing.T, b *uiBridge)
 	}{
 		{
 			name: "TurnStatusEvent",
@@ -309,6 +311,42 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
+			name: "RetryWaitingEvent",
+			event: events.RetryWaitingEvent{
+				Duration: 5 * time.Second,
+			},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Return(func() {})
+			},
+		},
+		{
+			name:  "ConsentStartedEvent (Stops Spinner)",
+			event: events.ConsentStartedEvent{},
+			preSetup: func(b *uiBridge) {
+				b.mu.Lock()
+				b.stopSpinner = func() {}
+				b.mu.Unlock()
+			},
+			verify: func(t *testing.T, b *uiBridge) {
+				b.mu.Lock()
+				defer b.mu.Unlock()
+				assert.Nil(t, b.stopSpinner)
+			},
+			setup: func(m *mockUIRenderer) {},
+		},
+		{
+			name:  "ConsentFinishedEvent (Resumes Active Phase)",
+			event: events.ConsentFinishedEvent{},
+			preSetup: func(b *uiBridge) {
+				b.mu.Lock()
+				b.activePhase = events.InferenceStartedEvent{Model: "gpt-4o"}
+				b.mu.Unlock()
+			},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Return(func() {})
+			},
+		},
+		{
 			name: "ResponseEvent",
 			event: events.ResponseEvent{
 				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},
@@ -323,11 +361,17 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mRenderer := new(mockUIRenderer)
 			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+			if tt.preSetup != nil {
+				tt.preSetup(bridge)
+			}
 			tt.setup(mRenderer)
 
 			bridge.handleEvent(context.Background(), tt.event)
 
 			mRenderer.AssertExpectations(t)
+			if tt.verify != nil {
+				tt.verify(t, bridge)
+			}
 		})
 	}
 }

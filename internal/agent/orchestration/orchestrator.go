@@ -293,6 +293,10 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 		b.handleTurnStatus(ev)
 	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
 		b.handleSpinnerEvent(ev)
+	case events.ConsentStartedEvent:
+		b.stopActiveSpinner()
+	case events.ConsentFinishedEvent:
+		b.resumeActiveSpinner()
 	case events.ResponseEvent:
 		b.handleResponse(ev)
 	case events.UsageMetricsEvent:

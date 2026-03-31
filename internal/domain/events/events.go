@@ -548,6 +548,8 @@ func (e SummarizationRequired) Type() string     { return "SummarizationRequired
 func (e TraceEvent) Type() string                { return "TraceEvent" }
 func (e RefiningStartedEvent) Type() string      { return "RefiningStartedEvent" }
 func (e SummarizationStartedEvent) Type() string { return "SummarizationStartedEvent" }
+func (e ConsentStartedEvent) Type() string      { return "ConsentStartedEvent" }
+func (e ConsentFinishedEvent) Type() string     { return "ConsentFinishedEvent" }
 
 // RetryWaitingEvent signals that the agent is waiting before retrying a failed operation.
 type RetryWaitingEvent struct {
@@ -555,3 +557,9 @@ type RetryWaitingEvent struct {
 }
 
 func (e RetryWaitingEvent) Type() string { return "RetryWaitingEvent" }
+
+// ConsentStartedEvent signals that the user is being prompted for tool consent.
+type ConsentStartedEvent struct{}
+
+// ConsentFinishedEvent signals that the user consent prompt has finished.
+type ConsentFinishedEvent struct{}
