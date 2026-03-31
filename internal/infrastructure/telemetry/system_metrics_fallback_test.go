@@ -11,7 +11,7 @@ import (
 
 func TestFallbackMetricsProvider(t *testing.T) {
 	p := NewSystemMetricsProvider()
-	
+
 	total, idle := p.GetCPUStats()
 	if total != 0 || idle != 0 {
 		t.Errorf("GetCPUStats() total = %d, idle = %d; want 0, 0", total, idle)

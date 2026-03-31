@@ -606,6 +606,7 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 
 	var names []string
 	if turn.State.Response != nil {
+		names = make([]string, 0, len(turn.State.Response.Parts))
 		for _, part := range turn.State.Response.Parts {
 			if part.FunctionCall != nil {
 				names = append(names, part.FunctionCall.Name)

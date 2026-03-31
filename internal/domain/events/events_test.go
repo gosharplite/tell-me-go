@@ -389,7 +389,6 @@ func TestEventTypes(t *testing.T) {
 		events.SummarizationRequired{},
 		events.TraceEvent{},
 		events.SummarizationStartedEvent{},
-		events.RefiningStartedEvent{},
 		events.RetryWaitingEvent{},
 	}
 

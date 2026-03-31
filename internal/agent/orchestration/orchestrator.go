@@ -291,7 +291,7 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
-	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
+	case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
 		b.handleSpinnerEvent(ev)
 	case events.ConsentStartedEvent:
 		b.stopActiveSpinner()
@@ -338,13 +338,6 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 		}
 		b.transitionSpinner(func() func() {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, status)
-		})
-	case events.RefiningStartedEvent:
-		b.mu.Lock()
-		b.isRendering = false // Reset state for the new retry cycle
-		b.mu.Unlock()
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
 		})
 	case events.SummarizationStartedEvent:
 		b.mu.Lock()

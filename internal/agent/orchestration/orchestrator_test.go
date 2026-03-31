@@ -272,13 +272,6 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
-			name:  "RefiningStartedEvent",
-			event: events.RefiningStartedEvent{},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {})
-			},
-		},
-		{
 			name:  "SummarizationStartedEvent",
 			event: events.SummarizationStartedEvent{},
 			setup: func(m *mockUIRenderer) {
@@ -1059,9 +1052,9 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	})
 
 	// Second attempt (Retry)
-	// Now this SHOULD be called because RefiningStartedEvent resets isRendering.
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {}).Once()
-	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
+	// Now this SHOULD be called because RetryWaitingEvent resets isRendering.
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Return(func() {}).Once()
+	bridge.handleEvent(context.Background(), events.RetryWaitingEvent{Duration: 5 * time.Second})
 
 	mRenderer.AssertExpectations(t)
 }
@@ -1186,21 +1179,12 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 
-	// 3. Refining starts
-	stopRefiningCalled := false
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {
-		stopRefiningCalled = true
-	}).Once()
-
-	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
-
 	// Verification
 	assert.True(t, stopSummarizationCalled, "Expected summarization spinner to be stopped before inference started")
-	assert.True(t, stopInferenceCalled, "Expected inference spinner to be stopped before refining started")
 
 	// Cleanup remaining
 	bridge.Cleanup()
-	assert.True(t, stopRefiningCalled, "Expected refining spinner to be stopped during cleanup")
+	assert.True(t, stopInferenceCalled, "Expected inference spinner to be stopped during cleanup")
 
 	mRenderer.AssertExpectations(t)
 }
