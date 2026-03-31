@@ -457,6 +457,9 @@ type ToolCallEvent struct {
 	MaxTurns int
 }
 
+// ToolExecutionStartedEvent signals that the tool execution phase has started.
+type ToolExecutionStartedEvent struct{}
+
 // ToolResultEvent signals that a tool has finished execution.
 type ToolResultEvent struct {
 	Name   string
@@ -532,6 +535,7 @@ func (e TurnStarted) Type() string               { return "TurnStarted" }
 func (e InferenceStartedEvent) Type() string     { return "InferenceStartedEvent" }
 func (e ResponseEvent) Type() string             { return "ResponseEvent" }
 func (e ToolCallEvent) Type() string             { return "ToolCallEvent" }
+func (e ToolExecutionStartedEvent) Type() string { return "ToolExecutionStartedEvent" }
 func (e ToolResultEvent) Type() string           { return "ToolResultEvent" }
 func (e UsageMetricsEvent) Type() string         { return "UsageMetricsEvent" }
 func (e SystemMessageEvent) Type() string        { return "SystemMessageEvent" }

@@ -276,7 +276,7 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
-	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent:
+	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent:
 		b.handleSpinnerEvent(ev)
 	case events.ResponseEvent:
 		b.handleResponse(ev)
@@ -324,6 +324,13 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 		b.transitionSpinner(func() func() {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
 		})
+	case events.ToolExecutionStartedEvent:
+		b.mu.Lock()
+		b.isRendering = false // Reset state to allow tool spinner after inference
+		b.mu.Unlock()
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinnerWithMetrics(b.ctx, " Executing tools...")
+		})
 	}
 }
 
@@ -357,6 +364,14 @@ func (b *uiBridge) handleToolEvents(e events.Event) {
 	case events.ToolCallEvent:
 		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
 	case events.ToolResultEvent:
+		b.mu.Lock()
+		stop := b.stopSpinner
+		b.stopSpinner = nil
+		b.mu.Unlock()
+
+		if stop != nil {
+			stop()
+		}
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
 	}
 }

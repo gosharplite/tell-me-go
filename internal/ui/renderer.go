@@ -4,11 +4,15 @@
 package ui
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"runtime/metrics"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,15 +30,17 @@ import (
 
 // stdUIRenderer implements ports.UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
-	locker       domain_security.Manager
-	stdout       io.Writer
-	stderr       io.Writer
-	clock        clock.Clock
-	renderer     *glamour.TermRenderer
-	mu           sync.RWMutex
-	ioMu         sync.Mutex
-	useColor     bool
-	forceSpinner bool
+	locker         domain_security.Manager
+	stdout         io.Writer
+	stderr         io.Writer
+	clock          clock.Clock
+	renderer       *glamour.TermRenderer
+	mu             sync.RWMutex
+	ioMu           sync.Mutex
+	useColor       bool
+	forceSpinner   bool
+	lastCPUTime    int64
+	lastSampleTime time.Time
 }
 
 // NewRenderer creates a new ports.UIRenderer.
@@ -363,6 +369,14 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 }
 
 func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	return r.startSpinnerInternal(ctx, status, false)
+}
+
+func (r *stdUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
+	return r.startSpinnerInternal(ctx, status, true)
+}
+
+func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string, showMetrics bool) func() {
 	ui := r.getUIState()
 	r.mu.RLock()
 	force := r.forceSpinner
@@ -378,8 +392,16 @@ func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status strin
 	done := make(chan struct{})
 	waitDone := make(chan struct{})
 
+	// Initialize CPU tracking on start
+	if showMetrics {
+		r.mu.Lock()
+		r.lastCPUTime = r.getTotalCPUTime()
+		r.lastSampleTime = startTime
+		r.mu.Unlock()
+	}
+
 	// Draw the first frame synchronously to avoid 200ms delay.
-	r.updateIndicatorFrame(ui, frames, &idx, startTime, status)
+	r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics)
 
 	var stopOnce sync.Once
 	stopFunc := func() {
@@ -404,7 +426,7 @@ func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status strin
 			case <-done:
 				return
 			case <-ticker.C():
-				r.updateIndicatorFrame(ui, frames, &idx, startTime, status)
+				r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics)
 			}
 		}
 	}()
@@ -412,11 +434,78 @@ func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status strin
 	return stopFunc
 }
 
-func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string) {
+func (r *stdUIRenderer) getTotalCPUTime() int64 {
+	// Use runtime/metrics for total CPU time (nanoseconds)
+	const cpuMetric = "/cpu/classes/total:cpu-seconds"
+	samples := make([]metrics.Sample, 1)
+	samples[0].Name = cpuMetric
+	metrics.Read(samples)
+	if samples[0].Value.Kind() == metrics.KindFloat64 {
+		return int64(samples[0].Value.Float64() * 1e9)
+	}
+	return 0
+}
+
+func (r *stdUIRenderer) getHostMemoryPercent() float64 {
+	f, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 0.0
+	}
+	defer f.Close()
+
+	var memTotal, memAvailable int64
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "MemTotal:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				memTotal, _ = strconv.ParseInt(fields[1], 10, 64)
+			}
+		} else if strings.HasPrefix(line, "MemAvailable:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				memAvailable, _ = strconv.ParseInt(fields[1], 10, 64)
+			}
+		}
+		if memTotal > 0 && memAvailable > 0 {
+			break
+		}
+	}
+
+	if memTotal == 0 {
+		return 0.0
+	}
+	return 100.0 * (1.0 - (float64(memAvailable) / float64(memTotal)))
+}
+
+func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string, showMetrics bool) {
 	msg := status
 	if !startTime.IsZero() {
 		elapsed := int(ui.clock.Now().Sub(startTime).Seconds())
-		msg = fmt.Sprintf("%s (%ds)", status, elapsed)
+		if showMetrics {
+			// Calculate CPU usage %
+			r.mu.Lock()
+			now := ui.clock.Now()
+			currentCPU := r.getTotalCPUTime()
+			cpuPercent := 0.0
+
+			if !r.lastSampleTime.IsZero() {
+				dt := now.Sub(r.lastSampleTime).Seconds()
+				if dt > 0 {
+					dCPU := float64(currentCPU-r.lastCPUTime) / 1e9 // seconds
+					cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+				}
+			}
+			r.lastCPUTime = currentCPU
+			r.lastSampleTime = now
+			r.mu.Unlock()
+
+			hostMemPercent := r.getHostMemoryPercent()
+			msg = fmt.Sprintf("%s (%ds) [CPU: %.1f%% | MEM: %.1f%%]", status, elapsed, cpuPercent, hostMemPercent)
+		} else {
+			msg = fmt.Sprintf("%s (%ds)", status, elapsed)
+		}
 	}
 
 	if r.locker != nil {
@@ -552,8 +641,8 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
 }
 
-func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string) {
-	r.drawLoadingIndicator(ui, frames[*idx], startTime, status)
+func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string, showMetrics bool) {
+	r.drawLoadingIndicator(ui, frames[*idx], startTime, status, showMetrics)
 	*idx = (*idx + 1) % len(frames)
 }
 

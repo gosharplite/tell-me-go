@@ -298,6 +298,8 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	auth := e.authorizer
 	e.mu.RUnlock()
 
+	e.emitEvent(ctx, bus, events.ToolExecutionStartedEvent{})
+
 	ctx, declinedMap := auth.RequestBatchConsent(ctx, calls)
 
 	// Orchestrate Execution
