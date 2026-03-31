@@ -66,7 +66,7 @@ func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
 }
 
 func (c *browseCommand) setupCapturer() (ports.Capturer, func()) {
-	capturer := ui.NewCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer).(ports.Capturer)
+	capturer := ui.NewCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer, false).(ports.Capturer)
 	if sm, ok := c.ctx.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {

@@ -25,7 +25,7 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 		_ = pw.Close()
 	})
 
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  pr,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -44,7 +44,7 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 func TestPrompt_Pipe(t *testing.T) {
 	t.Parallel()
 	inputStr := "hello from pipe"
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -65,7 +65,7 @@ func TestPrompt_Pipe(t *testing.T) {
 
 func TestPrompt_Args(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -89,7 +89,7 @@ func TestPrompt_Args(t *testing.T) {
 
 func TestPrompt_Empty(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -105,7 +105,7 @@ func TestPrompt_Empty(t *testing.T) {
 
 func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -125,7 +125,7 @@ func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 
 func TestPrompt_MockEnv(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:      strings.NewReader(""),
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
@@ -148,7 +148,7 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 	t.Parallel()
 	// Empty stdin (simulated pipe)
 
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -174,7 +174,7 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 func TestPrintFeedback_NoSM(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  strings.NewReader(""),
 		Stdout: &buf,
 		Stderr: io.Discard,
@@ -192,7 +192,7 @@ func TestPrintFeedback_NoSM(t *testing.T) {
 func TestPrompt_Combined(t *testing.T) {
 	t.Parallel()
 	inputStr := "pipe input"
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -217,7 +217,7 @@ func TestPrompt_Combined(t *testing.T) {
 
 func TestIsTTY_False(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{}
+	capturer := &capturer{disableEscapeSequences: true}
 	if capturer.IsTTY("not a file") {
 		t.Error("expected IsTTY to be false for string")
 	}
@@ -226,7 +226,7 @@ func TestIsTTY_False(t *testing.T) {
 func TestCaptureFromTTY(t *testing.T) {
 	t.Parallel()
 	inputStr := "tty input"
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -251,7 +251,7 @@ func TestCaptureFromTTY_Cancel(t *testing.T) {
 		_ = pw.Close()
 	})
 
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:  pr,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -271,7 +271,7 @@ func TestWarn_SemanticStyling(t *testing.T) {
 	var stderr bytes.Buffer
 	isTTY := true
 	mc := &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
 		Clock:         mc,
@@ -314,7 +314,7 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer
 	isTTY := true
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stdin:         strings.NewReader(""),
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
@@ -362,7 +362,7 @@ func TestPrompt_SemanticStyling(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer
 	isTTY := true
-	capturer := &capturer{
+	capturer := &capturer{disableEscapeSequences: true,
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
 		Clock:         &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
@@ -388,7 +388,7 @@ func TestCapturer_Confirm_ContextCancelled(t *testing.T) {
 		_ = pw.Close()
 	})
 
-	c := &capturer{
+	c := &capturer{disableEscapeSequences: true,
 		Stdin:  pr,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -421,7 +421,7 @@ func TestCapturer_ReadLine_ContextCancelled(t *testing.T) {
 		_ = pw.Close()
 	})
 
-	c := &capturer{
+	c := &capturer{disableEscapeSequences: true,
 		Stdin:  pr,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -452,7 +452,7 @@ func TestCapturer_ReadLine_ContextCancellation_Concurrency(t *testing.T) {
 	})
 
 	// 2. Setup capturer with the blocking reader using the constructor
-	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "")
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true)
 
 	// 3. Create a context that cancels quickly
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -563,7 +563,7 @@ func TestCapturer_ReadSingleKey(t *testing.T) {
 			// Construct Capturer with isolated Stdin
 			// Using correct NewCapturer signature:
 			// func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor
-			c := NewCapturer(stdin, io.Discard, io.Discard, nil, nil, "", tt.mockAnswer)
+			c := NewCapturer(stdin, io.Discard, io.Discard, nil, nil, "", tt.mockAnswer, true)
 
 			got, err := c.ReadSingleKey(ctx)
 			if (err != nil) != tt.wantErr {

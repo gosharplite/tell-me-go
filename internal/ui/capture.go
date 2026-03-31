@@ -42,23 +42,25 @@ type capturer struct {
 	mockPrompt string
 	mockAnswer string
 
-	isTTYOverride *bool // For testing color logic
+	isTTYOverride          *bool // For testing color logic
+	disableEscapeSequences bool
 }
 
 // NewCapturer creates a new capturer.
-func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor {
+func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string, disableEscapeSequences bool) domain_security.UserInteractor {
 	if clk == nil {
 		clk = clock.RealClock{}
 	}
 	return &capturer{
-		Stdin:      stdin,
-		Stdout:     stdout,
-		Stderr:     stderr,
-		SM:         sm,
-		Clock:      clk,
-		reader:     bufio.NewReader(stdin),
-		mockPrompt: mockPrompt,
-		mockAnswer: mockAnswer,
+		Stdin:                  stdin,
+		Stdout:                 stdout,
+		Stderr:                 stderr,
+		SM:                     sm,
+		Clock:                  clk,
+		reader:                 bufio.NewReader(stdin),
+		mockPrompt:             mockPrompt,
+		mockAnswer:             mockAnswer,
+		disableEscapeSequences: disableEscapeSequences,
 	}
 }
 
@@ -205,7 +207,7 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 func (c *capturer) printFeedback(w io.Writer, useColor bool, color, msg string) {
 	if useColor && c.IsTTY(w) {
 		prefix := "\r" + termClearLine
-		if strings.HasSuffix(os.Args[0], ".test") {
+		if c.disableEscapeSequences {
 			prefix = ""
 		}
 		_, _ = fmt.Fprintf(w, "%s%s%s%s\n", prefix, color, msg, colorReset)
@@ -227,7 +229,7 @@ func (c *capturer) Confirm(ctx context.Context, message string) (bool, error) {
 
 	if c.IsTTY(c.Stderr) {
 		prefix := "\r" + termClearLine
-		if strings.HasSuffix(os.Args[0], ".test") {
+		if c.disableEscapeSequences {
 			prefix = ""
 		}
 		if color != "" {
@@ -263,7 +265,7 @@ func (c *capturer) Warn(message string) {
 func (c *capturer) Prompt(message string) {
 	if c.IsTTY(c.Stderr) {
 		prefix := "\r" + termClearLine
-		if strings.HasSuffix(os.Args[0], ".test") {
+		if c.disableEscapeSequences {
 			prefix = ""
 		}
 		_, _ = fmt.Fprintf(c.Stderr, "%s%s%s%s", prefix, colorYellow, message, colorReset)
@@ -291,7 +293,7 @@ func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
 	}
 
 	if !term.IsTerminal(fd) {
-		if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || strings.HasSuffix(os.Args[0], ".test") {
+		if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || c.disableEscapeSequences {
 			return c.readByteFallback(ctx)
 		}
 		return "", fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")

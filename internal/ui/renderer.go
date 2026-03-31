@@ -452,39 +452,52 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 		now := ui.clock.Now()
 		elapsed := int(now.Sub(startTime).Seconds())
 		if showMetrics {
-			// Calculate CPU usage %
-			r.mu.Lock()
-			currentTotal, currentIdle := r.metricsProvider.GetCPUStats()
+			// 1. Check if update is needed under RLock
+			r.mu.RLock()
+			needsUpdate := now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero()
 			cpuPercent := r.lastCPUPercent
 			hostMemPercent := r.lastMemPercent
+			r.mu.RUnlock()
 
-			// Only recalculate metrics once per second to reduce jitter and overhead
-			if now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero() {
-				if !r.lastSampleTime.IsZero() {
-					if currentIdle > 0 {
-						// Host-level metrics
-						dTotal := float64(currentTotal - r.lastCPUTime)
-						dIdle := float64(currentIdle - r.lastIdleTime)
-						if dTotal > 0 {
-							cpuPercent = (1.0 - (dIdle / dTotal)) * 100.0
-						}
-					} else {
-						// Agent-level from runtime/metrics
-						dt := now.Sub(r.lastSampleTime).Seconds()
-						if dt > 0 {
-							dCPU := float64(currentTotal-r.lastCPUTime) / 1e9 // seconds
-							cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+			if needsUpdate {
+				// 2. Perform I/O WITHOUT any lock
+				currentTotal, currentIdle := r.metricsProvider.GetCPUStats()
+				currentMem := r.metricsProvider.GetMemoryPercent()
+
+				// 3. Update state under Write Lock
+				r.mu.Lock()
+				// Re-check update condition under write lock
+				if now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero() {
+					if !r.lastSampleTime.IsZero() {
+						if currentIdle > 0 {
+							// Host-level metrics
+							dTotal := float64(currentTotal - r.lastCPUTime)
+							dIdle := float64(currentIdle - r.lastIdleTime)
+							if dTotal > 0 {
+								cpuPercent = (1.0 - (dIdle / dTotal)) * 100.0
+							}
+						} else {
+							// Agent-level from runtime/metrics
+							dt := now.Sub(r.lastSampleTime).Seconds()
+							if dt > 0 {
+								dCPU := float64(currentTotal-r.lastCPUTime) / 1e9 // seconds
+								cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+							}
 						}
 					}
+					hostMemPercent = currentMem
+					r.lastCPUTime = currentTotal
+					r.lastIdleTime = currentIdle
+					r.lastSampleTime = now
+					r.lastCPUPercent = cpuPercent
+					r.lastMemPercent = hostMemPercent
+				} else {
+					// Another goroutine updated it while we were doing I/O
+					cpuPercent = r.lastCPUPercent
+					hostMemPercent = r.lastMemPercent
 				}
-				hostMemPercent = r.metricsProvider.GetMemoryPercent()
-				r.lastCPUTime = currentTotal
-				r.lastIdleTime = currentIdle
-				r.lastSampleTime = now
-				r.lastCPUPercent = cpuPercent
-				r.lastMemPercent = hostMemPercent
+				r.mu.Unlock()
 			}
-			r.mu.Unlock()
 
 			msg = fmt.Sprintf("%s (%ds) [CPU: %.1f%% | MEM: %.1f%%]", status, elapsed, cpuPercent, hostMemPercent)
 		} else {

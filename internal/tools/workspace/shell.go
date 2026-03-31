@@ -243,6 +243,9 @@ type warnWriter struct {
 }
 
 func (w *warnWriter) Write(p []byte) (n int, err error) {
+	w.sm.TerminalLock()
+	defer w.sm.TerminalUnlock()
+
 	// The process executor includes newlines in the feedback messages.
 	// Since Warn() also typically adds a newline, we trim one from the end
 	// to prevent double-spacing in the terminal.
