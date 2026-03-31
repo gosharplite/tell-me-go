@@ -21,10 +21,10 @@ import (
 )
 
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("LogSystemMessage", func(t *testing.T) {
 		stdout.Reset()
@@ -99,10 +99,10 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_StatusLogging(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
 		stderr.Reset()
@@ -132,10 +132,10 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_ToolLogging(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
@@ -162,10 +162,10 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 }
 
 func TestStdUIRenderer_ResponseRendering(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("RenderResponse_Markdown", func(t *testing.T) {
 		stdout.Reset()
@@ -187,10 +187,10 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 }
 
 func TestStdUIRenderer_Spinner(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("StartSpinner", func(t *testing.T) {
 		stdout.Reset()
@@ -258,10 +258,10 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 }
 
 func TestLogTurnStatus_Format(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:       r.nowSafe(),
@@ -344,10 +344,10 @@ func TestLogTurnStatus_Format(t *testing.T) {
 }
 
 func TestStdUIRenderer_Colors(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("Green cost in LogTurnStatus", func(t *testing.T) {
 		stderr.Reset()
@@ -398,10 +398,10 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 }
 
 func TestStdUIRenderer_ToolMetrics(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("Tool metrics omit total duration", func(t *testing.T) {
 		stderr.Reset()
@@ -441,9 +441,9 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 }
 
 func TestStdUIRenderer_Concurrency(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{}, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, clock.RealClock{}, nil).(*stdUIRenderer)
 
 	const (
 		numGoroutines = 50
@@ -554,10 +554,10 @@ func TestStdUIRenderer_NowSafeRace(t *testing.T) {
 }
 
 func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("LogUsage terminal output for summaries", func(t *testing.T) {
 		stderr.Reset()
@@ -596,10 +596,10 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 }
 
 func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("StartSpinnerContextCancellation", func(t *testing.T) {
 		stdout.Reset()
@@ -621,10 +621,10 @@ func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
 }
 
 func TestStartSpinner_Synchronization(t *testing.T) {
-	var combined inframock.SafeBuffer
+	combined := inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &combined, &combined, mc, nil).(*stdUIRenderer)
+	r := NewRenderer(locker, combined, combined, mc, nil).(*stdUIRenderer)
 	r.SetForceSpinner(true)
 
 	// Start spinner
@@ -634,7 +634,7 @@ func TestStartSpinner_Synchronization(t *testing.T) {
 	stop()
 
 	// Immediately write to "stdout" (the same buffer)
-	_, _ = fmt.Fprint(&combined, "Response")
+	_, _ = fmt.Fprint(combined, "Response")
 
 	output := combined.String()
 
@@ -673,7 +673,7 @@ func (m *mockSystemMetricsProvider) GetMemoryPercent() float64 {
 }
 
 func TestStdUIRenderer_SpinnerWithMetrics(t *testing.T) {
-	var stderr inframock.SafeBuffer
+	stderr := inframock.NewSafeBuffer()
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 
@@ -684,7 +684,7 @@ func TestStdUIRenderer_SpinnerWithMetrics(t *testing.T) {
 		Mem:   75.0,
 	}
 
-	r := NewRenderer(locker, nil, &stderr, mc, mockMetrics).(*stdUIRenderer)
+	r := NewRenderer(locker, nil, stderr, mc, mockMetrics).(*stdUIRenderer)
 	r.SetForceSpinner(true)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

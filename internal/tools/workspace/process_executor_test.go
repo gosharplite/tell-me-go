@@ -205,9 +205,9 @@ func assertOutputLength(t *testing.T, name string, actual string, expected int) 
 
 func TestRunPipeline_FeedbackRace(t *testing.T) {
 	executor := newprocessExecutor()
-	var feedback inframock.SafeBuffer
+	feedback := inframock.NewSafeBuffer()
 	config := executionConfig{
-		Feedback: &feedback,
+		Feedback: feedback,
 	}
 	pipedParts := [][]string{
 		{"sh", "-c", "echo out; echo err >&2"},
@@ -463,11 +463,11 @@ func TestRunCommand_FileWriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var feedback inframock.SafeBuffer
+	feedback := inframock.NewSafeBuffer()
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
-		Feedback:   &feedback,
+		Feedback:   feedback,
 	}
 
 	res, err := executor.RunCommand(context.Background(), []string{"echo", "hello"}, config)
@@ -518,11 +518,11 @@ func TestRunPipeline_FileWriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var feedback inframock.SafeBuffer
+	feedback := inframock.NewSafeBuffer()
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
-		Feedback:   &feedback,
+		Feedback:   feedback,
 	}
 
 	pipedParts := [][]string{
@@ -549,11 +549,11 @@ func TestRunCommand_WriteFailureSuppression(t *testing.T) {
 		t.Skip("/dev/full not available")
 	}
 
-	var feedback inframock.SafeBuffer
+	feedback := inframock.NewSafeBuffer()
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
-		Feedback:   &feedback,
+		Feedback:   feedback,
 	}
 
 	// Run a command that produces multiple lines of output
@@ -672,11 +672,11 @@ func TestRunPipeline_WriteFailureSuppression(t *testing.T) {
 		t.Skip("/dev/full not available")
 	}
 
-	var feedback inframock.SafeBuffer
+	feedback := inframock.NewSafeBuffer()
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
-		Feedback:   &feedback,
+		Feedback:   feedback,
 	}
 
 	pipedParts := [][]string{

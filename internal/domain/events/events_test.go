@@ -453,8 +453,8 @@ func TestSimpleEventBus_HOLBlocking(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var buf inframock.SafeBuffer
-	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+	buf := inframock.NewSafeBuffer()
+	testLogger := slog.New(slog.NewJSONHandler(buf, nil))
 
 	// Small semaphore and single worker to trigger HOL blocking
 	bus := events.NewSimpleEventBus(ctx,

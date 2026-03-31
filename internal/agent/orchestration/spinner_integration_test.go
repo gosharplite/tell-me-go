@@ -69,14 +69,14 @@ func (c *controlledClock) Tick() {
 
 func TestSpinner_E2E_Visibility(t *testing.T) {
 	// 1. Setup Environment
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		tickChannel: make(chan time.Time, 1),
 	}
 
 	// Use the real UIRenderer from internal/ui
-	uiRenderer := ui.NewRenderer(nil, &stdout, &stderr, clock, nil)
+	uiRenderer := ui.NewRenderer(nil, stdout, stderr, clock, nil)
 	uiRenderer.SetForceSpinner(true) // Bypass TTY check for testing
 
 	mChatter := new(mockChatter)
@@ -89,7 +89,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		return mChatter, nil
 	}
 
-	orch := newOrchestrator("home", "1.0.0", nil, nil, &stdout, &stderr, factory, nil, uiRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer)
 
 	// 2. Mock Agent Behavior
 	// When Chat is called, it will emit events via the event bus.
@@ -159,13 +159,13 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// This test ensures that if the event bus handler times out (5s),
 	// the spinner continues to run because it's using the bridge's session context.
 
-	var stdout, stderr inframock.SafeBuffer
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		tickChannel: make(chan time.Time, 1),
 	}
 
-	uiRenderer := ui.NewRenderer(nil, &stdout, &stderr, clock, nil)
+	uiRenderer := ui.NewRenderer(nil, stdout, stderr, clock, nil)
 	uiRenderer.SetForceSpinner(true)
 
 	// Create bridge with a long-lived context

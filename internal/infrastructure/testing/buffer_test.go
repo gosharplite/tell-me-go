@@ -8,7 +8,7 @@ import (
 )
 
 func TestSafeBuffer_Contract(t *testing.T) {
-	sb := &SafeBuffer{}
+	sb := NewSafeBuffer()
 
 	// Test Write and Len
 	data := []byte("architect")
