@@ -41,7 +41,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 			defer wg.Done()
 			<-start
 			if idx%2 == 0 {
-				bridge.handleEvent(context.Background(), events.ToolExecutionStartedEvent{})
+				bridge.handleEvent(context.Background(), events.ToolExecutionStartedEvent{ToolNames: []string{"test_tool"}})
 			} else {
 				bridge.handleEvent(context.Background(), events.ResponseEvent{
 					Content: &llm.Content{},
@@ -104,6 +104,6 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 
 	// 5. Verify the spinner was immediately stopped
 	assert.True(t, spinnerStopped.Load(), "Spinner started during ResponseEvent processing must be immediately stopped")
-	
+
 	bridge.Cleanup()
 }
