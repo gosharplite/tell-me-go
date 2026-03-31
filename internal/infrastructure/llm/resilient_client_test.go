@@ -10,7 +10,6 @@ import (
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
