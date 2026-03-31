@@ -80,7 +80,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		}
 	}
 
-	m.Mock.Test(t)
+	m.Test(t)
 	
 	bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt")
 	ctx := context.Background()

@@ -58,6 +58,23 @@ func (s *funcSubscriberWithErr) Handle(ctx context.Context, e events.Event) erro
 	return s.f(ctx, e)
 }
 
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (n int, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -500,7 +517,7 @@ func TestSimpleEventBus_HOLBlocking(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var buf bytes.Buffer
+	var buf safeBuffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 	// Small semaphore and single worker to trigger HOL blocking
@@ -510,7 +527,7 @@ func TestSimpleEventBus_HOLBlocking(t *testing.T) {
 		events.WithMaxConcurrentSubscribers(1),
 		events.WithQueueSize(10),
 	)
-	defer bus.Shutdown(context.Background())
+	defer func() { _ = bus.Shutdown(context.Background()) }()
 
 	block := make(chan struct{})
 	slowSub := &uncooperativeSubscriber{block: block}
