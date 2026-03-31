@@ -124,7 +124,9 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 		errCtx := ctx.Err()
 		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
 		errorWrapMsg := "tool execution failed"
-		if errCtx == context.DeadlineExceeded {
+		if errCtx == context.Canceled {
+			msg = "Execution was interrupted or cancelled by the user."
+		} else if errCtx == context.DeadlineExceeded {
 			msg = fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout)
 			errorWrapMsg = "tool execution timed out"
 		}
