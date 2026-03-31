@@ -413,8 +413,9 @@ func TestGetDetailedCoverageReport(t *testing.T) {
 			return nil, os.ErrNotExist
 		},
 	}
+	hea := &healthManager{Exec: mock}
 
-	_, err := getDetailedCoverageReport(ctx, "./non-existent", mock, nil)
+	_, err := hea.getDetailedCoverageReport(ctx, "./non-existent", nil)
 	if err == nil {
 		t.Error("expected error for non-existent package, got nil")
 	}
@@ -428,8 +429,9 @@ func TestGetDetailedCoverageJSON(t *testing.T) {
 			return nil, os.ErrNotExist
 		},
 	}
+	hea := &healthManager{Exec: mock}
 
-	_, err := getDetailedCoverageJSON(ctx, "./non-existent", "High", mock, nil)
+	_, err := hea.getDetailedCoverageJSON(ctx, "./non-existent", "High", nil)
 	if err == nil {
 		t.Error("expected error for non-existent package, got nil")
 	}
@@ -593,6 +595,7 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
+	hea := &healthManager{Exec: mock}
 
 	// Mock os.ReadFile by overriding the internal helper if we had one,
 	// but getDetailedCoverage uses os.ReadFile directly.
@@ -602,7 +605,7 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 	}
 	defer func() { _ = os.Remove("file.go") }()
 
-	blocks, err := getDetailedCoverage(ctx, ".", mock, nil)
+	blocks, err := hea.getDetailedCoverage(ctx, ".", nil)
 	if err != nil {
 		t.Fatalf("getDetailedCoverage failed: %v", err)
 	}
@@ -652,8 +655,9 @@ func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
+	hea := &healthManager{Exec: mock}
 
-	_, err := getDetailedCoverage(ctx, ".", mock, nil)
+	_, err := hea.getDetailedCoverage(ctx, ".", nil)
 	if err == nil || !strings.Contains(err.Error(), "coverage profile is empty") {
 		t.Errorf("expected empty profile error, got %v", err)
 	}
@@ -700,12 +704,13 @@ func TestGetDetailedCoverageReport_Success(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
+	hea := &healthManager{Exec: mock}
 	if err := os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("failed to write mock go file: %v", err)
 	}
 	defer func() { _ = os.Remove("file.go") }()
 
-	report, err := getDetailedCoverageReport(ctx, ".", mock, nil)
+	report, err := hea.getDetailedCoverageReport(ctx, ".", nil)
 	if err != nil {
 		t.Fatalf("getDetailedCoverageReport failed: %v", err)
 	}
@@ -733,12 +738,13 @@ func TestGetDetailedCoverageJSON_Success(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
+	hea := &healthManager{Exec: mock}
 	if err := os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("failed to write mock go file: %v", err)
 	}
 	defer func() { _ = os.Remove("file.go") }()
 
-	jsonStr, err := getDetailedCoverageJSON(ctx, ".", "Low", mock, nil)
+	jsonStr, err := hea.getDetailedCoverageJSON(ctx, ".", "Low", nil)
 	if err != nil {
 		t.Fatalf("getDetailedCoverageJSON failed: %v", err)
 	}
@@ -887,13 +893,14 @@ func TestGetModuleName_WithTrailingSlash(t *testing.T) {
 func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
 	ctx := context.Background()
 	mock := &mockExecutor{}
+	hea := &healthManager{Exec: mock}
 
 	// Set TMPDIR to a non-existent directory to force os.CreateTemp to fail
 	oldTmp := os.Getenv("TMPDIR")
 	_ = os.Setenv("TMPDIR", "/non-existent-directory-12345")
 	defer func() { _ = os.Setenv("TMPDIR", oldTmp) }()
 
-	_, err := getDetailedCoverage(ctx, ".", mock, nil)
+	_, err := hea.getDetailedCoverage(ctx, ".", nil)
 	if err == nil {
 		t.Error("expected error from os.CreateTemp, got nil")
 	}

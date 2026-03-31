@@ -266,9 +266,9 @@ func TestHealthManager_GetDetailedCoverage(t *testing.T) {
 
 	ctx := context.Background()
 	args := map[string]interface{}{"path": "./internal/domain/events/..."}
-	res, err := hea.getDetailedCoverage(ctx, args, nil)
+	res, err := hea.GetDetailedCoverage(ctx, args, nil)
 	if err != nil {
-		t.Fatalf("getDetailedCoverage failed: %v", err)
+		t.Fatalf("GetDetailedCoverage failed: %v", err)
 	}
 
 	if !strings.Contains(res.Text, "Detailed Coverage Report") {

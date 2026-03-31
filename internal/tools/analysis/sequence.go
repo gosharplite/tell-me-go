@@ -22,6 +22,14 @@ type funcInfo struct {
 	pkg  *packages.Package
 }
 
+type frameCollector struct {
+	frames []callFrame
+}
+
+func (c *frameCollector) Add(f callFrame) {
+	c.frames = append(c.frames, f)
+}
+
 // defaultSequenceAnalyzer performs static analysis to trace function call flows.
 type defaultSequenceAnalyzer struct {
 	SP        security.PathValidator
@@ -170,15 +178,15 @@ func (a *defaultSequenceAnalyzer) traceFlow(ctx context.Context, startSymbol str
 		return nil, fmt.Errorf("start symbol not found: %s", startSymbol)
 	}
 
-	var frames []callFrame
+	collector := &frameCollector{}
 	visited := make(map[string]bool)
 
-	a.walk(ctx, startPkg, startFunc, 0, maxDepth, &frames, visited, modName, hb)
+	a.walk(ctx, startPkg, startFunc, 0, maxDepth, collector, visited, modName, hb)
 
-	return frames, nil
+	return collector.frames, nil
 }
 
-func (a *defaultSequenceAnalyzer) walk(ctx context.Context, pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]callFrame, visited map[string]bool, modName string, hb chan<- struct{}) {
+func (a *defaultSequenceAnalyzer) walk(ctx context.Context, pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *frameCollector, visited map[string]bool, modName string, hb chan<- struct{}) {
 	if depth >= maxDepth || fn.Body == nil {
 		return
 	}
@@ -221,7 +229,7 @@ type sequenceVisitor struct {
 	modName  string
 	depth    int
 	maxDepth int
-	frames   *[]callFrame
+	frames   *frameCollector
 	visited  map[string]bool
 	analyzer *defaultSequenceAnalyzer
 	hb       chan<- struct{}
@@ -301,7 +309,7 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 		return
 	}
 
-	*v.frames = append(*v.frames, frame)
+	v.frames.Add(frame)
 
 	if targetId != "" {
 		v.tryRecurse(v.ctx, targetId, v.depth, v.maxDepth, v.hb)
@@ -316,10 +324,10 @@ func (v *sequenceVisitor) isInternal(pkgPath string) bool {
 }
 
 func (v *sequenceVisitor) isDuplicate(frame callFrame) bool {
-	if len(*v.frames) == 0 {
+	if len(v.frames.frames) == 0 {
 		return false
 	}
-	last := (*v.frames)[len(*v.frames)-1]
+	last := v.frames.frames[len(v.frames.frames)-1]
 	return last.From == frame.From && last.To == frame.To && last.Function == frame.Function
 }
 

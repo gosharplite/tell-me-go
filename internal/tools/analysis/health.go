@@ -24,6 +24,16 @@ type healthManager struct {
 	Ana  *analysisManager
 }
 
+type healthResult struct {
+	Status  string
+	Details string
+}
+
+type healthSummary struct {
+	Results map[string]healthResult
+	Alerts  []string
+}
+
 func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	select {
 	case <-ctx.Done():
@@ -34,24 +44,47 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	// Heartbeat while waiting for all parallel health checks
 	done := make(chan struct{})
 	defer close(done)
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
+	go m.startHeartbeat(done, hb)
+
+	summary := m.runParallelChecks(ctx, hb)
+	table := m.formatHealthTable(summary.Results, summary.Alerts)
+
+	recommendation := m.generateRecommendation(
+		summary.Results["Tests"].Status,
+		summary.Results["Coverage"].Status,
+		summary.Results["Linting"].Status,
+		summary.Results["Complexity"].Status,
+		summary.Results["Dead Code"].Status,
+	)
+
+	var sb strings.Builder
+	sb.WriteString(table)
+	if recommendation != "" {
+		sb.WriteString("\n**Architectural Recommendation**: " + recommendation + "\n")
+	}
+
+	return tools.ToolResult{Text: sb.String()}, nil
+}
+
+func (m *healthManager) startHeartbeat(done <-chan struct{}, hb chan<- struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if hb != nil {
+				select {
+				case hb <- struct{}{}:
+				default:
 				}
 			}
 		}
-	}()
+	}
+}
 
+func (m *healthManager) runParallelChecks(ctx context.Context, hb chan<- struct{}) healthSummary {
 	var (
 		testStatus, testDetails, coverageStatus, coverageDetails string
 		lintStatus, lintDetails                                  string
@@ -86,18 +119,31 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		return nil
 	})
 
-	_ = g.Wait() // Ignore nil errors as these gatherers don't return them currently
+	_ = g.Wait()
 
-	// Format table
+	return healthSummary{
+		Results: map[string]healthResult{
+			"Tests":      {Status: testStatus, Details: testDetails},
+			"Coverage":   {Status: coverageStatus, Details: coverageDetails},
+			"Linting":    {Status: lintStatus, Details: lintDetails},
+			"Complexity": {Status: compStatus, Details: compDetails},
+			"Dead Code":  {Status: deadStatus, Details: deadDetails},
+		},
+		Alerts: alerts,
+	}
+}
+
+func (m *healthManager) formatHealthTable(results map[string]healthResult, alerts []string) string {
 	var sb strings.Builder
 	sb.WriteString("### Project Health Dashboard\n")
 	sb.WriteString("| Metric | Status | Details |\n")
 	sb.WriteString("| :--- | :--- | :--- |\n")
-	_, _ = fmt.Fprintf(&sb, "| **Tests** | %s | %s |\n", testStatus, testDetails)
-	_, _ = fmt.Fprintf(&sb, "| **Coverage** | %s | %s |\n", coverageStatus, coverageDetails)
-	_, _ = fmt.Fprintf(&sb, "| **Linting** | %s | %s |\n", lintStatus, lintDetails)
-	_, _ = fmt.Fprintf(&sb, "| **Complexity** | %s | %s |\n", compStatus, compDetails)
-	_, _ = fmt.Fprintf(&sb, "| **Dead Code** | %s | %s |\n", deadStatus, deadDetails)
+
+	metrics := []string{"Tests", "Coverage", "Linting", "Complexity", "Dead Code"}
+	for _, metric := range metrics {
+		res := results[metric]
+		_, _ = fmt.Fprintf(&sb, "| **%s** | %s | %s |\n", metric, res.Status, res.Details)
+	}
 
 	if len(alerts) > 0 {
 		sb.WriteString("\n**Complexity Alerts (Threshold > 10):**\n")
@@ -105,13 +151,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 			_, _ = fmt.Fprintf(&sb, "- %s\n", alert)
 		}
 	}
-
-	recommendation := m.generateRecommendation(testStatus, coverageStatus, lintStatus, compStatus, deadStatus)
-	if recommendation != "" {
-		sb.WriteString("\n**Architectural Recommendation**: " + recommendation + "\n")
-	}
-
-	return tools.ToolResult{Text: sb.String()}, nil
+	return sb.String()
 }
 
 func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDetails, cStatus, cDetails string) {
@@ -285,13 +325,13 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead strin
 	return strings.Join(recs, " ")
 }
 
-func (m *healthManager) getDetailedCoverage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+func (m *healthManager) GetDetailedCoverage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok {
 		path = "./..."
 	}
 
-	report, err := getDetailedCoverageReport(ctx, path, m.Exec, hb)
+	report, err := m.getDetailedCoverageReport(ctx, path, hb)
 	if err != nil {
 		return tools.ToolResult{Text: "Error: " + err.Error()}, nil
 	}

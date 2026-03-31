@@ -35,7 +35,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks and authorized paths).
 
 ## 📋 Prerequisites
-*   **Go**: 1.26 or higher.
+*   **Go**: 1.26.1 or higher.
 
 ## 🛠️ Installation
 ```bash

@@ -165,7 +165,11 @@ func (s *secretScanner) Run(ctx context.Context) checkResult {
 		if persistence.IsBinary(content) {
 			return nil
 		}
-		s.scanContent(content, path, &findings, &secretsFound, compiledPatterns)
+		matches := s.scanContent(content, path, compiledPatterns)
+		findings = append(findings, matches...)
+		if len(matches) > 0 {
+			secretsFound = true
+		}
 		return nil
 	})
 
@@ -179,13 +183,14 @@ func (s *secretScanner) Run(ctx context.Context) checkResult {
 	return checkResult{OK: true, Message: "No common secrets detected."}
 }
 
-func (s *secretScanner) scanContent(content []byte, path string, findings *[]string, secretsFound *bool, patterns []*regexp.Regexp) {
+func (s *secretScanner) scanContent(content []byte, path string, patterns []*regexp.Regexp) []string {
+	var matches []string
 	for _, re := range patterns {
 		if re.Match(content) {
-			*findings = append(*findings, fmt.Sprintf("Potential secret in %s: pattern `%s`", path, re.String()))
-			*secretsFound = true
+			matches = append(matches, fmt.Sprintf("Potential secret in %s: pattern `%s`", path, re.String()))
 		}
 	}
+	return matches
 }
 
 func (s *secretScanner) isIgnored(path string) bool {
