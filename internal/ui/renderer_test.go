@@ -686,3 +686,61 @@ func TestStartSpinner_Synchronization(t *testing.T) {
 		t.Errorf("Response appeared BEFORE clear sequence: %q", output)
 	}
 }
+
+type MockSystemMetricsProvider struct {
+	Total int64
+	Idle  int64
+	Mem   float64
+}
+
+func (m *MockSystemMetricsProvider) GetCPUStats() (int64, int64) {
+	return m.Total, m.Idle
+}
+
+func (m *MockSystemMetricsProvider) GetMemoryPercent() float64 {
+	return m.Mem
+}
+
+func TestStdUIRenderer_SpinnerWithMetrics(t *testing.T) {
+	var stderr safeBuffer
+	locker := &mockLocker{}
+	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+
+	// Initial stats: total 1000, idle 500 (50% usage)
+	mockMetrics := &MockSystemMetricsProvider{
+		Total: 1000,
+		Idle:  500,
+		Mem:   75.0,
+	}
+
+	r := NewRenderer(locker, nil, &stderr, mc, mockMetrics).(*stdUIRenderer)
+	r.SetForceSpinner(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Update clock by 1 second and stats
+	// Note: total += 1000, idle += 200 => (1- (200/1000)) = 80% usage
+	stop := r.StartSpinnerWithMetrics(ctx, "Loading...")
+
+	// Tick clock to trigger first metric recalculation
+	mc.now = mc.now.Add(time.Second)
+	mockMetrics.Total += 1000
+	mockMetrics.Idle += 200
+	mockMetrics.Mem = 75.0
+
+	// Draw another frame to capture updated metrics
+	ui := r.getUIState()
+	r.drawLoadingIndicator(ui, "X", mc.now.Add(-time.Second), "Loading...", true)
+
+	stop()
+
+	output := stderr.String()
+	// Output should contain: Loading... (1s) [CPU: 80.0% | MEM: 75.0%]
+	if !strings.Contains(output, "CPU: 80.0%") {
+		t.Errorf("expected output to contain CPU: 80.0%%, got %q", output)
+	}
+	if !strings.Contains(output, "MEM: 75.0%") {
+		t.Errorf("expected output to contain MEM: 75.0%%, got %q", output)
+	}
+}
