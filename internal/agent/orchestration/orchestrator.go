@@ -447,9 +447,11 @@ func (b *uiBridge) transitionSpinner(startFn func() func()) {
 
 	// Safely assign the new spinner, watching out for race conditions
 	b.mu.Lock()
-	if b.isRendering {
+	// ARCHITECTURAL FIX: Re-verify ALL suppression states (Rendering OR Consent) 
+	// after the period where the mutex was released.
+	if b.isRendering || b.isWaitingForConsent {
 		b.mu.Unlock()
-		newStop() // Drop the new spinner if rendering started concurrently
+		newStop() // Immediately terminate the new spinner to prevent UI overlap
 		return
 	}
 

@@ -300,11 +300,16 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 
 	var declinedMap map[int]bool
 	func() {
-		e.emitEvent(ctx, bus, events.ConsentStartedEvent{})
+		// ARCHITECTURAL FIX: Use a detached context for UI state signals
+		// to ensure the bridge state is reset even if the turn is cancelled.
+		eventCtx := context.WithoutCancel(ctx)
+		e.emitEvent(eventCtx, bus, events.ConsentStartedEvent{})
+
 		// Local defer ensures UI is unlocked immediately after the user provides input
-		defer e.emitEvent(ctx, bus, events.ConsentFinishedEvent{})
+		defer e.emitEvent(eventCtx, bus, events.ConsentFinishedEvent{})
 
 		// Update outer variables
+		// The actual consent request remains interruptible
 		ctx, declinedMap = auth.RequestBatchConsent(ctx, calls)
 	}()
 

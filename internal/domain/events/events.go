@@ -251,32 +251,41 @@ func (b *SimpleEventBus) dispatch(event Event) {
 		b.wg.Add(1)
 		b.pendingWG.Add(1)
 
-		// Acquire semaphore slot (blocks if at max concurrency)
+		// Acquire semaphore slot with timeout to prevent Head-of-Line blocking
 		select {
 		case b.subSemaphore <- struct{}{}:
+			// Success: Slot acquired, launch the subscriber goroutine
+			go func(s Subscriber, e Event) {
+				defer b.wg.Done()
+				defer b.pendingWG.Done()
+				defer func() { <-b.subSemaphore }()
+
+				// Hard timeout prevents a subscriber from holding the semaphore token forever
+				timeoutCtx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+				defer cancel()
+
+				if err := b.notifySubscriber(timeoutCtx, s, e); err != nil {
+					b.getLogger().ErrorContext(timeoutCtx, "subscriber failed",
+						slog.String("event_type", e.Type()),
+						slog.String("subscriber_type", fmt.Sprintf("%T", s)),
+						slog.Any("error", err),
+					)
+				}
+			}(sub, event)
+
+		case <-time.After(500 * time.Millisecond):
+			// Failure: Skip this specific subscriber to keep the bus moving
+			b.getLogger().Warn("Subscriber saturated; event skipped for this subscriber to prevent bus stall",
+				slog.String("event_type", event.Type()),
+				slog.String("subscriber", fmt.Sprintf("%T", sub)))
+			b.wg.Done()
+			b.pendingWG.Done()
+
 		case <-b.ctx.Done():
 			b.wg.Done()
 			b.pendingWG.Done()
 			return
 		}
-
-		go func(s Subscriber, e Event) {
-			defer b.wg.Done()
-			defer b.pendingWG.Done()
-			defer func() { <-b.subSemaphore }()
-
-			// Hard timeout prevents a subscriber from holding the semaphore token forever
-			timeoutCtx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
-			defer cancel()
-
-			if err := b.notifySubscriber(timeoutCtx, s, e); err != nil {
-				b.getLogger().ErrorContext(timeoutCtx, "subscriber failed",
-					slog.String("event_type", e.Type()),
-					slog.String("subscriber_type", fmt.Sprintf("%T", s)),
-					slog.Any("error", err),
-				)
-			}
-		}(sub, event)
 	}
 }
 
