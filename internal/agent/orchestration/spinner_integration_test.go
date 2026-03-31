@@ -4,7 +4,6 @@
 package orchestration
 
 import (
-	"bytes"
 	"context"
 	"log/slog"
 	"sync"
@@ -17,35 +16,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
-
-// safeBuffer is a thread-safe wrapper around bytes.Buffer for testing concurrent I/O.
-type safeBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *safeBuffer) Write(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *safeBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
-
-func (s *safeBuffer) Reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.b.Reset()
-}
 
 // controlledTicker allows us to trigger ticks manually for spinner frames.
 type controlledTicker struct {
@@ -93,7 +69,7 @@ func (c *controlledClock) Tick() {
 
 func TestSpinner_E2E_Visibility(t *testing.T) {
 	// 1. Setup Environment
-	var stdout, stderr safeBuffer
+	var stdout, stderr inframock.SafeBuffer
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		tickChannel: make(chan time.Time, 1),
@@ -187,7 +163,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// This test ensures that if the event bus handler times out (5s),
 	// the spinner continues to run because it's using the bridge's session context.
 
-	var stdout, stderr safeBuffer
+	var stdout, stderr inframock.SafeBuffer
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		tickChannel: make(chan time.Time, 1),

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"go.uber.org/goleak"
 )
 
@@ -56,29 +57,6 @@ type funcSubscriberWithErr struct {
 
 func (s *funcSubscriberWithErr) Handle(ctx context.Context, e events.Event) error {
 	return s.f(ctx, e)
-}
-
-type safeBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *safeBuffer) Write(p []byte) (n int, err error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *safeBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-func (b *safeBuffer) Reset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.buf.Reset()
 }
 
 func cleanupBus(t *testing.T, bus events.EventBus) {
@@ -486,7 +464,7 @@ func TestSimpleEventBus_HOLBlocking(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var buf safeBuffer
+	var buf inframock.SafeBuffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 	// Small semaphore and single worker to trigger HOL blocking

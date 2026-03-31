@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestRunPipeline_TableDriven(t *testing.T) {
@@ -203,7 +205,7 @@ func assertOutputLength(t *testing.T, name string, actual string, expected int) 
 
 func TestRunPipeline_FeedbackRace(t *testing.T) {
 	executor := newprocessExecutor()
-	var feedback safeBuffer
+	var feedback inframock.SafeBuffer
 	config := executionConfig{
 		Feedback: &feedback,
 	}
@@ -217,17 +219,6 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 			t.Logf("Feedback race run %d error: %v", i, err)
 		}
 	}
-}
-
-type safeBuffer struct {
-	strings.Builder
-	mu sync.Mutex
-}
-
-func (b *safeBuffer) Write(p []byte) (n int, err error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.Builder.Write(p)
 }
 
 func TestRunCommand_Basic(t *testing.T) {
@@ -472,7 +463,7 @@ func TestRunCommand_FileWriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var feedback safeBuffer
+	var feedback inframock.SafeBuffer
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
@@ -527,7 +518,7 @@ func TestRunPipeline_FileWriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var feedback safeBuffer
+	var feedback inframock.SafeBuffer
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
@@ -558,7 +549,7 @@ func TestRunCommand_WriteFailureSuppression(t *testing.T) {
 		t.Skip("/dev/full not available")
 	}
 
-	var feedback safeBuffer
+	var feedback inframock.SafeBuffer
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
@@ -681,7 +672,7 @@ func TestRunPipeline_WriteFailureSuppression(t *testing.T) {
 		t.Skip("/dev/full not available")
 	}
 
-	var feedback safeBuffer
+	var feedback inframock.SafeBuffer
 	executor := newprocessExecutor()
 	config := executionConfig{
 		OutputFile: outputPath,
