@@ -330,18 +330,8 @@ func parseDetailedCoverage(ctx context.Context, r io.Reader, exec tools.CommandE
 	return blocks, nil
 }
 
-// getDetailedCoverage executes the coverage test and parses the profile.
-func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.CommandExecutor, hb chan<- struct{}) ([]uncoveredBlock, error) {
-	f, err := os.CreateTemp("", "coverage-*.out")
-	if err != nil {
-		return nil, err
-	}
-	tempPath := f.Name()
-	defer func() {
-		_ = os.Remove(tempPath)
-	}()
-	_ = f.Close()
-
+// runCoverageTest executes the coverage test with a heartbeat.
+func (m *healthManager) runCoverageTest(ctx context.Context, packagePath, tempPath string, hb chan<- struct{}) error {
 	// Heartbeat while running tests
 	done := make(chan struct{})
 	go func() {
@@ -361,16 +351,41 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 			}
 		}
 	}()
+	defer close(done)
 
-	_, _ = exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, packagePath)
-	close(done)
+	_, err := m.Exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, packagePath)
+	return err
+}
 
-	info, err := os.Stat(tempPath)
+// validateProfile checks if the coverage profile was correctly generated.
+func validateProfile(path string) error {
+	info, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("coverage profile was not generated: %w", err)
+		return fmt.Errorf("coverage profile was not generated: %w", err)
 	}
 	if info.Size() == 0 {
-		return nil, fmt.Errorf("coverage profile is empty; check if package path is valid and contains testable Go files")
+		return fmt.Errorf("coverage profile is empty; check if package path is valid and contains testable Go files")
+	}
+	return nil
+}
+
+// getDetailedCoverage executes the coverage test and parses the profile.
+func (m *healthManager) getDetailedCoverage(ctx context.Context, packagePath string, hb chan<- struct{}) ([]uncoveredBlock, error) {
+	f, err := os.CreateTemp("", "coverage-*.out")
+	if err != nil {
+		return nil, err
+	}
+	tempPath := f.Name()
+	defer func() {
+		_ = os.Remove(tempPath)
+	}()
+	_ = f.Close()
+
+	// Execute coverage test (ignores error as original code did, allowing partial profiles)
+	_ = m.runCoverageTest(ctx, packagePath, tempPath, hb)
+
+	if err := validateProfile(tempPath); err != nil {
+		return nil, err
 	}
 
 	cf, err := os.Open(tempPath)
@@ -381,12 +396,12 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 		_ = cf.Close()
 	}()
 
-	return parseDetailedCoverage(ctx, cf, exec, os.ReadFile)
+	return parseDetailedCoverage(ctx, cf, m.Exec, os.ReadFile)
 }
 
 // getDetailedCoverageReport generates a formatted report optimized for LLM consumption.
-func getDetailedCoverageReport(ctx context.Context, packagePath string, exec tools.CommandExecutor, hb chan<- struct{}) (string, error) {
-	blocks, err := getDetailedCoverage(ctx, packagePath, exec, hb)
+func (m *healthManager) getDetailedCoverageReport(ctx context.Context, packagePath string, hb chan<- struct{}) (string, error) {
+	blocks, err := m.getDetailedCoverage(ctx, packagePath, hb)
 	if err != nil {
 		return "", err
 	}
@@ -468,8 +483,8 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock,
 }
 
 // getDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
-func getDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, exec tools.CommandExecutor, hb chan<- struct{}) (string, error) {
-	blocks, err := getDetailedCoverage(ctx, packagePath, exec, hb)
+func (m *healthManager) getDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, hb chan<- struct{}) (string, error) {
+	blocks, err := m.getDetailedCoverage(ctx, packagePath, hb)
 	if err != nil {
 		return "", err
 	}

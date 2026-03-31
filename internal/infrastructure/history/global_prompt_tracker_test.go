@@ -230,102 +230,131 @@ func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
 }
 
 func TestGlobalPromptTracker_Migration(t *testing.T) {
-	t.Run("successful migration from hidden folder", func(t *testing.T) {
+	t.Run("MigrateValidLegacyData", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		legacyFile := filepath.Join(tmpDir, ".tellmego", "prompts.jsonl")
-		_ = os.MkdirAll(filepath.Dir(legacyFile), 0755)
-		newFile := filepath.Join(tmpDir, "output", "global_prompts.jsonl")
+		relPath := filepath.Join(".tellmego", "prompts.jsonl")
+		content := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
 
-		// 1. Setup legacy data
-		legacyContent := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
-		if err := os.WriteFile(legacyFile, legacyContent, 0644); err != nil {
-			t.Fatalf("failed to write legacy file: %v", err)
-		}
+		t.Run("SetupLegacyData", func(t *testing.T) {
+			setupLegacyFile(t, tmpDir, relPath, content)
+		})
 
-		// 2. Trigger migration
-		_, _ = NewGlobalPromptTracker(tmpDir)
+		t.Run("ExecuteMigration", func(t *testing.T) {
+			runMigration(t, tmpDir)
+		})
 
-		// 3. Verify legacy file is gone
-		if _, err := os.Stat(legacyFile); !os.IsNotExist(err) {
-			t.Errorf("expected legacy file to be removed, got err: %v", err)
-		}
+		t.Run("VerifyNewState", func(t *testing.T) {
+			verifyMigration(t, tmpDir, relPath, content)
+		})
 
-		// 4. Verify new file exists and content matches
-		if _, err := os.Stat(newFile); os.IsNotExist(err) {
-			t.Fatalf("expected new file to exist at %s", newFile)
-		}
-
-		migratedContent, err := os.ReadFile(newFile)
-		if err != nil {
-			t.Fatalf("failed to read migrated file: %v", err)
-		}
-
-		if !bytes.Equal(legacyContent, migratedContent) {
-			t.Errorf("content mismatch.\nwant: %s\ngot:  %s", legacyContent, migratedContent)
-		}
+		t.Run("CleanupLegacyFiles", func(t *testing.T) {
+			// Legacy file removal checked in verifyMigration, check folder here
+			if _, err := os.Stat(filepath.Join(tmpDir, ".tellmego")); !os.IsNotExist(err) {
+				t.Errorf("expected .tellmego folder to be removed")
+			}
+		})
 	})
 
-	t.Run("successful migration from root folder", func(t *testing.T) {
+	t.Run("MigrateFromRoot", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		legacyFile := filepath.Join(tmpDir, "global_prompts.jsonl")
-		newFile := filepath.Join(tmpDir, "output", "global_prompts.jsonl")
+		relPath := "global_prompts.jsonl"
+		content := []byte(`{"timestamp":"2023-01-02T00:00:00Z","prompt":"root test"}` + "\n")
 
-		// 1. Setup legacy data
-		legacyContent := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
-		if err := os.WriteFile(legacyFile, legacyContent, 0644); err != nil {
-			t.Fatalf("failed to write legacy file: %v", err)
-		}
-
-		// 2. Trigger migration
-		_, _ = NewGlobalPromptTracker(tmpDir)
-
-		// 3. Verify legacy file is gone
-		if _, err := os.Stat(legacyFile); !os.IsNotExist(err) {
-			t.Errorf("expected legacy file to be removed, got err: %v", err)
-		}
-
-		// 4. Verify new file exists and content matches
-		if _, err := os.Stat(newFile); os.IsNotExist(err) {
-			t.Fatalf("expected new file to exist at %s", newFile)
-		}
+		setupLegacyFile(t, tmpDir, relPath, content)
+		runMigration(t, tmpDir)
+		verifyMigration(t, tmpDir, relPath, content)
 	})
 
-	t.Run("no migration if new file exists", func(t *testing.T) {
+	t.Run("HandleCorruptLegacyData", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		legacyFile := filepath.Join(tmpDir, "global_prompts.jsonl")
-		newDir := filepath.Join(tmpDir, "output")
-		newFile := filepath.Join(newDir, "global_prompts.jsonl")
+		relPath := "global_prompts.jsonl"
+		content := []byte("this is not json\nbut it should still be moved\n")
 
-		// 1. Setup legacy and existing data
-		legacyContent := []byte(`{"timestamp":"2023-01-01T00:00:00Z","prompt":"legacy test"}` + "\n")
-		if err := os.WriteFile(legacyFile, legacyContent, 0644); err != nil {
-			t.Fatalf("failed to write legacy file: %v", err)
+		setupLegacyFile(t, tmpDir, relPath, content)
+		runMigration(t, tmpDir)
+		verifyMigration(t, tmpDir, relPath, content)
+	})
+
+	t.Run("Idempotency", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		relPath := "global_prompts.jsonl"
+		content := []byte(`{"timestamp":"2023-01-03T00:00:00Z","prompt":"idempotency test"}` + "\n")
+
+		setupLegacyFile(t, tmpDir, relPath, content)
+
+		// Run migration twice
+		runMigration(t, tmpDir)
+		runMigration(t, tmpDir)
+
+		verifyMigration(t, tmpDir, relPath, content)
+	})
+
+	t.Run("NoOverwrite", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		legacyRel := "global_prompts.jsonl"
+		legacyContent := []byte("legacy\n")
+		setupLegacyFile(t, tmpDir, legacyRel, legacyContent)
+
+		newRel := filepath.Join("output", "global_prompts.jsonl")
+		newContent := []byte("new\n")
+		// Use manual write for existing new file
+		_ = os.MkdirAll(filepath.Join(tmpDir, "output"), 0755)
+		_ = os.WriteFile(filepath.Join(tmpDir, newRel), newContent, 0644)
+
+		runMigration(t, tmpDir)
+
+		// Legacy file should STILL exist
+		if _, err := os.Stat(filepath.Join(tmpDir, legacyRel)); os.IsNotExist(err) {
+			t.Errorf("expected legacy file to still exist when new file is present")
 		}
 
-		_ = os.MkdirAll(newDir, 0755)
-		newContent := []byte(`{"timestamp":"2024-01-01T00:00:00Z","prompt":"new test"}` + "\n")
-		if err := os.WriteFile(newFile, newContent, 0644); err != nil {
-			t.Fatalf("failed to write new file: %v", err)
-		}
-
-		// 2. Trigger migration attempt
-		_, _ = NewGlobalPromptTracker(tmpDir)
-
-		// 3. Verify legacy file is STILL THERE (no migration)
-		if _, err := os.Stat(legacyFile); os.IsNotExist(err) {
-			t.Errorf("expected legacy file to still exist")
-		}
-
-		// 4. Verify new file content is NOT overwritten
-		migratedContent, err := os.ReadFile(newFile)
-		if err != nil {
-			t.Fatalf("failed to read new file: %v", err)
-		}
-
-		if !bytes.Equal(newContent, migratedContent) {
-			t.Errorf("content mismatch.\nwant: %s\ngot:  %s", newContent, migratedContent)
+		// New file should NOT be overwritten
+		got, _ := os.ReadFile(filepath.Join(tmpDir, newRel))
+		if !bytes.Equal(got, newContent) {
+			t.Errorf("new file was overwritten")
 		}
 	})
+}
+
+func setupLegacyFile(t *testing.T, homeDir, relPath string, content []byte) string {
+	t.Helper()
+	path := filepath.Join(homeDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("failed to create directory for %s: %v", relPath, err)
+	}
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatalf("failed to write legacy file %s: %v", relPath, err)
+	}
+	return path
+}
+
+func verifyMigration(t *testing.T, homeDir, legacyRelPath string, expectedContent []byte) {
+	t.Helper()
+	legacyFile := filepath.Join(homeDir, legacyRelPath)
+	newFile := filepath.Join(homeDir, "output", "global_prompts.jsonl")
+
+	// Verify legacy file is gone (if it was supposed to be migrated)
+	if _, err := os.Stat(legacyFile); !os.IsNotExist(err) {
+		t.Errorf("expected legacy file %s to be removed, but it still exists", legacyRelPath)
+	}
+
+	// Verify new file exists and content matches
+	content, err := os.ReadFile(newFile)
+	if err != nil {
+		t.Fatalf("failed to read migrated file: %v", err)
+	}
+
+	if !bytes.Equal(content, expectedContent) {
+		t.Errorf("migrated content mismatch for %s", legacyRelPath)
+	}
+}
+
+func runMigration(t *testing.T, homeDir string) {
+	t.Helper()
+	_, err := NewGlobalPromptTracker(homeDir)
+	if err != nil {
+		t.Fatalf("NewGlobalPromptTracker failed: %v", err)
+	}
 }
 
 func TestCopyFile(t *testing.T) {

@@ -3,7 +3,6 @@ package persistence
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"testing"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func setupTestDB(t *testing.T) *sql.DB {
+func setupSQLite(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -29,6 +28,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
+func setupTestDB(t *testing.T) ports.KVStore {
+	t.Helper()
+	return newSQLiteKVStore(setupSQLite(t))
+}
+
 func TestSQLiteTaskStore(t *testing.T) {
 	t.Parallel()
 	t.Run("Read Empty Store", testTaskStoreReadEmpty)
@@ -40,7 +44,7 @@ func TestSQLiteTaskStore(t *testing.T) {
 
 func testTaskStoreReadEmpty(t *testing.T) {
 	t.Parallel()
-	db := setupTestDB(t)
+	db := setupSQLite(t)
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -55,7 +59,7 @@ func testTaskStoreReadEmpty(t *testing.T) {
 
 func testTaskStoreAppendAndRead(t *testing.T) {
 	t.Parallel()
-	db := setupTestDB(t)
+	db := setupSQLite(t)
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -87,7 +91,7 @@ func testTaskStoreAppendAndRead(t *testing.T) {
 
 func testTaskStoreUpdate(t *testing.T) {
 	t.Parallel()
-	db := setupTestDB(t)
+	db := setupSQLite(t)
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -110,7 +114,7 @@ func testTaskStoreUpdate(t *testing.T) {
 
 func testTaskStoreDelete(t *testing.T) {
 	t.Parallel()
-	db := setupTestDB(t)
+	db := setupSQLite(t)
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -131,7 +135,7 @@ func testTaskStoreDelete(t *testing.T) {
 
 func testTaskStoreDeleteAll(t *testing.T) {
 	t.Parallel()
-	db := setupTestDB(t)
+	db := setupSQLite(t)
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
@@ -153,7 +157,7 @@ func TestStoreErrors(t *testing.T) {
 
 	t.Run("TaskStore Errors", func(t *testing.T) {
 		t.Parallel()
-		db := setupTestDB(t)
+		db := setupSQLite(t)
 		_ = db.Close() // Simulate connection drop
 		store := newSQLiteTaskStore(db)
 		ctx := context.Background()
@@ -183,101 +187,141 @@ func TestStoreErrors(t *testing.T) {
 func TestSQLiteKVStore(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		action  func(ctx context.Context, store ports.KVStore) (string, error)
-		want    string
-		wantErr bool
-	}{
-		{
-			name: "Set and Get",
-			action: func(ctx context.Context, store ports.KVStore) (string, error) {
-				if err := store.Set(ctx, "theme", "dark"); err != nil {
-					return "", err
-				}
-				return store.Get(ctx, "theme")
-			},
-			want: "dark",
-		},
-		{
-			name: "Missing Key",
-			action: func(ctx context.Context, store ports.KVStore) (string, error) {
-				return store.Get(ctx, "non_existent")
-			},
-			want: "",
-		},
-		{
-			name: "Overwrite (Upsert)",
-			action: func(ctx context.Context, store ports.KVStore) (string, error) {
-				if err := store.Set(ctx, "theme", "light"); err != nil {
-					return "", err
-				}
-				if err := store.Set(ctx, "theme", "dark"); err != nil {
-					return "", err
-				}
-				return store.Get(ctx, "theme")
-			},
-			want: "dark",
-		},
-		{
-			name: "Delete",
-			action: func(ctx context.Context, store ports.KVStore) (string, error) {
-				if err := store.Set(ctx, "theme", "dark"); err != nil {
-					return "", err
-				}
-				if err := store.Delete(ctx, "theme"); err != nil {
-					return "", err
-				}
-				return store.Get(ctx, "theme")
-			},
-			want: "",
-		},
-		{
-			name: "GetAll",
-			action: func(ctx context.Context, store ports.KVStore) (string, error) {
-				_ = store.Set(ctx, "key1", "val1")
-				_ = store.Set(ctx, "key2", "val2")
-				_ = store.Set(ctx, "key3", "val3")
-				all, err := store.GetAll(ctx)
-				if err != nil {
-					return "", err
-				}
-				return fmt.Sprintf("%d", len(all)), nil
-			},
-			want: "3",
-		},
-		{
-			name: "Closed Database Error",
-			action: func(ctx context.Context, store ports.KVStore) (string, error) {
-				// Use type assertion to close the underlying DB
-				if s, ok := store.(*sqliteKVStore); ok {
-					_ = s.db.Close()
-				}
-				return store.Get(ctx, "any")
-			},
-			wantErr: true,
-		},
+	t.Run("SetAndGet", testKVStoreSetAndGet)
+	t.Run("UpdateExisting", testKVStoreUpdateExisting)
+	t.Run("Delete", testKVStoreDelete)
+	t.Run("GetAll", testKVStoreGetAll)
+	t.Run("ContextCancellation", testKVStoreContextCancellation)
+	t.Run("DatabaseError", testKVStoreDatabaseError)
+}
+
+func testKVStoreSetAndGet(t *testing.T) {
+	t.Parallel()
+	kv := setupTestDB(t)
+	ctx := context.Background()
+
+	if err := kv.Set(ctx, "theme", "dark"); err != nil {
+		t.Fatalf("Set failed: %v", err)
 	}
 
-	for _, tt := range tests {
-		tt := tt // Capture range variable for safe parallel execution
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	val, err := kv.Get(ctx, "theme")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if val != "dark" {
+		t.Errorf("got %q; want %q", val, "dark")
+	}
 
-			// 1. ISOLATION: Setup DB INSIDE the loop to guarantee a clean environment
-			db := setupTestDB(t)
-			store := newSQLiteKVStore(db)
+	// Missing key
+	val, err = kv.Get(ctx, "missing")
+	if err != nil {
+		t.Fatalf("Get missing key failed: %v", err)
+	}
+	if val != "" {
+		t.Errorf("got %q for missing key; want empty", val)
+	}
+}
 
-			// 2. EXECUTION
-			got, err := tt.action(context.Background(), store)
+func testKVStoreUpdateExisting(t *testing.T) {
+	t.Parallel()
+	kv := setupTestDB(t)
+	ctx := context.Background()
 
-			// 3. ASSERTION
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("got %q; want %q", got, tt.want)
-			}
-		})
+	_ = kv.Set(ctx, "theme", "light")
+	if err := kv.Set(ctx, "theme", "dark"); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	val, _ := kv.Get(ctx, "theme")
+	if val != "dark" {
+		t.Errorf("got %q; want %q", val, "dark")
+	}
+}
+
+func testKVStoreDelete(t *testing.T) {
+	t.Parallel()
+	kv := setupTestDB(t)
+	ctx := context.Background()
+
+	_ = kv.Set(ctx, "theme", "dark")
+	if err := kv.Delete(ctx, "theme"); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	val, _ := kv.Get(ctx, "theme")
+	if val != "" {
+		t.Errorf("got %q after delete; want empty", val)
+	}
+
+	// Non-existent key
+	if err := kv.Delete(ctx, "non-existent"); err != nil {
+		t.Errorf("Delete non-existent key failed: %v", err)
+	}
+}
+
+func testKVStoreGetAll(t *testing.T) {
+	t.Parallel()
+	kv := setupTestDB(t)
+	ctx := context.Background()
+
+	data := map[string]string{
+		"key1": "val1",
+		"key2": "val2",
+		"key3": "val3",
+	}
+
+	for k, v := range data {
+		_ = kv.Set(ctx, k, v)
+	}
+
+	all, err := kv.GetAll(ctx)
+	if err != nil {
+		t.Fatalf("GetAll failed: %v", err)
+	}
+
+	if len(all) != len(data) {
+		t.Fatalf("got %d keys; want %d", len(all), len(data))
+	}
+
+	for k, v := range data {
+		if all[k] != v {
+			t.Errorf("key %s: got %q; want %q", k, all[k], v)
+		}
+	}
+}
+
+func testKVStoreContextCancellation(t *testing.T) {
+	t.Parallel()
+	kv := setupTestDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := kv.Set(ctx, "theme", "dark"); err == nil {
+		t.Error("expected error for cancelled context on Set")
+	}
+
+	if _, err := kv.Get(ctx, "theme"); err == nil {
+		t.Error("expected error for cancelled context on Get")
+	}
+}
+
+func testKVStoreDatabaseError(t *testing.T) {
+	t.Parallel()
+	db := setupSQLite(t)
+	kv := newSQLiteKVStore(db)
+	_ = db.Close()
+	ctx := context.Background()
+
+	if _, err := kv.Get(ctx, "any"); err == nil {
+		t.Error("expected error on Get with closed DB")
+	}
+	if err := kv.Set(ctx, "any", "val"); err == nil {
+		t.Error("expected error on Set with closed DB")
+	}
+	if err := kv.Delete(ctx, "any"); err == nil {
+		t.Error("expected error on Delete with closed DB")
+	}
+	if _, err := kv.GetAll(ctx); err == nil {
+		t.Error("expected error on GetAll with closed DB")
 	}
 }

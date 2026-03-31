@@ -398,6 +398,12 @@ func (a *defaultDeadCodeAnalyzer) evaluateOrphan(id string, meta *symMeta, state
 }
 
 func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanState, hb chan<- struct{}) []orphanReport {
+	findings := a.collectOrphanFindings(ctx, state, hb)
+	sortOrphanReports(findings)
+	return findings
+}
+
+func (a *defaultDeadCodeAnalyzer) collectOrphanFindings(ctx context.Context, state *scanState, hb chan<- struct{}) []orphanReport {
 	var findings []orphanReport
 
 	// Sort IDs for deterministic iteration
@@ -419,20 +425,22 @@ func (a *defaultDeadCodeAnalyzer) buildReport(ctx context.Context, state *scanSt
 			findings = append(findings, *report)
 		}
 	}
-
-	sort.Slice(findings, func(i, j int) bool {
-		if findings[i].Impact != findings[j].Impact {
-			return findings[i].Impact > findings[j].Impact
-		}
-		if findings[i].Complexity != findings[j].Complexity {
-			return findings[i].Complexity > findings[j].Complexity
-		}
-		if findings[i].Pkg != findings[j].Pkg {
-			return findings[i].Pkg < findings[j].Pkg
-		}
-		return findings[i].Symbol < findings[j].Symbol
-	})
 	return findings
+}
+
+func sortOrphanReports(reports []orphanReport) {
+	sort.Slice(reports, func(i, j int) bool {
+		if reports[i].Impact != reports[j].Impact {
+			return reports[i].Impact > reports[j].Impact
+		}
+		if reports[i].Complexity != reports[j].Complexity {
+			return reports[i].Complexity > reports[j].Complexity
+		}
+		if reports[i].Pkg != reports[j].Pkg {
+			return reports[i].Pkg < reports[j].Pkg
+		}
+		return reports[i].Symbol < reports[j].Symbol
+	})
 }
 
 func (a *defaultDeadCodeAnalyzer) shouldExclude(pkgPath string, excluded []string) bool {
@@ -580,9 +588,7 @@ func (a *defaultDeadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, 
 	}
 }
 
-func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *scanState, hb chan<- struct{}) {
-	// Take a snapshot of the initial usages to prevent exponential overflow/corruption
-	// caused by cyclic implementations and in-place map mutation during iteration.
+func takeUsageSnapshots(state *scanState) (map[string]int, map[string]int, []string) {
 	snapshotTotal := make(map[string]int, len(state.totalUses))
 	snapshotExternal := make(map[string]int, len(state.externalUses))
 	ids := make([]string, 0, len(state.totalUses))
@@ -594,6 +600,24 @@ func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, 
 		snapshotExternal[k] = v
 	}
 	sort.Strings(ids) // Ensure deterministic propagation order
+	return snapshotTotal, snapshotExternal, ids
+}
+
+func (a *defaultDeadCodeAnalyzer) propagateUsageToImplementations(ctx context.Context, id string, count int, snapshotExternal map[string]int, state *scanState, hb chan<- struct{}) {
+	for _, implId := range a.idx.GetImplementations(ctx, id, hb) {
+		if id == implId {
+			continue // Prevent self-referential loops
+		}
+		if _, exists := state.declarations[implId]; !exists {
+			continue
+		}
+		state.totalUses[implId] += count
+		state.externalUses[implId] += snapshotExternal[id]
+	}
+}
+
+func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *scanState, hb chan<- struct{}) {
+	snapshotTotal, snapshotExternal, ids := takeUsageSnapshots(state)
 
 	for i, id := range ids {
 		if i%20 == 0 && hb != nil {
@@ -603,18 +627,8 @@ func (a *defaultDeadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, 
 			}
 		}
 
-		count := snapshotTotal[id]
-		if count > 0 {
-			for _, implId := range a.idx.GetImplementations(ctx, id, hb) {
-				if id == implId {
-					continue // Prevent self-referential loops
-				}
-				if _, exists := state.declarations[implId]; !exists {
-					continue
-				}
-				state.totalUses[implId] += count
-				state.externalUses[implId] += snapshotExternal[id]
-			}
+		if count := snapshotTotal[id]; count > 0 {
+			a.propagateUsageToImplementations(ctx, id, count, snapshotExternal, state, hb)
 		}
 	}
 }

@@ -53,7 +53,7 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 					Required: []string{"path"},
 				},
 			},
-			handler: m.Health.getDetailedCoverage,
+			handler: m.Health.GetDetailedCoverage,
 			opts:    &tools.ToolOptions{LongRunning: true, LivenessThreshold: 30 * time.Second},
 		},
 		{
