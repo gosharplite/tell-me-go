@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -35,11 +34,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 
 	reg := &mockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	strategy.SetLimits(1000, 5, 20) // turn 3/5 (remaining 2) -> Triggers warning
 
@@ -394,11 +389,7 @@ func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Conte
 		},
 	}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{})), hManager, bus, nil)
 	cm.Summarizer = llm.NewSummarizer(g, bus)
 	return cm, capturedInput
@@ -499,11 +490,7 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "initial"}}})
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	cm := NewContextManager(strategy, hManager, bus, nil)
 

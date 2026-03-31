@@ -230,18 +230,18 @@ func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Cha
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
-	mu           sync.Mutex
-	ctx          context.Context
-	renderer     ports.UIRenderer
-	showThoughts bool
-	showTools    bool
-	rawOutput    bool
-	useColor     bool
-	logFile      string
-	stopSpinner  func()
-	isRendering  bool
+	mu                  sync.Mutex
+	ctx                 context.Context
+	renderer            ports.UIRenderer
+	showThoughts        bool
+	showTools           bool
+	rawOutput           bool
+	useColor            bool
+	logFile             string
+	stopSpinner         func()
+	isRendering         bool
 	isWaitingForConsent bool
-	activePhase  events.Event
+	activePhase         events.Event
 }
 
 func (b *uiBridge) stopActiveSpinner() {
@@ -447,7 +447,7 @@ func (b *uiBridge) transitionSpinner(startFn func() func()) {
 
 	// Safely assign the new spinner, watching out for race conditions
 	b.mu.Lock()
-	// ARCHITECTURAL FIX: Re-verify ALL suppression states (Rendering OR Consent) 
+	// ARCHITECTURAL FIX: Re-verify ALL suppression states (Rendering OR Consent)
 	// after the period where the mutex was released.
 	if b.isRendering || b.isWaitingForConsent {
 		b.mu.Unlock()

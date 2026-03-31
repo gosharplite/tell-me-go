@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func (m *panicMockRenderer) StartSpinnerWithMetrics(ctx context.Context, status 
 	return func() {}
 }
 func (m *panicMockRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {}
-func (m *panicMockRenderer) LogTurnStatus(status events.TurnStatus)                             {}
+func (m *panicMockRenderer) LogTurnStatus(status events.TurnStatus)                            {}
 func (m *panicMockRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 }
 func (m *panicMockRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
@@ -52,9 +53,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 	// Synchronous bus for deterministic testing
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
-	t.Cleanup(func() {
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	bridge := newUIBridge(ctx, mock, true, true, false, true, "test.log")
 	bus.Subscribe(bridge.handleEvent)

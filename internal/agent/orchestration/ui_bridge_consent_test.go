@@ -81,7 +81,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 	}
 
 	m.Test(t)
-	
+
 	bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt")
 	ctx := context.Background()
 
@@ -97,9 +97,9 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 			m.mu.Lock()
 			m.consentActive = true
 			m.mu.Unlock()
-			
+
 			runtime.Gosched()
-			
+
 			m.mu.Lock()
 			m.consentActive = false
 			m.mu.Unlock()
@@ -110,7 +110,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 			defer wg.Done()
 			// This event triggers transitionSpinner internally
 			bridge.handleEvent(ctx, events.InferenceStartedEvent{Model: "gpt-4"})
-			
+
 			// If transitionSpinner returns and the spinner is STILL running while consent is active, we have an overlap
 			m.mu.Lock()
 			if m.spinnerRunning && m.consentActive {
@@ -127,7 +127,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 			t.Fatalf("Iteration %d: Spinner overlapped with Consent Prompt!", i)
 		}
 		m.mu.Unlock()
-		
+
 		bridge.Cleanup()
 	}
 }

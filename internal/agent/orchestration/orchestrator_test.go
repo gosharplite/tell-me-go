@@ -21,6 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -151,11 +152,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = mEventBus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -395,11 +392,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = mEventBus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return mChatter, nil
@@ -434,11 +427,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = mEventBus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return nil, nil
@@ -658,11 +647,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = mEventBus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		tracker.record("AgentFactory")
@@ -827,11 +812,7 @@ func TestRun_Routing(t *testing.T) {
 	mUIRenderer := new(mockUIRenderer)
 	mCapturer := new(mockCapturer)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = mEventBus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(mChatter ports.Chatter) func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -1110,11 +1091,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			mCapturer := new(mockCapturer)
 			mHistory := new(mockHistoryManager)
 			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				_ = mEventBus.Shutdown(ctx)
-			})
+			inframock.CleanupBus(t, mEventBus)
 
 			factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 				return mChatter, nil

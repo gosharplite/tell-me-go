@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"path/filepath"
 	"testing"
 	"time"
@@ -56,11 +57,7 @@ func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
@@ -185,11 +182,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 			}
 
 			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				_ = bus.Shutdown(ctx)
-			})
+			inframock.CleanupBus(t, bus)
 			turn := &turn{
 				CtxManager:   cm,
 				TokenCounter: counter,

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"reflect"
 	"testing"
 	"time"
@@ -113,11 +114,7 @@ func TestNewClient(t *testing.T) {
 			}
 			pData := pricing.PricingData{}
 			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				_ = bus.Shutdown(ctx)
-			})
+			inframock.CleanupBus(t, bus)
 
 			client, err := NewClient(cfg, pData, bus, nil)
 

@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"os"
 	"path/filepath"
 	"testing"
@@ -142,11 +143,7 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	pData := pricing.PricingData{}
 

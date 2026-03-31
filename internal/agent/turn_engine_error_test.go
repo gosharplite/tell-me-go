@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"strings"
 	"testing"
 	"time"
@@ -45,11 +46,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 
 func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	reg := &mockToolRegistry{}
 
 	tmpDir := t.TempDir()

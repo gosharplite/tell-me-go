@@ -581,13 +581,13 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 	// Verify events
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
-	
+
 	var hasFinished bool
 	for _, e := range bus.Published {
 		if e.Type() == "ConsentFinishedEvent" {
 			hasFinished = true
 		}
 	}
-	
+
 	assert.True(t, hasFinished, "ConsentFinishedEvent should be published even if context is cancelled")
 }

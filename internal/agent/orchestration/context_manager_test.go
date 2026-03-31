@@ -11,10 +11,10 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -182,11 +182,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 
 	// Case 9: Event publishing
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	var logBuf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -284,11 +280,7 @@ func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
 func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	ctx := context.Background()
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	strategy := NewContextStrategy(&mockTokenCounter{})
 	factory := &PipelineFactory{Estimator: strategy, Events: bus}

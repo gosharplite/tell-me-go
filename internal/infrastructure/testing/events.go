@@ -7,6 +7,8 @@ import (
 	"context"
 	"reflect"
 	"sync"
+	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
@@ -162,4 +164,16 @@ func (b *countingEventBus) GetCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.count
+}
+
+// CleanupBus is a test helper that ensures the event bus is shut down properly.
+func CleanupBus(t *testing.T, bus events.EventBus) {
+	t.Helper()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := bus.Shutdown(ctx); err != nil {
+			t.Logf("Warning: bus shutdown failed: %v", err)
+		}
+	})
 }
