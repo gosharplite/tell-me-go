@@ -1,6 +1,6 @@
 module github.com/gosharplite/tell-me-go
 
-go 1.26
+go 1.26.1
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0

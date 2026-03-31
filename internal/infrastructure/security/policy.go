@@ -404,6 +404,12 @@ func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 	return "Are you absolutely sure? This allows the AI to read/write files in this location in future sessions."
 }
 
+type toolEntry struct {
+	decl    *tools.ToolDeclaration
+	handler tools.ToolFunc
+	opts    *tools.ToolOptions // nil if using standard Register
+}
+
 // RegisterPolicyTools adds security policy management tools to the registry.
 func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error {
 	p, err := newPolicyTool(sm, kv)
@@ -411,137 +417,161 @@ func (sm *SecurityManager) RegisterPolicyTools(r tools.Registry, kv ports.KVStor
 		return err
 	}
 
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "register_safepath",
-		Description: "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The absolute or relative path to authorize.",
-				},
-				"reason": {
-					Type:        "STRING",
-					Description: "Reason why this path needs to be authorized.",
-				},
-			},
-			Required: []string{"path", "reason"},
-		},
-	}, p.RegisterSafePath, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "list_safepaths",
-		Description: "Lists all currently authorized safe paths and files.",
-	}, p.ListSafePaths); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "remove_safepath",
-		Description: "Removes a directory or file from the authorized boundaries.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The path to remove from authorized boundaries.",
-				},
-			},
-			Required: []string{"path"},
-		},
-	}, p.RemoveSafePath, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "register_readpath",
-		Description: "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The absolute or relative path to authorize for reading.",
-				},
-				"reason": {
-					Type:        "STRING",
-					Description: "Reason why this path needs to be authorized.",
-				},
-			},
-			Required: []string{"path", "reason"},
-		},
-	}, p.RegisterReadPath, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "list_readpaths",
-		Description: "Lists all currently authorized read-only paths and files.",
-	}, p.ListReadPaths); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "remove_readpath",
-		Description: "Removes a directory or file from the read-only authorized boundaries.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The path to remove from read-only authorized boundaries.",
-				},
-			},
-			Required: []string{"path"},
-		},
-	}, p.RemoveReadPath, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "bypass_confirmation",
-		Description: "Disables all interactive security prompts for the current mode. This setting is **persistent across sessions** and remains active until manually revoked.",
-	}, p.BypassConfirmation, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "revoke_bypass",
-		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, p.RevokeBypass, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
-		return err
-	}
-
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "update_session_setting",
-		Description: "Updates a persistent session configuration setting. These settings persist across session rotations and system restarts.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"key": {
-					Type:        "STRING",
-					Description: "The name of the setting to update (e.g., 'backup_retention_days', 'bypass_confirmation').",
-				},
-				"value": {
-					Type:        "STRING",
-					Description: "The new value for the setting.",
-				},
-			},
-			Required: []string{"key", "value"},
-		},
-	}, p.UpdateSessionSetting, tools.ToolOptions{Serial: true}); err != nil {
-		return err
-	}
-
-	if err := r.Register(&tools.ToolDeclaration{
-		Name:        "list_session_settings",
-		Description: "Lists all current persistent session settings and their values.",
-	}, p.ListSessionSettings); err != nil {
-		return err
+	for _, e := range getPolicyToolEntries(p) {
+		var err error
+		if e.opts != nil {
+			err = r.RegisterWithOptions(e.decl, e.handler, *e.opts)
+		} else {
+			err = r.Register(e.decl, e.handler)
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func getPolicyToolEntries(p *policyTool) []toolEntry {
+	return []toolEntry{
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "register_safepath",
+				Description: "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path": {
+							Type:        "STRING",
+							Description: "The absolute or relative path to authorize.",
+						},
+						"reason": {
+							Type:        "STRING",
+							Description: "Reason why this path needs to be authorized.",
+						},
+					},
+					Required: []string{"path", "reason"},
+				},
+			},
+			handler: p.RegisterSafePath,
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "list_safepaths",
+				Description: "Lists all currently authorized safe paths and files.",
+			},
+			handler: p.ListSafePaths,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "remove_safepath",
+				Description: "Removes a directory or file from the authorized boundaries.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path": {
+							Type:        "STRING",
+							Description: "The path to remove from authorized boundaries.",
+						},
+					},
+					Required: []string{"path"},
+				},
+			},
+			handler: p.RemoveSafePath,
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "register_readpath",
+				Description: "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path": {
+							Type:        "STRING",
+							Description: "The absolute or relative path to authorize for reading.",
+						},
+						"reason": {
+							Type:        "STRING",
+							Description: "Reason why this path needs to be authorized.",
+						},
+					},
+					Required: []string{"path", "reason"},
+				},
+			},
+			handler: p.RegisterReadPath,
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "list_readpaths",
+				Description: "Lists all currently authorized read-only paths and files.",
+			},
+			handler: p.ListReadPaths,
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "remove_readpath",
+				Description: "Removes a directory or file from the read-only authorized boundaries.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path": {
+							Type:        "STRING",
+							Description: "The path to remove from read-only authorized boundaries.",
+						},
+					},
+					Required: []string{"path"},
+				},
+			},
+			handler: p.RemoveReadPath,
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "bypass_confirmation",
+				Description: "Disables all interactive security prompts for the current mode. This setting is **persistent across sessions** and remains active until manually revoked.",
+			},
+			handler: p.BypassConfirmation,
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "revoke_bypass",
+				Description: "Re-enables interactive security prompts by revoking the bypass status.",
+			},
+			handler: p.RevokeBypass,
+			opts:    &tools.ToolOptions{Serial: true, LongRunning: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "update_session_setting",
+				Description: "Updates a persistent session configuration setting. These settings persist across session rotations and system restarts.",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"key": {
+							Type:        "STRING",
+							Description: "The name of the setting to update (e.g., 'backup_retention_days', 'bypass_confirmation').",
+						},
+						"value": {
+							Type:        "STRING",
+							Description: "The new value for the setting.",
+						},
+					},
+					Required: []string{"key", "value"},
+				},
+			},
+			handler: p.UpdateSessionSetting,
+			opts:    &tools.ToolOptions{Serial: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:        "list_session_settings",
+				Description: "Lists all current persistent session settings and their values.",
+			},
+			handler: p.ListSessionSettings,
+		},
+	}
 }

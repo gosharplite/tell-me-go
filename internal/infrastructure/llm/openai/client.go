@@ -222,13 +222,8 @@ type completionTokensDetails struct {
 // It returns an error if message conversion or JSON serialization fails.
 func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*chatRequest, error) {
 	effort, hasEffort := c.headers["reasoning_effort"]
-	// useResponsesAPI requires gpt-5.4+, tools, and reasoning_effort
+	// useResponsesAPI requires gpt-4o-2024-11-20+ (gpt-5.4+ mock in resolution logic), tools, and reasoning_effort
 	useResponsesAPI := c.capabilities.RequiresResponsesAPI && len(toolDecls) > 0 && hasEffort
-
-	items, messages, err := c.toOpenAIMessages(ctx, history, resolver, useResponsesAPI)
-	if err != nil {
-		return nil, err
-	}
 
 	reqPayload := chatRequest{
 		Model: c.model,
@@ -237,9 +232,17 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 
 	// Dynamic selection for Messages/Input
 	if useResponsesAPI {
+		items, err := c.toResponsesInput(ctx, history, resolver)
+		if err != nil {
+			return nil, err
+		}
 		reqPayload.Input = items
 		reqPayload.Reasoning = &reasoningConfig{Effort: effort}
 	} else {
+		messages, err := c.toStandardMessages(ctx, history, resolver)
+		if err != nil {
+			return nil, err
+		}
 		reqPayload.Messages = messages
 		if hasEffort && c.capabilities.SupportsReasoningEffort {
 			reqPayload.ReasoningEffort = effort
@@ -340,6 +343,67 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	return c.fromOpenAIResponse(&chatResp, duration)
 }
 
+type openaiSink interface {
+	AddMessage(role, text string, reasoning *string, toolCalls []toolCall)
+	AddToolResponse(id, response string)
+}
+
+type responsesSink struct {
+	client *client
+	items  *[]historyItem
+}
+
+func (s *responsesSink) AddMessage(role, text string, reasoning *string, toolCalls []toolCall) {
+	r := role
+	*s.items = append(*s.items, historyItem{
+		Type:    "message",
+		Role:    &r,
+		Content: []requestContentBlock{{Type: s.client.resolveBlockType(role), Text: text}},
+	})
+	for _, tc := range toolCalls {
+		cid := tc.ID
+		name := tc.Function.Name
+		args := tc.Function.Arguments
+		*s.items = append(*s.items, historyItem{
+			Type:      "function_call",
+			CallID:    &cid,
+			Name:      &name,
+			Arguments: &args,
+		})
+	}
+}
+
+func (s *responsesSink) AddToolResponse(id, response string) {
+	cid := id
+	out := response
+	*s.items = append(*s.items, historyItem{
+		Type:   "function_call_output",
+		CallID: &cid,
+		Output: &out,
+	})
+}
+
+type standardSink struct {
+	messages *[]message
+}
+
+func (s *standardSink) AddMessage(role, text string, reasoning *string, toolCalls []toolCall) {
+	*s.messages = append(*s.messages, message{
+		Role:             role,
+		Content:          text,
+		ReasoningContent: reasoning,
+		ToolCalls:        toolCalls,
+	})
+}
+
+func (s *standardSink) AddToolResponse(id, response string) {
+	*s.messages = append(*s.messages, message{
+		Role:       "tool",
+		ToolCallID: id,
+		Content:    response,
+	})
+}
+
 func (c *client) resolveBlockType(role string) string {
 	if role == "assistant" {
 		return "output_text"
@@ -347,38 +411,35 @@ func (c *client) resolveBlockType(role string) string {
 	return "input_text"
 }
 
-// toOpenAIMessages converts domain-level history to OpenAI-compatible messages.
-// It returns an error if any part of the history cannot be classified or marshalled to JSON.
-func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver, useBlocks bool) ([]historyItem, []message, error) {
+func (c *client) toResponsesInput(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]historyItem, error) {
 	var items []historyItem
-	var messages []message
-	personaInjected := c.maybeInjectInitialPersona(&items, &messages, useBlocks)
+	sink := &responsesSink{client: c, items: &items}
+	personaInjected := c.maybeInjectInitialPersona(sink)
 
 	for _, h := range history {
-		if err := c.appendMessagesFromHistoryItem(ctx, &items, &messages, h, resolver, &personaInjected, useBlocks); err != nil {
-			return nil, nil, err
+		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, resolver, &personaInjected); err != nil {
+			return nil, err
 		}
 	}
-	return items, messages, nil
+	return items, nil
 }
 
-func (c *client) maybeInjectInitialPersona(items *[]historyItem, messages *[]message, useBlocks bool) (personaInjected bool) {
-	if c.persona != "" && !c.capabilities.UseDeveloperRole { // Non-OpenAI reasoners use 'system' at start
-		role := "system"
-		if useBlocks {
-			r := role
-			*items = append(*items, historyItem{
-				Type:    "message",
-				Role:    &r,
-				Content: []requestContentBlock{{Type: c.resolveBlockType(role), Text: c.persona}},
-			})
-		} else {
-			msg := message{
-				Role:    role,
-				Content: c.persona,
-			}
-			*messages = append(*messages, msg)
+func (c *client) toStandardMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]message, error) {
+	var messages []message
+	sink := &standardSink{messages: &messages}
+	personaInjected := c.maybeInjectInitialPersona(sink)
+
+	for _, h := range history {
+		if err := c.appendMessagesFromHistoryItem(ctx, sink, h, resolver, &personaInjected); err != nil {
+			return nil, err
 		}
+	}
+	return messages, nil
+}
+
+func (c *client) maybeInjectInitialPersona(sink openaiSink) (personaInjected bool) {
+	if c.persona != "" && !c.capabilities.UseDeveloperRole { // Non-OpenAI reasoners use 'system' at start
+		sink.AddMessage("system", c.persona, nil, nil)
 		return true
 	}
 	return false
@@ -386,18 +447,16 @@ func (c *client) maybeInjectInitialPersona(items *[]historyItem, messages *[]mes
 
 func (c *client) appendMessagesFromHistoryItem(
 	ctx context.Context,
-	items *[]historyItem,
-	messages *[]message,
+	sink openaiSink,
 	h *llm.Content,
 	resolver llm.AssetResolver,
 	personaInjected *bool,
-	useBlocks bool,
 ) error {
 	role := normalizeRole(h.Role)
 
 	toolResponseParts, otherParts := partitionParts(h.Parts)
 
-	if err := c.appendToolResponseMessages(items, messages, toolResponseParts, useBlocks); err != nil {
+	if err := c.appendToolResponseMessages(sink, toolResponseParts); err != nil {
 		return err
 	}
 
@@ -410,46 +469,14 @@ func (c *client) appendMessagesFromHistoryItem(
 		return err
 	}
 
-	c.injectPersona(items, messages, personaInjected, role, &text, useBlocks)
+	c.injectPersona(sink, personaInjected, role)
 
 	var reasoningPtr *string
-	if c.capabilities.IsDeepSeek && role == "assistant" {
-		reasoningPtr = &reasoning
-	} else if reasoning != "" {
+	if (c.capabilities.IsDeepSeek && role == "assistant") || (reasoning != "") {
 		reasoningPtr = &reasoning
 	}
 
-	if useBlocks {
-		r := role
-		t := text
-		// Append message item
-		*items = append(*items, historyItem{
-			Type:    "message",
-			Role:    &r,
-			Content: []requestContentBlock{{Type: c.resolveBlockType(role), Text: t}},
-		})
-
-		// Append tool calls as separate items
-		for _, tc := range toolCalls {
-			cid := tc.ID
-			name := tc.Function.Name
-			args := tc.Function.Arguments
-			*items = append(*items, historyItem{
-				Type:      "function_call",
-				CallID:    &cid,
-				Name:      &name,
-				Arguments: &args,
-			})
-		}
-	} else {
-		msg := message{
-			Role:             role,
-			ToolCalls:        toolCalls,
-			ReasoningContent: reasoningPtr,
-			Content:          text,
-		}
-		*messages = append(*messages, msg)
-	}
+	sink.AddMessage(role, text, reasoningPtr, toolCalls)
 
 	return nil
 }
@@ -474,7 +501,7 @@ func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherPart
 	return
 }
 
-func (c *client) appendToolResponseMessages(items *[]historyItem, messages *[]message, toolResponseParts []*llm.Part, useBlocks bool) error {
+func (c *client) appendToolResponseMessages(sink openaiSink, toolResponseParts []*llm.Part) error {
 	for _, p := range toolResponseParts {
 		// Fail fast if tool response has an empty ID - it violates protocol and indicates state corruption
 		if p.FunctionResponse.ID == "" {
@@ -486,21 +513,7 @@ func (c *client) appendToolResponseMessages(items *[]historyItem, messages *[]me
 			return fmt.Errorf("failed to marshal tool response: %w", err)
 		}
 
-		if useBlocks {
-			cid := p.FunctionResponse.ID
-			out := res
-			*items = append(*items, historyItem{
-				Type:   "function_call_output",
-				CallID: &cid,
-				Output: &out,
-			})
-		} else {
-			*messages = append(*messages, message{
-				Role:       "tool",
-				ToolCallID: p.FunctionResponse.ID,
-				Content:    res,
-			})
-		}
+		sink.AddToolResponse(p.FunctionResponse.ID, res)
 	}
 	return nil
 }
@@ -544,27 +557,13 @@ func (c *client) classifyParts(parts []*llm.Part) (text string, reasoning string
 	return strings.Join(textParts, "\n"), strings.Join(reasoningParts, ""), toolCalls, nil
 }
 
-func (c *client) injectPersona(items *[]historyItem, messages *[]message, personaInjected *bool, role string, text *string, useBlocks bool) {
+func (c *client) injectPersona(sink openaiSink, personaInjected *bool, role string) {
 	if role != "user" || *personaInjected || c.persona == "" {
 		return
 	}
 
 	if c.capabilities.UseDeveloperRole {
-		devRole := "developer"
-		if useBlocks {
-			dr := devRole
-			*items = append(*items, historyItem{
-				Type:    "message",
-				Role:    &dr,
-				Content: []requestContentBlock{{Type: c.resolveBlockType(devRole), Text: c.persona}},
-			})
-		} else {
-			msg := message{
-				Role:    devRole,
-				Content: c.persona,
-			}
-			*messages = append(*messages, msg)
-		}
+		sink.AddMessage("developer", c.persona, nil, nil)
 		*personaInjected = true
 	}
 }
@@ -728,45 +727,63 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 	return metrics
 }
 
+func (c *client) handleTextBlock(content *llm.Content, cb contentBlock) {
+	text := c.extractBlockText(cb.Text)
+	if text == "" {
+		text = cb.OutputText
+	}
+	if text == "" {
+		text = cb.InputText
+	}
+	if text != "" {
+		content.Parts = append(content.Parts, &llm.Part{Text: text})
+	}
+}
+
+func (c *client) handleThoughtBlock(content *llm.Content, cb contentBlock) {
+	val := cb.Thought
+	if val == "" {
+		val = cb.Reasoning
+	}
+	// Some models use type: "thought" with a "text" field
+	if val == "" && cb.Type == "thought" {
+		val = c.extractBlockText(cb.Text)
+	}
+	if val != "" {
+		content.Parts = append(content.Parts, &llm.Part{Text: val, IsThought: true})
+	}
+}
+
+func (c *client) handleToolUseBlock(content *llm.Content, cb contentBlock) {
+	if cb.Name != "" && cb.ID != "" {
+		content.Parts = append(content.Parts, &llm.Part{
+			FunctionCall: &llm.FunctionCall{
+				ID:   cb.ID,
+				Name: cb.Name,
+				Args: cb.Input,
+			},
+		})
+	}
+}
+
+func (c *client) handleRefusalBlock(content *llm.Content, cb contentBlock) {
+	if cb.Refusal != "" {
+		content.Parts = append(content.Parts, &llm.Part{Text: cb.Refusal})
+	}
+}
+
 func (c *client) appendPartsFromBlock(content *llm.Content, cb contentBlock) {
 	switch cb.Type {
 	case "text", "output_text", "input_text":
-		text := c.extractBlockText(cb.Text)
-		if text == "" {
-			text = cb.OutputText
-		}
-		if text == "" {
-			text = cb.InputText
-		}
-		if text != "" {
-			content.Parts = append(content.Parts, &llm.Part{Text: text})
-		}
+		c.handleTextBlock(content, cb)
 	case "thought", "reasoning":
-		val := cb.Thought
-		if val == "" {
-			val = cb.Reasoning
-		}
-		// Some models use type: "thought" with a "text" field
-		if val == "" && cb.Type == "thought" {
-			val = c.extractBlockText(cb.Text)
-		}
-		if val != "" {
-			content.Parts = append(content.Parts, &llm.Part{Text: val, IsThought: true})
-		}
+		c.handleThoughtBlock(content, cb)
 	case "tool_use":
-		if cb.Name != "" && cb.ID != "" {
-			content.Parts = append(content.Parts, &llm.Part{
-				FunctionCall: &llm.FunctionCall{
-					ID:   cb.ID,
-					Name: cb.Name,
-					Args: cb.Input,
-				},
-			})
-		}
+		c.handleToolUseBlock(content, cb)
 	case "refusal":
-		if cb.Refusal != "" {
-			content.Parts = append(content.Parts, &llm.Part{Text: cb.Refusal})
-		}
+		c.handleRefusalBlock(content, cb)
+	default:
+		c.logger.Debug("unhandled content block type", "type", cb.Type)
 	}
 }
 
