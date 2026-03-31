@@ -567,6 +567,8 @@ func (p *inferenceStep) updateState(turn *turn, content *llm.Content, metrics *l
 	}
 	turn.State.HasToolCalls = p.hasToolCalls(content)
 	if turn.State.HasToolCalls {
+		// Preallocate capacity based on the number of parts in the response
+		turn.State.ToolReasons = make([]string, 0, len(content.Parts))
 		for _, part := range content.Parts {
 			if part.FunctionCall != nil {
 				if reason, ok := part.FunctionCall.Args["reason"].(string); ok && reason != "" {
