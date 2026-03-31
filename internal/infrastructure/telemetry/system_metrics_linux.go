@@ -8,6 +8,7 @@ package telemetry
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"runtime/metrics"
 	"strconv"
 	"strings"
@@ -25,7 +26,7 @@ func NewSystemMetricsProvider() ports.SystemMetricsProvider {
 
 func (p *LinuxMetricsProvider) GetCPUStats() (int64, int64) {
 	// Try to get host CPU stats from /proc/stat first for better visibility of tool execution
-	f, err := os.Open(procRoot + "proc/stat")
+	f, err := os.Open(filepath.Join(procRoot, "proc", "stat"))
 	if err == nil {
 		defer func() { _ = f.Close() }()
 		scanner := bufio.NewScanner(f)
@@ -61,7 +62,7 @@ func (p *LinuxMetricsProvider) GetCPUStats() (int64, int64) {
 }
 
 func (p *LinuxMetricsProvider) GetMemoryPercent() float64 {
-	f, err := os.Open(procRoot + "proc/meminfo")
+	f, err := os.Open(filepath.Join(procRoot, "proc", "meminfo"))
 	if err != nil {
 		return 0.0
 	}
