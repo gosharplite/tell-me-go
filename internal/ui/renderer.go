@@ -4,15 +4,12 @@
 package ui
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
-	"runtime/metrics"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,38 +27,48 @@ import (
 
 // stdUIRenderer implements ports.UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
-	locker         domain_security.Manager
-	stdout         io.Writer
-	stderr         io.Writer
-	clock          clock.Clock
-	renderer       *glamour.TermRenderer
-	mu             sync.RWMutex
-	ioMu           sync.Mutex
-	useColor       bool
-	forceSpinner   bool
-	lastCPUTime    int64
-	lastIdleTime   int64
-	lastSampleTime time.Time
-	lastCPUPercent float64
-	lastMemPercent float64
+	locker          domain_security.Manager
+	stdout          io.Writer
+	stderr          io.Writer
+	clock           clock.Clock
+	renderer        *glamour.TermRenderer
+	mu              sync.RWMutex
+	ioMu            sync.Mutex
+	useColor        bool
+	forceSpinner    bool
+	metricsProvider ports.SystemMetricsProvider
+	lastCPUTime     int64
+	lastIdleTime    int64
+	lastSampleTime  time.Time
+	lastCPUPercent  float64
+	lastMemPercent  float64
 }
 
+type defaultMetricsProvider struct{}
+
+func (d *defaultMetricsProvider) GetCPUStats() (int64, int64) { return 0, 0 }
+func (d *defaultMetricsProvider) GetMemoryPercent() float64   { return 0.0 }
+
 // NewRenderer creates a new ports.UIRenderer.
-func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock) ports.UIRenderer {
+func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock, metricsProvider ports.SystemMetricsProvider) ports.UIRenderer {
 	if clk == nil {
 		clk = clock.RealClock{}
+	}
+	if metricsProvider == nil {
+		metricsProvider = &defaultMetricsProvider{}
 	}
 	tr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
 	)
 	r := &stdUIRenderer{
-		locker:   locker,
-		stdout:   stdout,
-		stderr:   stderr,
-		clock:    clk,
-		renderer: tr,
-		useColor: true,
+		locker:          locker,
+		stdout:          stdout,
+		stderr:          stderr,
+		clock:           clk,
+		renderer:        tr,
+		useColor:        true,
+		metricsProvider: metricsProvider,
 	}
 	if err != nil {
 		// Fallback: the renderer will be nil, and we'll handle it in renderMarkdown
@@ -398,10 +405,10 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	// Initialize CPU tracking on start
 	if showMetrics {
 		r.mu.Lock()
-		r.lastCPUTime, r.lastIdleTime = r.getCPUStats()
+		r.lastCPUTime, r.lastIdleTime = r.metricsProvider.GetCPUStats()
 		r.lastSampleTime = startTime
 		r.lastCPUPercent = 0.0
-		r.lastMemPercent = r.getHostMemoryPercent()
+		r.lastMemPercent = r.metricsProvider.GetMemoryPercent()
 		r.mu.Unlock()
 	}
 
@@ -439,76 +446,6 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	return stopFunc
 }
 
-func (r *stdUIRenderer) getCPUStats() (int64, int64) {
-	// Try to get host CPU stats from /proc/stat first for better visibility of tool execution
-	f, err := os.Open("/proc/stat")
-	if err == nil {
-		defer func() { _ = f.Close() }()
-		scanner := bufio.NewScanner(f)
-		if scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "cpu ") {
-				fields := strings.Fields(line)
-				if len(fields) >= 5 {
-					// Format: user nice system idle iowait irq softirq steal guest guest_nice
-					var total, idle int64
-					for i := 1; i < len(fields); i++ {
-						val, _ := strconv.ParseInt(fields[i], 10, 64)
-						total += val
-						if i == 4 { // idle index is 4 (starts at 1)
-							idle = val
-						}
-					}
-					return total, idle
-				}
-			}
-		}
-	}
-
-	// Fallback: Use runtime/metrics for total CPU time (nanoseconds)
-	const cpuMetric = "/cpu/classes/total:cpu-seconds"
-	samples := make([]metrics.Sample, 1)
-	samples[0].Name = cpuMetric
-	metrics.Read(samples)
-	if samples[0].Value.Kind() == metrics.KindFloat64 {
-		return int64(samples[0].Value.Float64() * 1e9), 0
-	}
-	return 0, 0
-}
-
-func (r *stdUIRenderer) getHostMemoryPercent() float64 {
-	f, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return 0.0
-	}
-	defer func() { _ = f.Close() }()
-
-	var memTotal, memAvailable int64
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "MemTotal:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				memTotal, _ = strconv.ParseInt(fields[1], 10, 64)
-			}
-		} else if strings.HasPrefix(line, "MemAvailable:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				memAvailable, _ = strconv.ParseInt(fields[1], 10, 64)
-			}
-		}
-		if memTotal > 0 && memAvailable > 0 {
-			break
-		}
-	}
-
-	if memTotal == 0 {
-		return 0.0
-	}
-	return 100.0 * (1.0 - (float64(memAvailable) / float64(memTotal)))
-}
-
 func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string, showMetrics bool) {
 	msg := status
 	if !startTime.IsZero() {
@@ -517,7 +454,7 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 		if showMetrics {
 			// Calculate CPU usage %
 			r.mu.Lock()
-			currentTotal, currentIdle := r.getCPUStats()
+			currentTotal, currentIdle := r.metricsProvider.GetCPUStats()
 			cpuPercent := r.lastCPUPercent
 			hostMemPercent := r.lastMemPercent
 
@@ -525,7 +462,7 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 			if now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero() {
 				if !r.lastSampleTime.IsZero() {
 					if currentIdle > 0 {
-						// Host-level from /proc/stat
+						// Host-level metrics
 						dTotal := float64(currentTotal - r.lastCPUTime)
 						dIdle := float64(currentIdle - r.lastIdleTime)
 						if dTotal > 0 {
@@ -540,7 +477,7 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 						}
 					}
 				}
-				hostMemPercent = r.getHostMemoryPercent()
+				hostMemPercent = r.metricsProvider.GetMemoryPercent()
 				r.lastCPUTime = currentTotal
 				r.lastIdleTime = currentIdle
 				r.lastSampleTime = now

@@ -64,3 +64,11 @@ type HistoryRenderOptions struct {
 	ShowThoughts bool
 	UseColor     bool
 }
+
+// SystemMetricsProvider defines the interface for collecting host resource usage.
+type SystemMetricsProvider interface {
+	// GetCPUStats returns (total, idle) ticks or seconds.
+	GetCPUStats() (total int64, idle int64)
+	// GetMemoryPercent returns the host memory usage percentage (0-100).
+	GetMemoryPercent() float64
+}

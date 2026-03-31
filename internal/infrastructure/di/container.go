@@ -53,6 +53,7 @@ type Container interface {
 	GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
 	GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error)
 	GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error)
+	GetSystemMetricsProvider() ports.SystemMetricsProvider
 }
 
 // bootstrapper handles the instantiation and wiring of system components.
@@ -451,4 +452,9 @@ func (b *bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []
 	}
 
 	return suggestions.NewMultiSourceSuggestionService(ctx, infra_persistence.NewOSFileSystem(), tracker, recentHistory, b.Stderr)
+}
+
+// GetSystemMetricsProvider returns the system metrics provider based on the platform.
+func (b *bootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider {
+	return telemetry.NewSystemMetricsProvider()
 }

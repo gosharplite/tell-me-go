@@ -53,7 +53,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("LogSystemMessage", func(t *testing.T) {
 		stdout.Reset()
@@ -131,7 +131,7 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
 		stderr.Reset()
@@ -164,7 +164,7 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
@@ -194,7 +194,7 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("RenderResponse_Markdown", func(t *testing.T) {
 		stdout.Reset()
@@ -219,7 +219,7 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("StartSpinner", func(t *testing.T) {
 		stdout.Reset()
@@ -290,7 +290,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:       r.nowSafe(),
@@ -376,7 +376,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("Green cost in LogTurnStatus", func(t *testing.T) {
 		stderr.Reset()
@@ -430,7 +430,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("Tool metrics omit total duration", func(t *testing.T) {
 		stderr.Reset()
@@ -472,7 +472,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 func TestStdUIRenderer_Concurrency(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
-	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{}).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, clock.RealClock{}, nil).(*stdUIRenderer)
 
 	const (
 		numGoroutines = 50
@@ -530,7 +530,7 @@ func TestStdUIRenderer_GetTimestamp(t *testing.T) {
 	})
 
 	t.Run("Real clock fallback", func(t *testing.T) {
-		r := NewRenderer(locker, nil, nil, nil).(*stdUIRenderer)
+		r := NewRenderer(locker, nil, nil, nil, nil).(*stdUIRenderer)
 		got := r.getTimestamp()
 		// Just verify it doesn't panic and returns a valid looking timestamp (HH:MM:SS)
 		if len(got) != 8 || got[2] != ':' || got[5] != ':' {
@@ -586,7 +586,7 @@ func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("LogUsage terminal output for summaries", func(t *testing.T) {
 		stderr.Reset()
@@ -614,7 +614,7 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewRenderer(locker, nil, nil, clock.RealClock{}).(*stdUIRenderer)
+			r := NewRenderer(locker, nil, nil, clock.RealClock{}, nil).(*stdUIRenderer)
 			r.SetUseColor(tt.useColor)
 			ui := r.getUIState()
 			if got := ui.c(tt.input); got != tt.expected {
@@ -628,7 +628,7 @@ func TestStdUIRenderer_Spinner_Cancellation(t *testing.T) {
 	var stdout, stderr safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	t.Run("StartSpinnerContextCancellation", func(t *testing.T) {
 		stdout.Reset()
@@ -653,7 +653,7 @@ func TestStartSpinner_Synchronization(t *testing.T) {
 	var combined safeBuffer
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
-	r := NewRenderer(locker, &combined, &combined, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &combined, &combined, mc, nil).(*stdUIRenderer)
 	r.SetForceSpinner(true)
 
 	// Start spinner

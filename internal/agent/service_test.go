@@ -136,6 +136,14 @@ func (m *mockServiceContainer) GetSuggestionService(ctx context.Context, recentH
 	return args.Get(0).(ports.SuggestionService), args.Error(1)
 }
 
+func (m *mockServiceContainer) GetSystemMetricsProvider() ports.SystemMetricsProvider {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.SystemMetricsProvider)
+}
+
 // mockServiceSessionDependencies is a mock of SessionDependencies.
 type mockServiceSessionDependencies struct {
 	mock.Mock
@@ -262,6 +270,7 @@ func TestProcessMessage(t *testing.T) {
 
 				mockHM := &mockHistoryManagerForRetry{}
 				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				c.On("GetSystemMetricsProvider").Return(ports.SystemMetricsProvider(nil))
 				c.On("GetAgentFactory").Return(ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
 					return agent, nil
 				}))
