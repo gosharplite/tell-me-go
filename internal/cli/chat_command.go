@@ -146,7 +146,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 
 		svc, err := c.ChatService.GetSuggestionService(ctx, recentHistory)
 
-		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer)
+		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 		if !ok {
 			// Fallback: use a dummy cleanup or return an error if TUI requires BaseCapturer
@@ -190,7 +190,7 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 }
 
 func (c *chatCommand) setupCapturer() (ports.Capturer, func()) {
-	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer)
+	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 	capturer, ok := capturerInterface.(ports.Capturer)
 	if !ok {
 		return nil, func() {}

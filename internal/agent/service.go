@@ -31,6 +31,7 @@ type Container interface {
 	GetUnifiedHistoryProvider(ctx context.Context, cfg *domain_config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
 	GetToolNames(ctx context.Context, cfg *domain_config.Config, configPath string) ([]string, error)
 	GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error)
+	GetSystemMetricsProvider() ports.SystemMetricsProvider
 }
 
 type chatService struct {
@@ -106,7 +107,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}()
 
 	// 3. Delegate to agent orchestration
-	uiRenderer := ui.NewRenderer(s.SM, s.Stdout, s.Stderr, clock.RealClock{})
+	uiRenderer := ui.NewRenderer(s.SM, s.Stdout, s.Stderr, clock.RealClock{}, s.Container.GetSystemMetricsProvider())
 	historyRenderer := &ui.StdHistoryRenderer{}
 
 	err = orchestration.Run(ctx, orchestration.RunParams{

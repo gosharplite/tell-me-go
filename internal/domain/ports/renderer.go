@@ -17,6 +17,7 @@ import (
 type ResponseRenderer interface {
 	StartSpinner(ctx context.Context) (stop func())
 	StartSpinnerWithStatus(ctx context.Context, status string) (stop func())
+	StartSpinnerWithMetrics(ctx context.Context, status string) (stop func())
 	RenderResponse(content *llm.Content, showThoughts, rawOutput bool)
 }
 
@@ -62,4 +63,12 @@ type HistoryRenderOptions struct {
 	Raw          bool
 	ShowThoughts bool
 	UseColor     bool
+}
+
+// SystemMetricsProvider defines the interface for collecting host resource usage.
+type SystemMetricsProvider interface {
+	// GetCPUStats returns (total, idle) ticks or seconds.
+	GetCPUStats() (total int64, idle int64)
+	// GetMemoryPercent returns the host memory usage percentage (0-100).
+	GetMemoryPercent() float64
 }

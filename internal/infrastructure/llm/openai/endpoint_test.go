@@ -120,11 +120,11 @@ type dynamicEndpointTestCase struct {
 func TestDynamicEndpointIntegration(t *testing.T) {
 	tests := []dynamicEndpointTestCase{
 		{
-			name:         "Standard OpenAI Model",
-			capabilities: llm.Capabilities{RequiresResponsesAPI: false},
-			mockResponse: `{"choices":[{"message":{"role":"assistant","content":"chat-ok"}}],"usage":{"total_tokens":10}}`,
+			name:             "Standard OpenAI Model",
+			capabilities:     llm.Capabilities{RequiresResponsesAPI: false},
+			mockResponse:     `{"choices":[{"message":{"role":"assistant","content":"chat-ok"}}],"usage":{"total_tokens":10}}`,
 			expectedEndpoint: "/chat/completions",
-			required:     []string{`"messages"`},
+			required:         []string{`"messages"`},
 		},
 		{
 			name: "OpenAI Reasoning Model with Tools",

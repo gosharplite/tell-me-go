@@ -23,7 +23,7 @@ func TestUIRendererGolden(t *testing.T) {
 	// Inject deterministic dependencies
 	frozenTime := time.Date(2026, 1, 1, 15, 4, 5, 0, time.UTC)
 	mc := &mockClock{now: frozenTime}
-	r := NewRenderer(locker, &stdout, &stderr, mc).(*stdUIRenderer)
+	r := NewRenderer(locker, &stdout, &stderr, mc, nil).(*stdUIRenderer)
 
 	r.SetUseColor(true)
 

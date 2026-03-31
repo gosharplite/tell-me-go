@@ -239,10 +239,10 @@ type uiBridge struct {
 	logFile      string
 	stopSpinner  func()
 	isRendering  bool
+	activePhase  events.Event
 }
 
-// Cleanup stops any active spinner.
-func (b *uiBridge) Cleanup() {
+func (b *uiBridge) stopActiveSpinner() {
 	b.mu.Lock()
 	stop := b.stopSpinner
 	b.stopSpinner = nil
@@ -251,6 +251,20 @@ func (b *uiBridge) Cleanup() {
 	if stop != nil {
 		stop()
 	}
+}
+
+func (b *uiBridge) resumeActiveSpinner() {
+	b.mu.Lock()
+	phase := b.activePhase
+	b.mu.Unlock()
+	if phase != nil {
+		b.handleSpinnerEvent(phase)
+	}
+}
+
+// Cleanup stops any active spinner.
+func (b *uiBridge) Cleanup() {
+	b.stopActiveSpinner()
 }
 
 // newUIBridge creates a new uiBridge.
@@ -276,7 +290,7 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
-	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent:
+	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent:
 		b.handleSpinnerEvent(ev)
 	case events.ResponseEvent:
 		b.handleResponse(ev)
@@ -301,10 +315,16 @@ func (b *uiBridge) handleSystemMessage(e events.Event) {
 	default:
 		return
 	}
+	b.stopActiveSpinner()
 	b.renderer.LogSystemMessage(msg, lvl)
+	b.resumeActiveSpinner()
 }
 
 func (b *uiBridge) handleSpinnerEvent(e events.Event) {
+	b.mu.Lock()
+	b.activePhase = e
+	b.mu.Unlock()
+
 	switch e.(type) {
 	case events.InferenceStartedEvent:
 		b.transitionSpinner(func() func() {
@@ -324,53 +344,60 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 		b.transitionSpinner(func() func() {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
 		})
+	case events.ToolExecutionStartedEvent:
+		b.mu.Lock()
+		b.isRendering = false // Reset state to allow tool spinner after inference
+		b.mu.Unlock()
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinnerWithMetrics(b.ctx, " Executing tools...")
+		})
 	}
 }
 
 func (b *uiBridge) handleTurnStatus(ev events.TurnStatusEvent) {
 	b.mu.Lock()
 	b.isRendering = false
+	b.activePhase = nil // Clear phase on new turn/header
 	b.mu.Unlock()
+	b.stopActiveSpinner()
 	b.renderer.LogTurnStatus(ev.Status)
 }
 
 func (b *uiBridge) handleResponse(ev events.ResponseEvent) {
 	b.mu.Lock()
 	b.isRendering = true
-	stop := b.stopSpinner
-	b.stopSpinner = nil
+	b.activePhase = nil // Clear phase on response
 	b.mu.Unlock()
-
-	if stop != nil {
-		stop()
-	}
+	b.stopActiveSpinner()
 	b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
 }
 
 func (b *uiBridge) handleUsageMetrics(ev events.UsageMetricsEvent) {
 	ctx := b.ensureContext(ev.Context, "UsageMetricsEvent")
+	b.stopActiveSpinner()
 	b.renderer.LogUsage(ctx, ev.Metrics, b.logFile, ev.StartTime)
+	b.resumeActiveSpinner()
 }
 
 func (b *uiBridge) handleToolEvents(e events.Event) {
 	switch ev := e.(type) {
 	case events.ToolCallEvent:
+		b.stopActiveSpinner()
 		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
+		b.resumeActiveSpinner()
 	case events.ToolResultEvent:
+		b.stopActiveSpinner()
 		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
+		b.resumeActiveSpinner()
 	}
 }
 
 func (b *uiBridge) handleTurnStarted() {
 	b.mu.Lock()
-	stop := b.stopSpinner
-	b.stopSpinner = nil
 	b.isRendering = false
+	b.activePhase = nil
 	b.mu.Unlock()
-
-	if stop != nil {
-		stop()
-	}
+	b.stopActiveSpinner()
 }
 
 func (b *uiBridge) transitionSpinner(startFn func() func()) {

@@ -188,13 +188,20 @@ func (t *shellTool) authorize(ctx context.Context, label, detail, reason string,
 }
 
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
+	// 1. Lock to print the header
 	t.sm.TerminalLock()
-	defer t.sm.TerminalUnlock()
-
 	t.sm.Warn(fmt.Sprintf("%s... (Output shown below)", msg))
 	t.sm.Warn("------------------------------------------------------------")
+	t.sm.TerminalUnlock()
+
+	// 2. Execute command WITHOUT holding the lock to allow spinner to run
 	res, err := runFn()
+
+	// 3. Lock to print the footer
+	t.sm.TerminalLock()
 	t.sm.Warn("------------------------------------------------------------")
+	t.sm.TerminalUnlock()
+
 	return res, err
 }
 
@@ -236,6 +243,9 @@ type warnWriter struct {
 }
 
 func (w *warnWriter) Write(p []byte) (n int, err error) {
+	w.sm.TerminalLock()
+	defer w.sm.TerminalUnlock()
+
 	// The process executor includes newlines in the feedback messages.
 	// Since Warn() also typically adds a newline, we trim one from the end
 	// to prevent double-spacing in the terminal.

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -26,33 +27,48 @@ import (
 
 // stdUIRenderer implements ports.UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
-	locker       domain_security.Manager
-	stdout       io.Writer
-	stderr       io.Writer
-	clock        clock.Clock
-	renderer     *glamour.TermRenderer
-	mu           sync.RWMutex
-	ioMu         sync.Mutex
-	useColor     bool
-	forceSpinner bool
+	locker          domain_security.Manager
+	stdout          io.Writer
+	stderr          io.Writer
+	clock           clock.Clock
+	renderer        *glamour.TermRenderer
+	mu              sync.RWMutex
+	ioMu            sync.Mutex
+	useColor        bool
+	forceSpinner    bool
+	metricsProvider ports.SystemMetricsProvider
+	lastCPUTime     int64
+	lastIdleTime    int64
+	lastSampleTime  time.Time
+	lastCPUPercent  float64
+	lastMemPercent  float64
 }
 
+type defaultMetricsProvider struct{}
+
+func (d *defaultMetricsProvider) GetCPUStats() (int64, int64) { return 0, 0 }
+func (d *defaultMetricsProvider) GetMemoryPercent() float64   { return 0.0 }
+
 // NewRenderer creates a new ports.UIRenderer.
-func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock) ports.UIRenderer {
+func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock, metricsProvider ports.SystemMetricsProvider) ports.UIRenderer {
 	if clk == nil {
 		clk = clock.RealClock{}
+	}
+	if metricsProvider == nil {
+		metricsProvider = &defaultMetricsProvider{}
 	}
 	tr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
 	)
 	r := &stdUIRenderer{
-		locker:   locker,
-		stdout:   stdout,
-		stderr:   stderr,
-		clock:    clk,
-		renderer: tr,
-		useColor: true,
+		locker:          locker,
+		stdout:          stdout,
+		stderr:          stderr,
+		clock:           clk,
+		renderer:        tr,
+		useColor:        true,
+		metricsProvider: metricsProvider,
 	}
 	if err != nil {
 		// Fallback: the renderer will be nil, and we'll handle it in renderMarkdown
@@ -363,6 +379,14 @@ func (r *stdUIRenderer) StartSpinner(ctx context.Context) func() {
 }
 
 func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	return r.startSpinnerInternal(ctx, status, false)
+}
+
+func (r *stdUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
+	return r.startSpinnerInternal(ctx, status, true)
+}
+
+func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string, showMetrics bool) func() {
 	ui := r.getUIState()
 	r.mu.RLock()
 	force := r.forceSpinner
@@ -378,8 +402,18 @@ func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status strin
 	done := make(chan struct{})
 	waitDone := make(chan struct{})
 
+	// Initialize CPU tracking on start
+	if showMetrics {
+		r.mu.Lock()
+		r.lastCPUTime, r.lastIdleTime = r.metricsProvider.GetCPUStats()
+		r.lastSampleTime = startTime
+		r.lastCPUPercent = 0.0
+		r.lastMemPercent = r.metricsProvider.GetMemoryPercent()
+		r.mu.Unlock()
+	}
+
 	// Draw the first frame synchronously to avoid 200ms delay.
-	r.updateIndicatorFrame(ui, frames, &idx, startTime, status)
+	r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics)
 
 	var stopOnce sync.Once
 	stopFunc := func() {
@@ -404,7 +438,7 @@ func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status strin
 			case <-done:
 				return
 			case <-ticker.C():
-				r.updateIndicatorFrame(ui, frames, &idx, startTime, status)
+				r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics)
 			}
 		}
 	}()
@@ -412,11 +446,63 @@ func (r *stdUIRenderer) StartSpinnerWithStatus(ctx context.Context, status strin
 	return stopFunc
 }
 
-func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string) {
+func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string, showMetrics bool) {
 	msg := status
 	if !startTime.IsZero() {
-		elapsed := int(ui.clock.Now().Sub(startTime).Seconds())
-		msg = fmt.Sprintf("%s (%ds)", status, elapsed)
+		now := ui.clock.Now()
+		elapsed := int(now.Sub(startTime).Seconds())
+		if showMetrics {
+			// 1. Check if update is needed under RLock
+			r.mu.RLock()
+			needsUpdate := now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero()
+			cpuPercent := r.lastCPUPercent
+			hostMemPercent := r.lastMemPercent
+			r.mu.RUnlock()
+
+			if needsUpdate {
+				// 2. Perform I/O WITHOUT any lock
+				currentTotal, currentIdle := r.metricsProvider.GetCPUStats()
+				currentMem := r.metricsProvider.GetMemoryPercent()
+
+				// 3. Update state under Write Lock
+				r.mu.Lock()
+				// Re-check update condition under write lock
+				if now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero() {
+					if !r.lastSampleTime.IsZero() {
+						if currentIdle > 0 {
+							// Host-level metrics
+							dTotal := float64(currentTotal - r.lastCPUTime)
+							dIdle := float64(currentIdle - r.lastIdleTime)
+							if dTotal > 0 {
+								cpuPercent = (1.0 - (dIdle / dTotal)) * 100.0
+							}
+						} else {
+							// Agent-level from runtime/metrics
+							dt := now.Sub(r.lastSampleTime).Seconds()
+							if dt > 0 {
+								dCPU := float64(currentTotal-r.lastCPUTime) / 1e9 // seconds
+								cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+							}
+						}
+					}
+					hostMemPercent = currentMem
+					r.lastCPUTime = currentTotal
+					r.lastIdleTime = currentIdle
+					r.lastSampleTime = now
+					r.lastCPUPercent = cpuPercent
+					r.lastMemPercent = hostMemPercent
+				} else {
+					// Another goroutine updated it while we were doing I/O
+					cpuPercent = r.lastCPUPercent
+					hostMemPercent = r.lastMemPercent
+				}
+				r.mu.Unlock()
+			}
+
+			msg = fmt.Sprintf("%s (%ds) [CPU: %.1f%% | MEM: %.1f%%]", status, elapsed, cpuPercent, hostMemPercent)
+		} else {
+			msg = fmt.Sprintf("%s (%ds)", status, elapsed)
+		}
 	}
 
 	if r.locker != nil {
@@ -458,7 +544,7 @@ func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Engine] Step %d/%d%s\n",
+	_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Engine] Step %d/%d%s\n", ui.c(termClearLine),
 		ui.c(colorCyan), ts, turn+1, maxTurns, ui.c(colorReset))
 
 	if showTools {
@@ -509,11 +595,11 @@ func (r *stdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 			snippet = snippet[:197] + "..."
 		}
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
-		_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: %s%s\n", ui.c(colorCyan), timestamp, name, snippet, ui.c(colorReset))
+		_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Result] %s: %s%s\n", ui.c(termClearLine), ui.c(colorCyan), timestamp, name, snippet, ui.c(colorReset))
 	}
 
 	for _, b := range result.BinaryData {
-		_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
+		_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n", ui.c(termClearLine),
 			ui.c(colorCyan), timestamp, name, b.MIMEType, len(b.Data), ui.c(colorReset))
 	}
 
@@ -548,12 +634,12 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
+	_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [%s] %s%s\n", ui.c(termClearLine),
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
 }
 
-func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string) {
-	r.drawLoadingIndicator(ui, frames[*idx], startTime, status)
+func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string, showMetrics bool) {
+	r.drawLoadingIndicator(ui, frames[*idx], startTime, status, showMetrics)
 	*idx = (*idx + 1) % len(frames)
 }
 

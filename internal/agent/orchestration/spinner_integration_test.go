@@ -100,7 +100,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	}
 
 	// Use the real UIRenderer from internal/ui
-	uiRenderer := ui.NewRenderer(nil, &stdout, &stderr, clock)
+	uiRenderer := ui.NewRenderer(nil, &stdout, &stderr, clock, nil)
 	uiRenderer.SetForceSpinner(true) // Bypass TTY check for testing
 
 	mChatter := new(mockChatter)
@@ -193,7 +193,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 		tickChannel: make(chan time.Time, 1),
 	}
 
-	uiRenderer := ui.NewRenderer(nil, &stdout, &stderr, clock)
+	uiRenderer := ui.NewRenderer(nil, &stdout, &stderr, clock, nil)
 	uiRenderer.SetForceSpinner(true)
 
 	// Create bridge with a long-lived context
