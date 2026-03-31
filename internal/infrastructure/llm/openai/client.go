@@ -350,12 +350,12 @@ type openaiSink interface {
 
 type responsesSink struct {
 	client *client
-	items  *[]historyItem
+	items  []historyItem
 }
 
 func (s *responsesSink) AddMessage(role, text string, reasoning *string, toolCalls []toolCall) {
 	r := role
-	*s.items = append(*s.items, historyItem{
+	s.items = append(s.items, historyItem{
 		Type:    "message",
 		Role:    &r,
 		Content: []requestContentBlock{{Type: s.client.resolveBlockType(role), Text: text}},
@@ -364,7 +364,7 @@ func (s *responsesSink) AddMessage(role, text string, reasoning *string, toolCal
 		cid := tc.ID
 		name := tc.Function.Name
 		args := tc.Function.Arguments
-		*s.items = append(*s.items, historyItem{
+		s.items = append(s.items, historyItem{
 			Type:      "function_call",
 			CallID:    &cid,
 			Name:      &name,
@@ -376,7 +376,7 @@ func (s *responsesSink) AddMessage(role, text string, reasoning *string, toolCal
 func (s *responsesSink) AddToolResponse(id, response string) {
 	cid := id
 	out := response
-	*s.items = append(*s.items, historyItem{
+	s.items = append(s.items, historyItem{
 		Type:   "function_call_output",
 		CallID: &cid,
 		Output: &out,
@@ -384,11 +384,11 @@ func (s *responsesSink) AddToolResponse(id, response string) {
 }
 
 type standardSink struct {
-	messages *[]message
+	messages []message
 }
 
 func (s *standardSink) AddMessage(role, text string, reasoning *string, toolCalls []toolCall) {
-	*s.messages = append(*s.messages, message{
+	s.messages = append(s.messages, message{
 		Role:             role,
 		Content:          text,
 		ReasoningContent: reasoning,
@@ -397,7 +397,7 @@ func (s *standardSink) AddMessage(role, text string, reasoning *string, toolCall
 }
 
 func (s *standardSink) AddToolResponse(id, response string) {
-	*s.messages = append(*s.messages, message{
+	s.messages = append(s.messages, message{
 		Role:       "tool",
 		ToolCallID: id,
 		Content:    response,
@@ -412,8 +412,7 @@ func (c *client) resolveBlockType(role string) string {
 }
 
 func (c *client) toResponsesInput(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]historyItem, error) {
-	var items []historyItem
-	sink := &responsesSink{client: c, items: &items}
+	sink := &responsesSink{client: c}
 	personaInjected := c.maybeInjectInitialPersona(sink)
 
 	for _, h := range history {
@@ -421,12 +420,11 @@ func (c *client) toResponsesInput(ctx context.Context, history []*llm.Content, r
 			return nil, err
 		}
 	}
-	return items, nil
+	return sink.items, nil
 }
 
 func (c *client) toStandardMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]message, error) {
-	var messages []message
-	sink := &standardSink{messages: &messages}
+	sink := &standardSink{}
 	personaInjected := c.maybeInjectInitialPersona(sink)
 
 	for _, h := range history {
@@ -434,7 +432,7 @@ func (c *client) toStandardMessages(ctx context.Context, history []*llm.Content,
 			return nil, err
 		}
 	}
-	return messages, nil
+	return sink.messages, nil
 }
 
 func (c *client) maybeInjectInitialPersona(sink openaiSink) (personaInjected bool) {
