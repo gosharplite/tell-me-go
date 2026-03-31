@@ -41,3 +41,45 @@ Context is transferred between agents using the `-l -r` (Last-Raw) flags. This p
 - **Separation of Concerns**: Each agent stays within its domain logic.
 - **Reduced Context Noise**: Only relevant outputs are piped to the next agent.
 - **Scalable Refinement**: Allows for multiple iterations of feedback without manual copying.
+
+## Real-World Example
+
+The following sequence illustrates a typical development cycle for `tell-me-go`:
+
+```bash
+# 1. Start planning with the Architect
+a-new "How to improve this code base?"
+a "Tell Coder what to do."
+
+# 2. Pipe the plan to a new Coder session
+a -l -r | c-new
+
+# 3. Architect reviews Coder's implementation
+c -l -r | a
+
+# 4. Iterative refinement between Architect and Coder
+a -l -r | c
+c -l -r | a
+
+# 5. Quality Assurance with the Tester
+t-new "Review last commit."
+t -l -r | a "Do you agree? --- "
+
+# 6. Architect instructs Coder on Tester's feedback
+a "Tell Coder what to do."
+a -l -r | c-new
+c -l -r | a
+
+# 7. Final verification by Tester
+t "Review last commit."
+
+# 8. Peer Review for the last 2 commits
+r-new "Review last 2 commits."
+r -l -r | a "Do you agree? --- "
+
+# 9. Final Architect-Coder-Reviewer cycle
+a "Tell Coder what to do."
+a -l -r | c-new
+c -l -r | a
+r "Review last commit."
+```
