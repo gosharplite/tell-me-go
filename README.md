@@ -137,7 +137,6 @@ MODELS:
       COMP: 14.00
 
 # --- Tools & Features ---
-USE_SEARCH: false
 SHOW_THOUGHTS: false
 SHOW_TOOLS: true
 
@@ -176,33 +175,7 @@ alias b-new='b -new'
 alias b-install='(cd $TELL_ME_HOME && git pull && go install ./cmd/tell-me-go)'
 ```
 
+For advanced usage with piped multi-agent workflows, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md).
+
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).
-
-## 🧩 Attributions
-This project includes adapted content from the following open-source resources:
-*   **[everything-claude-code](https://github.com/affaanmustafa/everything-claude-code)**: Skill definitions in `docs/skills/` (see `docs/skills/NOTICE.md` for details).
-
-## 🛠️ Development
-
-### Standard Tasks
-Use the `Makefile` for all development tasks:
-- **Tidy Dependencies:** `make tidy`
-- **Run Tests:** `make test`
-- **Race Detection:** `make test-race` (Package-by-package execution for AI environments).
-- **Coverage Profile:** `make test-coverage` (Excludes mocks/generated code).
-
-### Architecture Documentation
-Refer to the following documents for deep-dives into the system design:
-
-- **ADR Index**: Complete list of Architectural Decision Records in [docs/adr/README.md](docs/adr/README.md)
-- **ADR-001**: [Hybrid LLM Infrastructure Strategy](docs/adr/2024-05-multi-llm-provider-strategy.md)
-- **ADR-002**: [Tool Execution Concurrency & Timeouts](docs/adr/2024-06-tool-execution-concurrency-and-timeouts.md)
-- **ADR-003**: [Domain Decomposition Strategy](docs/adr/2024-07-domain-decomposition-strategy.md)
-- **ADR-004**: [ChatterParams Elimination](docs/adr/2024-08-chatterparams-elimination.md)
-- **ADR-005**: [Skill Injection Architecture](docs/adr/2024-09-skill-injection-architecture.md)
-- **ADR-006**: [History Log Compaction and Bounded Contexts](docs/adr/2024-10-history-log-compaction.md)
-- **ADR-007**: [Extract Agent Configuration via Functional Options](docs/adr/2026-02-agent-options-extraction.md)
-- **ADR-008**: [Bubble Tea Interactive History Browser](docs/adr/2026-02-bubble-tea-history-browser.md)
-- **ADR-009**: [TUI Interactive Prompt Mode](docs/adr/2026-02-tui-prompt-mode.md)
-- **SOPs**: Standard Operating Procedures are located in `docs/sop/`.
