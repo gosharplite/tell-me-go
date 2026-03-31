@@ -163,6 +163,9 @@ func (m *mockFailingUIRenderer) StartSpinner(ctx context.Context) func() { retur
 func (m *mockFailingUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
 	return func() {}
 }
+func (m *mockFailingUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
+	return func() {}
+}
 func (m *mockFailingUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {}
 func (m *mockFailingUIRenderer) LogUsage(context.Context, *llm.Metrics, string, time.Time)         {}
 func (m *mockFailingUIRenderer) LogToolCall([]*llm.FunctionCall, int, int, bool)                   {}

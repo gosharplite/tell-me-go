@@ -77,6 +77,14 @@ func (m *mockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status stri
 	return func() {}
 }
 
+func (m *mockUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
+	args := m.Called(ctx, status)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
 func (m *mockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
 	m.Called(content, showThoughts, rawOutput)
 }
@@ -491,6 +499,15 @@ func (m *behaviorMockUIRenderer) StartSpinner(ctx context.Context) func() {
 
 func (m *behaviorMockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
 	m.tracker.record("UIRenderer.StartSpinnerWithStatus")
+	args := m.Called(ctx, status)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *behaviorMockUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
+	m.tracker.record("UIRenderer.StartSpinnerWithMetrics")
 	args := m.Called(ctx, status)
 	if fn, ok := args.Get(0).(func()); ok {
 		return fn
