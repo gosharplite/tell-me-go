@@ -299,8 +299,10 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	e.mu.RUnlock()
 
 	e.emitEvent(ctx, bus, events.ConsentStartedEvent{})
+	// Ensure UI is unlocked even if RequestBatchConsent panics
+	defer e.emitEvent(ctx, bus, events.ConsentFinishedEvent{})
+
 	ctx, declinedMap := auth.RequestBatchConsent(ctx, calls)
-	e.emitEvent(ctx, bus, events.ConsentFinishedEvent{})
 
 	// Orchestrate Execution
 	collector := e.newResultCollector(calls, bus)
@@ -309,7 +311,12 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	// [SCALABILITY FIX] Bounding the execution plan goroutine to prevent leaks on context cancellation.
 	// This ensures that all goroutines started by the plan are properly joined.
 	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
+	g.Go(func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("execution plan panicked: %v", r)
+			}
+		}()
 		if e.execPlan != nil {
 			return e.execPlan(e, gCtx, calls, collector.ch, declinedMap)
 		}

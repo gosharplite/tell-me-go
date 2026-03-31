@@ -390,6 +390,8 @@ func TestEventTypes(t *testing.T) {
 		events.TraceEvent{},
 		events.SummarizationStartedEvent{},
 		events.RetryWaitingEvent{},
+		events.ConsentStartedEvent{},
+		events.ConsentFinishedEvent{},
 	}
 
 	for _, e := range events_list {

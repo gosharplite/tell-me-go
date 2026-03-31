@@ -464,3 +464,28 @@ func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
 func (m *orderMockRegistry) GetOptions(name string) tools.ToolOptions {
 	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }
+
+func TestOrchestrator_Execute_PlanPanic(t *testing.T) {
+	t.Parallel()
+	reg := &mockToolRegistry{}
+	// Inject an execution plan that panics
+	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)},
+		withExecutionPlan(func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
+			panic("test panic")
+		}))
+	require.NoError(t, err)
+	t.Cleanup(exec.Shutdown)
+
+	respContent := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
+		},
+	}
+
+	// Execute should return an error derived from the panic, and specifically NOT deadlock/hang.
+	// The resultCollector.Wait should terminate because the errgroup context is canceled by the panic/err.
+	_, execErr := exec.Execute(context.Background(), respContent, 0, 10)
+
+	assert.Error(t, execErr)
+	assert.Contains(t, execErr.Error(), "execution plan panicked: test panic")
+}
