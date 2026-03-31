@@ -87,13 +87,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	var capturedEvents []string
 	var mu sync.Mutex
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if err := bus.Shutdown(ctx); err != nil {
-			t.Errorf("failed to shutdown event bus: %v", err)
-		}
-	})
+	inframock.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -206,17 +200,9 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 			bus1 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				_ = bus1.Shutdown(ctx)
-			})
+			inframock.CleanupBus(t, bus1)
 			bus2 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				_ = bus2.Shutdown(ctx)
-			})
+			inframock.CleanupBus(t, bus2)
 			e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 			strategy.SetLimits(1000, 5, 10)
 
@@ -269,17 +255,9 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	bus1 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus1.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus1)
 	bus2 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus2.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus2)
 	e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 	strategy.SetLimits(1000, 5, 10)
 
@@ -298,13 +276,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if err := bus.Shutdown(ctx); err != nil {
-			t.Errorf("failed to shutdown event bus: %v", err)
-		}
-	})
+	inframock.CleanupBus(t, bus)
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -355,13 +327,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if err := bus.Shutdown(ctx); err != nil {
-			t.Errorf("failed to shutdown event bus: %v", err)
-		}
-	})
+	inframock.CleanupBus(t, bus)
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -488,13 +454,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	var capturedTime time.Time
 	var mu sync.Mutex
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if err := bus.Shutdown(ctx); err != nil {
-			t.Errorf("failed to shutdown event bus: %v", err)
-		}
-	})
+	inframock.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if st, ok := e.(events.TurnStatusEvent); ok {
 			mu.Lock()
@@ -1049,11 +1009,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 
@@ -1104,11 +1060,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	t.Parallel()
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	tracker := &mockEngineCostTracker{}
 	reg := &mockToolRegistry{}
 	hManager := &mockHistoryManager{}
@@ -1419,11 +1371,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	var capturedEvents []string
 	var mu sync.Mutex
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()
 		defer mu.Unlock()

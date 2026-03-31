@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"go.uber.org/goleak"
 )
 
@@ -58,32 +59,11 @@ func (s *funcSubscriberWithErr) Handle(ctx context.Context, e events.Event) erro
 	return s.f(ctx, e)
 }
 
-type safeBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *safeBuffer) Write(p []byte) (n int, err error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *safeBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
 func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	received := make(chan events.Event, 1)
 
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
@@ -112,11 +92,7 @@ func TestSimpleEventBus_ErrorAggregation(t *testing.T) {
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(testLogger), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	err1 := errors.New("err 1")
 	err2 := errors.New("err 2")
@@ -148,11 +124,7 @@ func TestSimpleEventBus_PanicRecovery(t *testing.T) {
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(testLogger), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		panic("boom")
@@ -173,11 +145,7 @@ func TestSafePublish_Timeout(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	ctx2, cancel := context.WithCancel(context.Background())
 	cancel() // Already canceled
@@ -214,11 +182,7 @@ func TestSimpleEventBus_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	ctxRoot := context.Background()
 	bus := events.NewSimpleEventBus(ctxRoot, events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	ctx, cancel := context.WithCancel(ctxRoot)
 	cancel()
@@ -233,11 +197,7 @@ func TestSimpleEventBus_Race(t *testing.T) {
 	nullLogger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(nullLogger), events.WithWorkers(2))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	var wg sync.WaitGroup
 
@@ -266,11 +226,7 @@ func TestSimpleEventBus_Deadlock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	sub := &deadlockSubscriber{bus: bus}
 	bus.SubscribeSubscriber("StatusUpdate", sub)
@@ -311,11 +267,7 @@ func TestSafePublish_Success(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 	received := make(chan events.Event, 1)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		received <- e
@@ -342,11 +294,7 @@ func TestEventBus_RoutingErrorIsolation(t *testing.T) {
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(testLogger), events.WithWorkers(1))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	errGlobal := errors.New("global error")
 	errSpecific := errors.New("specific error")
@@ -422,11 +370,7 @@ func TestSafePublish_NoGoroutineLeak(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(1))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	sub := &respectfulSubscriber{}
 	bus.SubscribeSubscriber("leak_test", sub)
@@ -453,11 +397,7 @@ func TestSafePublish_UncooperativeSubscriber(t *testing.T) {
 		events.WithQueueSize(200),
 		events.WithMaxConcurrentSubscribers(2),
 	)
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	block := make(chan struct{})
 	sub := &uncooperativeSubscriber{block: block}
@@ -485,11 +425,7 @@ func TestWithLogger(t *testing.T) {
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(testLogger), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	bus.SubscribeSubscriber("test_panic", &panicSubscriber{msg: "test panic"})
 	_ = bus.Publish(ctx, testEvent{typeName: "test_panic"})
@@ -517,8 +453,8 @@ func TestSimpleEventBus_HOLBlocking(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var buf safeBuffer
-	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+	buf := inframock.NewSafeBuffer()
+	testLogger := slog.New(slog.NewJSONHandler(buf, nil))
 
 	// Small semaphore and single worker to trigger HOL blocking
 	bus := events.NewSimpleEventBus(ctx,
@@ -527,7 +463,7 @@ func TestSimpleEventBus_HOLBlocking(t *testing.T) {
 		events.WithMaxConcurrentSubscribers(1),
 		events.WithQueueSize(10),
 	)
-	defer func() { _ = bus.Shutdown(context.Background()) }()
+	inframock.CleanupBus(t, bus)
 
 	block := make(chan struct{})
 	slowSub := &uncooperativeSubscriber{block: block}

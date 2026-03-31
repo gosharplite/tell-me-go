@@ -5,11 +5,11 @@ package factory
 
 import (
 	"context"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -107,11 +107,7 @@ func TestNewChatter(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = bus.Shutdown(ctx)
-	})
+	inframock.CleanupBus(t, bus)
 
 	deps := &mockSessionDeps{
 		gw:       &mockGateway{},

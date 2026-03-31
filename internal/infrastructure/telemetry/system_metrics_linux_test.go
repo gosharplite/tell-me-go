@@ -25,12 +25,12 @@ func TestLinuxMetricsProvider(t *testing.T) {
 	procRoot = tmpDir + "/"
 	defer func() { procRoot = originalRoot }()
 
-	p := &LinuxMetricsProvider{}
+	p := &linuxMetricsProvider{}
 
 	t.Run("NewSystemMetricsProvider", func(t *testing.T) {
 		provider := NewSystemMetricsProvider()
-		if _, ok := provider.(*LinuxMetricsProvider); !ok {
-			t.Errorf("NewSystemMetricsProvider() did not return a *LinuxMetricsProvider")
+		if _, ok := provider.(*linuxMetricsProvider); !ok {
+			t.Errorf("NewSystemMetricsProvider() did not return a *linuxMetricsProvider")
 		}
 	})
 

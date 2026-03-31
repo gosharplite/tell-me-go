@@ -6,6 +6,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"os"
 	"path/filepath"
 	"testing"
@@ -225,11 +226,7 @@ func TestTraceTelemetry(t *testing.T) {
 	t.Run("RegisterTraceSubscriber", func(t *testing.T) {
 		t.Parallel()
 		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-		t.Cleanup(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_ = bus.Shutdown(ctx)
-		})
+		inframock.CleanupBus(t, bus)
 		RegisterTraceSubscriber(bus, traceFile)
 
 		_ = bus.Publish(context.Background(), events.TraceEvent{Trace: trace})

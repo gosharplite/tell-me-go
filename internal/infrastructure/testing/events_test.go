@@ -78,6 +78,7 @@ func TestTestEventBus_NoOps(t *testing.T) {
 func TestCountingEventBus(t *testing.T) {
 	t.Parallel()
 	bus := NewCountingEventBus()
+	CleanupBus(t, bus)
 	ctx := context.Background()
 
 	require.NoError(t, bus.Publish(ctx, myEvent{}))
