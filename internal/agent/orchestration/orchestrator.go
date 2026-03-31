@@ -240,6 +240,7 @@ type uiBridge struct {
 	logFile      string
 	stopSpinner  func()
 	isRendering  bool
+	isWaitingForConsent bool
 	activePhase  events.Event
 }
 
@@ -259,7 +260,7 @@ func (b *uiBridge) resumeActiveSpinner() {
 	phase := b.activePhase
 	b.mu.Unlock()
 	if phase != nil {
-		b.handleSpinnerEvent(phase)
+		b.startSpinnerForPhase(phase)
 	}
 }
 
@@ -294,8 +295,14 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
 		b.handleSpinnerEvent(ev)
 	case events.ConsentStartedEvent:
+		b.mu.Lock()
+		b.isWaitingForConsent = true
+		b.mu.Unlock()
 		b.stopActiveSpinner()
 	case events.ConsentFinishedEvent:
+		b.mu.Lock()
+		b.isWaitingForConsent = false
+		b.mu.Unlock()
 		b.resumeActiveSpinner()
 	case events.ResponseEvent:
 		b.handleResponse(ev)
@@ -329,7 +336,10 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 	b.mu.Lock()
 	b.activePhase = e
 	b.mu.Unlock()
+	b.startSpinnerForPhase(e)
+}
 
+func (b *uiBridge) startSpinnerForPhase(e events.Event) {
 	switch ev := e.(type) {
 	case events.InferenceStartedEvent:
 		status := " Thinking..."
@@ -419,7 +429,7 @@ func (b *uiBridge) handleTurnStarted() {
 
 func (b *uiBridge) transitionSpinner(startFn func() func()) {
 	b.mu.Lock()
-	if b.isRendering {
+	if b.isRendering || b.isWaitingForConsent {
 		b.mu.Unlock()
 		return
 	}
