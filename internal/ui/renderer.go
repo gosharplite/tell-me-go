@@ -41,6 +41,8 @@ type stdUIRenderer struct {
 	forceSpinner   bool
 	lastCPUTime    int64
 	lastSampleTime time.Time
+	lastCPUPercent float64
+	lastMemPercent float64
 }
 
 // NewRenderer creates a new ports.UIRenderer.
@@ -397,6 +399,8 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 		r.mu.Lock()
 		r.lastCPUTime = r.getTotalCPUTime()
 		r.lastSampleTime = startTime
+		r.lastCPUPercent = 0.0
+		r.lastMemPercent = r.getHostMemoryPercent()
 		r.mu.Unlock()
 	}
 
@@ -482,26 +486,32 @@ func (r *stdUIRenderer) getHostMemoryPercent() float64 {
 func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string, showMetrics bool) {
 	msg := status
 	if !startTime.IsZero() {
-		elapsed := int(ui.clock.Now().Sub(startTime).Seconds())
+		now := ui.clock.Now()
+		elapsed := int(now.Sub(startTime).Seconds())
 		if showMetrics {
 			// Calculate CPU usage %
 			r.mu.Lock()
-			now := ui.clock.Now()
 			currentCPU := r.getTotalCPUTime()
-			cpuPercent := 0.0
+			cpuPercent := r.lastCPUPercent
+			hostMemPercent := r.lastMemPercent
 
-			if !r.lastSampleTime.IsZero() {
-				dt := now.Sub(r.lastSampleTime).Seconds()
-				if dt > 0 {
-					dCPU := float64(currentCPU-r.lastCPUTime) / 1e9 // seconds
-					cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+			// Only recalculate metrics once per second to reduce jitter and overhead
+			if now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero() {
+				if !r.lastSampleTime.IsZero() {
+					dt := now.Sub(r.lastSampleTime).Seconds()
+					if dt > 0 {
+						dCPU := float64(currentCPU-r.lastCPUTime) / 1e9 // seconds
+						cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+					}
 				}
+				hostMemPercent = r.getHostMemoryPercent()
+				r.lastCPUTime = currentCPU
+				r.lastSampleTime = now
+				r.lastCPUPercent = cpuPercent
+				r.lastMemPercent = hostMemPercent
 			}
-			r.lastCPUTime = currentCPU
-			r.lastSampleTime = now
 			r.mu.Unlock()
 
-			hostMemPercent := r.getHostMemoryPercent()
 			msg = fmt.Sprintf("%s (%ds) [CPU: %.1f%% | MEM: %.1f%%]", status, elapsed, cpuPercent, hostMemPercent)
 		} else {
 			msg = fmt.Sprintf("%s (%ds)", status, elapsed)
