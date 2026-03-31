@@ -567,6 +567,8 @@ func (p *inferenceStep) updateState(turn *turn, content *llm.Content, metrics *l
 	}
 	turn.State.HasToolCalls = p.hasToolCalls(content)
 	if turn.State.HasToolCalls {
+		// Preallocate capacity based on the number of parts in the response
+		turn.State.ToolReasons = make([]string, 0, len(content.Parts))
 		for _, part := range content.Parts {
 			if part.FunctionCall != nil {
 				if reason, ok := part.FunctionCall.Args["reason"].(string); ok && reason != "" {
@@ -606,6 +608,7 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 
 	var names []string
 	if turn.State.Response != nil {
+		names = make([]string, 0, len(turn.State.Response.Parts))
 		for _, part := range turn.State.Response.Parts {
 			if part.FunctionCall != nil {
 				names = append(names, part.FunctionCall.Name)

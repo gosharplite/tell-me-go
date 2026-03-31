@@ -251,32 +251,41 @@ func (b *SimpleEventBus) dispatch(event Event) {
 		b.wg.Add(1)
 		b.pendingWG.Add(1)
 
-		// Acquire semaphore slot (blocks if at max concurrency)
+		// Acquire semaphore slot with timeout to prevent Head-of-Line blocking
 		select {
 		case b.subSemaphore <- struct{}{}:
+			// Success: Slot acquired, launch the subscriber goroutine
+			go func(s Subscriber, e Event) {
+				defer b.wg.Done()
+				defer b.pendingWG.Done()
+				defer func() { <-b.subSemaphore }()
+
+				// Hard timeout prevents a subscriber from holding the semaphore token forever
+				timeoutCtx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+				defer cancel()
+
+				if err := b.notifySubscriber(timeoutCtx, s, e); err != nil {
+					b.getLogger().ErrorContext(timeoutCtx, "subscriber failed",
+						slog.String("event_type", e.Type()),
+						slog.String("subscriber_type", fmt.Sprintf("%T", s)),
+						slog.Any("error", err),
+					)
+				}
+			}(sub, event)
+
+		case <-time.After(500 * time.Millisecond):
+			// Failure: Skip this specific subscriber to keep the bus moving
+			b.getLogger().Warn("Subscriber saturated; event skipped for this subscriber to prevent bus stall",
+				slog.String("event_type", event.Type()),
+				slog.String("subscriber", fmt.Sprintf("%T", sub)))
+			b.wg.Done()
+			b.pendingWG.Done()
+
 		case <-b.ctx.Done():
 			b.wg.Done()
 			b.pendingWG.Done()
 			return
 		}
-
-		go func(s Subscriber, e Event) {
-			defer b.wg.Done()
-			defer b.pendingWG.Done()
-			defer func() { <-b.subSemaphore }()
-
-			// Hard timeout prevents a subscriber from holding the semaphore token forever
-			timeoutCtx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
-			defer cancel()
-
-			if err := b.notifySubscriber(timeoutCtx, s, e); err != nil {
-				b.getLogger().ErrorContext(timeoutCtx, "subscriber failed",
-					slog.String("event_type", e.Type()),
-					slog.String("subscriber_type", fmt.Sprintf("%T", s)),
-					slog.Any("error", err),
-				)
-			}
-		}(sub, event)
 	}
 }
 
@@ -424,84 +433,6 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	}
 }
 
-// StatusUpdate signals a change in the agent's internal state or progress.
-type StatusUpdate struct {
-	Message string
-	Level   string
-}
-
-// TurnStarted signals the beginning of a new Think-Act-Observe cycle.
-type TurnStarted struct {
-	Turn     int
-	MaxTurns int
-}
-
-// InferenceStartedEvent signals that the agent is starting to generate a response.
-type InferenceStartedEvent struct {
-	Model string
-}
-
-// RefiningStartedEvent signals that the agent is starting to refine or recover context.
-type RefiningStartedEvent struct{}
-
-// SummarizationStartedEvent signals that the history summarization process has begun.
-type SummarizationStartedEvent struct{}
-
-// ResponseEvent carries the final LLM output.
-type ResponseEvent struct {
-	Content *llm.Content
-}
-
-// ToolCallEvent signals that one or more tools are being invoked.
-type ToolCallEvent struct {
-	Calls    []*llm.FunctionCall
-	Turn     int
-	MaxTurns int
-}
-
-// ToolExecutionStartedEvent signals that the tool execution phase has started.
-type ToolExecutionStartedEvent struct {
-	ToolNames []string
-}
-
-// ToolResultEvent signals that a tool has finished execution.
-type ToolResultEvent struct {
-	Name   string
-	Result tools.ToolResult
-}
-
-// UsageMetricsEvent signals that a turn is complete and usage should be recorded.
-type UsageMetricsEvent struct {
-	Context   context.Context
-	Metrics   *llm.Metrics
-	LogFile   string
-	StartTime time.Time
-}
-
-// SystemMessageEvent signals a system-level message (error, warning, info).
-type SystemMessageEvent struct {
-	Message string
-	Level   string
-}
-
-// TokenLimitReachedEvent signals that the conversation has reached its token limit.
-type TokenLimitReachedEvent struct {
-	Tokens   int
-	MaxLimit int
-}
-
-// SummarizationRequired signals that the history is becoming too large and should be summarized.
-type SummarizationRequired struct {
-	Tokens   int
-	MaxLimit int
-	Reason   string
-}
-
-// TraceEvent carries the TurnTrace for a completed turn.
-type TraceEvent struct {
-	Trace *telemetry.TurnTrace
-}
-
 // SafePublish attempts to publish an event with a forced timeout.
 // It returns an error if the context is cancelled, the queue is full, or the publication fails.
 func SafePublish(ctx context.Context, bus EventBus, event Event) error {
@@ -534,20 +465,106 @@ func SafePublish(ctx context.Context, bus EventBus, event Event) error {
 	return wrappedErr
 }
 
-func (e StatusUpdate) Type() string              { return "StatusUpdate" }
-func (e TurnStarted) Type() string               { return "TurnStarted" }
-func (e InferenceStartedEvent) Type() string     { return "InferenceStartedEvent" }
-func (e ResponseEvent) Type() string             { return "ResponseEvent" }
-func (e ToolCallEvent) Type() string             { return "ToolCallEvent" }
-func (e ToolExecutionStartedEvent) Type() string { return "ToolExecutionStartedEvent" }
-func (e ToolResultEvent) Type() string           { return "ToolResultEvent" }
-func (e UsageMetricsEvent) Type() string         { return "UsageMetricsEvent" }
-func (e SystemMessageEvent) Type() string        { return "SystemMessageEvent" }
-func (e TokenLimitReachedEvent) Type() string    { return "TokenLimitReachedEvent" }
-func (e SummarizationRequired) Type() string     { return "SummarizationRequired" }
-func (e TraceEvent) Type() string                { return "TraceEvent" }
-func (e RefiningStartedEvent) Type() string      { return "RefiningStartedEvent" }
+// StatusUpdate signals a change in the agent's internal state or progress.
+type StatusUpdate struct {
+	Message string
+	Level   string
+}
+
+func (e StatusUpdate) Type() string { return "StatusUpdate" }
+
+// TurnStarted signals the beginning of a new Think-Act-Observe cycle.
+type TurnStarted struct {
+	Turn     int
+	MaxTurns int
+}
+
+func (e TurnStarted) Type() string { return "TurnStarted" }
+
+// InferenceStartedEvent signals that the agent is starting to generate a response.
+type InferenceStartedEvent struct {
+	Model string
+}
+
+func (e InferenceStartedEvent) Type() string { return "InferenceStartedEvent" }
+
+// SummarizationStartedEvent signals that the history summarization process has begun.
+type SummarizationStartedEvent struct{}
+
 func (e SummarizationStartedEvent) Type() string { return "SummarizationStartedEvent" }
+
+// ResponseEvent carries the final LLM output.
+type ResponseEvent struct {
+	Content *llm.Content
+}
+
+func (e ResponseEvent) Type() string { return "ResponseEvent" }
+
+// ToolCallEvent signals that one or more tools are being invoked.
+type ToolCallEvent struct {
+	Calls    []*llm.FunctionCall
+	Turn     int
+	MaxTurns int
+}
+
+func (e ToolCallEvent) Type() string { return "ToolCallEvent" }
+
+// ToolExecutionStartedEvent signals that the tool execution phase has started.
+type ToolExecutionStartedEvent struct {
+	ToolNames []string
+}
+
+func (e ToolExecutionStartedEvent) Type() string { return "ToolExecutionStartedEvent" }
+
+// ToolResultEvent signals that a tool has finished execution.
+type ToolResultEvent struct {
+	Name   string
+	Result tools.ToolResult
+}
+
+func (e ToolResultEvent) Type() string { return "ToolResultEvent" }
+
+// UsageMetricsEvent signals that a turn is complete and usage should be recorded.
+type UsageMetricsEvent struct {
+	Context   context.Context
+	Metrics   *llm.Metrics
+	LogFile   string
+	StartTime time.Time
+}
+
+func (e UsageMetricsEvent) Type() string { return "UsageMetricsEvent" }
+
+// SystemMessageEvent signals a system-level message (error, warning, info).
+type SystemMessageEvent struct {
+	Message string
+	Level   string
+}
+
+func (e SystemMessageEvent) Type() string { return "SystemMessageEvent" }
+
+// TokenLimitReachedEvent signals that the conversation has reached its token limit.
+type TokenLimitReachedEvent struct {
+	Tokens   int
+	MaxLimit int
+}
+
+func (e TokenLimitReachedEvent) Type() string { return "TokenLimitReachedEvent" }
+
+// SummarizationRequired signals that the history is becoming too large and should be summarized.
+type SummarizationRequired struct {
+	Tokens   int
+	MaxLimit int
+	Reason   string
+}
+
+func (e SummarizationRequired) Type() string { return "SummarizationRequired" }
+
+// TraceEvent carries the TurnTrace for a completed turn.
+type TraceEvent struct {
+	Trace *telemetry.TurnTrace
+}
+
+func (e TraceEvent) Type() string { return "TraceEvent" }
 
 // RetryWaitingEvent signals that the agent is waiting before retrying a failed operation.
 type RetryWaitingEvent struct {
@@ -555,3 +572,13 @@ type RetryWaitingEvent struct {
 }
 
 func (e RetryWaitingEvent) Type() string { return "RetryWaitingEvent" }
+
+// ConsentStartedEvent signals that the user is being prompted for tool consent.
+type ConsentStartedEvent struct{}
+
+func (e ConsentStartedEvent) Type() string { return "ConsentStartedEvent" }
+
+// ConsentFinishedEvent signals that the user consent prompt has finished.
+type ConsentFinishedEvent struct{}
+
+func (e ConsentFinishedEvent) Type() string { return "ConsentFinishedEvent" }

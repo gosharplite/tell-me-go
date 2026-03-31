@@ -58,6 +58,23 @@ func (s *funcSubscriberWithErr) Handle(ctx context.Context, e events.Event) erro
 	return s.f(ctx, e)
 }
 
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (n int, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func TestSimpleEventBus_PublishSubscribe(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -389,8 +406,9 @@ func TestEventTypes(t *testing.T) {
 		events.SummarizationRequired{},
 		events.TraceEvent{},
 		events.SummarizationStartedEvent{},
-		events.RefiningStartedEvent{},
 		events.RetryWaitingEvent{},
+		events.ConsentStartedEvent{},
+		events.ConsentFinishedEvent{},
 	}
 
 	for _, e := range events_list {
@@ -492,4 +510,59 @@ func TestErrBusClosed_Explicit(t *testing.T) {
 	if !errors.Is(err, events.ErrBusClosed) {
 		t.Errorf("expected ErrBusClosed, got %v", err)
 	}
+}
+
+func TestSimpleEventBus_HOLBlocking(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var buf safeBuffer
+	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	// Small semaphore and single worker to trigger HOL blocking
+	bus := events.NewSimpleEventBus(ctx,
+		events.WithLogger(testLogger),
+		events.WithWorkers(1),
+		events.WithMaxConcurrentSubscribers(1),
+		events.WithQueueSize(10),
+	)
+	defer func() { _ = bus.Shutdown(context.Background()) }()
+
+	block := make(chan struct{})
+	slowSub := &uncooperativeSubscriber{block: block}
+	bus.SubscribeGlobal(slowSub)
+
+	// Publish first event - will occupy the single semaphore slot
+	_ = bus.Publish(ctx, testEvent{typeName: "E1"})
+
+	// Wait a bit to ensure E1 is picked up by the worker and occupies the slot
+	time.Sleep(100 * time.Millisecond)
+
+	// Publish second event - should trigger timeout in dispatch (500ms) because E1 holds the slot
+	_ = bus.Publish(ctx, testEvent{typeName: "E2"})
+
+	// Publish third event - should be picked up by the worker after E2 times out
+	_ = bus.Publish(ctx, testEvent{typeName: "E3"})
+
+	// Give enough time for timeouts (2 * 500ms + some buffer)
+	time.Sleep(2 * time.Second)
+
+	output := buf.String()
+
+	// Verify log contains warning for E2 and E3 being skipped
+	if !strings.Contains(output, "Subscriber saturated; event skipped for this subscriber") {
+		t.Errorf("Expected warning log not found in: %s", output)
+	}
+
+	if !strings.Contains(output, "event_type\":\"E2\"") {
+		t.Errorf("Expected E2 to be skipped and logged, output: %s", output)
+	}
+
+	if !strings.Contains(output, "event_type\":\"E3\"") {
+		t.Errorf("Expected E3 to be skipped and logged (was it blocked?), output: %s", output)
+	}
+
+	// Unblock E1
+	close(block)
 }

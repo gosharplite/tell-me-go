@@ -188,9 +188,11 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 
 func TestUIBridge_HandleEvent(t *testing.T) {
 	tests := []struct {
-		name  string
-		event events.Event
-		setup func(m *mockUIRenderer)
+		name     string
+		event    events.Event
+		setup    func(m *mockUIRenderer)
+		preSetup func(b *uiBridge)
+		verify   func(t *testing.T, b *uiBridge)
 	}{
 		{
 			name: "TurnStatusEvent",
@@ -270,13 +272,6 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
-			name:  "RefiningStartedEvent",
-			event: events.RefiningStartedEvent{},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {})
-			},
-		},
-		{
 			name:  "SummarizationStartedEvent",
 			event: events.SummarizationStartedEvent{},
 			setup: func(m *mockUIRenderer) {
@@ -309,6 +304,42 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
+			name: "RetryWaitingEvent",
+			event: events.RetryWaitingEvent{
+				Duration: 5 * time.Second,
+			},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Return(func() {})
+			},
+		},
+		{
+			name:  "ConsentStartedEvent (Stops Spinner)",
+			event: events.ConsentStartedEvent{},
+			preSetup: func(b *uiBridge) {
+				b.mu.Lock()
+				b.stopSpinner = func() {}
+				b.mu.Unlock()
+			},
+			verify: func(t *testing.T, b *uiBridge) {
+				b.mu.Lock()
+				defer b.mu.Unlock()
+				assert.Nil(t, b.stopSpinner)
+			},
+			setup: func(m *mockUIRenderer) {},
+		},
+		{
+			name:  "ConsentFinishedEvent (Resumes Active Phase)",
+			event: events.ConsentFinishedEvent{},
+			preSetup: func(b *uiBridge) {
+				b.mu.Lock()
+				b.activePhase = events.InferenceStartedEvent{Model: "gpt-4o"}
+				b.mu.Unlock()
+			},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Return(func() {})
+			},
+		},
+		{
 			name: "ResponseEvent",
 			event: events.ResponseEvent{
 				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},
@@ -323,11 +354,17 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mRenderer := new(mockUIRenderer)
 			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+			if tt.preSetup != nil {
+				tt.preSetup(bridge)
+			}
 			tt.setup(mRenderer)
 
 			bridge.handleEvent(context.Background(), tt.event)
 
 			mRenderer.AssertExpectations(t)
+			if tt.verify != nil {
+				tt.verify(t, bridge)
+			}
 		})
 	}
 }
@@ -1015,9 +1052,9 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	})
 
 	// Second attempt (Retry)
-	// Now this SHOULD be called because RefiningStartedEvent resets isRendering.
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {}).Once()
-	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
+	// Now this SHOULD be called because RetryWaitingEvent resets isRendering.
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Return(func() {}).Once()
+	bridge.handleEvent(context.Background(), events.RetryWaitingEvent{Duration: 5 * time.Second})
 
 	mRenderer.AssertExpectations(t)
 }
@@ -1142,21 +1179,12 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 
-	// 3. Refining starts
-	stopRefiningCalled := false
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Refining response...").Return(func() {
-		stopRefiningCalled = true
-	}).Once()
-
-	bridge.handleEvent(context.Background(), events.RefiningStartedEvent{})
-
 	// Verification
 	assert.True(t, stopSummarizationCalled, "Expected summarization spinner to be stopped before inference started")
-	assert.True(t, stopInferenceCalled, "Expected inference spinner to be stopped before refining started")
 
 	// Cleanup remaining
 	bridge.Cleanup()
-	assert.True(t, stopRefiningCalled, "Expected refining spinner to be stopped during cleanup")
+	assert.True(t, stopInferenceCalled, "Expected inference spinner to be stopped during cleanup")
 
 	mRenderer.AssertExpectations(t)
 }

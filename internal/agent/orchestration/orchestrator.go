@@ -240,6 +240,7 @@ type uiBridge struct {
 	logFile      string
 	stopSpinner  func()
 	isRendering  bool
+	isWaitingForConsent bool
 	activePhase  events.Event
 }
 
@@ -259,7 +260,7 @@ func (b *uiBridge) resumeActiveSpinner() {
 	phase := b.activePhase
 	b.mu.Unlock()
 	if phase != nil {
-		b.handleSpinnerEvent(phase)
+		b.startSpinnerForPhase(phase)
 	}
 }
 
@@ -291,8 +292,18 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
-	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
+	case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
 		b.handleSpinnerEvent(ev)
+	case events.ConsentStartedEvent:
+		b.mu.Lock()
+		b.isWaitingForConsent = true
+		b.mu.Unlock()
+		b.stopActiveSpinner()
+	case events.ConsentFinishedEvent:
+		b.mu.Lock()
+		b.isWaitingForConsent = false
+		b.mu.Unlock()
+		b.resumeActiveSpinner()
 	case events.ResponseEvent:
 		b.handleResponse(ev)
 	case events.UsageMetricsEvent:
@@ -325,7 +336,10 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 	b.mu.Lock()
 	b.activePhase = e
 	b.mu.Unlock()
+	b.startSpinnerForPhase(e)
+}
 
+func (b *uiBridge) startSpinnerForPhase(e events.Event) {
 	switch ev := e.(type) {
 	case events.InferenceStartedEvent:
 		status := " Thinking..."
@@ -334,13 +348,6 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 		}
 		b.transitionSpinner(func() func() {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, status)
-		})
-	case events.RefiningStartedEvent:
-		b.mu.Lock()
-		b.isRendering = false // Reset state for the new retry cycle
-		b.mu.Unlock()
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, " Refining response...")
 		})
 	case events.SummarizationStartedEvent:
 		b.mu.Lock()
@@ -422,7 +429,7 @@ func (b *uiBridge) handleTurnStarted() {
 
 func (b *uiBridge) transitionSpinner(startFn func() func()) {
 	b.mu.Lock()
-	if b.isRendering {
+	if b.isRendering || b.isWaitingForConsent {
 		b.mu.Unlock()
 		return
 	}
@@ -440,9 +447,11 @@ func (b *uiBridge) transitionSpinner(startFn func() func()) {
 
 	// Safely assign the new spinner, watching out for race conditions
 	b.mu.Lock()
-	if b.isRendering {
+	// ARCHITECTURAL FIX: Re-verify ALL suppression states (Rendering OR Consent) 
+	// after the period where the mutex was released.
+	if b.isRendering || b.isWaitingForConsent {
 		b.mu.Unlock()
-		newStop() // Drop the new spinner if rendering started concurrently
+		newStop() // Immediately terminate the new spinner to prevent UI overlap
 		return
 	}
 

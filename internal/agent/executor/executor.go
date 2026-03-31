@@ -298,13 +298,20 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	auth := e.authorizer
 	e.mu.RUnlock()
 
-	names := make([]string, len(calls))
-	for i, c := range calls {
-		names[i] = c.Name
-	}
-	e.emitEvent(ctx, bus, events.ToolExecutionStartedEvent{ToolNames: names})
+	var declinedMap map[int]bool
+	func() {
+		// ARCHITECTURAL FIX: Use a detached context for UI state signals
+		// to ensure the bridge state is reset even if the turn is cancelled.
+		eventCtx := context.WithoutCancel(ctx)
+		e.emitEvent(eventCtx, bus, events.ConsentStartedEvent{})
 
-	ctx, declinedMap := auth.RequestBatchConsent(ctx, calls)
+		// Local defer ensures UI is unlocked immediately after the user provides input
+		defer e.emitEvent(eventCtx, bus, events.ConsentFinishedEvent{})
+
+		// Update outer variables
+		// The actual consent request remains interruptible
+		ctx, declinedMap = auth.RequestBatchConsent(ctx, calls)
+	}()
 
 	// Orchestrate Execution
 	collector := e.newResultCollector(calls, bus)
@@ -313,7 +320,12 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	// [SCALABILITY FIX] Bounding the execution plan goroutine to prevent leaks on context cancellation.
 	// This ensures that all goroutines started by the plan are properly joined.
 	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
+	g.Go(func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("execution plan panicked: %v", r)
+			}
+		}()
 		if e.execPlan != nil {
 			return e.execPlan(e, gCtx, calls, collector.ch, declinedMap)
 		}
@@ -321,8 +333,11 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	})
 
 	results, waitErr := collector.Wait(gCtx)
-	if err := g.Wait(); err != nil && waitErr == nil {
-		waitErr = err
+	if err := g.Wait(); err != nil {
+		// Prioritize the errgroup error if the collector was interrupted by context cancellation
+		if waitErr == nil || errors.Is(waitErr, context.Canceled) {
+			waitErr = err
+		}
 	}
 
 	duration := time.Since(startTime)
