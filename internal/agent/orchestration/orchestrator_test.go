@@ -275,6 +275,13 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
+			name:  "ToolExecutionStartedEvent",
+			event: events.ToolExecutionStartedEvent{},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Return(func() {})
+			},
+		},
+		{
 			name: "ResponseEvent",
 			event: events.ResponseEvent{
 				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},
