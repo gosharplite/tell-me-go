@@ -9,16 +9,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-type DefaultMetricsProvider struct{}
+type defaultMetricsProvider struct{}
 
 func NewSystemMetricsProvider() ports.SystemMetricsProvider {
-	return &DefaultMetricsProvider{}
+	return &defaultMetricsProvider{}
 }
 
-func (p *DefaultMetricsProvider) GetCPUStats() (int64, int64) {
+func (p *defaultMetricsProvider) GetCPUStats() (int64, int64) {
 	return getRuntimeCPUStats()
 }
 
-func (p *DefaultMetricsProvider) GetMemoryPercent() float64 {
+func (p *defaultMetricsProvider) GetMemoryPercent() float64 {
 	return 0.0
 }

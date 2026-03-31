@@ -658,17 +658,17 @@ func TestStartSpinner_Synchronization(t *testing.T) {
 	}
 }
 
-type MockSystemMetricsProvider struct {
+type mockSystemMetricsProvider struct {
 	Total int64
 	Idle  int64
 	Mem   float64
 }
 
-func (m *MockSystemMetricsProvider) GetCPUStats() (int64, int64) {
+func (m *mockSystemMetricsProvider) GetCPUStats() (int64, int64) {
 	return m.Total, m.Idle
 }
 
-func (m *MockSystemMetricsProvider) GetMemoryPercent() float64 {
+func (m *mockSystemMetricsProvider) GetMemoryPercent() float64 {
 	return m.Mem
 }
 
@@ -678,7 +678,7 @@ func TestStdUIRenderer_SpinnerWithMetrics(t *testing.T) {
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 
 	// Initial stats: total 1000, idle 500 (50% usage)
-	mockMetrics := &MockSystemMetricsProvider{
+	mockMetrics := &mockSystemMetricsProvider{
 		Total: 1000,
 		Idle:  500,
 		Mem:   75.0,

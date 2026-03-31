@@ -17,13 +17,13 @@ import (
 
 var procRoot = "/"
 
-type LinuxMetricsProvider struct{}
+type linuxMetricsProvider struct{}
 
 func NewSystemMetricsProvider() ports.SystemMetricsProvider {
-	return &LinuxMetricsProvider{}
+	return &linuxMetricsProvider{}
 }
 
-func (p *LinuxMetricsProvider) GetCPUStats() (int64, int64) {
+func (p *linuxMetricsProvider) GetCPUStats() (int64, int64) {
 	// Try to get host CPU stats from /proc/stat first for better visibility of tool execution
 	f, err := os.Open(filepath.Join(procRoot, "proc", "stat"))
 	if err == nil {
@@ -53,7 +53,7 @@ func (p *LinuxMetricsProvider) GetCPUStats() (int64, int64) {
 	return getRuntimeCPUStats()
 }
 
-func (p *LinuxMetricsProvider) GetMemoryPercent() float64 {
+func (p *linuxMetricsProvider) GetMemoryPercent() float64 {
 	f, err := os.Open(filepath.Join(procRoot, "proc", "meminfo"))
 	if err != nil {
 		return 0.0

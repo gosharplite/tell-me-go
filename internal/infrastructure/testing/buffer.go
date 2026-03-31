@@ -5,7 +5,14 @@ package inframock
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"sync"
+)
+
+var (
+	_ io.Writer    = (*SafeBuffer)(nil)
+	_ fmt.Stringer = (*SafeBuffer)(nil)
 )
 
 // SafeBuffer is a thread-safe wrapper around bytes.Buffer.
