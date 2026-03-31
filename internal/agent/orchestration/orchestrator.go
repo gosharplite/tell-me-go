@@ -326,9 +326,8 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 	b.activePhase = e
 	b.mu.Unlock()
 
-	switch e.(type) {
+	switch ev := e.(type) {
 	case events.InferenceStartedEvent:
-		ev := e.(events.InferenceStartedEvent)
 		status := " Thinking..."
 		if ev.Model != "" {
 			status = fmt.Sprintf(" Thinking [%s]...", ev.Model)
@@ -351,7 +350,6 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
 		})
 	case events.ToolExecutionStartedEvent:
-		ev := e.(events.ToolExecutionStartedEvent)
 		b.mu.Lock()
 		b.isRendering = false // Reset state to allow tool spinner after inference
 		b.mu.Unlock()
@@ -367,7 +365,6 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 			return b.renderer.StartSpinnerWithMetrics(b.ctx, status)
 		})
 	case events.RetryWaitingEvent:
-		ev := e.(events.RetryWaitingEvent)
 		b.mu.Lock()
 		b.isRendering = false
 		b.mu.Unlock()

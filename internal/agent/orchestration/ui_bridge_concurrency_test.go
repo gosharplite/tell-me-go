@@ -104,6 +104,6 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 
 	// 5. Verify the spinner was immediately stopped
 	assert.True(t, spinnerStopped.Load(), "Spinner started during ResponseEvent processing must be immediately stopped")
-	
+
 	bridge.Cleanup()
 }
