@@ -98,8 +98,7 @@ func TestLinuxMetricsProvider(t *testing.T) {
 		}
 		total, idle := p.GetCPUStats()
 		if total != 0 || idle != 0 {
-			// Actually total might be non-zero if it fell back, but since we have a file it might not fallback.
-			// Let's see what happens.
+			t.Logf("Fallback or partial read detected during corrupted format test: total=%d, idle=%d", total, idle)
 		}
 
 		err = os.WriteFile(filepath.Join(procDir, "meminfo"), []byte("MemTotal: invalid\nMemAvailable: 0\n"), 0644)

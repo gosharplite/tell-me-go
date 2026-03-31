@@ -16,7 +16,7 @@ func NewSystemMetricsProvider() ports.SystemMetricsProvider {
 }
 
 func (p *DefaultMetricsProvider) GetCPUStats() (int64, int64) {
-	return 0, 0
+	return getRuntimeCPUStats()
 }
 
 func (p *DefaultMetricsProvider) GetMemoryPercent() float64 {

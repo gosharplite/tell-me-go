@@ -9,7 +9,6 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
-	"runtime/metrics"
 	"strconv"
 	"strings"
 
@@ -51,14 +50,7 @@ func (p *LinuxMetricsProvider) GetCPUStats() (int64, int64) {
 	}
 
 	// Fallback: Use runtime/metrics for total CPU time (nanoseconds)
-	const cpuMetric = "/cpu/classes/total:cpu-seconds"
-	samples := make([]metrics.Sample, 1)
-	samples[0].Name = cpuMetric
-	metrics.Read(samples)
-	if samples[0].Value.Kind() == metrics.KindFloat64 {
-		return int64(samples[0].Value.Float64() * 1e9), 0
-	}
-	return 0, 0
+	return getRuntimeCPUStats()
 }
 
 func (p *LinuxMetricsProvider) GetMemoryPercent() float64 {

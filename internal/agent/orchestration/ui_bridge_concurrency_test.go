@@ -23,11 +23,10 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	var activeSpinners int32
 
 	// Thread-safe mock setup with atomic tracking
-	mRenderer.On("StartSpinnerWithMetrics", mock.Anything, mock.Anything).Return(func(ctx context.Context, status string) func() {
-		atomic.AddInt32(&activeSpinners, 1)
-		return func() {
-			atomic.AddInt32(&activeSpinners, -1)
-		}
+	mRenderer.On("StartSpinnerWithMetrics", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		atomic.AddInt32(&activeSpinners, 1) // Increment when the mock is called
+	}).Return(func() {
+		atomic.AddInt32(&activeSpinners, -1) // Return the expected func() type for cleanup
 	})
 
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()

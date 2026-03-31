@@ -352,7 +352,7 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if stderr.String() != tt.expected+"\n" {
-				t.Errorf("expected %q, got %q", "\r\x1b[2K"+tt.expected+"\n", stderr.String())
+				t.Errorf("expected %q, got %q", tt.expected+"\n", stderr.String())
 			}
 		})
 	}
