@@ -547,7 +547,7 @@ func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Engine] Step %d/%d%s\n",
+	_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Engine] Step %d/%d%s\n", ui.c(termClearLine),
 		ui.c(colorCyan), ts, turn+1, maxTurns, ui.c(colorReset))
 
 	if showTools {
@@ -598,11 +598,11 @@ func (r *stdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 			snippet = snippet[:197] + "..."
 		}
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
-		_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: %s%s\n", ui.c(colorCyan), timestamp, name, snippet, ui.c(colorReset))
+		_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Result] %s: %s%s\n", ui.c(termClearLine), ui.c(colorCyan), timestamp, name, snippet, ui.c(colorReset))
 	}
 
 	for _, b := range result.BinaryData {
-		_, _ = fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
+		_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n", ui.c(termClearLine),
 			ui.c(colorCyan), timestamp, name, b.MIMEType, len(b.Data), ui.c(colorReset))
 	}
 
@@ -637,7 +637,7 @@ func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
+	_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [%s] %s%s\n", ui.c(termClearLine),
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
 }
 
