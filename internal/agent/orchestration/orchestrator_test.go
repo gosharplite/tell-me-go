@@ -254,10 +254,19 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
-			name:  "InferenceStartedEvent",
+			name: "InferenceStartedEvent (Model)",
+			event: events.InferenceStartedEvent{
+				Model: "gpt-4o",
+			},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Return(func() {})
+			},
+		},
+		{
+			name:  "InferenceStartedEvent (Empty)",
 			event: events.InferenceStartedEvent{},
 			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinner", mock.Anything).Return(func() {})
+				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {})
 			},
 		},
 		{
@@ -275,7 +284,25 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 		},
 		{
-			name:  "ToolExecutionStartedEvent",
+			name: "ToolExecutionStartedEvent (Single)",
+			event: events.ToolExecutionStartedEvent{
+				ToolNames: []string{"search_files"},
+			},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing [search_files]...").Return(func() {})
+			},
+		},
+		{
+			name: "ToolExecutionStartedEvent (Multiple)",
+			event: events.ToolExecutionStartedEvent{
+				ToolNames: []string{"list_files", "read_files"},
+			},
+			setup: func(m *mockUIRenderer) {
+				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools [list_files, read_files]...").Return(func() {})
+			},
+		},
+		{
+			name:  "ToolExecutionStartedEvent (Empty)",
 			event: events.ToolExecutionStartedEvent{},
 			setup: func(m *mockUIRenderer) {
 				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Return(func() {})
@@ -929,7 +956,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() {})
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {})
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
 
 	ctx := context.Background()
@@ -960,7 +987,7 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	var spinnerStopped bool
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped = true })
 
 	// Start Inference
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
@@ -978,7 +1005,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	// First attempt
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Once()
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 
 	// Response (e.g. error)
@@ -1001,7 +1028,7 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 
 	var spinnerStopped bool
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped = true })
 
 	// Start Inference
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
@@ -1070,7 +1097,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			mUIRenderer.On("SetUseColor", true).Return()
 
 			var spinnerStopped bool
-			mUIRenderer.On("StartSpinner", mock.Anything).Return(func() { spinnerStopped = true })
+			mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped = true })
 
 			mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
 				sub := args.Get(0).(func(context.Context, events.Event))
@@ -1109,7 +1136,7 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 
 	// 2. Inference starts (without previous response)
 	stopInferenceCalled := false
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() {
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {
 		stopInferenceCalled = true
 	}).Once()
 
@@ -1142,9 +1169,6 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 
 	// Thread-safe mock setup
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {
-		atomic.AddInt32(&activeSpinners, -1)
-	})
-	mRenderer.On("StartSpinner", mock.Anything).Return(func() {
 		atomic.AddInt32(&activeSpinners, -1)
 	})
 

@@ -437,7 +437,9 @@ type TurnStarted struct {
 }
 
 // InferenceStartedEvent signals that the agent is starting to generate a response.
-type InferenceStartedEvent struct{}
+type InferenceStartedEvent struct {
+	Model string
+}
 
 // RefiningStartedEvent signals that the agent is starting to refine or recover context.
 type RefiningStartedEvent struct{}
@@ -458,7 +460,9 @@ type ToolCallEvent struct {
 }
 
 // ToolExecutionStartedEvent signals that the tool execution phase has started.
-type ToolExecutionStartedEvent struct{}
+type ToolExecutionStartedEvent struct {
+	ToolNames []string
+}
 
 // ToolResultEvent signals that a tool has finished execution.
 type ToolResultEvent struct {
@@ -544,3 +548,10 @@ func (e SummarizationRequired) Type() string     { return "SummarizationRequired
 func (e TraceEvent) Type() string                { return "TraceEvent" }
 func (e RefiningStartedEvent) Type() string      { return "RefiningStartedEvent" }
 func (e SummarizationStartedEvent) Type() string { return "SummarizationStartedEvent" }
+
+// RetryWaitingEvent signals that the agent is waiting before retrying a failed operation.
+type RetryWaitingEvent struct {
+	Duration time.Duration
+}
+
+func (e RetryWaitingEvent) Type() string { return "RetryWaitingEvent" }

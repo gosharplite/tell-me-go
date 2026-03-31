@@ -298,7 +298,11 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	auth := e.authorizer
 	e.mu.RUnlock()
 
-	e.emitEvent(ctx, bus, events.ToolExecutionStartedEvent{})
+	names := make([]string, len(calls))
+	for i, c := range calls {
+		names[i] = c.Name
+	}
+	e.emitEvent(ctx, bus, events.ToolExecutionStartedEvent{ToolNames: names})
 
 	ctx, declinedMap := auth.RequestBatchConsent(ctx, calls)
 

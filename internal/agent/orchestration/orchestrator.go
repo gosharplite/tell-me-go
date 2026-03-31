@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -290,7 +291,7 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
-	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent:
+	case events.InferenceStartedEvent, events.RefiningStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
 		b.handleSpinnerEvent(ev)
 	case events.ResponseEvent:
 		b.handleResponse(ev)
@@ -327,8 +328,13 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 
 	switch e.(type) {
 	case events.InferenceStartedEvent:
+		ev := e.(events.InferenceStartedEvent)
+		status := " Thinking..."
+		if ev.Model != "" {
+			status = fmt.Sprintf(" Thinking [%s]...", ev.Model)
+		}
 		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinner(b.ctx)
+			return b.renderer.StartSpinnerWithStatus(b.ctx, status)
 		})
 	case events.RefiningStartedEvent:
 		b.mu.Lock()
@@ -345,11 +351,28 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
 		})
 	case events.ToolExecutionStartedEvent:
+		ev := e.(events.ToolExecutionStartedEvent)
 		b.mu.Lock()
 		b.isRendering = false // Reset state to allow tool spinner after inference
 		b.mu.Unlock()
+
+		status := " Executing tools..."
+		if len(ev.ToolNames) == 1 {
+			status = fmt.Sprintf(" Executing [%s]...", ev.ToolNames[0])
+		} else if len(ev.ToolNames) > 1 {
+			status = fmt.Sprintf(" Executing tools [%s]...", strings.Join(ev.ToolNames, ", "))
+		}
+
 		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithMetrics(b.ctx, " Executing tools...")
+			return b.renderer.StartSpinnerWithMetrics(b.ctx, status)
+		})
+	case events.RetryWaitingEvent:
+		ev := e.(events.RetryWaitingEvent)
+		b.mu.Lock()
+		b.isRendering = false
+		b.mu.Unlock()
+		b.transitionSpinner(func() func() {
+			return b.renderer.StartSpinnerWithStatus(b.ctx, fmt.Sprintf(" Retrying in %v...", ev.Duration.Round(time.Second)))
 		})
 	}
 }

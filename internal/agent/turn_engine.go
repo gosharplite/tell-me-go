@@ -535,7 +535,7 @@ func (p *inferenceStep) process(ctx context.Context, turn *turn) (processResult,
 }
 
 func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (respContent *llm.Content, metrics *llm.Metrics, err error) {
-	_ = events.SafePublish(ctx, turn.Events, events.InferenceStartedEvent{})
+	_ = events.SafePublish(ctx, turn.Events, events.InferenceStartedEvent{Model: turn.Model})
 
 	defer func() {
 		safeContent := respContent
@@ -603,6 +603,16 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 	if !turn.State.HasToolCalls {
 		return processResult{NextPhase: phasePersisting}, nil
 	}
+
+	var names []string
+	if turn.State.Response != nil {
+		for _, part := range turn.State.Response.Parts {
+			if part.FunctionCall != nil {
+				names = append(names, part.FunctionCall.Name)
+			}
+		}
+	}
+	_ = events.SafePublish(ctx, turn.Events, events.ToolExecutionStartedEvent{ToolNames: names})
 
 	toolStart := turn.Clock.Now()
 
@@ -740,6 +750,9 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 		}
 	}
 
+	// Publish RetryWaitingEvent to show the spinner during the backoff delay
+	_ = events.SafePublish(ctx, turn.Events, events.RetryWaitingEvent{Duration: delay})
+
 	if err := ctx.Err(); err != nil {
 		return processResult{}, err
 	}
@@ -749,9 +762,6 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 		return processResult{}, ctx.Err()
 	case <-turn.Clock.After(delay):
 	}
-
-	// Trigger a spinner early so it covers refining and the next inference attempt
-	_ = events.SafePublish(ctx, turn.Events, events.RefiningStartedEvent{})
 
 	return processResult{NextPhase: phaseRefining}, nil
 }

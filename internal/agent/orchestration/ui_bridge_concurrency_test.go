@@ -41,7 +41,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 			defer wg.Done()
 			<-start
 			if idx%2 == 0 {
-				bridge.handleEvent(context.Background(), events.ToolExecutionStartedEvent{})
+				bridge.handleEvent(context.Background(), events.ToolExecutionStartedEvent{ToolNames: []string{"test_tool"}})
 			} else {
 				bridge.handleEvent(context.Background(), events.ResponseEvent{
 					Content: &llm.Content{},

@@ -1430,8 +1430,8 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 		switch e := e.(type) {
 		case events.InferenceStartedEvent:
 			capturedEvents = append(capturedEvents, "InferenceStartedEvent")
-		case events.RefiningStartedEvent:
-			capturedEvents = append(capturedEvents, "RefiningStartedEvent")
+		case events.RetryWaitingEvent:
+			capturedEvents = append(capturedEvents, "RetryWaitingEvent")
 		case events.SystemMessageEvent:
 			if e.Level == "warn" {
 				capturedEvents = append(capturedEvents, "SystemMessageEvent")
@@ -1468,9 +1468,9 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	// Expected sequence:
 	// 1. InferenceStartedEvent (first attempt)
 	// 2. SystemMessageEvent (retry notice)
-	// 3. RefiningStartedEvent (fired in attemptRetry after wait)
+	// 3. RetryWaitingEvent (fired in attemptRetry before wait)
 	// 4. InferenceStartedEvent (second attempt in inferenceStep)
-	expected := []string{"InferenceStartedEvent", "SystemMessageEvent", "RefiningStartedEvent", "InferenceStartedEvent"}
+	expected := []string{"InferenceStartedEvent", "SystemMessageEvent", "RetryWaitingEvent", "InferenceStartedEvent"}
 	mu.Lock()
 	defer mu.Unlock()
 	if !assert.Equal(t, expected, capturedEvents) {
