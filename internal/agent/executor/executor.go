@@ -298,11 +298,15 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	auth := e.authorizer
 	e.mu.RUnlock()
 
-	e.emitEvent(ctx, bus, events.ConsentStartedEvent{})
-	// Ensure UI is unlocked even if RequestBatchConsent panics
-	defer e.emitEvent(ctx, bus, events.ConsentFinishedEvent{})
+	var declinedMap map[int]bool
+	func() {
+		e.emitEvent(ctx, bus, events.ConsentStartedEvent{})
+		// Local defer ensures UI is unlocked immediately after the user provides input
+		defer e.emitEvent(ctx, bus, events.ConsentFinishedEvent{})
 
-	ctx, declinedMap := auth.RequestBatchConsent(ctx, calls)
+		// Update outer variables
+		ctx, declinedMap = auth.RequestBatchConsent(ctx, calls)
+	}()
 
 	// Orchestrate Execution
 	collector := e.newResultCollector(calls, bus)
@@ -324,8 +328,11 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	})
 
 	results, waitErr := collector.Wait(gCtx)
-	if err := g.Wait(); err != nil && waitErr == nil {
-		waitErr = err
+	if err := g.Wait(); err != nil {
+		// Prioritize the errgroup error if the collector was interrupted by context cancellation
+		if waitErr == nil || errors.Is(waitErr, context.Canceled) {
+			waitErr = err
+		}
 	}
 
 	duration := time.Since(startTime)

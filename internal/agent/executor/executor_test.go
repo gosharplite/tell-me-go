@@ -468,8 +468,12 @@ func (m *orderMockRegistry) GetOptions(name string) tools.ToolOptions {
 func TestOrchestrator_Execute_PlanPanic(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
+
+	// Create a mock event bus to track events
+	bus := &mockEventBus{}
+
 	// Inject an execution plan that panics
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)},
+	exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)},
 		withExecutionPlan(func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
 			panic("test panic")
 		}))
@@ -488,4 +492,15 @@ func TestOrchestrator_Execute_PlanPanic(t *testing.T) {
 
 	assert.Error(t, execErr)
 	assert.Contains(t, execErr.Error(), "execution plan panicked: test panic")
+
+	// Verify event sequencing
+	var eventTypes []string
+	bus.mu.Lock()
+	for _, e := range bus.Published {
+		eventTypes = append(eventTypes, e.Type())
+	}
+	bus.mu.Unlock()
+
+	assert.Contains(t, eventTypes, "ConsentStartedEvent")
+	assert.Contains(t, eventTypes, "ConsentFinishedEvent")
 }
