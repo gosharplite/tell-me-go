@@ -40,6 +40,7 @@ type stdUIRenderer struct {
 	useColor       bool
 	forceSpinner   bool
 	lastCPUTime    int64
+	lastIdleTime   int64
 	lastSampleTime time.Time
 	lastCPUPercent float64
 	lastMemPercent float64
@@ -397,7 +398,7 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	// Initialize CPU tracking on start
 	if showMetrics {
 		r.mu.Lock()
-		r.lastCPUTime = r.getTotalCPUTime()
+		r.lastCPUTime, r.lastIdleTime = r.getCPUStats()
 		r.lastSampleTime = startTime
 		r.lastCPUPercent = 0.0
 		r.lastMemPercent = r.getHostMemoryPercent()
@@ -438,16 +439,41 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	return stopFunc
 }
 
-func (r *stdUIRenderer) getTotalCPUTime() int64 {
-	// Use runtime/metrics for total CPU time (nanoseconds)
+func (r *stdUIRenderer) getCPUStats() (int64, int64) {
+	// Try to get host CPU stats from /proc/stat first for better visibility of tool execution
+	f, err := os.Open("/proc/stat")
+	if err == nil {
+		defer func() { _ = f.Close() }()
+		scanner := bufio.NewScanner(f)
+		if scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "cpu ") {
+				fields := strings.Fields(line)
+				if len(fields) >= 5 {
+					// Format: user nice system idle iowait irq softirq steal guest guest_nice
+					var total, idle int64
+					for i := 1; i < len(fields); i++ {
+						val, _ := strconv.ParseInt(fields[i], 10, 64)
+						total += val
+						if i == 4 { // idle index is 4 (starts at 1)
+							idle = val
+						}
+					}
+					return total, idle
+				}
+			}
+		}
+	}
+
+	// Fallback: Use runtime/metrics for total CPU time (nanoseconds)
 	const cpuMetric = "/cpu/classes/total:cpu-seconds"
 	samples := make([]metrics.Sample, 1)
 	samples[0].Name = cpuMetric
 	metrics.Read(samples)
 	if samples[0].Value.Kind() == metrics.KindFloat64 {
-		return int64(samples[0].Value.Float64() * 1e9)
+		return int64(samples[0].Value.Float64() * 1e9), 0
 	}
-	return 0
+	return 0, 0
 }
 
 func (r *stdUIRenderer) getHostMemoryPercent() float64 {
@@ -455,7 +481,7 @@ func (r *stdUIRenderer) getHostMemoryPercent() float64 {
 	if err != nil {
 		return 0.0
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var memTotal, memAvailable int64
 	scanner := bufio.NewScanner(f)
@@ -491,21 +517,32 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 		if showMetrics {
 			// Calculate CPU usage %
 			r.mu.Lock()
-			currentCPU := r.getTotalCPUTime()
+			currentTotal, currentIdle := r.getCPUStats()
 			cpuPercent := r.lastCPUPercent
 			hostMemPercent := r.lastMemPercent
 
 			// Only recalculate metrics once per second to reduce jitter and overhead
 			if now.Sub(r.lastSampleTime) >= time.Second || r.lastSampleTime.IsZero() {
 				if !r.lastSampleTime.IsZero() {
-					dt := now.Sub(r.lastSampleTime).Seconds()
-					if dt > 0 {
-						dCPU := float64(currentCPU-r.lastCPUTime) / 1e9 // seconds
-						cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+					if currentIdle > 0 {
+						// Host-level from /proc/stat
+						dTotal := float64(currentTotal - r.lastCPUTime)
+						dIdle := float64(currentIdle - r.lastIdleTime)
+						if dTotal > 0 {
+							cpuPercent = (1.0 - (dIdle / dTotal)) * 100.0
+						}
+					} else {
+						// Agent-level from runtime/metrics
+						dt := now.Sub(r.lastSampleTime).Seconds()
+						if dt > 0 {
+							dCPU := float64(currentTotal-r.lastCPUTime) / 1e9 // seconds
+							cpuPercent = (dCPU / dt) * 100.0 / float64(runtime.NumCPU())
+						}
 					}
 				}
 				hostMemPercent = r.getHostMemoryPercent()
-				r.lastCPUTime = currentCPU
+				r.lastCPUTime = currentTotal
+				r.lastIdleTime = currentIdle
 				r.lastSampleTime = now
 				r.lastCPUPercent = cpuPercent
 				r.lastMemPercent = hostMemPercent
