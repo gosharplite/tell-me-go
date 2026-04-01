@@ -154,3 +154,19 @@ func TestNewChatter(t *testing.T) {
 func (m *mockRegistry) GetOptions(name string) tools.ToolOptions {
 	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }
+
+func (m *mockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return nil
+}
+
+func (m *mockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return nil
+}
+
+func (m *mockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return nil
+}
+
+func (m *mockRegistry) ListAvailableToolkits() []string {
+	return nil
+}

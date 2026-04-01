@@ -591,3 +591,35 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 
 	assert.True(t, hasFinished, "ConsentFinishedEvent should be published even if context is cancelled")
 }
+
+func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}
+
+func (m *orderMockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *orderMockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *orderMockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *orderMockRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}

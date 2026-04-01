@@ -233,3 +233,19 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 		t.Fatal("Test timed out: Orchestrator failed to cancel the zombie tool")
 	}
 }
+
+func (m *mockZombieRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *mockZombieRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockZombieRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockZombieRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}

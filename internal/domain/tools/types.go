@@ -64,6 +64,7 @@ type ToolOptions struct {
 type ToolRegistrar interface {
 	Register(def *ToolDeclaration, handler ToolFunc) error
 	RegisterWithOptions(def *ToolDeclaration, handler ToolFunc, opts ToolOptions) error
+	RegisterToToolkit(toolkit string, def *ToolDeclaration, handler ToolFunc) error
 }
 
 // ToolExecutor defines the interface for executing tools and checking their behavior.
@@ -77,6 +78,9 @@ type ToolExecutor interface {
 // ToolMetadataProvider defines the interface for listing available tools.
 type ToolMetadataProvider interface {
 	GetDeclarations() []*ToolDeclaration
+	GetCoreDeclarations() []*ToolDeclaration
+	GetDeclarationsByToolkits(toolkits []string) []*ToolDeclaration
+	ListAvailableToolkits() []string
 }
 
 // Registry defines the interface for the tool registry.

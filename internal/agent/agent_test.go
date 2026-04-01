@@ -877,3 +877,19 @@ func TestAgent_Shutdown_FlushError(t *testing.T) {
 func (m *mockToolRegistryWithExpectations) GetOptions(name string) tools.ToolOptions {
 	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }
+
+func (m *mockToolRegistryWithExpectations) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *mockToolRegistryWithExpectations) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistryWithExpectations) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistryWithExpectations) ListAvailableToolkits() []string {
+	return []string{"core"}
+}

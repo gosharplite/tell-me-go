@@ -240,3 +240,19 @@ func TestRegisterAll_Errors(t *testing.T) {
 func (m *MockRegistry) GetOptions(name string) domaintools.ToolOptions {
 	return domaintools.ToolOptions{}
 }
+
+func (m *MockRegistry) RegisterToToolkit(toolkit string, def *domaintools.ToolDeclaration, handler domaintools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *MockRegistry) GetCoreDeclarations() []*domaintools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *MockRegistry) GetDeclarationsByToolkits(toolkits []string) []*domaintools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *MockRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}

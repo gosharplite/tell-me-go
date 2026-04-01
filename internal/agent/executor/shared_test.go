@@ -71,3 +71,19 @@ func (r *panicRegistry) Execute(ctx context.Context, name string, args map[strin
 func (r *panicRegistry) GetOptions(name string) tools.ToolOptions {
 	return tools.ToolOptions{}
 }
+
+func (r *panicRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	panic("not implemented")
+}
+
+func (r *panicRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	panic("not implemented")
+}
+
+func (r *panicRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	panic("not implemented")
+}
+
+func (r *panicRegistry) ListAvailableToolkits() []string {
+	panic("not implemented")
+}
