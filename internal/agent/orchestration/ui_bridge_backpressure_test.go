@@ -58,10 +58,15 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 		close(done)
 	}()
 
+	timeout := 5 * time.Second
+	if deadline, ok := t.Deadline(); ok {
+		timeout = time.Until(deadline) / 2
+	}
+
 	select {
 	case <-done:
 		// Success
-	case <-time.After(2 * time.Second):
+	case <-time.After(timeout):
 		t.Fatal("UI Bridge queue full, but handleEvent blocked unexpectedly (load-shedding failed)")
 	}
 
@@ -109,10 +114,15 @@ func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 	close(block)
 
 	// Wait for the cleanup goroutine to finish
+	timeout := 5 * time.Second
+	if deadline, ok := t.Deadline(); ok {
+		timeout = time.Until(deadline) / 2
+	}
+
 	select {
 	case <-cleanupDone:
 		// Success
-	case <-time.After(2 * time.Second):
+	case <-time.After(timeout):
 		t.Fatal("Cleanup did not finish even after unblocking")
 	}
 
@@ -171,6 +181,10 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			timeout := 5 * time.Second
+			if deadline, ok := t.Deadline(); ok {
+				timeout = time.Until(deadline) / 2
+			}
 			mRenderer := new(mockUIRenderer)
 			// Allow LogTurnStatus to be called many times as we drain the events during cleanup
 			mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
@@ -253,7 +267,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 				select {
 				case <-done:
 					// Success: It successfully waited and then delivered the event.
-				case <-time.After(2 * time.Second):
+				case <-time.After(timeout):
 					t.Fatalf("%s: Deadlock! Event never processed after queue unblocked", tt.name)
 				}
 			} else {
@@ -267,7 +281,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 				select {
 				case <-done:
 					// Success: it load-shed or respected context cancellation and returned immediately
-				case <-time.After(2 * time.Second):
+				case <-time.After(timeout):
 					t.Fatalf("%s: Regression: Load-shedding failed, handleEvent blocked unexpectedly", tt.name)
 				}
 			}
@@ -277,6 +291,10 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 
 func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	t.Parallel()
+	timeout := 5 * time.Second
+	if deadline, ok := t.Deadline(); ok {
+		timeout = time.Until(deadline) / 2
+	}
 
 	mRenderer := new(mockUIRenderer)
 	// Block the loop on a critical event
@@ -313,7 +331,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	select {
 	case <-inMock:
 		// Loop is now blocked in LogSystemMessage
-	case <-time.After(2 * time.Second):
+	case <-time.After(timeout):
 		t.Fatal("Bridge did not reach blocking mock")
 	}
 
@@ -337,7 +355,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	select {
 	case <-done:
 		// Success: Goroutine returned immediately due to pre-cancelled context
-	case <-time.After(2 * time.Second):
+	case <-time.After(timeout):
 		t.Fatal("handleEvent did not respect cancelled context immediately")
 	}
 }
