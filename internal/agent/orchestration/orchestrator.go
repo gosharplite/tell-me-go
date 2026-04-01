@@ -347,6 +347,8 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 	case b.eventCh <- e:
 	case <-ctx.Done():
 	case <-b.done:
+	default:
+		b.logger.Debug("UI Bridge queue full, shedding load")
 	}
 }
 
