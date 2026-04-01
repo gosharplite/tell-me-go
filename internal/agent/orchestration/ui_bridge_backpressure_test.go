@@ -48,11 +48,11 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 	}
 
-	// The 102nd event should NOT block because of the non-blocking select with default case.
+	// The 102nd event (transient visual event) should NOT block because of the non-blocking select with default case.
 	// It is natively synchronous and returns instantly if load shedding is working.
 	done := make(chan struct{})
 	go func() {
-		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+		bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 		close(done)
 	}()
 
@@ -128,9 +128,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 		isContextCancelled bool
 	}{
 		{
-			name:           "Transient event should be shed (non-blocking)",
+			name:           "Critical TurnStatusEvent should block (enforce backpressure)",
 			event:          events.TurnStatusEvent{},
-			expectBlocking: false,
+			expectBlocking: true,
 		},
 		{
 			name:           "Critical ResponseEvent should block (enforce backpressure)",

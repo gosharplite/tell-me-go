@@ -178,7 +178,7 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 
 	b := make([]byte, 8)
 	var sessionID string
-	if _, err := o.EntropySource.Read(b); err != nil {
+	if _, err := io.ReadFull(o.EntropySource, b); err != nil {
 		// Fallback to timestamp if entropy source fails
 		sessionID = fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
 	} else {
@@ -347,8 +347,10 @@ func (b *uiBridge) drain() {
 			switch ev := e.(type) {
 			case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
 				continue // Safely skip transient visual spinners during shutdown
-			case events.ResponseEvent, events.SystemMessageEvent:
-				b.processRecoverable(ev) // Guarantee final text delivery to the UI
+			case events.ResponseEvent, events.SystemMessageEvent,
+				events.ConsentStartedEvent, events.ConsentFinishedEvent,
+				events.TurnStarted, events.TurnStatusEvent:
+				b.processRecoverable(ev) // Guarantee final state/text delivery to the UI
 			default:
 				b.processRecoverable(e)
 			}
@@ -369,7 +371,7 @@ func (b *uiBridge) processRecoverable(e events.Event) {
 			b.cancel()
 		}
 	}()
-	b.processEvent(b.ctx, e)
+	b.processEvent(e)
 }
 
 // handleEvent processes a domain event and updates the UI.
@@ -379,7 +381,9 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 	}
 
 	switch e.(type) {
-	case events.ResponseEvent, events.SystemMessageEvent:
+	case events.ResponseEvent, events.SystemMessageEvent,
+		events.ConsentStartedEvent, events.ConsentFinishedEvent,
+		events.TurnStarted, events.TurnStatusEvent:
 		// Critical events: ensure delivery and enforce true backpressure.
 		select {
 		case b.eventCh <- e:
@@ -401,7 +405,7 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 	}
 }
 
-func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
+func (b *uiBridge) processEvent(e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
