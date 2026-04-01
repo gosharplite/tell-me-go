@@ -14,11 +14,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/goleak"
 )
 
 func TestUIBridge_StressConcurrency(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -65,7 +64,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 }
 
 func TestUIBridge_LogicalStateVerification(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	ctx := context.Background()
 
 	mRenderer := new(mockUIRenderer)

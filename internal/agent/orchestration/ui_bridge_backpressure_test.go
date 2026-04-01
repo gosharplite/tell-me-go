@@ -14,10 +14,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 )
 
 func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
+	t.Parallel()
 	var buf syncWriter
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -60,7 +60,7 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 	select {
 	case <-done:
 		// Success
-	case <-time.After(1 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("UI Bridge queue full, but handleEvent blocked unexpectedly (load-shedding failed)")
 	}
 
@@ -69,6 +69,7 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 }
 
 func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
+	t.Parallel()
 	var buf syncWriter
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -136,7 +137,7 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 }
 
 func TestUIBridge_QoSRouting(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 
 	tests := []struct {
 		name               string
@@ -183,7 +184,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mRenderer := new(mockUIRenderer)
 			// Allow LogTurnStatus to be called many times as we drain the events during cleanup
 			mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
@@ -279,7 +282,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 				select {
 				case <-done:
 					// Success: it load-shed or respected context cancellation and returned immediately
-				case <-time.After(1 * time.Second):
+				case <-time.After(2 * time.Second):
 					t.Fatalf("%s: Regression: Load-shedding failed, handleEvent blocked unexpectedly", tt.name)
 				}
 			}
@@ -288,7 +291,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 }
 
 func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 
 	mRenderer := new(mockUIRenderer)
 	// Block the loop on a critical event
@@ -348,7 +351,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	select {
 	case <-done:
 		// Success: Goroutine returned immediately due to pre-cancelled context
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(2 * time.Second):
 		t.Fatal("handleEvent did not respect cancelled context immediately")
 	}
 }

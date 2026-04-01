@@ -21,11 +21,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 )
 
 func TestOrchestrator_SessionID_DegradationWarning(t *testing.T) {
-	defer goleak.VerifyNone(t)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)

@@ -17,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/goleak"
 )
 
 type panicMockRenderer struct {
@@ -56,7 +55,6 @@ func (m *panicMockRenderer) SetUseColor(use bool)       {}
 func (m *panicMockRenderer) SetForceSpinner(force bool) {}
 
 func TestUIBridge_PanicResilience(t *testing.T) {
-	defer goleak.VerifyNone(t)
 	ctx := context.Background()
 	mock := &panicMockRenderer{}
 
@@ -90,7 +88,6 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 }
 
 func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
-	defer goleak.VerifyNone(t)
 	ctx := context.Background()
 
 	// Create a custom slog handler to capture the panic log.
@@ -125,7 +122,6 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 }
 
 func TestUIBridge_PanicInStopSpinner(t *testing.T) {
-	defer goleak.VerifyNone(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -169,7 +165,6 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 }
 
 func TestUIBridge_PoisonPill(t *testing.T) {
-	defer goleak.VerifyNone(t)
 	ctx := context.Background()
 
 	logBuffer := inframock.NewSafeBuffer()

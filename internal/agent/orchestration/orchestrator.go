@@ -258,6 +258,7 @@ type uiBridge struct {
 	activePhase         events.Event
 	eventCh             chan events.Event
 	wg                  sync.WaitGroup
+	cleanupTimeout      time.Duration
 	isPoisoned          bool
 }
 
@@ -295,14 +296,14 @@ func (b *uiBridge) Cleanup() {
 		close(done)
 	}()
 
-	timer := time.NewTimer(3 * time.Second)
+	timer := time.NewTimer(b.cleanupTimeout)
 	defer timer.Stop()
 
 	select {
 	case <-done:
 		// Cleanup completed successfully
 	case <-timer.C:
-		b.logger.Warn("UI Bridge cleanup timed out after 3 seconds")
+		b.logger.Warn(fmt.Sprintf("UI Bridge cleanup timed out after %v", b.cleanupTimeout))
 	}
 }
 
@@ -313,16 +314,17 @@ func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, showThoug
 	}
 	ctx, cancel := context.WithCancel(parentCtx)
 	b := &uiBridge{
-		ctx:          ctx,
-		cancel:       cancel,
-		renderer:     renderer,
-		logger:       logger,
-		showThoughts: showThoughts,
-		showTools:    showTools,
-		rawOutput:    rawOutput,
-		useColor:     useColor,
-		logFile:      logFile,
-		eventCh:      make(chan events.Event, 100),
+		ctx:            ctx,
+		cancel:         cancel,
+		renderer:       renderer,
+		logger:         logger,
+		showThoughts:   showThoughts,
+		showTools:      showTools,
+		rawOutput:      rawOutput,
+		useColor:       useColor,
+		logFile:        logFile,
+		eventCh:        make(chan events.Event, 100),
+		cleanupTimeout: 3 * time.Second,
 	}
 	b.wg.Add(1)
 	go b.loop()

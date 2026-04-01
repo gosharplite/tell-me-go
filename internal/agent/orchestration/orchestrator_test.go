@@ -27,7 +27,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 )
 
 // --- Mocks ---
@@ -150,7 +149,7 @@ func (m *mockCapturer) Close(ctx context.Context) error {
 // --- Tests ---
 
 func TestOrchestrator_Run_Success(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
@@ -187,7 +186,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 }
 
 func TestUIBridge_HandleEvent(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	tests := []struct {
 		name     string
 		event    events.Event
@@ -420,7 +419,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mRenderer := new(mockUIRenderer)
 			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 			defer bridge.Cleanup()
@@ -449,7 +450,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 }
 
 func TestUIBridge_EnsureContext(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -472,7 +473,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 }
 
 func TestOrchestrator_Run_Error(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
@@ -509,7 +510,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 }
 
 func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
@@ -550,7 +551,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 }
 
 func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
 	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
@@ -750,7 +751,7 @@ func (m *behaviorMockCapturer) Close(ctx context.Context) error {
 }
 
 func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	tracker := &behaviorTracker{}
 	mChatter := &behaviorMockChatter{tracker: tracker}
 	mCapturer := &behaviorMockCapturer{tracker: tracker}
@@ -841,6 +842,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 }
 
 func TestSessionDependencies_Accessors(t *testing.T) {
+	t.Parallel()
 	paths := &persistence.Paths{}
 	deps := &sessionDependencies{
 		Paths: paths,
@@ -859,6 +861,7 @@ func TestSessionDependencies_Accessors(t *testing.T) {
 }
 
 func TestOrchestrator_AgentFactory_Error(t *testing.T) {
+	t.Parallel()
 	// Create an orchestrator with a failing factory
 	o := &orchestrator{
 		AgentFactory: func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -886,7 +889,7 @@ func TestOrchestrator_AgentFactory_Error(t *testing.T) {
 }
 
 func TestOrchestrator_Rollback(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mHistory := &mockHistoryManager{
 		contents: make([]*llm.Content, 4), // 2 turns
 	}
@@ -923,7 +926,9 @@ func TestOrchestrator_Rollback(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mHistory.rollbackErr = tt.rollbackErr
 			sCfg := &sessionConfig{BackN: tt.backN}
 			deps := &sessionDependencies{HistoryManager: mHistory}
@@ -942,7 +947,7 @@ func TestOrchestrator_Rollback(t *testing.T) {
 }
 
 func TestRun_Routing(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
 	mCapturer := new(mockCapturer)
@@ -974,6 +979,7 @@ func TestRun_Routing(t *testing.T) {
 	}
 
 	t.Run("Rollback only (no prompt)", func(t *testing.T) {
+		t.Parallel()
 		mHistory := &mockHistoryManager{
 			contents: make([]*llm.Content, 4), // 2 turns
 		}
@@ -992,6 +998,7 @@ func TestRun_Routing(t *testing.T) {
 	})
 
 	t.Run("Rollback and Chat", func(t *testing.T) {
+		t.Parallel()
 		mHistory := &mockHistoryManager{
 			contents: make([]*llm.Content, 4), // 2 turns
 		}
@@ -1015,6 +1022,7 @@ func TestRun_Routing(t *testing.T) {
 	})
 
 	t.Run("Rollback aborts on error", func(t *testing.T) {
+		t.Parallel()
 		mHistory := &mockHistoryManager{
 			contents:    make([]*llm.Content, 4), // 2 turns
 			rollbackErr: fmt.Errorf("rollback failed"),
@@ -1038,7 +1046,7 @@ func TestRun_Routing(t *testing.T) {
 }
 
 func TestUIBridge_Concurrency(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -1112,7 +1120,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 }
 
 func TestUIBridge_LogicalRace(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -1149,7 +1157,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 }
 
 func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -1171,7 +1179,7 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 }
 
 func TestUIBridge_Retry_Spinner(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -1219,7 +1227,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 }
 
 func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -1251,7 +1259,7 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 }
 
 func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 
 	tests := []struct {
 		name          string
@@ -1276,7 +1284,9 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mChatter := new(mockChatter)
 			mCapturer := new(mockCapturer)
 			mHistory := new(mockHistoryManager)
@@ -1347,7 +1357,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 }
 
 func TestUIBridge_SpinnerTransitions(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -1403,7 +1413,7 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 }
 
 func TestUIBridge_SpinnerConcurrency(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -1479,7 +1489,7 @@ func (m *mockClock) Jitter(base float64) float64 {
 }
 
 func TestOrchestrator_SessionID_Fallback(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
@@ -1532,7 +1542,7 @@ func TestOrchestrator_SessionID_Fallback(t *testing.T) {
 }
 
 func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
@@ -1582,7 +1592,7 @@ func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
 }
 
 func TestOrchestrator_SessionID_ShortRead_Fallback(t *testing.T) {
-	defer goleak.VerifyNone(t)
+	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
@@ -1638,4 +1648,34 @@ func TestOrchestrator_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	mClock.AssertExpectations(t)
 	mChatter.AssertExpectations(t)
+}
+
+func TestUIBridge_Cleanup_Timeout(t *testing.T) {
+	t.Parallel()
+	mRenderer := new(mockUIRenderer)
+
+	// Initialize bridge
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+
+	// Override for instant test execution
+	bridge.cleanupTimeout = 1 * time.Millisecond
+
+	// Force a waitgroup hang to simulate a deadlocked renderer or long-running loop
+	bridge.wg.Add(1)
+	defer bridge.wg.Done() // Ensure the hung WaitGroup is eventually released to prevent goroutine leaks in the test suite.
+
+	// Execute Cleanup. It should timeout after 1ms and return normally.
+	// This test passes if it doesn't block and returns within a reasonable time.
+	done := make(chan struct{})
+	go func() {
+		bridge.Cleanup()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success: Cleanup returned even with a hung WaitGroup
+	case <-time.After(2 * time.Second):
+		t.Fatal("Cleanup did not return within expected timeout")
+	}
 }

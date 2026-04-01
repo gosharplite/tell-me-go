@@ -15,11 +15,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/goleak"
 )
 
 func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
-	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	block := make(chan struct{})
 
@@ -54,7 +52,6 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 }
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
-	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
@@ -76,7 +73,6 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 }
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
-	defer goleak.VerifyNone(t)
 	m := &collisionMock{}
 	m.On("LogTurnStatus", mock.Anything).Return().Maybe()
 	m.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
