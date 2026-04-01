@@ -25,19 +25,19 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
-	time.Sleep(10 * time.Millisecond)
+	bridge.sync(context.Background())
 
 	// 2. Trigger a spinner event during consent - should be suppressed
 	// We don't expect StartSpinnerWithStatus to be called yet
 	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
-	time.Sleep(10 * time.Millisecond)
+	bridge.sync(context.Background())
 
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
 
 	// 3. Finish consent - should resume the suppressed spinner
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.ConsentFinishedEvent{})
-	time.Sleep(10 * time.Millisecond)
+	bridge.sync(context.Background())
 
 	mRenderer.AssertExpectations(t)
 }
@@ -50,12 +50,12 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
-	time.Sleep(10 * time.Millisecond)
+	bridge.sync(context.Background())
 
 	// 2. System message arrives during consent
 	mRenderer.On("LogSystemMessage", "Hello", "info").Return().Once()
 	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
-	time.Sleep(10 * time.Millisecond)
+	bridge.sync(context.Background())
 
 	// Should NOT start a spinner because isWaitingForConsent is true
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)

@@ -145,6 +145,18 @@ func (m *mockCapturer) Close(ctx context.Context) error {
 	return args.Error(0)
 }
 
+// --- Helpers ---
+
+func (b *uiBridge) sync(ctx context.Context) {
+	reply := make(chan struct{})
+	b.handleEvent(ctx, syncEvent{reply: reply})
+	select {
+	case <-reply:
+	case <-ctx.Done():
+	case <-b.done:
+	}
+}
+
 // --- Tests ---
 
 func TestOrchestrator_Run_Success(t *testing.T) {
@@ -320,11 +332,11 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			preSetup: func(b *uiBridge) {
 				// Start a spinner first
 				b.handleEvent(context.Background(), events.InferenceStartedEvent{})
-				time.Sleep(10 * time.Millisecond)
+				b.sync(context.Background())
 			},
 			verify: func(t *testing.T, b *uiBridge) {
-				time.Sleep(10 * time.Millisecond)
-				// We can't easily check b.stopSpinner without a race, 
+				b.sync(context.Background())
+				// We can't easily check b.stopSpinner without a race,
 				// but the mock expectations and logic should cover it.
 			},
 		},
@@ -336,7 +348,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				b.handleEvent(context.Background(), events.InferenceStartedEvent{Model: "gpt-4o"})
 				// Enter consent
 				b.handleEvent(context.Background(), events.ConsentStartedEvent{})
-				time.Sleep(10 * time.Millisecond)
+				b.sync(context.Background())
 			},
 			setup: func(m *mockUIRenderer) {
 				// Expect it to be started twice: once originally, once after consent
@@ -368,7 +380,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			bridge.handleEvent(context.Background(), tt.event)
 
 			// Wait for the async actor loop to process the event
-			time.Sleep(20 * time.Millisecond)
+			bridge.sync(context.Background())
 
 			mRenderer.AssertExpectations(t)
 			if tt.verify != nil {
@@ -991,6 +1003,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 
 	close(start)
 	wg.Wait()
+	bridge.sync(ctx)
 }
 
 func TestUIBridge_LogicalRace(t *testing.T) {
@@ -1012,7 +1025,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	// 2. Try to start a spinner (should be suppressed)
 	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
 
-	time.Sleep(20 * time.Millisecond) // Wait for actor loop
+	bridge.sync(ctx) // Wait for actor loop
 
 	// Verification
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
@@ -1024,8 +1037,8 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 	defer bridge.Cleanup()
 
-	var spinnerStopped atomic.Bool
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped.Store(true) })
+	spinnerStopped := make(chan struct{})
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { close(spinnerStopped) })
 
 	// Start Inference
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
@@ -1033,9 +1046,11 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	// Force new turn before ResponseEvent arrives (Simulates an abort/reset)
 	bridge.handleEvent(context.Background(), events.TurnStarted{})
 
-	time.Sleep(20 * time.Millisecond) // Wait for actor loop
+	bridge.sync(context.Background()) // Wait for actor loop
 
-	if !spinnerStopped.Load() {
+	select {
+	case <-spinnerStopped:
+	case <-time.After(2 * time.Second):
 		t.Error("Expected stopSpinner to be called during TurnStarted to prevent resource leaks")
 	}
 }
@@ -1049,20 +1064,20 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	// First attempt
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
-	time.Sleep(20 * time.Millisecond)
+	bridge.sync(context.Background())
 
 	// Response (e.g. error)
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
 	bridge.handleEvent(context.Background(), events.ResponseEvent{
 		Content: &llm.Content{},
 	})
-	time.Sleep(20 * time.Millisecond)
+	bridge.sync(context.Background())
 
 	// Second attempt (Retry)
 	// Now this SHOULD be called because RetryWaitingEvent resets isRendering.
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.RetryWaitingEvent{Duration: 5 * time.Second})
-	time.Sleep(20 * time.Millisecond)
+	bridge.sync(context.Background())
 
 	mRenderer.AssertExpectations(t)
 }
@@ -1073,17 +1088,21 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 	defer bridge.Cleanup()
 
-	var spinnerStopped atomic.Bool
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped.Store(true) })
+	spinnerStopped := make(chan struct{})
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { close(spinnerStopped) })
 
 	// Start Inference
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
-	time.Sleep(20 * time.Millisecond) // Wait for actor loop to start the spinner
+	bridge.sync(context.Background()) // Wait for actor loop to start the spinner
 
 	// Simulate unexpected exit by calling Cleanup
 	bridge.Cleanup()
 
-	assert.True(t, spinnerStopped.Load(), "Expected stopSpinner to be called during Cleanup")
+	select {
+	case <-spinnerStopped:
+	case <-time.After(2 * time.Second):
+		t.Error("Expected stopSpinner to be called during Cleanup")
+	}
 
 	// Double cleanup should be safe
 	bridge.Cleanup()
@@ -1139,8 +1158,11 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			mCapturer.On("IsTTY", io.Discard).Return(true)
 			mUIRenderer.On("SetUseColor", true).Return()
 
-			var spinnerStopped atomic.Bool
-			mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped.Store(true) })
+			spinnerStarted := make(chan struct{})
+			spinnerStopped := make(chan struct{})
+			mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(args mock.Arguments) {
+				close(spinnerStarted)
+			}).Return(func() { close(spinnerStopped) })
 
 			mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
 				sub := args.Get(0).(func(context.Context, events.Event))
@@ -1157,10 +1179,18 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.expectedError)
 
-			// Wait a bit for the async actor to process the InferenceStartedEvent
-			time.Sleep(50 * time.Millisecond)
+			// Wait for the async actor to process the InferenceStartedEvent
+			select {
+			case <-spinnerStarted:
+			case <-time.After(2 * time.Second):
+				t.Fatal("Timeout waiting for spinner to start")
+			}
 
-			assert.True(t, spinnerStopped.Load(), "Expected spinner to be stopped via deferred Cleanup on error")
+			select {
+			case <-spinnerStopped:
+			case <-time.After(2 * time.Second):
+				t.Error("Expected spinner to be stopped via deferred Cleanup on error")
+			}
 
 			mChatter.AssertExpectations(t)
 			mCapturer.AssertExpectations(t)
@@ -1175,31 +1205,37 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	defer bridge.Cleanup()
 
 	// 1. Summarization starts
-	var stopSummarizationCalled atomic.Bool
+	stopSummarizationCalled := make(chan struct{})
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {
-		stopSummarizationCalled.Store(true)
+		close(stopSummarizationCalled)
 	}).Once()
 
 	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
-	time.Sleep(20 * time.Millisecond) // Wait for actor loop
+	bridge.sync(context.Background()) // Wait for actor loop
 
 	// 2. Inference starts (without previous response)
-	var stopInferenceCalled atomic.Bool
+	stopInferenceCalled := make(chan struct{})
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {
-		stopInferenceCalled.Store(true)
+		close(stopInferenceCalled)
 	}).Once()
 
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
-	time.Sleep(20 * time.Millisecond) // Wait for actor loop
+	bridge.sync(context.Background()) // Wait for actor loop
 
 	// Verification
-	assert.True(t, stopSummarizationCalled.Load(), "Expected summarization spinner to be stopped before inference started")
+	select {
+	case <-stopSummarizationCalled:
+	case <-time.After(2 * time.Second):
+		t.Error("Expected summarization spinner to be stopped before inference started")
+	}
 
 	// Cleanup remaining
-	time.Sleep(20 * time.Millisecond) // Give actor loop time to process
-	bridge.Cleanup() // Explicit cleanup here is actually fine as long as it's idempotent, but I'll remove it to be clean.
-    // Wait, let's just use the deferred one.
-	assert.True(t, stopInferenceCalled.Load(), "Expected inference spinner to be stopped during cleanup")
+	bridge.Cleanup()
+	select {
+	case <-stopInferenceCalled:
+	case <-time.After(2 * time.Second):
+		t.Error("Expected inference spinner to be stopped during cleanup")
+	}
 
 	mRenderer.AssertExpectations(t)
 }
@@ -1232,7 +1268,7 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	time.Sleep(100 * time.Millisecond) // Give actor loop time to process
+	bridge.sync(context.Background()) // Give actor loop time to process
 	bridge.Cleanup()
 
 	// Verify all spinners were eventually stopped

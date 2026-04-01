@@ -57,6 +57,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	wg.Wait()
 
 	// Final cleanup must stop any remaining spinner
+	bridge.sync(context.Background())
 	bridge.Cleanup()
 
 	assert.Equal(t, int32(0), atomic.LoadInt32(&activeSpinners), "Every started spinner must be stopped eventually")
@@ -68,7 +69,7 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
 	defer bridge.Cleanup()
 
-	var spinnerStopped atomic.Bool
+	spinnerStopped := make(chan struct{})
 	started := make(chan struct{})
 	canFinishStart := make(chan struct{})
 	stoppedChan := make(chan struct{})
@@ -78,7 +79,7 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 		close(started)
 		<-canFinishStart
 	}).Return(func() {
-		spinnerStopped.Store(true)
+		close(spinnerStopped)
 		close(stoppedChan)
 	}).Once()
 
@@ -90,7 +91,11 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	}()
 
 	// Wait until StartSpinnerWithMetrics is called and blocked
-	<-started
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timeout waiting for spinner to start")
+	}
 
 	// 2. Process ResponseEvent while ToolExecution is in its "act" phase (unlocked)
 	bridge.handleEvent(context.Background(), events.ResponseEvent{
@@ -108,7 +113,9 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	}
 
 	// 5. Verify the spinner was immediately stopped
-	assert.True(t, spinnerStopped.Load(), "Spinner started during ResponseEvent processing must be immediately stopped")
-
-	bridge.Cleanup()
+		select {
+	case <-spinnerStopped:
+	case <-time.After(2 * time.Second):
+		t.Error("Spinner started during ResponseEvent processing must be immediately stopped")
+	}
 }

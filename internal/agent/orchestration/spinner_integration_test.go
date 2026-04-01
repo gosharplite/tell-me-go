@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"sync"
 	"testing"
@@ -23,6 +24,20 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/goleak"
 )
+
+type syncWriter struct {
+	io.Writer
+	onWrite chan struct{}
+}
+
+func (w *syncWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	select {
+	case w.onWrite <- struct{}{}:
+	default:
+	}
+	return n, err
+}
 
 // controlledTicker allows us to trigger ticks manually for spinner frames.
 type controlledTicker struct {
@@ -71,7 +86,9 @@ func (c *controlledClock) Tick() {
 func TestSpinner_E2E_Visibility(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	// 1. Setup Environment
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdoutRaw, stderrRaw := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stderr := &syncWriter{Writer: stderrRaw, onWrite: make(chan struct{}, 100)}
+	stdout := stdoutRaw
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		tickChannel: make(chan time.Time, 1),
@@ -113,14 +130,27 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		// Phase A: Inference Starts
 		capturedHandler(ctx, events.InferenceStartedEvent{})
 
-		// Wait for the goroutine to draw first frame
-		time.Sleep(50 * time.Millisecond)
+		// Wait for the goroutine to process event
+		reply := make(chan struct{})
+		capturedHandler(ctx, syncEvent{reply: reply})
+		<-reply
 
 		// Phase B: Ticks (Spinner frames)
 		clock.Tick() // Frame 1
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-stderr.onWrite:
+		case <-time.After(2 * time.Second):
+		}
+
 		clock.Tick() // Frame 2
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-stderr.onWrite:
+		case <-time.After(2 * time.Second):
+		}
+
+		reply2 := make(chan struct{})
+		capturedHandler(ctx, syncEvent{reply: reply2})
+		<-reply2
 
 		// Phase C: Response arrives
 		capturedHandler(ctx, events.ResponseEvent{
@@ -140,7 +170,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 4. Assertions on Stderr
-	output := stderr.String()
+	output := stderrRaw.String()
 
 	// Check for Thinking message
 	assert.Contains(t, output, "Thinking...", "Spinner message not found in stderr")
@@ -162,7 +192,9 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// This test ensures that if the event bus handler times out (5s),
 	// the spinner continues to run because it's using the bridge's session context.
 
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdoutRaw, stderrRaw := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stderr := &syncWriter{Writer: stderrRaw, onWrite: make(chan struct{}, 100)}
+	stdout := stdoutRaw
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		tickChannel: make(chan time.Time, 1),
@@ -182,17 +214,23 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 
 	bridge.handleEvent(handlerCtx, events.InferenceStartedEvent{})
 
-	// Wait for handler context to expire
-	time.Sleep(200 * time.Millisecond)
+	// Wait for actor loop to process event
+	bridge.sync(sessionCtx)
 
 	// Trigger ticks - if the spinner is still alive, these will succeed
-	stderr.Reset()
+	stderrRaw.Reset()
 	clock.Tick()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-stderr.onWrite:
+	case <-time.After(2 * time.Second):
+	}
 	clock.Tick()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-stderr.onWrite:
+	case <-time.After(2 * time.Second):
+	}
 
-	output := stderr.String()
+	output := stderrRaw.String()
 	assert.Contains(t, output, "⠙", "Spinner should still be ticking even after handler context expired")
 
 	// Cleanup

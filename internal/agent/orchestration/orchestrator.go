@@ -322,8 +322,16 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 	}
 }
 
+type syncEvent struct {
+	reply chan struct{}
+}
+
+func (e syncEvent) Type() string { return "syncEvent" }
+
 func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	switch ev := e.(type) {
+	case syncEvent:
+		close(ev.reply)
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
 	case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
