@@ -71,7 +71,6 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	block := make(chan struct{})
 
 	// 2. Setup a mock that will block the loop when a specific event is processed
-	// Use Once() to ensure we only block once and let subsequent events flow.
 	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(_ mock.Arguments) {
 		<-block
 	}).Return().Once()
@@ -79,17 +78,18 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	// Subsequent LogTurnStatus calls should return normally
 	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
 
-	// 3. CRITICAL: Add .Maybe() to the method we expect NOT to be called!
-	// In the uiBridge.loop shutdown branch, ResponseEvent is explicitly skipped.
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	// 3. Expect RenderResponse to be CALLED during drain phase
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
 
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 
 	// 4. Send the blocking event, then send events we want to test for fast-drain
 	// This event freezes the loop
 	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-	// This event should be SKIPPED during fast drain (shutdown)
+	// This event should NOT be skipped anymore during fast drain
 	bridge.handleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
+	// This event should be skipped during fast drain (spinner)
+	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 	// This event should be PROCESSED even during fast drain
 	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 
@@ -100,8 +100,7 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 		close(cleanupDone)
 	}()
 
-	// 6. WAIT for Cleanup to start and cancel the context (Deterministic synchronization)
-	// This replaces the flaky time.Sleep(20 * time.Millisecond).
+	// 6. WAIT for Cleanup to start and cancel the context
 	<-bridge.ctx.Done()
 
 	// 7. Unblock the loop, forcing it to immediately enter the fast-drain phase
@@ -110,9 +109,7 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	// Wait for the cleanup goroutine to finish
 	<-cleanupDone
 
-	// 8. Assert expected calls. LogTurnStatus should have been called twice (once blocking, once fast-drain).
-	// RenderResponse should NOT have been called.
-	mRenderer.AssertNotCalled(t, "RenderResponse", mock.Anything, mock.Anything, mock.Anything)
+	// 8. Assert expected calls. RenderResponse should have been called!
 	mRenderer.AssertExpectations(t)
 }
 
@@ -178,7 +175,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 		}
 	})
 
-	t.Run("Critical event should not block (background delivery)", func(t *testing.T) {
+	t.Run("Critical event should block (enforce backpressure)", func(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			bridge.handleEvent(context.Background(), events.ResponseEvent{})
@@ -187,9 +184,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 
 		select {
 		case <-done:
-			// Success: it didn't block
-		case <-time.After(500 * time.Millisecond):
-			t.Fatal("bridge.handleEvent blocked for critical event when channel was full")
+			t.Fatal("bridge.handleEvent should have blocked for critical event when channel was full")
+		case <-time.After(200 * time.Millisecond):
+			// Success: it blocked!
 		}
 	})
 

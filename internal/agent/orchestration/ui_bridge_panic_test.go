@@ -5,9 +5,9 @@ package orchestration
 
 import (
 	"context"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"io"
 	"log/slog"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"sync"
 	"testing"
 	"time"
@@ -92,24 +92,24 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	ctx := context.Background()
-	
+
 	// Create a custom slog handler to capture the panic log.
 	// We use LevelDebug to ensure the stack trace log is captured.
 	logBuffer := inframock.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	
+
 	mockRenderer := new(mockUIRenderer)
 	// This mock will panic when StartSpinnerWithStatus is called
 	mockRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("intentional test panic")
 	}).Return(func() {})
-	
+
 	bridge := newUIBridge(ctx, mockRenderer, true, true, false, true, "test.log", logger)
 	defer bridge.Cleanup()
-	
+
 	// Trigger the panic
 	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
-	
+
 	// Wait for shutdown and check logs
 	select {
 	case <-bridge.ctx.Done():
@@ -117,7 +117,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for bridge to shutdown after panic")
 	}
-	
+
 	output := logBuffer.String()
 	assert.Contains(t, output, "uiBridge actor recovered from panic")
 	assert.Contains(t, output, "intentional test panic")

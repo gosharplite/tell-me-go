@@ -18,7 +18,7 @@ import (
 type silentT struct{}
 
 func (s *silentT) Errorf(format string, args ...interface{}) {}
-func (s *silentT) FailNow()                                {}
+func (s *silentT) FailNow()                                  {}
 func (s *silentT) Logf(format string, args ...interface{})   {}
 
 func waitMock(t *testing.T, m *mock.Mock, timeout time.Duration) {

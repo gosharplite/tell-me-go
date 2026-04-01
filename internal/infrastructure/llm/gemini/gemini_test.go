@@ -738,7 +738,7 @@ func TestGemini_ResetConnections_ThreadSafety(t *testing.T) {
 func TestNewClient_Options(t *testing.T) {
 	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.BearerAuth{Token: "test-token"}
-	
+
 	c, err := NewClient(
 		apiURL,
 		"gemini-1.5-flash",

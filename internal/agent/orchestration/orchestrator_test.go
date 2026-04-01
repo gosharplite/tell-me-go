@@ -1171,7 +1171,13 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 
 			mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-			mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(tt.chatErr)
+			mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Run(func(args mock.Arguments) {
+				// Wait for the spinner to start before failing chat to avoid racing with fast-drain
+				select {
+				case <-spinnerStarted:
+				case <-time.After(2 * time.Second):
+				}
+			}).Return(tt.chatErr)
 			mChatter.On("Shutdown", mock.Anything).Return(nil)
 
 			err := orch.Run(context.Background(), sCfg, deps, mCapturer)

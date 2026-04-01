@@ -43,6 +43,15 @@ To ensure 100% reliability and zero flakiness, the following rules are enforced 
     mRenderer.AssertNotCalled(t, "ForbiddenAction")
     ```
 
+### 4. Concurrency & Backpressure Strategy
+*   **Strict Backpressure**: The `uiBridge` enforces strict backpressure via blocking channel delivery for critical events (`ResponseEvent`, `SystemMessageEvent`). It MUST NOT spawn unbounded background goroutines to bypass full buffers, as this defeats the backpressure mechanism and risks goroutine bloat.
+*   **Load Shedding**: For non-critical visual/transient events (like spinners), the bridge uses a non-blocking `select` with a `default` case to shed load if the event queue is full, prioritizing system responsiveness.
+
+### 5. Teardown Contract
+*   **Deterministic Drain**: During shutdown (via the `drain()` phase), the actor loop gracefully processes all remaining events in the mailbox.
+*   **Zero Data Loss for Critical Content**: To prevent data loss, the `drain()` phase strictly flushes all critical domain data (e.g., `ResponseEvent` tokens, `SystemMessageEvent`) to the UI.
+*   **Safe Spinner Discard**: Transient visual events (e.g., `InferenceStartedEvent`, `SummarizationStartedEvent`, `ToolExecutionStartedEvent`, `RetryWaitingEvent`) are safely discarded during the `drain()` phase to ensure a fast and clean exit.
+
 ## Consequences
 *   **Positive**: Elimination of data races in UI rendering logic.
 *   **Positive**: Deterministic, high-speed test suite with zero flakiness.

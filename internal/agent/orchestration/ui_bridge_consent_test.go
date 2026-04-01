@@ -30,8 +30,8 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 
 	// Handle other expected calls with .Maybe() to prevent panic masking.
 	// We use a specific matcher to avoid overlap with SYNC_SENTINEL used by syncBridge.
-	mRenderer.On("LogSystemMessage", mock.MatchedBy(func(s string) bool { 
-		return s != "BLOCK" && s != "SYNC_SENTINEL" 
+	mRenderer.On("LogSystemMessage", mock.MatchedBy(func(s string) bool {
+		return s != "BLOCK" && s != "SYNC_SENTINEL"
 	}), mock.Anything).Return().Maybe()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 

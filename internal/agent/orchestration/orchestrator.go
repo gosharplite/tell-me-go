@@ -334,11 +334,15 @@ func (b *uiBridge) drain() {
 				b.stopActiveSpinner()
 				return
 			}
-			// Skip synchronous UI rendering during teardown
-			if _, isVisual := e.(events.ResponseEvent); isVisual {
-				continue
+
+			switch ev := e.(type) {
+			case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
+				continue // Safely skip transient visual spinners during shutdown
+			case events.ResponseEvent, events.SystemMessageEvent:
+				b.processRecoverable(ev) // Guarantee final text delivery to the UI
+			default:
+				b.processRecoverable(e)
 			}
-			b.processRecoverable(e)
 		default:
 			b.stopActiveSpinner()
 			return
@@ -367,34 +371,24 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 
 	switch e.(type) {
 	case events.ResponseEvent, events.SystemMessageEvent:
-		// Critical events: ensure delivery without blocking the main orchestrator loop.
+		// Critical events: ensure delivery and enforce true backpressure.
 		select {
 		case b.eventCh <- e:
 			// Queued successfully
 		case <-ctx.Done():
-			b.logger.Debug("Context cancelled while queuing critical event")
+			b.logger.Debug("Caller context cancelled while queuing critical event")
 		case <-b.ctx.Done():
 			b.logger.Debug("Bridge shutting down, dropping critical event")
 		default:
-			// Queue is saturated. Prevent caller from blocking by spawning a background
-			// goroutine to wait for channel space.
-			// TODO(architecture): [TECH DEBT] Unbounded goroutine spawning.
-			// While bounded by b.ctx.Done(), a sustained flood of events while the channel is full
-			// could cause goroutine bloat. If this becomes a hot path, refactor to use a
-			// fixed-size Worker Pool or a Ring Buffer.
-			go func() {
-				if b.ctx.Err() != nil {
-					return
-				}
-
-				select {
-				case b.eventCh <- e:
-				case <-ctx.Done():
-					b.logger.Debug("Caller context cancelled while waiting to queue critical event")
-				case <-b.ctx.Done():
-					b.logger.Debug("Bridge shutting down, dropping critical event in background")
-				}
-			}()
+			// Queue is saturated. Enforce backpressure by blocking until space is available,
+			// or contexts are cancelled.
+			select {
+			case b.eventCh <- e:
+			case <-ctx.Done():
+				b.logger.Debug("Caller context cancelled while waiting to queue critical event")
+			case <-b.ctx.Done():
+				b.logger.Debug("Bridge shutting down, dropping critical event")
+			}
 		}
 	default:
 		// Safe to shed visual/transient events if queue is full
