@@ -23,7 +23,12 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	// Block the loop indefinitely to fill the channel
 	block := make(chan struct{})
+	inMock := make(chan struct{}, 1)
 	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+		select {
+		case inMock <- struct{}{}:
+		default:
+		}
 		<-block
 	}).Return()
 
@@ -35,8 +40,11 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 
 	// The channel capacity is 100.
 	// 1 event is currently being processed (blocked on LogTurnStatus).
+	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+	<-inMock // Wait for the loop to block
+
 	// 100 events will fill the channel.
-	for i := 0; i < 101; i++ {
+	for i := 0; i < 100; i++ {
 		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 	}
 
@@ -87,16 +95,21 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 
 	// 5. Trigger shutdown concurrently
-	go bridge.Cleanup()
+	cleanupDone := make(chan struct{})
+	go func() {
+		bridge.Cleanup()
+		close(cleanupDone)
+	}()
 
-	// 6. Yield briefly to ensure the shutdown signal (close(b.done)) is registered by the loop's select.
-	time.Sleep(20 * time.Millisecond)
+	// 6. WAIT for Cleanup to start and close b.done (Deterministic synchronization)
+	// This replaces the flaky time.Sleep(20 * time.Millisecond).
+	<-bridge.done
 
 	// 7. Unblock the loop, forcing it to immediately enter the fast-drain phase
 	close(block)
 
-	// Finalize Cleanup (it's safe to call multiple times or just wait for it to finish)
-	bridge.Cleanup()
+	// Wait for the cleanup goroutine to finish
+	<-cleanupDone
 
 	// 8. Assert expected calls. LogTurnStatus should have been called twice (once blocking, once fast-drain).
 	// RenderResponse should NOT have been called.
@@ -106,10 +119,15 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 
 func TestUIBridge_QoSRouting(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	
+
 	// Block the loop indefinitely to fill the channel
 	block := make(chan struct{})
+	inMock := make(chan struct{}, 1)
 	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+		select {
+		case inMock <- struct{}{}:
+		default:
+		}
 		<-block
 	}).Return()
 
@@ -119,17 +137,16 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 		bridge.Cleanup()
 	}()
 
-	// Fill the channel (capacity 100)
-	// 1 event is currently being processed (blocked on LogTurnStatus).
+	// 2. Send the first event to block the loop
+	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+
+	// 3. Wait for the loop to reach the mock and block (Deterministic synchronization)
+	<-inMock
+
+	// 4. Fill the channel (capacity 100)
+	// Since the loop is already blocked, subsequent sends will fill eventCh.
 	// 100 events will fill the channel.
-	// We send more than 101 to ensure the channel is full regardless of loop timing.
-	for i := 0; i < 200; i++ {
-		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-	}
-	// Small sleep to ensure the loop has taken an item and blocked
-	time.Sleep(100 * time.Millisecond)
-	// Fill again to be absolutely sure
-	for i := 0; i < 200; i++ {
+	for i := 0; i < 100; i++ {
 		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 	}
 
@@ -148,7 +165,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 		}
 	})
 
-	t.Run("Critical event should block", func(t *testing.T) {
+	t.Run("Critical event should not block (background delivery)", func(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			bridge.handleEvent(context.Background(), events.ResponseEvent{})
@@ -157,9 +174,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 
 		select {
 		case <-done:
-			t.Fatal("bridge.handleEvent did not block for critical event when channel was full")
-		case <-time.After(200 * time.Millisecond):
-			// Success: it blocked
+			// Success: it didn't block
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("bridge.handleEvent blocked for critical event when channel was full")
 		}
 	})
 	

@@ -250,6 +250,8 @@ type uiBridge struct {
 	done                chan struct{}
 	stopOnce            sync.Once
 	wg                  sync.WaitGroup
+	mu                  sync.RWMutex
+	closed              bool
 }
 
 func (b *uiBridge) stopActiveSpinner() {
@@ -268,11 +270,20 @@ func (b *uiBridge) resumeActiveSpinner() {
 	}
 }
 
+func (b *uiBridge) shutdown() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
+	b.closed = true
+	close(b.done)
+	close(b.eventCh)
+}
+
 // Cleanup stops any active spinner.
 func (b *uiBridge) Cleanup() {
-	b.stopOnce.Do(func() {
-		close(b.done)
-	})
+	b.stopOnce.Do(b.shutdown)
 	b.wg.Wait()
 }
 
@@ -351,7 +362,7 @@ func (b *uiBridge) processRecoverable(e events.Event) {
 			b.logger.Debug("uiBridge recovery stack trace", "stack", string(debug.Stack()))
 			b.stopActiveSpinner()
 			// Trigger shutdown to avoid unpredictable state
-			b.stopOnce.Do(func() { close(b.done) })
+			b.stopOnce.Do(b.shutdown)
 		}
 	}()
 	b.processEvent(b.ctx, e)
@@ -359,15 +370,41 @@ func (b *uiBridge) processRecoverable(e events.Event) {
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.closed {
+		return
+	}
+
 	switch e.(type) {
 	case events.ResponseEvent, events.SystemMessageEvent:
-		// Enforce backpressure: Block to guarantee terminal output delivery
+		// Critical events: ensure delivery without blocking the main orchestrator loop.
 		select {
 		case b.eventCh <- e:
+			// Queued successfully
 		case <-ctx.Done():
 			b.logger.Debug("Context cancelled while queuing critical event")
-		case <-b.done: // ensure we don't deadlock if the actor loop is shutting down
+		case <-b.done:
 			b.logger.Debug("Bridge shutting down, dropping critical event")
+		default:
+			// Queue is saturated. Prevent caller from blocking by spawning a background
+			// goroutine to wait for channel space.
+			b.wg.Add(1)
+			go func() {
+				defer b.wg.Done()
+				b.mu.RLock()
+				defer b.mu.RUnlock()
+				if b.closed {
+					return
+				}
+
+				select {
+				case b.eventCh <- e:
+				case <-b.done:
+					b.logger.Debug("Bridge shutting down, dropping critical event in background")
+				}
+			}()
 		}
 	default:
 		// Safe to shed visual/transient events if queue is full
