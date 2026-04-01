@@ -295,10 +295,13 @@ func (b *uiBridge) Cleanup() {
 		close(done)
 	}()
 
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+
 	select {
 	case <-done:
 		// Cleanup completed successfully
-	case <-time.After(3 * time.Second):
+	case <-timer.C:
 		b.logger.Warn("UI Bridge cleanup timed out after 3 seconds")
 	}
 }
