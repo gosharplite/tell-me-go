@@ -66,17 +66,6 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 		cm.Pipeline = factory.BuildStandardPipeline(cm.GetLimits())
 	}
 
-	if bus != nil {
-		bus.Subscribe(func(ctx context.Context, e events.Event) {
-			if cfg, ok := e.(events.ConfigUpdated); ok {
-				cm.mu.Lock()
-				defer cm.mu.Unlock()
-				if cm.Factory != nil {
-					cm.Pipeline = cm.Factory.BuildStandardPipeline(cfg.Limits)
-				}
-			}
-		})
-	}
 
 	return cm
 }

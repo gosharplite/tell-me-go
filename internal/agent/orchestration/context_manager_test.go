@@ -249,41 +249,10 @@ func TestContextManager_Prepare_ClonesContent(t *testing.T) {
 	assert.Equal(t, "original", preparedHistory[0].Parts[0].Text)
 }
 
-func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
-	registry := &mockToolRegistry{}
-	bus := &mockEventBus{}
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(registry))
-	factory := &PipelineFactory{Estimator: strategy}
-	cm := NewContextManager(strategy, nil, bus, factory)
-
-	limits := events.Limits{
-		MaxHistoryTokens: 240000,
-		MaxToolTurns:     500,
-		MaxHistoryTurns:  50,
-	}
-
-	cm.Reconfigure(limits)
-
-	h, tool, hist := strategy.getLimits()
-	if h != 240000 {
-		t.Errorf("expected history tokens limit 240000, got %d", h)
-	}
-	if tool != 500 {
-		t.Errorf("expected tool turns limit 500, got %d", tool)
-	}
-	if hist != 50 {
-		t.Errorf("expected history turns limit 50, got %d", hist)
-	}
-}
-
-func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
-	ctx := context.Background()
-	inframock.CleanupBus(t, bus)
-
+func TestContextManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 	strategy := NewContextStrategy(&mockTokenCounter{})
-	factory := &PipelineFactory{Estimator: strategy, Events: bus}
-	cm := NewContextManager(strategy, &mockHistoryManager{}, bus, factory)
+	factory := &PipelineFactory{Estimator: strategy}
+	cm := NewContextManager(strategy, &mockHistoryManager{}, nil, factory)
 
 	// Initially not nil because NewContextManager builds it with default limits immediately.
 	cm.mu.Lock()
@@ -295,30 +264,39 @@ func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
 		MaxHistoryTokens: 9999,
 		MaxToolTurns:     50,
 		MaxHistoryTurns:  100,
+		ContextWindow:    2000,
+		TieredThreshold:  1000,
 	}
 
-	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
-	err := bus.Flush(ctx)
-	assert.NoError(t, err)
+	cm.Reconfigure(newLimits)
 
 	cm.mu.Lock()
 	p1 := cm.Pipeline
 	cm.mu.Unlock()
 
-	assert.NotNil(t, p1, "Pipeline should be built after ConfigUpdated event")
+	assert.NotNil(t, p1, "Pipeline should be built after Reconfigure")
 
-	// Publish another update to ensure it updates again (rebuilds pipeline)
+	// Verify limits were synced (Merged verification)
+	h, tool, hist := strategy.getLimits()
+	assert.Equal(t, 9999, h)
+	assert.Equal(t, 50, tool)
+	assert.Equal(t, 100, hist)
+	assert.Equal(t, 2000, strategy.getContextWindow())
+	assert.Equal(t, 1000, strategy.GetTieredThreshold())
+
+	// Reconfigure again to ensure it updates again (rebuilds pipeline)
 	newLimits.MaxHistoryTokens = 8888
-	require.NoError(t, bus.Publish(context.Background(), events.ConfigUpdated{Limits: newLimits}))
-	err = bus.Flush(ctx)
-	assert.NoError(t, err)
+	cm.Reconfigure(newLimits)
 
 	cm.mu.Lock()
 	p2 := cm.Pipeline
 	cm.mu.Unlock()
 
 	assert.NotNil(t, p2)
-	assert.NotEqual(t, p1, p2, "Pipeline should be rebuilt on new config update")
+	assert.NotEqual(t, p1, p2, "Pipeline should be rebuilt on new Reconfigure call")
+
+	h, _, _ = strategy.getLimits()
+	assert.Equal(t, 8888, h)
 }
 
 func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {

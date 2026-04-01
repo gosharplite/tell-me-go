@@ -30,7 +30,7 @@ func TestIsCriticalEvent(t *testing.T) {
 		{"SummarizationStartedEvent", events.SummarizationStartedEvent{}, false},
 		{"ToolExecutionStartedEvent", events.ToolExecutionStartedEvent{}, false},
 		{"RetryWaitingEvent", events.RetryWaitingEvent{}, false},
-		{"StatusUpdate", events.StatusUpdate{}, false},
+		{"StatusUpdate", events.StatusUpdate{}, true},
 	}
 
 	for _, tt := range tests {

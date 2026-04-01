@@ -292,7 +292,7 @@ func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
 		return c.readByteFallback(ctx)
 	}
 
-	if !term.IsTerminal(fd) {
+	if !c.IsTTY(c.Stdin) {
 		if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || c.disableEscapeSequences {
 			return c.readByteFallback(ctx)
 		}
