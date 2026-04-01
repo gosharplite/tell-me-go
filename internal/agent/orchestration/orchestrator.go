@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -158,7 +159,7 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		}
 	}()
 
-	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic)
+	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
 	if cleanupUI != nil {
 		defer cleanupUI()
 	}
@@ -211,28 +212,31 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer ports.Capturer) (func(), error) {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (func(), error) {
 	cfg := sCfg.GetConfig()
-	cleanup := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
+	paths := sd.GetPaths()
+	pData := sd.GetPricingData()
+	logger := sd.GetLogger()
+	cleanup := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return cleanup, err
 	}
 	return cleanup, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ports.Capturer) func() {
+func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) func() {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
-	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
+	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath, logger)
 	chatAgent.Subscribe(bridge.handleEvent)
 	return bridge.Cleanup
 }
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
-	mu                  sync.Mutex
 	ctx                 context.Context
 	renderer            ports.UIRenderer
+	logger              *slog.Logger
 	showThoughts        bool
 	showTools           bool
 	rawOutput           bool
@@ -242,13 +246,15 @@ type uiBridge struct {
 	isRendering         bool
 	isWaitingForConsent bool
 	activePhase         events.Event
+	eventCh             chan events.Event
+	done                chan struct{}
+	stopOnce            sync.Once
+	wg                  sync.WaitGroup
 }
 
 func (b *uiBridge) stopActiveSpinner() {
-	b.mu.Lock()
 	stop := b.stopSpinner
 	b.stopSpinner = nil
-	b.mu.Unlock()
 
 	if stop != nil {
 		stop()
@@ -256,9 +262,7 @@ func (b *uiBridge) stopActiveSpinner() {
 }
 
 func (b *uiBridge) resumeActiveSpinner() {
-	b.mu.Lock()
 	phase := b.activePhase
-	b.mu.Unlock()
 	if phase != nil {
 		b.startSpinnerForPhase(phase)
 	}
@@ -266,26 +270,84 @@ func (b *uiBridge) resumeActiveSpinner() {
 
 // Cleanup stops any active spinner.
 func (b *uiBridge) Cleanup() {
-	b.stopActiveSpinner()
+	b.stopOnce.Do(func() {
+		close(b.done)
+	})
+	b.wg.Wait()
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
+func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string, logger *slog.Logger) *uiBridge {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	b := &uiBridge{
 		ctx:          ctx,
 		renderer:     renderer,
+		logger:       logger,
 		showThoughts: showThoughts,
 		showTools:    showTools,
 		rawOutput:    rawOutput,
 		useColor:     useColor,
 		logFile:      logFile,
+		eventCh:      make(chan events.Event, 100),
+		done:         make(chan struct{}),
 	}
+	b.wg.Add(1)
+	go b.loop()
 	return b
+}
+
+func (b *uiBridge) loop() {
+	defer b.wg.Done()
+	for {
+		select {
+		case e, ok := <-b.eventCh:
+			if !ok {
+				b.stopActiveSpinner()
+				return
+			}
+			b.processRecoverable(e)
+		case <-b.done:
+			// Gracefully drain remaining events before exiting
+			for {
+				select {
+				case e, ok := <-b.eventCh:
+					if !ok {
+						b.stopActiveSpinner()
+						return
+					}
+					b.processRecoverable(e)
+				default:
+					b.stopActiveSpinner()
+					return
+				}
+			}
+		}
+	}
+}
+
+func (b *uiBridge) processRecoverable(e events.Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			b.logger.Error("uiBridge actor recovered from panic",
+				"error", r,
+				"stack", string(debug.Stack()))
+			b.stopActiveSpinner()
+			// Trigger shutdown to avoid unpredictable state
+			b.stopOnce.Do(func() { close(b.done) })
+		}
+	}()
+	b.processEvent(b.ctx, e)
 }
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
-	b.processEvent(ctx, e)
+	select {
+	case b.eventCh <- e:
+	case <-ctx.Done():
+	case <-b.done:
+	}
 }
 
 func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
@@ -295,14 +357,10 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 	case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
 		b.handleSpinnerEvent(ev)
 	case events.ConsentStartedEvent:
-		b.mu.Lock()
 		b.isWaitingForConsent = true
-		b.mu.Unlock()
 		b.stopActiveSpinner()
 	case events.ConsentFinishedEvent:
-		b.mu.Lock()
 		b.isWaitingForConsent = false
-		b.mu.Unlock()
 		b.resumeActiveSpinner()
 	case events.ResponseEvent:
 		b.handleResponse(ev)
@@ -333,9 +391,7 @@ func (b *uiBridge) handleSystemMessage(e events.Event) {
 }
 
 func (b *uiBridge) handleSpinnerEvent(e events.Event) {
-	b.mu.Lock()
 	b.activePhase = e
-	b.mu.Unlock()
 	b.startSpinnerForPhase(e)
 }
 
@@ -350,16 +406,12 @@ func (b *uiBridge) startSpinnerForPhase(e events.Event) {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, status)
 		})
 	case events.SummarizationStartedEvent:
-		b.mu.Lock()
 		b.isRendering = false
-		b.mu.Unlock()
 		b.transitionSpinner(func() func() {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
 		})
 	case events.ToolExecutionStartedEvent:
-		b.mu.Lock()
 		b.isRendering = false // Reset state to allow tool spinner after inference
-		b.mu.Unlock()
 
 		status := " Executing tools..."
 		if len(ev.ToolNames) == 1 {
@@ -372,9 +424,7 @@ func (b *uiBridge) startSpinnerForPhase(e events.Event) {
 			return b.renderer.StartSpinnerWithMetrics(b.ctx, status)
 		})
 	case events.RetryWaitingEvent:
-		b.mu.Lock()
 		b.isRendering = false
-		b.mu.Unlock()
 		b.transitionSpinner(func() func() {
 			return b.renderer.StartSpinnerWithStatus(b.ctx, fmt.Sprintf(" Retrying in %v...", ev.Duration.Round(time.Second)))
 		})
@@ -382,19 +432,15 @@ func (b *uiBridge) startSpinnerForPhase(e events.Event) {
 }
 
 func (b *uiBridge) handleTurnStatus(ev events.TurnStatusEvent) {
-	b.mu.Lock()
 	b.isRendering = false
 	b.activePhase = nil // Clear phase on new turn/header
-	b.mu.Unlock()
 	b.stopActiveSpinner()
 	b.renderer.LogTurnStatus(ev.Status)
 }
 
 func (b *uiBridge) handleResponse(ev events.ResponseEvent) {
-	b.mu.Lock()
 	b.isRendering = true
 	b.activePhase = nil // Clear phase on response
-	b.mu.Unlock()
 	b.stopActiveSpinner()
 	b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
 }
@@ -420,50 +466,18 @@ func (b *uiBridge) handleToolEvents(e events.Event) {
 }
 
 func (b *uiBridge) handleTurnStarted() {
-	b.mu.Lock()
 	b.isRendering = false
 	b.activePhase = nil
-	b.mu.Unlock()
 	b.stopActiveSpinner()
 }
 
 func (b *uiBridge) transitionSpinner(startFn func() func()) {
-	b.mu.Lock()
 	if b.isRendering || b.isWaitingForConsent {
-		b.mu.Unlock()
-		return
-	}
-	oldStop := b.stopSpinner
-	b.stopSpinner = nil
-	b.mu.Unlock()
-
-	// Stop the old spinner OUTSIDE the lock
-	if oldStop != nil {
-		oldStop()
-	}
-
-	// Start the new spinner
-	newStop := startFn()
-
-	// Safely assign the new spinner, watching out for race conditions
-	b.mu.Lock()
-	// ARCHITECTURAL FIX: Re-verify ALL suppression states (Rendering OR Consent)
-	// after the period where the mutex was released.
-	if b.isRendering || b.isWaitingForConsent {
-		b.mu.Unlock()
-		newStop() // Immediately terminate the new spinner to prevent UI overlap
 		return
 	}
 
-	// CAPTURE any spinner assigned by a concurrent thread while we were unlocked
-	leakedStop := b.stopSpinner
-	b.stopSpinner = newStop
-	b.mu.Unlock()
-
-	// Stop the leaked spinner OUTSIDE the lock to prevent deadlocks
-	if leakedStop != nil {
-		leakedStop()
-	}
+	b.stopActiveSpinner()
+	b.stopSpinner = startFn()
 }
 
 func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Context {

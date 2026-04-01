@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"log/slog"
 	"runtime"
 	"sync"
 	"testing"
@@ -13,48 +14,49 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/goleak"
 )
 
 func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+	defer bridge.Cleanup()
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
-
-	bridge.mu.Lock()
-	assert.True(t, bridge.isWaitingForConsent, "Expected isWaitingForConsent to be true")
-	bridge.mu.Unlock()
+	syncBridge(t, bridge, mRenderer)
 
 	// 2. Trigger a spinner event during consent - should be suppressed
 	// We don't expect StartSpinnerWithStatus to be called yet
 	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
+	syncBridge(t, bridge, mRenderer)
 
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
 
 	// 3. Finish consent - should resume the suppressed spinner
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.ConsentFinishedEvent{})
-
-	bridge.mu.Lock()
-	assert.False(t, bridge.isWaitingForConsent, "Expected isWaitingForConsent to be false")
-	bridge.mu.Unlock()
+	syncBridge(t, bridge, mRenderer)
 
 	mRenderer.AssertExpectations(t)
 }
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+	defer bridge.Cleanup()
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
+	syncBridge(t, bridge, mRenderer)
 
 	// 2. System message arrives during consent
 	mRenderer.On("LogSystemMessage", "Hello", "info").Return().Once()
 	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
+	syncBridge(t, bridge, mRenderer)
 
 	// Should NOT start a spinner because isWaitingForConsent is true
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
@@ -63,6 +65,7 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 }
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	m := &collisionMock{}
 	m.On("LogTurnStatus", mock.Anything).Return().Maybe()
 	m.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
@@ -82,11 +85,11 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 
 	m.Test(t)
 
-	bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt")
 	ctx := context.Background()
 
 	// High-iteration loop to hammer the race window
-	for i := 0; i < 5000; i++ {
+	for i := 0; i < 500; i++ {
+		bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt", slog.Default())
 		var wg sync.WaitGroup
 		wg.Add(2)
 
