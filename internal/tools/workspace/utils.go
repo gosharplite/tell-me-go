@@ -52,6 +52,8 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 		if count%50 == 0 && hb != nil {
 			select {
 			case hb <- struct{}{}:
+			case <-ctx.Done():
+				return ctx.Err()
 			default:
 			}
 		}
@@ -158,6 +160,8 @@ func (p *searchPipeline) walkFunc(path string, info os.FileInfo, err error) erro
 	if p.hb != nil {
 		select {
 		case p.hb <- struct{}{}:
+		case <-p.ctx.Done():
+			return p.ctx.Err()
 		default:
 		}
 	}
@@ -201,6 +205,8 @@ func (p *searchPipeline) scanFile(path string) error {
 	if p.hb != nil {
 		select {
 		case p.hb <- struct{}{}:
+		case <-p.ctx.Done():
+			return p.ctx.Err()
 		default:
 		}
 	}
