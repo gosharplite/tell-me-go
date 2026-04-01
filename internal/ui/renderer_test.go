@@ -299,6 +299,22 @@ func TestLogTurnStatus_Format(t *testing.T) {
 		}
 	}
 
+	t.Run("Priority Indicator", func(t *testing.T) {
+		stderr.Reset()
+		r.LogTurnStatus(events.TurnStatus{
+			Timestamp:  r.nowSafe(),
+			IsPostCall: true,
+			Metrics: &llm.Metrics{
+				Provider:    "google",
+				TrafficType: "ON_DEMAND_PRIORITY",
+			},
+		})
+		output := stderr.String()
+		if !strings.Contains(output, "[google-priority]") {
+			t.Errorf("expected output to contain [google-priority], got %q", output)
+		}
+	})
+
 	t.Run("CumulativeToolDuration", func(t *testing.T) {
 		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{

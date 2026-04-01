@@ -40,10 +40,10 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	case "anthropic":
 		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout, logger)
 	case "google", "gemini", "": // Default to Gemini for now
-		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout, gemini.WithLogger(logger))
+		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.Headers, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout, gemini.WithLogger(logger))
 	default:
 		// Fallback to Gemini if type is unknown for backward compatibility
-		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout, gemini.WithLogger(logger))
+		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.Headers, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout, gemini.WithLogger(logger))
 	}
 
 	if err != nil {

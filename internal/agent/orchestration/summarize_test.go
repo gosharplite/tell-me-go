@@ -151,7 +151,7 @@ func setupTestClient(t *testing.T, url string) *gemini.Client {
 	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	inframock.CleanupBus(t, bus)
-	client, err := gemini.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, bus, 5*time.Second)
+	client, err := gemini.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, nil, 0, "", 0, "", false, bus, 5*time.Second)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

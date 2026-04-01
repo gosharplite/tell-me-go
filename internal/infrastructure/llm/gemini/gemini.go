@@ -39,10 +39,11 @@ type Client struct {
 	eventBus          events.EventBus
 	logger            ports.Logger
 	httpTransport     http.RoundTripper
+	headers           map[string]string
 }
 
 // NewClient returns a new Gemini API client.
-func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration, opts ...geminiOption) (*Client, error) {
+func NewClient(apiURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration, opts ...geminiOption) (*Client, error) {
 	// Baseline defense against hung connections
 	if timeout == 0 {
 		timeout = 60 * time.Second
@@ -50,6 +51,7 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 
 	c := &Client{
 		authenticator:     authenticator,
+		headers:           headers,
 		apiURL:            apiURL,
 		model:             model,
 		thinkingBudget:    thinkingBudget,
@@ -100,6 +102,13 @@ func (c *Client) initSDK(timeout time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("failed to prepare auth headers: %w", err)
 	}
+
+	// Merge custom headers from configuration (e.g., for Priority PayGo)
+	c.mu.RLock()
+	for k, v := range c.headers {
+		headers.Set(k, v)
+	}
+	c.mu.RUnlock()
 
 	var tr http.RoundTripper
 	if defaultTr, ok := http.DefaultTransport.(*http.Transport); ok {
