@@ -41,10 +41,11 @@ type Task struct {
 
 // SessionInfo holds metadata about the current execution environment.
 type SessionInfo struct {
-	Env      map[string]string `json:"env"`
-	Paths    map[string]string `json:"paths"`
-	Model    string            `json:"model,omitempty"`
-	Provider string            `json:"provider,omitempty"`
+	Env            map[string]string `json:"env"`
+	Paths          map[string]string `json:"paths"`
+	Model          string            `json:"model,omitempty"`
+	Provider       string            `json:"provider,omitempty"`
+	ActiveToolkits []string          `json:"active_toolkits,omitempty"` // Tracks lazy-loaded domains
 }
 
 // TaskReader defines the interface for reading tasks.

@@ -6,19 +6,23 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 
+	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
 // sessionState manages all persistent services and session metadata.
 type sessionState struct {
-	Tasks    ports.TaskStore
-	Settings ports.KVStore
-	Info     ports.SessionInfo
-	db       *sql.DB
+	Tasks     ports.TaskStore
+	Settings  ports.KVStore
+	Info      ports.SessionInfo
+	db        *sql.DB
+	statePath string
+	fs        domain_persistence.FileSystem
 }
 
 func (s *sessionState) GetTasks() ports.TaskStore  { return s.Tasks }
@@ -27,6 +31,13 @@ func (s *sessionState) GetInfo() ports.SessionInfo { return s.Info }
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	s.Info = info
+	// Persist to disk
+	if s.statePath != "" && s.Info.Env["STORAGE_TYPE"] != "memory" {
+		data, err := json.MarshalIndent(s.Info, "", "  ")
+		if err == nil {
+			_ = s.fs.AtomicWrite(context.Background(), s.statePath, data, 0644)
+		}
+	}
 }
 
 func (s *sessionState) Close() error {
@@ -53,17 +64,42 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 		return nil, err
 	}
 
+	fs := NewOSFileSystem()
+	statePath := filepath.Join(configDir, "state.json")
+
 	state := &sessionState{
-		Tasks:    tasks,
-		Settings: kvStore,
-		db:       db,
+		Tasks:     tasks,
+		Settings:  kvStore,
+		db:        db,
+		statePath: statePath,
+		fs:        fs,
 	}
 
-	state.Info = ports.SessionInfo{
-		Env: map[string]string{
-			"STORAGE_TYPE": storageType,
-		},
-		Paths: paths,
+	// Try to load existing state
+	if storageType != "memory" {
+		if data, err := fs.ReadFile(ctx, statePath); err == nil {
+			var loaded ports.SessionInfo
+			if err := json.Unmarshal(data, &loaded); err == nil {
+				state.Info = loaded
+			}
+		}
+	}
+
+	// Ensure essential fields are set if not loaded or if missing
+	if state.Info.Env == nil {
+		state.Info.Env = make(map[string]string)
+	}
+	state.Info.Env["STORAGE_TYPE"] = storageType
+
+	if state.Info.Paths == nil {
+		state.Info.Paths = make(map[string]string)
+	}
+	for k, v := range paths {
+		state.Info.Paths[k] = v
+	}
+
+	if state.Info.ActiveToolkits == nil {
+		state.Info.ActiveToolkits = []string{}
 	}
 
 	return state, nil

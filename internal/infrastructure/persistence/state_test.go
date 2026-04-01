@@ -56,3 +56,41 @@ func TestNewSessionState_MemoryStorage(t *testing.T) {
 		t.Errorf("expected STORAGE_TYPE to be memory, got %s", info.Env["STORAGE_TYPE"])
 	}
 }
+
+func TestSessionState_Persistence(t *testing.T) {
+	tempDir := t.TempDir()
+	ctx := context.Background()
+
+	// 1. Create a session and set info
+	state1, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	info := state1.GetInfo()
+	info.ActiveToolkits = []string{"git", "k8s"}
+	state1.SetInfo(info)
+	_ = state1.Close()
+
+	// 2. Reload the session state from disk
+	state2, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state2.Close()
+
+	// 3. Verify ActiveToolkits is restored
+	restoredInfo := state2.GetInfo()
+	if len(restoredInfo.ActiveToolkits) != 2 {
+		t.Fatalf("expected 2 active toolkits, got %d", len(restoredInfo.ActiveToolkits))
+	}
+	
+	tkMap := make(map[string]bool)
+	for _, tk := range restoredInfo.ActiveToolkits {
+		tkMap[tk] = true
+	}
+	
+	if !tkMap["git"] || !tkMap["k8s"] {
+		t.Errorf("restored toolkits missing git or k8s: %v", restoredInfo.ActiveToolkits)
+	}
+}
