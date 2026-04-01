@@ -179,7 +179,7 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 	b := make([]byte, 8)
 	var sessionID string
 	if _, err := io.ReadFull(o.EntropySource, b); err != nil {
-		// Fallback to timestamp if entropy source fails
+		_, _ = fmt.Fprintf(o.Stderr, "[WARN] Entropy source failure, degrading to time-based session ID: %v\n", err)
 		sessionID = fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
 	} else {
 		sessionID = fmt.Sprintf("session-%s", hex.EncodeToString(b))
@@ -349,10 +349,10 @@ func (b *uiBridge) drain() {
 			}
 
 			switch ev := e.(type) {
-			case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
-				continue // Safely skip transient visual spinners during shutdown
+			case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent,
+				events.ConsentStartedEvent, events.ConsentFinishedEvent:
+				continue // Safely skip transient visual spinners and interactive states during shutdown
 			case events.ResponseEvent, events.SystemMessageEvent,
-				events.ConsentStartedEvent, events.ConsentFinishedEvent,
 				events.TurnStarted, events.TurnStatusEvent:
 				b.processRecoverable(ev) // Guarantee final state/text delivery to the UI
 			default:
