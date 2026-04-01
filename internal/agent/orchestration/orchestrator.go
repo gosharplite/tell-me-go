@@ -383,6 +383,13 @@ func (b *uiBridge) processRecoverable(e events.Event) {
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			// The panic is caught. Log that the event was dropped because the bridge is closed.
+			b.logger.Debug("Dropped UI event because bridge input is closed", "panic", r)
+		}
+	}()
+
 	if b.ctx.Err() != nil {
 		return
 	}

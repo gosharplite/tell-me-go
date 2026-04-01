@@ -205,3 +205,33 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	// Verify that RenderResponse was NOT called (it was the second event in the queue)
 	mRenderer.AssertNotCalled(t, "RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
+
+func TestUIBridge_SendToClosedChannel(t *testing.T) {
+	ctx := context.Background()
+	mRenderer := new(mockUIRenderer)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "test.log", logger)
+	
+	// Close the input to simulate a shutdown sequence.
+	bridge.CloseInput()
+
+	// Attempt to send an event after the channel is closed.
+	// This should trigger the panic recovery and return without crashing.
+	assert.NotPanics(t, func() {
+		bridge.handleEvent(ctx, events.ResponseEvent{})
+	})
+	
+	// Ensure that critical events also don't panic.
+	assert.NotPanics(t, func() {
+		bridge.handleEvent(ctx, events.TurnStarted{})
+	})
+
+	// Ensure that transient events also don't panic.
+	assert.NotPanics(t, func() {
+		bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+	})
+	
+	// Clean up.
+	bridge.Cleanup()
+}
