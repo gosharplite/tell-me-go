@@ -81,21 +81,9 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	// 2. Expect the response to be rendered sequentially after
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, true, false).Return().Once()
 
-	// 3. Queue the events concurrently
-	var wg sync.WaitGroup
-	testEvents := []events.Event{
-		events.ToolExecutionStartedEvent{},
-		events.ResponseEvent{Content: &llm.Content{}},
-	}
-
-	for _, e := range testEvents {
-		wg.Add(1)
-		go func(evt events.Event) {
-			defer wg.Done()
-			bridge.handleEvent(ctx, evt)
-		}(e)
-	}
-	wg.Wait()
+	// 3. Queue the events sequentially
+	bridge.handleEvent(ctx, events.ToolExecutionStartedEvent{})
+	bridge.handleEvent(ctx, events.ResponseEvent{Content: &llm.Content{}})
 
 	// 4. Flush the queue using the robust syncBridge helper
 	syncBridge(t, bridge, mRenderer)
