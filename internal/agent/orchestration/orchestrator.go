@@ -347,9 +347,8 @@ func (b *uiBridge) drain() {
 func (b *uiBridge) processRecoverable(e events.Event) {
 	defer func() {
 		if r := recover(); r != nil {
-			b.logger.Error("uiBridge actor recovered from panic",
-				"error", r,
-				"stack", string(debug.Stack()))
+			b.logger.Error("uiBridge actor recovered from panic", "error", r)
+			b.logger.Debug("uiBridge recovery stack trace", "stack", string(debug.Stack()))
 			b.stopActiveSpinner()
 			// Trigger shutdown to avoid unpredictable state
 			b.stopOnce.Do(func() { close(b.done) })

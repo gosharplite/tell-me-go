@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"sync"
@@ -63,7 +64,9 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
 	inframock.CleanupBus(t, bus)
 
-	bridge := newUIBridge(ctx, mock, true, true, false, true, "test.log", slog.Default())
+	// Silence noise in test output
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bridge := newUIBridge(ctx, mock, true, true, false, true, "test.log", logger)
 	defer bridge.Cleanup()
 	bus.Subscribe(bridge.handleEvent)
 
@@ -90,9 +93,10 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	ctx := context.Background()
 	
-	// Create a custom slog handler to capture the panic log
+	// Create a custom slog handler to capture the panic log.
+	// We use LevelDebug to ensure the stack trace log is captured.
 	logBuffer := inframock.NewSafeBuffer()
-	logger := slog.New(slog.NewTextHandler(logBuffer, nil))
+	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	
 	mockRenderer := new(mockUIRenderer)
 	// This mock will panic when StartSpinnerWithStatus is called
