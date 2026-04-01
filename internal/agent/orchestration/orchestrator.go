@@ -301,6 +301,14 @@ func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, s
 func (b *uiBridge) loop() {
 	defer b.wg.Done()
 	for {
+		// Prioritize shutdown signal to ensure clean exit and deterministic fast-drain
+		select {
+		case <-b.done:
+			b.drain()
+			return
+		default:
+		}
+
 		select {
 		case e, ok := <-b.eventCh:
 			if !ok {
@@ -309,24 +317,29 @@ func (b *uiBridge) loop() {
 			}
 			b.processRecoverable(e)
 		case <-b.done:
-			// Gracefully drain remaining events before exiting
-			for {
-				select {
-				case e, ok := <-b.eventCh:
-					if !ok {
-						b.stopActiveSpinner()
-						return
-					}
-					// Skip synchronous UI rendering during teardown
-					if _, isVisual := e.(events.ResponseEvent); isVisual {
-						continue
-					}
-					b.processRecoverable(e)
-				default:
-					b.stopActiveSpinner()
-					return
-				}
+			b.drain()
+			return
+		}
+	}
+}
+
+func (b *uiBridge) drain() {
+	// Gracefully drain remaining events before exiting
+	for {
+		select {
+		case e, ok := <-b.eventCh:
+			if !ok {
+				b.stopActiveSpinner()
+				return
 			}
+			// Skip synchronous UI rendering during teardown
+			if _, isVisual := e.(events.ResponseEvent); isVisual {
+				continue
+			}
+			b.processRecoverable(e)
+		default:
+			b.stopActiveSpinner()
+			return
 		}
 	}
 }
@@ -347,12 +360,25 @@ func (b *uiBridge) processRecoverable(e events.Event) {
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
-	select {
-	case b.eventCh <- e:
-	case <-ctx.Done():
-	case <-b.done:
+	switch e.(type) {
+	case events.ResponseEvent, events.SystemMessageEvent:
+		// Enforce backpressure: Block to guarantee terminal output delivery
+		select {
+		case b.eventCh <- e:
+		case <-ctx.Done():
+			b.logger.Debug("Context cancelled while queuing critical event")
+		case <-b.done: // ensure we don't deadlock if the actor loop is shutting down
+			b.logger.Debug("Bridge shutting down, dropping critical event")
+		}
 	default:
-		b.logger.Debug("UI Bridge queue full, shedding load")
+		// Safe to shed visual/transient events if queue is full
+		select {
+		case b.eventCh <- e:
+		case <-ctx.Done():
+		case <-b.done:
+		default:
+			b.logger.Debug("UI Bridge queue full, shedding load/visual event")
+		}
 	}
 }
 

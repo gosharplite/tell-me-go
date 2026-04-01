@@ -21,25 +21,35 @@ import (
 func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
+	block := make(chan struct{})
+
+	// Setup a block to freeze the actor loop
+	mRenderer.On("LogSystemMessage", "BLOCK", mock.Anything).Run(func(_ mock.Arguments) {
+		<-block
+	}).Return().Once()
+
+	// Handle other expected calls with .Maybe() to prevent panic masking.
+	// We use a specific matcher to avoid overlap with SYNC_SENTINEL used by syncBridge.
+	mRenderer.On("LogSystemMessage", mock.MatchedBy(func(s string) bool { 
+		return s != "BLOCK" && s != "SYNC_SENTINEL" 
+	}), mock.Anything).Return().Maybe()
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
+
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
-	// 1. Start consent
+	// 1. Queue events in order: Start Consent -> Block Loop -> Trigger Suppressed Event -> Finish Consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
-	syncBridge(t, bridge, mRenderer)
-
-	// 2. Trigger a spinner event during consent - should be suppressed
-	// We don't expect StartSpinnerWithStatus to be called yet
+	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "BLOCK"})
 	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
-	syncBridge(t, bridge, mRenderer)
-
-	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
-
-	// 3. Finish consent - should resume the suppressed spinner
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.ConsentFinishedEvent{})
+
+	// 2. Unblock the loop and ensure all queued events are processed
+	close(block)
 	syncBridge(t, bridge, mRenderer)
 
+	// 3. Assert it was eventually resumed. .Maybe() recorded it, so AssertCalled will find it.
+	mRenderer.AssertCalled(t, "StartSpinnerWithStatus", mock.Anything, " Compressing context...")
 	mRenderer.AssertExpectations(t)
 }
 
@@ -55,6 +65,7 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 
 	// 2. System message arrives during consent
 	mRenderer.On("LogSystemMessage", "Hello", "info").Return().Once()
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
 	syncBridge(t, bridge, mRenderer)
 

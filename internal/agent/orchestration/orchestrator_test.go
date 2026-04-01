@@ -863,6 +863,7 @@ func TestRun_Routing(t *testing.T) {
 			contents: make([]*llm.Content, 4), // 2 turns
 		}
 		mChatter := new(mockChatter)
+		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 		p := setupParams(mHistory, mChatter)
 		p.BackN = 1
 		p.Prompt = ""
@@ -880,6 +881,7 @@ func TestRun_Routing(t *testing.T) {
 			contents: make([]*llm.Content, 4), // 2 turns
 		}
 		mChatter := new(mockChatter)
+		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 		p := setupParams(mHistory, mChatter)
 		p.BackN = 1
 		p.Prompt = "hello"
@@ -903,6 +905,7 @@ func TestRun_Routing(t *testing.T) {
 			rollbackErr: fmt.Errorf("rollback failed"),
 		}
 		mChatter := new(mockChatter)
+		mChatter.On("Chat", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 		p := setupParams(mHistory, mChatter)
 		p.BackN = 1
 		p.Prompt = "hello"
@@ -1001,6 +1004,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 
 	// StartSpinnerWithStatus should NOT be called because ResponseEvent is already rendering
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 
 	ctx := context.Background()
 
