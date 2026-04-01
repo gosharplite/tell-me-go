@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -23,26 +22,22 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
-
-	bridge.mu.Lock()
-	assert.True(t, bridge.isWaitingForConsent, "Expected isWaitingForConsent to be true")
-	bridge.mu.Unlock()
+	time.Sleep(10 * time.Millisecond)
 
 	// 2. Trigger a spinner event during consent - should be suppressed
 	// We don't expect StartSpinnerWithStatus to be called yet
 	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
+	time.Sleep(10 * time.Millisecond)
 
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
 
 	// 3. Finish consent - should resume the suppressed spinner
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.ConsentFinishedEvent{})
-
-	bridge.mu.Lock()
-	assert.False(t, bridge.isWaitingForConsent, "Expected isWaitingForConsent to be false")
-	bridge.mu.Unlock()
+	time.Sleep(10 * time.Millisecond)
 
 	mRenderer.AssertExpectations(t)
+	bridge.Cleanup()
 }
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
@@ -51,15 +46,18 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
+	time.Sleep(10 * time.Millisecond)
 
 	// 2. System message arrives during consent
 	mRenderer.On("LogSystemMessage", "Hello", "info").Return().Once()
 	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
+	time.Sleep(10 * time.Millisecond)
 
 	// Should NOT start a spinner because isWaitingForConsent is true
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
 
 	mRenderer.AssertExpectations(t)
+	bridge.Cleanup()
 }
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {

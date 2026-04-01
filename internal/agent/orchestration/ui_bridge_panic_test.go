@@ -62,9 +62,9 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	mock.shouldPanic = true
 	err := bus.Publish(ctx, events.InferenceStartedEvent{Model: "test-model"})
 
-	// SimpleEventBus catches panics and returns them as errors when Workers=0
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "subscriber panicked: simulated ui panic")
+	// Now that it's asynchronous, bus.Publish doesn't return an error from the actor's panic.
+	assert.NoError(t, err)
+	time.Sleep(20 * time.Millisecond) // Wait for actor loop to panic and recover
 
 	// Phase 2: The Recovery/Follow-up
 	mock.shouldPanic = false
@@ -72,6 +72,8 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	err = bus.Publish(ctx, events.StatusUpdate{Message: uniqueMsg, Level: "info"})
 
 	assert.NoError(t, err)
+	time.Sleep(20 * time.Millisecond) // Wait for second event processing
 	assert.Equal(t, uniqueMsg, mock.lastMsg)
 	assert.Equal(t, "info", mock.lastLevel)
+	bridge.Cleanup()
 }
