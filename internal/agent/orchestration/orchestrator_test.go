@@ -424,12 +424,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			t.Parallel()
 			mRenderer := new(mockUIRenderer)
 			bridge := newUIBridge(context.Background(), mRenderer,
-				WithBridgeThoughts(true),
-				WithBridgeTools(true),
-				WithBridgeRawOutput(false),
-				WithBridgeColor(true),
-				WithBridgeLogFile("log.txt"),
-				WithBridgeLogger(slog.Default()),
+				withBridgeThoughts(true),
+				withBridgeTools(true),
+				withBridgeRawOutput(false),
+				withBridgeColor(true),
+				withBridgeLogFile("log.txt"),
+				withBridgeLogger(slog.Default()),
 			)
 			defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 			// Set up expectations BEFORE preSetup
@@ -459,7 +459,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 func TestUIBridge_EnsureContext(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	t.Run("Returns existing context", func(t *testing.T) {
@@ -1068,7 +1068,7 @@ func TestRun_Routing(t *testing.T) {
 func TestUIBridge_Concurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// Setup mocks with Maybe() to handle concurrent calls safely
@@ -1142,7 +1142,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 func TestUIBridge_LogicalRace(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// StartSpinnerWithStatus should NOT be called because ResponseEvent is already rendering
@@ -1179,7 +1179,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	spinnerStopped := make(chan struct{})
@@ -1201,7 +1201,7 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 func TestUIBridge_Retry_Spinner(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// First attempt
@@ -1249,7 +1249,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 
 	spinnerStarted := make(chan struct{})
 	spinnerStopped := make(chan struct{})
@@ -1379,7 +1379,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 
 	// 1. Summarization starts
 	stopSummarizationCalled := make(chan struct{})
@@ -1435,7 +1435,7 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 
 	var activeSpinners int32
 
@@ -1686,7 +1686,7 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 
 	// Initialize bridge with a very small timeout via functional option
 	bridge := newUIBridge(context.Background(), mRenderer,
-		WithBridgeCleanupTimeout(10*time.Millisecond),
+		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
 
 	// Force a waitgroup hang to simulate a deadlocked renderer or long-running loop

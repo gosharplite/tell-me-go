@@ -190,12 +190,12 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// Create bridge with a long-lived context
 	sessionCtx := context.Background()
 	bridge := newUIBridge(sessionCtx, uiRenderer,
-		WithBridgeThoughts(true),
-		WithBridgeTools(true),
-		WithBridgeRawOutput(false),
-		WithBridgeColor(true),
-		WithBridgeLogFile("log.txt"),
-		WithBridgeLogger(slog.Default()),
+		withBridgeThoughts(true),
+		withBridgeTools(true),
+		withBridgeRawOutput(false),
+		withBridgeColor(true),
+		withBridgeLogFile("log.txt"),
+		withBridgeLogger(slog.Default()),
 	)
 	defer func() {
 		bridge.CloseInput()

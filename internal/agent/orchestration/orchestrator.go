@@ -236,52 +236,52 @@ func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Cha
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(ctx, o.UIRenderer,
-		WithBridgeThoughts(cfg.ShowThoughts),
-		WithBridgeTools(cfg.ShowTools),
-		WithBridgeRawOutput(rawOutput),
-		WithBridgeColor(useColor),
-		WithBridgeLogFile(logPath),
-		WithBridgeLogger(logger),
+		withBridgeThoughts(cfg.ShowThoughts),
+		withBridgeTools(cfg.ShowTools),
+		withBridgeRawOutput(rawOutput),
+		withBridgeColor(useColor),
+		withBridgeLogFile(logPath),
+		withBridgeLogger(logger),
 	)
 	chatAgent.Subscribe(bridge.handleEvent)
 	return bridge
 }
 
-// BridgeOption configures a uiBridge instance.
-type BridgeOption func(*uiBridge)
+// bridgeOption configures a uiBridge instance.
+type bridgeOption func(*uiBridge)
 
-// WithBridgeThoughts enables or disables thought rendering.
-func WithBridgeThoughts(show bool) BridgeOption {
+// withBridgeThoughts enables or disables thought rendering.
+func withBridgeThoughts(show bool) bridgeOption {
 	return func(b *uiBridge) { b.showThoughts = show }
 }
 
-// WithBridgeTools enables or disables tool call rendering.
-func WithBridgeTools(show bool) BridgeOption {
+// withBridgeTools enables or disables tool call rendering.
+func withBridgeTools(show bool) bridgeOption {
 	return func(b *uiBridge) { b.showTools = show }
 }
 
-// WithBridgeRawOutput enables or disables raw output mode.
-func WithBridgeRawOutput(raw bool) BridgeOption {
+// withBridgeRawOutput enables or disables raw output mode.
+func withBridgeRawOutput(raw bool) bridgeOption {
 	return func(b *uiBridge) { b.rawOutput = raw }
 }
 
-// WithBridgeColor enables or disables ANSI color support.
-func WithBridgeColor(color bool) BridgeOption {
+// withBridgeColor enables or disables ANSI color support.
+func withBridgeColor(color bool) bridgeOption {
 	return func(b *uiBridge) { b.useColor = color }
 }
 
-// WithBridgeLogFile sets the file path for logging usage metrics.
-func WithBridgeLogFile(path string) BridgeOption {
+// withBridgeLogFile sets the file path for logging usage metrics.
+func withBridgeLogFile(path string) bridgeOption {
 	return func(b *uiBridge) { b.logFile = path }
 }
 
-// WithBridgeLogger sets the structured logger.
-func WithBridgeLogger(l *slog.Logger) BridgeOption {
+// withBridgeLogger sets the structured logger.
+func withBridgeLogger(l *slog.Logger) bridgeOption {
 	return func(b *uiBridge) { b.logger = l }
 }
 
-// WithBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
-func WithBridgeCleanupTimeout(d time.Duration) BridgeOption {
+// withBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
+func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
 	return func(b *uiBridge) { b.cleanupTimeout = d }
 }
 
@@ -376,7 +376,7 @@ func (b *uiBridge) Cleanup() {
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, opts ...BridgeOption) *uiBridge {
+func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
 	ctx, cancel := context.WithCancel(parentCtx)
 	b := &uiBridge{
 		ctx:            ctx,

@@ -34,7 +34,7 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 		<-block
 	}).Return()
 
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(logger))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
 	defer func() {
 		close(block)
 		bridge.CloseInput()
@@ -93,7 +93,7 @@ func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
 	mRenderer.On("LogSystemMessage", mock.Anything, "processed", "warn").Return().Once()
 
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(logger))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
 
 	// 4. Send the blocking event, then send events that MUST be drained
 	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
@@ -207,7 +207,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-			bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+			bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 			defer func() {
 				select {
 				case <-block:
@@ -307,7 +307,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
+	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	defer func() {
 		select {
 		case <-block:

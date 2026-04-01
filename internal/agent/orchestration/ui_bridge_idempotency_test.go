@@ -18,13 +18,13 @@ import (
 func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer,
-		WithBridgeThoughts(true),
-		WithBridgeTools(true),
-		WithBridgeRawOutput(false),
-		WithBridgeColor(true),
-		WithBridgeLogFile("log.txt"),
-		WithBridgeLogger(slog.Default()),
-		WithBridgeCleanupTimeout(10*time.Millisecond),
+		withBridgeThoughts(true),
+		withBridgeTools(true),
+		withBridgeRawOutput(false),
+		withBridgeColor(true),
+		withBridgeLogFile("log.txt"),
+		withBridgeLogger(slog.Default()),
+		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
 
 	// Capture baseline goroutine count
