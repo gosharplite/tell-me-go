@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -158,7 +159,7 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		}
 	}()
 
-	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic)
+	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
 	if cleanupUI != nil {
 		defer cleanupUI()
 	}
@@ -211,19 +212,22 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer ports.Capturer) (func(), error) {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (func(), error) {
 	cfg := sCfg.GetConfig()
-	cleanup := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
+	paths := sd.GetPaths()
+	pData := sd.GetPricingData()
+	logger := sd.GetLogger()
+	cleanup := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return cleanup, err
 	}
 	return cleanup, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ports.Capturer) func() {
+func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) func() {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
-	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
+	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath, logger)
 	chatAgent.Subscribe(bridge.handleEvent)
 	return bridge.Cleanup
 }
@@ -232,6 +236,7 @@ func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Cha
 type uiBridge struct {
 	ctx                 context.Context
 	renderer            ports.UIRenderer
+	logger              *slog.Logger
 	showThoughts        bool
 	showTools           bool
 	rawOutput           bool
@@ -272,10 +277,14 @@ func (b *uiBridge) Cleanup() {
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
+func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string, logger *slog.Logger) *uiBridge {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	b := &uiBridge{
 		ctx:          ctx,
 		renderer:     renderer,
+		logger:       logger,
 		showThoughts: showThoughts,
 		showTools:    showTools,
 		rawOutput:    rawOutput,
@@ -301,7 +310,12 @@ func (b *uiBridge) loop() {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						// Recover from UI panics to keep the bridge alive
+						b.logger.Error("uiBridge actor recovered from panic",
+							"error", r,
+							"stack", string(debug.Stack()))
+						b.stopActiveSpinner()
+						// Trigger shutdown to avoid unpredictable state
+						b.stopOnce.Do(func() { close(b.done) })
 					}
 				}()
 				b.processEvent(b.ctx, e)

@@ -204,7 +204,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 
 	// Create bridge with a long-lived context
 	sessionCtx := context.Background()
-	bridge := newUIBridge(sessionCtx, uiRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(sessionCtx, uiRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	// Simulate InferenceStartedEvent arriving via a short-lived handler context

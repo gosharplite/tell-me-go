@@ -355,7 +355,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mRenderer := new(mockUIRenderer)
-			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 			defer bridge.Cleanup()
 			// Set up expectations BEFORE preSetup
 			tt.setup(mRenderer)
@@ -378,7 +378,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 func TestUIBridge_EnsureContext(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	t.Run("Returns existing context", func(t *testing.T) {
@@ -497,7 +497,9 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, 10, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
 
-	cleanup, err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, paths, pData, mCapturer)
+	deps := newSessionDependencies(paths, nil, nil, nil, nil, nil, nil, pData, nil, nil, slog.Default())
+
+	cleanup, err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
 	require.NotNil(t, cleanup)
@@ -920,7 +922,7 @@ func TestRun_Routing(t *testing.T) {
 func TestUIBridge_Concurrency(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	// Setup mocks with Maybe() to handle concurrent calls safely
@@ -994,7 +996,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 func TestUIBridge_LogicalRace(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	// StartSpinnerWithStatus should NOT be called because ResponseEvent is already rendering
@@ -1023,7 +1025,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	spinnerStopped := make(chan struct{})
@@ -1045,7 +1047,7 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 func TestUIBridge_Retry_Spinner(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	// First attempt
@@ -1072,7 +1074,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	spinnerStarted := make(chan struct{})
@@ -1194,7 +1196,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	// 1. Summarization starts
@@ -1236,7 +1238,7 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	var activeSpinners int32

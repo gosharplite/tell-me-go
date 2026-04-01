@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"log/slog"
 	"runtime"
 	"sync"
 	"testing"
@@ -20,7 +21,7 @@ import (
 func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	// 1. Start consent
@@ -45,7 +46,7 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	// 1. Start consent
@@ -88,7 +89,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 
 	// High-iteration loop to hammer the race window
 	for i := 0; i < 500; i++ {
-		bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt")
+		bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt", slog.Default())
 		var wg sync.WaitGroup
 		wg.Add(2)
 

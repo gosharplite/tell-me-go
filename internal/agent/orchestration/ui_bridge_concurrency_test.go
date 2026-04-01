@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -20,7 +21,7 @@ import (
 func TestUIBridge_StressConcurrency(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	var activeSpinners int32
@@ -66,7 +67,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
 	spinnerStopped := make(chan struct{})

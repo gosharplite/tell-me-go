@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"log/slog"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"go.uber.org/goleak"
 )
 
@@ -61,7 +63,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
 	inframock.CleanupBus(t, bus)
 
-	bridge := newUIBridge(ctx, mock, true, true, false, true, "test.log")
+	bridge := newUIBridge(ctx, mock, true, true, false, true, "test.log", slog.Default())
 	defer bridge.Cleanup()
 	bus.Subscribe(bridge.handleEvent)
 
@@ -74,22 +76,46 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	// Now that it's asynchronous, bus.Publish doesn't return an error from the actor's panic.
 	assert.NoError(t, err)
 
-	// Phase 2: The Recovery/Follow-up
-	mock.mu.Lock()
-	mock.shouldPanic = false
-	mock.mu.Unlock()
-	uniqueMsg := "recovered and processing"
-	err = bus.Publish(ctx, events.StatusUpdate{Message: uniqueMsg, Level: "info"})
-	assert.NoError(t, err)
+	// In the new implementation, a panic triggers a shutdown.
+	// So we expect the bridge to be done.
+	select {
+	case <-bridge.done:
+		// Success
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for bridge to shutdown after panic")
+	}
+}
 
-	assert.Eventually(t, func() bool {
-		mock.mu.Lock()
-		defer mock.mu.Unlock()
-		return mock.lastMsg == uniqueMsg
-	}, 5*time.Second, 10*time.Millisecond)
-
-	mock.mu.Lock()
-	assert.Equal(t, uniqueMsg, mock.lastMsg)
-	assert.Equal(t, "info", mock.lastLevel)
-	mock.mu.Unlock()
+func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	ctx := context.Background()
+	
+	// Create a custom slog handler to capture the panic log
+	logBuffer := inframock.NewSafeBuffer()
+	logger := slog.New(slog.NewTextHandler(logBuffer, nil))
+	
+	mockRenderer := new(mockUIRenderer)
+	// This mock will panic when StartSpinnerWithStatus is called
+	mockRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		panic("intentional test panic")
+	}).Return(func() {})
+	
+	bridge := newUIBridge(ctx, mockRenderer, true, true, false, true, "test.log", logger)
+	defer bridge.Cleanup()
+	
+	// Trigger the panic
+	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+	
+	// Wait for shutdown and check logs
+	select {
+	case <-bridge.done:
+		// Expected shutdown
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for bridge to shutdown after panic")
+	}
+	
+	output := logBuffer.String()
+	assert.Contains(t, output, "uiBridge actor recovered from panic")
+	assert.Contains(t, output, "intentional test panic")
+	assert.Contains(t, output, "stack")
 }
