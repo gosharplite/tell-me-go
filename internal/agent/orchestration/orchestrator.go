@@ -267,7 +267,11 @@ func (b *uiBridge) stopActiveSpinner() {
 	if stop != nil {
 		// Protect the boundary against double-panics from external UI dependencies
 		func() {
-			defer func() { _ = recover() }()
+			defer func() {
+				if r := recover(); r != nil {
+					b.logger.Debug("Recovered from panic while stopping spinner", "panic", r)
+				}
+			}()
 			stop()
 		}()
 	}
