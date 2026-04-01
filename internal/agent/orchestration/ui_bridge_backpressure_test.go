@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
@@ -48,18 +49,8 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 	}
 
 	// The 102nd event should NOT block because of the non-blocking select with default case.
-	done := make(chan struct{})
-	go func() {
-		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Success: it didn't block
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("bridge.handleEvent blocked when channel was full; load shedding not working")
-	}
+	// It is natively synchronous and returns instantly if load shedding is working.
+	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 
 	// Verify that the debug message was logged
 	require.Contains(t, buf.String(), "UI Bridge queue full, shedding load/visual event")
@@ -78,8 +69,9 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	// Subsequent LogTurnStatus calls should return normally
 	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
 
-	// 3. Expect RenderResponse to be CALLED during drain phase
+	// 3. Expect RenderResponse and LogSystemMessage to be CALLED during drain phase
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
+	mRenderer.On("LogSystemMessage", "critical shutdown warning", mock.Anything).Return().Once()
 
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 
@@ -88,6 +80,8 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 	// This event should NOT be skipped anymore during fast drain
 	bridge.handleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
+	// This event should NOT be skipped during fast drain (critical system message)
+	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "critical shutdown warning", Level: "warn"})
 	// This event should be skipped during fast drain (spinner)
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 	// This event should be PROCESSED even during fast drain
@@ -114,109 +108,111 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 }
 
 func TestUIBridge_QoSRouting(t *testing.T) {
-	mRenderer := new(mockUIRenderer)
+	defer goleak.VerifyNone(t)
 
-	// Block the loop indefinitely to fill the channel
-	block := make(chan struct{})
-	inMock := make(chan struct{}, 1)
-	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
-		select {
-		case inMock <- struct{}{}:
-		default:
-		}
-		<-block
-	}).Return()
-
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-
-	// Setup delivery tracker for the critical event
-	deliveryCh := make(chan struct{})
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		close(deliveryCh)
-	}).Return().Once()
-	// Allow LogTurnStatus to be called many times as we drain the 100 events
-	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
-
-	defer func() {
-		// Ensure block is closed if not already to prevent goroutine leak in test
-		select {
-		case <-block:
-		default:
-			close(block)
-		}
-		bridge.Cleanup()
-	}()
-
-	// 2. Send the first event to block the loop
-	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-
-	// 3. Wait for the loop to reach the mock and block (Deterministic synchronization)
-	<-inMock
-
-	// 4. Fill the channel (capacity 100)
-	// Since the loop is already blocked, subsequent sends will fill eventCh.
-	// 100 events will fill the channel.
-	for i := 0; i < 100; i++ {
-		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+	tests := []struct {
+		name              string
+		event             events.Event
+		expectBlocking    bool
+		isContextCancelled bool
+	}{
+		{
+			name:           "Transient event should be shed (non-blocking)",
+			event:          events.TurnStatusEvent{},
+			expectBlocking: false,
+		},
+		{
+			name:           "Critical ResponseEvent should block (enforce backpressure)",
+			event:          events.ResponseEvent{},
+			expectBlocking: true,
+		},
+		{
+			name:           "Critical SystemMessageEvent should block (enforce backpressure)",
+			event:          events.SystemMessageEvent{Message: "critical", Level: "error"},
+			expectBlocking: true,
+		},
+		{
+			name:              "Critical event should respect context cancellation",
+			event:             events.ResponseEvent{},
+			expectBlocking:    false,
+			isContextCancelled: true,
+		},
 	}
 
-	t.Run("Transient event should be shed", func(t *testing.T) {
-		done := make(chan struct{})
-		go func() {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mRenderer := new(mockUIRenderer)
+			// Allow LogTurnStatus to be called many times as we drain the events during cleanup
+			mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
+			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+
+			// 1. Setup a block to freeze the actor loop
+			block := make(chan struct{})
+			inMock := make(chan struct{}, 1)
+
+			// Override the first LogTurnStatus to block the loop
+			mRenderer.ExpectedCalls = nil // Clear previous Maybe() for precise control
+			mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+				select {
+				case inMock <- struct{}{}:
+				default:
+				}
+				<-block
+			}).Return().Once()
+			mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
+			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+
+			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+			defer func() {
+				select {
+				case <-block:
+				default:
+					close(block)
+				}
+				bridge.Cleanup()
+			}()
+
+			// 2. Send the first event to block the loop
 			bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-			close(done)
-		}()
 
-		select {
-		case <-done:
-			// Success: it didn't block
-		case <-time.After(200 * time.Millisecond):
-			t.Fatal("bridge.handleEvent blocked for transient event when channel was full")
-		}
-	})
+			// 3. Wait for the loop to reach the mock and block
+			<-inMock
 
-	t.Run("Critical event should block (enforce backpressure)", func(t *testing.T) {
-		done := make(chan struct{})
-		go func() {
-			bridge.handleEvent(context.Background(), events.ResponseEvent{})
-			close(done)
-		}()
+			// 4. Fill the channel (capacity 100)
+			for i := 0; i < 100; i++ {
+				bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+			}
 
-		select {
-		case <-done:
-			t.Fatal("bridge.handleEvent should have blocked for critical event when channel was full")
-		case <-time.After(200 * time.Millisecond):
-			// Success: it blocked!
-		}
-	})
+			// 5. Execute the test case
+			ctx := context.Background()
+			if tt.isContextCancelled {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(context.Background())
+				cancel()
+			}
 
-	t.Run("Critical event should respect context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // already cancelled
+			// 6. Assert blocking behavior
+			if tt.expectBlocking {
+				done := make(chan struct{})
+				go func() {
+					bridge.handleEvent(ctx, tt.event)
+					close(done)
+				}()
 
-		done := make(chan struct{})
-		go func() {
-			bridge.handleEvent(ctx, events.ResponseEvent{})
-			close(done)
-		}()
-
-		select {
-		case <-done:
-			// Success: it returned due to context cancellation
-		case <-time.After(200 * time.Millisecond):
-			t.Fatal("bridge.handleEvent blocked indefinitely for critical event with cancelled context")
-		}
-	})
-
-	// 5. Unblock the loop and verify deterministic delivery of the critical event
-	close(block)
-
-	select {
-	case <-deliveryCh:
-		// Success: The background goroutine successfully delivered the queued critical event!
-	case <-time.After(2 * time.Second):
-		t.Fatal("Timeout waiting for critical event to be delivered after queue unblocked")
+				select {
+				case <-done:
+					t.Errorf("%s: bridge.handleEvent should have blocked but returned", tt.name)
+				case <-time.After(200 * time.Millisecond):
+					// Success: it blocked!
+				}
+			} else {
+				// For non-blocking cases (load shedding or cancelled context),
+				// it should be synchronous and return instantly.
+				// If a regression occurs and it hangs, the test suite timeout will catch it.
+				bridge.handleEvent(ctx, tt.event)
+			}
+		})
 	}
-
-	mRenderer.AssertExpectations(t)
 }

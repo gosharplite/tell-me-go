@@ -123,3 +123,47 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	assert.Contains(t, output, "intentional test panic")
 	assert.Contains(t, output, "stack")
 }
+
+func TestUIBridge_PanicInStopSpinner(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mRenderer := new(mockUIRenderer)
+	// Mock the renderer to return a closure that panics when called.
+	// We use .Maybe() because syncBridge might trigger resumeActiveSpinner which calls this again.
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {
+		panic("renderer panic in stop closure")
+	}).Maybe()
+
+	// Silence noise in test output
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "test.log", logger)
+	defer bridge.Cleanup()
+
+	// 1. Start a spinner to set b.stopSpinner.
+	bridge.handleEvent(ctx, events.InferenceStartedEvent{Model: "test-model"})
+
+	// 2. Wait for the event to be processed and b.stopSpinner to be set.
+	// Use syncBridge to ensure the first event is fully processed.
+	syncBridge(t, bridge, mRenderer)
+
+	// 3. Trigger a primary panic.
+	// This will trigger the recovery block, which calls b.stopActiveSpinner().
+	// That call will trigger the double-panic.
+	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+		panic("primary panic")
+	}).Once()
+
+	bridge.handleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{Mode: "test"}})
+
+	// 4. Assert that the uiBridge survives and cancels successfully.
+	select {
+	case <-bridge.ctx.Done():
+		// Success: Bridge cancelled gracefully despite double-panic
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for bridge to shutdown after double-panic")
+	}
+
+	mRenderer.AssertExpectations(t)
+}

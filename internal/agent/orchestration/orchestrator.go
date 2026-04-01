@@ -260,7 +260,11 @@ func (b *uiBridge) stopActiveSpinner() {
 	b.stopSpinner = nil
 
 	if stop != nil {
-		stop()
+		// Protect the boundary against double-panics from external UI dependencies
+		func() {
+			defer func() { _ = recover() }()
+			stop()
+		}()
 	}
 }
 

@@ -509,10 +509,13 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 // --- Behavioral Sequence Testing ---
 
 type behaviorTracker struct {
+	mu       sync.Mutex
 	sequence []string
 }
 
 func (t *behaviorTracker) record(name string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.sequence = append(t.sequence, name)
 }
 
@@ -568,28 +571,46 @@ type behaviorMockUIRenderer struct {
 func (m *behaviorMockUIRenderer) StartSpinner(ctx context.Context) func() {
 	m.tracker.record("UIRenderer.StartSpinner")
 	args := m.Called(ctx)
+	var internalFn func()
 	if fn, ok := args.Get(0).(func()); ok {
-		return fn
+		internalFn = fn
 	}
-	return func() {}
+	return func() {
+		m.tracker.record("UIRenderer.StopSpinner")
+		if internalFn != nil {
+			internalFn()
+		}
+	}
 }
 
 func (m *behaviorMockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
 	m.tracker.record("UIRenderer.StartSpinnerWithStatus")
 	args := m.Called(ctx, status)
+	var internalFn func()
 	if fn, ok := args.Get(0).(func()); ok {
-		return fn
+		internalFn = fn
 	}
-	return func() {}
+	return func() {
+		m.tracker.record("UIRenderer.StopSpinner")
+		if internalFn != nil {
+			internalFn()
+		}
+	}
 }
 
 func (m *behaviorMockUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
 	m.tracker.record("UIRenderer.StartSpinnerWithMetrics")
 	args := m.Called(ctx, status)
+	var internalFn func()
 	if fn, ok := args.Get(0).(func()); ok {
-		return fn
+		internalFn = fn
 	}
-	return func() {}
+	return func() {
+		m.tracker.record("UIRenderer.StopSpinner")
+		if internalFn != nil {
+			internalFn()
+		}
+	}
 }
 
 func (m *behaviorMockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
@@ -696,10 +717,27 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
 	mUIRenderer.On("SetUseColor", true).Return()
-	mChatter.On("Subscribe", mock.Anything).Return()
+
+	var uiSub func(context.Context, events.Event)
+	mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
+		uiSub = args.Get(0).(func(context.Context, events.Event))
+	}).Return()
+
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+
+	spinnerStarted := make(chan struct{})
+	mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Run(func(args mock.Arguments) {
+		close(spinnerStarted)
+	}).Return(func() {})
+
+	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Run(func(args mock.Arguments) {
+		if uiSub != nil {
+			uiSub(context.Background(), events.InferenceStartedEvent{Model: "gpt-4o"})
+		}
+		// Ensure spinner is active before finishing chat to guarantee it's recorded before Shutdown
+		<-spinnerStarted
+	}).Return(nil)
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
 	// Execute high-level Run function to cover it
@@ -716,7 +754,9 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 		"Chatter.SetLimits",          // Apply constraints
 		"Chatter.SetTieredThreshold", // Apply cost threshold
 		"Chatter.Chat",               // Start conversation
-		"Chatter.Shutdown",           // Cleanup
+		"UIRenderer.StartSpinnerWithStatus",
+		"Chatter.Shutdown", // Stop Producers first
+		"UIRenderer.StopSpinner", // Stop Consumer second (deterministic)
 	}
 
 	assert.Equal(t, expectedSequence, tracker.sequence, "Orchestrator must follow exact coordination sequence")
