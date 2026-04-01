@@ -258,6 +258,7 @@ type uiBridge struct {
 	activePhase         events.Event
 	eventCh             chan events.Event
 	wg                  sync.WaitGroup
+	isPoisoned          bool
 }
 
 func (b *uiBridge) stopActiveSpinner() {
@@ -287,7 +288,19 @@ func (b *uiBridge) resumeActiveSpinner() {
 // Cleanup stops any active spinner and waits for events to drain.
 func (b *uiBridge) Cleanup() {
 	b.cancel()
-	b.wg.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		b.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Cleanup completed successfully
+	case <-time.After(3 * time.Second):
+		b.logger.Warn("UI Bridge cleanup timed out after 3 seconds")
+	}
 }
 
 // newUIBridge creates a new uiBridge.
@@ -348,6 +361,11 @@ func (b *uiBridge) drain() {
 				return
 			}
 
+			if b.isPoisoned {
+				b.logger.Debug("Skipping remaining events during drain due to prior panic", "type", fmt.Sprintf("%T", e))
+				continue
+			}
+
 			switch ev := e.(type) {
 			case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent,
 				events.ConsentStartedEvent, events.ConsentFinishedEvent:
@@ -371,6 +389,7 @@ func (b *uiBridge) drain() {
 func (b *uiBridge) processRecoverable(e events.Event) {
 	defer func() {
 		if r := recover(); r != nil {
+			b.isPoisoned = true
 			b.logger.Error("uiBridge actor recovered from panic", "error", r)
 			b.logger.Debug("uiBridge recovery stack trace", "stack", string(debug.Stack()))
 			b.stopActiveSpinner()

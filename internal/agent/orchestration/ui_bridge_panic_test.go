@@ -167,3 +167,36 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	mRenderer.AssertExpectations(t)
 }
+
+func TestUIBridge_PoisonPill(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	ctx := context.Background()
+
+	logBuffer := inframock.NewSafeBuffer()
+	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	mRenderer := new(mockUIRenderer)
+	// First event panics
+	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+		panic("first panic")
+	}).Once()
+
+	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "test.log", logger)
+
+	// Send two events
+	bridge.handleEvent(ctx, events.TurnStatusEvent{})
+	bridge.handleEvent(ctx, events.ResponseEvent{})
+
+	// Wait for shutdown and cleanup
+	bridge.Cleanup()
+
+	output := logBuffer.String()
+	// Should contain the first panic
+	assert.Contains(t, output, "uiBridge actor recovered from panic")
+	assert.Contains(t, output, "first panic")
+	// Should contain the skipping message
+	assert.Contains(t, output, "Skipping remaining events during drain due to prior panic")
+
+	// Verify that RenderResponse was NOT called (it was the second event in the queue)
+	mRenderer.AssertNotCalled(t, "RenderResponse", mock.Anything, mock.Anything, mock.Anything)
+}
