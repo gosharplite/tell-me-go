@@ -87,28 +87,28 @@ func (m *mockUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status str
 	return func() {}
 }
 
-func (m *mockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
-	m.Called(content, showThoughts, rawOutput)
+func (m *mockUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
+	m.Called(ctx, content, showThoughts, rawOutput)
 }
 
-func (m *mockUIRenderer) LogTurnStatus(status events.TurnStatus) {
-	m.Called(status)
+func (m *mockUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
+	m.Called(ctx, status)
 }
 
 func (m *mockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 	m.Called(ctx, metrics, logFile, startTime)
 }
 
-func (m *mockUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
-	m.Called(calls, turn, maxTurns, showTools)
+func (m *mockUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+	m.Called(ctx, calls, turn, maxTurns, showTools)
 }
 
-func (m *mockUIRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {
-	m.Called(name, result, showTools)
+func (m *mockUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
+	m.Called(ctx, name, result, showTools)
 }
 
-func (m *mockUIRenderer) LogSystemMessage(msg string, level string) {
-	m.Called(msg, level)
+func (m *mockUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
+	m.Called(ctx, msg, level)
 }
 
 func (m *mockUIRenderer) SetUseColor(use bool) {
@@ -201,7 +201,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *mockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogTurnStatus", mock.Anything).Run(func(_ mock.Arguments) {
+				m.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 					close(done)
 				}).Return()
 				return done
@@ -231,7 +231,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *mockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogToolCall", mock.Anything, 0, 5, true).Run(func(_ mock.Arguments) {
+				m.On("LogToolCall", mock.Anything, mock.Anything, 0, 5, true).Run(func(_ mock.Arguments) {
 					close(done)
 				}).Return()
 				return done
@@ -245,7 +245,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *mockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogToolResult", "test", mock.Anything, true).Run(func(_ mock.Arguments) {
+				m.On("LogToolResult", mock.Anything, "test", mock.Anything, true).Run(func(_ mock.Arguments) {
 					close(done)
 				}).Return()
 				return done
@@ -259,7 +259,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *mockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogSystemMessage", "msg", "info").Run(func(_ mock.Arguments) {
+				m.On("LogSystemMessage", mock.Anything, "msg", "info").Run(func(_ mock.Arguments) {
 					close(done)
 				}).Return()
 				return done
@@ -273,7 +273,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *mockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("LogSystemMessage", "updating", "info").Run(func(_ mock.Arguments) {
+				m.On("LogSystemMessage", mock.Anything, "updating", "info").Run(func(_ mock.Arguments) {
 					close(done)
 				}).Return()
 				return done
@@ -410,7 +410,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			setup: func(m *mockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
-				m.On("RenderResponse", mock.Anything, true, false).Run(func(_ mock.Arguments) {
+				m.On("RenderResponse", mock.Anything, mock.Anything, true, false).Run(func(_ mock.Arguments) {
 					close(done)
 				}).Return()
 				return done
@@ -424,7 +424,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			t.Parallel()
 			mRenderer := new(mockUIRenderer)
 			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-			defer bridge.Cleanup()
+			defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 			// Set up expectations BEFORE preSetup
 			done := tt.setup(mRenderer)
 			if tt.preSetup != nil {
@@ -453,7 +453,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
+	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	t.Run("Returns existing context", func(t *testing.T) {
 		type contextKey string
@@ -464,7 +464,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	})
 
 	t.Run("Returns background context and logs warning if nil", func(t *testing.T) {
-		mRenderer.On("LogSystemMessage", "test missing context", "warn").Once()
+		mRenderer.On("LogSystemMessage", mock.Anything, "test missing context", "warn").Once()
 		var nilCtx context.Context
 		result := bridge.ensureContext(nilCtx, "test")
 		assert.NotNil(t, result)
@@ -573,11 +573,12 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 
 	deps := newSessionDependencies(paths, nil, nil, nil, nil, nil, nil, pData, nil, nil, slog.Default())
 
-	cleanup, err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer)
+	bridge, err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
-	require.NotNil(t, cleanup)
-	cleanup()
+	require.NotNil(t, bridge)
+	bridge.CloseInput()
+	bridge.Cleanup()
 }
 
 // --- Behavioral Sequence Testing ---
@@ -687,14 +688,14 @@ func (m *behaviorMockUIRenderer) StartSpinnerWithMetrics(ctx context.Context, st
 	}
 }
 
-func (m *behaviorMockUIRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
+func (m *behaviorMockUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
 	m.tracker.record("UIRenderer.RenderResponse")
-	m.Called(content, showThoughts, rawOutput)
+	m.Called(ctx, content, showThoughts, rawOutput)
 }
 
-func (m *behaviorMockUIRenderer) LogTurnStatus(status events.TurnStatus) {
+func (m *behaviorMockUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
 	m.tracker.record("UIRenderer.LogTurnStatus")
-	m.Called(status)
+	m.Called(ctx, status)
 }
 
 func (m *behaviorMockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
@@ -702,19 +703,19 @@ func (m *behaviorMockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metr
 	m.Called(ctx, metrics, logFile, startTime)
 }
 
-func (m *behaviorMockUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+func (m *behaviorMockUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 	m.tracker.record("UIRenderer.LogToolCall")
-	m.Called(calls, turn, maxTurns, showTools)
+	m.Called(ctx, calls, turn, maxTurns, showTools)
 }
 
-func (m *behaviorMockUIRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {
+func (m *behaviorMockUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
 	m.tracker.record("UIRenderer.LogToolResult")
-	m.Called(name, result, showTools)
+	m.Called(ctx, name, result, showTools)
 }
 
-func (m *behaviorMockUIRenderer) LogSystemMessage(msg string, level string) {
+func (m *behaviorMockUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
 	m.tracker.record("UIRenderer.LogSystemMessage")
-	m.Called(msg, level)
+	m.Called(ctx, msg, level)
 }
 
 func (m *behaviorMockUIRenderer) SetUseColor(use bool) {
@@ -1049,17 +1050,17 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
+	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// Setup mocks with Maybe() to handle concurrent calls safely
 	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Maybe()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
-	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -1123,10 +1124,10 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
+	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// StartSpinnerWithStatus should NOT be called because ResponseEvent is already rendering
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 
 	ctx := context.Background()
@@ -1141,7 +1142,7 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 
 	// 3. Send a sentinel to ensure #2 was processed
 	done := make(chan struct{})
-	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(_ mock.Arguments) {
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 		close(done)
 	}).Return().Once()
 	bridge.handleEvent(ctx, events.TurnStatusEvent{})
@@ -1160,7 +1161,7 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
+	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	spinnerStopped := make(chan struct{})
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { close(spinnerStopped) })
@@ -1182,7 +1183,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
+	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// First attempt
 	done1 := make(chan struct{})
@@ -1198,7 +1199,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 
 	// Response (e.g. error)
 	done2 := make(chan struct{})
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 		close(done2)
 	}).Return().Once()
 	bridge.handleEvent(context.Background(), events.ResponseEvent{
@@ -1230,7 +1231,6 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
 
 	spinnerStarted := make(chan struct{})
 	spinnerStopped := make(chan struct{})
@@ -1249,6 +1249,7 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	}
 
 	// Simulate unexpected exit by calling Cleanup
+	bridge.CloseInput()
 	bridge.Cleanup()
 
 	select {
@@ -1360,7 +1361,6 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
 
 	// 1. Summarization starts
 	stopSummarizationCalled := make(chan struct{})
@@ -1402,6 +1402,7 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	}
 
 	// Cleanup remaining
+	bridge.CloseInput()
 	bridge.Cleanup()
 	select {
 	case <-stopInferenceCalled:
@@ -1416,7 +1417,6 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
 
 	var activeSpinners int32
 
@@ -1442,6 +1442,7 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	wg.Wait()
 
 	// Wait for all spinners to be stopped eventually
+	bridge.CloseInput()
 	bridge.Cleanup()
 
 	// Verify all spinners were eventually stopped
@@ -1665,9 +1666,9 @@ func TestUIBridge_Cleanup_Timeout(t *testing.T) {
 	defer bridge.wg.Done() // Ensure the hung WaitGroup is eventually released to prevent goroutine leaks in the test suite.
 
 	// Execute Cleanup. It should timeout after 1ms and return normally.
-	// This test passes if it doesn't block and returns within a reasonable time.
 	done := make(chan struct{})
 	go func() {
+		bridge.CloseInput()
 		bridge.Cleanup()
 		close(done)
 	}()
@@ -1678,4 +1679,7 @@ func TestUIBridge_Cleanup_Timeout(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Cleanup did not return within expected timeout")
 	}
+
+	// VERIFY: context should be cancelled now
+	assert.Error(t, bridge.ctx.Err(), "Context should be cancelled after Cleanup timeout")
 }

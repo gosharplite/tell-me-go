@@ -20,7 +20,6 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
 
 	var activeSpinners int32
 
@@ -32,7 +31,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 		atomic.AddInt32(&activeSpinners, -1) // Return the expected func() type for cleanup
 	})
 
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 	const numGoroutines = 100
 	var wg sync.WaitGroup
@@ -58,6 +57,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 
 	// Final cleanup must stop any remaining spinner
 	syncBridge(t, bridge, mRenderer)
+	bridge.CloseInput()
 	bridge.Cleanup()
 
 	assert.Equal(t, int32(0), atomic.LoadInt32(&activeSpinners), "Every started spinner must be stopped eventually")
@@ -69,14 +69,17 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
+	defer func() {
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
 
 	// 1. Expect the spinner to start first
 	// Note: startSpinnerForPhase(ToolExecutionStartedEvent) calls StartSpinnerWithMetrics
 	mRenderer.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Return(func() {}).Once()
 
 	// 2. Expect the response to be rendered sequentially after
-	mRenderer.On("RenderResponse", mock.Anything, true, false).Return().Once()
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, true, false).Return().Once()
 
 	// 3. Queue the events concurrently (the Actor guarantees sequential processing)
 	bridge.handleEvent(ctx, events.ToolExecutionStartedEvent{})

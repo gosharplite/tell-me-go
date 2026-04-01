@@ -18,13 +18,13 @@ type ResponseRenderer interface {
 	StartSpinner(ctx context.Context) (stop func())
 	StartSpinnerWithStatus(ctx context.Context, status string) (stop func())
 	StartSpinnerWithMetrics(ctx context.Context, status string) (stop func())
-	RenderResponse(content *llm.Content, showThoughts, rawOutput bool)
+	RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool)
 }
 
 // StatusLogger defines the interface for logging status and system messages.
 type StatusLogger interface {
-	LogTurnStatus(status events.TurnStatus)
-	LogSystemMessage(msg string, level string)
+	LogTurnStatus(ctx context.Context, status events.TurnStatus)
+	LogSystemMessage(ctx context.Context, msg string, level string)
 }
 
 // UsageLogger defines the interface for logging usage metrics.
@@ -34,8 +34,8 @@ type UsageLogger interface {
 
 // ToolLogger defines the interface for logging tool calls and results.
 type ToolLogger interface {
-	LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool)
-	LogToolResult(name string, result tools.ToolResult, showTools bool)
+	LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool)
+	LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool)
 }
 
 // RendererConfigurator defines the interface for configuring renderer behavior.

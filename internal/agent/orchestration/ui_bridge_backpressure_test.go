@@ -25,7 +25,7 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 	// Block the loop indefinitely to fill the channel
 	block := make(chan struct{})
 	inMock := make(chan struct{}, 1)
-	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		select {
 		case inMock <- struct{}{}:
 		default:
@@ -36,6 +36,7 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", logger)
 	defer func() {
 		close(block)
+		bridge.CloseInput()
 		bridge.Cleanup()
 	}()
 
@@ -68,7 +69,7 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 	require.Contains(t, buf.String(), "UI Bridge queue full, shedding load/visual event")
 }
 
-func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
+func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 	t.Parallel()
 	var buf syncWriter
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -78,62 +79,45 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	block := make(chan struct{})
 
 	// 2. Setup a mock that will block the loop when a specific event is processed
-	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(_ mock.Arguments) {
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 		<-block
 	}).Return().Once()
 
-	// Subsequent LogTurnStatus calls should return normally
-	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
-
-	// 3. Expect RenderResponse, LogSystemMessage, and Tool/Usage loggers to be CALLED during drain phase
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
-	mRenderer.On("LogSystemMessage", "critical shutdown warning", mock.Anything).Return().Once()
-	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
-	mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
+	// 3. We expect all events to be processed during graceful drain
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
+	mRenderer.On("LogSystemMessage", mock.Anything, "processed", "warn").Return().Once()
 
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", logger)
 
-	// Define a custom dummy event for the unknown type test
-	type UnknownEvent struct{ events.Event }
-
-	// 4. Send the blocking event, then send events we want to test for fast-drain
-	// This event freezes the loop
+	// 4. Send the blocking event, then send events that MUST be drained
 	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-	// This event should NOT be skipped anymore during fast drain
 	bridge.handleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
-	// This event should NOT be skipped during fast drain (critical system message)
-	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "critical shutdown warning", Level: "warn"})
-	// This event should be skipped during fast drain (spinner)
-	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
-	// These tool/usage events should be processed during fast drain
-	bridge.handleEvent(context.Background(), events.ToolCallEvent{})
-	bridge.handleEvent(context.Background(), events.UsageMetricsEvent{Metrics: &llm.Metrics{}, Context: context.Background()})
-	// This event should be skipped during fast drain (unknown event type)
-	bridge.handleEvent(context.Background(), UnknownEvent{})
-	// This event should be PROCESSED even during fast drain
-	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "processed", Level: "warn"})
 
 	// 5. Trigger shutdown concurrently
 	cleanupDone := make(chan struct{})
 	go func() {
+		bridge.CloseInput()
 		bridge.Cleanup()
 		close(cleanupDone)
 	}()
 
-	// 6. WAIT for Cleanup to start and cancel the context
-	<-bridge.ctx.Done()
+	// 6. Give Cleanup some time to reach the Wait() call
+	time.Sleep(10 * time.Millisecond)
 
-	// 7. Unblock the loop, forcing it to immediately enter the fast-drain phase
+	// 7. Unblock the loop
 	close(block)
 
 	// Wait for the cleanup goroutine to finish
-	<-cleanupDone
+	select {
+	case <-cleanupDone:
+		// Success
+	case <-time.After(2 * time.Second):
+		t.Fatal("Cleanup did not finish even after unblocking")
+	}
 
-	// 8. Assert expected calls. RenderResponse should have been called!
+	// 8. Assert expectations. All events should have been processed.
 	mRenderer.AssertExpectations(t)
-
-	// 9. Verify that the unknown event was skipped and logged
-	require.Contains(t, buf.String(), "Unknown event type skipped during drain")
 }
 
 func TestUIBridge_QoSRouting(t *testing.T) {
@@ -189,11 +173,11 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			t.Parallel()
 			mRenderer := new(mockUIRenderer)
 			// Allow LogTurnStatus to be called many times as we drain the events during cleanup
-			mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
-			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 			// 1. Setup a block to freeze the actor loop
@@ -202,18 +186,18 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 
 			// Override the first LogTurnStatus to block the loop
 			mRenderer.ExpectedCalls = nil // Clear previous Maybe() for precise control
-			mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+			mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 				select {
 				case inMock <- struct{}{}:
 				default:
 				}
 				<-block
 			}).Return().Once()
-			mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
-			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
@@ -223,6 +207,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 				default:
 					close(block)
 				}
+				bridge.CloseInput()
 				bridge.Cleanup()
 			}()
 
@@ -298,7 +283,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	block := make(chan struct{})
 	inMock := make(chan struct{}, 1)
 
-	mRenderer.On("LogSystemMessage", "BLOCK", mock.Anything).Run(func(args mock.Arguments) {
+	mRenderer.On("LogSystemMessage", mock.Anything, "BLOCK", mock.Anything).Run(func(args mock.Arguments) {
 		select {
 		case inMock <- struct{}{}:
 		default:
@@ -307,9 +292,9 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	}).Return().Once()
 
 	// Allow other messages during cleanup
-	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer func() {
@@ -318,6 +303,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 		default:
 			close(block)
 		}
+		bridge.CloseInput()
 		bridge.Cleanup()
 	}()
 

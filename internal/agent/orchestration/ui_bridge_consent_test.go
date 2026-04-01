@@ -22,19 +22,22 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	block := make(chan struct{})
 
 	// Setup a block to freeze the actor loop
-	mRenderer.On("LogSystemMessage", "BLOCK", mock.Anything).Run(func(_ mock.Arguments) {
+	mRenderer.On("LogSystemMessage", mock.Anything, "BLOCK", mock.Anything).Run(func(_ mock.Arguments) {
 		<-block
 	}).Return().Once()
 
 	// Handle other expected calls with .Maybe() to prevent panic masking.
 	// We use a specific matcher to avoid overlap with SYNC_SENTINEL used by syncBridge.
-	mRenderer.On("LogSystemMessage", mock.MatchedBy(func(s string) bool {
+	mRenderer.On("LogSystemMessage", mock.Anything, mock.MatchedBy(func(s string) bool {
 		return s != "BLOCK" && s != "SYNC_SENTINEL"
 	}), mock.Anything).Return().Maybe()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
+	defer func() {
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
 
 	// 1. Queue events in order: Start Consent -> Block Loop -> Trigger Suppressed Event -> Finish Consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
@@ -54,14 +57,17 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	defer bridge.Cleanup()
+	defer func() {
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
 	syncBridge(t, bridge, mRenderer)
 
 	// 2. System message arrives during consent
-	mRenderer.On("LogSystemMessage", "Hello", "info").Return().Once()
+	mRenderer.On("LogSystemMessage", mock.Anything, "Hello", "info").Return().Once()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
 	syncBridge(t, bridge, mRenderer)
@@ -74,8 +80,8 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 	m := &collisionMock{}
-	m.On("LogTurnStatus", mock.Anything).Return().Maybe()
-	m.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+	m.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+	m.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	m.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 
 	// Helper to update spinner state
@@ -138,6 +144,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		}
 		m.mu.Unlock()
 
+		bridge.CloseInput()
 		bridge.Cleanup()
 	}
 }
@@ -167,28 +174,28 @@ func (m *mockCollisionRenderer) StartSpinnerWithMetrics(ctx context.Context, sta
 	return m.startFn()
 }
 
-func (m *mockCollisionRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {
-	m.Called(content, showThoughts, rawOutput)
+func (m *mockCollisionRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
+	m.Called(ctx, content, showThoughts, rawOutput)
 }
 
-func (m *mockCollisionRenderer) LogTurnStatus(status events.TurnStatus) {
-	m.Called(status)
+func (m *mockCollisionRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
+	m.Called(ctx, status)
 }
 
 func (m *mockCollisionRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 	m.Called(ctx, metrics, logFile, startTime)
 }
 
-func (m *mockCollisionRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
-	m.Called(calls, turn, maxTurns, showTools)
+func (m *mockCollisionRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+	m.Called(ctx, calls, turn, maxTurns, showTools)
 }
 
-func (m *mockCollisionRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {
-	m.Called(name, result, showTools)
+func (m *mockCollisionRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
+	m.Called(ctx, name, result, showTools)
 }
 
-func (m *mockCollisionRenderer) LogSystemMessage(msg string, level string) {
-	m.Called(msg, level)
+func (m *mockCollisionRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
+	m.Called(ctx, msg, level)
 }
 
 func (m *mockCollisionRenderer) SetUseColor(use bool) {

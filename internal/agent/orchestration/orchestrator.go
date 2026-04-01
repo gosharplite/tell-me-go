@@ -156,7 +156,7 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		return fmt.Errorf("failed to initialize agent: %w", err)
 	}
 
-	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
+	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
 	// Single defer to guarantee deterministic teardown order:
 	// Stop Producers first, then Consumers.
 	defer func() {
@@ -168,8 +168,9 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		}
 
 		// 2. Clean up Consumer (UI) second
-		if cleanupUI != nil {
-			cleanupUI()
+		if bridge != nil {
+			bridge.CloseInput()
+			bridge.Cleanup()
 		}
 	}()
 	if err != nil {
@@ -221,24 +222,24 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (func(), error) {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*uiBridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
 	pData := sd.GetPricingData()
 	logger := sd.GetLogger()
-	cleanup := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
+	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
-		return cleanup, err
+		return bridge, err
 	}
-	return cleanup, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
+	return bridge, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) func() {
+func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) *uiBridge {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath, logger)
 	chatAgent.Subscribe(bridge.handleEvent)
-	return bridge.Cleanup
+	return bridge
 }
 
 // uiBridge translates domain events into UI updates.
@@ -257,6 +258,7 @@ type uiBridge struct {
 	isWaitingForConsent bool
 	activePhase         events.Event
 	eventCh             chan events.Event
+	closeOnce           sync.Once
 	wg                  sync.WaitGroup
 	cleanupTimeout      time.Duration
 	isPoisoned          bool
@@ -286,24 +288,39 @@ func (b *uiBridge) resumeActiveSpinner() {
 	}
 }
 
-// Cleanup stops any active spinner and waits for events to drain.
-func (b *uiBridge) Cleanup() {
-	b.cancel()
+// CloseInput safely closes the event channel. This MUST be called by the producer
+// (Orchestrator) after all sending goroutines have finished.
+func (b *uiBridge) CloseInput() {
+	b.closeOnce.Do(func() {
+		close(b.eventCh)
+	})
+}
 
+// Cleanup stops any active spinner and waits for events to drain.
+// It assumes CloseInput() has already been called.
+func (b *uiBridge) Cleanup() {
+	// 1. Set up the wait mechanism
 	done := make(chan struct{})
 	go func() {
 		b.wg.Wait()
 		close(done)
 	}()
 
+	// 2. Wait with timeout
 	timer := time.NewTimer(b.cleanupTimeout)
 	defer timer.Stop()
 
 	select {
 	case <-done:
-		// Cleanup completed successfully
+		// Clean exit: all workers finished draining within the timeout
+		b.cancel()
 	case <-timer.C:
-		b.logger.Warn(fmt.Sprintf("UI Bridge cleanup timed out after %v", b.cleanupTimeout))
+		// Timeout reached: The renderer might be deadlocked or too slow.
+		b.logger.Warn("UI Bridge cleanup timed out, forcing context cancellation")
+
+		// Forcefully unblock the hanging renderer, which unblocks the loop,
+		// allowing the background wg.Wait() goroutine to eventually exit.
+		b.cancel()
 	}
 }
 
@@ -324,7 +341,7 @@ func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, showThoug
 		useColor:       useColor,
 		logFile:        logFile,
 		eventCh:        make(chan events.Event, 100),
-		cleanupTimeout: 3 * time.Second,
+		cleanupTimeout: 5 * time.Second,
 	}
 	b.wg.Add(1)
 	go b.loop()
@@ -334,59 +351,18 @@ func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, showThoug
 func (b *uiBridge) loop() {
 	defer b.wg.Done()
 	for {
-		// Prioritize shutdown signal to ensure clean exit and deterministic fast-drain
 		select {
 		case <-b.ctx.Done():
-			b.drain()
-			return
-		default:
-		}
-
-		select {
-		case <-b.ctx.Done():
-			b.drain()
+			// Forced abort (only happens if UI is deadlocked and Cleanup times out)
+			b.stopActiveSpinner()
 			return
 		case e, ok := <-b.eventCh:
 			if !ok {
+				// Channel closed by producer (via Cleanup), natural drain complete
 				b.stopActiveSpinner()
 				return
 			}
 			b.processRecoverable(e)
-		}
-	}
-}
-
-func (b *uiBridge) drain() {
-	// Gracefully drain remaining events before exiting
-	for {
-		select {
-		case e, ok := <-b.eventCh:
-			if !ok {
-				b.stopActiveSpinner()
-				return
-			}
-
-			if b.isPoisoned {
-				b.logger.Debug("Skipping remaining events during drain due to prior panic", "type", fmt.Sprintf("%T", e))
-				continue
-			}
-
-			switch ev := e.(type) {
-			case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent,
-				events.ConsentStartedEvent, events.ConsentFinishedEvent:
-				continue // Safely skip transient visual spinners and interactive states during shutdown
-			case events.ResponseEvent, events.SystemMessageEvent, events.StatusUpdate,
-				events.TurnStarted, events.TurnStatusEvent,
-				events.ToolCallEvent, events.ToolResultEvent,
-				events.UsageMetricsEvent:
-				b.processRecoverable(ev) // Guarantee final state/text delivery to the UI
-			default:
-				// Safely ignore unknown or unmapped events during the fast-drain phase
-				b.logger.Debug("Unknown event type skipped during drain", "type", fmt.Sprintf("%T", e))
-			}
-		default:
-			b.stopActiveSpinner()
-			return
 		}
 	}
 }
@@ -474,7 +450,7 @@ func (b *uiBridge) handleSystemMessage(e events.Event) {
 		return
 	}
 	b.stopActiveSpinner()
-	b.renderer.LogSystemMessage(msg, lvl)
+	b.renderer.LogSystemMessage(b.ctx, msg, lvl)
 	b.resumeActiveSpinner()
 }
 
@@ -523,14 +499,14 @@ func (b *uiBridge) handleTurnStatus(ev events.TurnStatusEvent) {
 	b.isRendering = false
 	b.activePhase = nil // Clear phase on new turn/header
 	b.stopActiveSpinner()
-	b.renderer.LogTurnStatus(ev.Status)
+	b.renderer.LogTurnStatus(b.ctx, ev.Status)
 }
 
 func (b *uiBridge) handleResponse(ev events.ResponseEvent) {
 	b.isRendering = true
 	b.activePhase = nil // Clear phase on response
 	b.stopActiveSpinner()
-	b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
+	b.renderer.RenderResponse(b.ctx, ev.Content, b.showThoughts, b.rawOutput)
 }
 
 func (b *uiBridge) handleUsageMetrics(ev events.UsageMetricsEvent) {
@@ -544,11 +520,11 @@ func (b *uiBridge) handleToolEvents(e events.Event) {
 	switch ev := e.(type) {
 	case events.ToolCallEvent:
 		b.stopActiveSpinner()
-		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
+		b.renderer.LogToolCall(b.ctx, ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
 		b.resumeActiveSpinner()
 	case events.ToolResultEvent:
 		b.stopActiveSpinner()
-		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
+		b.renderer.LogToolResult(b.ctx, ev.Name, ev.Result, b.showTools)
 		b.resumeActiveSpinner()
 	}
 }
@@ -570,7 +546,7 @@ func (b *uiBridge) transitionSpinner(startFn func() func()) {
 
 func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Context {
 	if ctx == nil {
-		b.renderer.LogSystemMessage(name+" missing context", "warn")
+		b.renderer.LogSystemMessage(b.ctx, name+" missing context", "warn")
 		return context.Background()
 	}
 	return ctx

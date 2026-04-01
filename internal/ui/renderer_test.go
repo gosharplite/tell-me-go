@@ -29,7 +29,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	t.Run("LogSystemMessage", func(t *testing.T) {
 		stdout.Reset()
 		stderr.Reset()
-		r.LogSystemMessage("test message", "error")
+		r.LogSystemMessage(context.Background(), "test message", "error")
 		if !strings.Contains(stderr.String(), "test message") {
 			t.Errorf("expected stderr to contain 'test message', got %q", stderr.String())
 		}
@@ -37,7 +37,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 
 	t.Run("LogTurnStatus", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			Timestamp:        mc.Now(),
 			CurrentTurns:     0,
 			SessionTurns:     0,
@@ -63,7 +63,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 
 	t.Run("LogTurnStatus_NoMaxHistoryTurns", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			Timestamp:        mc.Now(),
 			CurrentTurns:     0,
 			SessionTurns:     0,
@@ -106,7 +106,7 @@ func TestStdUIRenderer_StatusLogging(t *testing.T) {
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			Timestamp:       r.nowSafe(),
 			CurrentTurns:    1,
 			MaxHistoryTurns: 10,
@@ -139,7 +139,7 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
-		r.LogToolCall([]*llm.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val", "reason": "my intent"}}}, 0, 5, true)
+		r.LogToolCall(context.Background(), []*llm.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val", "reason": "my intent"}}}, 0, 5, true)
 		output := stderr.String()
 		if !strings.Contains(output, "Tool Action") || !strings.Contains(output, "my_tool") {
 			t.Errorf("expected stderr to contain 'Tool Action' and 'my_tool', got %q", output)
@@ -154,7 +154,7 @@ func TestStdUIRenderer_ToolLogging(t *testing.T) {
 
 	t.Run("LogToolResult_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
-		r.LogToolResult("my_tool", tools.ToolResult{Text: "output", BinaryData: []tools.BinaryData{{MIMEType: "image/png", Data: []byte("xyz")}}}, true)
+		r.LogToolResult(context.Background(), "my_tool", tools.ToolResult{Text: "output", BinaryData: []tools.BinaryData{{MIMEType: "image/png", Data: []byte("xyz")}}}, true)
 		if !strings.Contains(stderr.String(), "Tool Result") || !strings.Contains(stderr.String(), "image/png") {
 			t.Errorf("expected stderr to contain 'Tool Result' and 'image/png', got %q", stderr.String())
 		}
@@ -170,7 +170,7 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 	t.Run("RenderResponse_Markdown", func(t *testing.T) {
 		stdout.Reset()
 		content := &llm.Content{Parts: []*llm.Part{{Text: "# Title\nbody"}}}
-		r.RenderResponse(content, false, false)
+		r.RenderResponse(context.Background(), content, false, false)
 		if !strings.Contains(stdout.String(), "Title") {
 			t.Errorf("expected stdout to contain 'Title', got %q", stdout.String())
 		}
@@ -179,7 +179,7 @@ func TestStdUIRenderer_ResponseRendering(t *testing.T) {
 	t.Run("RenderResponse_Thoughts", func(t *testing.T) {
 		stderr.Reset()
 		content := &llm.Content{Parts: []*llm.Part{{Text: "I am thinking", IsThought: true}}}
-		r.RenderResponse(content, true, false)
+		r.RenderResponse(context.Background(), content, true, false)
 		if !strings.Contains(stderr.String(), "Thinking") || !strings.Contains(stderr.String(), "I am thinking") {
 			t.Errorf("expected stderr to contain 'Thinking', got %q", stderr.String())
 		}
@@ -263,7 +263,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	mc := &mockClock{now: time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC)}
 	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
-	r.LogTurnStatus(events.TurnStatus{
+	r.LogTurnStatus(context.Background(), events.TurnStatus{
 		Timestamp:       r.nowSafe(),
 		CurrentTurns:    1,
 		MaxHistoryTurns: 10,
@@ -301,7 +301,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 
 	t.Run("Priority Indicator", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			Timestamp:  r.nowSafe(),
 			IsPostCall: true,
 			Metrics: &llm.Metrics{
@@ -317,7 +317,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 
 	t.Run("CumulativeToolDuration", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			Timestamp:  r.nowSafe(),
 			IsPostCall: true,
 			Metrics: &llm.Metrics{
@@ -339,7 +339,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	})
 
 	// Check Ready line with aggregates
-	r.LogTurnStatus(events.TurnStatus{
+	r.LogTurnStatus(context.Background(), events.TurnStatus{
 		Timestamp:   mc.Now(),
 		IsPostCall:  true,
 		IsFinal:     true,
@@ -367,7 +367,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 
 	t.Run("Green cost in LogTurnStatus", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			IsPostCall:   true,
 			IsFinal:      true,
 			SessionCost:  1.2345,
@@ -386,7 +386,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 
 	t.Run("Yellow warning for token usage", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			Tokens:           850,
 			MaxHistoryTokens: 1000,
 			SessionTurns:     1,
@@ -400,7 +400,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 
 	t.Run("Red error for token overflow", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			Tokens:           1100,
 			MaxHistoryTokens: 1000,
 			SessionTurns:     1,
@@ -426,7 +426,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 			ResponseTokens: 50,
 			Duration:       1.5,
 		}
-		r.LogToolResult("test_tool", tools.ToolResult{
+		r.LogToolResult(context.Background(), "test_tool", tools.ToolResult{
 			Metadata: map[string]interface{}{"metrics": m},
 		}, true)
 
@@ -441,7 +441,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 
 	t.Run("Regular metrics include total duration", func(t *testing.T) {
 		stderr.Reset()
-		r.LogTurnStatus(events.TurnStatus{
+		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			IsPostCall: true,
 			StartTime:  r.nowSafe().Add(-5 * time.Second),
 			Metrics: &llm.Metrics{
@@ -480,10 +480,10 @@ func TestStdUIRenderer_Concurrency(t *testing.T) {
 					},
 				}
 				// Test RenderResponse
-				r.RenderResponse(content, false, true)
+				r.RenderResponse(context.Background(), content, false, true)
 
 				// Test LogSystemMessage
-				r.LogSystemMessage(fmt.Sprintf("G%d-I%d-Sys", id, j), "info")
+				r.LogSystemMessage(context.Background(), fmt.Sprintf("G%d-I%d-Sys", id, j), "info")
 			}
 		}(i)
 	}

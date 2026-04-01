@@ -38,14 +38,16 @@ func (m *panicMockRenderer) StartSpinnerWithStatus(ctx context.Context, status s
 func (m *panicMockRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
 	return func() {}
 }
-func (m *panicMockRenderer) RenderResponse(content *llm.Content, showThoughts, rawOutput bool) {}
-func (m *panicMockRenderer) LogTurnStatus(status events.TurnStatus)                            {}
+func (m *panicMockRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
+}
+func (m *panicMockRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {}
 func (m *panicMockRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 }
-func (m *panicMockRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+func (m *panicMockRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 }
-func (m *panicMockRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {}
-func (m *panicMockRenderer) LogSystemMessage(msg string, level string) {
+func (m *panicMockRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
+}
+func (m *panicMockRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastMsg = msg
@@ -65,7 +67,10 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := newUIBridge(ctx, mock, true, true, false, true, "test.log", logger)
-	defer bridge.Cleanup()
+	defer func() {
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
 	bus.Subscribe(bridge.handleEvent)
 
 	// Phase 1: The Panic
@@ -102,7 +107,10 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	}).Return(func() {})
 
 	bridge := newUIBridge(ctx, mockRenderer, true, true, false, true, "test.log", logger)
-	defer bridge.Cleanup()
+	defer func() {
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
 
 	// Trigger the panic
 	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
@@ -135,7 +143,10 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "test.log", logger)
-	defer bridge.Cleanup()
+	defer func() {
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
 
 	// 1. Start a spinner to set b.stopSpinner.
 	bridge.handleEvent(ctx, events.InferenceStartedEvent{Model: "test-model"})
@@ -147,7 +158,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	// 3. Trigger a primary panic.
 	// This will trigger the recovery block, which calls b.stopActiveSpinner().
 	// That call will trigger the double-panic.
-	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("primary panic")
 	}).Once()
 
@@ -172,7 +183,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 
 	mRenderer := new(mockUIRenderer)
 	// First event panics
-	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(args mock.Arguments) {
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("first panic")
 	}).Once()
 
@@ -183,15 +194,14 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	bridge.handleEvent(ctx, events.ResponseEvent{})
 
 	// Wait for shutdown and cleanup
+	bridge.CloseInput()
 	bridge.Cleanup()
 
 	output := logBuffer.String()
 	// Should contain the first panic
 	assert.Contains(t, output, "uiBridge actor recovered from panic")
 	assert.Contains(t, output, "first panic")
-	// Should contain the skipping message
-	assert.Contains(t, output, "Skipping remaining events during drain due to prior panic")
 
 	// Verify that RenderResponse was NOT called (it was the second event in the queue)
-	mRenderer.AssertNotCalled(t, "RenderResponse", mock.Anything, mock.Anything, mock.Anything)
+	mRenderer.AssertNotCalled(t, "RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

@@ -19,7 +19,7 @@ func syncBridge(t *testing.T, b *uiBridge, m *mockUIRenderer) {
 	// Use a sentinel event that is handled by the bridge and calls a mock method.
 	// LogSystemMessage is ideal as it's safe to call when no spinner is active.
 	done := make(chan struct{})
-	m.On("LogSystemMessage", "SYNC_SENTINEL", "info").Run(func(_ mock.Arguments) {
+	m.On("LogSystemMessage", mock.Anything, "SYNC_SENTINEL", "info").Run(func(_ mock.Arguments) {
 		close(done)
 	}).Return().Once()
 
