@@ -101,9 +101,9 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 		close(cleanupDone)
 	}()
 
-	// 6. WAIT for Cleanup to start and close b.done (Deterministic synchronization)
+	// 6. WAIT for Cleanup to start and cancel the context (Deterministic synchronization)
 	// This replaces the flaky time.Sleep(20 * time.Millisecond).
-	<-bridge.done
+	<-bridge.ctx.Done()
 
 	// 7. Unblock the loop, forcing it to immediately enter the fast-drain phase
 	close(block)

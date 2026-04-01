@@ -235,6 +235,7 @@ func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Cha
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
 	ctx                 context.Context
+	cancel              context.CancelFunc
 	renderer            ports.UIRenderer
 	logger              *slog.Logger
 	showThoughts        bool
@@ -247,11 +248,7 @@ type uiBridge struct {
 	isWaitingForConsent bool
 	activePhase         events.Event
 	eventCh             chan events.Event
-	done                chan struct{}
-	stopOnce            sync.Once
 	wg                  sync.WaitGroup
-	mu                  sync.RWMutex
-	closed              bool
 }
 
 func (b *uiBridge) stopActiveSpinner() {
@@ -270,30 +267,21 @@ func (b *uiBridge) resumeActiveSpinner() {
 	}
 }
 
-func (b *uiBridge) shutdown() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.closed {
-		return
-	}
-	b.closed = true
-	close(b.done)
-	close(b.eventCh)
-}
-
-// Cleanup stops any active spinner.
+// Cleanup stops any active spinner and waits for events to drain.
 func (b *uiBridge) Cleanup() {
-	b.stopOnce.Do(b.shutdown)
+	b.cancel()
 	b.wg.Wait()
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string, logger *slog.Logger) *uiBridge {
+func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string, logger *slog.Logger) *uiBridge {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	ctx, cancel := context.WithCancel(parentCtx)
 	b := &uiBridge{
 		ctx:          ctx,
+		cancel:       cancel,
 		renderer:     renderer,
 		logger:       logger,
 		showThoughts: showThoughts,
@@ -302,7 +290,6 @@ func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, s
 		useColor:     useColor,
 		logFile:      logFile,
 		eventCh:      make(chan events.Event, 100),
-		done:         make(chan struct{}),
 	}
 	b.wg.Add(1)
 	go b.loop()
@@ -314,7 +301,7 @@ func (b *uiBridge) loop() {
 	for {
 		// Prioritize shutdown signal to ensure clean exit and deterministic fast-drain
 		select {
-		case <-b.done:
+		case <-b.ctx.Done():
 			b.drain()
 			return
 		default:
@@ -327,7 +314,7 @@ func (b *uiBridge) loop() {
 				return
 			}
 			b.processRecoverable(e)
-		case <-b.done:
+		case <-b.ctx.Done():
 			b.drain()
 			return
 		}
@@ -362,7 +349,7 @@ func (b *uiBridge) processRecoverable(e events.Event) {
 			b.logger.Debug("uiBridge recovery stack trace", "stack", string(debug.Stack()))
 			b.stopActiveSpinner()
 			// Trigger shutdown to avoid unpredictable state
-			b.stopOnce.Do(b.shutdown)
+			b.cancel()
 		}
 	}()
 	b.processEvent(b.ctx, e)
@@ -370,10 +357,7 @@ func (b *uiBridge) processRecoverable(e events.Event) {
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	if b.closed {
+	if b.ctx.Err() != nil {
 		return
 	}
 
@@ -385,7 +369,7 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 			// Queued successfully
 		case <-ctx.Done():
 			b.logger.Debug("Context cancelled while queuing critical event")
-		case <-b.done:
+		case <-b.ctx.Done():
 			b.logger.Debug("Bridge shutting down, dropping critical event")
 		default:
 			// Queue is saturated. Prevent caller from blocking by spawning a background
@@ -393,15 +377,13 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 			b.wg.Add(1)
 			go func() {
 				defer b.wg.Done()
-				b.mu.RLock()
-				defer b.mu.RUnlock()
-				if b.closed {
+				if b.ctx.Err() != nil {
 					return
 				}
 
 				select {
 				case b.eventCh <- e:
-				case <-b.done:
+				case <-b.ctx.Done():
 					b.logger.Debug("Bridge shutting down, dropping critical event in background")
 				}
 			}()
@@ -411,7 +393,7 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 		select {
 		case b.eventCh <- e:
 		case <-ctx.Done():
-		case <-b.done:
+		case <-b.ctx.Done():
 		default:
 			b.logger.Debug("UI Bridge queue full, shedding load/visual event")
 		}

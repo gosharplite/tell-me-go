@@ -21,8 +21,8 @@ We have refactored `uiBridge` to use the **Actor Model** and enforced a determin
 
 ### 2. Lifecycle Management
 *   **Graceful Teardown**: The component implements a `Cleanup()` method.
-*   **Resource Safety**: `Cleanup()` closes a `done` channel to signal the loop to exit and uses a `sync.WaitGroup` to wait for the goroutine to terminate.
-*   **Idempotency**: `Cleanup()` uses `sync.Once` to ensure it can be called safely multiple times (e.g., in a `defer` block and an error path).
+*   **Standard Primitives**: `Cleanup()` uses `context.Context` and its `cancel()` function to signal the loop to exit and uses a `sync.WaitGroup` to wait for the goroutine to terminate.
+*   **Idempotency**: The `cancel()` function is inherently thread-safe and idempotent, ensuring it can be called safely multiple times (e.g., in a `defer` block and an error path) without requiring `sync.Once`.
 
 ### 3. Deterministic Testing Rules
 To ensure 100% reliability and zero flakiness, the following rules are enforced for all tests interacting with `uiBridge`:

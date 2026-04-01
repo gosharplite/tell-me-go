@@ -82,7 +82,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	// In the new implementation, a panic triggers a shutdown.
 	// So we expect the bridge to be done.
 	select {
-	case <-bridge.done:
+	case <-bridge.ctx.Done():
 		// Success
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for bridge to shutdown after panic")
@@ -112,7 +112,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	
 	// Wait for shutdown and check logs
 	select {
-	case <-bridge.done:
+	case <-bridge.ctx.Done():
 		// Expected shutdown
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for bridge to shutdown after panic")
