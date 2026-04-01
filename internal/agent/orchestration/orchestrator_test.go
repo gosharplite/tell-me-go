@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -161,7 +163,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -189,7 +191,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 	tests := []struct {
 		name     string
 		event    events.Event
-		setup    func(m *mockUIRenderer)
+		setup    func(m *mockUIRenderer) <-chan struct{}
 		preSetup func(b *uiBridge, m *mockUIRenderer)
 		verify   func(t *testing.T, b *uiBridge)
 	}{
@@ -198,8 +200,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.TurnStatusEvent{
 				Status: events.TurnStatus{SessionTurns: 1},
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("LogTurnStatus", mock.Anything).Return()
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("LogTurnStatus", mock.Anything).Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return()
+				return done
 			},
 		},
 		{
@@ -209,8 +215,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				StartTime: time.Now(),
 				Context:   context.Background(),
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("LogUsage", mock.Anything, mock.Anything, "log.txt", mock.Anything).Return()
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("LogUsage", mock.Anything, mock.Anything, "log.txt", mock.Anything).Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return()
+				return done
 			},
 		},
 		{
@@ -220,8 +230,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Turn:     0,
 				MaxTurns: 5,
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("LogToolCall", mock.Anything, 0, 5, true).Return()
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("LogToolCall", mock.Anything, 0, 5, true).Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return()
+				return done
 			},
 		},
 		{
@@ -230,8 +244,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Name:   "test",
 				Result: tools.ToolResult{Text: "result"},
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("LogToolResult", "test", mock.Anything, true).Return()
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("LogToolResult", "test", mock.Anything, true).Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return()
+				return done
 			},
 		},
 		{
@@ -240,8 +258,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Message: "msg",
 				Level:   "info",
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("LogSystemMessage", "msg", "info").Return()
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("LogSystemMessage", "msg", "info").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return()
+				return done
 			},
 		},
 		{
@@ -250,8 +272,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				Message: "updating",
 				Level:   "info",
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("LogSystemMessage", "updating", "info").Return()
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("LogSystemMessage", "updating", "info").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return()
+				return done
 			},
 		},
 		{
@@ -259,22 +285,34 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.InferenceStartedEvent{
 				Model: "gpt-4o",
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Return(func() {})
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return(func() {})
+				return done
 			},
 		},
 		{
 			name:  "InferenceStartedEvent (Empty)",
 			event: events.InferenceStartedEvent{},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {})
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return(func() {})
+				return done
 			},
 		},
 		{
 			name:  "SummarizationStartedEvent",
 			event: events.SummarizationStartedEvent{},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {})
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return(func() {})
+				return done
 			},
 		},
 		{
@@ -282,8 +320,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.ToolExecutionStartedEvent{
 				ToolNames: []string{"search_files"},
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing [search_files]...").Return(func() {})
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing [search_files]...").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return(func() {})
+				return done
 			},
 		},
 		{
@@ -291,15 +333,23 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.ToolExecutionStartedEvent{
 				ToolNames: []string{"list_files", "read_files"},
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools [list_files, read_files]...").Return(func() {})
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools [list_files, read_files]...").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return(func() {})
+				return done
 			},
 		},
 		{
 			name:  "ToolExecutionStartedEvent (Empty)",
 			event: events.ToolExecutionStartedEvent{},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Return(func() {})
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return(func() {})
+				return done
 			},
 		},
 		{
@@ -307,16 +357,23 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.RetryWaitingEvent{
 				Duration: 5 * time.Second,
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Return(func() {})
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return(func() {})
+				return done
 			},
 		},
 		{
 			name:  "ConsentStartedEvent (Stops Spinner)",
 			event: events.ConsentStartedEvent{},
-			setup: func(m *mockUIRenderer) {
-				// Expect initial spinner and stop func to be called
-				m.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {})
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return(func() {})
+				return done
 			},
 			preSetup: func(b *uiBridge, m *mockUIRenderer) {
 				// Start a spinner first
@@ -336,9 +393,15 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				// Enter consent
 				b.handleEvent(context.Background(), events.ConsentStartedEvent{})
 			},
-			setup: func(m *mockUIRenderer) {
-				// Expect it to be started twice: once originally, once after consent
-				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Return(func() {}).Twice()
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				var count int32
+				m.On("StartSpinnerWithStatus", mock.Anything, " Thinking [gpt-4o]...").Run(func(_ mock.Arguments) {
+					if atomic.AddInt32(&count, 1) == 2 {
+						close(done)
+					}
+				}).Return(func() {}).Twice()
+				return done
 			},
 		},
 		{
@@ -346,8 +409,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.ResponseEvent{
 				Content: &llm.Content{Parts: []*llm.Part{{Text: "result"}}},
 			},
-			setup: func(m *mockUIRenderer) {
-				m.On("RenderResponse", mock.Anything, true, false).Return()
+			setup: func(m *mockUIRenderer) <-chan struct{} {
+				done := make(chan struct{})
+				m.On("RenderResponse", mock.Anything, true, false).Run(func(_ mock.Arguments) {
+					close(done)
+				}).Return()
+				return done
 			},
 		},
 	}
@@ -358,7 +425,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 			defer bridge.Cleanup()
 			// Set up expectations BEFORE preSetup
-			tt.setup(mRenderer)
+			done := tt.setup(mRenderer)
 			if tt.preSetup != nil {
 				tt.preSetup(bridge, mRenderer)
 			}
@@ -366,7 +433,13 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			bridge.handleEvent(context.Background(), tt.event)
 
 			// Wait for the async actor loop to process the event(s)
-			waitMock(t, &mRenderer.Mock, 2*time.Second)
+			if done != nil {
+				select {
+				case <-done:
+				case <-time.After(2 * time.Second):
+					t.Fatalf("%s: timeout waiting for event processing", tt.name)
+				}
+			}
 
 			if tt.verify != nil {
 				tt.verify(t, bridge)
@@ -412,7 +485,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -480,7 +553,7 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 
@@ -791,8 +864,10 @@ func TestOrchestrator_AgentFactory_Error(t *testing.T) {
 		AgentFactory: func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 			return nil, fmt.Errorf("factory failed")
 		},
-		Stderr: io.Discard, // Prevent spam
-		Stdout: io.Discard,
+		Stderr:        io.Discard, // Prevent spam
+		Stdout:        io.Discard,
+		Clock:         clock.RealClock{},
+		EntropySource: rand.Reader,
 	}
 
 	deps := &sessionDependencies{
@@ -817,7 +892,7 @@ func TestOrchestrator_Rollback(t *testing.T) {
 	}
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	tests := []struct {
 		name          string
@@ -1057,10 +1132,17 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
 
 	// 3. Send a sentinel to ensure #2 was processed
-	mRenderer.On("LogTurnStatus", mock.Anything).Return().Once()
+	done := make(chan struct{})
+	mRenderer.On("LogTurnStatus", mock.Anything).Run(func(_ mock.Arguments) {
+		close(done)
+	}).Return().Once()
 	bridge.handleEvent(ctx, events.TurnStatusEvent{})
 
-	waitMock(t, &mRenderer.Mock, 2*time.Second)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for LogicalRace sentinel")
+	}
 
 	// Verification
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
@@ -1095,22 +1177,43 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	defer bridge.Cleanup()
 
 	// First attempt
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {}).Once()
+	done1 := make(chan struct{})
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(_ mock.Arguments) {
+		close(done1)
+	}).Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
-	waitMock(t, &mRenderer.Mock, 2*time.Second)
+	select {
+	case <-done1:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for first attempt spinner")
+	}
 
 	// Response (e.g. error)
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
+	done2 := make(chan struct{})
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+		close(done2)
+	}).Return().Once()
 	bridge.handleEvent(context.Background(), events.ResponseEvent{
 		Content: &llm.Content{},
 	})
-	waitMock(t, &mRenderer.Mock, 2*time.Second)
+	select {
+	case <-done2:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for response")
+	}
 
 	// Second attempt (Retry)
 	// Now this SHOULD be called because RetryWaitingEvent resets isRendering.
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Return(func() {}).Once()
+	done3 := make(chan struct{})
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Run(func(_ mock.Arguments) {
+		close(done3)
+	}).Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.RetryWaitingEvent{Duration: 5 * time.Second})
-	waitMock(t, &mRenderer.Mock, 2*time.Second)
+	select {
+	case <-done3:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for retry spinner")
+	}
 
 	mRenderer.AssertExpectations(t)
 }
@@ -1186,7 +1289,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 
 			mHistoryRenderer := new(mockHistoryRenderer)
 			mUIRenderer := new(mockUIRenderer)
-			orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
+			orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 			sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 				Model: "model",
@@ -1251,21 +1354,35 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 
 	// 1. Summarization starts
 	stopSummarizationCalled := make(chan struct{})
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {
+	doneSummarization := make(chan struct{})
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Run(func(_ mock.Arguments) {
+		close(doneSummarization)
+	}).Return(func() {
 		close(stopSummarizationCalled)
 	}).Once()
 
 	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
-	waitMock(t, &mRenderer.Mock, 2*time.Second) // Wait for Summarization to start
+	select {
+	case <-doneSummarization:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for summarization spinner")
+	}
 
 	// 2. Inference starts (without previous response)
 	stopInferenceCalled := make(chan struct{})
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {
+	doneInference := make(chan struct{})
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(_ mock.Arguments) {
+		close(doneInference)
+	}).Return(func() {
 		close(stopInferenceCalled)
 	}).Once()
 
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
-	waitMock(t, &mRenderer.Mock, 2*time.Second) // Wait for Inference to start
+	select {
+	case <-doneInference:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for inference spinner")
+	}
 
 	// Verification
 	select {
@@ -1319,4 +1436,147 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 
 	// Verify all spinners were eventually stopped
 	assert.Equal(t, int32(0), atomic.LoadInt32(&activeSpinners), "Expected all spinners to be stopped")
+}
+
+type mockEntropySource struct {
+	mock.Mock
+}
+
+func (m *mockEntropySource) Read(p []byte) (n int, err error) {
+	args := m.Called(p)
+	if args.Get(0) != nil {
+		copy(p, args.Get(0).([]byte))
+	}
+	return args.Int(1), args.Error(2)
+}
+
+type mockClock struct {
+	mock.Mock
+}
+
+func (m *mockClock) Now() time.Time {
+	args := m.Called()
+	return args.Get(0).(time.Time)
+}
+
+func (m *mockClock) Sleep(d time.Duration) {
+	m.Called(d)
+}
+
+func (m *mockClock) After(d time.Duration) <-chan time.Time {
+	args := m.Called(d)
+	return args.Get(0).(<-chan time.Time)
+}
+
+func (m *mockClock) NewTicker(d time.Duration) clock.Ticker {
+	args := m.Called(d)
+	return args.Get(0).(clock.Ticker)
+}
+
+func (m *mockClock) Jitter(base float64) float64 {
+	args := m.Called(base)
+	return args.Get(0).(float64)
+}
+
+func TestOrchestrator_SessionID_Fallback(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	mChatter := new(mockChatter)
+	mCapturer := new(mockCapturer)
+	mHistory := new(mockHistoryManager)
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	inframock.CleanupBus(t, mEventBus)
+
+	mClock := new(mockClock)
+	mEntropy := new(mockEntropySource)
+
+	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	mClock.On("Now").Return(fixedTime)
+	// Entropy source fails
+	mEntropy.On("Read", mock.Anything).Return(nil, 0, fmt.Errorf("entropy failure"))
+
+	expectedSessionID := fmt.Sprintf("session-%d", fixedTime.UnixNano())
+
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return mChatter, nil
+	}
+
+	mHistoryRenderer := new(mockHistoryRenderer)
+	mUIRenderer := new(mockUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+
+	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default())
+
+	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
+	mChatter.On("Subscribe", mock.Anything).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+	
+	// Exact match on Session ID
+	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
+		return s.ID == expectedSessionID
+	}), "hello").Return(nil)
+	
+	mChatter.On("Shutdown", mock.Anything).Return(nil)
+
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	require.NoError(t, err)
+
+	mClock.AssertExpectations(t)
+	mEntropy.AssertExpectations(t)
+	mChatter.AssertExpectations(t)
+}
+
+func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	mChatter := new(mockChatter)
+	mCapturer := new(mockCapturer)
+	mHistory := new(mockHistoryManager)
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	inframock.CleanupBus(t, mEventBus)
+
+	mClock := new(mockClock)
+	mEntropy := new(mockEntropySource)
+
+	fixedEntropy := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+	mEntropy.On("Read", mock.Anything).Return(fixedEntropy, len(fixedEntropy), nil)
+
+	expectedSessionID := "session-0102030405060708"
+
+	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return mChatter, nil
+	}
+
+	mHistoryRenderer := new(mockHistoryRenderer)
+	mUIRenderer := new(mockUIRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+
+	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default())
+
+	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
+	mChatter.On("Subscribe", mock.Anything).Return()
+	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+	
+	// Exact match on Session ID
+	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
+		return s.ID == expectedSessionID
+	}), "hello").Return(nil)
+	
+	mChatter.On("Shutdown", mock.Anything).Return(nil)
+
+	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
+	require.NoError(t, err)
+
+	mEntropy.AssertExpectations(t)
+	mChatter.AssertExpectations(t)
 }

@@ -23,6 +23,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // orchestrator manages the session lifecycle and agent execution.
@@ -36,6 +37,8 @@ type orchestrator struct {
 	AgentFactory    ports.ChatterFactory
 	HistoryRenderer ports.HistoryRenderer
 	UIRenderer      ports.UIRenderer
+	Clock           clock.Clock
+	EntropySource   io.Reader
 }
 
 // sessionConfig contains configuration for a single session execution.
@@ -120,7 +123,7 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 }
 
 // newOrchestrator creates a new orchestrator.
-func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer) Orchestrator {
+func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) Orchestrator {
 	return &orchestrator{
 		HomeDir:         homeDir,
 		Version:         version,
@@ -131,6 +134,8 @@ func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 		AgentFactory:    factory,
 		HistoryRenderer: historyRenderer,
 		UIRenderer:      uiRenderer,
+		Clock:           clk,
+		EntropySource:   entropy,
 	}
 }
 
@@ -173,9 +178,9 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 
 	b := make([]byte, 8)
 	var sessionID string
-	if _, err := rand.Read(b); err != nil {
+	if _, err := o.EntropySource.Read(b); err != nil {
 		// Fallback to timestamp if entropy source fails
-		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+		sessionID = fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
 	} else {
 		sessionID = fmt.Sprintf("session-%s", hex.EncodeToString(b))
 	}
@@ -554,11 +559,22 @@ type RunParams struct {
 	Config          *config.Config
 	Deps            ports.SessionDependencies
 	Capturer        ports.Capturer
+	Clock           clock.Clock
+	EntropySource   io.Reader
 }
 
 // Run is the high-level entry point for running a chat session.
 // It simplifies the public API by encapsulating internal component assembly.
 func Run(ctx context.Context, params RunParams) error {
+	clk := params.Clock
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	entropy := params.EntropySource
+	if entropy == nil {
+		entropy = rand.Reader
+	}
+
 	orch := newOrchestrator(
 		params.HomeDir,
 		params.Version,
@@ -569,6 +585,8 @@ func Run(ctx context.Context, params RunParams) error {
 		params.AgentFactory,
 		params.HistoryRenderer,
 		params.UIRenderer,
+		clk,
+		entropy,
 	)
 
 	sCfg := newSessionConfig(

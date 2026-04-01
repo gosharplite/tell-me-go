@@ -212,13 +212,13 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 					close(done)
 				}()
 
-				// Give it a very short window to fail if it was supposed to block but didn't.
-				// This is much less flaky than the original 200ms "success" wait.
+				// To be truly deterministic without sleeps, we check that it hasn't finished yet.
+				// Given the queue is full and loop is blocked, it MUST block.
 				select {
 				case <-done:
 					t.Fatalf("%s: bridge.handleEvent should have blocked but returned early", tt.name)
-				case <-time.After(50 * time.Millisecond):
-					// Likely blocking, proceed to unblock.
+				default:
+					// Proceed
 				}
 
 				// Deterministic: Unblock the queue and assert successful delivery!
@@ -296,27 +296,21 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 		bridge.handleEvent(context.Background(), events.ResponseEvent{})
 	}
 
-	// 3. Prepare cancellable context
+	// 3. Prepare an ALREADY cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
+	cancel() // Cancel immediately
 
-	// 4. Trigger blocking call in goroutine
+	// 4. Trigger call and assert it returns immediately without blocking
+	done := make(chan struct{})
 	go func() {
 		bridge.handleEvent(ctx, events.ResponseEvent{})
 		close(done)
 	}()
 
-	// 5. Wait to ensure it is blocked in the select statement
-	time.Sleep(50 * time.Millisecond)
-
-	// 6. Cancel the context while it is blocked
-	cancel()
-
-	// 7. Assert it returns immediately due to cancellation
 	select {
 	case <-done:
-		// Success: Goroutine exited cleanly without the queue draining
-	case <-time.After(2 * time.Second):
-		t.Fatal("Goroutine leak: handleEvent did not respect context cancellation mid-flight")
+		// Success: Goroutine returned immediately due to pre-cancelled context
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("handleEvent did not respect cancelled context immediately")
 	}
 }

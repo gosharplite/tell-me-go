@@ -94,7 +94,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		return mChatter, nil
 	}
 
-	orch := newOrchestrator("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
 
 	// 2. Mock Agent Behavior
 	// When Chat is called, it will emit events via the event bus.
@@ -117,9 +117,12 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		capturedHandler(ctx, events.InferenceStartedEvent{})
 
 		// Wait for the spinner to start and write to stderr
-		assert.Eventually(t, func() bool {
-			return strings.Contains(stderrRaw.String(), "Thinking...")
-		}, 5*time.Second, 10*time.Millisecond)
+		select {
+		case <-stderr.onWrite:
+		case <-time.After(5 * time.Second):
+			t.Fatal("Timeout waiting for spinner start")
+		}
+		assert.Contains(t, stderrRaw.String(), "Thinking...")
 
 		// Phase B: Ticks (Spinner frames)
 		clock.Tick() // Frame 1
@@ -199,9 +202,12 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	bridge.handleEvent(handlerCtx, events.InferenceStartedEvent{})
 
 	// Wait for the spinner to start
-	assert.Eventually(t, func() bool {
-		return strings.Contains(stderrRaw.String(), "Thinking...")
-	}, 5*time.Second, 10*time.Millisecond)
+	select {
+	case <-stderr.onWrite:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for spinner start")
+	}
+	assert.Contains(t, stderrRaw.String(), "Thinking...")
 
 	// Trigger ticks - if the spinner is still alive, these will succeed
 	stderrRaw.Reset()

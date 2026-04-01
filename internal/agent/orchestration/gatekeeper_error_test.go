@@ -15,6 +15,8 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"crypto/rand"
 	"github.com/stretchr/testify/require"
 	"log/slog"
 )
@@ -177,7 +179,7 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
-	o := newOrchestrator("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{})
+	o := newOrchestrator("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
 
 	cfg := &config.Config{
 		SelectedProvider: "test",
