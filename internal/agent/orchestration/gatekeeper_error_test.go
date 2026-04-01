@@ -158,10 +158,10 @@ func (m *mockFailingCapturer) Close(context.Context) error { return nil }
 
 type mockFailingUIRenderer struct{}
 
-func (m *mockFailingUIRenderer) SetUseColor(bool)                        {}
-func (m *mockFailingUIRenderer) SetForceSpinner(bool)                    {}
-func (m *mockFailingUIRenderer) LogTurnStatus(context.Context, events.TurnStatus)         {}
-func (m *mockFailingUIRenderer) StartSpinner(ctx context.Context) func() { return func() {} }
+func (m *mockFailingUIRenderer) SetUseColor(bool)                                 {}
+func (m *mockFailingUIRenderer) SetForceSpinner(bool)                             {}
+func (m *mockFailingUIRenderer) LogTurnStatus(context.Context, events.TurnStatus) {}
+func (m *mockFailingUIRenderer) StartSpinner(ctx context.Context) func()          { return func() {} }
 func (m *mockFailingUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
 	return func() {}
 }

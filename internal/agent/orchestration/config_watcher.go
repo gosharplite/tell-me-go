@@ -13,6 +13,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
 
+// FileStat defines the interface for file status checks.
+type FileStat interface {
+	Stat(name string) (os.FileInfo, error)
+}
+
+type realFileStat struct{}
+
+func (s realFileStat) Stat(name string) (os.FileInfo, error) { return os.Stat(name) }
+
 // ConfigWatcher defines the interface for monitoring configuration.
 type ConfigWatcher interface {
 	SetPaths(main, session string)
@@ -28,6 +37,7 @@ type fileConfigWatcher struct {
 	mu                   sync.RWMutex
 	Loader               config.ConfigLoader
 	SessionLoader        config.SessionLoader
+	FS                   FileStat
 	logger               *slog.Logger
 	mainPath             string
 	sessionPath          string
@@ -61,6 +71,7 @@ func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.S
 	return &fileConfigWatcher{
 		Loader:               mainLoader,
 		SessionLoader:        sessionLoader,
+		FS:                   realFileStat{},
 		logger:               logger,
 		maxHistoryTokens:     tokens,
 		maxToolTurns:         toolTurns,
@@ -97,7 +108,7 @@ func (cw *fileConfigWatcher) updateFromMain(model string) bool {
 		return false
 	}
 
-	info, err := os.Stat(cw.mainPath)
+	info, err := cw.FS.Stat(cw.mainPath)
 	if err != nil {
 		return false
 	}
@@ -136,7 +147,7 @@ func (cw *fileConfigWatcher) updateFromSession(forceUpdate bool) {
 		return
 	}
 
-	info, err := os.Stat(cw.sessionPath)
+	info, err := cw.FS.Stat(cw.sessionPath)
 	if err != nil {
 		return
 	}

@@ -212,7 +212,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	bridge := newUIBridge(ctx, mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("test.log"), WithBridgeLogger(logger))
-	
+
 	// Close the input to simulate a shutdown sequence.
 	bridge.CloseInput()
 
@@ -221,7 +221,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	assert.NotPanics(t, func() {
 		bridge.handleEvent(ctx, events.ResponseEvent{})
 	})
-	
+
 	// Ensure that critical events also don't panic.
 	assert.NotPanics(t, func() {
 		bridge.handleEvent(ctx, events.TurnStarted{})
@@ -231,7 +231,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	assert.NotPanics(t, func() {
 		bridge.handleEvent(ctx, events.InferenceStartedEvent{})
 	})
-	
+
 	// Clean up.
 	bridge.Cleanup()
 }

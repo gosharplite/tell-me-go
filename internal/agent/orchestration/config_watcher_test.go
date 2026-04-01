@@ -14,7 +14,10 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"log/slog"
 )
 
 type testSessionLoader struct{}
@@ -523,4 +526,182 @@ func TestConfigWatcher_EmptyPaths(t *testing.T) {
 	cw.Refresh("default")
 	tokens, _, _, _ := cw.GetLimits()
 	assert.Equal(t, 100, tokens)
+}
+
+type mockFileStat struct {
+	mock.Mock
+}
+
+func (m *mockFileStat) Stat(name string) (os.FileInfo, error) {
+	args := m.Called(name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(os.FileInfo), args.Error(1)
+}
+
+type mockFileInfo struct {
+	os.FileInfo
+	modTime time.Time
+}
+
+func (m *mockFileInfo) ModTime() time.Time { return m.modTime }
+func (m *mockFileInfo) Name() string       { return "test" }
+func (m *mockFileInfo) Size() int64        { return 0 }
+func (m *mockFileInfo) Mode() os.FileMode  { return 0 }
+func (m *mockFileInfo) IsDir() bool        { return false }
+func (m *mockFileInfo) Sys() interface{}   { return nil }
+
+func TestNoOpConfigWatcher(t *testing.T) {
+	cw := NewNoOpConfigWatcher(100, 10, 20)
+
+	t.Run("DefaultValues", func(t *testing.T) {
+		tokens, toolTurns, historyTurns, _ := cw.GetLimits()
+		assert.Equal(t, 100, tokens)
+		assert.Equal(t, 10, toolTurns)
+		assert.Equal(t, 20, historyTurns)
+	})
+
+	t.Run("SetLimits", func(t *testing.T) {
+		cw.SetLimits(200, 15, 25)
+		tokens, toolTurns, historyTurns, _ := cw.GetLimits()
+		assert.Equal(t, 200, tokens)
+		assert.Equal(t, 15, toolTurns)
+		assert.Equal(t, 25, historyTurns)
+	})
+
+	t.Run("ApplyLimits", func(t *testing.T) {
+		cw.ApplyLimits(events.Limits{
+			MaxHistoryTokens: 300,
+			MaxToolTurns:     20,
+			MaxHistoryTurns:  40,
+			TieredThreshold:  5000,
+		})
+		tokens, toolTurns, historyTurns, threshold := cw.GetLimits()
+		assert.Equal(t, 300, tokens)
+		assert.Equal(t, 20, toolTurns)
+		assert.Equal(t, 40, historyTurns)
+		assert.Equal(t, 5000, threshold)
+	})
+
+	t.Run("SyncToStrategy", func(t *testing.T) {
+		cs := NewContextStrategy(NewHeuristicTokenCounter(nil))
+		cw.SyncToStrategy(cs)
+		assert.Equal(t, 300, cs.maxHistoryTokens)
+		assert.Equal(t, 20, cs.maxToolTurns)
+	})
+
+	t.Run("NoOpMethods", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			cw.SetPaths("main", "session")
+			cw.Refresh("model")
+		})
+	})
+}
+
+func TestConfigWatcher_ErrorPaths(t *testing.T) {
+	t.Run("StatError_Main", func(t *testing.T) {
+		mockFS := new(mockFileStat)
+		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil).(*fileConfigWatcher)
+		cw.FS = mockFS
+		cw.SetPaths("main.yaml", "")
+
+		mockFS.On("Stat", "main.yaml").Return(nil, os.ErrNotExist)
+
+		cw.Refresh("default")
+		tokens, _, _, _ := cw.GetLimits()
+		assert.Equal(t, 100, tokens)
+	})
+
+	t.Run("StatError_Session", func(t *testing.T) {
+		mockFS := new(mockFileStat)
+		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil).(*fileConfigWatcher)
+		cw.FS = mockFS
+		cw.SetPaths("", "session.json")
+
+		mockFS.On("Stat", "session.json").Return(nil, os.ErrNotExist)
+
+		cw.Refresh("default")
+		tokens, _, _, _ := cw.GetLimits()
+		assert.Equal(t, 100, tokens)
+	})
+
+	t.Run("LoadError_Main", func(t *testing.T) {
+		mockFS := new(mockFileStat)
+		mockLoader := new(mockConfigLoader)
+		cw := NewFileConfigWatcher(mockLoader, nil, 100, 10, 20, nil).(*fileConfigWatcher)
+		cw.FS = mockFS
+		cw.SetPaths("main.yaml", "")
+
+		info := &mockFileInfo{modTime: time.Now()}
+		mockFS.On("Stat", "main.yaml").Return(info, nil)
+		mockLoader.On("Load", "main.yaml").Return(nil, fmt.Errorf("load error"))
+
+		cw.Refresh("default")
+		tokens, _, _, _ := cw.GetLimits()
+		assert.Equal(t, 100, tokens)
+	})
+
+	t.Run("LoadError_Session", func(t *testing.T) {
+		mockFS := new(mockFileStat)
+		mockSess := new(mockSessionLoader)
+		cw := NewFileConfigWatcher(nil, mockSess, 100, 10, 20, nil).(*fileConfigWatcher)
+		cw.FS = mockFS
+		cw.SetPaths("", "session.json")
+
+		info := &mockFileInfo{modTime: time.Now()}
+		mockFS.On("Stat", "session.json").Return(info, nil)
+		mockSess.On("LoadSession", "session.json").Return(nil, fmt.Errorf("load error"))
+
+		cw.Refresh("default")
+		tokens, _, _, _ := cw.GetLimits()
+		assert.Equal(t, 100, tokens)
+	})
+
+	t.Run("NilLoader_Main", func(t *testing.T) {
+		mockFS := new(mockFileStat)
+		cw := NewFileConfigWatcher(nil, nil, 100, 10, 20, nil).(*fileConfigWatcher)
+		cw.FS = mockFS
+		cw.SetPaths("main.yaml", "")
+
+		info := &mockFileInfo{modTime: time.Now()}
+		mockFS.On("Stat", "main.yaml").Return(info, nil)
+
+		cw.Refresh("default")
+		tokens, _, _, _ := cw.GetLimits()
+		assert.Equal(t, 100, tokens)
+	})
+
+	t.Run("SessionCfgNil", func(t *testing.T) {
+		mockFS := new(mockFileStat)
+		mockSess := new(mockSessionLoader)
+		cw := NewFileConfigWatcher(nil, mockSess, 100, 10, 20, nil).(*fileConfigWatcher)
+		cw.FS = mockFS
+		cw.SetPaths("", "session.json")
+
+		info := &mockFileInfo{modTime: time.Now()}
+		mockFS.On("Stat", "session.json").Return(info, nil)
+		mockSess.On("LoadSession", "session.json").Return(nil, nil)
+
+		cw.Refresh("default")
+		tokens, _, _, _ := cw.GetLimits()
+		assert.Equal(t, 100, tokens)
+	})
+
+	t.Run("SessionLoadErrorWithLogger", func(t *testing.T) {
+		mockFS := new(mockFileStat)
+		mockSess := new(mockSessionLoader)
+		logBuffer := inframock.NewSafeBuffer()
+		logger := slog.New(slog.NewTextHandler(logBuffer, nil))
+		cw := NewFileConfigWatcher(nil, mockSess, 100, 10, 20, logger).(*fileConfigWatcher)
+		cw.FS = mockFS
+		cw.SetPaths("", "session.json")
+
+		info := &mockFileInfo{modTime: time.Now()}
+		mockFS.On("Stat", "session.json").Return(info, nil)
+		mockSess.On("LoadSession", "session.json").Return(nil, fmt.Errorf("session error"))
+
+		cw.Refresh("default")
+		assert.Contains(t, logBuffer.String(), "Failed to load session config")
+	})
 }

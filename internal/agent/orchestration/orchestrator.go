@@ -307,6 +307,7 @@ type uiBridge struct {
 	wg                  sync.WaitGroup
 	cleanupTimeout      time.Duration
 	isPoisoned          bool
+	isClosed            atomic.Bool
 }
 
 func (b *uiBridge) stopActiveSpinner() {
@@ -337,6 +338,7 @@ func (b *uiBridge) resumeActiveSpinner() {
 // (Orchestrator) after all sending goroutines have finished.
 func (b *uiBridge) CloseInput() {
 	b.closeOnce.Do(func() {
+		b.isClosed.Store(true)
 		close(b.eventCh)
 	})
 }
@@ -430,10 +432,15 @@ func (b *uiBridge) processRecoverable(e events.Event) {
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
+	if b.isClosed.Load() {
+		b.logger.Debug("Shedding event: bridge is closed")
+		return
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
-			// The panic is caught. Log that the event was dropped because the bridge is closed.
-			b.logger.Debug("Dropped UI event because bridge input is closed", "panic", r)
+			// Log as Warn/Error since it's now unexpected (last-resort safety)
+			b.logger.Warn("Unexpected panic in uiBridge.handleEvent", "panic", r, "stack", string(debug.Stack()))
 		}
 	}()
 
@@ -441,12 +448,7 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 		return
 	}
 
-	switch e.(type) {
-	case events.ResponseEvent, events.SystemMessageEvent,
-		events.ConsentStartedEvent, events.ConsentFinishedEvent,
-		events.TurnStarted, events.TurnStatusEvent,
-		events.ToolCallEvent, events.ToolResultEvent,
-		events.UsageMetricsEvent:
+	if isCriticalEvent(e) {
 		// Critical events: ensure delivery and enforce true backpressure.
 		select {
 		case b.eventCh <- e:
@@ -456,15 +458,16 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 		case <-b.ctx.Done():
 			b.logger.Debug("Bridge shutting down, dropping critical event")
 		}
+		return
+	}
+
+	// Safe to shed visual/transient events if queue is full
+	select {
+	case b.eventCh <- e:
+	case <-ctx.Done():
+	case <-b.ctx.Done():
 	default:
-		// Safe to shed visual/transient events if queue is full
-		select {
-		case b.eventCh <- e:
-		case <-ctx.Done():
-		case <-b.ctx.Done():
-		default:
-			b.logger.Debug("UI Bridge queue full, shedding load/visual event")
-		}
+		b.logger.Debug("UI Bridge queue full, shedding load/visual event")
 	}
 }
 
@@ -514,39 +517,21 @@ func (b *uiBridge) handleSpinnerEvent(e events.Event) {
 }
 
 func (b *uiBridge) startSpinnerForPhase(e events.Event) {
-	switch ev := e.(type) {
-	case events.InferenceStartedEvent:
-		status := " Thinking..."
-		if ev.Model != "" {
-			status = fmt.Sprintf(" Thinking [%s]...", ev.Model)
-		}
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, status)
-		})
-	case events.SummarizationStartedEvent:
-		b.isRendering = false
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
-		})
-	case events.ToolExecutionStartedEvent:
-		b.isRendering = false // Reset state to allow tool spinner after inference
-
-		status := " Executing tools..."
-		if len(ev.ToolNames) == 1 {
-			status = fmt.Sprintf(" Executing [%s]...", ev.ToolNames[0])
-		} else if len(ev.ToolNames) > 1 {
-			status = fmt.Sprintf(" Executing tools [%s]...", strings.Join(ev.ToolNames, ", "))
-		}
-
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithMetrics(b.ctx, status)
-		})
-	case events.RetryWaitingEvent:
-		b.isRendering = false
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, fmt.Sprintf(" Retrying in %v...", ev.Duration.Round(time.Second)))
-		})
+	info, ok := getSpinnerInfo(e)
+	if !ok {
+		return
 	}
+
+	if info.resetRendering {
+		b.isRendering = false
+	}
+
+	b.transitionSpinner(func() func() {
+		if info.withMetrics {
+			return b.renderer.StartSpinnerWithMetrics(b.ctx, info.status)
+		}
+		return b.renderer.StartSpinnerWithStatus(b.ctx, info.status)
+	})
 }
 
 func (b *uiBridge) handleTurnStatus(ev events.TurnStatusEvent) {
@@ -687,4 +672,48 @@ func Run(ctx context.Context, params RunParams) error {
 	}
 
 	return nil
+}
+
+func isCriticalEvent(e events.Event) bool {
+	switch e.(type) {
+	case events.ResponseEvent, events.SystemMessageEvent,
+		events.ConsentStartedEvent, events.ConsentFinishedEvent,
+		events.TurnStarted, events.TurnStatusEvent,
+		events.ToolCallEvent, events.ToolResultEvent,
+		events.UsageMetricsEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+type spinnerInfo struct {
+	status         string
+	withMetrics    bool
+	resetRendering bool
+}
+
+func getSpinnerInfo(e events.Event) (spinnerInfo, bool) {
+	switch ev := e.(type) {
+	case events.InferenceStartedEvent:
+		status := " Thinking..."
+		if ev.Model != "" {
+			status = fmt.Sprintf(" Thinking [%s]...", ev.Model)
+		}
+		return spinnerInfo{status: status, withMetrics: false, resetRendering: false}, true
+	case events.SummarizationStartedEvent:
+		return spinnerInfo{status: " Compressing context...", withMetrics: false, resetRendering: true}, true
+	case events.ToolExecutionStartedEvent:
+		status := " Executing tools..."
+		if len(ev.ToolNames) == 1 {
+			status = fmt.Sprintf(" Executing [%s]...", ev.ToolNames[0])
+		} else if len(ev.ToolNames) > 1 {
+			status = fmt.Sprintf(" Executing tools [%s]...", strings.Join(ev.ToolNames, ", "))
+		}
+		return spinnerInfo{status: status, withMetrics: true, resetRendering: true}, true
+	case events.RetryWaitingEvent:
+		return spinnerInfo{status: fmt.Sprintf(" Retrying in %v...", ev.Duration.Round(time.Second)), withMetrics: false, resetRendering: true}, true
+	default:
+		return spinnerInfo{}, false
+	}
 }
