@@ -68,6 +68,21 @@ func TestGetMetrics(t *testing.T) {
 				TotalTokens: 100,
 			},
 		},
+		{
+			name: "TrafficTypePriority",
+			resp: &genai.GenerateContentResponse{
+				UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+					TotalTokenCount: 100,
+					TrafficType:     "ON_DEMAND_PRIORITY",
+				},
+			},
+			duration: 1.0,
+			want: llm.Metrics{
+				Duration:    1.0,
+				TotalTokens: 100,
+				TrafficType: "ON_DEMAND_PRIORITY",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -103,5 +118,8 @@ func assertMetrics(t *testing.T, got, want llm.Metrics) {
 	}
 	if got.SearchQueries != want.SearchQueries {
 		t.Errorf("SearchQueries: got %d, want %d", got.SearchQueries, want.SearchQueries)
+	}
+	if got.TrafficType != want.TrafficType {
+		t.Errorf("TrafficType: got %s, want %s", got.TrafficType, want.TrafficType)
 	}
 }

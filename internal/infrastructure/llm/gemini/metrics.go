@@ -20,6 +20,7 @@ func getMetrics(resp *genai.GenerateContentResponse, duration float64) *llm.Metr
 		m.PromptTokens = um.PromptTokenCount
 		m.ResponseTokens = um.CandidatesTokenCount
 		m.TotalTokens = um.TotalTokenCount
+		m.TrafficType = string(um.TrafficType)
 
 		// Map native thinking tokens from SDK
 		if um.ThoughtsTokenCount > 0 {

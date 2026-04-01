@@ -217,7 +217,7 @@ func performDynamicEndpointTest(t *testing.T, tt dynamicEndpointTestCase) {
 	server, path, body := setupTestServer(t, tt.mockResponse)
 	defer server.Close()
 
-	c := NewClient(server.URL, "test-model", &auth.BearerAuth{Token: "key"}, tt.headers, "", 0, 100, nil)
+	c := NewClient(server.URL, "test-model", &auth.BearerAuth{Token: "key"}, WithHeaders(tt.headers), WithThinkingBudget(100))
 	c.capabilities = tt.capabilities
 
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}
@@ -273,7 +273,7 @@ func TestAlternativeUsageAndPolymorphicText(t *testing.T) {
 		}))
 		defer server.Close()
 
-		c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+		c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 		_, metrics, err := c.SendChat(context.Background(), nil, []*tools.ToolDeclaration{{Name: "t"}}, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -302,7 +302,7 @@ func TestAlternativeUsageAndPolymorphicText(t *testing.T) {
 		}))
 		defer server.Close()
 
-		c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+		c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 		resp, _, _ := c.SendChat(context.Background(), nil, []*tools.ToolDeclaration{{Name: "t"}}, nil)
 		if resp.Parts[0].Text != "nested text" {
 			t.Errorf("expected 'nested text', got %q", resp.Parts[0].Text)
@@ -328,7 +328,7 @@ func TestRefusalHandling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 	resp, _, _ := c.SendChat(context.Background(), nil, []*tools.ToolDeclaration{{Name: "t"}}, nil)
 	if len(resp.Parts) != 1 || resp.Parts[0].Text != "I cannot answer this." {
 		t.Errorf("expected refusal text, got %+v", resp.Parts[0])
@@ -345,7 +345,7 @@ func TestMandatoryContentField(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 
 	history := []*llm.Content{
 		{
@@ -390,7 +390,7 @@ func TestPolymorphicResponsesParsing(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 	resp, _, err := c.SendChat(context.Background(), nil, []*tools.ToolDeclaration{{Name: "t"}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -435,7 +435,7 @@ func TestModernTextTypesAndPerItemUsage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 	resp, metrics, err := c.SendChat(context.Background(), nil, []*tools.ToolDeclaration{{Name: "t"}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -476,7 +476,7 @@ func TestTopLevelToolCallsInResponses(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 	resp, _, err := c.SendChat(context.Background(), nil, []*tools.ToolDeclaration{{Name: "get_time"}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -510,7 +510,7 @@ func TestBlockBasedToolCallsInHistory(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 
 	// History item: assistant message with a tool call
 	history := []*llm.Content{
@@ -571,7 +571,7 @@ func TestToolResultBlocksInHistory(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 
 	// History item: tool response
 	history := []*llm.Content{
@@ -614,7 +614,7 @@ func TestHistoryItemSequencing(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, map[string]string{"reasoning_effort": "high"}, "", 0, 100, nil)
+	c := NewClient(server.URL, "gpt-5.4", &auth.BearerAuth{Token: "key"}, WithHeaders(map[string]string{"reasoning_effort": "high"}), WithThinkingBudget(100))
 
 	// History: User -> Model (thought + call) -> Tool Result
 	history := []*llm.Content{

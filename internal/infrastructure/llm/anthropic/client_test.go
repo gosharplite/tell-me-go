@@ -23,7 +23,7 @@ import (
 func setupMockAnthropicServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *client) {
 	t.Helper()
 	server := httptest.NewServer(handler)
-	c := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"}, nil, 0, "", 0, nil)
+	c := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"})
 	return server, c
 }
 
@@ -162,7 +162,7 @@ func TestExtendedThinking(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-7-sonnet", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0, nil)
+	client := NewClient(server.URL, "claude-3-7-sonnet", &auth.AnthropicAuth{APIKey: "key"})
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	var thought, text string
@@ -218,7 +218,7 @@ func TestToolCalling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0, nil)
+	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"})
 
 	// 1. Initial call
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Weather in London?"}}}}
@@ -273,7 +273,7 @@ func TestThinkingBudget(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-7", &auth.AnthropicAuth{APIKey: "key"}, nil, 2048, "", 0, nil)
+	client := NewClient(server.URL, "claude-3-7", &auth.AnthropicAuth{APIKey: "key"}, WithThinkingBudget(2048))
 	_, _, _ = client.SendChat(context.Background(), nil, nil, nil)
 }
 
@@ -469,7 +469,7 @@ func TestSendChat_Errors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0, nil)
+			client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"})
 			_, _, err := client.SendChat(context.Background(), nil, nil, nil)
 
 			if err == nil {
@@ -501,7 +501,7 @@ func TestSendChat_Timeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0, nil)
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -516,7 +516,7 @@ func TestSendChat_Timeout(t *testing.T) {
 }
 
 func TestAnthropic_SystemContent(t *testing.T) {
-	client := NewClient("", "claude-3", nil, nil, 0, "Initial Persona", 0, nil)
+	client := NewClient("", "claude-3", nil, WithPersona("Initial Persona"))
 	history := []*llm.Content{
 		{
 			Role:  "system",
@@ -545,7 +545,7 @@ func TestAnthropic_AppendOrMergeMessage(t *testing.T) {
 }
 
 func TestAnthropic_GenerateImages_NotImplemented(t *testing.T) {
-	client := NewClient("", "", nil, nil, 0, "", 0, nil)
+	client := NewClient("", "", nil)
 	_, err := client.GenerateImages(context.Background(), "", "", "")
 	if err == nil {
 		t.Error("expected error for GenerateImages")
@@ -554,7 +554,7 @@ func TestAnthropic_GenerateImages_NotImplemented(t *testing.T) {
 
 func TestAnthropic_RefreshAuth(t *testing.T) {
 	auth := &auth.AnthropicAuth{APIKey: "old"}
-	client := NewClient("", "", auth, nil, 0, "", 0, nil)
+	client := NewClient("", "", auth)
 	_ = client.RefreshAuth()
 }
 
@@ -592,7 +592,7 @@ func TestPromptCaching(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "You are a helpful assistant", 0, nil)
+	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, WithPersona("You are a helpful assistant"))
 	_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -606,7 +606,7 @@ func TestPromptCaching(t *testing.T) {
 func TestAnthropic_InternalErrors(t *testing.T) {
 	t.Run("Authenticator Error", func(t *testing.T) {
 		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
-		c := NewClient("", "claude-3", errAuth, nil, 0, "", 0, nil)
+		c := NewClient("", "claude-3", errAuth)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
 			t.Errorf("expected auth error, got %v", err)
@@ -614,7 +614,7 @@ func TestAnthropic_InternalErrors(t *testing.T) {
 	})
 
 	t.Run("Invalid URL", func(t *testing.T) {
-		c := NewClient(" :invalid", "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0, nil)
+		c := NewClient(" :invalid", "claude-3", &auth.AnthropicAuth{APIKey: "key"})
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to create request") {
 			t.Errorf("expected request creation error, got %v", err)
@@ -649,7 +649,7 @@ func TestAnthropic_EdgeCases(t *testing.T) {
 func TestAnthropic_ResetConnections(t *testing.T) {
 	t.Run("initialized client", func(t *testing.T) {
 		// NewClient initializes the transport
-		client := NewClient("", "claude-3", nil, nil, 0, "", 0, nil)
+		client := NewClient("", "claude-3", nil)
 		if client.transport == nil {
 			t.Fatal("expected transport to be initialized")
 		}
@@ -665,4 +665,30 @@ func TestAnthropic_ResetConnections(t *testing.T) {
 		// This should not panic because of the internal nil check
 		c.ResetConnections()
 	})
+}
+
+func TestNewClient_Options(t *testing.T) {
+	authenticator := &auth.BearerAuth{Token: "test-token"}
+	c := NewClient(
+		"http://localhost",
+		"claude-3-5-sonnet",
+		authenticator,
+		WithTimeout(10*time.Second),
+		WithHeaders(map[string]string{"X-Test": "val"}),
+		WithPersona("test-persona"),
+		WithThinkingBudget(100),
+	)
+
+	if c.timeout != 10*time.Second {
+		t.Errorf("expected timeout 10s, got %v", c.timeout)
+	}
+	if c.headers["X-Test"] != "val" {
+		t.Errorf("expected header X-Test=val, got %s", c.headers["X-Test"])
+	}
+	if c.persona != "test-persona" {
+		t.Errorf("expected persona 'test-persona', got %q", c.persona)
+	}
+	if c.thinkingBudget != 100 {
+		t.Errorf("expected thinking budget 100, got %d", c.thinkingBudget)
+	}
 }

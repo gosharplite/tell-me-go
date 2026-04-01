@@ -36,14 +36,42 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 
 	switch p.Type {
 	case "openai", "deepseek":
-		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout, maxBudget, logger)
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator,
+			openai.WithHeaders(p.Headers),
+			openai.WithPersona(cfg.Person),
+			openai.WithTimeout(timeout),
+			openai.WithThinkingBudget(maxBudget),
+			openai.WithLogger(logger),
+		)
 	case "anthropic":
-		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout, logger)
+		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator,
+			anthropic.WithHeaders(p.Headers),
+			anthropic.WithThinkingBudget(maxBudget),
+			anthropic.WithPersona(cfg.Person),
+			anthropic.WithTimeout(timeout),
+			anthropic.WithLogger(logger),
+		)
 	case "google", "gemini", "": // Default to Gemini for now
-		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout, gemini.WithLogger(logger))
+		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
+			gemini.WithHeaders(p.Headers),
+			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
+			gemini.WithSystemInstruction(cfg.Person),
+			gemini.WithSearch(cfg.UseSearch),
+			gemini.WithEventBus(bus),
+			gemini.WithTimeout(timeout),
+			gemini.WithLogger(logger),
+		)
 	default:
 		// Fallback to Gemini if type is unknown for backward compatibility
-		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout, gemini.WithLogger(logger))
+		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator,
+			gemini.WithHeaders(p.Headers),
+			gemini.WithThinking(p.ThinkingBudget, p.ThinkingLevel, maxBudget),
+			gemini.WithSystemInstruction(cfg.Person),
+			gemini.WithSearch(cfg.UseSearch),
+			gemini.WithEventBus(bus),
+			gemini.WithTimeout(timeout),
+			gemini.WithLogger(logger),
+		)
 	}
 
 	if err != nil {

@@ -32,19 +32,68 @@ type client struct {
 	persona        string
 	thinkingBudget int
 	logger         ports.Logger
+	timeout        time.Duration
+}
+
+// openaiOption defines a functional option for configuring the OpenAI Client.
+type openaiOption func(*client)
+
+// WithHeaders sets the custom headers for the OpenAI Client.
+func WithHeaders(headers map[string]string) openaiOption {
+	return func(c *client) {
+		c.headers = headers
+	}
+}
+
+// WithPersona sets the initial persona instruction for the OpenAI Client.
+func WithPersona(persona string) openaiOption {
+	return func(c *client) {
+		c.persona = persona
+	}
+}
+
+// WithTimeout sets the HTTP timeout for the OpenAI Client.
+func WithTimeout(timeout time.Duration) openaiOption {
+	return func(c *client) {
+		c.timeout = timeout
+	}
+}
+
+// WithThinkingBudget sets the thinking budget for models that support it.
+func WithThinkingBudget(budget int) openaiOption {
+	return func(c *client) {
+		c.thinkingBudget = budget
+	}
+}
+
+// WithLogger sets the logger for the OpenAI Client.
+func WithLogger(l ports.Logger) openaiOption {
+	return func(c *client) {
+		c.logger = l
+	}
 }
 
 // NewClient creates a new OpenAI-compatible client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, persona string, timeout time.Duration, thinkingBudget int, logger ports.Logger) *client {
-	if logger == nil {
-		logger = &ports.NoOpLogger{}
-	}
+func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...openaiOption) *client {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
+
+	c := &client{
+		authenticator: authenticator,
+		baseURL:       strings.TrimSuffix(baseURL, "/"),
+		model:         model,
+		capabilities:  llm.ResolveCapabilities(model),
+		logger:        &ports.NoOpLogger{},
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
 	// Baseline defense against hung connections
-	if timeout == 0 {
-		timeout = 60 * time.Second
+	if c.timeout == 0 {
+		c.timeout = 60 * time.Second
 	}
 
 	var tr http.RoundTripper
@@ -54,18 +103,10 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 		tr = http.DefaultTransport
 	}
 
-	return &client{
-		httpClient:     &http.Client{Timeout: timeout, Transport: tr},
-		transport:      tr,
-		authenticator:  authenticator,
-		baseURL:        strings.TrimSuffix(baseURL, "/"),
-		model:          model,
-		capabilities:   llm.ResolveCapabilities(model),
-		headers:        headers,
-		persona:        persona,
-		thinkingBudget: thinkingBudget,
-		logger:         logger,
-	}
+	c.transport = tr
+	c.httpClient = &http.Client{Timeout: c.timeout, Transport: tr}
+
+	return c
 }
 
 type chatRequest struct {

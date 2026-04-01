@@ -66,6 +66,7 @@ type Metrics struct {
 	CumulativeToolDuration float64 `json:"cumulative_tool_duration,omitempty"`
 	Cost                   float64 `json:"cost,omitempty"` // USD cost for this turn or summary
 	IsSummary              bool    `json:"is_summary,omitempty"`
+	TrafficType            string  `json:"traffic_type,omitempty"`
 }
 
 // AssetResolver defines the interface for lazy hydration of binary assets.
