@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -814,4 +815,59 @@ func TestOpenAI_ResetConnections(t *testing.T) {
 		// This should not panic because of the internal nil check
 		c.ResetConnections()
 	})
+}
+
+func TestNewClient_Options(t *testing.T) {
+	authenticator := &auth.BearerAuth{Token: "test-token"}
+	c := NewClient(
+		"http://localhost",
+		"gpt-4",
+		authenticator,
+		WithTimeout(10*time.Second),
+		WithHeaders(map[string]string{"X-Test": "val"}),
+		WithPersona("test-persona"),
+		WithThinkingBudget(100),
+	)
+
+	if c.timeout != 10*time.Second {
+		t.Errorf("expected timeout 10s, got %v", c.timeout)
+	}
+	if c.headers["X-Test"] != "val" {
+		t.Errorf("expected header X-Test=val, got %s", c.headers["X-Test"])
+	}
+	if c.persona != "test-persona" {
+		t.Errorf("expected persona 'test-persona', got %q", c.persona)
+	}
+	if c.thinkingBudget != 100 {
+		t.Errorf("expected thinking budget 100, got %d", c.thinkingBudget)
+	}
+}
+
+func TestHandleToolUseBlock(t *testing.T) {
+	c := &client{}
+	content := &llm.Content{}
+	mockBlock := contentBlock{
+		Type: "tool_use",
+		Name: "my_tool",
+		ID:   "call_123",
+		Input: map[string]interface{}{
+			"arg": "val",
+		},
+	}
+
+	c.handleToolUseBlock(content, mockBlock)
+
+	if len(content.Parts) != 1 {
+		t.Fatalf("expected 1 part, got %d", len(content.Parts))
+	}
+	part := content.Parts[0]
+	if part.FunctionCall == nil {
+		t.Fatal("expected function call part")
+	}
+	if part.FunctionCall.Name != "my_tool" {
+		t.Errorf("expected tool name 'my_tool', got %q", part.FunctionCall.Name)
+	}
+	if part.FunctionCall.ID != "call_123" {
+		t.Errorf("expected tool ID 'call_123', got %q", part.FunctionCall.ID)
+	}
 }

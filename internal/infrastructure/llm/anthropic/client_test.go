@@ -666,3 +666,29 @@ func TestAnthropic_ResetConnections(t *testing.T) {
 		c.ResetConnections()
 	})
 }
+
+func TestNewClient_Options(t *testing.T) {
+	authenticator := &auth.BearerAuth{Token: "test-token"}
+	c := NewClient(
+		"http://localhost",
+		"claude-3-5-sonnet",
+		authenticator,
+		WithTimeout(10*time.Second),
+		WithHeaders(map[string]string{"X-Test": "val"}),
+		WithPersona("test-persona"),
+		WithThinkingBudget(100),
+	)
+
+	if c.timeout != 10*time.Second {
+		t.Errorf("expected timeout 10s, got %v", c.timeout)
+	}
+	if c.headers["X-Test"] != "val" {
+		t.Errorf("expected header X-Test=val, got %s", c.headers["X-Test"])
+	}
+	if c.persona != "test-persona" {
+		t.Errorf("expected persona 'test-persona', got %q", c.persona)
+	}
+	if c.thinkingBudget != 100 {
+		t.Errorf("expected thinking budget 100, got %d", c.thinkingBudget)
+	}
+}

@@ -734,3 +734,34 @@ func TestGemini_ResetConnections_ThreadSafety(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestNewClient_Options(t *testing.T) {
+	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	authenticator := &auth.BearerAuth{Token: "test-token"}
+	
+	c, err := NewClient(
+		apiURL,
+		"gemini-1.5-flash",
+		authenticator,
+		WithTimeout(10*time.Second),
+		WithHeaders(map[string]string{"X-Test": "val"}),
+		WithSearch(true),
+		WithThinking(100, "high", 200),
+	)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	if c.timeout != 10*time.Second {
+		t.Errorf("expected timeout 10s, got %v", c.timeout)
+	}
+	if c.headers["X-Test"] != "val" {
+		t.Errorf("expected header X-Test=val, got %s", c.headers["X-Test"])
+	}
+	if !c.useSearch {
+		t.Error("expected useSearch to be true")
+	}
+	if c.thinkingBudget != 100 || c.thinkingLevel != "high" || c.maxThinkingBudget != 200 {
+		t.Errorf("unexpected thinking config: budget=%d, level=%s, max=%d", c.thinkingBudget, c.thinkingLevel, c.maxThinkingBudget)
+	}
+}
