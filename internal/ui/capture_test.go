@@ -301,10 +301,10 @@ func TestCaptureFromTTY_TableDriven(t *testing.T) {
 			t.Parallel()
 			stdin, closer := tt.setup(t)
 			if closer != nil {
-				defer closer.Close()
+				defer func() { _ = closer.Close() }()
 			}
 			if f, ok := stdin.(*os.File); ok {
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 			}
 
 			ctx, cancel := tt.ctxFunc()
@@ -650,7 +650,7 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 			t.Parallel()
 			stdin, closer := tt.setup(t)
 			if closer != nil {
-				defer closer.Close()
+				defer func() { _ = closer.Close() }()
 			}
 
 			ctx, cancel := tt.ctxFunc()
