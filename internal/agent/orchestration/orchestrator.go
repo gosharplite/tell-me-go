@@ -151,18 +151,22 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		return fmt.Errorf("failed to initialize agent: %w", err)
 	}
 
+	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
+	// Single defer to guarantee deterministic teardown order:
+	// Stop Producers first, then Consumers.
 	defer func() {
+		// 1. Stop Producers (Agent) first
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
 		defer cancel()
 		if err := chatAgent.Shutdown(shutdownCtx); err != nil {
 			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)
 		}
-	}()
 
-	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
-	if cleanupUI != nil {
-		defer cleanupUI()
-	}
+		// 2. Clean up Consumer (UI) second
+		if cleanupUI != nil {
+			cleanupUI()
+		}
+	}()
 	if err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
@@ -374,9 +378,11 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 		default:
 			// Queue is saturated. Prevent caller from blocking by spawning a background
 			// goroutine to wait for channel space.
-			b.wg.Add(1)
+			// TODO(architecture): [TECH DEBT] Unbounded goroutine spawning.
+			// While bounded by b.ctx.Done(), a sustained flood of events while the channel is full
+			// could cause goroutine bloat. If this becomes a hot path, refactor to use a
+			// fixed-size Worker Pool or a Ring Buffer.
 			go func() {
-				defer b.wg.Done()
 				if b.ctx.Err() != nil {
 					return
 				}
