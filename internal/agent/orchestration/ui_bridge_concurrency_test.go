@@ -9,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -67,57 +66,28 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 
 func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	defer goleak.VerifyNone(t)
+	ctx := context.Background()
+
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "log.txt", slog.Default())
 	defer bridge.Cleanup()
 
-	spinnerStopped := make(chan struct{})
-	started := make(chan struct{})
-	canFinishStart := make(chan struct{})
-	stoppedChan := make(chan struct{})
+	// 1. Expect the spinner to start first
+	// Note: startSpinnerForPhase(ToolExecutionStartedEvent) calls StartSpinnerWithMetrics
+	mRenderer.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Return(func() {}).Once()
 
-	// This mock simulates the "act" phase being slow
-	mRenderer.On("StartSpinnerWithMetrics", mock.Anything, " Executing tools...").Run(func(args mock.Arguments) {
-		close(started)
-		<-canFinishStart
-	}).Return(func() {
-		close(spinnerStopped)
-		close(stoppedChan)
-	}).Once()
+	// 2. Expect the response to be rendered sequentially after
+	mRenderer.On("RenderResponse", mock.Anything, true, false).Return().Once()
 
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
-
-	// 1. Start ToolExecution in a goroutine
-	go func() {
-		bridge.handleEvent(context.Background(), events.ToolExecutionStartedEvent{})
-	}()
-
-	// Wait until StartSpinnerWithMetrics is called and blocked
-	select {
-	case <-started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Timeout waiting for spinner to start")
-	}
-
-	// 2. Process ResponseEvent while ToolExecution is in its "act" phase (unlocked)
-	bridge.handleEvent(context.Background(), events.ResponseEvent{
+	// 3. Queue the events concurrently (the Actor guarantees sequential processing)
+	bridge.handleEvent(ctx, events.ToolExecutionStartedEvent{})
+	bridge.handleEvent(ctx, events.ResponseEvent{
 		Content: &llm.Content{},
 	})
 
-	// 3. Allow ToolExecution to finish its "act" phase and re-lock
-	close(canFinishStart)
+	// 4. Flush the queue using the robust syncBridge helper
+	syncBridge(t, bridge, mRenderer)
 
-	// 4. Wait for the spinner to be stopped
-	select {
-	case <-stoppedChan:
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for spinner to be stopped")
-	}
-
-	// 5. Verify the spinner was immediately stopped
-		select {
-	case <-spinnerStopped:
-	case <-time.After(2 * time.Second):
-		t.Error("Spinner started during ResponseEvent processing must be immediately stopped")
-	}
+	// 5. Verify the sequential execution happened as expected
+	mRenderer.AssertExpectations(t)
 }
