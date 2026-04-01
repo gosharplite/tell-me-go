@@ -307,24 +307,38 @@ func (b *uiBridge) loop() {
 				b.stopActiveSpinner()
 				return
 			}
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						b.logger.Error("uiBridge actor recovered from panic",
-							"error", r,
-							"stack", string(debug.Stack()))
-						b.stopActiveSpinner()
-						// Trigger shutdown to avoid unpredictable state
-						b.stopOnce.Do(func() { close(b.done) })
-					}
-				}()
-				b.processEvent(b.ctx, e)
-			}()
+			b.processRecoverable(e)
 		case <-b.done:
-			b.stopActiveSpinner()
-			return
+			// Gracefully drain remaining events before exiting
+			for {
+				select {
+				case e, ok := <-b.eventCh:
+					if !ok {
+						b.stopActiveSpinner()
+						return
+					}
+					b.processRecoverable(e)
+				default:
+					b.stopActiveSpinner()
+					return
+				}
+			}
 		}
 	}
+}
+
+func (b *uiBridge) processRecoverable(e events.Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			b.logger.Error("uiBridge actor recovered from panic",
+				"error", r,
+				"stack", string(debug.Stack()))
+			b.stopActiveSpinner()
+			// Trigger shutdown to avoid unpredictable state
+			b.stopOnce.Do(func() { close(b.done) })
+		}
+	}()
+	b.processEvent(b.ctx, e)
 }
 
 // handleEvent processes a domain event and updates the UI.
