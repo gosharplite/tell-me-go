@@ -13,7 +13,7 @@ import (
 
 var loadToolkitDef = &tools.ToolDeclaration{
 	Name:        "load_toolkit",
-	Description: "CRITICAL: Use this to load specialized tools into your context. Available toolkits: ['git', 'k8s', 'ado', 'jira']. If a user asks to deploy to Kubernetes, you must call load_toolkit(names=['k8s']) first.",
+	Description: "CRITICAL: Use this to load specialized tools into your context. Available toolkits: ['git', 'k8s', 'ado', 'jira', 'confluence', 'media', 'network', 'teams']. If a user asks to deploy to Kubernetes, you must call load_toolkit(names=['k8s']) first.",
 	Parameters: &tools.Schema{
 		Type: "OBJECT",
 		Properties: map[string]*tools.Schema{

@@ -429,14 +429,15 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 
 type mockSessionDeps struct {
 	ports.SessionDependencies
-	gw       llm.LLMGateway
-	hManager ports.HistoryManager
-	reg      tools.Registry
-	sm       security.Manager
-	bus      events.EventBus
-	tracker  pricing.CostTracker
-	paths    *persistence.Paths
-	client   llm.LLMClient
+	gw              llm.LLMGateway
+	hManager        ports.HistoryManager
+	reg             tools.Registry
+	sm              security.Manager
+	bus             events.EventBus
+	tracker         pricing.CostTracker
+	paths           *persistence.Paths
+	client          llm.LLMClient
+	sessionProvider ports.SessionProvider
 }
 
 func (m *mockSessionDeps) GetPaths() *persistence.Paths {
@@ -462,6 +463,7 @@ func (m *mockSessionDeps) GetTracker() pricing.CostTracker {
 func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
 func (m *mockSessionDeps) GetClient() llm.LLMClient                             { return m.client }
 func (m *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
+func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return m.sessionProvider }
 
 type mockTracker struct {
 	pricing.CostTracker
@@ -517,17 +519,19 @@ func TestSessionDeps_Getters(t *testing.T) {
 	inframock.CleanupBus(t, bus)
 	tracker := &mockTracker{}
 	pData := pricing.PricingData{}
+	sessionProvider := new(mockSessionProvider)
 
 	deps := &sessionDeps{
-		paths:       paths,
-		hManager:    hManager,
-		client:      client,
-		gw:          gw,
-		reg:         reg,
-		sm:          sm,
-		bus:         bus,
-		tracker:     tracker,
-		pricingData: pData,
+		paths:           paths,
+		hManager:        hManager,
+		client:          client,
+		gw:              gw,
+		reg:             reg,
+		sm:              sm,
+		bus:             bus,
+		tracker:         tracker,
+		pricingData:     pData,
+		sessionProvider: sessionProvider,
 	}
 
 	assert.Equal(t, gw, deps.GetGateway())
@@ -539,6 +543,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.Equal(t, tracker, deps.GetTracker())
 	assert.Equal(t, pData, deps.GetPricingData())
 	assert.Equal(t, client, deps.GetClient())
+	assert.Equal(t, sessionProvider, deps.GetSessionProvider())
 }
 
 type mockKVStore struct {

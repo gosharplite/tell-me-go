@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRegistry_Resilience(t *testing.T) {
@@ -144,7 +145,7 @@ func TestRegistry_Toolkits(t *testing.T) {
 		if len(decls) != 3 {
 			t.Errorf("expected 3 declarations (core + git), got %d", len(decls))
 		}
-		
+
 		names := make(map[string]bool)
 		for _, d := range decls {
 			names[d.Name] = true
@@ -162,7 +163,7 @@ func TestRegistry_Toolkits(t *testing.T) {
 		if len(toolkits) != 3 {
 			t.Errorf("expected 3 toolkits, got %d: %v", len(toolkits), toolkits)
 		}
-		
+
 		tks := make(map[string]bool)
 		for _, tk := range toolkits {
 			tks[tk] = true
@@ -175,4 +176,24 @@ func TestRegistry_Toolkits(t *testing.T) {
 			t.Errorf("missing expected toolkits: %v", tksList)
 		}
 	})
+}
+
+func TestRegistry_RegisterToToolkitWithOptions(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+
+	err := r.RegisterToToolkitWithOptions("git", &tools.ToolDeclaration{Name: "git_serial"}, nil, tools.ToolOptions{Serial: true})
+	assert.NoError(t, err)
+
+	assert.True(t, r.IsSerial("git_serial"))
+
+	decls := r.GetDeclarationsByToolkits([]string{"git"})
+	found := false
+	for _, d := range decls {
+		if d.Name == "git_serial" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "git_serial should be in git toolkit")
 }

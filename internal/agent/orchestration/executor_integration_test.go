@@ -289,6 +289,10 @@ func (m *integrationToolRegistry) RegisterToToolkit(toolkit string, def *tools.T
 	return m.Register(def, handler)
 }
 
+func (m *integrationToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
 func (m *integrationToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
 	return m.GetDeclarations()
 }

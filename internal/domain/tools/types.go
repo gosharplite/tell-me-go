@@ -65,6 +65,7 @@ type ToolRegistrar interface {
 	Register(def *ToolDeclaration, handler ToolFunc) error
 	RegisterWithOptions(def *ToolDeclaration, handler ToolFunc, opts ToolOptions) error
 	RegisterToToolkit(toolkit string, def *ToolDeclaration, handler ToolFunc) error
+	RegisterToToolkitWithOptions(toolkit string, def *ToolDeclaration, handler ToolFunc, opts ToolOptions) error
 }
 
 // ToolExecutor defines the interface for executing tools and checking their behavior.

@@ -25,14 +25,14 @@ type ContextManager struct {
 	cachedWindow   []*llm.Content
 	cachedMetadata *Metadata
 
-	Strategy   *ContextStrategy
-	History    ports.HistoryManager
-	Events     events.EventBus
-	Pipeline   *ContextPipeline
-	Factory    *PipelineFactory
-	Summarizer ports.Summarizer
+	Strategy        *ContextStrategy
+	History         ports.HistoryManager
+	Events          events.EventBus
+	Pipeline        *ContextPipeline
+	Factory         *PipelineFactory
+	Summarizer      ports.Summarizer
 	SessionProvider ports.SessionProvider
-	logger     *slog.Logger
+	logger          *slog.Logger
 }
 
 // contextManagerOption defines a functional option for configuring the ContextManager.
@@ -66,7 +66,6 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 		}
 		cm.Pipeline = factory.BuildStandardPipeline(cm.GetLimits())
 	}
-
 
 	return cm
 }

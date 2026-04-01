@@ -84,12 +84,12 @@ func TestSessionState_Persistence(t *testing.T) {
 	if len(restoredInfo.ActiveToolkits) != 2 {
 		t.Fatalf("expected 2 active toolkits, got %d", len(restoredInfo.ActiveToolkits))
 	}
-	
+
 	tkMap := make(map[string]bool)
 	for _, tk := range restoredInfo.ActiveToolkits {
 		tkMap[tk] = true
 	}
-	
+
 	if !tkMap["git"] || !tkMap["k8s"] {
 		t.Errorf("restored toolkits missing git or k8s: %v", restoredInfo.ActiveToolkits)
 	}

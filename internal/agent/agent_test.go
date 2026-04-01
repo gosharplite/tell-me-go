@@ -882,6 +882,10 @@ func (m *mockToolRegistryWithExpectations) RegisterToToolkit(toolkit string, def
 	return m.Register(def, handler)
 }
 
+func (m *mockToolRegistryWithExpectations) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
 func (m *mockToolRegistryWithExpectations) GetCoreDeclarations() []*tools.ToolDeclaration {
 	return m.GetDeclarations()
 }

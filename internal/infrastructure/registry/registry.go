@@ -49,15 +49,16 @@ func (r *registry) Register(def *tools.ToolDeclaration, handler toolFunc) error 
 
 // RegisterWithOptions adds a new tool to the registry with specific options and core toolkit.
 func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) error {
-	return r.registerToToolkitWithOptions("core", def, handler, opts)
+	return r.RegisterToToolkitWithOptions("core", def, handler, opts)
 }
 
 // RegisterToToolkit adds a tool to a specific toolkit.
 func (r *registry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler toolFunc) error {
-	return r.registerToToolkitWithOptions(toolkit, def, handler, ToolOptions{})
+	return r.RegisterToToolkitWithOptions(toolkit, def, handler, ToolOptions{})
 }
 
-func (r *registry) registerToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) error {
+// RegisterToToolkitWithOptions adds a tool to a specific toolkit with options.
+func (r *registry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) error {
 	if def.Name == "" {
 		return fmt.Errorf("cannot register tool with empty name")
 	}

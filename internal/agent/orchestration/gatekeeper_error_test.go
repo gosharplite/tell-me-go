@@ -192,7 +192,7 @@ func TestOrchestrator_ConfigError(t *testing.T) {
 	sc := newSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := newSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default())
+	sd := newSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), new(mockSessionProvider))
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {

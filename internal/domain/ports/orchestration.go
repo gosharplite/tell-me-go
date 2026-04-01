@@ -104,6 +104,7 @@ type InfrastructureDependencyProvider interface {
 	GetSecurityManager() security.Manager
 	GetEventBus() events.EventBus
 	GetLogger() *slog.Logger
+	GetSessionProvider() SessionProvider
 }
 
 // SessionDependencies defines the dependencies required for a session.

@@ -223,6 +223,10 @@ func (m *limitMockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDec
 	return m.Register(def, handler)
 }
 
+func (m *limitMockRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
 func (m *limitMockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
 	return m.GetDeclarations()
 }

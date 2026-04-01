@@ -50,7 +50,7 @@ func RegisterAll(r tools.Registry, sm domain_security.Manager, client llm.LLMCli
 func registerMedia(r tools.Registry, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
 	m := &mediaManager{sm: sm, client: client, assetsDir: assetsDir}
 
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkitWithOptions("media", &tools.ToolDeclaration{
 		Name:        "create_image",
 		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
 		Parameters: &tools.Schema{
@@ -75,7 +75,7 @@ func registerMedia(r tools.Registry, sm domain_security.Manager, client llm.LLMC
 		return err
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("media", &tools.ToolDeclaration{
 		Name:        "read_image",
 		Description: "Reads a local image file for vision analysis.",
 		Parameters: &tools.Schema{
@@ -95,7 +95,7 @@ func registerMedia(r tools.Registry, sm domain_security.Manager, client llm.LLMC
 }
 
 func registerNetwork(r tools.Registry, net *networkTool) error {
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkitWithOptions("network", &tools.ToolDeclaration{
 		Name:        "read_external_docs",
 		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
 		Parameters: &tools.Schema{
@@ -112,7 +112,7 @@ func registerNetwork(r tools.Registry, net *networkTool) error {
 		return err
 	}
 
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkitWithOptions("network", &tools.ToolDeclaration{
 		Name:        "http_request",
 		Description: "Executes a custom HTTP request.",
 		Parameters: &tools.Schema{
@@ -148,7 +148,7 @@ func registerNetwork(r tools.Registry, net *networkTool) error {
 
 func registerTeams(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
 	m := newteamsManager(sm, client)
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkitWithOptions("teams", &tools.ToolDeclaration{
 		Name:            "send_teams_message",
 		Description:     "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
 		RequiresConsent: true,
@@ -179,7 +179,7 @@ func registerTeams(r tools.Registry, sm domain_security.Manager, client tools.HT
 func registerConfluence(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
 	m := newconfluenceManager(sm, client)
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("confluence", &tools.ToolDeclaration{
 		Name:        "confluence_search",
 		Description: "Performs a discovery-based search for Confluence pages using keywords. space_id is required for keyword searches. If title is omitted, it lists up to 250 recent pages in the space.",
 		Parameters: &tools.Schema{
@@ -203,7 +203,7 @@ func registerConfluence(r tools.Registry, sm domain_security.Manager, client too
 		return err
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("confluence", &tools.ToolDeclaration{
 		Name:        "confluence_read",
 		Description: "Reads the content of a Confluence page and converts it to clean Markdown. Requires a numeric page_id.",
 		Parameters: &tools.Schema{
@@ -220,7 +220,7 @@ func registerConfluence(r tools.Registry, sm domain_security.Manager, client too
 		return err
 	}
 
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkitWithOptions("confluence", &tools.ToolDeclaration{
 		Name:            "confluence_write",
 		Description:     "Updates a Confluence page. Handles versioning and Markdown-to-XHTML conversion internally. Triggers security confirmation.",
 		RequiresConsent: true,
@@ -255,7 +255,7 @@ func registerConfluence(r tools.Registry, sm domain_security.Manager, client too
 func registerJira(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
 	m := newjiraManager(sm, client)
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("jira", &tools.ToolDeclaration{
 		Name:        "jira_search_issues",
 		Description: "Searches for Jira issues using JQL (Jira Query Language). Returns issue keys, summaries, statuses, and assignees.",
 		Parameters: &tools.Schema{
@@ -276,7 +276,7 @@ func registerJira(r tools.Registry, sm domain_security.Manager, client tools.HTT
 		return err
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("jira", &tools.ToolDeclaration{
 		Name:        "jira_get_issue",
 		Description: "Retrieves full details for a specific Jira issue, including summary, status, priority, assignee, and description.",
 		Parameters: &tools.Schema{
@@ -311,6 +311,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 	}
 
 	specs := []toolSpec{
+		// ... (omitting specs for brevity as they are unchanged)
 		{
 			decl: &tools.ToolDeclaration{
 				Name:        "ado_get_pull_request",
@@ -674,7 +675,7 @@ func registerAzureDevOps(r tools.Registry, sm domain_security.Manager, client to
 	}
 
 	for _, spec := range specs {
-		if err := r.Register(spec.decl, spec.handler); err != nil {
+		if err := r.RegisterToToolkit("ado", spec.decl, spec.handler); err != nil {
 			return err
 		}
 	}

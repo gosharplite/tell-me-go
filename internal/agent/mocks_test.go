@@ -24,11 +24,11 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 func (m *mockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
-	return nil
+	return m.RegisterToToolkit("core", declaration, implementation)
 }
 
 func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	return nil
+	return m.RegisterToToolkitWithOptions("core", def, handler, opts)
 }
 
 func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -41,6 +41,31 @@ func (m *mockToolRegistry) IsSerial(name string) bool {
 
 func (m *mockToolRegistry) IsLongRunning(name string) bool {
 	return false
+}
+
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.RegisterToToolkitWithOptions(toolkit, def, handler, tools.ToolOptions{})
+}
+
+func (m *mockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	m.Declarations = append(m.Declarations, def)
+	return nil
+}
+
+func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
 }
 
 type mockTokenCounter struct {
@@ -112,24 +137,4 @@ type mockSessionLoader struct {
 
 type mockSkillSelector struct {
 	skills.SkillSelector
-}
-
-func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
-}
-
-func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	return m.Register(def, handler)
-}
-
-func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *mockToolRegistry) ListAvailableToolkits() []string {
-	return []string{"core"}
 }

@@ -378,6 +378,10 @@ func (m *cancelIntegrationRegistry) RegisterToToolkit(toolkit string, def *tools
 	return m.Register(def, handler)
 }
 
+func (m *cancelIntegrationRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
 func (m *cancelIntegrationRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
 	return m.GetDeclarations()
 }

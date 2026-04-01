@@ -238,6 +238,10 @@ func (m *mockZombieRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDe
 	return m.Register(def, handler)
 }
 
+func (m *mockZombieRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
 func (m *mockZombieRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
 	return m.GetDeclarations()
 }

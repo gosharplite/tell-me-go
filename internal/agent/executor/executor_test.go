@@ -43,6 +43,29 @@ func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[st
 }
 func (m *mockToolRegistry) IsSerial(name string) bool      { return m.isSerial }
 func (m *mockToolRegistry) IsLongRunning(name string) bool { return false }
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *mockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
+func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}
 
 func TestOrchestrator_ContextCancellation(t *testing.T) {
 	t.Parallel()
@@ -264,6 +287,30 @@ func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[s
 func (m *orderMockRegistry) IsSerial(name string) bool      { return m.serialTools[name] }
 func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
 
+func (m *orderMockRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *orderMockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *orderMockRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
+func (m *orderMockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *orderMockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *orderMockRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}
+
 func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
@@ -457,14 +504,6 @@ func TestResultCollector_EmitEvent(t *testing.T) {
 	assert.Equal(t, "event_publish_failed", mockLogger.lastMsg)
 }
 
-func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
-}
-
-func (m *orderMockRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
-}
-
 func TestOrchestrator_Execute_PlanPanic(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
@@ -590,36 +629,4 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 	}
 
 	assert.True(t, hasFinished, "ConsentFinishedEvent should be published even if context is cancelled")
-}
-
-func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	return m.Register(def, handler)
-}
-
-func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *mockToolRegistry) ListAvailableToolkits() []string {
-	return []string{"core"}
-}
-
-func (m *orderMockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	return m.Register(def, handler)
-}
-
-func (m *orderMockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *orderMockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *orderMockRegistry) ListAvailableToolkits() []string {
-	return []string{"core"}
 }

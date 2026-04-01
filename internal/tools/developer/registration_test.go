@@ -77,6 +77,10 @@ func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDecl
 	return m.Register(def, handler)
 }
 
+func (m *mockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
 func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
 	return m.GetDeclarations()
 }
