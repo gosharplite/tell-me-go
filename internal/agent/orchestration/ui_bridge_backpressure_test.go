@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -68,6 +69,9 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 }
 
 func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
+	var buf syncWriter
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
 	mRenderer := new(mockUIRenderer)
 	// 1. Setup a block to freeze the actor loop
 	block := make(chan struct{})
@@ -80,11 +84,16 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	// Subsequent LogTurnStatus calls should return normally
 	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
 
-	// 3. Expect RenderResponse and LogSystemMessage to be CALLED during drain phase
+	// 3. Expect RenderResponse, LogSystemMessage, and Tool/Usage loggers to be CALLED during drain phase
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
 	mRenderer.On("LogSystemMessage", "critical shutdown warning", mock.Anything).Return().Once()
+	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
+	mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
 
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", logger)
+
+	// Define a custom dummy event for the unknown type test
+	type UnknownEvent struct{ events.Event }
 
 	// 4. Send the blocking event, then send events we want to test for fast-drain
 	// This event freezes the loop
@@ -95,6 +104,11 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "critical shutdown warning", Level: "warn"})
 	// This event should be skipped during fast drain (spinner)
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	// These tool/usage events should be processed during fast drain
+	bridge.handleEvent(context.Background(), events.ToolCallEvent{})
+	bridge.handleEvent(context.Background(), events.UsageMetricsEvent{Metrics: &llm.Metrics{}, Context: context.Background()})
+	// This event should be skipped during fast drain (unknown event type)
+	bridge.handleEvent(context.Background(), UnknownEvent{})
 	// This event should be PROCESSED even during fast drain
 	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 
@@ -116,6 +130,9 @@ func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
 
 	// 8. Assert expected calls. RenderResponse should have been called!
 	mRenderer.AssertExpectations(t)
+
+	// 9. Verify that the unknown event was skipped and logged
+	require.Contains(t, buf.String(), "Unknown event type skipped during drain")
 }
 
 func TestUIBridge_QoSRouting(t *testing.T) {
@@ -143,6 +160,21 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			expectBlocking: true,
 		},
 		{
+			name:           "Critical ToolCallEvent should block (enforce backpressure)",
+			event:          events.ToolCallEvent{Calls: []*llm.FunctionCall{{Name: "test"}}},
+			expectBlocking: true,
+		},
+		{
+			name:           "Critical ToolResultEvent should block (enforce backpressure)",
+			event:          events.ToolResultEvent{Name: "test", Result: tools.ToolResult{Text: "ok"}},
+			expectBlocking: true,
+		},
+		{
+			name:           "Critical UsageMetricsEvent should block (enforce backpressure)",
+			event:          events.UsageMetricsEvent{Metrics: &llm.Metrics{}, StartTime: time.Now()},
+			expectBlocking: true,
+		},
+		{
 			name:              "Critical event should respect context cancellation",
 			event:             events.ResponseEvent{},
 			expectBlocking:    false,
@@ -157,6 +189,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
 			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 			// 1. Setup a block to freeze the actor loop
 			block := make(chan struct{})
@@ -174,6 +209,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
 			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
 			defer func() {

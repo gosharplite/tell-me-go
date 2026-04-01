@@ -352,11 +352,14 @@ func (b *uiBridge) drain() {
 			case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent,
 				events.ConsentStartedEvent, events.ConsentFinishedEvent:
 				continue // Safely skip transient visual spinners and interactive states during shutdown
-			case events.ResponseEvent, events.SystemMessageEvent,
-				events.TurnStarted, events.TurnStatusEvent:
+			case events.ResponseEvent, events.SystemMessageEvent, events.StatusUpdate,
+				events.TurnStarted, events.TurnStatusEvent,
+				events.ToolCallEvent, events.ToolResultEvent,
+				events.UsageMetricsEvent:
 				b.processRecoverable(ev) // Guarantee final state/text delivery to the UI
 			default:
-				b.processRecoverable(e)
+				// Safely ignore unknown or unmapped events during the fast-drain phase
+				b.logger.Debug("Unknown event type skipped during drain", "type", fmt.Sprintf("%T", e))
 			}
 		default:
 			b.stopActiveSpinner()
@@ -387,7 +390,9 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 	switch e.(type) {
 	case events.ResponseEvent, events.SystemMessageEvent,
 		events.ConsentStartedEvent, events.ConsentFinishedEvent,
-		events.TurnStarted, events.TurnStatusEvent:
+		events.TurnStarted, events.TurnStatusEvent,
+		events.ToolCallEvent, events.ToolResultEvent,
+		events.UsageMetricsEvent:
 		// Critical events: ensure delivery and enforce true backpressure.
 		select {
 		case b.eventCh <- e:
