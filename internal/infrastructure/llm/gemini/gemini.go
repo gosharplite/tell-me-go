@@ -40,40 +40,28 @@ type Client struct {
 	logger            ports.Logger
 	httpTransport     http.RoundTripper
 	headers           map[string]string
+	timeout           time.Duration
 }
 
 // NewClient returns a new Gemini API client.
-func NewClient(apiURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration, opts ...geminiOption) (*Client, error) {
-	// Baseline defense against hung connections
-	if timeout == 0 {
-		timeout = 60 * time.Second
-	}
-
+func NewClient(apiURL, model string, authenticator auth.Authenticator, opts ...geminiOption) (*Client, error) {
 	c := &Client{
-		authenticator:     authenticator,
-		headers:           headers,
-		apiURL:            apiURL,
-		model:             model,
-		thinkingBudget:    thinkingBudget,
-		thinkingLevel:     thinkingLevel,
-		maxThinkingBudget: maxThinkingBudget,
-		useSearch:         useSearch,
-		eventBus:          bus,
-		logger:            &ports.NoOpLogger{},
+		apiURL:        apiURL,
+		model:         model,
+		authenticator: authenticator,
+		logger:        &ports.NoOpLogger{},
 	}
 
 	for _, opt := range opts {
 		opt(c)
 	}
 
-	if systemInstruction != "" {
-		c.systemInstruction = &llm.Content{
-			Role:  "system",
-			Parts: []*llm.Part{{Text: systemInstruction}},
-		}
+	// Baseline defense against hung connections
+	if c.timeout == 0 {
+		c.timeout = 60 * time.Second
 	}
 
-	if err := c.initSDK(timeout); err != nil {
+	if err := c.initSDK(c.timeout); err != nil {
 		return nil, err
 	}
 
@@ -87,6 +75,55 @@ type geminiOption func(*Client)
 func WithLogger(l ports.Logger) geminiOption {
 	return func(c *Client) {
 		c.logger = l
+	}
+}
+
+// WithHeaders sets the custom headers for the Gemini Client.
+func WithHeaders(headers map[string]string) geminiOption {
+	return func(c *Client) {
+		c.headers = headers
+	}
+}
+
+// WithThinking sets the thinking configuration for the Gemini Client.
+func WithThinking(budget int, level string, maxBudget int) geminiOption {
+	return func(c *Client) {
+		c.thinkingBudget = budget
+		c.thinkingLevel = level
+		c.maxThinkingBudget = maxBudget
+	}
+}
+
+// WithSystemInstruction sets the system instruction for the Gemini Client.
+func WithSystemInstruction(instruction string) geminiOption {
+	return func(c *Client) {
+		if instruction != "" {
+			c.systemInstruction = &llm.Content{
+				Role:  "system",
+				Parts: []*llm.Part{{Text: instruction}},
+			}
+		}
+	}
+}
+
+// WithSearch enables or disables the Google Search tool for the Gemini Client.
+func WithSearch(useSearch bool) geminiOption {
+	return func(c *Client) {
+		c.useSearch = useSearch
+	}
+}
+
+// WithEventBus sets the event bus for the Gemini Client.
+func WithEventBus(bus events.EventBus) geminiOption {
+	return func(c *Client) {
+		c.eventBus = bus
+	}
+}
+
+// WithTimeout sets the timeout for the Gemini Client.
+func WithTimeout(timeout time.Duration) geminiOption {
+	return func(c *Client) {
+		c.timeout = timeout
 	}
 }
 

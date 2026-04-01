@@ -20,7 +20,7 @@ import (
 
 func setupMockOpenAIServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *client) {
 	server := httptest.NewServer(handler)
-	c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0, nil)
+	c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"})
 	return server, c
 }
 
@@ -156,7 +156,7 @@ func TestDeepSeekReasoning(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+	client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"})
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	var thought, text string
@@ -200,7 +200,7 @@ func TestOpenAIReasoningTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "o1-mini", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+	client := NewClient(server.URL, "o1-mini", &auth.BearerAuth{Token: "key"})
 	_, metrics, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	if metrics.ThinkingTokens != 15 {
@@ -261,7 +261,7 @@ func TestToolCalling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"})
 
 	// 1. Initial call
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Weather?"}}}}
@@ -318,7 +318,7 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+	client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"})
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	if len(resp.Parts) != 2 {
@@ -333,7 +333,7 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 }
 
 func TestToOpenAIMessages_EmptyContent(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
+	c := NewClient("", "gpt-4", nil)
 	history := []*llm.Content{
 		{
 			Role:  "user",
@@ -366,7 +366,7 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 }
 
 func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
-	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0, nil)
+	client := NewClient("", "deepseek-reasoner", nil)
 	history := []*llm.Content{
 		{
 			Role:  "user",
@@ -452,7 +452,7 @@ func TestSendChat_Errors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+			client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"})
 			_, _, err := client.SendChat(context.Background(), nil, nil, nil)
 
 			if err == nil {
@@ -495,7 +495,7 @@ func TestToOpenAISchema(t *testing.T) {
 
 func TestInjectPersona(t *testing.T) {
 	t.Run("OpenAI Reasoner Persona", func(t *testing.T) {
-		c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0, 0, nil)
+		c := NewClient("", "o1-mini", nil, WithPersona("Be helpful"))
 		messages, _ := c.toStandardMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 2 || messages[0].Role != "developer" {
 			t.Errorf("expected developer role for persona in OpenAI reasoner, got %+v", messages[0])
@@ -503,7 +503,7 @@ func TestInjectPersona(t *testing.T) {
 	})
 
 	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
-		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0, nil)
+		c := NewClient("", "deepseek-reasoner", nil, WithPersona("Be helpful"))
 		messages, _ := c.toStandardMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 2 || messages[0].Role != "system" || messages[0].Content != "Be helpful" {
 			t.Errorf("expected system role for persona in DeepSeek, got %+v", messages[0])
@@ -512,7 +512,7 @@ func TestInjectPersona(t *testing.T) {
 }
 
 func TestGenerateImages_NotImplemented(t *testing.T) {
-	client := NewClient("", "", nil, nil, "", 0, 0, nil)
+	client := NewClient("", "", nil)
 	_, err := client.GenerateImages(context.Background(), "", "", "")
 	if err == nil {
 		t.Error("expected error for GenerateImages")
@@ -521,13 +521,13 @@ func TestGenerateImages_NotImplemented(t *testing.T) {
 
 func TestRefreshAuth(t *testing.T) {
 	auth := &auth.BearerAuth{Token: "old"}
-	client := NewClient("", "", auth, nil, "", 0, 0, nil)
+	client := NewClient("", "", auth)
 	_ = client.RefreshAuth()
 	// No easy way to check if invalidated without internal knowledge, but call it for coverage
 }
 
 func TestSendChat_MarshallingError(t *testing.T) {
-	client := NewClient("http://localhost", "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0, nil)
+	client := NewClient("http://localhost", "gpt-4", &auth.BearerAuth{Token: "test-key"})
 	history := []*llm.Content{
 		{
 			Role: "model",
@@ -556,7 +556,7 @@ func TestSendChat_MarshallingError(t *testing.T) {
 }
 
 func TestToOpenAIMessages_MultiToolResponse(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
+	c := NewClient("", "gpt-4", nil)
 	history := []*llm.Content{
 		{
 			Role: "user",
@@ -616,7 +616,7 @@ func TestCacheHitReporting(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+		client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"})
 		_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -651,7 +651,7 @@ func TestCacheHitReporting(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+		client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"})
 		_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -666,7 +666,7 @@ func TestCacheHitReporting(t *testing.T) {
 func TestOpenAI_InternalErrors(t *testing.T) {
 	t.Run("Authenticator Error", func(t *testing.T) {
 		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
-		c := NewClient("", "gpt-4", errAuth, nil, "", 0, 0, nil)
+		c := NewClient("", "gpt-4", errAuth)
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
 			t.Errorf("expected auth error, got %v", err)
@@ -674,7 +674,7 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 	})
 
 	t.Run("Invalid URL", func(t *testing.T) {
-		c := NewClient(" :invalid", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+		c := NewClient(" :invalid", "gpt-4", &auth.BearerAuth{Token: "key"})
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed to create request") {
 			t.Errorf("expected request creation error, got %v", err)
@@ -684,7 +684,7 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 	t.Run("HTTP Request Failure", func(t *testing.T) {
 		// A URL that will fail on Do()
 
-		c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0, nil)
+		c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"})
 		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
 		if err == nil || !strings.Contains(err.Error(), "request failed") {
 			t.Errorf("expected request failure error, got %v", err)
@@ -717,7 +717,7 @@ func TestOpenAI_EdgeCase_MarshalResponse(t *testing.T) {
 }
 
 func TestOpenAI_EdgeCase_ToOpenAITools(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
+	c := NewClient("", "gpt-4", nil)
 	decls := []*tools.ToolDeclaration{
 		{
 			Name:        "test",
@@ -737,7 +737,7 @@ func TestOpenAI_EdgeCase_ToOpenAITools(t *testing.T) {
 }
 
 func TestOpenAI_EdgeCase_ParseResponseContent(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
+	c := NewClient("", "gpt-4", nil)
 	content := &llm.Content{}
 	c.parseResponseContent([]interface{}{
 		map[string]interface{}{"type": "text", "text": ""},
@@ -750,7 +750,7 @@ func TestOpenAI_EdgeCase_ParseResponseContent(t *testing.T) {
 }
 
 func TestOpenAI_EdgeCase_ParseResponseToolCalls(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
+	c := NewClient("", "gpt-4", nil)
 	content := &llm.Content{}
 	err := c.parseResponseToolCalls([]toolCall{
 		{
@@ -765,7 +765,7 @@ func TestOpenAI_EdgeCase_ParseResponseToolCalls(t *testing.T) {
 }
 
 func TestDeepSeekEmptyReasoningContent(t *testing.T) {
-	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0, nil)
+	client := NewClient("", "deepseek-reasoner", nil)
 	history := []*llm.Content{
 		{
 			Role: "model",
@@ -798,7 +798,7 @@ func TestDeepSeekEmptyReasoningContent(t *testing.T) {
 func TestOpenAI_ResetConnections(t *testing.T) {
 	t.Run("initialized client", func(t *testing.T) {
 		// NewClient initializes the transport
-		client := NewClient("", "gpt-4", nil, nil, "", 0, 0, nil)
+		client := NewClient("", "gpt-4", nil)
 		if client.transport == nil {
 			t.Fatal("expected transport to be initialized")
 		}

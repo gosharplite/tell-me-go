@@ -147,14 +147,10 @@ func runSendChatTest(t *testing.T, tt sendChatTestCase) {
 		apiURL,
 		"test-model",
 		authenticator,
-		nil,
-		tt.thinkingBudget,
-		tt.thinkingBudgetSeverity,
-		0,
-		tt.systemInstruction,
-		false,
-		bus,
-		5*time.Second,
+		WithThinking(tt.thinkingBudget, tt.thinkingBudgetSeverity, 0),
+		WithSystemInstruction(tt.systemInstruction),
+		WithEventBus(bus),
+		WithTimeout(5*time.Second),
 	)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
@@ -199,7 +195,7 @@ func TestRefreshAuth(t *testing.T) {
 	authenticator := &auth.VertexAuth{Token: "test-token"}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	inframock.CleanupBus(t, bus)
-	client, _ := NewClient(apiURL, "test-model", authenticator, nil, 0, "", 0, "", false, bus, 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", authenticator, WithEventBus(bus), WithTimeout(5*time.Second))
 
 	err := client.RefreshAuth()
 	if err != nil {
@@ -265,7 +261,7 @@ func runGenerateImagesTest(t *testing.T, tt generateImagesTestCase) {
 	apiURL := "http://localhost/v1" // Trigger GeminiAPI backend with v1
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	inframock.CleanupBus(t, bus)
-	client, err := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, nil, 0, "", 0, "", false, bus, 5*time.Second)
+	client, err := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, WithEventBus(bus), WithTimeout(5*time.Second))
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -599,7 +595,7 @@ func TestFormatFinishError(t *testing.T) {
 func TestGemini_InternalErrors(t *testing.T) {
 	t.Run("Authenticator Error in NewClient", func(t *testing.T) {
 		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
-		_, err := NewClient("http://localhost", "gemini-1.5-flash", errAuth, nil, 0, "", 0, "", false, nil, 0)
+		_, err := NewClient("http://localhost", "gemini-1.5-flash", errAuth)
 		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
 			t.Errorf("expected auth error, got %v", err)
 		}
@@ -701,7 +697,7 @@ func TestGemini_ResetConnections(t *testing.T) {
 		// Use a Vertex AI style URL to avoid mandatory API key check in SDK for Google AI backend
 		apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 		authenticator := &auth.BearerAuth{Token: "test-token"}
-		client, err := NewClient(apiURL, "gemini-1.5-flash", authenticator, nil, 0, "", 0, "", false, nil, 0)
+		client, err := NewClient(apiURL, "gemini-1.5-flash", authenticator)
 		if err != nil {
 			t.Fatalf("failed to create client: %v", err)
 		}
@@ -723,7 +719,7 @@ func TestGemini_ResetConnections_ThreadSafety(t *testing.T) {
 	// Use a Vertex AI style URL to avoid mandatory API key check in SDK for Google AI backend
 	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.BearerAuth{Token: "test-token"}
-	client, err := NewClient(apiURL, "gemini-1.5-flash", authenticator, nil, 0, "", 0, "", false, nil, 0)
+	client, err := NewClient(apiURL, "gemini-1.5-flash", authenticator)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

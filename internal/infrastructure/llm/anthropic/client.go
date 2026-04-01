@@ -31,19 +31,67 @@ type client struct {
 	thinkingBudget int
 	persona        string
 	logger         ports.Logger
+	timeout        time.Duration
+}
+
+// anthropicOption defines a functional option for configuring the Anthropic Client.
+type anthropicOption func(*client)
+
+// WithHeaders sets the custom headers for the Anthropic Client.
+func WithHeaders(headers map[string]string) anthropicOption {
+	return func(c *client) {
+		c.headers = headers
+	}
+}
+
+// WithPersona sets the initial persona instruction for the Anthropic Client.
+func WithPersona(persona string) anthropicOption {
+	return func(c *client) {
+		c.persona = persona
+	}
+}
+
+// WithTimeout sets the HTTP timeout for the Anthropic Client.
+func WithTimeout(timeout time.Duration) anthropicOption {
+	return func(c *client) {
+		c.timeout = timeout
+	}
+}
+
+// WithThinkingBudget sets the thinking budget for models that support it.
+func WithThinkingBudget(budget int) anthropicOption {
+	return func(c *client) {
+		c.thinkingBudget = budget
+	}
+}
+
+// WithLogger sets the logger for the Anthropic Client.
+func WithLogger(l ports.Logger) anthropicOption {
+	return func(c *client) {
+		c.logger = l
+	}
 }
 
 // NewClient creates a new Anthropic client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int, persona string, timeout time.Duration, logger ports.Logger) *client {
-	if logger == nil {
-		logger = &ports.NoOpLogger{}
-	}
+func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...anthropicOption) *client {
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com/v1"
 	}
+
+	c := &client{
+		authenticator: authenticator,
+		baseURL:       strings.TrimSuffix(baseURL, "/"),
+		model:         model,
+		logger:        &ports.NoOpLogger{},
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
 	// Baseline defense against hung connections
-	if timeout == 0 {
-		timeout = 60 * time.Second
+	if c.timeout == 0 {
+		c.timeout = 60 * time.Second
 	}
 
 	var tr http.RoundTripper
@@ -53,17 +101,10 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 		tr = http.DefaultTransport
 	}
 
-	return &client{
-		httpClient:     &http.Client{Timeout: timeout, Transport: tr},
-		transport:      tr,
-		authenticator:  authenticator,
-		baseURL:        strings.TrimSuffix(baseURL, "/"),
-		model:          model,
-		headers:        headers,
-		thinkingBudget: thinkingBudget,
-		persona:        persona,
-		logger:         logger,
-	}
+	c.transport = tr
+	c.httpClient = &http.Client{Timeout: c.timeout, Transport: tr}
+
+	return c
 }
 
 type messagesRequest struct {
