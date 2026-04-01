@@ -37,7 +37,7 @@ func TestOrchestrator_SessionID_DegradationWarning(t *testing.T) {
 
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
-	
+
 	entropyErr := fmt.Errorf("OS entropy exhaustion")
 	mEntropy.On("Read", mock.Anything).Return(nil, 0, entropyErr)
 

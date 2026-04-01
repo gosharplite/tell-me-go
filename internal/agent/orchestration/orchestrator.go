@@ -341,15 +341,15 @@ func (b *uiBridge) loop() {
 		}
 
 		select {
+		case <-b.ctx.Done():
+			b.drain()
+			return
 		case e, ok := <-b.eventCh:
 			if !ok {
 				b.stopActiveSpinner()
 				return
 			}
 			b.processRecoverable(e)
-		case <-b.ctx.Done():
-			b.drain()
-			return
 		}
 	}
 }

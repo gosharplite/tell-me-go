@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"crypto/rand"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -16,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
-	"crypto/rand"
 	"github.com/stretchr/testify/require"
 	"log/slog"
 )

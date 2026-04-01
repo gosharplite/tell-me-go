@@ -139,9 +139,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
 	tests := []struct {
-		name              string
-		event             events.Event
-		expectBlocking    bool
+		name               string
+		event              events.Event
+		expectBlocking     bool
 		isContextCancelled bool
 	}{
 		{
@@ -175,9 +175,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			expectBlocking: true,
 		},
 		{
-			name:              "Critical event should respect context cancellation",
-			event:             events.ResponseEvent{},
-			expectBlocking:    false,
+			name:               "Critical event should respect context cancellation",
+			event:              events.ResponseEvent{},
+			expectBlocking:     false,
 			isContextCancelled: true,
 		},
 	}

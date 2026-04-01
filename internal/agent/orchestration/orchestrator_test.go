@@ -828,7 +828,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 		"Chatter.SetTieredThreshold", // Apply cost threshold
 		"Chatter.Chat",               // Start conversation
 		"UIRenderer.StartSpinnerWithStatus",
-		"Chatter.Shutdown", // Stop Producers first
+		"Chatter.Shutdown",       // Stop Producers first
 		"UIRenderer.StopSpinner", // Stop Consumer second (deterministic)
 	}
 
@@ -1515,12 +1515,12 @@ func TestOrchestrator_SessionID_Fallback(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-	
+
 	// Exact match on Session ID
 	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
 		return s.ID == expectedSessionID
 	}), "hello").Return(nil)
-	
+
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
@@ -1566,12 +1566,12 @@ func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-	
+
 	// Exact match on Session ID
 	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
 		return s.ID == expectedSessionID
 	}), "hello").Return(nil)
-	
+
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
@@ -1594,12 +1594,12 @@ func TestOrchestrator_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
-	
+
 	// Entropy source returns a short read (e.g., only 4 bytes instead of 8)
 	shortEntropy := []byte{0x01, 0x02, 0x03, 0x04}
 	mEntropy.On("Read", mock.Anything).Return(shortEntropy, len(shortEntropy), nil).Once()
-	// io.ReadFull will call Read again if it didn't get enough bytes, 
-	// or it might fail immediately depending on the reader. 
+	// io.ReadFull will call Read again if it didn't get enough bytes,
+	// or it might fail immediately depending on the reader.
 	// For most readers, it calls until full or error.
 	// If we want to simulate EOF or short read that doesn't continue:
 	mEntropy.On("Read", mock.Anything).Return(nil, 0, io.EOF).Maybe()
@@ -1626,11 +1626,11 @@ func TestOrchestrator_SessionID_ShortRead_Fallback(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-	
+
 	mChatter.On("Chat", mock.Anything, mock.MatchedBy(func(s *ports.Session) bool {
 		return s.ID == expectedSessionID
 	}), "hello").Return(nil)
-	
+
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
