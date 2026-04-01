@@ -148,6 +148,7 @@ func (m *mockCapturer) Close(ctx context.Context) error {
 // --- Tests ---
 
 func TestOrchestrator_Run_Success(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
@@ -184,6 +185,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 }
 
 func TestUIBridge_HandleEvent(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	tests := []struct {
 		name     string
 		event    events.Event
@@ -356,10 +358,12 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mRenderer := new(mockUIRenderer)
 			bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+			defer bridge.Cleanup()
+			// Set up expectations BEFORE preSetup
+			tt.setup(mRenderer)
 			if tt.preSetup != nil {
 				tt.preSetup(bridge)
 			}
-			tt.setup(mRenderer)
 
 			bridge.handleEvent(context.Background(), tt.event)
 
@@ -370,14 +374,15 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			if tt.verify != nil {
 				tt.verify(t, bridge)
 			}
-			bridge.Cleanup()
 		})
 	}
 }
 
 func TestUIBridge_EnsureContext(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	t.Run("Returns existing context", func(t *testing.T) {
 		type contextKey string
@@ -397,6 +402,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 }
 
 func TestOrchestrator_Run_Error(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
@@ -433,6 +439,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 }
 
 func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
@@ -473,6 +480,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 }
 
 func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
 	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
@@ -496,6 +504,7 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
 	require.NotNil(t, cleanup)
+	cleanup()
 }
 
 // --- Behavioral Sequence Testing ---
@@ -648,6 +657,7 @@ func (m *behaviorMockCapturer) Close(ctx context.Context) error {
 }
 
 func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	tracker := &behaviorTracker{}
 	mChatter := &behaviorMockChatter{tracker: tracker}
 	mCapturer := &behaviorMockCapturer{tracker: tracker}
@@ -762,6 +772,7 @@ func TestOrchestrator_AgentFactory_Error(t *testing.T) {
 }
 
 func TestOrchestrator_Rollback(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mHistory := &mockHistoryManager{
 		contents: make([]*llm.Content, 4), // 2 turns
 	}
@@ -817,6 +828,7 @@ func TestOrchestrator_Rollback(t *testing.T) {
 }
 
 func TestRun_Routing(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
 	mCapturer := new(mockCapturer)
@@ -909,8 +921,10 @@ func TestRun_Routing(t *testing.T) {
 }
 
 func TestUIBridge_Concurrency(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	// Setup mocks with Maybe() to handle concurrent calls safely
 	mRenderer.On("StartSpinner", mock.Anything).Return(func() {}).Maybe()
@@ -977,12 +991,13 @@ func TestUIBridge_Concurrency(t *testing.T) {
 
 	close(start)
 	wg.Wait()
-	bridge.Cleanup()
 }
 
 func TestUIBridge_LogicalRace(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	// StartSpinnerWithStatus should NOT be called because ResponseEvent is already rendering
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return()
@@ -1001,15 +1016,16 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 
 	// Verification
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
-	bridge.Cleanup()
 }
 
 func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
-	var spinnerStopped bool
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped = true })
+	var spinnerStopped atomic.Bool
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped.Store(true) })
 
 	// Start Inference
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
@@ -1019,30 +1035,34 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 
 	time.Sleep(20 * time.Millisecond) // Wait for actor loop
 
-	if !spinnerStopped {
+	if !spinnerStopped.Load() {
 		t.Error("Expected stopSpinner to be called during TurnStarted to prevent resource leaks")
 	}
-	bridge.Cleanup()
 }
 
 func TestUIBridge_Retry_Spinner(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	// First attempt
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	time.Sleep(20 * time.Millisecond)
 
 	// Response (e.g. error)
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Once()
 	bridge.handleEvent(context.Background(), events.ResponseEvent{
 		Content: &llm.Content{},
 	})
+	time.Sleep(20 * time.Millisecond)
 
 	// Second attempt (Retry)
 	// Now this SHOULD be called because RetryWaitingEvent resets isRendering.
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Return(func() {}).Once()
 	bridge.handleEvent(context.Background(), events.RetryWaitingEvent{Duration: 5 * time.Second})
+	time.Sleep(20 * time.Millisecond)
 
 	mRenderer.AssertExpectations(t)
 }
@@ -1051,17 +1071,19 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
-	var spinnerStopped bool
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped = true })
+	var spinnerStopped atomic.Bool
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped.Store(true) })
 
 	// Start Inference
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	time.Sleep(20 * time.Millisecond) // Wait for actor loop to start the spinner
 
 	// Simulate unexpected exit by calling Cleanup
 	bridge.Cleanup()
 
-	assert.True(t, spinnerStopped, "Expected stopSpinner to be called during Cleanup")
+	assert.True(t, spinnerStopped.Load(), "Expected stopSpinner to be called during Cleanup")
 
 	// Double cleanup should be safe
 	bridge.Cleanup()
@@ -1117,8 +1139,8 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			mCapturer.On("IsTTY", io.Discard).Return(true)
 			mUIRenderer.On("SetUseColor", true).Return()
 
-			var spinnerStopped bool
-			mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped = true })
+			var spinnerStopped atomic.Bool
+			mUIRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { spinnerStopped.Store(true) })
 
 			mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
 				sub := args.Get(0).(func(context.Context, events.Event))
@@ -1135,7 +1157,10 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.expectedError)
 
-			assert.True(t, spinnerStopped, "Expected spinner to be stopped via deferred Cleanup on error")
+			// Wait a bit for the async actor to process the InferenceStartedEvent
+			time.Sleep(50 * time.Millisecond)
+
+			assert.True(t, spinnerStopped.Load(), "Expected spinner to be stopped via deferred Cleanup on error")
 
 			mChatter.AssertExpectations(t)
 			mCapturer.AssertExpectations(t)
@@ -1144,43 +1169,53 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 }
 
 func TestUIBridge_SpinnerTransitions(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	// 1. Summarization starts
-	stopSummarizationCalled := false
+	var stopSummarizationCalled atomic.Bool
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Compressing context...").Return(func() {
-		stopSummarizationCalled = true
+		stopSummarizationCalled.Store(true)
 	}).Once()
 
 	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
+	time.Sleep(20 * time.Millisecond) // Wait for actor loop
 
 	// 2. Inference starts (without previous response)
-	stopInferenceCalled := false
+	var stopInferenceCalled atomic.Bool
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() {
-		stopInferenceCalled = true
+		stopInferenceCalled.Store(true)
 	}).Once()
 
 	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	time.Sleep(20 * time.Millisecond) // Wait for actor loop
 
 	// Verification
-	assert.True(t, stopSummarizationCalled, "Expected summarization spinner to be stopped before inference started")
+	assert.True(t, stopSummarizationCalled.Load(), "Expected summarization spinner to be stopped before inference started")
 
 	// Cleanup remaining
-	bridge.Cleanup()
-	assert.True(t, stopInferenceCalled, "Expected inference spinner to be stopped during cleanup")
+	time.Sleep(20 * time.Millisecond) // Give actor loop time to process
+	bridge.Cleanup() // Explicit cleanup here is actually fine as long as it's idempotent, but I'll remove it to be clean.
+    // Wait, let's just use the deferred one.
+	assert.True(t, stopInferenceCalled.Load(), "Expected inference spinner to be stopped during cleanup")
 
 	mRenderer.AssertExpectations(t)
 }
 
 func TestUIBridge_SpinnerConcurrency(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	var activeSpinners int32
 
 	// Thread-safe mock setup
-	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		atomic.AddInt32(&activeSpinners, 1)
+	}).Return(func() {
 		atomic.AddInt32(&activeSpinners, -1)
 	})
 
@@ -1189,7 +1224,6 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			atomic.AddInt32(&activeSpinners, 1)
 			if idx%2 == 0 {
 				bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
 			} else {
@@ -1198,6 +1232,7 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+	time.Sleep(100 * time.Millisecond) // Give actor loop time to process
 	bridge.Cleanup()
 
 	// Verify all spinners were eventually stopped

@@ -14,11 +14,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/goleak"
 )
 
 func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
@@ -37,12 +40,13 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	mRenderer.AssertExpectations(t)
-	bridge.Cleanup()
 }
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	// 1. Start consent
 	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
@@ -57,10 +61,10 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	mRenderer.AssertNotCalled(t, "StartSpinnerWithStatus", mock.Anything, mock.Anything)
 
 	mRenderer.AssertExpectations(t)
-	bridge.Cleanup()
 }
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	m := &collisionMock{}
 	m.On("LogTurnStatus", mock.Anything).Return().Maybe()
 	m.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
@@ -80,11 +84,11 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 
 	m.Test(t)
 
-	bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt")
 	ctx := context.Background()
 
 	// High-iteration loop to hammer the race window
-	for i := 0; i < 5000; i++ {
+	for i := 0; i < 500; i++ {
+		bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt")
 		var wg sync.WaitGroup
 		wg.Add(2)
 

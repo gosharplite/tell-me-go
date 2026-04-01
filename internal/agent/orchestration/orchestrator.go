@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -242,6 +243,8 @@ type uiBridge struct {
 	activePhase         events.Event
 	eventCh             chan events.Event
 	done                chan struct{}
+	stopOnce            sync.Once
+	wg                  sync.WaitGroup
 }
 
 func (b *uiBridge) stopActiveSpinner() {
@@ -262,7 +265,10 @@ func (b *uiBridge) resumeActiveSpinner() {
 
 // Cleanup stops any active spinner.
 func (b *uiBridge) Cleanup() {
-	close(b.done)
+	b.stopOnce.Do(func() {
+		close(b.done)
+	})
+	b.wg.Wait()
 }
 
 // newUIBridge creates a new uiBridge.
@@ -278,14 +284,20 @@ func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, s
 		eventCh:      make(chan events.Event, 100),
 		done:         make(chan struct{}),
 	}
+	b.wg.Add(1)
 	go b.loop()
 	return b
 }
 
 func (b *uiBridge) loop() {
+	defer b.wg.Done()
 	for {
 		select {
-		case e := <-b.eventCh:
+		case e, ok := <-b.eventCh:
+			if !ok {
+				b.stopActiveSpinner()
+				return
+			}
 			func() {
 				defer func() {
 					if r := recover(); r != nil {

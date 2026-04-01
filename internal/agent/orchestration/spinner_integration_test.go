@@ -21,6 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/goleak"
 )
 
 // controlledTicker allows us to trigger ticks manually for spinner frames.
@@ -68,6 +69,7 @@ func (c *controlledClock) Tick() {
 }
 
 func TestSpinner_E2E_Visibility(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	// 1. Setup Environment
 	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
 	clock := &controlledClock{
@@ -156,6 +158,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 }
 
 func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	// This test ensures that if the event bus handler times out (5s),
 	// the spinner continues to run because it's using the bridge's session context.
 
@@ -171,6 +174,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// Create bridge with a long-lived context
 	sessionCtx := context.Background()
 	bridge := newUIBridge(sessionCtx, uiRenderer, true, true, false, true, "log.txt")
+	defer bridge.Cleanup()
 
 	// Simulate InferenceStartedEvent arriving via a short-lived handler context
 	handlerCtx, cancel := context.WithTimeout(sessionCtx, 100*time.Millisecond)
