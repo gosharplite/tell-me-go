@@ -223,46 +223,119 @@ func TestIsTTY_False(t *testing.T) {
 	}
 }
 
-func TestCaptureFromTTY(t *testing.T) {
+func TestCaptureFromTTY_TableDriven(t *testing.T) {
 	t.Parallel()
-	inputStr := "tty input"
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  strings.NewReader(inputStr),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
+
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T) (io.Reader, io.Closer)
+		ctxFunc func() (context.Context, context.CancelFunc)
+		want    string
+		wantErr error
+	}{
+		{
+			name: "Multi-line Input",
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				go func() {
+					_, _ = pw.Write([]byte("line 1\nline 2"))
+					_ = pw.Close()
+				}()
+				return pr, nil // closer handled by goroutine or t.Cleanup if we wanted but pw.Close() is key
+			},
+			ctxFunc: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			want: "line 1\nline 2",
+		},
+		{
+			name: "Empty Input",
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				_ = pw.Close()
+				return pr, nil
+			},
+			ctxFunc: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			want: "",
+		},
+		{
+			name: "Context Cancellation",
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				t.Cleanup(func() { _ = pr.Close(); _ = pw.Close() })
+				return pr, nil
+			},
+			ctxFunc: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+				return ctx, cancel
+			},
+			wantErr: context.DeadlineExceeded,
+		},
+		{
+			name: "Input Size Limit",
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				go func() {
+					// Write more than 1MB
+					data := make([]byte, 1024*1024+100)
+					for i := range data {
+						data[i] = 'A'
+					}
+					_, _ = pw.Write(data)
+					_ = pw.Close()
+				}()
+				return pr, nil
+			},
+			ctxFunc: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			want: strings.Repeat("A", 1024*1024), // Should be truncated to maxPromptSize
+		},
 	}
 
-	prompt, err := capturer.captureFromTTY(context.Background(), false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			stdin, closer := tt.setup(t)
+			if closer != nil {
+				defer closer.Close()
+			}
+			if f, ok := stdin.(*os.File); ok {
+				defer f.Close()
+			}
 
-	if prompt != inputStr {
-		t.Errorf("expected %q, got %q", inputStr, prompt)
-	}
-}
+			ctx, cancel := tt.ctxFunc()
+			defer cancel()
 
-func TestCaptureFromTTY_Cancel(t *testing.T) {
-	t.Parallel()
-	pr, pw := io.Pipe()
-	t.Cleanup(func() {
-		_ = pr.Close()
-		_ = pw.Close()
-	})
+			c := &capturer{
+				Stdin:  stdin,
+				Stdout: io.Discard,
+				Stderr: io.Discard,
+				Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
+			}
 
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  pr,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+			got, err := c.captureFromTTY(ctx, false)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("expected error %v, got %v", tt.wantErr, err)
+				}
+				return
+			}
 
-	_, err := capturer.captureFromTTY(ctx, false)
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled, got %v", err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got != tt.want {
+				t.Errorf("got length %d, want %d", len(got), len(tt.want))
+				if len(got) < 100 {
+					t.Errorf("got %q, want %q", got, tt.want)
+				}
+			}
+		})
 	}
 }
 
@@ -480,74 +553,94 @@ func TestCapturer_ReadLine_ContextCancellation_Concurrency(t *testing.T) {
 	}
 }
 
-func TestCapturer_ReadSingleKey(t *testing.T) {
+func TestReadSingleKey_Comprehensive(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		mockAnswer string
-		setupInput func(t *testing.T) io.Reader
-		setupCtx   func() (context.Context, context.CancelFunc)
-		want       string
-		wantErr    bool
+		name                   string
+		mockAnswer             string
+		isTTYOverride          *bool
+		disableEscapeSequences bool
+		setup                  func(t *testing.T) (io.Reader, io.Closer)
+		ctxFunc                func() (context.Context, context.CancelFunc)
+		want                   string
+		wantErr                string
 	}{
 		{
-			name:       "fast return with mockAnswer",
+			name:       "Mock Answer",
 			mockAnswer: "Yes",
-			setupInput: func(t *testing.T) io.Reader {
-				return nil // Shouldn't be read
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				return nil, nil
 			},
-			setupCtx: func() (context.Context, context.CancelFunc) {
+			ctxFunc: func() (context.Context, context.CancelFunc) {
 				return context.WithCancel(context.Background())
 			},
-			want:    "y",
-			wantErr: false,
+			want: "y",
 		},
 		{
-			name:       "context cancellation triggers readByteFallback",
-			mockAnswer: "",
-			setupInput: func(t *testing.T) io.Reader {
-				pr, pw := io.Pipe()
-				t.Cleanup(func() {
-					_ = pr.Close()
-					_ = pw.Close()
-				})
-				// It's an io.Reader but not an *os.File, so it triggers fallback immediately
-				return pr
+			name:          "Non-TTY Pipe",
+			isTTYOverride: boolPtr(false),
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				return pr, pw
 			},
-			setupCtx: func() (context.Context, context.CancelFunc) {
+			ctxFunc: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			wantErr: "confirmation required but not running in a terminal",
+		},
+		{
+			name:          "Simulated TTY Pipe",
+			isTTYOverride: boolPtr(true),
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				_, _ = pw.Write([]byte("K"))
+				return pr, pw
+			},
+			ctxFunc: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			want: "k",
+		},
+		{
+			name: "Context Cancellation",
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				return pr, pw
+			},
+			ctxFunc: func() (context.Context, context.CancelFunc) {
 				ctx, cancel := context.WithCancel(context.Background())
-				cancel() // Cancel immediately
+				cancel()
 				return ctx, cancel
 			},
-			want:    "",
-			wantErr: true,
+			wantErr: context.Canceled.Error(),
 		},
 		{
-			name:       "non-TTY os.File triggers readByteFallback and reads byte",
-			mockAnswer: "",
-			setupInput: func(t *testing.T) io.Reader {
-				f, err := os.CreateTemp(t.TempDir(), "test-stdin-*")
-				if err != nil {
-					t.Fatalf("failed to create temp file: %v", err)
-				}
-				t.Cleanup(func() { _ = f.Close() })
-
-				_, err = f.Write([]byte("x"))
-				if err != nil {
-					t.Fatalf("failed to write to temp file: %v", err)
-				}
-				_, err = f.Seek(0, 0) // rewind to beginning
-				if err != nil {
-					t.Fatalf("failed to seek: %v", err)
-				}
-				return f
+			name:          "Ctrl+C (ETX)",
+			isTTYOverride: boolPtr(true),
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				_, _ = pw.Write([]byte{3})
+				return pr, pw
 			},
-			setupCtx: func() (context.Context, context.CancelFunc) {
+			ctxFunc: func() (context.Context, context.CancelFunc) {
 				return context.WithCancel(context.Background())
 			},
-			want:    "x",
-			wantErr: false,
+			wantErr: context.Canceled.Error(),
+		},
+		{
+			name:                   "Fallback when not TTY but escape sequences disabled",
+			isTTYOverride:          boolPtr(false),
+			disableEscapeSequences: true,
+			setup: func(t *testing.T) (io.Reader, io.Closer) {
+				pr, pw, _ := os.Pipe()
+				_, _ = pw.Write([]byte("Z"))
+				return pr, pw
+			},
+			ctxFunc: func() (context.Context, context.CancelFunc) {
+				return context.WithCancel(context.Background())
+			},
+			want: "z",
 		},
 	}
 
@@ -555,24 +648,43 @@ func TestCapturer_ReadSingleKey(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			stdin, closer := tt.setup(t)
+			if closer != nil {
+				defer closer.Close()
+			}
 
-			stdin := tt.setupInput(t)
-			ctx, cancel := tt.setupCtx()
-			t.Cleanup(cancel)
+			ctx, cancel := tt.ctxFunc()
+			defer cancel()
 
-			// Construct Capturer with isolated Stdin
-			// Using correct NewCapturer signature:
-			// func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.Manager, clk clock.Clock, mockPrompt, mockAnswer string) domain_security.UserInteractor
-			c := NewCapturer(stdin, io.Discard, io.Discard, nil, nil, "", tt.mockAnswer, true)
+			c := &capturer{
+				Stdin:                  stdin,
+				Stdout:                 io.Discard,
+				Stderr:                 io.Discard,
+				mockAnswer:             tt.mockAnswer,
+				isTTYOverride:          tt.isTTYOverride,
+				disableEscapeSequences: tt.disableEscapeSequences,
+				reader:                 bufio.NewReader(stdin),
+			}
 
 			got, err := c.ReadSingleKey(ctx)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ReadSingleKey() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.wantErr)
+				} else if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
+				}
 				return
 			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
 			if got != tt.want {
-				t.Errorf("ReadSingleKey() got = %v, want %v", got, tt.want)
+				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
+
+func boolPtr(b bool) *bool { return &b }
