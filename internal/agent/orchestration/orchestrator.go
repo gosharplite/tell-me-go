@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -259,6 +260,8 @@ type uiBridge struct {
 	activePhase         events.Event
 	eventCh             chan events.Event
 	closeOnce           sync.Once
+	cleanupOnce         sync.Once
+	cleanupInvocations  int32
 	wg                  sync.WaitGroup
 	cleanupTimeout      time.Duration
 	isPoisoned          bool
@@ -299,29 +302,33 @@ func (b *uiBridge) CloseInput() {
 // Cleanup stops any active spinner and waits for events to drain.
 // It assumes CloseInput() has already been called.
 func (b *uiBridge) Cleanup() {
-	// 1. Set up the wait mechanism
-	done := make(chan struct{})
-	go func() {
-		b.wg.Wait()
-		close(done)
-	}()
+	b.cleanupOnce.Do(func() {
+		atomic.AddInt32(&b.cleanupInvocations, 1)
 
-	// 2. Wait with timeout
-	timer := time.NewTimer(b.cleanupTimeout)
-	defer timer.Stop()
+		// 1. Set up the wait mechanism
+		done := make(chan struct{})
+		go func() {
+			b.wg.Wait()
+			close(done)
+		}()
 
-	select {
-	case <-done:
-		// Clean exit: all workers finished draining within the timeout
-		b.cancel()
-	case <-timer.C:
-		// Timeout reached: The renderer might be deadlocked or too slow.
-		b.logger.Warn("UI Bridge cleanup timed out, forcing context cancellation")
+		// 2. Wait with timeout
+		timer := time.NewTimer(b.cleanupTimeout)
+		defer timer.Stop()
 
-		// Forcefully unblock the hanging renderer, which unblocks the loop,
-		// allowing the background wg.Wait() goroutine to eventually exit.
-		b.cancel()
-	}
+		select {
+		case <-done:
+			// Clean exit: all workers finished draining within the timeout
+			b.cancel()
+		case <-timer.C:
+			// Timeout reached: The renderer might be deadlocked or too slow.
+			b.logger.Warn("UI Bridge cleanup timed out, forcing context cancellation")
+
+			// Forcefully unblock the hanging renderer, which unblocks the loop,
+			// allowing the background wg.Wait() goroutine to eventually exit.
+			b.cancel()
+		}
+	})
 }
 
 // newUIBridge creates a new uiBridge.

@@ -107,23 +107,15 @@ func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 		close(cleanupDone)
 	}()
 
-	// 6. Give Cleanup some time to reach the Wait() call
-	time.Sleep(10 * time.Millisecond)
-
-	// 7. Unblock the loop
+	// 6. Unblock the loop immediately. The pipeline is deterministic.
 	close(block)
 
-	// Wait for the cleanup goroutine to finish
-	timeout := 5 * time.Second
-	if deadline, ok := t.Deadline(); ok {
-		timeout = time.Until(deadline) / 2
-	}
-
+	// 7. Wait for the cleanup goroutine to finish using a channel (e.g., cleanupDone)
 	select {
 	case <-cleanupDone:
-		// Success
-	case <-time.After(timeout):
-		t.Fatal("Cleanup did not finish even after unblocking")
+		// Success - drained gracefully
+	case <-time.After(2 * time.Second): // Generous timeout for test failure
+		t.Fatal("Cleanup did not finish even after unblocking; pipeline is deadlocked")
 	}
 
 	// 8. Assert expectations. All events should have been processed.
