@@ -57,7 +57,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	wg.Wait()
 
 	// Final cleanup must stop any remaining spinner
-	bridge.sync(context.Background())
+	syncBridge(t, bridge, mRenderer)
 	bridge.Cleanup()
 
 	assert.Equal(t, int32(0), atomic.LoadInt32(&activeSpinners), "Every started spinner must be stopped eventually")

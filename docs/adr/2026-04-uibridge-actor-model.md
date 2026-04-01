@@ -36,10 +36,10 @@ To ensure 100% reliability and zero flakiness, the following rules are enforced 
     })
     // ... wait for <-done with timeout
     ```
-*   **Rule 3: Negative Synchronization via Queue Flushing**: When asserting that an action did *not* occur (e.g., `AssertNotCalled`), use the `sync()` helper. This helper sends a special `syncEvent` through the bridge and waits for the actor to process it, guaranteeing that all previous events in the queue have been handled.
+*   **Rule 3: Negative Synchronization via Sentinel Events**: When asserting that an action did *not* occur (e.g., `AssertNotCalled`), use the `syncBridge()` helper. This helper sends a sentinel domain event (e.g. `SystemMessageEvent`) through the bridge and waits for its corresponding mock call, guaranteeing that all previous events in the queue have been handled.
     ```go
     bridge.handleEvent(ctx, someEvent)
-    bridge.sync(ctx) // Flushes the queue
+    syncBridge(t, bridge, mRenderer) // Flushes the queue using a sentinel
     mRenderer.AssertNotCalled(t, "ForbiddenAction")
     ```
 

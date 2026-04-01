@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -130,27 +131,25 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		// Phase A: Inference Starts
 		capturedHandler(ctx, events.InferenceStartedEvent{})
 
-		// Wait for the goroutine to process event
-		reply := make(chan struct{})
-		capturedHandler(ctx, syncEvent{reply: reply})
-		<-reply
+		// Wait for the spinner to start and write to stderr
+		assert.Eventually(t, func() bool {
+			return strings.Contains(stderrRaw.String(), "Thinking...")
+		}, 5*time.Second, 10*time.Millisecond)
 
 		// Phase B: Ticks (Spinner frames)
 		clock.Tick() // Frame 1
 		select {
 		case <-stderr.onWrite:
 		case <-time.After(2 * time.Second):
+			t.Error("Timeout waiting for spinner frame 1")
 		}
 
 		clock.Tick() // Frame 2
 		select {
 		case <-stderr.onWrite:
 		case <-time.After(2 * time.Second):
+			t.Error("Timeout waiting for spinner frame 2")
 		}
-
-		reply2 := make(chan struct{})
-		capturedHandler(ctx, syncEvent{reply: reply2})
-		<-reply2
 
 		// Phase C: Response arrives
 		capturedHandler(ctx, events.ResponseEvent{
@@ -214,8 +213,10 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 
 	bridge.handleEvent(handlerCtx, events.InferenceStartedEvent{})
 
-	// Wait for actor loop to process event
-	bridge.sync(sessionCtx)
+	// Wait for the spinner to start
+	assert.Eventually(t, func() bool {
+		return strings.Contains(stderrRaw.String(), "Thinking...")
+	}, 5*time.Second, 10*time.Millisecond)
 
 	// Trigger ticks - if the spinner is still alive, these will succeed
 	stderrRaw.Reset()
@@ -223,11 +224,13 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	select {
 	case <-stderr.onWrite:
 	case <-time.After(2 * time.Second):
+		t.Error("Timeout waiting for spinner tick after handler context expired")
 	}
 	clock.Tick()
 	select {
 	case <-stderr.onWrite:
 	case <-time.After(2 * time.Second):
+		t.Error("Timeout waiting for second spinner tick")
 	}
 
 	output := stderrRaw.String()

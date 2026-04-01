@@ -73,7 +73,6 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 	// Now that it's asynchronous, bus.Publish doesn't return an error from the actor's panic.
 	assert.NoError(t, err)
-	bridge.sync(ctx) // Wait for actor loop to panic and recover
 
 	// Phase 2: The Recovery/Follow-up
 	mock.mu.Lock()
@@ -81,9 +80,14 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	mock.mu.Unlock()
 	uniqueMsg := "recovered and processing"
 	err = bus.Publish(ctx, events.StatusUpdate{Message: uniqueMsg, Level: "info"})
-
 	assert.NoError(t, err)
-	bridge.sync(ctx) // Wait for second event processing
+
+	assert.Eventually(t, func() bool {
+		mock.mu.Lock()
+		defer mock.mu.Unlock()
+		return mock.lastMsg == uniqueMsg
+	}, 5*time.Second, 10*time.Millisecond)
+
 	mock.mu.Lock()
 	assert.Equal(t, uniqueMsg, mock.lastMsg)
 	assert.Equal(t, "info", mock.lastLevel)

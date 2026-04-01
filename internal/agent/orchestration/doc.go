@@ -20,9 +20,9 @@ Rules for uiBridge:
 Tests in this package must be 100% deterministic and are forbidden from using time.Sleep for synchronization.
 
 Patterns for Testing:
-  - Positive Tests: Use testify/mock's .Run() method to signal a channel when a mock is called.
-  - Negative Tests: Use the bridge.sync() helper to flush the event queue. This sends a syncEvent
-    through the actor loop, guaranteeing that all previously queued events have been processed before
-    assertions (like AssertNotCalled) are made.
+  - Outside-In Synchronization: Use mocks to signal when an operation completes. For negative assertions
+    (AssertNotCalled), send a sentinel event that you know is handled by the bridge and wait for its
+    corresponding mock call to ensure all previously queued events were processed.
+  - Integration Tests: Use Eventually blocks to poll for expected side effects (e.g. stderr output).
 */
 package orchestration
