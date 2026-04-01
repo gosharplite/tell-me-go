@@ -5,6 +5,7 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"os"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestUIRendererGolden(t *testing.T) {
 			IsPostCall:       false,
 		}
 
-		r.LogTurnStatus(status)
+		r.LogTurnStatus(context.Background(), status)
 
 		verifyGolden(t, "turn_status_pre.golden", stderr.String())
 	})
@@ -81,7 +82,7 @@ func TestUIRendererGolden(t *testing.T) {
 			},
 		}
 
-		r.LogTurnStatus(status)
+		r.LogTurnStatus(context.Background(), status)
 
 		verifyGolden(t, "turn_status_post.golden", stderr.String())
 	})

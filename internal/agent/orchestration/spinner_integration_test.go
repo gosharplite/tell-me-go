@@ -6,6 +6,7 @@ package orchestration
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -69,7 +70,9 @@ func (c *controlledClock) Tick() {
 
 func TestSpinner_E2E_Visibility(t *testing.T) {
 	// 1. Setup Environment
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdoutRaw, stderrRaw := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stderr := &syncWriter{Writer: stderrRaw, onWrite: make(chan struct{}, 100)}
+	stdout := stdoutRaw
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		tickChannel: make(chan time.Time, 1),
@@ -89,7 +92,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		return mChatter, nil
 	}
 
-	orch := newOrchestrator("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer)
+	orch := newOrchestrator("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
 
 	// 2. Mock Agent Behavior
 	// When Chat is called, it will emit events via the event bus.
@@ -111,14 +114,28 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		// Phase A: Inference Starts
 		capturedHandler(ctx, events.InferenceStartedEvent{})
 
-		// Wait for the goroutine to draw first frame
-		time.Sleep(50 * time.Millisecond)
+		// Wait for the spinner to start and write to stderr
+		select {
+		case <-stderr.onWrite:
+		case <-time.After(5 * time.Second):
+			t.Fatal("Timeout waiting for spinner start")
+		}
+		assert.Contains(t, stderrRaw.String(), "Thinking...")
 
 		// Phase B: Ticks (Spinner frames)
 		clock.Tick() // Frame 1
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-stderr.onWrite:
+		case <-time.After(2 * time.Second):
+			t.Error("Timeout waiting for spinner frame 1")
+		}
+
 		clock.Tick() // Frame 2
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-stderr.onWrite:
+		case <-time.After(2 * time.Second):
+			t.Error("Timeout waiting for spinner frame 2")
+		}
 
 		// Phase C: Response arrives
 		capturedHandler(ctx, events.ResponseEvent{
@@ -138,7 +155,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 4. Assertions on Stderr
-	output := stderr.String()
+	output := stderrRaw.String()
 
 	// Check for Thinking message
 	assert.Contains(t, output, "Thinking...", "Spinner message not found in stderr")
@@ -159,7 +176,9 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// This test ensures that if the event bus handler times out (5s),
 	// the spinner continues to run because it's using the bridge's session context.
 
-	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stdoutRaw, stderrRaw := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	stderr := &syncWriter{Writer: stderrRaw, onWrite: make(chan struct{}, 100)}
+	stdout := stdoutRaw
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		tickChannel: make(chan time.Time, 1),
@@ -170,7 +189,18 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 
 	// Create bridge with a long-lived context
 	sessionCtx := context.Background()
-	bridge := newUIBridge(sessionCtx, uiRenderer, true, true, false, true, "log.txt")
+	bridge := newUIBridge(sessionCtx, uiRenderer,
+		withBridgeThoughts(true),
+		withBridgeTools(true),
+		withBridgeRawOutput(false),
+		withBridgeColor(true),
+		withBridgeLogFile("log.txt"),
+		withBridgeLogger(slog.Default()),
+	)
+	defer func() {
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
 
 	// Simulate InferenceStartedEvent arriving via a short-lived handler context
 	handlerCtx, cancel := context.WithTimeout(sessionCtx, 100*time.Millisecond)
@@ -178,17 +208,30 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 
 	bridge.handleEvent(handlerCtx, events.InferenceStartedEvent{})
 
-	// Wait for handler context to expire
-	time.Sleep(200 * time.Millisecond)
+	// Wait for the spinner to start
+	select {
+	case <-stderr.onWrite:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for spinner start")
+	}
+	assert.Contains(t, stderrRaw.String(), "Thinking...")
 
 	// Trigger ticks - if the spinner is still alive, these will succeed
-	stderr.Reset()
+	stderrRaw.Reset()
 	clock.Tick()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-stderr.onWrite:
+	case <-time.After(2 * time.Second):
+		t.Error("Timeout waiting for spinner tick after handler context expired")
+	}
 	clock.Tick()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-stderr.onWrite:
+	case <-time.After(2 * time.Second):
+		t.Error("Timeout waiting for second spinner tick")
+	}
 
-	output := stderr.String()
+	output := stderrRaw.String()
 	assert.Contains(t, output, "⠙", "Spinner should still be ticking even after handler context expired")
 
 	// Cleanup

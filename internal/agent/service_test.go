@@ -280,6 +280,7 @@ func TestProcessMessage(t *testing.T) {
 				deps.On("GetPaths").Return(&persistence.Paths{})
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
+				deps.On("GetLogger").Return(slog.Default())
 
 				bus.On("Shutdown", mock.Anything).Return(nil)
 

@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -22,6 +24,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // orchestrator manages the session lifecycle and agent execution.
@@ -35,6 +38,8 @@ type orchestrator struct {
 	AgentFactory    ports.ChatterFactory
 	HistoryRenderer ports.HistoryRenderer
 	UIRenderer      ports.UIRenderer
+	Clock           clock.Clock
+	EntropySource   io.Reader
 }
 
 // sessionConfig contains configuration for a single session execution.
@@ -119,7 +124,7 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 }
 
 // newOrchestrator creates a new orchestrator.
-func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer) Orchestrator {
+func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) Orchestrator {
 	return &orchestrator{
 		HomeDir:         homeDir,
 		Version:         version,
@@ -130,6 +135,8 @@ func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 		AgentFactory:    factory,
 		HistoryRenderer: historyRenderer,
 		UIRenderer:      uiRenderer,
+		Clock:           clk,
+		EntropySource:   entropy,
 	}
 }
 
@@ -150,27 +157,32 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 		return fmt.Errorf("failed to initialize agent: %w", err)
 	}
 
+	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
+	// Single defer to guarantee deterministic teardown order:
+	// Stop Producers first, then Consumers.
 	defer func() {
+		// 1. Stop Producers (Agent) first
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
 		defer cancel()
 		if err := chatAgent.Shutdown(shutdownCtx); err != nil {
 			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)
 		}
-	}()
 
-	cleanupUI, err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic)
-	if cleanupUI != nil {
-		defer cleanupUI()
-	}
+		// 2. Clean up Consumer (UI) second
+		if bridge != nil {
+			bridge.CloseInput()
+			bridge.Cleanup()
+		}
+	}()
 	if err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
 	b := make([]byte, 8)
 	var sessionID string
-	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp if entropy source fails
-		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+	if _, err := io.ReadFull(o.EntropySource, b); err != nil {
+		_, _ = fmt.Fprintf(o.Stderr, "[WARN] Entropy source failure, degrading to time-based session ID: %v\n", err)
+		sessionID = fmt.Sprintf("session-%d", o.Clock.Now().UnixNano())
 	} else {
 		sessionID = fmt.Sprintf("session-%s", hex.EncodeToString(b))
 	}
@@ -200,9 +212,6 @@ func (o *orchestrator) Rollback(ctx context.Context, sc ports.SessionConfig, sd 
 
 // RenderHistory renders the last N messages from history.
 func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool) {
-	if sCfg.GetLastN() <= 0 {
-		return
-	}
 	cfg := sCfg.GetConfig()
 	o.HistoryRenderer.Render(o.Stdout, hManager, sCfg.GetLastN(), ports.HistoryRenderOptions{
 		Raw:          sCfg.GetRawOutput(),
@@ -211,28 +220,77 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer ports.Capturer) (func(), error) {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*uiBridge, error) {
 	cfg := sCfg.GetConfig()
-	cleanup := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
+	paths := sd.GetPaths()
+	pData := sd.GetPricingData()
+	logger := sd.GetLogger()
+	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
-		return cleanup, err
+		return bridge, err
 	}
-	return cleanup, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
+	return bridge, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ports.Capturer) func() {
+func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) *uiBridge {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
-	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
+	bridge := newUIBridge(ctx, o.UIRenderer,
+		withBridgeThoughts(cfg.ShowThoughts),
+		withBridgeTools(cfg.ShowTools),
+		withBridgeRawOutput(rawOutput),
+		withBridgeColor(useColor),
+		withBridgeLogFile(logPath),
+		withBridgeLogger(logger),
+	)
 	chatAgent.Subscribe(bridge.handleEvent)
-	return bridge.Cleanup
+	return bridge
+}
+
+// bridgeOption configures a uiBridge instance.
+type bridgeOption func(*uiBridge)
+
+// withBridgeThoughts enables or disables thought rendering.
+func withBridgeThoughts(show bool) bridgeOption {
+	return func(b *uiBridge) { b.showThoughts = show }
+}
+
+// withBridgeTools enables or disables tool call rendering.
+func withBridgeTools(show bool) bridgeOption {
+	return func(b *uiBridge) { b.showTools = show }
+}
+
+// withBridgeRawOutput enables or disables raw output mode.
+func withBridgeRawOutput(raw bool) bridgeOption {
+	return func(b *uiBridge) { b.rawOutput = raw }
+}
+
+// withBridgeColor enables or disables ANSI color support.
+func withBridgeColor(color bool) bridgeOption {
+	return func(b *uiBridge) { b.useColor = color }
+}
+
+// withBridgeLogFile sets the file path for logging usage metrics.
+func withBridgeLogFile(path string) bridgeOption {
+	return func(b *uiBridge) { b.logFile = path }
+}
+
+// withBridgeLogger sets the structured logger.
+func withBridgeLogger(l *slog.Logger) bridgeOption {
+	return func(b *uiBridge) { b.logger = l }
+}
+
+// withBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
+func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
+	return func(b *uiBridge) { b.cleanupTimeout = d }
 }
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
-	mu                  sync.Mutex
 	ctx                 context.Context
+	cancel              context.CancelFunc
 	renderer            ports.UIRenderer
+	logger              *slog.Logger
 	showThoughts        bool
 	showTools           bool
 	rawOutput           bool
@@ -242,67 +300,188 @@ type uiBridge struct {
 	isRendering         bool
 	isWaitingForConsent bool
 	activePhase         events.Event
+	eventCh             chan events.Event
+	closeOnce           sync.Once
+	cleanupOnce         sync.Once
+	cleanupInvocations  int32
+	wg                  sync.WaitGroup
+	cleanupTimeout      time.Duration
+	isPoisoned          bool
+	isClosed            atomic.Bool
 }
 
 func (b *uiBridge) stopActiveSpinner() {
-	b.mu.Lock()
 	stop := b.stopSpinner
 	b.stopSpinner = nil
-	b.mu.Unlock()
 
 	if stop != nil {
-		stop()
+		// Protect the boundary against double-panics from external UI dependencies
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					b.logger.Debug("Recovered from panic while stopping spinner", "panic", r)
+				}
+			}()
+			stop()
+		}()
 	}
 }
 
 func (b *uiBridge) resumeActiveSpinner() {
-	b.mu.Lock()
 	phase := b.activePhase
-	b.mu.Unlock()
 	if phase != nil {
 		b.startSpinnerForPhase(phase)
 	}
 }
 
-// Cleanup stops any active spinner.
+// CloseInput safely closes the event channel. This MUST be called by the producer
+// (Orchestrator) after all sending goroutines have finished.
+func (b *uiBridge) CloseInput() {
+	b.closeOnce.Do(func() {
+		b.isClosed.Store(true)
+		close(b.eventCh)
+	})
+}
+
+// Cleanup stops any active spinner and waits for events to drain.
+// It assumes CloseInput() has already been called.
 func (b *uiBridge) Cleanup() {
-	b.stopActiveSpinner()
+	b.cleanupOnce.Do(func() {
+		atomic.AddInt32(&b.cleanupInvocations, 1)
+
+		// 1. Set up the wait mechanism
+		done := make(chan struct{})
+		go func() {
+			b.wg.Wait()
+			close(done)
+		}()
+
+		// 2. Wait with timeout
+		timer := time.NewTimer(b.cleanupTimeout)
+		defer timer.Stop()
+
+		select {
+		case <-done:
+			// Clean exit: all workers finished draining within the timeout
+			b.cancel()
+		case <-timer.C:
+			// Timeout reached: The renderer might be deadlocked or too slow.
+			b.logger.Warn("UI Bridge cleanup timed out, forcing context cancellation")
+
+			// Forcefully unblock the hanging renderer, which unblocks the loop,
+			// allowing the background wg.Wait() goroutine to eventually exit.
+			b.cancel()
+		}
+	})
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(ctx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
+func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
+	ctx, cancel := context.WithCancel(parentCtx)
 	b := &uiBridge{
-		ctx:          ctx,
-		renderer:     renderer,
-		showThoughts: showThoughts,
-		showTools:    showTools,
-		rawOutput:    rawOutput,
-		useColor:     useColor,
-		logFile:      logFile,
+		ctx:            ctx,
+		cancel:         cancel,
+		renderer:       renderer,
+		logger:         slog.Default(),
+		eventCh:        make(chan events.Event, 100),
+		cleanupTimeout: 5 * time.Second,
 	}
+	for _, opt := range opts {
+		opt(b)
+	}
+	if b.logger == nil {
+		b.logger = slog.Default()
+	}
+	b.wg.Add(1)
+	go b.loop()
 	return b
+}
+
+func (b *uiBridge) loop() {
+	defer b.wg.Done()
+	for {
+		select {
+		case <-b.ctx.Done():
+			// Forced abort (only happens if UI is deadlocked and Cleanup times out)
+			b.stopActiveSpinner()
+			return
+		case e, ok := <-b.eventCh:
+			if !ok {
+				// Channel closed by producer (via Cleanup), natural drain complete
+				b.stopActiveSpinner()
+				return
+			}
+			b.processRecoverable(e)
+		}
+	}
+}
+
+func (b *uiBridge) processRecoverable(e events.Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			b.isPoisoned = true
+			b.logger.Error("uiBridge actor recovered from panic", "error", r)
+			b.logger.Debug("uiBridge recovery stack trace", "stack", string(debug.Stack()))
+			b.stopActiveSpinner()
+			// Trigger shutdown to avoid unpredictable state
+			b.cancel()
+		}
+	}()
+	b.processEvent(e)
 }
 
 // handleEvent processes a domain event and updates the UI.
 func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
-	b.processEvent(ctx, e)
+	if b.isClosed.Load() {
+		b.logger.Debug("Shedding event: bridge is closed")
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Log as Warn/Error since it's now unexpected (last-resort safety)
+			b.logger.Warn("Unexpected panic in uiBridge.handleEvent", "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+
+	if b.ctx.Err() != nil {
+		return
+	}
+
+	if isCriticalEvent(e) {
+		// Critical events: ensure delivery and enforce true backpressure.
+		select {
+		case b.eventCh <- e:
+			// Queued successfully
+		case <-ctx.Done():
+			b.logger.Debug("Caller context cancelled while waiting to queue critical event")
+		case <-b.ctx.Done():
+			b.logger.Debug("Bridge shutting down, dropping critical event")
+		}
+		return
+	}
+
+	// Safe to shed visual/transient events if queue is full
+	select {
+	case b.eventCh <- e:
+	case <-ctx.Done():
+	case <-b.ctx.Done():
+	default:
+		b.logger.Debug("UI Bridge queue full, shedding load/visual event")
+	}
 }
 
-func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
+func (b *uiBridge) processEvent(e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.handleTurnStatus(ev)
 	case events.InferenceStartedEvent, events.SummarizationStartedEvent, events.ToolExecutionStartedEvent, events.RetryWaitingEvent:
 		b.handleSpinnerEvent(ev)
 	case events.ConsentStartedEvent:
-		b.mu.Lock()
 		b.isWaitingForConsent = true
-		b.mu.Unlock()
 		b.stopActiveSpinner()
 	case events.ConsentFinishedEvent:
-		b.mu.Lock()
 		b.isWaitingForConsent = false
-		b.mu.Unlock()
 		b.resumeActiveSpinner()
 	case events.ResponseEvent:
 		b.handleResponse(ev)
@@ -328,75 +507,45 @@ func (b *uiBridge) handleSystemMessage(e events.Event) {
 		return
 	}
 	b.stopActiveSpinner()
-	b.renderer.LogSystemMessage(msg, lvl)
+	b.renderer.LogSystemMessage(b.ctx, msg, lvl)
 	b.resumeActiveSpinner()
 }
 
 func (b *uiBridge) handleSpinnerEvent(e events.Event) {
-	b.mu.Lock()
 	b.activePhase = e
-	b.mu.Unlock()
 	b.startSpinnerForPhase(e)
 }
 
 func (b *uiBridge) startSpinnerForPhase(e events.Event) {
-	switch ev := e.(type) {
-	case events.InferenceStartedEvent:
-		status := " Thinking..."
-		if ev.Model != "" {
-			status = fmt.Sprintf(" Thinking [%s]...", ev.Model)
-		}
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, status)
-		})
-	case events.SummarizationStartedEvent:
-		b.mu.Lock()
-		b.isRendering = false
-		b.mu.Unlock()
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, " Compressing context...")
-		})
-	case events.ToolExecutionStartedEvent:
-		b.mu.Lock()
-		b.isRendering = false // Reset state to allow tool spinner after inference
-		b.mu.Unlock()
-
-		status := " Executing tools..."
-		if len(ev.ToolNames) == 1 {
-			status = fmt.Sprintf(" Executing [%s]...", ev.ToolNames[0])
-		} else if len(ev.ToolNames) > 1 {
-			status = fmt.Sprintf(" Executing tools [%s]...", strings.Join(ev.ToolNames, ", "))
-		}
-
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithMetrics(b.ctx, status)
-		})
-	case events.RetryWaitingEvent:
-		b.mu.Lock()
-		b.isRendering = false
-		b.mu.Unlock()
-		b.transitionSpinner(func() func() {
-			return b.renderer.StartSpinnerWithStatus(b.ctx, fmt.Sprintf(" Retrying in %v...", ev.Duration.Round(time.Second)))
-		})
+	info, ok := getSpinnerInfo(e)
+	if !ok {
+		return
 	}
+
+	if info.resetRendering {
+		b.isRendering = false
+	}
+
+	b.transitionSpinner(func() func() {
+		if info.withMetrics {
+			return b.renderer.StartSpinnerWithMetrics(b.ctx, info.status)
+		}
+		return b.renderer.StartSpinnerWithStatus(b.ctx, info.status)
+	})
 }
 
 func (b *uiBridge) handleTurnStatus(ev events.TurnStatusEvent) {
-	b.mu.Lock()
 	b.isRendering = false
 	b.activePhase = nil // Clear phase on new turn/header
-	b.mu.Unlock()
 	b.stopActiveSpinner()
-	b.renderer.LogTurnStatus(ev.Status)
+	b.renderer.LogTurnStatus(b.ctx, ev.Status)
 }
 
 func (b *uiBridge) handleResponse(ev events.ResponseEvent) {
-	b.mu.Lock()
 	b.isRendering = true
 	b.activePhase = nil // Clear phase on response
-	b.mu.Unlock()
 	b.stopActiveSpinner()
-	b.renderer.RenderResponse(ev.Content, b.showThoughts, b.rawOutput)
+	b.renderer.RenderResponse(b.ctx, ev.Content, b.showThoughts, b.rawOutput)
 }
 
 func (b *uiBridge) handleUsageMetrics(ev events.UsageMetricsEvent) {
@@ -410,65 +559,33 @@ func (b *uiBridge) handleToolEvents(e events.Event) {
 	switch ev := e.(type) {
 	case events.ToolCallEvent:
 		b.stopActiveSpinner()
-		b.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
+		b.renderer.LogToolCall(b.ctx, ev.Calls, ev.Turn, ev.MaxTurns, b.showTools)
 		b.resumeActiveSpinner()
 	case events.ToolResultEvent:
 		b.stopActiveSpinner()
-		b.renderer.LogToolResult(ev.Name, ev.Result, b.showTools)
+		b.renderer.LogToolResult(b.ctx, ev.Name, ev.Result, b.showTools)
 		b.resumeActiveSpinner()
 	}
 }
 
 func (b *uiBridge) handleTurnStarted() {
-	b.mu.Lock()
 	b.isRendering = false
 	b.activePhase = nil
-	b.mu.Unlock()
 	b.stopActiveSpinner()
 }
 
 func (b *uiBridge) transitionSpinner(startFn func() func()) {
-	b.mu.Lock()
 	if b.isRendering || b.isWaitingForConsent {
-		b.mu.Unlock()
-		return
-	}
-	oldStop := b.stopSpinner
-	b.stopSpinner = nil
-	b.mu.Unlock()
-
-	// Stop the old spinner OUTSIDE the lock
-	if oldStop != nil {
-		oldStop()
-	}
-
-	// Start the new spinner
-	newStop := startFn()
-
-	// Safely assign the new spinner, watching out for race conditions
-	b.mu.Lock()
-	// ARCHITECTURAL FIX: Re-verify ALL suppression states (Rendering OR Consent)
-	// after the period where the mutex was released.
-	if b.isRendering || b.isWaitingForConsent {
-		b.mu.Unlock()
-		newStop() // Immediately terminate the new spinner to prevent UI overlap
 		return
 	}
 
-	// CAPTURE any spinner assigned by a concurrent thread while we were unlocked
-	leakedStop := b.stopSpinner
-	b.stopSpinner = newStop
-	b.mu.Unlock()
-
-	// Stop the leaked spinner OUTSIDE the lock to prevent deadlocks
-	if leakedStop != nil {
-		leakedStop()
-	}
+	b.stopActiveSpinner()
+	b.stopSpinner = startFn()
 }
 
 func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Context {
 	if ctx == nil {
-		b.renderer.LogSystemMessage(name+" missing context", "warn")
+		b.renderer.LogSystemMessage(b.ctx, name+" missing context", "warn")
 		return context.Background()
 	}
 	return ctx
@@ -494,11 +611,22 @@ type RunParams struct {
 	Config          *config.Config
 	Deps            ports.SessionDependencies
 	Capturer        ports.Capturer
+	Clock           clock.Clock
+	EntropySource   io.Reader
 }
 
 // Run is the high-level entry point for running a chat session.
 // It simplifies the public API by encapsulating internal component assembly.
 func Run(ctx context.Context, params RunParams) error {
+	clk := params.Clock
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	entropy := params.EntropySource
+	if entropy == nil {
+		entropy = rand.Reader
+	}
+
 	orch := newOrchestrator(
 		params.HomeDir,
 		params.Version,
@@ -509,6 +637,8 @@ func Run(ctx context.Context, params RunParams) error {
 		params.AgentFactory,
 		params.HistoryRenderer,
 		params.UIRenderer,
+		clk,
+		entropy,
 	)
 
 	sCfg := newSessionConfig(
@@ -521,26 +651,69 @@ func Run(ctx context.Context, params RunParams) error {
 		params.Config,
 	)
 
-	// Behavior 1: Render History (if requested)
 	isTTY := params.Capturer.IsTTY(params.Stdout)
-	orch.RenderHistory(params.Deps.GetHistoryManager(), sCfg, isTTY)
 
-	// Behavior 2: Handle Rollback (if requested)
+	// Phase 1: Render History (if requested)
+	if sCfg.GetLastN() > 0 {
+		orch.RenderHistory(params.Deps.GetHistoryManager(), sCfg, isTTY)
+	}
+
+	// Phase 2: Handle Rollback (if requested)
 	if sCfg.GetBackN() > 0 {
 		if err := orch.Rollback(ctx, sCfg, params.Deps); err != nil {
 			return err
 		}
-		// If no prompt was provided alongside -b, exit early.
-		if sCfg.GetPrompt() == "" {
-			return nil
+	}
+
+	// Phase 3: Main Orchestration Loop (Chat)
+	// Execute chat only if a prompt is provided. This removes CLI-specific early exits.
+	if sCfg.GetPrompt() != "" {
+		return orch.Run(ctx, sCfg, params.Deps, params.Capturer)
+	}
+
+	return nil
+}
+
+func isCriticalEvent(e events.Event) bool {
+	switch e.(type) {
+	case events.ResponseEvent, events.SystemMessageEvent,
+		events.ConsentStartedEvent, events.ConsentFinishedEvent,
+		events.TurnStarted, events.TurnStatusEvent,
+		events.ToolCallEvent, events.ToolResultEvent,
+		events.UsageMetricsEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+type spinnerInfo struct {
+	status         string
+	withMetrics    bool
+	resetRendering bool
+}
+
+func getSpinnerInfo(e events.Event) (spinnerInfo, bool) {
+	switch ev := e.(type) {
+	case events.InferenceStartedEvent:
+		status := " Thinking..."
+		if ev.Model != "" {
+			status = fmt.Sprintf(" Thinking [%s]...", ev.Model)
 		}
+		return spinnerInfo{status: status, withMetrics: false, resetRendering: false}, true
+	case events.SummarizationStartedEvent:
+		return spinnerInfo{status: " Compressing context...", withMetrics: false, resetRendering: true}, true
+	case events.ToolExecutionStartedEvent:
+		status := " Executing tools..."
+		if len(ev.ToolNames) == 1 {
+			status = fmt.Sprintf(" Executing [%s]...", ev.ToolNames[0])
+		} else if len(ev.ToolNames) > 1 {
+			status = fmt.Sprintf(" Executing tools [%s]...", strings.Join(ev.ToolNames, ", "))
+		}
+		return spinnerInfo{status: status, withMetrics: true, resetRendering: true}, true
+	case events.RetryWaitingEvent:
+		return spinnerInfo{status: fmt.Sprintf(" Retrying in %v...", ev.Duration.Round(time.Second)), withMetrics: false, resetRendering: true}, true
+	default:
+		return spinnerInfo{}, false
 	}
-
-	// Behavior 3: Handle History-only display (early exit)
-	if sCfg.GetPrompt() == "" && sCfg.GetLastN() > 0 {
-		return nil
-	}
-
-	// Behavior 4: Main Orchestration Loop (Chat)
-	return orch.Run(ctx, sCfg, params.Deps, params.Capturer)
 }

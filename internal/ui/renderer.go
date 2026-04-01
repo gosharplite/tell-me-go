@@ -72,7 +72,7 @@ func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk c
 	}
 	if err != nil {
 		// Fallback: the renderer will be nil, and we'll handle it in renderMarkdown
-		r.LogSystemMessage(fmt.Sprintf("failed to initialize glamour renderer: %v", err), "warn")
+		r.LogSystemMessage(context.Background(), fmt.Sprintf("failed to initialize glamour renderer: %v", err), "warn")
 	}
 	return r
 }
@@ -289,7 +289,7 @@ func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, star
 		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, m.ThinkingTokens, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
 }
 
-func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
+func (r *stdUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
 	if r.locker != nil {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
@@ -313,7 +313,7 @@ func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	}
 }
 
-func (r *stdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
+func (r *stdUIRenderer) RenderResponse(ctx context.Context, respContent *llm.Content, showThoughts, rawOutput bool) {
 	if r.locker != nil {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
@@ -534,7 +534,7 @@ func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {
 	_, _ = fmt.Fprint(ui.stderr, "\r"+ui.c(termClearLine))
 }
 
-func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+func (r *stdUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 	if r.locker != nil {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
@@ -575,7 +575,7 @@ func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 	}
 }
 
-func (r *stdUIRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {
+func (r *stdUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
 	if !showTools {
 		return
 	}
@@ -611,7 +611,7 @@ func (r *stdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 	}
 }
 
-func (r *stdUIRenderer) LogSystemMessage(msg string, level string) {
+func (r *stdUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
 	if r.locker != nil {
 		r.locker.TerminalLock()
 		defer r.locker.TerminalUnlock()
