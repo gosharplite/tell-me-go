@@ -380,19 +380,9 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 		case b.eventCh <- e:
 			// Queued successfully
 		case <-ctx.Done():
-			b.logger.Debug("Caller context cancelled while queuing critical event")
+			b.logger.Debug("Caller context cancelled while waiting to queue critical event")
 		case <-b.ctx.Done():
 			b.logger.Debug("Bridge shutting down, dropping critical event")
-		default:
-			// Queue is saturated. Enforce backpressure by blocking until space is available,
-			// or contexts are cancelled.
-			select {
-			case b.eventCh <- e:
-			case <-ctx.Done():
-				b.logger.Debug("Caller context cancelled while waiting to queue critical event")
-			case <-b.ctx.Done():
-				b.logger.Debug("Bridge shutting down, dropping critical event")
-			}
 		}
 	default:
 		// Safe to shed visual/transient events if queue is full

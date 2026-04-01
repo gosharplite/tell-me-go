@@ -50,7 +50,18 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 
 	// The 102nd event should NOT block because of the non-blocking select with default case.
 	// It is natively synchronous and returns instantly if load shedding is working.
-	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+	done := make(chan struct{})
+	go func() {
+		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success
+	case <-time.After(1 * time.Second):
+		t.Fatal("UI Bridge queue full, but handleEvent blocked unexpectedly (load-shedding failed)")
+	}
 
 	// Verify that the debug message was logged
 	require.Contains(t, buf.String(), "UI Bridge queue full, shedding load/visual event")
@@ -201,18 +212,111 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 					close(done)
 				}()
 
+				// Give it a very short window to fail if it was supposed to block but didn't.
+				// This is much less flaky than the original 200ms "success" wait.
 				select {
 				case <-done:
-					t.Errorf("%s: bridge.handleEvent should have blocked but returned", tt.name)
-				case <-time.After(200 * time.Millisecond):
-					// Success: it blocked!
+					t.Fatalf("%s: bridge.handleEvent should have blocked but returned early", tt.name)
+				case <-time.After(50 * time.Millisecond):
+					// Likely blocking, proceed to unblock.
+				}
+
+				// Deterministic: Unblock the queue and assert successful delivery!
+				close(block)
+
+				select {
+				case <-done:
+					// Success: It successfully waited and then delivered the event.
+				case <-time.After(2 * time.Second):
+					t.Fatalf("%s: Deadlock! Event never processed after queue unblocked", tt.name)
 				}
 			} else {
-				// For non-blocking cases (load shedding or cancelled context),
-				// it should be synchronous and return instantly.
-				// If a regression occurs and it hangs, the test suite timeout will catch it.
-				bridge.handleEvent(ctx, tt.event)
+				// Non-blocking case: fail fast if regression causes a hang
+				done := make(chan struct{})
+				go func() {
+					bridge.handleEvent(ctx, tt.event)
+					close(done)
+				}()
+
+				select {
+				case <-done:
+					// Success: it load-shed or respected context cancellation and returned immediately
+				case <-time.After(1 * time.Second):
+					t.Fatalf("%s: Regression: Load-shedding failed, handleEvent blocked unexpectedly", tt.name)
+				}
 			}
 		})
+	}
+}
+
+func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	mRenderer := new(mockUIRenderer)
+	// Block the loop on a critical event
+	block := make(chan struct{})
+	inMock := make(chan struct{}, 1)
+
+	mRenderer.On("LogSystemMessage", "BLOCK", mock.Anything).Run(func(args mock.Arguments) {
+		select {
+		case inMock <- struct{}{}:
+		default:
+		}
+		<-block
+	}).Return().Once()
+
+	// Allow other messages during cleanup
+	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+	defer func() {
+		select {
+		case <-block:
+		default:
+			close(block)
+		}
+		bridge.Cleanup()
+	}()
+
+	// 1. Send critical event to block the loop
+	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "BLOCK", Level: "info"})
+
+	select {
+	case <-inMock:
+		// Loop is now blocked in LogSystemMessage
+	case <-time.After(2 * time.Second):
+		t.Fatal("Bridge did not reach blocking mock")
+	}
+
+	// 2. Fill the channel (capacity 100)
+	for i := 0; i < 100; i++ {
+		// Use ResponseEvent to ensure they are not shed
+		bridge.handleEvent(context.Background(), events.ResponseEvent{})
+	}
+
+	// 3. Prepare cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	// 4. Trigger blocking call in goroutine
+	go func() {
+		bridge.handleEvent(ctx, events.ResponseEvent{})
+		close(done)
+	}()
+
+	// 5. Wait to ensure it is blocked in the select statement
+	time.Sleep(50 * time.Millisecond)
+
+	// 6. Cancel the context while it is blocked
+	cancel()
+
+	// 7. Assert it returns immediately due to cancellation
+	select {
+	case <-done:
+		// Success: Goroutine exited cleanly without the queue draining
+	case <-time.After(2 * time.Second):
+		t.Fatal("Goroutine leak: handleEvent did not respect context cancellation mid-flight")
 	}
 }
