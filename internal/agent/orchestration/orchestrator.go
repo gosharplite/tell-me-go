@@ -631,26 +631,25 @@ func Run(ctx context.Context, params RunParams) error {
 		params.Config,
 	)
 
-	// Behavior 1: Render History (if requested)
 	isTTY := params.Capturer.IsTTY(params.Stdout)
-	orch.RenderHistory(params.Deps.GetHistoryManager(), sCfg, isTTY)
 
-	// Behavior 2: Handle Rollback (if requested)
+	// Phase 1: Render History (if requested)
+	if sCfg.GetLastN() > 0 {
+		orch.RenderHistory(params.Deps.GetHistoryManager(), sCfg, isTTY)
+	}
+
+	// Phase 2: Handle Rollback (if requested)
 	if sCfg.GetBackN() > 0 {
 		if err := orch.Rollback(ctx, sCfg, params.Deps); err != nil {
 			return err
 		}
-		// If no prompt was provided alongside -b, exit early.
-		if sCfg.GetPrompt() == "" {
-			return nil
-		}
 	}
 
-	// Behavior 3: Handle History-only display (early exit)
-	if sCfg.GetPrompt() == "" && sCfg.GetLastN() > 0 {
-		return nil
+	// Phase 3: Main Orchestration Loop (Chat)
+	// Execute chat only if a prompt is provided. This removes CLI-specific early exits.
+	if sCfg.GetPrompt() != "" {
+		return orch.Run(ctx, sCfg, params.Deps, params.Capturer)
 	}
 
-	// Behavior 4: Main Orchestration Loop (Chat)
-	return orch.Run(ctx, sCfg, params.Deps, params.Capturer)
+	return nil
 }
