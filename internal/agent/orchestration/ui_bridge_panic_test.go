@@ -66,7 +66,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	bridge := newUIBridge(ctx, mock, true, true, false, true, "test.log", logger)
+	bridge := newUIBridge(ctx, mock, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("test.log"), WithBridgeLogger(logger))
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -106,7 +106,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 		panic("intentional test panic")
 	}).Return(func() {})
 
-	bridge := newUIBridge(ctx, mockRenderer, true, true, false, true, "test.log", logger)
+	bridge := newUIBridge(ctx, mockRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("test.log"), WithBridgeLogger(logger))
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -142,7 +142,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "test.log", logger)
+	bridge := newUIBridge(ctx, mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("test.log"), WithBridgeLogger(logger))
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -187,7 +187,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 		panic("first panic")
 	}).Once()
 
-	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "test.log", logger)
+	bridge := newUIBridge(ctx, mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("test.log"), WithBridgeLogger(logger))
 
 	// Send two events
 	bridge.handleEvent(ctx, events.TurnStatusEvent{})
@@ -211,7 +211,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	bridge := newUIBridge(ctx, mRenderer, true, true, false, true, "test.log", logger)
+	bridge := newUIBridge(ctx, mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("test.log"), WithBridgeLogger(logger))
 	
 	// Close the input to simulate a shutdown sequence.
 	bridge.CloseInput()

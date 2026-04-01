@@ -212,9 +212,6 @@ func (o *orchestrator) Rollback(ctx context.Context, sc ports.SessionConfig, sd 
 
 // RenderHistory renders the last N messages from history.
 func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool) {
-	if sCfg.GetLastN() <= 0 {
-		return
-	}
 	cfg := sCfg.GetConfig()
 	o.HistoryRenderer.Render(o.Stdout, hManager, sCfg.GetLastN(), ports.HistoryRenderOptions{
 		Raw:          sCfg.GetRawOutput(),
@@ -238,9 +235,54 @@ func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.C
 func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) *uiBridge {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
-	bridge := newUIBridge(ctx, o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath, logger)
+	bridge := newUIBridge(ctx, o.UIRenderer,
+		WithBridgeThoughts(cfg.ShowThoughts),
+		WithBridgeTools(cfg.ShowTools),
+		WithBridgeRawOutput(rawOutput),
+		WithBridgeColor(useColor),
+		WithBridgeLogFile(logPath),
+		WithBridgeLogger(logger),
+	)
 	chatAgent.Subscribe(bridge.handleEvent)
 	return bridge
+}
+
+// BridgeOption configures a uiBridge instance.
+type BridgeOption func(*uiBridge)
+
+// WithBridgeThoughts enables or disables thought rendering.
+func WithBridgeThoughts(show bool) BridgeOption {
+	return func(b *uiBridge) { b.showThoughts = show }
+}
+
+// WithBridgeTools enables or disables tool call rendering.
+func WithBridgeTools(show bool) BridgeOption {
+	return func(b *uiBridge) { b.showTools = show }
+}
+
+// WithBridgeRawOutput enables or disables raw output mode.
+func WithBridgeRawOutput(raw bool) BridgeOption {
+	return func(b *uiBridge) { b.rawOutput = raw }
+}
+
+// WithBridgeColor enables or disables ANSI color support.
+func WithBridgeColor(color bool) BridgeOption {
+	return func(b *uiBridge) { b.useColor = color }
+}
+
+// WithBridgeLogFile sets the file path for logging usage metrics.
+func WithBridgeLogFile(path string) BridgeOption {
+	return func(b *uiBridge) { b.logFile = path }
+}
+
+// WithBridgeLogger sets the structured logger.
+func WithBridgeLogger(l *slog.Logger) BridgeOption {
+	return func(b *uiBridge) { b.logger = l }
+}
+
+// WithBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
+func WithBridgeCleanupTimeout(d time.Duration) BridgeOption {
+	return func(b *uiBridge) { b.cleanupTimeout = d }
 }
 
 // uiBridge translates domain events into UI updates.
@@ -332,23 +374,21 @@ func (b *uiBridge) Cleanup() {
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string, logger *slog.Logger) *uiBridge {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func newUIBridge(parentCtx context.Context, renderer ports.UIRenderer, opts ...BridgeOption) *uiBridge {
 	ctx, cancel := context.WithCancel(parentCtx)
 	b := &uiBridge{
 		ctx:            ctx,
 		cancel:         cancel,
 		renderer:       renderer,
-		logger:         logger,
-		showThoughts:   showThoughts,
-		showTools:      showTools,
-		rawOutput:      rawOutput,
-		useColor:       useColor,
-		logFile:        logFile,
+		logger:         slog.Default(),
 		eventCh:        make(chan events.Event, 100),
 		cleanupTimeout: 5 * time.Second,
+	}
+	for _, opt := range opts {
+		opt(b)
+	}
+	if b.logger == nil {
+		b.logger = slog.Default()
 	}
 	b.wg.Add(1)
 	go b.loop()

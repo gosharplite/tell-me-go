@@ -17,10 +17,15 @@ import (
 
 func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
-	
-	// Use a very short timeout for testing speed
-	bridge.cleanupTimeout = 10 * time.Millisecond
+	bridge := newUIBridge(context.Background(), mRenderer,
+		WithBridgeThoughts(true),
+		WithBridgeTools(true),
+		WithBridgeRawOutput(false),
+		WithBridgeColor(true),
+		WithBridgeLogFile("log.txt"),
+		WithBridgeLogger(slog.Default()),
+		WithBridgeCleanupTimeout(10*time.Millisecond),
+	)
 
 	// Capture baseline goroutine count
 	baselineGoroutines := runtime.NumGoroutine()

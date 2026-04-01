@@ -33,7 +33,7 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	}), mock.Anything).Return().Maybe()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -56,7 +56,7 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+	bridge := newUIBridge(context.Background(), mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -102,7 +102,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 
 	// High-iteration loop to hammer the race window
 	for i := 0; i < 500; i++ {
-		bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, true, true, false, true, "log.txt", slog.Default())
+		bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 		var wg sync.WaitGroup
 		wg.Add(2)
 
