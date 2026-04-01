@@ -4,7 +4,6 @@
 package orchestration
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -184,7 +183,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
 	inframock.CleanupBus(t, bus)
 
-	var logBuf bytes.Buffer
+	var logBuf syncWriter
 	testLogger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	cm.logger = testLogger
 	cm.Events = bus
@@ -446,7 +445,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 
 func TestContextManager_WithLogger(t *testing.T) {
 	ctx := context.Background()
-	var buf bytes.Buffer
+	var buf syncWriter
 	// Set level to DEBUG to capture the "failed to emit summarization event" log.
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 

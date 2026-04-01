@@ -383,6 +383,8 @@ func (b *uiBridge) handleEvent(ctx context.Context, e events.Event) {
 
 				select {
 				case b.eventCh <- e:
+				case <-ctx.Done():
+					b.logger.Debug("Caller context cancelled while waiting to queue critical event")
 				case <-b.ctx.Done():
 					b.logger.Debug("Bridge shutting down, dropping critical event in background")
 				}

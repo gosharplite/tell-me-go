@@ -5,7 +5,6 @@ package orchestration
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -25,20 +24,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/goleak"
 )
-
-type syncWriter struct {
-	io.Writer
-	onWrite chan struct{}
-}
-
-func (w *syncWriter) Write(p []byte) (int, error) {
-	n, err := w.Writer.Write(p)
-	select {
-	case w.onWrite <- struct{}{}:
-	default:
-	}
-	return n, err
-}
 
 // controlledTicker allows us to trigger ticks manually for spinner frames.
 type controlledTicker struct {

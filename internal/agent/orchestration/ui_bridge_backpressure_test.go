@@ -4,7 +4,6 @@
 package orchestration
 
 import (
-	"bytes"
 	"context"
 	"log/slog"
 	"testing"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncWriter
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	mRenderer := new(mockUIRenderer)
@@ -132,8 +131,22 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 	}).Return()
 
 	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+
+	// Setup delivery tracker for the critical event
+	deliveryCh := make(chan struct{})
+	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		close(deliveryCh)
+	}).Return().Once()
+	// Allow LogTurnStatus to be called many times as we drain the 100 events
+	mRenderer.On("LogTurnStatus", mock.Anything).Return().Maybe()
+
 	defer func() {
-		close(block)
+		// Ensure block is closed if not already to prevent goroutine leak in test
+		select {
+		case <-block:
+		default:
+			close(block)
+		}
 		bridge.Cleanup()
 	}()
 
@@ -179,11 +192,11 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			t.Fatal("bridge.handleEvent blocked for critical event when channel was full")
 		}
 	})
-	
+
 	t.Run("Critical event should respect context cancellation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // already cancelled
-		
+
 		done := make(chan struct{})
 		go func() {
 			bridge.handleEvent(ctx, events.ResponseEvent{})
@@ -197,4 +210,16 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			t.Fatal("bridge.handleEvent blocked indefinitely for critical event with cancelled context")
 		}
 	})
+
+	// 5. Unblock the loop and verify deterministic delivery of the critical event
+	close(block)
+
+	select {
+	case <-deliveryCh:
+		// Success: The background goroutine successfully delivered the queued critical event!
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timeout waiting for critical event to be delivered after queue unblocked")
+	}
+
+	mRenderer.AssertExpectations(t)
 }
