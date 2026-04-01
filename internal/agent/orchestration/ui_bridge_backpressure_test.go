@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -55,4 +56,24 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 
 	// Verify that the debug message was logged
 	require.Contains(t, buf.String(), "UI Bridge queue full, shedding load")
+}
+
+func TestUIBridge_Shutdown_FastDrain(t *testing.T) {
+	mRenderer := new(mockUIRenderer)
+	// We don't expect RenderResponse to be called during shutdown drain
+	mRenderer.On("LogTurnStatus", mock.Anything).Return()
+
+	bridge := newUIBridge(context.Background(), mRenderer, true, true, false, true, "log.txt", slog.Default())
+	
+	// 1. Enqueue a visual event that should be skipped during shutdown
+	bridge.handleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
+	// 2. Enqueue a non-visual event that should still be processed
+	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+
+	// Trigger shutdown
+	bridge.Cleanup()
+
+	// Verification: LogTurnStatus should have been called, but RenderResponse should NOT
+	mRenderer.AssertExpectations(t)
+	mRenderer.AssertNotCalled(t, "RenderResponse", mock.Anything, mock.Anything, mock.Anything)
 }

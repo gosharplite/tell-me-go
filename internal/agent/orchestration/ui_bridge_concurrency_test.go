@@ -28,7 +28,8 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 
 	// Thread-safe mock setup with atomic tracking
 	mRenderer.On("StartSpinnerWithMetrics", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		atomic.AddInt32(&activeSpinners, 1) // Increment when the mock is called
+		current := atomic.AddInt32(&activeSpinners, 1)
+		assert.LessOrEqual(t, current, int32(1), "Actor model violation: Concurrent spinners detected")
 	}).Return(func() {
 		atomic.AddInt32(&activeSpinners, -1) // Return the expected func() type for cleanup
 	})

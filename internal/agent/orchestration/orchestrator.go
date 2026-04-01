@@ -317,6 +317,10 @@ func (b *uiBridge) loop() {
 						b.stopActiveSpinner()
 						return
 					}
+					// Skip synchronous UI rendering during teardown
+					if _, isVisual := e.(events.ResponseEvent); isVisual {
+						continue
+					}
 					b.processRecoverable(e)
 				default:
 					b.stopActiveSpinner()
