@@ -69,5 +69,3 @@ func NewPipelineOrchestrator(registry tools.Registry, sm domain_security.Manager
 
 	return res, nil
 }
-
-

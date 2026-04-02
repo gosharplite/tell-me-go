@@ -21,7 +21,7 @@ import (
 
 func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -83,7 +83,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")

@@ -253,7 +253,7 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	t.Helper()
 	reg := &mockToolRegistry{}
 	// Use synchronous event bus for deterministic test results
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}

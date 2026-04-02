@@ -225,7 +225,7 @@ func TestTraceTelemetry(t *testing.T) {
 
 	t.Run("RegisterTraceSubscriber", func(t *testing.T) {
 		t.Parallel()
-		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, bus)
 		RegisterTraceSubscriber(bus, traceFile)
 

@@ -89,7 +89,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {

@@ -36,7 +36,7 @@ var (
 
 const (
 	defaultQueueSize         = 1024
-	defaultWorkers           = 8
+	defaultAsyncDispatch     = true
 	defaultMaxConcurrentSubs = 1024
 )
 
@@ -64,10 +64,10 @@ type SimpleEventBus struct {
 	cancel            context.CancelFunc
 	log               *slog.Logger
 
-	queueSize  int
-	numWorkers int            // If <= 0, runs synchronously
-	workerWG   sync.WaitGroup // Tracks active worker goroutines for subscribers
-	pendingWG  sync.WaitGroup // Tracks pending events for Flush
+	queueSize     int
+	asyncDispatch bool           // If false, runs synchronously
+	workerWG      sync.WaitGroup // Tracks active worker goroutines for subscribers
+	pendingWG     sync.WaitGroup // Tracks pending events for Flush
 }
 
 // busOption defines a functional option for configuring the SimpleEventBus.
@@ -87,10 +87,10 @@ func WithQueueSize(size int) busOption {
 	}
 }
 
-// WithWorkers sets whether the event bus runs async (n > 0) or sync (n <= 0).
-func WithWorkers(n int) busOption {
+// WithAsync sets whether the event bus runs asynchronously.
+func WithAsync(async bool) busOption {
 	return func(b *SimpleEventBus) {
-		b.numWorkers = n
+		b.asyncDispatch = async
 	}
 }
 
@@ -109,7 +109,7 @@ func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 		ctx:               ctx,
 		cancel:            cancel,
 		log:               slog.Default(),
-		numWorkers:        defaultWorkers,
+		asyncDispatch:     defaultAsyncDispatch,
 		queueSize:         defaultQueueSize,
 	}
 
@@ -147,7 +147,7 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	}
 
 	// Synchronous mode for testing/specific use cases
-	if b.numWorkers <= 0 {
+	if !b.asyncDispatch {
 		return b.dispatchSync(ctx, event)
 	}
 
@@ -213,7 +213,7 @@ func (b *SimpleEventBus) newWrapper(sub Subscriber) *subscriberWrapper {
 	w := &subscriberWrapper{
 		sub: sub,
 	}
-	if b.numWorkers > 0 {
+	if b.asyncDispatch {
 		w.ch = make(chan Event, b.queueSize)
 		b.workerWG.Add(1)
 		go func() {

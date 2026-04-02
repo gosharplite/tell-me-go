@@ -62,7 +62,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	mock := &panicMockRenderer{}
 
 	// Synchronous bus for deterministic testing
-	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
 	// Silence noise in test output

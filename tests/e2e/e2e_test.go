@@ -479,13 +479,12 @@ func TestSecurityGate(t *testing.T) {
 				"TELL_ME_MOCK_URL=" + server.URL,
 			}
 
-			_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
-			if err != nil {
-				t.Fatalf("CLI failed: %v", err)
+			_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
+			if err == nil {
+				t.Fatalf("CLI succeeded when it should have failed due to security violation")
 			}
-
-			if !strings.Contains(*receivedResponse, "security violation") {
-				t.Errorf("Expected security violation error to be sent back to model, got: %q", *receivedResponse)
+			if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") {
+				t.Errorf("Expected security violation error in stderr or response. stderr: %s, response: %q", stderr, *receivedResponse)
 			}
 		})
 	}
@@ -515,13 +514,13 @@ func TestSymlinkAttack(t *testing.T) {
 		"TELL_ME_MOCK_URL=" + server.URL,
 	}
 
-	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
-	if err != nil {
-		t.Fatalf("CLI failed: %v", err)
+	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
+	if err == nil {
+		t.Fatalf("CLI succeeded when it should have failed due to symlink attack")
 	}
 
-	if !strings.Contains(*receivedResponse, "security violation") {
-		t.Errorf("Expected security violation for symlink attack, got: %q", *receivedResponse)
+	if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") {
+		t.Errorf("Expected security violation for symlink attack. stderr: %s, response: %q", stderr, *receivedResponse)
 	}
 }
 

@@ -153,7 +153,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -484,7 +484,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -520,7 +520,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	t.Parallel()
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -767,7 +767,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mUIRenderer := &behaviorMockUIRenderer{tracker: tracker}
 
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -991,7 +991,7 @@ func TestRun_Routing(t *testing.T) {
 		mHistoryRenderer := new(mockHistoryRenderer)
 		mUIRenderer := new(mockUIRenderer)
 		mCapturer := new(mockCapturer)
-		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, mEventBus)
 
 		mHistory := &mockHistoryManager{
@@ -1016,7 +1016,7 @@ func TestRun_Routing(t *testing.T) {
 		mHistoryRenderer := new(mockHistoryRenderer)
 		mUIRenderer := new(mockUIRenderer)
 		mCapturer := new(mockCapturer)
-		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, mEventBus)
 
 		mHistory := &mockHistoryManager{
@@ -1045,7 +1045,7 @@ func TestRun_Routing(t *testing.T) {
 		mHistoryRenderer := new(mockHistoryRenderer)
 		mUIRenderer := new(mockUIRenderer)
 		mCapturer := new(mockCapturer)
-		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, mEventBus)
 
 		mHistory := &mockHistoryManager{
@@ -1319,7 +1319,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			mChatter := new(mockChatter)
 			mCapturer := new(mockCapturer)
 			mHistory := new(mockHistoryManager)
-			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			inframock.CleanupBus(t, mEventBus)
 
 			factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -1528,7 +1528,7 @@ func TestOrchestrator_SessionID_Fallback(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	mClock := new(mockClock)
@@ -1581,7 +1581,7 @@ func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	mClock := new(mockClock)
@@ -1631,7 +1631,7 @@ func TestOrchestrator_SessionID_ShortRead_Fallback(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	mClock := new(mockClock)

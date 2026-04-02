@@ -112,7 +112,7 @@ func TestNewClient(t *testing.T) {
 				HTTPTimeoutSeconds: tt.timeoutSeconds,
 			}
 			pData := pricing.PricingData{}
-			bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			inframock.CleanupBus(t, bus)
 
 			client, err := NewClient(cfg, pData, bus, nil)

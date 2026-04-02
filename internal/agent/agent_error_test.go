@@ -27,7 +27,7 @@ func TestAgent_ConfigFailure(t *testing.T) {
 		},
 	}
 
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	a := &agent{
 		events: bus,

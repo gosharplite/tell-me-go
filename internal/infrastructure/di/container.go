@@ -131,7 +131,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithAsync(false))
 
 	pricingData := telemetry.GetPricing(ctx, b.SM, filepath.Join(b.HomeDir, "output"))
 
@@ -422,7 +422,7 @@ func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, conf
 	pricingOverrides := b.getPricingOverrides(cfg)
 
 	// Create a minimal event bus to avoid nil panics in some tool registration
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithAsync(false))
 
 	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
 		SecurityManager:  b.SM,

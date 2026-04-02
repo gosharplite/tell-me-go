@@ -34,7 +34,7 @@ func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) ([
 	// Dynamically build the IN clause with placeholders.
 	placeholders := strings.Repeat("?,", len(eventIDs)-1) + "?"
 	query := "SELECT id, payload, created_at FROM events WHERE id IN (" + placeholders + ")"
-	
+
 	args := make([]interface{}, len(eventIDs))
 	for i, id := range eventIDs {
 		args[i] = id
@@ -53,7 +53,7 @@ func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) ([
 		if err := rows.Scan(&e.ID, &e.Payload, &createdAtStr); err != nil {
 			return nil, err
 		}
-		
+
 		// Parse the string time returned by SQLite
 		t, err := time.Parse(time.RFC3339Nano, createdAtStr)
 		if err == nil {

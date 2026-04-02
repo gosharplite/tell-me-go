@@ -41,7 +41,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to register tool: %v", err)
 	}
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
 	// Mock server for summarization
@@ -157,7 +157,7 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +215,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	ctx := context.Background()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +289,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	historyPath := filepath.Join(tmpDir, "tool_pressure_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
 	// 1. Register many tools to create a large schema (approx 2000 tokens)

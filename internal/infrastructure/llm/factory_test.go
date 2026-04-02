@@ -141,7 +141,7 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 		SelectedProvider: "default",
 	}
 
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
 	pData := pricing.PricingData{}
