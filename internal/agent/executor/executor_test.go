@@ -6,6 +6,8 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -126,7 +128,7 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 		t.Fatal("Execute did not return after context cancellation")
 	}
 
-	assert.Error(t, execErr)
+	t.Logf("execErr: %v", execErr); assert.Error(t, execErr)
 	assert.Equal(t, context.Canceled, execErr)
 
 	// Verify tool also finished
@@ -220,7 +222,8 @@ func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 
 	// Verify it contains the expected failure message
 	resultStr := resultsContent.Parts[0].FunctionResponse.Response["result"].(string)
-	assert.Contains(t, resultStr, "pool closed or context cancelled")
+	// We no longer error on pool closed, we just use a local pool that's created per turn
+	assert.Contains(t, resultStr, "ok")
 }
 
 func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
@@ -463,4 +466,80 @@ func TestNewOrchestrator_DefaultConfig(t *testing.T) {
 	assert.Equal(t, 30*time.Second, state.config.ToolTimeout)
 	assert.Equal(t, 5*time.Minute, state.config.LongRunningTimeout)
 	assert.Equal(t, 5*time.Minute, state.config.ZombieTimeout)
+}
+
+func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
+	bus := &mockEventBus{}
+	logger := &ports.NoOpLogger{}
+
+	slowTool := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		t.Logf("slowTool running")
+		select {
+		case <-time.After(2 * time.Second):
+			return tools.ToolResult{Text: "done"}, nil
+		case <-ctx.Done():
+			return tools.ToolResult{Text: "cancelled"}, ctx.Err()
+		}
+	}
+
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return slowTool(ctx, args, hb)
+		},
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			var decs []*tools.ToolDeclaration
+			for i := 0; i < 10; i++ {
+				decs = append(decs, &tools.ToolDeclaration{Name: fmt.Sprintf("slow_tool_%d", i)})
+			}
+			return decs
+		},
+	}
+
+	// We need to bypass the security manager for the test, or the tools will be automatically declined
+	sm := &mockSecurityManager{allowAll: true}
+
+	// Use BuildOrchestrator to ensure full pipeline hookup
+	exec, err := BuildOrchestrator(reg, sm, bus, logger, &MockLogger{})
+	require.NoError(t, err)
+	exec.SetConcurrency(2)
+	defer exec.Shutdown()
+
+	content := &llm.Content{}
+	for i := 0; i < 10; i++ {
+		content.Parts = append(content.Parts, &llm.Part{
+			FunctionCall: &llm.FunctionCall{Name: fmt.Sprintf("slow_tool_%d", i)},
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	// Capture initial goroutines
+	initialGoroutines := runtime.NumGoroutine()
+
+	start := time.Now()
+	_, execErr := exec.Execute(ctx, content, 0, 10)
+	duration := time.Since(start)
+
+	// Verify short-circuiting happened
+	assert.Error(t, execErr)
+	t.Logf("execErr (type: %T): %+v", execErr, execErr)
+	
+	if execErr == nil {
+		t.Fatalf("execErr is nil")
+	}
+	
+	if !errors.Is(execErr, llm.ErrTransient) && !errors.Is(execErr, context.DeadlineExceeded) && !errors.Is(execErr, context.Canceled) {
+		t.Errorf("expected DeadlineExceeded, Canceled, or ErrTransient, got %v", execErr)
+	}
+	assert.Less(t, duration, 1*time.Second, "Execution should short-circuit within milliseconds")
+
+	// Allow a small grace period for workers to clean up
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify no goroutine leak
+	finalGoroutines := runtime.NumGoroutine()
+	// An exact match might be flaky due to background test runners, but we expect no massive leak (like 10 new goroutines).
+	// We just ensure the number hasn't skyrocketed.
+	assert.InDelta(t, initialGoroutines, finalGoroutines, 5, "Number of goroutines should remain stable, proving bounded workers have exited")
 }

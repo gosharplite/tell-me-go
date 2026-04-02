@@ -370,57 +370,56 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tr}
 			close(resultsCh)
 		} else {
-			var wg sync.WaitGroup
+			jobsCh := make(chan int, len(batch.tasks))
 			for _, taskIdx := range batch.tasks {
-				i := taskIdx
-				fc := calls[i]
+				jobsCh <- taskIdx
+			}
+			close(jobsCh)
 
+			numWorkers := state.config.MaxConcurrentTools
+			if len(batch.tasks) < numWorkers {
+				numWorkers = len(batch.tasks)
+			}
+
+			var wg sync.WaitGroup
+			for w := 0; w < numWorkers; w++ {
 				wg.Add(1)
-				task := func(_ context.Context) {
+				go func() {
 					defer wg.Done()
-					defer func() {
-						if r := recover(); r != nil {
-							err := fmt.Errorf("panic during tool execution: %v", r)
+					for {
+						select {
+						case <-ctx.Done():
 							resultsCh <- toolExecResult{
-								index: i,
-								name:  fc.Name,
-								tr:    tools.ToolResult{Text: err.Error(), Error: err},
+								index: -1,
+								name:  "context_cancelled",
+								tr:    tools.ToolResult{Text: "Skipped: Context cancelled", Error: ctx.Err()},
 							}
-						}
-					}()
-					if ctx.Err() != nil {
-						resultsCh <- toolExecResult{
-							index: i,
-							name:  fc.Name,
-							tr:    tools.ToolResult{Text: "Skipped: Context cancelled"},
-						}
-						return
-					}
-					tr := e.pipeline.ExecuteTool(ctx, fc)
-					resultsCh <- toolExecResult{index: i, name: fc.Name, tr: tr}
-				}
+							return // Graceful exit on cancellation
+						case i, ok := <-jobsCh:
+							if !ok {
+								return
+							}
+							fc := calls[i]
 
-				if err := state.pool.Submit(task); err != nil {
-					wg.Done()
-					var msg string
-					if errors.Is(err, concurrency.ErrPoolSaturated) {
-						msg = "Error: Tool execution queue is full (pool saturated). Please try again later."
-					} else {
-						msg = "Error: Task submission failed (pool closed or context cancelled)"
+							var tr tools.ToolResult
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										err := fmt.Errorf("panic during tool execution: %v", r)
+										tr = tools.ToolResult{Text: err.Error(), Error: err}
+									}
+								}()
+								tr = e.pipeline.ExecuteTool(ctx, fc)
+							}()
+							resultsCh <- toolExecResult{index: i, name: fc.Name, tr: tr}
+						}
 					}
-					resultsCh <- toolExecResult{
-						index: i,
-						name:  fc.Name,
-						tr:    tools.ToolResult{Text: msg, Error: err},
-					}
-				}
+				}()
 			}
 
 			go func() {
 				defer func() {
 					if r := recover(); r != nil {
-						// Recover, capture stack trace, but we cannot easily route to aggregator since we don't know the exact index.
-						// Close the channel to avoid deadlock.
 						e.logger.Error("panic in fan-in wait goroutine", "panic", r, "stack", string(debug.Stack()))
 					}
 					close(resultsCh)
@@ -431,6 +430,10 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 		// 2. Fan-in Aggregator Loop (lock-free mutation of failures)
 		for res := range resultsCh {
+			if res.index == -1 {
+				// cancellation signal
+				continue
+			}
 			results[res.index] = res.tr
 			evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
 			e.emitEvent(ctx, e.events, evt)
@@ -451,6 +454,12 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
 				return ctx.Err()
 			}
+		} else {
+			if err := ctx.Err(); err != nil {
+				e.logger.Debug("Parallel batch interrupted, halting execution plan", "batch_idx", batchIdx)
+				e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
+				return err
+			}
 		}
 	}
 	return ctx.Err()
@@ -460,6 +469,10 @@ func (e *Orchestrator) failRemainingTasks(batches []taskBatch, startBatchIdx int
 	for j := startBatchIdx; j < len(batches); j++ {
 		for _, skippedIdx := range batches[j].tasks {
 			if j == startBatchIdx && skippedIdx <= skipTaskIdx {
+				continue
+			}
+
+			if results[skippedIdx].Text != "" || results[skippedIdx].Error != nil {
 				continue
 			}
 
