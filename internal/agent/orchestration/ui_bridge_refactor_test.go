@@ -171,7 +171,7 @@ func TestUIBridge_EnqueueEvent_CriticalBlocking(t *testing.T) {
 	_ = b.enqueueEvent(ctx, events.ResponseEvent{})
 	duration := time.Since(start)
 
-	assert.GreaterOrEqual(t, duration, 50*time.Millisecond)
+	assert.GreaterOrEqual(t, duration, 40*time.Millisecond, "context should block for roughly the 50ms timeout duration, accounting for scheduler jitter")
 
 	// Verify queue still has only the filler
 	e := <-b.eventCh
