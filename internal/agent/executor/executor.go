@@ -347,122 +347,19 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 	var planErrors []error
 
 	for batchIdx, batch := range batches {
-		if err := ctx.Err(); err != nil {
-			e.logger.Debug("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
-			e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
+		if err := e.checkPreconditions(ctx, batchIdx, batches, calls, results); err != nil {
 			planErrors = append(planErrors, err)
 			return errors.Join(planErrors...)
 		}
 
 		batchStart := time.Now()
-
 		resultsCh := make(chan toolExecResult, len(batch.tasks))
 
 		// 1. Fan-out
-		if batch.isSerial {
-			taskIdx := batch.tasks[0]
-			fc := calls[taskIdx]
-
-			var tr tools.ToolResult
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						e.logger.Error("panic in serial execution", "panic", r, "stack", string(debug.Stack()))
-						err := fmt.Errorf("tool execution panic: %v", r)
-						tr = tools.ToolResult{Text: err.Error(), Error: err}
-					}
-				}()
-				tr = e.pipeline.ExecuteTool(ctx, fc)
-			}()
-
-			resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tr}
-			close(resultsCh)
-		} else {
-			jobsCh := make(chan int, len(batch.tasks))
-			for _, taskIdx := range batch.tasks {
-				jobsCh <- taskIdx
-			}
-			close(jobsCh)
-
-			numWorkers := state.config.MaxConcurrentTools
-			if len(batch.tasks) < numWorkers {
-				numWorkers = len(batch.tasks)
-			}
-
-			var wg sync.WaitGroup
-			for w := 0; w < numWorkers; w++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					var currentJobIdx = -1
-					var currentJobName string
-
-					defer func() {
-						if r := recover(); r != nil {
-							e.logger.Error("panic in worker goroutine", "panic", r, "stack", string(debug.Stack()))
-							if currentJobIdx != -1 {
-								err := fmt.Errorf("tool execution panic: %v", r)
-								resultsCh <- toolExecResult{
-									index: currentJobIdx,
-									name:  currentJobName,
-									tr:    tools.ToolResult{Text: err.Error(), Error: err},
-								}
-							}
-						}
-					}()
-
-					for {
-						select {
-						case <-ctx.Done():
-							resultsCh <- toolExecResult{
-								index: -1,
-								name:  "context_cancelled",
-								tr:    tools.ToolResult{Text: "Skipped: Context cancelled", Error: ctx.Err()},
-							}
-							return // Graceful exit on cancellation
-						case i, ok := <-jobsCh:
-							if !ok {
-								return
-							}
-							currentJobIdx = i
-							fc := calls[i]
-							currentJobName = fc.Name
-
-							tr := e.pipeline.ExecuteTool(ctx, fc)
-							resultsCh <- toolExecResult{index: i, name: fc.Name, tr: tr}
-
-							currentJobIdx = -1
-							currentJobName = ""
-						}
-					}
-				}()
-			}
-
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						e.logger.Error("panic in fan-in wait goroutine", "panic", r, "stack", string(debug.Stack()))
-					}
-					close(resultsCh)
-				}()
-				wg.Wait()
-			}()
-		}
+		e.executeBatch(ctx, batch, calls, state.config.MaxConcurrentTools, resultsCh)
 
 		// 2. Fan-in Aggregator Loop (lock-free mutation of failures)
-		for res := range resultsCh {
-			if res.index == -1 {
-				// cancellation signal
-				continue
-			}
-			results[res.index] = res.tr
-			evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
-			e.emitEvent(ctx, e.events, evt)
-
-			if res.tr.Error != nil {
-				planErrors = append(planErrors, res.tr.Error)
-			}
-		}
+		planErrors = e.handleBatchResults(ctx, resultsCh, results, planErrors)
 
 		e.logger.Debug("Batch execution completed",
 			"batch_idx", batchIdx,
@@ -471,29 +368,15 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			"duration_ms", time.Since(batchStart).Milliseconds())
 
 		// Serial halt logic
-		if batch.isSerial {
-			if results[batch.tasks[0]].Error != nil || ctx.Err() != nil {
-				e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
-					"batch_idx", batchIdx,
-					"tool_name", calls[batch.tasks[0]].Name)
-				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
-
-				if ctx.Err() != nil {
-					planErrors = append(planErrors, ctx.Err())
-				}
-
-				if len(planErrors) > 0 {
-					return errors.Join(planErrors...)
-				}
-				return ctx.Err()
-			}
-		} else {
-			if err := ctx.Err(); err != nil {
-				e.logger.Debug("Parallel batch interrupted, halting execution plan", "batch_idx", batchIdx)
-				e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
-				planErrors = append(planErrors, err)
+		halt, haltErr := e.evaluateBatchOutcome(ctx, batchIdx, batch, batches, calls, results)
+		if haltErr != nil {
+			planErrors = append(planErrors, haltErr)
+		}
+		if halt {
+			if len(planErrors) > 0 {
 				return errors.Join(planErrors...)
 			}
+			return ctx.Err()
 		}
 	}
 
@@ -506,6 +389,157 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 	}
 
 	return ctx.Err()
+}
+
+func (e *Orchestrator) checkPreconditions(ctx context.Context, batchIdx int, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) error {
+	if err := ctx.Err(); err != nil {
+		e.logger.Debug("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
+		e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
+		return err
+	}
+	return nil
+}
+
+func (e *Orchestrator) executeBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult) {
+	if batch.isSerial {
+		e.executeSerialBatch(ctx, batch, calls, resultsCh)
+	} else {
+		e.executeParallelBatch(ctx, batch, calls, maxWorkers, resultsCh)
+	}
+}
+
+func (e *Orchestrator) executeSerialBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, resultsCh chan<- toolExecResult) {
+	taskIdx := batch.tasks[0]
+	fc := calls[taskIdx]
+
+	var tr tools.ToolResult
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				e.logger.Error("panic in serial execution", "panic", r, "stack", string(debug.Stack()))
+				err := fmt.Errorf("tool execution panic: %v", r)
+				tr = tools.ToolResult{Text: err.Error(), Error: err}
+			}
+		}()
+		tr = e.pipeline.ExecuteTool(ctx, fc)
+	}()
+
+	resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tr}
+	close(resultsCh)
+}
+
+func (e *Orchestrator) executeParallelBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult) {
+	jobsCh := make(chan int, len(batch.tasks))
+	for _, taskIdx := range batch.tasks {
+		jobsCh <- taskIdx
+	}
+	close(jobsCh)
+
+	numWorkers := maxWorkers
+	if len(batch.tasks) < numWorkers {
+		numWorkers = len(batch.tasks)
+	}
+
+	var wg sync.WaitGroup
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go e.parallelWorker(ctx, calls, jobsCh, resultsCh, &wg)
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				e.logger.Error("panic in fan-in wait goroutine", "panic", r, "stack", string(debug.Stack()))
+			}
+			close(resultsCh)
+		}()
+		wg.Wait()
+	}()
+}
+
+func (e *Orchestrator) parallelWorker(ctx context.Context, calls []*llm.FunctionCall, jobsCh <-chan int, resultsCh chan<- toolExecResult, wg *sync.WaitGroup) {
+	defer wg.Done()
+	var currentJobIdx = -1
+	var currentJobName string
+
+	defer func() {
+		if r := recover(); r != nil {
+			e.logger.Error("panic in worker goroutine", "panic", r, "stack", string(debug.Stack()))
+			if currentJobIdx != -1 {
+				err := fmt.Errorf("tool execution panic: %v", r)
+				resultsCh <- toolExecResult{
+					index: currentJobIdx,
+					name:  currentJobName,
+					tr:    tools.ToolResult{Text: err.Error(), Error: err},
+				}
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			resultsCh <- toolExecResult{
+				index: -1,
+				name:  "context_cancelled",
+				tr:    tools.ToolResult{Text: "Skipped: Context cancelled", Error: ctx.Err()},
+			}
+			return // Graceful exit on cancellation
+		case i, ok := <-jobsCh:
+			if !ok {
+				return
+			}
+			currentJobIdx = i
+			fc := calls[i]
+			currentJobName = fc.Name
+
+			tr := e.pipeline.ExecuteTool(ctx, fc)
+			resultsCh <- toolExecResult{index: i, name: fc.Name, tr: tr}
+
+			currentJobIdx = -1
+			currentJobName = ""
+		}
+	}
+}
+
+func (e *Orchestrator) handleBatchResults(ctx context.Context, resultsCh <-chan toolExecResult, results []tools.ToolResult, planErrors []error) []error {
+	for res := range resultsCh {
+		if res.index == -1 {
+			// cancellation signal
+			continue
+		}
+		results[res.index] = res.tr
+		evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
+		e.emitEvent(ctx, e.events, evt)
+
+		if res.tr.Error != nil {
+			planErrors = append(planErrors, res.tr.Error)
+		}
+	}
+	return planErrors
+}
+
+func (e *Orchestrator) evaluateBatchOutcome(ctx context.Context, batchIdx int, batch taskBatch, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) (bool, error) {
+	if batch.isSerial {
+		if results[batch.tasks[0]].Error != nil || ctx.Err() != nil {
+			e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
+				"batch_idx", batchIdx,
+				"tool_name", calls[batch.tasks[0]].Name)
+			e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
+
+			if ctx.Err() != nil {
+				return true, ctx.Err()
+			}
+			return true, nil
+		}
+	} else {
+		if err := ctx.Err(); err != nil {
+			e.logger.Debug("Parallel batch interrupted, halting execution plan", "batch_idx", batchIdx)
+			e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 func (e *Orchestrator) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, calls []*llm.FunctionCall, results []tools.ToolResult, err error, reason string) {
