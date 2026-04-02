@@ -315,7 +315,6 @@ type uiBridge struct {
 	rawOutput      bool
 	useColor       bool
 	logFile        string
-	mu             sync.Mutex
 	state          UIState
 	stopSpinner    func()
 	activePhase    events.Event
@@ -330,9 +329,6 @@ type uiBridge struct {
 }
 
 func (b *uiBridge) transition(next UIState) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	if b.state == next {
 		return
 	}
@@ -340,14 +336,14 @@ func (b *uiBridge) transition(next UIState) {
 	// Side effects for entering the new state
 	switch next {
 	case StateIdle, StateRendering, StateAwaitingConsent:
-		b.stopActiveSpinnerLocked()
+		b.stopActiveSpinner()
 	case StateThinking:
 		// StateThinking side effects are typically handled via transitionSpinner
 		// but we ensure old spinner is stopped if we were in another state.
 		// If we were already in StateThinking, we don't stop here to avoid flicker
 		// unless transitionSpinner is called.
 		if b.state != StateThinking {
-			b.stopActiveSpinnerLocked()
+			b.stopActiveSpinner()
 		}
 	}
 
@@ -355,18 +351,10 @@ func (b *uiBridge) transition(next UIState) {
 }
 
 func (b *uiBridge) is(state UIState) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	return b.state == state
 }
 
 func (b *uiBridge) stopActiveSpinner() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.stopActiveSpinnerLocked()
-}
-
-func (b *uiBridge) stopActiveSpinnerLocked() {
 	stop := b.stopSpinner
 	b.stopSpinner = nil
 
@@ -629,14 +617,11 @@ func (b *uiBridge) handleTurnStarted() {
 }
 
 func (b *uiBridge) transitionSpinner(startFn func() func()) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	if b.state == StateRendering || b.state == StateAwaitingConsent {
 		return
 	}
 
-	b.stopActiveSpinnerLocked()
+	b.stopActiveSpinner()
 	b.stopSpinner = startFn()
 	b.state = StateThinking
 }
