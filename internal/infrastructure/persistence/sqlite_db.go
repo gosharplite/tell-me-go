@@ -104,10 +104,46 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 		_ = tx.Rollback()
 	}()
 
-	for _, t := range tasks {
-		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES (?, ?, ?, ?)",
-			int64(t.ID), t.Content, t.Status, t.CreatedAt.Format(time.RFC3339Nano)); err != nil {
-			return fmt.Errorf("inserting legacy task %d: %w", int(t.ID), err)
+	// 1. Map Domain to DTO
+	type taskRow struct {
+		ID        int64
+		Content   string
+		Status    string
+		CreatedAt string
+	}
+	
+	rows := make([]taskRow, len(tasks))
+	for i, t := range tasks {
+		rows[i] = taskRow{
+			ID:        int64(t.ID),
+			Content:   t.Content,
+			Status:    t.Status,
+			CreatedAt: t.CreatedAt.Format(time.RFC3339Nano),
+		}
+	}
+
+	// 2. Execute Bulk Insert (batching to respect SQLite limits)
+	batchSize := 200
+	for i := 0; i < len(rows); i += batchSize {
+		end := i + batchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		batch := rows[i:end]
+
+		query := "INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES "
+		var args []interface{}
+		
+		for j, r := range batch {
+			if j > 0 {
+				query += ", "
+			}
+			query += "(?, ?, ?, ?)"
+			args = append(args, r.ID, r.Content, r.Status, r.CreatedAt)
+		}
+
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("bulk inserting legacy tasks: %w", err)
 		}
 	}
 
