@@ -330,7 +330,6 @@ type uiBridge struct {
 	cleanupInvocations int32
 	wg                 sync.WaitGroup
 	cleanupTimeout     time.Duration
-	isPoisoned         bool
 	isClosed           atomic.Bool
 }
 
@@ -467,7 +466,6 @@ func (b *uiBridge) loop(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
 			b.logger.Error("panic in uiBridge loop", "error", r, "stack", string(debug.Stack()))
-			b.isPoisoned = true
 			b.stopActiveSpinner()
 			if b.cancel != nil {
 				b.cancel()
@@ -495,7 +493,6 @@ func (b *uiBridge) loop(ctx context.Context) {
 func (b *uiBridge) processRecoverable(ctx context.Context, e events.Event) {
 	defer func() {
 		if r := recover(); r != nil {
-			b.isPoisoned = true
 			b.logger.Error("uiBridge actor recovered from panic", "error", r)
 			b.logger.Debug("uiBridge recovery stack trace", "stack", string(debug.Stack()))
 			b.stopActiveSpinner()
