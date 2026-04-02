@@ -45,6 +45,10 @@ func (c *controlledClock) Now() time.Time {
 	return c.now
 }
 
+func (c *controlledClock) Since(t time.Time) time.Duration {
+	return c.Now().Sub(t)
+}
+
 func (c *controlledClock) Sleep(d time.Duration) {
 	c.mu.Lock()
 	c.now = c.now.Add(d)

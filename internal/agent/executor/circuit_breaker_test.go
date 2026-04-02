@@ -8,6 +8,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
@@ -61,7 +62,8 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 				IsSerialFunc: func(n string) bool { return false },
 			}
 
-			cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout)
+			mockClock := clock.NewMockClock(time.Now())
+			cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
 			call := &llm.FunctionCall{Name: tt.toolName}
 
 			var lastResult tools.ToolResult
@@ -82,7 +84,7 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 			}
 
 			if tt.waitTimeout {
-				time.Sleep(resetTimeout * 2)
+				mockClock.Advance(resetTimeout * 2)
 				res := cbPipeline.ExecuteTool(context.Background(), call)
 				// Should have transitioned to half-open, meaning it actually called the mock again
 				if res.Error == nil || errors.Is(res.Error, tools.ErrToolCircuitOpen) {
@@ -108,7 +110,8 @@ func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
 		},
 	}
 
-	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout)
+	mockClock := clock.NewMockClock(time.Now())
+	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
 	call := &llm.FunctionCall{Name: "flaky_tool"}
 
 	// 1. Force Failures to open circuit
@@ -122,7 +125,7 @@ func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
 	}
 
 	// 2. Wait for timeout to transition to half-open
-	time.Sleep(resetTimeout * 2)
+	mockClock.Advance(resetTimeout * 2)
 
 	// 3. Recover the tool
 	forceError = false

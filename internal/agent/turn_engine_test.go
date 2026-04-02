@@ -1189,6 +1189,8 @@ type mockBlockingClock struct {
 }
 
 func (m *mockBlockingClock) Now() time.Time { return time.Now() }
+
+func (m *mockBlockingClock) Since(t time.Time) time.Duration { return time.Since(t) }
 func (m *mockBlockingClock) Sleep(d time.Duration) {
 	if m.onAfter != nil {
 		m.onAfter()

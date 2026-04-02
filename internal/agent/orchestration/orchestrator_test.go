@@ -1500,6 +1500,10 @@ func (m *mockClock) Now() time.Time {
 	return args.Get(0).(time.Time)
 }
 
+func (m *mockClock) Since(t time.Time) time.Duration {
+	return m.Now().Sub(t)
+}
+
 func (m *mockClock) Sleep(d time.Duration) {
 	m.Called(d)
 }
