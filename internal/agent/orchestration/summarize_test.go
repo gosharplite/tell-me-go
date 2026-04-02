@@ -149,7 +149,7 @@ func setupMockGeminiServer() *httptest.Server {
 func setupTestClient(t *testing.T, url string) *gemini.Client {
 	t.Helper()
 	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	client, err := gemini.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 	if err != nil {
@@ -160,7 +160,7 @@ func setupTestClient(t *testing.T, url string) *gemini.Client {
 
 func setupInternalTools(t *testing.T, client *gemini.Client, h ports.HistoryManager) *InternalTools {
 	t.Helper()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	reg := registry.New()
 	gw := llm.NewResilientClient(client)

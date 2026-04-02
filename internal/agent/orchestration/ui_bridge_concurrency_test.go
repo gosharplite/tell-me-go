@@ -19,7 +19,8 @@ import (
 func TestUIBridge_StressConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 
 	var activeSpinners int32
 
@@ -43,9 +44,9 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 			defer wg.Done()
 			<-start
 			if idx%2 == 0 {
-				bridge.handleEvent(context.Background(), events.ToolExecutionStartedEvent{ToolNames: []string{"test_tool"}})
+				_ = bridge.handleEvent(context.Background(), events.ToolExecutionStartedEvent{ToolNames: []string{"test_tool"}})
 			} else {
-				bridge.handleEvent(context.Background(), events.ResponseEvent{
+				_ = bridge.handleEvent(context.Background(), events.ResponseEvent{
 					Content: &llm.Content{},
 				})
 			}
@@ -68,7 +69,8 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	ctx := context.Background()
 
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(ctx, mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(ctx)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -82,8 +84,8 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, true, false).Return().Once()
 
 	// 3. Queue the events sequentially
-	bridge.handleEvent(ctx, events.ToolExecutionStartedEvent{})
-	bridge.handleEvent(ctx, events.ResponseEvent{Content: &llm.Content{}})
+	_ = bridge.handleEvent(ctx, events.ToolExecutionStartedEvent{})
+	_ = bridge.handleEvent(ctx, events.ResponseEvent{Content: &llm.Content{}})
 
 	// 4. Flush the queue using the robust syncBridge helper
 	syncBridge(t, bridge, mRenderer)

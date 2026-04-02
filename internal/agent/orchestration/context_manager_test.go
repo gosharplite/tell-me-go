@@ -180,7 +180,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	assert.Error(t, err)
 
 	// Case 9: Event publishing
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
 	var logBuf syncWriter
@@ -440,7 +440,7 @@ func TestContextManager_WithLogger(t *testing.T) {
 	}
 
 	// Use a bus that is shut down to trigger a log in emitSummarizationEvent.
-	bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	_ = bus.Shutdown(ctx)
 
 	cm := NewContextManager(strategy, history, bus, nil, WithLogger(testLogger))

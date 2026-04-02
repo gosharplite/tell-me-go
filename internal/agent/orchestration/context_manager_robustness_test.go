@@ -33,7 +33,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{FunctionResponse: &domain_llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
 
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
 	strategy.SetLimits(1000, 5, 20) // turn 3/5 (remaining 2) -> Triggers warning
@@ -388,7 +388,7 @@ func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Conte
 			return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
 		},
 	}
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{})), hManager, bus, nil)
 	cm.Summarizer = llm.NewSummarizer(g, bus)
@@ -489,7 +489,7 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	// Initial message
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "initial"}}})
 
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	cm := NewContextManager(strategy, hManager, bus, nil)

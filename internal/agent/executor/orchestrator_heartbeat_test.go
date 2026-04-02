@@ -57,19 +57,18 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 	}
 
 	// Orchestrator with safety decorator
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: hangingTool.Name}
-	tool, _ := exec.resolver.Resolve(fc)
+	tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
 
 	// Execute
-	result, err := exec.runtime.Execute(ctx, tool, fc, nil)
+	result, err := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
 	require.NoError(t, err)
 
 	// Should have timed out due to heartbeat missing
@@ -105,19 +104,18 @@ func TestOrchestrator_HeartbeatSuccess(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: livelyTool.Name}
-	tool, _ := exec.resolver.Resolve(fc)
+	tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
 
 	// Execute
-	result, err := exec.runtime.Execute(ctx, tool, fc, nil)
+	result, err := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
 
 	// Should succeed because heartbeats kept it alive
 	assert.NoError(t, err)

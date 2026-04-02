@@ -45,7 +45,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 }
 
 func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	reg := &mockToolRegistry{}
 

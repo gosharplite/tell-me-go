@@ -118,9 +118,8 @@ func TestOrchestrator_EndToEnd_BarrierPattern(t *testing.T) {
 	bus := &mockEventBus{} // from mocks_test.go
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
+	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	var executionCounter int32
 	var parallelOrder int32
@@ -172,9 +171,8 @@ func TestOrchestrator_EndToEnd_SequentialOrder(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
+	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	var executionCounter int32
 	var serialOrder int32
@@ -225,9 +223,8 @@ func TestOrchestrator_EndToEnd_ContextCancellation(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(timeout))
+	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(timeout))
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	exitSignal := make(chan struct{})
 

@@ -1,261 +1,179 @@
-// Copyright (c) 2026 gosharplite@gmail.com
-// SPDX-License-Identifier: MIT
-
 package executor
 
 import (
 	"context"
-	"sync"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestToolPanicSerial(t *testing.T) {
+func TestOrchestrator_ChaosScenarios(t *testing.T) {
 	t.Parallel()
-	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-			panic("simulated serial tool panic")
+	tests := []struct {
+		name          string
+		mockSetup     func(syncChan chan struct{}) *MockToolPipeline
+		calls         []*llm.FunctionCall
+		wantPanicText string // or specific error assertion
+		wantTimeout   bool
+	}{
+		{
+			name: "parallel tool panics mid-flight",
+			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
+				return &MockToolPipeline{
+					IsSerialFunc: func(n string) bool { return false },
+					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+						if call.Name == "dangerous_tool" {
+							panic("simulated third-party crash")
+						}
+						return tools.ToolResult{Text: "safe"}
+					},
+					RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+						m := make(map[int]bool)
+						for i := range calls {
+							m[i] = true
+						}
+						return ctx, m
+					},
+				}
+			},
+			calls: []*llm.FunctionCall{
+				{Name: "safe_tool_1"},
+				{Name: "dangerous_tool"},
+				{Name: "safe_tool_2"},
+			},
+			wantPanicText: "simulated third-party crash",
 		},
-		isSerial: true,
+		{
+			name: "serial tool panics mid-flight",
+			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
+				return &MockToolPipeline{
+					IsSerialFunc: func(n string) bool { return true },
+					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+						panic("simulated serial crash")
+					},
+					RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+						return ctx, map[int]bool{0: true}
+					},
+				}
+			},
+			calls: []*llm.FunctionCall{
+				{Name: "dangerous_serial"},
+			},
+			wantPanicText: "simulated serial crash",
+		},
+		{
+			name: "context deadline exceeded during fan-in",
+			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
+				return &MockToolPipeline{
+					IsSerialFunc: func(n string) bool { return false },
+					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+						if call.Name == "hang_tool" {
+							// Signal that the tool has started
+							close(syncChan)
+							// Block until context is canceled
+							<-ctx.Done()
+							return tools.ToolResult{Text: "aborted", Error: ctx.Err()}
+						}
+						return tools.ToolResult{Text: "safe"}
+					},
+					RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+						m := make(map[int]bool)
+						for i := range calls {
+							m[i] = true
+						}
+						return ctx, m
+					},
+				}
+			},
+			calls: []*llm.FunctionCall{
+				{Name: "safe_tool_1"},
+				{Name: "hang_tool"},
+			},
+			wantTimeout: true,
+		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-	ctx := context.Background()
-	fc := &llm.FunctionCall{Name: "test_tool"}
-	resChan := make(chan toolExecResult, 1)
+			syncChan := make(chan struct{})
+			mock := tt.mockSetup(syncChan)
 
-	// executeSerialTask returns bool (true if it can continue)
-	canContinue := exec.executeSerialTask(ctx, 0, fc, resChan)
-
-	assert.False(t, canContinue, "Should not continue after panic")
-
-	timer := time.NewTimer(ciSafeTimeout)
-	defer timer.Stop()
-
-	select {
-	case res := <-resChan:
-		assert.Equal(t, 0, res.index)
-		assert.Contains(t, res.tr.Text, "encountered an internal fatal error (panic)")
-		assert.Error(t, res.tr.Error)
-		assert.Contains(t, res.tr.Error.Error(), "Panic detected: simulated serial tool panic")
-	case <-timer.C:
-		t.Fatal("Timeout waiting for result")
-	}
-}
-
-func TestToolPanicParallel(t *testing.T) {
-	t.Parallel()
-	reg := &mockToolRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-			if name == "panic_tool" {
-				panic("simulated parallel tool panic")
+			// Setup minimal orchestrator state
+			cfg := OrchestratorConfig{
+				MaxConcurrentTools: 5,
+				ToolTimeout:        1 * time.Hour,
 			}
-			return tools.ToolResult{Text: "ok"}, nil
-		},
-		getDeclarationsFn: func() []*tools.ToolDeclaration {
-			return []*tools.ToolDeclaration{
-				{Name: "panic_tool"},
-				{Name: "normal_tool"},
+
+			o := &Orchestrator{
+				pipeline: mock,
+				events:   events.NewSimpleEventBus(context.Background()),
+				logger:   &ports.NoOpLogger{},
 			}
-		},
-		isSerial: false,
-	}
+			o.state.Store(&orchestratorState{
+				config: cfg,
+			})
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
+			declinedMap := make(map[int]bool)
+			results := make([]tools.ToolResult, len(tt.calls))
 
-	ctx := context.Background()
-	calls := []*llm.FunctionCall{
-		{Name: "panic_tool"},
-		{Name: "normal_tool"},
-	}
-	resChan := make(chan toolExecResult, 2)
-	batch := taskBatch{
-		isSerial: false,
-		tasks:    []int{0, 1},
-	}
+			if tt.wantTimeout {
+				// Run in background so we can cancel from main thread
+				errChan := make(chan error, 1)
+				go func() {
+					errChan <- o.runExecutionPlan(ctx, tt.calls, declinedMap, results)
+				}()
 
-	exec.executeParallelBatch(ctx, batch, calls, resChan)
+				// Wait for the tool to start processing
+				<-syncChan
+				// Explicitly trigger the timeout/cancellation condition
+				cancel()
 
-	results := make(map[string]toolExecResult)
-	for i := 0; i < 2; i++ {
-		timer := time.NewTimer(ciSafeTimeout)
-		select {
-		case res := <-resChan:
-			results[res.name] = res
-		case <-timer.C:
-			timer.Stop()
-			t.Fatal("Timeout waiting for results")
-		}
-		timer.Stop()
-	}
+				// Wait for orchestrator to finish
+				err := <-errChan
+				if err == nil {
+					t.Errorf("expected context cancellation error, got nil")
+				}
+				return // Test successful
+			}
 
-	panicRes := results["panic_tool"]
-	assert.Contains(t, panicRes.tr.Text, "encountered an internal fatal error (panic)")
-	assert.Error(t, panicRes.tr.Error)
-	assert.Contains(t, panicRes.tr.Error.Error(), "Panic detected: simulated parallel tool panic")
+			// For non-timeout tests, run synchronously
+			err := o.runExecutionPlan(ctx, tt.calls, declinedMap, results)
 
-	normalRes := results["normal_tool"]
-	assert.Equal(t, "ok", normalRes.tr.Text)
-	assert.NoError(t, normalRes.tr.Error)
-}
+			// For panic tests, verify we didn't deadlock and the result captures the panic string
+			if err != nil {
+				t.Logf("runExecutionPlan returned error (could be acceptable depending on panic): %v", err)
+			}
 
-func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
-	t.Parallel()
-	// Mock registry where resolveTool or something else inside IdentifyConsentItems panics
+			foundPanic := false
+			for i, res := range results {
+				if tt.wantPanicText != "" {
+					if res.Error != nil && strings.Contains(res.Error.Error(), tt.wantPanicText) {
+						foundPanic = true
+					} else if strings.Contains(res.Text, tt.wantPanicText) {
+						foundPanic = true
+					}
+				} else {
+					if res.Error != nil {
+						t.Errorf("unexpected error for call %d: %v", i, res.Error)
+					}
+				}
+			}
 
-	reg := &mockToolRegistry{
-		getDeclarationsFn: func() []*tools.ToolDeclaration {
-			panic("simulated auth panic")
-		},
-	}
-
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	calls := []*llm.FunctionCall{
-		{Name: "panic_auth_tool"},
-	}
-
-	// IdentifyConsentItems has a recover block that marks it as declined
-	consentIndices, declinedMap := exec.authorizer.IdentifyConsentItems(calls)
-
-	assert.Empty(t, consentIndices, "Should not have consent indices if it panicked")
-	assert.True(t, declinedMap[0], "Tool should be marked as declined/denied after panic (fail closed)")
-}
-
-func TestZombieToolTimeout(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping slow integration test in short mode")
-	}
-	hangingTool := &tools.ToolDeclaration{
-		Name: "zombie_tool",
-	}
-
-	stopCh := make(chan struct{})
-	// Mock registry that blocks indefinitely until stopCh is closed
-	reg := &mockZombieRegistry{
-		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-			<-stopCh // Block until we release it
-			return tools.ToolResult{Text: "finally done"}, nil
-		},
-		getDeclarationsFn: func() []*tools.ToolDeclaration {
-			return []*tools.ToolDeclaration{hangingTool}
-		},
-	}
-
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond), withZombieTimeout(300*time.Millisecond))
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	ctx := context.Background()
-
-	doneCh := make(chan struct{})
-	var result tools.ToolResult
-	var timeoutErr error
-
-	start := time.Now()
-	go func() {
-		defer close(doneCh)
-		fc := &llm.FunctionCall{Name: hangingTool.Name}
-		tool, _ := exec.resolver.Resolve(fc)
-		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc, nil)
-	}()
-
-	select {
-	case <-doneCh:
-		duration := time.Since(start)
-		assert.NoError(t, timeoutErr)
-		assert.Error(t, result.Error)
-		assert.Contains(t, result.Error.Error(), "timed out")
-		assert.True(t, duration >= 200*time.Millisecond)
-	case <-time.After(2 * time.Second):
-		t.Fatal("Test deadlocked on runWithTimeout")
-	}
-
-	timer := time.NewTimer(ciSafeTimeout)
-	defer timer.Stop()
-
-	// Wait for zombie monitor to fire
-	select {
-	case msg := <-exec.observer.(*MockLogger).CriticalLogs:
-		assert.Contains(t, msg, "CRITICAL: Tool goroutine permanently leaked: zombie_tool")
-	case <-timer.C:
-		t.Fatal("Timeout waiting for zombie monitor to fire")
-	}
-
-	// Clean up the zombie goroutine so goleak doesn't complain
-	close(stopCh)
-}
-
-func TestExecuteSerialTaskRecovery(t *testing.T) {
-	t.Parallel()
-	reg := &mockToolRegistry{
-		getDeclarationsFn: func() []*tools.ToolDeclaration {
-			panic("panic during serial resolve")
-		},
-	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	ctx := context.Background()
-	fc := &llm.FunctionCall{Name: "any_tool"}
-	resChan := make(chan toolExecResult, 1)
-
-	exec.executeSerialTask(ctx, 0, fc, resChan)
-
-	timer := time.NewTimer(ciSafeTimeout)
-	defer timer.Stop()
-
-	select {
-	case res := <-resChan:
-		assert.Contains(t, res.tr.Text, "encountered an internal fatal error (panic)")
-		assert.Contains(t, res.tr.Error.Error(), "panic during serial resolve")
-	case <-timer.C:
-		t.Fatal("Timeout waiting for result")
-	}
-}
-
-func TestEnqueueParallelTaskRecovery(t *testing.T) {
-	t.Parallel()
-	reg := &mockToolRegistry{
-		getDeclarationsFn: func() []*tools.ToolDeclaration {
-			panic("panic during parallel resolve")
-		},
-	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	ctx := context.Background()
-	fc := &llm.FunctionCall{Name: "any_tool"}
-	resChan := make(chan toolExecResult, 1)
-	var wg sync.WaitGroup
-
-	exec.enqueueParallelTask(ctx, 0, fc, resChan, &wg)
-	wg.Wait()
-
-	timer2 := time.NewTimer(ciSafeTimeout)
-	defer timer2.Stop()
-
-	select {
-	case res := <-resChan:
-		assert.Contains(t, res.tr.Text, "encountered an internal fatal error (panic)")
-		assert.Contains(t, res.tr.Error.Error(), "panic during parallel resolve")
-	case <-timer2.C:
-		t.Fatal("Timeout waiting for result")
+			if tt.wantPanicText != "" && !foundPanic {
+				t.Errorf("expected to find panic text %q in results, got none", tt.wantPanicText)
+				for i, r := range results {
+					t.Logf("Result %d: Text=%q, Err=%v", i, r.Text, r.Error)
+				}
+			}
+		})
 	}
 }

@@ -27,7 +27,7 @@ func TestOrchestrator_SessionID_DegradationWarning(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	mClock := new(mockClock)

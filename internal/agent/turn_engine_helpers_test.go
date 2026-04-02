@@ -150,7 +150,8 @@ type mockClock struct {
 	CurrentTime time.Time
 }
 
-func (m *mockClock) Now() time.Time { return m.CurrentTime }
+func (m *mockClock) Now() time.Time                  { return m.CurrentTime }
+func (m *mockClock) Since(t time.Time) time.Duration { return m.CurrentTime.Sub(t) }
 func (m *mockClock) Sleep(d time.Duration) {
 	m.CurrentTime = m.CurrentTime.Add(d)
 }
@@ -252,7 +253,7 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	t.Helper()
 	reg := &mockToolRegistry{}
 	// Use synchronous event bus for deterministic test results
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}

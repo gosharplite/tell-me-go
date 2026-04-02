@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -30,32 +29,29 @@ func TestOrchestrator_ConfigRace(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 	ctx := context.Background()
 	var wg sync.WaitGroup
 
-	// Start concurrent executions
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			content := &llm.Content{
-				Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "task"}}},
-			}
-			for j := 0; j < 5; j++ {
-				_, _ = exec.Execute(ctx, content, 0, 10)
-			}
-		}()
-	}
+	// Start sequential execution (Orchestrator handles one turn per session)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		content := &llm.Content{
+			Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "task"}}},
+		}
+		for j := 0; j < 20; j++ {
+			_, _ = exec.Execute(ctx, content, 0, 10)
+		}
+	}()
 
 	// Hammer config updates
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
-			exec.SetConcurrency(1+(i%10), time.Duration(10+i)*time.Millisecond)
+			exec.SetConcurrency(1 + (i % 10))
 			runtime.Gosched()
 		}
 	}()
@@ -87,9 +83,8 @@ func TestOrchestrator_ContextCancellation_MidBatch(t *testing.T) {
 	})
 	require.NoError(t, regErr)
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

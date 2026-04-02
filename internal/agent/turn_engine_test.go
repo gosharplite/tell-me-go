@@ -86,7 +86,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	t.Parallel()
 	var capturedEvents []string
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()
@@ -199,9 +199,9 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 
 			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-			bus1 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			bus1 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			inframock.CleanupBus(t, bus1)
-			bus2 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			bus2 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			inframock.CleanupBus(t, bus2)
 			e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 			strategy.SetLimits(1000, 5, 10)
@@ -254,9 +254,9 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	bus1 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus1 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus1)
-	bus2 := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus2 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus2)
 	e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus1), reg, bus2, strategy)
 	strategy.SetLimits(1000, 5, 10)
@@ -275,7 +275,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
@@ -326,7 +326,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
@@ -453,7 +453,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 
 	var capturedTime time.Time
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if st, ok := e.(events.TurnStatusEvent); ok {
@@ -1008,7 +1008,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{}
 	reg := &mockToolRegistry{}
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
@@ -1059,7 +1059,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 
 func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	tracker := &mockEngineCostTracker{}
 	reg := &mockToolRegistry{}
@@ -1189,6 +1189,8 @@ type mockBlockingClock struct {
 }
 
 func (m *mockBlockingClock) Now() time.Time { return time.Now() }
+
+func (m *mockBlockingClock) Since(t time.Time) time.Duration { return time.Since(t) }
 func (m *mockBlockingClock) Sleep(d time.Duration) {
 	if m.onAfter != nil {
 		m.onAfter()
@@ -1370,7 +1372,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	t.Parallel()
 	var capturedEvents []string
 	var mu sync.Mutex
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		mu.Lock()

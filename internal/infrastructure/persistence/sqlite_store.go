@@ -22,30 +22,33 @@ func newSQLiteTaskStore(db *sql.DB) *sqliteTaskStore {
 	return &sqliteTaskStore{db: db}
 }
 
-func (s *sqliteTaskStore) ReadAll(ctx context.Context) ([]ports.Task, error) {
+func (s *sqliteTaskStore) ReadAll(ctx context.Context) (res []ports.Task, err error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT id, content, status, created_at FROM tasks ORDER BY id")
 	if err != nil {
 		return nil, fmt.Errorf("querying all tasks: %w", err)
 	}
 	defer func() {
-		_ = rows.Close()
+		if closeErr := rows.Close(); closeErr != nil {
+			if err == nil {
+				err = closeErr
+			}
+		}
 	}()
 
-	var res []ports.Task
 	for rows.Next() {
 		var t ports.Task
 		var createdAtStr string
-		if err := rows.Scan(&t.ID, &t.Content, &t.Status, &createdAtStr); err != nil {
-			return nil, fmt.Errorf("scanning task row: %w", err)
+		if scanErr := rows.Scan(&t.ID, &t.Content, &t.Status, &createdAtStr); scanErr != nil {
+			return nil, fmt.Errorf("scanning task row: %w", scanErr)
 		}
-		var err error
-		t.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse created_at for task %d: %w", int(t.ID), err)
+		var parseErr error
+		t.CreatedAt, parseErr = time.Parse(time.RFC3339Nano, createdAtStr)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse created_at for task %d: %w", int(t.ID), parseErr)
 		}
 		res = append(res, t)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("tasks rows iteration error: %w", err)
 	}
 	return res, nil
@@ -121,26 +124,30 @@ func (s *sqliteKVStore) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-func (s *sqliteKVStore) GetAll(ctx context.Context) (map[string]string, error) {
+func (s *sqliteKVStore) GetAll(ctx context.Context) (res map[string]string, err error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT key, value FROM settings")
 	if err != nil {
 		return nil, fmt.Errorf("querying all settings: %w", err)
 	}
 	defer func() {
-		_ = rows.Close()
+		if closeErr := rows.Close(); closeErr != nil {
+			if err == nil {
+				err = closeErr
+			}
+		}
 	}()
 
-	res := make(map[string]string)
+	res = make(map[string]string)
 	for rows.Next() {
 		var k, v string
-		if err := rows.Scan(&k, &v); err != nil {
-			return nil, fmt.Errorf("scanning setting row: %w", err)
+		if scanErr := rows.Scan(&k, &v); scanErr != nil {
+			return nil, fmt.Errorf("scanning setting row: %w", scanErr)
 		}
 		res[k] = v
 	}
 
 	// Check for errors that occurred during iteration
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating settings rows: %w", err)
 	}
 

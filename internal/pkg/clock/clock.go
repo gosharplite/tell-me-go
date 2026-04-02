@@ -11,6 +11,7 @@ import (
 // Clock provides a way to get the current time and handle delays, facilitating deterministic testing.
 type Clock interface {
 	Now() time.Time
+	Since(t time.Time) time.Duration
 	Sleep(d time.Duration)
 	After(d time.Duration) <-chan time.Time
 	NewTicker(d time.Duration) Ticker
@@ -58,4 +59,8 @@ type realTicker struct {
 
 func (rt realTicker) C() <-chan time.Time {
 	return rt.Ticker.C
+}
+
+func (RealClock) Since(t time.Time) time.Duration {
+	return time.Since(t)
 }

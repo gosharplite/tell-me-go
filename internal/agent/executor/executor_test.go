@@ -6,6 +6,8 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -14,7 +16,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -89,9 +90,8 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -126,8 +126,9 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 		t.Fatal("Execute did not return after context cancellation")
 	}
 
+	t.Logf("execErr: %v", execErr)
 	assert.Error(t, execErr)
-	assert.Equal(t, context.Canceled, execErr)
+	assert.ErrorIs(t, execErr, context.Canceled)
 
 	// Verify tool also finished
 	timer2 := time.NewTimer(ciSafeTimeout)
@@ -141,182 +142,11 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_LeakPrevention(t *testing.T) {
-	t.Parallel()
-	pool := concurrency.NewWorkerPool(1)
-	t.Cleanup(pool.Shutdown)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	started := make(chan struct{})
-	finished := make(chan struct{})
-
-	task := func(taskCtx context.Context) {
-		close(started)
-		select {
-		case <-taskCtx.Done(): // Pool context
-		case <-ctx.Done(): // Task context (our local one)
-		}
-		close(finished)
-	}
-
-	err := pool.Submit(task)
-	require.NoError(t, err)
-	<-started
-
-	cancel() // Cancel the task context
-
-	timer3 := time.NewTimer(100 * time.Millisecond)
-	defer timer3.Stop()
-
-	select {
-	case <-finished:
-		// Worker should be free now
-	case <-timer3.C:
-		t.Error("Worker did not release after task context cancellation")
-	}
-
-	// Pool should still be functional for other tasks
-	task2Started := make(chan struct{})
-	err = pool.Submit(func(ctx context.Context) {
-		close(task2Started)
-	})
-	assert.NoError(t, err)
-
-	timer4 := time.NewTimer(100 * time.Millisecond)
-	defer timer4.Stop()
-
-	select {
-	case <-task2Started:
-		// Success
-	case <-timer4.C:
-		t.Error("Worker pool became unresponsive after task cancellation")
-	}
-}
-
-func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
-	t.Parallel()
-	reg := &mockToolRegistry{}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	batch := taskBatch{
-		isSerial: false,
-		tasks:    []int{0},
-	}
-	calls := []*llm.FunctionCall{
-		{Name: "test_tool"},
-	}
-	resChan := make(chan toolExecResult, 1)
-
-	exec.executeParallelBatch(ctx, batch, calls, resChan)
-
-	timer5 := time.NewTimer(ciSafeTimeout)
-	defer timer5.Stop()
-
-	select {
-	case res := <-resChan:
-		assert.Equal(t, 0, res.index)
-		assert.Equal(t, "test_tool", res.name)
-		assert.ErrorContains(t, res.tr.Error, "batch interrupted")
-	case <-timer5.C:
-		t.Fatal("Expected result on resChan, but got none")
-	}
-}
-
-func TestBuildExecutionBatches_PreservesOrder(t *testing.T) {
-	t.Parallel()
-	reg := &orderMockRegistry{
-		serialTools: map[string]bool{
-			"S1": true,
-			"S2": true,
-		},
-	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	calls := []*llm.FunctionCall{
-		{Name: "P1"},
-		{Name: "S1"},
-		{Name: "P2"},
-		{Name: "P3"},
-		{Name: "S2"},
-	}
-
-	resChan := make(chan toolExecResult, len(calls))
-	batches := exec.buildExecutionBatches(calls, nil, resChan)
-
-	// Expected batches:
-	// 1. Parallel: [P1] (index 0)
-	// 2. Serial: [S1] (index 1)
-	// 3. Parallel: [P2, P3] (index 2, 3)
-	// 4. Serial: [S2] (index 4)
-
-	assert.Equal(t, 4, len(batches), "Should have 4 batches")
-
-	assert.False(t, batches[0].isSerial)
-	assert.Equal(t, []int{0}, batches[0].tasks)
-
-	assert.True(t, batches[1].isSerial)
-	assert.Equal(t, []int{1}, batches[1].tasks)
-
-	assert.False(t, batches[2].isSerial)
-	assert.Equal(t, []int{2, 3}, batches[2].tasks)
-
-	assert.True(t, batches[3].isSerial)
-	assert.Equal(t, []int{4}, batches[3].tasks)
-}
-
-type orderMockRegistry struct {
-	serialTools map[string]bool
-}
-
-func (m *orderMockRegistry) GetDeclarations() []*tools.ToolDeclaration                 { return nil }
-func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) error { return nil }
-func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	return nil
-}
-func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return tools.ToolResult{}, nil
-}
-func (m *orderMockRegistry) IsSerial(name string) bool      { return m.serialTools[name] }
-func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
-
-func (m *orderMockRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
-}
-
-func (m *orderMockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	return m.Register(def, handler)
-}
-
-func (m *orderMockRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	return m.RegisterWithOptions(def, handler, opts)
-}
-
-func (m *orderMockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *orderMockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *orderMockRegistry) ListAvailableToolkits() []string {
-	return []string{"core"}
-}
-
 func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.Shutdown() // Deterministically close the pool
 
 	calls := []*llm.FunctionCall{
 		{ID: "1", Name: "test_tool"},
@@ -337,7 +167,8 @@ func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 
 	// Verify it contains the expected failure message
 	resultStr := resultsContent.Parts[0].FunctionResponse.Response["result"].(string)
-	assert.Contains(t, resultStr, "pool closed or context cancelled")
+	// We no longer error on pool closed, we just use a local pool that's created per turn
+	assert.Contains(t, resultStr, "ok")
 }
 
 func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
@@ -347,9 +178,8 @@ func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	// Setup trace context
 	trace := telemetry.NewTurnTrace()
@@ -372,37 +202,31 @@ func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 }
 
 func TestNewOrchestrator_NilObserver(t *testing.T) {
-	reg := &mockToolRegistry{}
-	_, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, nil)
-	require.Error(t, err)
-	assert.Equal(t, "ExecutionObserver is required", err.Error())
-
-	// Coverage for lines 95-97: error from NewZombieTool
-	sabotageOpt := func(e *Orchestrator) {
-		e.observer = nil
-	}
-	_, err = NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, sabotageOpt)
+	cfg := OrchestratorConfig{}
+	pipeline := &defaultToolPipeline{}
+	_, err := NewOrchestrator(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
 
 func TestNewOrchestrator_NilRegistry(t *testing.T) {
-	// Call with nil registry
-	executor, err := NewOrchestrator(nil, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	cfg := OrchestratorConfig{}
+	executor, err := NewOrchestrator(cfg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "registry is required")
+	require.Contains(t, err.Error(), "pipeline is required")
 	require.Nil(t, executor)
 }
 
 func TestNewOrchestrator_NilLogger(t *testing.T) {
 	t.Parallel()
-	reg := &mockToolRegistry{}
+	cfg := OrchestratorConfig{}
+	pipeline := &defaultToolPipeline{}
 	observer := &MockLogger{}
 
 	// Explicitly pass nil for the logger
-	_, err := NewOrchestrator(reg, nil, nil, nil, observer)
+	_, err := NewOrchestrator(cfg, pipeline, nil, nil, observer)
 	require.Error(t, err)
 	assert.Equal(t, "logger is required", err.Error())
 }
@@ -483,67 +307,6 @@ func TestOrchestrator_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
 	assert.False(t, mockLogger.errorCalled, "Expected Error NOT to be called on logger for ErrBusNotInitialized")
 }
 
-func TestResultCollector_EmitEvent(t *testing.T) {
-	// Setup
-	mockLogger := &capturingLogger{}
-	genericErr := errors.New("publish error")
-	mockBus := &errorEventBus{err: genericErr}
-
-	exec, err := NewOrchestrator(&mockToolRegistry{}, nil, mockBus, mockLogger, &MockLogger{})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	collector := exec.newResultCollector(nil, mockBus)
-
-	// Action: Manually trigger an event emission from collector's context
-	evt := events.ToolResultEvent{Name: "test"}
-	collector.executor.emitEvent(context.Background(), collector.bus, evt)
-
-	// Assert
-	assert.True(t, mockLogger.errorCalled)
-	assert.Equal(t, "event_publish_failed", mockLogger.lastMsg)
-}
-
-func TestOrchestrator_Execute_PlanPanic(t *testing.T) {
-	t.Parallel()
-	reg := &mockToolRegistry{}
-
-	// Create a mock event bus to track events
-	bus := &mockEventBus{}
-
-	// Inject an execution plan that panics
-	exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)},
-		withExecutionPlan(func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
-			panic("test panic")
-		}))
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	respContent := &llm.Content{
-		Parts: []*llm.Part{
-			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
-		},
-	}
-
-	// Execute should return an error derived from the panic, and specifically NOT deadlock/hang.
-	// The resultCollector.Wait should terminate because the errgroup context is canceled by the panic/err.
-	_, execErr := exec.Execute(context.Background(), respContent, 0, 10)
-
-	assert.Error(t, execErr)
-	assert.Contains(t, execErr.Error(), "execution plan panicked: test panic")
-
-	// Verify event sequencing
-	var eventTypes []string
-	bus.mu.Lock()
-	for _, e := range bus.Published {
-		eventTypes = append(eventTypes, e.Type())
-	}
-	bus.mu.Unlock()
-
-	assert.Contains(t, eventTypes, "ConsentStartedEvent")
-	assert.Contains(t, eventTypes, "ConsentFinishedEvent")
-}
-
 type mockAuthorizer struct {
 	RequestBatchConsentFunc func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
 }
@@ -584,10 +347,9 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.authorizer = auth
-	t.Cleanup(exec.Shutdown)
+	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).authorizer = auth
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -629,4 +391,205 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 	}
 
 	assert.True(t, hasFinished, "ConsentFinishedEvent should be published even if context is cancelled")
+}
+
+func TestNewOrchestrator_DefaultConfig(t *testing.T) {
+	cfg := OrchestratorConfig{}
+	pipeline := &defaultToolPipeline{}
+	observer := &MockLogger{}
+	logger := &ports.NoOpLogger{}
+
+	executor, err := NewOrchestrator(cfg, pipeline, nil, logger, observer)
+	require.NoError(t, err)
+	require.NotNil(t, executor)
+
+	state := executor.state.Load()
+	assert.Equal(t, 5, state.config.MaxConcurrentTools)
+	assert.Equal(t, 30*time.Second, state.config.ToolTimeout)
+	assert.Equal(t, 5*time.Minute, state.config.LongRunningTimeout)
+	assert.Equal(t, 5*time.Minute, state.config.ZombieTimeout)
+}
+
+func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
+	bus := &mockEventBus{}
+	logger := &ports.NoOpLogger{}
+
+	slowTool := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		t.Logf("slowTool running")
+		select {
+		case <-time.After(2 * time.Second):
+			return tools.ToolResult{Text: "done"}, nil
+		case <-ctx.Done():
+			return tools.ToolResult{Text: "cancelled"}, ctx.Err()
+		}
+	}
+
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return slowTool(ctx, args, hb)
+		},
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			var decs []*tools.ToolDeclaration
+			for i := 0; i < 10; i++ {
+				decs = append(decs, &tools.ToolDeclaration{Name: fmt.Sprintf("slow_tool_%d", i)})
+			}
+			return decs
+		},
+	}
+
+	// We need to bypass the security manager for the test, or the tools will be automatically declined
+	sm := &mockSecurityManager{allowAll: true}
+
+	// Use NewPipelineOrchestrator to ensure full pipeline hookup
+	exec, err := NewPipelineOrchestrator(reg, sm, bus, logger, &MockLogger{})
+	require.NoError(t, err)
+	exec.SetConcurrency(2)
+
+	content := &llm.Content{}
+	for i := 0; i < 10; i++ {
+		content.Parts = append(content.Parts, &llm.Part{
+			FunctionCall: &llm.FunctionCall{Name: fmt.Sprintf("slow_tool_%d", i)},
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	// Capture initial goroutines
+	initialGoroutines := runtime.NumGoroutine()
+
+	start := time.Now()
+	_, execErr := exec.Execute(ctx, content, 0, 10)
+	duration := time.Since(start)
+
+	// Verify short-circuiting happened
+	assert.Error(t, execErr)
+	t.Logf("execErr (type: %T): %+v", execErr, execErr)
+
+	if execErr == nil {
+		t.Fatalf("execErr is nil")
+	}
+
+	if !errors.Is(execErr, llm.ErrTransient) && !errors.Is(execErr, context.DeadlineExceeded) && !errors.Is(execErr, context.Canceled) {
+		t.Errorf("expected DeadlineExceeded, Canceled, or ErrTransient, got %v", execErr)
+	}
+	assert.Less(t, duration, 1*time.Second, "Execution should short-circuit within milliseconds")
+
+	// Allow a small grace period for workers to clean up
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify no goroutine leak
+	finalGoroutines := runtime.NumGoroutine()
+	// An exact match might be flaky due to background test runners, but we expect no massive leak (like 10 new goroutines).
+	// We just ensure the number hasn't skyrocketed.
+	assert.InDelta(t, initialGoroutines, finalGoroutines, 5, "Number of goroutines should remain stable, proving bounded workers have exited")
+}
+
+type mockPanicPipeline struct {
+	panicOn string
+}
+
+func (m *mockPanicPipeline) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+	return ctx, nil
+}
+
+func (m *mockPanicPipeline) IsSerial(toolName string) bool {
+	return false
+}
+
+func (m *mockPanicPipeline) ExecuteTool(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+	if call.Name == m.panicOn {
+		panic("simulated nil pointer dereference")
+	}
+	return tools.ToolResult{Text: "success"}
+}
+
+func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
+	bus := &mockEventBus{}
+	logger := &ports.NoOpLogger{}
+
+	pipeline := &mockPanicPipeline{panicOn: "panic_tool"}
+
+	cfg := OrchestratorConfig{MaxConcurrentTools: 2}
+	exec, err := NewOrchestrator(cfg, pipeline, bus, logger, &MockLogger{})
+	require.NoError(t, err)
+
+	content := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "success_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "panic_tool"}},
+		},
+	}
+
+	ctx := context.Background()
+
+	// 1. The test suite should not crash (the panic is recovered)
+	results := make([]tools.ToolResult, 2)
+	calls := []*llm.FunctionCall{content.Parts[0].FunctionCall, content.Parts[1].FunctionCall}
+	declinedMap := make(map[int]bool)
+
+	execErr := exec.runExecutionPlan(ctx, calls, declinedMap, results)
+
+	// 2. The recovered panic is returned as an error from runExecutionPlan
+	assert.Error(t, execErr)
+
+	// 4. The error string contains "simulated nil pointer dereference"
+	assert.Contains(t, execErr.Error(), "simulated nil pointer dereference")
+
+	// 3. The successfully executed tool's result is still handled or acknowledged
+	var foundSuccess bool
+	var foundPanic bool
+	for i, tr := range results {
+		switch calls[i].Name {
+		case "success_tool":
+			assert.Equal(t, "success", tr.Text)
+			foundSuccess = true
+		case "panic_tool":
+			assert.Contains(t, tr.Text, "simulated nil pointer dereference")
+			foundPanic = true
+		}
+	}
+
+	assert.True(t, foundSuccess, "success_tool should have completed successfully")
+	assert.True(t, foundPanic, "panic_tool should have completed with panic error")
+}
+
+func TestExecutor_PanicRecovery(t *testing.T) {
+	t.Parallel()
+
+	// Create a mock registry that panics when a specific tool is executed
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			if name == "panic_tool" {
+				panic("simulated fatal error")
+			}
+			return tools.ToolResult{Text: "success"}, nil
+		},
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "panic_tool"}}
+		},
+	}
+
+	// We need a proper pipeline to test ExecuteTool
+	pipeline := NewDefaultToolPipeline(
+		reg,
+		&mockSecurityManager{allowAll: true},
+		&mockEventBus{},
+		&ports.NoOpLogger{},
+		nil,
+		30*time.Second,
+		5*time.Minute,
+		5*time.Minute,
+	)
+
+	call := &llm.FunctionCall{Name: "panic_tool"}
+
+	// Action: Execute the tool which will panic
+	result := pipeline.ExecuteTool(context.Background(), call)
+
+	// Assert that we gracefully caught the panic and mapped it to llm.ErrTerminal
+	require.Error(t, result.Error)
+	assert.ErrorIs(t, result.Error, llm.ErrTerminal, "Panic should be wrapped in llm.ErrTerminal")
+	assert.Contains(t, result.Text, "encountered an internal fatal error (panic)")
+	assert.Contains(t, result.Error.Error(), "simulated fatal error")
 }

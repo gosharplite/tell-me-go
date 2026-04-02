@@ -6,6 +6,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -160,5 +161,48 @@ func TestSQLiteMigrations_InvalidDBPath(t *testing.T) {
 	_, err := initSQLiteDB(context.Background(), "/invalid/path/db.sqlite")
 	if err == nil {
 		t.Error("expected error for invalid db path")
+	}
+}
+
+func TestRepository_BulkInsert(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	fs := NewOSFileSystem()
+
+	tempDir := t.TempDir()
+	tasksFile := filepath.Join(tempDir, "bulk_tasks.json")
+	dbPath := filepath.Join(tempDir, "bulk_test.db")
+
+	// Generate 500 tasks
+	tasksJSON := "["
+	for i := 1; i <= 500; i++ {
+		if i > 1 {
+			tasksJSON += ","
+		}
+		tasksJSON += fmt.Sprintf(`{"id": %d, "content": "Bulk Task %d", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}`, i, i)
+	}
+	tasksJSON += "]"
+
+	if err := fs.WriteFile(ctx, tasksFile, []byte(tasksJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := initSQLiteDB(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
+		t.Fatalf("migrateFromJSON failed: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count); err != nil {
+		t.Fatalf("QueryRowContext failed: %v", err)
+	}
+	if count != 500 {
+		t.Errorf("Expected 500 tasks, got %d", count)
 	}
 }

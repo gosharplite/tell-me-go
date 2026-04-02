@@ -46,7 +46,7 @@ type ConfigurableSecurityManager interface {
 
 // Container defines the interface for building session dependencies and provides factories.
 type Container interface {
-	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(), error)
+	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error)
 	GetAgentFactory() ports.ChatterFactory
 	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error
 	GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error)
@@ -95,7 +95,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
-func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(), error) {
+func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
 	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, nil, nil, err
@@ -117,7 +117,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		// Hard dependency: session rotation must complete before we continue.
 		// Errors here MUST halt execution to prevent state corruption.
 		if err := b.handleNewSession(ctx, paths, cfg, pricingOverrides, sessionProvider.GetSettings()); err != nil {
-			cleanup()
+			_ = cleanup(ctx)
 			return nil, nil, nil, fmt.Errorf("session initialization failed during rotation: %w", err)
 		}
 	}
@@ -127,17 +127,17 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	hManager, err := b.buildHistoryManager(ctx, paths)
 	if err != nil {
-		cleanup()
+		_ = cleanup(ctx)
 		return nil, nil, nil, err
 	}
 
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithAsync(false))
 
 	pricingData := telemetry.GetPricing(ctx, b.SM, filepath.Join(b.HomeDir, "output"))
 
 	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.Logger))
 	if err != nil {
-		cleanup()
+		_ = cleanup(ctx)
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
 
@@ -157,7 +157,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		FileSystem:       infra_persistence.NewOSFileSystem(),
 	})
 	if err != nil {
-		cleanup()
+		_ = cleanup(ctx)
 		return nil, nil, nil, err
 	}
 
@@ -194,7 +194,7 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	return reg, nil
 }
 
-func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(), error) {
+func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(stdctx.Context) error, error) {
 	var sessionProvider ports.SessionProvider
 	state, err := b.NewSessionState(ctx, paths.ModeDir)
 	if err != nil {
@@ -207,12 +207,14 @@ func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persisten
 	info.Provider = cfg.SelectedProvider
 	state.SetInfo(info)
 
-	cleanup := func() {
+	cleanup := func(stdctx.Context) error {
 		if sessionProvider != nil {
 			if err := sessionProvider.Close(); err != nil {
 				_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to close session provider: %v\n", err)
+				return err
 			}
 		}
+		return nil
 	}
 	return sessionProvider, cleanup, nil
 }
@@ -420,7 +422,7 @@ func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, conf
 	pricingOverrides := b.getPricingOverrides(cfg)
 
 	// Create a minimal event bus to avoid nil panics in some tool registration
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithAsync(false))
 
 	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
 		SecurityManager:  b.SM,

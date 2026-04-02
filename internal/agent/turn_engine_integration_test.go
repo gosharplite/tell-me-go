@@ -90,7 +90,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	t.Parallel()
 	t.Run("Scenario A - Single Massive Payload", func(t *testing.T) {
 		t.Parallel()
-		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, bus)
 		historyPath := filepath.Join(t.TempDir(), "history_a.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -163,7 +163,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 	t.Run("Scenario B - Context Exhaustion", func(t *testing.T) {
 		t.Parallel()
-		bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, bus)
 		historyPath := filepath.Join(t.TempDir(), "history_b.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -256,7 +256,7 @@ func (m *cancelIntegrationRegistry) GetDeclarations() []*tools.ToolDeclaration {
 
 func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	t.Parallel()
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history_cancel.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -296,9 +296,8 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	gw := &integrationMockLLMGateway{}
 	// Real executor
-	exec, err := executor.NewOrchestrator(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineOrchestrator(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 

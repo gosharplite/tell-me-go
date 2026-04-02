@@ -287,10 +287,7 @@ func (t *shellTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
 				return
 			case <-ticker.C:
 				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
+					sendHeartbeat(context.Background(), hb)
 				}
 			}
 		}

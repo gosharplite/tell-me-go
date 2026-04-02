@@ -134,7 +134,7 @@ func TestNewChatter(t *testing.T) {
 		t.Fatalf("failed to create skills dir: %v", err)
 	}
 
-	bus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
 	deps := &mockSessionDeps{

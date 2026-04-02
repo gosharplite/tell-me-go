@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
+
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,7 +20,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -89,9 +88,8 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	sm := setupMockSecurityManager(allowedTools)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	exec, err := NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	return exec, bus, behaviors
 }
@@ -119,8 +117,16 @@ func assertExecutionSuccess(t *testing.T, resp *llm.Content, err error, expected
 
 func assertExecutionError(t *testing.T, resp *llm.Content, err error, bus *inframock.TestEventBus, expectedMsg string, expectedErr error) {
 	t.Helper()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if expectedErr != nil && errors.Is(expectedErr, llm.ErrTerminal) {
+		if err == nil {
+			t.Fatalf("expected terminal error, got nil")
+		} else if !errors.Is(err, llm.ErrTerminal) {
+			t.Fatalf("expected error to wrap llm.ErrTerminal, got: %v", err)
+		}
+	} else {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	}
 	verifyErrorResponse(t, resp, expectedMsg)
 	if bus != nil && expectedErr != nil {
@@ -160,7 +166,7 @@ func TestOrchestrator_Success(t *testing.T) {
 			"tool2": {result: tools.ToolResult{Text: "res2"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(2, 0)
+		exec.SetConcurrency(2)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "tool1"}},
@@ -178,7 +184,7 @@ func TestOrchestrator_Success(t *testing.T) {
 			"tool2":       {result: tools.ToolResult{Text: "res2"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(2, 0)
+		exec.SetConcurrency(2)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "serial_tool"}},
@@ -218,7 +224,7 @@ func TestOrchestrator_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Did you mean \"list_files\"?", nil)
+		assertExecutionError(t, resp, err, nil, "Did you mean \"list_files\"?", llm.ErrTerminal)
 	})
 
 	t.Run("Security Violation", func(t *testing.T) {
@@ -258,8 +264,7 @@ func TestOrchestrator_SafetyLimits(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"slow": {delay: 500 * time.Millisecond, result: tools.ToolResult{Text: "too late"}},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(0, 50*time.Millisecond)
+		exec, bus, _ := setupTestExecutor(t, toolsMap, nil, withToolTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "slow"}},
@@ -290,8 +295,7 @@ func TestOrchestrator_SafetyLimits(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "finally finished"}, long: true},
 		}
-		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(0, 50*time.Millisecond)
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil, withToolTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "long_tool"}},
@@ -341,8 +345,8 @@ func TestOrchestrator_PanicRecovery(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		if err == nil || !errors.Is(err, llm.ErrTerminal) {
+			t.Fatalf("expected terminal error, got: %v", err)
 		}
 		if resp == nil || len(resp.Parts) < 2 {
 			t.Fatalf("expected at least 2 parts, got %v", resp)
@@ -369,7 +373,7 @@ func TestOrchestrator_Concurrency(t *testing.T) {
 			"t3": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "r3"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(1, 0)
+		exec.SetConcurrency(2)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "t1"}},
@@ -389,7 +393,7 @@ func TestOrchestrator_Concurrency(t *testing.T) {
 			"s1": {result: tools.ToolResult{Text: "sr1"}, serial: true},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(2, 0)
+		exec.SetConcurrency(2)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "p1"}},
@@ -453,10 +457,9 @@ func TestOrchestrator_ConcurrencyLimit_Strict(t *testing.T) {
 		require.NoError(t, reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc))
 	}
 
-	exec, err := NewOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.SetConcurrency(2, 0)
-	t.Cleanup(exec.Shutdown)
+	exec.SetConcurrency(2)
 
 	content := createTestToolContent(5)
 
@@ -595,66 +598,11 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_SubmitFailure(t *testing.T) {
-	t.Parallel()
-	p := concurrency.NewWorkerPool(1)
-	p.Shutdown()
-
-	err := p.Submit(func(ctx context.Context) {})
-	if err == nil {
-		t.Error("Expected Submit to fail on closed pool")
-	}
-}
-
-func TestResultCollector(t *testing.T) {
-	t.Parallel()
-	calls := []*llm.FunctionCall{
-		{Name: "tool0"},
-		{Name: "tool1"},
-		{Name: "tool2"},
-	}
-
-	t.Run("Ordering", func(t *testing.T) {
-		t.Parallel()
-		exec, _, _ := setupTestExecutor(t, nil, nil)
-		collector := exec.newResultCollector(calls, nil)
-		collector.ch <- toolExecResult{index: 2, name: "tool2", tr: tools.ToolResult{Text: "res2"}}
-		collector.ch <- toolExecResult{index: 0, name: "tool0", tr: tools.ToolResult{Text: "res0"}}
-		collector.ch <- toolExecResult{index: 1, name: "tool1", tr: tools.ToolResult{Text: "res1"}}
-
-		results, err := collector.Wait(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if len(results) != 3 {
-			t.Fatalf("Expected 3 results, got %d", len(results))
-		}
-		if results[0].Text != "res0" || results[1].Text != "res1" || results[2].Text != "res2" {
-			t.Errorf("Results out of order: %v", results)
-		}
-	})
-
-	t.Run("Context Cancellation", func(t *testing.T) {
-		t.Parallel()
-		ctx, cancel := context.WithCancel(context.Background())
-		exec, _, _ := setupTestExecutor(t, nil, nil)
-		collector := exec.newResultCollector(calls, nil)
-		cancel()
-
-		_, err := collector.Wait(ctx)
-		if err != context.Canceled {
-			t.Errorf("Expected context.Canceled, got %v", err)
-		}
-	})
-}
-
 func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	e, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 	require.NoError(t, err)
-	t.Cleanup(e.Shutdown)
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
 		t.Parallel()
@@ -731,9 +679,8 @@ func TestOrchestrator_EventPublishing(t *testing.T) {
 	require.NoError(t, err)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -758,9 +705,8 @@ func TestOrchestrator_EventPublishing(t *testing.T) {
 func TestOrchestrator_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(e.Shutdown)
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
 	results := []tools.ToolResult{{Text: "res"}}
@@ -777,17 +723,16 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
-		t.Cleanup(exec.Shutdown)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "any"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		if err == nil || !errors.Is(err, llm.ErrTerminal) {
+			t.Fatalf("expected terminal error, got: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool \"any\" encountered an internal fatal error (panic) and was terminated.")
 		verifyToolEventError(t, bus, llm.ErrTerminal)
@@ -797,17 +742,16 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
-		t.Cleanup(exec.Shutdown)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "any"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		if err == nil || !errors.Is(err, llm.ErrTerminal) {
+			t.Fatalf("expected terminal error, got: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool \"any\" encountered an internal fatal error (panic) and was terminated.")
 		verifyToolEventError(t, bus, llm.ErrTerminal)
@@ -907,8 +851,8 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 			err:     errors.New("flakey error"),
 		},
 	}
-	exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
-	exec.SetConcurrency(1, 0) // serial to ensure deterministic failure counting
+	exec, bus, _ := setupTestExecutor(t, toolsMap, nil, WithCBThreshold(2))
+	exec.SetConcurrency(1) // serial to ensure deterministic failure counting
 
 	content := &llm.Content{Parts: []*llm.Part{
 		{FunctionCall: &llm.FunctionCall{Name: "flakey_tool"}},
@@ -917,8 +861,6 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 	// 1st failure
 	_, _ = exec.Execute(context.Background(), content, 0, 10)
 	// 2nd failure
-	_, _ = exec.Execute(context.Background(), content, 0, 10)
-	// 3rd failure
 	_, _ = exec.Execute(context.Background(), content, 0, 10)
 
 	// Circuit should now be open
@@ -943,141 +885,8 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 		t.Errorf("Expected SystemMessageEvent with level 'warn' for circuit breaker")
 	}
 
-	if atomic.LoadInt32(&attempts) != 3 {
-		t.Errorf("Expected exactly 3 attempts, got %d", attempts)
-	}
-}
-
-func TestOrchestrator_ContextCancellation_Parallel(t *testing.T) {
-	t.Parallel()
-
-	toolStarted := make(chan struct{})
-
-	toolsMap := map[string]toolBehavior{
-		"tool1": {
-			observe: func() {
-				select {
-				case <-toolStarted: // prevent double close
-				default:
-					close(toolStarted)
-				}
-			},
-			delay: 100 * time.Millisecond,
-		},
-		"tool2": {delay: 100 * time.Millisecond},
-		"tool3": {delay: 100 * time.Millisecond},
-	}
-	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-	// Limit concurrency so tool3 is queued and picked up after context is cancelled
-	exec.SetConcurrency(1, 0)
-
-	content := &llm.Content{Parts: []*llm.Part{
-		{FunctionCall: &llm.FunctionCall{Name: "tool1"}},
-		{FunctionCall: &llm.FunctionCall{Name: "tool2"}},
-		{FunctionCall: &llm.FunctionCall{Name: "tool3"}},
-	}}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Deterministic synchronization
-	go func() {
-		<-toolStarted // Block until the scheduler actually starts the tool
-		cancel()
-	}()
-
-	resp, err := exec.Execute(ctx, content, 0, 10)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("Expected context.Canceled, got %v", err)
-	}
-
-	// Since the executor now synthesizes responses on cancellation to preserve history state,
-	// resp should NOT be nil, and the length of its parts must equal the number of original function calls.
-	if resp == nil {
-		t.Errorf("Expected non-nil response on context cancellation for history preservation")
-	} else if len(resp.Parts) != len(content.Parts) {
-		t.Errorf("Expected %d response parts, got %d", len(content.Parts), len(resp.Parts))
-	}
-}
-
-func TestOrchestrator_ContextCancellation_Direct(t *testing.T) {
-	t.Parallel()
-	toolsMap := map[string]toolBehavior{
-		"tool1": {delay: 100 * time.Millisecond},
-	}
-	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-	exec.SetConcurrency(1, 0)
-
-	calls := []*llm.FunctionCall{{Name: "tool1"}}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	resChan := make(chan toolExecResult, 1)
-
-	// Create wait group matching runExecutionPlan behavior manually
-	var wg sync.WaitGroup
-	exec.enqueueParallelTask(ctx, 0, calls[0], resChan, &wg)
-
-	wg.Wait()
-
-	res := <-resChan
-	if res.tr.Text != "Skipped: Context cancelled" {
-		t.Errorf("Expected 'Skipped: Context cancelled', got %q", res.tr.Text)
-	}
-}
-
-func TestOrchestrator_UserDeclinedBatch(t *testing.T) {
-	t.Parallel()
-	toolsMap := map[string]toolBehavior{
-		"declined_tool": {result: tools.ToolResult{Text: "ok"}},
-		"allowed_tool":  {result: tools.ToolResult{Text: "ok"}},
-	}
-	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-
-	calls := []*llm.FunctionCall{
-		{Name: "declined_tool"},
-		{Name: "allowed_tool"},
-	}
-
-	declinedMap := map[int]bool{
-		0: true, // declining the first tool
-	}
-
-	resChan := make(chan toolExecResult, 2)
-	batches := exec.buildExecutionBatches(calls, declinedMap, resChan)
-
-	// Assert that the length of batches is exactly 1.
-	if len(batches) != 1 {
-		t.Fatalf("expected 1 batch, got %d", len(batches))
-	}
-
-	// Assert that the tasks array inside that batch contains exactly one element: index 1 (the allowed_tool).
-	// It should not contain index 0.
-	if len(batches[0].tasks) != 1 {
-		t.Fatalf("expected 1 task in batch, got %d", len(batches[0].tasks))
-	}
-	if batches[0].tasks[0] != 1 {
-		t.Errorf("expected task index 1, got %d", batches[0].tasks[0])
-	}
-
-	// Read one result from resChan
-	res := <-resChan
-
-	// Assert that res.index is 0, res.name is "declined_tool", and res.tr.Error is tools.ErrUserDeclined.
-	if res.index != 0 {
-		t.Errorf("expected result index 0, got %d", res.index)
-	}
-	if res.name != "declined_tool" {
-		t.Errorf("expected result name 'declined_tool', got %s", res.name)
-	}
-	if !errors.Is(res.tr.Error, tools.ErrUserDeclined) {
-		t.Errorf("expected tools.ErrUserDeclined, got %v", res.tr.Error)
-	}
-
-	// Assert that res.tr.Text equals "User explicitly denied this action."
-	expectedText := "User explicitly denied this action."
-	if res.tr.Text != expectedText {
-		t.Errorf("expected text %q, got %q", expectedText, res.tr.Text)
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Errorf("Expected exactly 2 attempts, got %d", attempts)
 	}
 }
 
@@ -1114,11 +923,10 @@ func TestOrchestrator_ZombieTool(t *testing.T) {
 	}, registry.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := NewOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := NewPipelineOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)
-		exec.Shutdown()
 	})
 
 	content := &llm.Content{Parts: []*llm.Part{

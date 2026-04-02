@@ -179,3 +179,6 @@ For advanced usage with piped multi-agent workflows, see [docs/user/piped-multi-
 
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).
+
+## Design Decisions
+Significant architectural decisions are documented in our [Architecture Decision Records (ADRs)](docs/adr/README.md).

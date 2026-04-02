@@ -153,7 +153,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -376,7 +376,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			},
 			preSetup: func(b *uiBridge, m *mockUIRenderer) {
 				// Start a spinner first
-				b.handleEvent(context.Background(), events.InferenceStartedEvent{})
+				_ = b.handleEvent(context.Background(), events.InferenceStartedEvent{})
 				// No need for explicit waitMock here as preSetup's effects will be checked at end
 			},
 			verify: func(t *testing.T, b *uiBridge) {
@@ -388,9 +388,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			event: events.ConsentFinishedEvent{},
 			preSetup: func(b *uiBridge, m *mockUIRenderer) {
 				// Set active phase via event
-				b.handleEvent(context.Background(), events.InferenceStartedEvent{Model: "gpt-4o"})
+				_ = b.handleEvent(context.Background(), events.InferenceStartedEvent{Model: "gpt-4o"})
 				// Enter consent
-				b.handleEvent(context.Background(), events.ConsentStartedEvent{})
+				_ = b.handleEvent(context.Background(), events.ConsentStartedEvent{})
 			},
 			setup: func(m *mockUIRenderer) <-chan struct{} {
 				done := make(chan struct{})
@@ -423,7 +423,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			mRenderer := new(mockUIRenderer)
-			bridge := newUIBridge(context.Background(), mRenderer,
+			bridge := newUIBridge(mRenderer,
 				withBridgeThoughts(true),
 				withBridgeTools(true),
 				withBridgeRawOutput(false),
@@ -431,6 +431,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				withBridgeLogFile("log.txt"),
 				withBridgeLogger(slog.Default()),
 			)
+			bridge.Start(context.Background())
 			defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 			// Set up expectations BEFORE preSetup
 			done := tt.setup(mRenderer)
@@ -438,7 +439,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				tt.preSetup(bridge, mRenderer)
 			}
 
-			bridge.handleEvent(context.Background(), tt.event)
+			_ = bridge.handleEvent(context.Background(), tt.event)
 
 			// Wait for the async actor loop to process the event(s)
 			if done != nil {
@@ -459,7 +460,8 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 func TestUIBridge_EnsureContext(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	t.Run("Returns existing context", func(t *testing.T) {
@@ -470,12 +472,10 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 		assert.Equal(t, ctx, result)
 	})
 
-	t.Run("Returns background context and logs warning if nil", func(t *testing.T) {
-		mRenderer.On("LogSystemMessage", mock.Anything, "test missing context", "warn").Once()
+	t.Run("Returns background context and logs debug if nil", func(t *testing.T) {
 		var nilCtx context.Context
 		result := bridge.ensureContext(nilCtx, "test")
 		assert.NotNil(t, result)
-		mRenderer.AssertExpectations(t)
 	})
 }
 
@@ -484,7 +484,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -520,7 +520,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	t.Parallel()
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -767,7 +767,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 	mUIRenderer := &behaviorMockUIRenderer{tracker: tracker}
 
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -991,7 +991,7 @@ func TestRun_Routing(t *testing.T) {
 		mHistoryRenderer := new(mockHistoryRenderer)
 		mUIRenderer := new(mockUIRenderer)
 		mCapturer := new(mockCapturer)
-		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, mEventBus)
 
 		mHistory := &mockHistoryManager{
@@ -1016,7 +1016,7 @@ func TestRun_Routing(t *testing.T) {
 		mHistoryRenderer := new(mockHistoryRenderer)
 		mUIRenderer := new(mockUIRenderer)
 		mCapturer := new(mockCapturer)
-		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, mEventBus)
 
 		mHistory := &mockHistoryManager{
@@ -1045,7 +1045,7 @@ func TestRun_Routing(t *testing.T) {
 		mHistoryRenderer := new(mockHistoryRenderer)
 		mUIRenderer := new(mockUIRenderer)
 		mCapturer := new(mockCapturer)
-		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+		mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 		inframock.CleanupBus(t, mEventBus)
 
 		mHistory := &mockHistoryManager{
@@ -1072,7 +1072,8 @@ func TestRun_Routing(t *testing.T) {
 func TestUIBridge_Concurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// Setup mocks with Maybe() to handle concurrent calls safely
@@ -1096,7 +1097,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 		defer wg.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
-			bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+			_ = bridge.handleEvent(ctx, events.InferenceStartedEvent{})
 		}
 	}()
 
@@ -1104,7 +1105,7 @@ func TestUIBridge_Concurrency(t *testing.T) {
 		defer wg.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
-			bridge.handleEvent(ctx, events.ResponseEvent{
+			_ = bridge.handleEvent(ctx, events.ResponseEvent{
 				Content: &llm.Content{},
 			})
 		}
@@ -1116,8 +1117,8 @@ func TestUIBridge_Concurrency(t *testing.T) {
 		defer wg.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
-			bridge.handleEvent(ctx, events.TurnStarted{})
-			bridge.handleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{}})
+			_ = bridge.handleEvent(ctx, events.TurnStarted{})
+			_ = bridge.handleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{}})
 		}
 	}()
 
@@ -1125,12 +1126,12 @@ func TestUIBridge_Concurrency(t *testing.T) {
 		defer wg.Done()
 		<-start
 		for i := 0; i < iterations; i++ {
-			bridge.handleEvent(ctx, events.UsageMetricsEvent{
+			_ = bridge.handleEvent(ctx, events.UsageMetricsEvent{
 				Metrics:   &llm.Metrics{},
 				StartTime: time.Now(),
 				Context:   ctx,
 			})
-			bridge.handleEvent(ctx, events.ToolCallEvent{
+			_ = bridge.handleEvent(ctx, events.ToolCallEvent{
 				Calls:    []*llm.FunctionCall{{Name: "test"}},
 				Turn:     0,
 				MaxTurns: 5,
@@ -1146,7 +1147,8 @@ func TestUIBridge_Concurrency(t *testing.T) {
 func TestUIBridge_LogicalRace(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// StartSpinnerWithStatus should NOT be called because ResponseEvent is already rendering
@@ -1156,19 +1158,19 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Mark as rendering via ResponseEvent
-	bridge.handleEvent(ctx, events.ResponseEvent{
+	_ = bridge.handleEvent(ctx, events.ResponseEvent{
 		Content: &llm.Content{},
 	})
 
 	// 2. Try to start a spinner (should be suppressed)
-	bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+	_ = bridge.handleEvent(ctx, events.InferenceStartedEvent{})
 
 	// 3. Send a sentinel to ensure #2 was processed
 	done := make(chan struct{})
 	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 		close(done)
 	}).Return().Once()
-	bridge.handleEvent(ctx, events.TurnStatusEvent{})
+	_ = bridge.handleEvent(ctx, events.TurnStatusEvent{})
 
 	select {
 	case <-done:
@@ -1183,17 +1185,18 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	spinnerStopped := make(chan struct{})
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Return(func() { close(spinnerStopped) })
 
 	// Start Inference
-	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 
 	// Force new turn before ResponseEvent arrives (Simulates an abort/reset)
-	bridge.handleEvent(context.Background(), events.TurnStarted{})
+	_ = bridge.handleEvent(context.Background(), events.TurnStarted{})
 
 	select {
 	case <-spinnerStopped:
@@ -1205,7 +1208,8 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 func TestUIBridge_Retry_Spinner(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// First attempt
@@ -1213,7 +1217,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Thinking...").Run(func(_ mock.Arguments) {
 		close(done1)
 	}).Return(func() {}).Once()
-	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 	select {
 	case <-done1:
 	case <-time.After(2 * time.Second):
@@ -1225,7 +1229,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 		close(done2)
 	}).Return().Once()
-	bridge.handleEvent(context.Background(), events.ResponseEvent{
+	_ = bridge.handleEvent(context.Background(), events.ResponseEvent{
 		Content: &llm.Content{},
 	})
 	select {
@@ -1240,7 +1244,7 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, " Retrying in 5s...").Run(func(_ mock.Arguments) {
 		close(done3)
 	}).Return(func() {}).Once()
-	bridge.handleEvent(context.Background(), events.RetryWaitingEvent{Duration: 5 * time.Second})
+	_ = bridge.handleEvent(context.Background(), events.RetryWaitingEvent{Duration: 5 * time.Second})
 	select {
 	case <-done3:
 	case <-time.After(2 * time.Second):
@@ -1253,7 +1257,8 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 
 	spinnerStarted := make(chan struct{})
 	spinnerStopped := make(chan struct{})
@@ -1262,7 +1267,7 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	}).Return(func() { close(spinnerStopped) })
 
 	// Start Inference
-	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 
 	// Wait for spinner to start
 	select {
@@ -1314,7 +1319,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 			mChatter := new(mockChatter)
 			mCapturer := new(mockCapturer)
 			mHistory := new(mockHistoryManager)
-			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+			mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			inframock.CleanupBus(t, mEventBus)
 
 			factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -1383,7 +1388,8 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 
 	// 1. Summarization starts
 	stopSummarizationCalled := make(chan struct{})
@@ -1394,7 +1400,7 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 		close(stopSummarizationCalled)
 	}).Once()
 
-	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
 	select {
 	case <-doneSummarization:
 	case <-time.After(2 * time.Second):
@@ -1410,7 +1416,7 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 		close(stopInferenceCalled)
 	}).Once()
 
-	bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 	select {
 	case <-doneInference:
 	case <-time.After(2 * time.Second):
@@ -1439,7 +1445,8 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 
 	var activeSpinners int32
 
@@ -1456,9 +1463,9 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			if idx%2 == 0 {
-				bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
+				_ = bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
 			} else {
-				bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+				_ = bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 			}
 		}(i)
 	}
@@ -1493,6 +1500,10 @@ func (m *mockClock) Now() time.Time {
 	return args.Get(0).(time.Time)
 }
 
+func (m *mockClock) Since(t time.Time) time.Duration {
+	return m.Now().Sub(t)
+}
+
 func (m *mockClock) Sleep(d time.Duration) {
 	m.Called(d)
 }
@@ -1517,7 +1528,7 @@ func TestOrchestrator_SessionID_Fallback(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	mClock := new(mockClock)
@@ -1570,7 +1581,7 @@ func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	mClock := new(mockClock)
@@ -1620,7 +1631,7 @@ func TestOrchestrator_SessionID_ShortRead_Fallback(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	mClock := new(mockClock)
@@ -1678,7 +1689,8 @@ func TestUIBridge_NilLoggerFallback(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	// Instantiate without WithLogger
-	bridge := newUIBridge(context.Background(), mRenderer)
+	bridge := newUIBridge(mRenderer)
+	bridge.Start(context.Background())
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	assert.NotNil(t, bridge.logger, "Logger should fall back to slog.Default() if nil")
@@ -1688,10 +1700,14 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Initialize bridge with a very small timeout via functional option
-	bridge := newUIBridge(context.Background(), mRenderer,
+	bridge := newUIBridge(mRenderer,
 		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
+	bridgeCtx := bridge.Start(ctx)
 
 	// Force a waitgroup hang to simulate a deadlocked renderer or long-running loop
 	bridge.wg.Add(1)
@@ -1713,5 +1729,18 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 	}
 
 	// VERIFY: context should be cancelled now
-	assert.Error(t, bridge.ctx.Err(), "Context should be cancelled after Cleanup timeout")
+	assert.Error(t, bridgeCtx.Err(), "Context should be cancelled after Cleanup timeout")
+}
+
+func TestUIBridge_HandleEvent_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(mRenderer)
+	// We don't start the bridge's background loop to specifically test load shedding logic
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+	assert.ErrorIs(t, err, context.Canceled)
 }

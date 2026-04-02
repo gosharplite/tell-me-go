@@ -37,9 +37,8 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 	observer := &MockLogger{}
 
 	// Create Orchestrator but replace runtime with mockExecutor
-	exec, err := NewOrchestrator(reg, nil, bus, logger, observer)
+	exec, err := NewPipelineOrchestrator(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
-	defer exec.Shutdown()
 
 	releaseCh := make(chan struct{})
 	var startedCount atomic.Int32
@@ -55,7 +54,7 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 			wg.Done()
 		},
 	}
-	exec.runtime = mock
+	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime = mock
 
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -101,9 +100,8 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	observer := &MockLogger{}
 
 	// Create Orchestrator but replace runtime with mockExecutor
-	exec, err := NewOrchestrator(reg, nil, bus, logger, observer)
+	exec, err := NewPipelineOrchestrator(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
-	defer exec.Shutdown()
 
 	releaseCh1 := make(chan struct{})
 	releaseCh2 := make(chan struct{})
@@ -136,7 +134,7 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	currentReleaseCh := make(chan struct{})
 	mock.BlockCh = currentReleaseCh
 
-	exec.runtime = mock
+	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime = mock
 
 	content := &llm.Content{
 		Parts: []*llm.Part{

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
@@ -76,7 +77,7 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer) (*app, *slog
 
 // Run executes the application logic.
 func (a *app) Run(ctx stdctx.Context, args []string) error {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Ensure the security manager (and underlying audit log file) flushes and closes on exit

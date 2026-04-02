@@ -93,7 +93,11 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 
 	// 3. Invoking a Use Case / Service interface
 	capturer, cleanup := c.buildCapturer(ctx, opts)
-	defer cleanup()
+	defer func() {
+		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
+		defer cancel()
+		_ = cleanup(shutdownCtx)
+	}()
 
 	if !opts.retry {
 		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
@@ -135,7 +139,7 @@ func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet,
 	return opts, fs, nil
 }
 
-func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports.Capturer, func()) {
+func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports.Capturer, func(stdctx.Context) error) {
 	if opts.tuiPrompt {
 		// Try to get at least the last user message for the trie
 		lastMsg, _, _ := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
@@ -152,13 +156,13 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 			// Fallback: use a dummy cleanup or return an error if TUI requires BaseCapturer
 			c, ok := capturerInterface.(ports.Capturer)
 			if !ok {
-				return nil, func() {}
+				return nil, func(stdctx.Context) error { return nil }
 			}
-			return c, func() {}
+			return c, func(stdctx.Context) error { return nil }
 		}
 
 		var capturer ports.Capturer
-		cleanup := func() {}
+		cleanup := func(stdctx.Context) error { return nil }
 
 		if err != nil {
 			// Log warning and fall back to the base capturer (no suggestions)
@@ -166,14 +170,12 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 			capturer = baseCapturer
 		} else {
 			capturer = tui.NewPromptCapturer(baseCapturer, svc)
-			cleanup = func() {
-				// We use a separate context for shutdown to ensure it runs even if
-				// the main context is cancelled.
-				shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
-				defer cancel()
-				if err := capturer.Close(shutdownCtx); err != nil {
+			cleanup = func(ctx stdctx.Context) error {
+				if err := capturer.Close(ctx); err != nil {
 					_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close suggestion service: %v\n", err)
+					return err
 				}
+				return nil
 			}
 		}
 
@@ -189,18 +191,18 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 	return c.setupCapturer()
 }
 
-func (c *chatCommand) setupCapturer() (ports.Capturer, func()) {
+func (c *chatCommand) setupCapturer() (ports.Capturer, func(stdctx.Context) error) {
 	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 	capturer, ok := capturerInterface.(ports.Capturer)
 	if !ok {
-		return nil, func() {}
+		return nil, func(stdctx.Context) error { return nil }
 	}
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
 		sm.SetInteractor(capturerInterface)
 	}
-	return capturer, func() {}
+	return capturer, func(stdctx.Context) error { return nil }
 }
 
 func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer ports.Capturer) (string, error) {

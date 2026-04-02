@@ -8,12 +8,14 @@ import (
 )
 
 func TestTelemetryLogger_ExecutionTimedOut(t *testing.T) {
+	t.Parallel()
 	logger := &TelemetryLogger{}
 	// This should not panic
 	logger.ExecutionTimedOut("test-tool-id")
 }
 
 func TestTelemetryLogger_ExecutionCompletedLate(t *testing.T) {
+	t.Parallel()
 	logger := &TelemetryLogger{}
 	// This should not panic
 	logger.ExecutionCompletedLate("test-tool-id")

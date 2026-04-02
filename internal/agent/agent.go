@@ -55,7 +55,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	}
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry))
-	exec, err := executor.NewOrchestrator(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
+	exec, err := executor.NewPipelineOrchestrator(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
@@ -216,10 +216,6 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 func (a *agent) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	if a.executor != nil {
-		a.executor.Shutdown()
-	}
 
 	if a.events != nil {
 		if err := a.events.Flush(ctx); err != nil {

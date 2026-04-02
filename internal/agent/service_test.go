@@ -84,7 +84,7 @@ type mockServiceContainer struct {
 	mock.Mock
 }
 
-func (m *mockServiceContainer) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(), error) {
+func (m *mockServiceContainer) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
 	var deps ports.SessionDependencies
 	if args.Get(0) != nil {
@@ -94,7 +94,7 @@ func (m *mockServiceContainer) BuildSessionDependencies(ctx context.Context, cfg
 	if args.Get(1) != nil {
 		hManager = args.Get(1).(ports.HistoryManager)
 	}
-	return deps, hManager, args.Get(2).(func()), args.Error(3)
+	return deps, hManager, args.Get(2).(func(context.Context) error), args.Error(3)
 }
 
 func (m *mockServiceContainer) GetAgentFactory() ports.ChatterFactory {
@@ -253,7 +253,7 @@ func TestProcessMessage(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setupMock   func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func()
+		setupMock   func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error
 		opts        ChatOptions
 		wantErr     bool
 		errMsg      string
@@ -262,7 +262,7 @@ func TestProcessMessage(t *testing.T) {
 		{
 			name: "Success",
 			opts: ChatOptions{ConfigPath: "config.yaml", Prompt: "hello"},
-			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func() {
+			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -273,7 +273,7 @@ func TestProcessMessage(t *testing.T) {
 				l.On("Load", "config.yaml").Return(cfg, nil)
 
 				cleanupCalled := false
-				cleanup := func() { cleanupCalled = true }
+				cleanup := func(context.Context) error { cleanupCalled = true; return nil }
 
 				mockHM := &mockHistoryManagerForRetry{}
 				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
@@ -301,18 +301,19 @@ func TestProcessMessage(t *testing.T) {
 				cap.On("IsTTY", mock.Anything).Return(true)
 				cap.On("Close", mock.Anything).Return(nil)
 
-				return func() {
+				return func(context.Context) error {
 					assert.True(t, cleanupCalled)
+					return nil
 				}
 			},
 		},
 		{
 			name: "BuildSessionDepsError",
 			opts: ChatOptions{ConfigPath: "config.yaml"},
-			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func() {
+			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				l.On("Load", "config.yaml").Return(cfg, nil)
-				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func() {}, errBuild)
+				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 				return nil
 			},
 			wantErr:     true,
@@ -322,7 +323,7 @@ func TestProcessMessage(t *testing.T) {
 		{
 			name: "ConfigLoadError",
 			opts: ChatOptions{ConfigPath: "invalid.yaml"},
-			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func() {
+			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
 				l.On("Load", "invalid.yaml").Return((*config.Config)(nil), errFileNotFound)
 				return nil
 			},
@@ -345,7 +346,7 @@ func TestProcessMessage(t *testing.T) {
 
 			service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
 
-			var verify func()
+			var verify func(context.Context) error
 			if tt.setupMock != nil {
 				verify = tt.setupMock(loader, container, sm, capturer, deps, bus, agent)
 			}
@@ -365,7 +366,7 @@ func TestProcessMessage(t *testing.T) {
 			}
 
 			if verify != nil {
-				verify()
+				_ = verify(context.Background())
 			}
 
 			loader.AssertExpectations(t)

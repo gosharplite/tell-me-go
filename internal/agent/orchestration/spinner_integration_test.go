@@ -45,6 +45,10 @@ func (c *controlledClock) Now() time.Time {
 	return c.now
 }
 
+func (c *controlledClock) Since(t time.Time) time.Duration {
+	return c.Now().Sub(t)
+}
+
 func (c *controlledClock) Sleep(d time.Duration) {
 	c.mu.Lock()
 	c.now = c.now.Add(d)
@@ -85,7 +89,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
-	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithWorkers(0))
+	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
 	factory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -99,7 +103,8 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	// Since we are testing the Orchestrator's wiring, we need to capture the bridge's handleEvent function.
 	var capturedHandler func(context.Context, events.Event)
 	mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
-		capturedHandler = args.Get(0).(func(context.Context, events.Event))
+		sub := args.Get(0).(func(context.Context, events.Event))
+		capturedHandler = sub
 	}).Return()
 
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -189,7 +194,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 
 	// Create bridge with a long-lived context
 	sessionCtx := context.Background()
-	bridge := newUIBridge(sessionCtx, uiRenderer,
+	bridge := newUIBridge(uiRenderer,
 		withBridgeThoughts(true),
 		withBridgeTools(true),
 		withBridgeRawOutput(false),
@@ -197,6 +202,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 		withBridgeLogFile("log.txt"),
 		withBridgeLogger(slog.Default()),
 	)
+	bridge.Start(sessionCtx)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -206,7 +212,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	handlerCtx, cancel := context.WithTimeout(sessionCtx, 100*time.Millisecond)
 	defer cancel()
 
-	bridge.handleEvent(handlerCtx, events.InferenceStartedEvent{})
+	_ = bridge.handleEvent(handlerCtx, events.InferenceStartedEvent{})
 
 	// Wait for the spinner to start
 	select {
@@ -235,5 +241,5 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	assert.Contains(t, output, "⠙", "Spinner should still be ticking even after handler context expired")
 
 	// Cleanup
-	bridge.handleEvent(sessionCtx, events.ResponseEvent{Content: &llm.Content{}})
+	_ = bridge.handleEvent(sessionCtx, events.ResponseEvent{Content: &llm.Content{}})
 }
