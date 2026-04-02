@@ -67,7 +67,9 @@ type SimpleEventBus struct {
 	queueSize     int
 	asyncDispatch bool           // If false, runs synchronously
 	workerWG      sync.WaitGroup // Tracks active worker goroutines for subscribers
-	pendingWG     sync.WaitGroup // Tracks pending events for Flush
+	pendingMu     sync.Mutex
+	cond          *sync.Cond
+	pendingCount  int
 }
 
 // busOption defines a functional option for configuring the SimpleEventBus.
@@ -112,12 +114,28 @@ func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 		asyncDispatch:     defaultAsyncDispatch,
 		queueSize:         defaultQueueSize,
 	}
+	b.cond = sync.NewCond(&b.pendingMu)
 
 	for _, opt := range opts {
 		opt(b)
 	}
 
 	return b
+}
+
+func (b *SimpleEventBus) incPending() {
+	b.pendingMu.Lock()
+	b.pendingCount++
+	b.pendingMu.Unlock()
+}
+
+func (b *SimpleEventBus) decPending() {
+	b.pendingMu.Lock()
+	b.pendingCount--
+	if b.pendingCount == 0 {
+		b.cond.Broadcast()
+	}
+	b.pendingMu.Unlock()
 }
 
 func (b *SimpleEventBus) getLogger() *slog.Logger {
@@ -167,17 +185,17 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	wrappers = append(wrappers, globalSubs...)
 
 	for _, w := range wrappers {
-		b.pendingWG.Add(1)
+		b.incPending()
 		select {
 		case w.ch <- event:
 			// Successfully enqueued
 		case <-ctx.Done():
-			b.pendingWG.Done()
+			b.decPending()
 			return ctx.Err()
 		default:
 			// Backpressure: Subscriber channel is full.
 			// Shed load and log to avoid blocking the hot path.
-			b.pendingWG.Done()
+			b.decPending()
 			b.getLogger().Warn("subscriber queue full, dropping event",
 				slog.String("event_type", event.Type()),
 				slog.String("subscriber", fmt.Sprintf("%T", w.sub)))
@@ -240,11 +258,11 @@ func (b *SimpleEventBus) subscriberLoop(w *subscriberWrapper) {
 	for {
 		select {
 		case <-b.ctx.Done():
-			// Drain the queue to decrement pendingWG for unhandled events.
+			// Drain the queue to decrement pending for unhandled events.
 			for {
 				select {
 				case <-w.ch:
-					b.pendingWG.Done()
+					b.decPending()
 				default:
 					return
 				}
@@ -264,7 +282,7 @@ func (b *SimpleEventBus) subscriberLoop(w *subscriberWrapper) {
 				)
 			}
 			cancel()
-			b.pendingWG.Done()
+			b.decPending()
 		}
 	}
 }
@@ -407,25 +425,39 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	}
 
 	done := make(chan struct{})
+	var cancelled bool
+
 	go func() {
+		defer close(done)
 		defer func() {
 			if r := recover(); r != nil {
 				if b.log != nil {
 					b.log.Error("panic in event bus flush wait", "error", r, "stack", string(debug.Stack()))
 				}
-				close(done)
 			}
 		}()
-		b.pendingWG.Wait()
-		close(done)
+		
+		b.pendingMu.Lock()
+		defer b.pendingMu.Unlock()
+		for b.pendingCount > 0 && !cancelled {
+			b.cond.Wait()
+		}
 	}()
 
 	select {
 	case <-done:
 		return nil
 	case <-ctx.Done():
+		b.pendingMu.Lock()
+		cancelled = true
+		b.cond.Broadcast()
+		b.pendingMu.Unlock()
 		return ctx.Err()
 	case <-b.ctx.Done():
+		b.pendingMu.Lock()
+		cancelled = true
+		b.cond.Broadcast()
+		b.pendingMu.Unlock()
 		return ErrBusClosed
 	}
 }
