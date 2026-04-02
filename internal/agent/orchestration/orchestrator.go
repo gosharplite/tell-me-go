@@ -400,6 +400,12 @@ func (b *uiBridge) Cleanup() {
 		// 1. Set up the wait mechanism
 		done := make(chan struct{})
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					b.logger.Error("panic in UI bridge cleanup wait", "error", r, "stack", string(debug.Stack()))
+					close(done)
+				}
+			}()
 			b.wg.Wait()
 			close(done)
 		}()
@@ -453,6 +459,16 @@ func (b *uiBridge) Start(ctx context.Context) context.Context {
 }
 
 func (b *uiBridge) loop(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			b.logger.Error("panic in uiBridge loop", "error", r, "stack", string(debug.Stack()))
+			b.isPoisoned = true
+			b.stopActiveSpinner()
+			if b.cancel != nil {
+				b.cancel()
+			}
+		}
+	}()
 	defer b.wg.Done()
 	for {
 		select {

@@ -32,7 +32,6 @@ type Subscriber interface {
 var (
 	ErrBusClosed         = errors.New("event bus is closed")
 	ErrBusNotInitialized = errors.New("event bus is nil or uninitialized")
-	errQueueFull         = errors.New("event bus queue is full")
 )
 
 const (
@@ -217,7 +216,21 @@ func (b *SimpleEventBus) newWrapper(sub Subscriber) *subscriberWrapper {
 	if b.numWorkers > 0 {
 		w.ch = make(chan Event, b.queueSize)
 		b.workerWG.Add(1)
-		go b.subscriberLoop(w)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					if b.log != nil {
+						b.log.Error("panic in event bus subscriber loop", "error", r, "stack", string(debug.Stack()))
+					}
+					// Important: Ensure workerWG.Done() is called even if subscriberLoop panics early.
+					// Since b.subscriberLoop has a defer b.workerWG.Done(), if the panic occurs *inside* subscriberLoop,
+					// the defer inside subscriberLoop will handle the Done().
+					// If we put it here, we shouldn't call it again unless we know it panicked *before* the defer in subscriberLoop was registered.
+					// Since we call b.subscriberLoop(w) directly, its defer is guaranteed to run if it panics inside.
+				}
+			}()
+			b.subscriberLoop(w)
+		}()
 	}
 	return w
 }
@@ -360,6 +373,15 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	// Wait for active workers to finish
 	done := make(chan struct{})
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// Don't swallow the panic. Log it.
+				if b.log != nil {
+					b.log.Error("panic in event bus shutdown wait", "error", r, "stack", string(debug.Stack()))
+				}
+				close(done)
+			}
+		}()
 		b.workerWG.Wait()
 		close(done)
 	}()
@@ -386,6 +408,14 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 
 	done := make(chan struct{})
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if b.log != nil {
+					b.log.Error("panic in event bus flush wait", "error", r, "stack", string(debug.Stack()))
+				}
+				close(done)
+			}
+		}()
 		b.pendingWG.Wait()
 		close(done)
 	}()

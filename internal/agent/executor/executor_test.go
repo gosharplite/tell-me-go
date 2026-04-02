@@ -194,45 +194,6 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 	}
 }
 
-type orderMockRegistry struct {
-	serialTools map[string]bool
-}
-
-func (m *orderMockRegistry) GetDeclarations() []*tools.ToolDeclaration                 { return nil }
-func (m *orderMockRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) error { return nil }
-func (m *orderMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	return nil
-}
-func (m *orderMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	return tools.ToolResult{}, nil
-}
-func (m *orderMockRegistry) IsSerial(name string) bool      { return m.serialTools[name] }
-func (m *orderMockRegistry) IsLongRunning(name string) bool { return false }
-
-func (m *orderMockRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
-}
-
-func (m *orderMockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	return m.Register(def, handler)
-}
-
-func (m *orderMockRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	return m.RegisterWithOptions(def, handler, opts)
-}
-
-func (m *orderMockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *orderMockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
-	return m.GetDeclarations()
-}
-
-func (m *orderMockRegistry) ListAvailableToolkits() []string {
-	return []string{"core"}
-}
-
 func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}

@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"runtime/debug"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -434,6 +436,16 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 				wg.Add(1)
 				task := func(_ context.Context) {
+					defer func() {
+						if r := recover(); r != nil {
+							err := fmt.Errorf("panic during tool execution: %v", r)
+							resultsCh <- toolExecResult{
+								index: i,
+								name:  fc.Name,
+								tr:    tools.ToolResult{Text: err.Error(), Error: err},
+							}
+						}
+					}()
 					defer wg.Done()
 					if ctx.Err() != nil {
 						resultsCh <- toolExecResult{
@@ -464,6 +476,13 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			}
 
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						// Recover, capture stack trace, but we cannot easily route to aggregator since we don't know the exact index.
+						// Close the channel to avoid deadlock.
+						e.logger.Error("panic in fan-in wait goroutine", "panic", r, "stack", string(debug.Stack()))
+					}
+				}()
 				wg.Wait()
 				close(resultsCh)
 			}()

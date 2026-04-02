@@ -40,6 +40,12 @@ func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]in
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// Prevent crashing the tool execution silently
+				fmt.Printf("panic in summarize history background drainer: %v\n", r)
+			}
+		}()
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
