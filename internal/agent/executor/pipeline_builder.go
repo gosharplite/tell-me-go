@@ -21,6 +21,8 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 		ToolTimeout:        30 * time.Second,
 		LongRunningTimeout: 5 * time.Minute,
 		ZombieTimeout:      5 * time.Minute,
+		CBThreshold:        3,
+		CBResetTimeout:     5 * time.Minute,
 	}
 
 	for _, opt := range opts {
@@ -58,7 +60,7 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 		runtime:    exec,
 		registry:   registry,
 	}
-	pipeline := NewCircuitBreakerPipeline(basePipeline, 3, 5*time.Minute)
+	pipeline := NewCircuitBreakerPipeline(basePipeline, cfg.CBThreshold, cfg.CBResetTimeout)
 
 	res, err := NewOrchestrator(cfg, pipeline, bus, logger, observer, opts...)
 	if err != nil {

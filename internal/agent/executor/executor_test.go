@@ -142,7 +142,6 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 	}
 }
 
-
 func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}

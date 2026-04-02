@@ -590,7 +590,6 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 	}
 }
 
-
 func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
@@ -844,7 +843,7 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 			err:     errors.New("flakey error"),
 		},
 	}
-	exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+	exec, bus, _ := setupTestExecutor(t, toolsMap, nil, WithCBThreshold(2))
 	exec.SetConcurrency(1) // serial to ensure deterministic failure counting
 
 	content := &llm.Content{Parts: []*llm.Part{
@@ -854,8 +853,6 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 	// 1st failure
 	_, _ = exec.Execute(context.Background(), content, 0, 10)
 	// 2nd failure
-	_, _ = exec.Execute(context.Background(), content, 0, 10)
-	// 3rd failure
 	_, _ = exec.Execute(context.Background(), content, 0, 10)
 
 	// Circuit should now be open
@@ -880,8 +877,8 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 		t.Errorf("Expected SystemMessageEvent with level 'warn' for circuit breaker")
 	}
 
-	if atomic.LoadInt32(&attempts) != 3 {
-		t.Errorf("Expected exactly 3 attempts, got %d", attempts)
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Errorf("Expected exactly 2 attempts, got %d", attempts)
 	}
 }
 

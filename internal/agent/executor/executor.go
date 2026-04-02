@@ -28,6 +28,8 @@ type OrchestratorConfig struct {
 	ToolTimeout        time.Duration
 	LongRunningTimeout time.Duration
 	ZombieTimeout      time.Duration
+	CBThreshold        int
+	CBResetTimeout     time.Duration
 }
 
 type ToolPipeline interface {
@@ -146,6 +148,18 @@ func withToolTimeout(timeout time.Duration) executorOption {
 	}
 }
 
+func WithCBThreshold(threshold int) executorOption {
+	return func(cfg *OrchestratorConfig) {
+		cfg.CBThreshold = threshold
+	}
+}
+
+func WithCBResetTimeout(timeout time.Duration) executorOption {
+	return func(cfg *OrchestratorConfig) {
+		cfg.CBResetTimeout = timeout
+	}
+}
+
 func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
 	for _, opt := range opts {
 		opt(&cfg)
@@ -172,6 +186,12 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 	}
 	if cfg.ZombieTimeout <= 0 {
 		cfg.ZombieTimeout = 5 * time.Minute
+	}
+	if cfg.CBThreshold <= 0 {
+		cfg.CBThreshold = 3
+	}
+	if cfg.CBResetTimeout <= 0 {
+		cfg.CBResetTimeout = 5 * time.Minute
 	}
 
 	e := &Orchestrator{

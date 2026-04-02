@@ -26,7 +26,7 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 		}
 		mockClock := clock.NewMockClock(time.Now())
 		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
-		
+
 		call := &llm.FunctionCall{Name: "reliable_tool"}
 		for i := 0; i < 5; i++ {
 			res := cbPipeline.ExecuteTool(context.Background(), call)
@@ -212,7 +212,7 @@ func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
 
 	startWg.Done()
 	doneWg.Wait()
-	
+
 	closeMu.Lock()
 	if !isClosed {
 		close(errCh)
