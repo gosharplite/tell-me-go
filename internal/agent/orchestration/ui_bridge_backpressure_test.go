@@ -243,10 +243,14 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			// 6. Assert blocking behavior
 			if tt.expectBlocking {
 				done := make(chan struct{})
+				started := make(chan struct{})
 				go func() {
+					close(started)
 					_ = bridge.handleEvent(ctx, tt.event)
 					close(done)
 				}()
+
+				<-started
 
 				// To be truly deterministic without sleeps, we check that it hasn't finished yet.
 				// Given the queue is full and loop is blocked, it MUST block.
@@ -379,13 +383,15 @@ func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
 
 	// 3. Start a goroutine that will block on sending a critical event
 	done := make(chan struct{})
+	started := make(chan struct{})
 	go func() {
+		close(started)
 		_ = bridge.handleEvent(bridgeCtx, events.TurnStarted{})
 		close(done)
 	}()
 
-	// Give it a moment to block
-	time.Sleep(100 * time.Millisecond)
+	// Wait for goroutine to at least begin
+	<-started
 
 	// 4. Cancel the bridge context
 	bridge.cancel()

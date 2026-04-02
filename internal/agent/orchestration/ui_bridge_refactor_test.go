@@ -166,10 +166,14 @@ func TestUIBridge_EnqueueEvent_CriticalBlocking(t *testing.T) {
 	defer cancel()
 
 	done := make(chan struct{})
+	started := make(chan struct{})
 	go func() {
+		close(started)
 		defer close(done)
 		_ = b.enqueueEvent(ctx, events.ResponseEvent{})
 	}()
+
+	<-started
 
 	// Prove that done does not receive a value prematurely
 	select {
