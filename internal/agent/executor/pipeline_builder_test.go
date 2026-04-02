@@ -117,7 +117,6 @@ func TestBuildOrchestrator(t *testing.T) {
 			assert.NotNil(t, state)
 			assert.Equal(t, 5, state.config.MaxConcurrentTools) // Default check
 
-			orch.Shutdown() // Avoid goleak
 		})
 	}
 }

@@ -20,7 +20,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -91,7 +90,6 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	bus := &inframock.TestEventBus{}
 	exec, err := BuildOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	return exec, bus, behaviors
 }
@@ -454,7 +452,6 @@ func TestOrchestrator_ConcurrencyLimit_Strict(t *testing.T) {
 	exec, err := BuildOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.SetConcurrency(2)
-	t.Cleanup(exec.Shutdown)
 
 	content := createTestToolContent(5)
 
@@ -593,23 +590,12 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_SubmitFailure(t *testing.T) {
-	t.Parallel()
-	p := concurrency.NewWorkerPool(1)
-	p.Shutdown()
-
-	err := p.Submit(func(ctx context.Context) {})
-	if err == nil {
-		t.Error("Expected Submit to fail on closed pool")
-	}
-}
 
 func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
 	e, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 	require.NoError(t, err)
-	t.Cleanup(e.Shutdown)
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
 		t.Parallel()
@@ -688,7 +674,6 @@ func TestOrchestrator_EventPublishing(t *testing.T) {
 	bus := &inframock.TestEventBus{}
 	exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -715,7 +700,6 @@ func TestOrchestrator_Strategies(t *testing.T) {
 	reg := registry.New()
 	e, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(e.Shutdown)
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
 	results := []tools.ToolResult{{Text: "res"}}
@@ -734,7 +718,6 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		bus := &inframock.TestEventBus{}
 		exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
-		t.Cleanup(exec.Shutdown)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "any"}},
@@ -754,7 +737,6 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		bus := &inframock.TestEventBus{}
 		exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
-		t.Cleanup(exec.Shutdown)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "any"}},
@@ -940,7 +922,6 @@ func TestOrchestrator_ZombieTool(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)
-		exec.Shutdown()
 	})
 
 	content := &llm.Content{Parts: []*llm.Part{

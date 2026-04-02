@@ -120,7 +120,6 @@ func TestOrchestrator_EndToEnd_BarrierPattern(t *testing.T) {
 
 	exec, err := executor.BuildOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	var executionCounter int32
 	var parallelOrder int32
@@ -174,7 +173,6 @@ func TestOrchestrator_EndToEnd_SequentialOrder(t *testing.T) {
 
 	exec, err := executor.BuildOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	var executionCounter int32
 	var serialOrder int32
@@ -227,7 +225,6 @@ func TestOrchestrator_EndToEnd_ContextCancellation(t *testing.T) {
 
 	exec, err := executor.BuildOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(timeout))
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	exitSignal := make(chan struct{})
 

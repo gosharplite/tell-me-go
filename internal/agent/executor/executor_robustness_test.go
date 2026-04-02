@@ -31,7 +31,6 @@ func TestOrchestrator_ConfigRace(t *testing.T) {
 
 	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 	ctx := context.Background()
 	var wg sync.WaitGroup
 
@@ -86,7 +85,6 @@ func TestOrchestrator_ContextCancellation_MidBatch(t *testing.T) {
 
 	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

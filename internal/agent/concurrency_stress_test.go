@@ -121,7 +121,6 @@ func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	exec, err := executor.BuildOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	toolProceedTask := make(chan struct{})
 	defer close(toolProceedTask)

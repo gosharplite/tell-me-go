@@ -10,7 +10,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 )
 
 func TestOrchestrator_ChaosScenarios(t *testing.T) {
@@ -105,7 +104,6 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 				MaxConcurrentTools: 5,
 				ToolTimeout:        100 * time.Millisecond,
 			}
-			pool := concurrency.NewWorkerPool(cfg.MaxConcurrentTools)
 
 			o := &Orchestrator{
 				pipeline: mock,
@@ -114,10 +112,8 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 			}
 			o.state.Store(&orchestratorState{
 				config: cfg,
-				pool:   pool,
 			})
 			t.Cleanup(func() {
-				o.Shutdown()
 			})
 
 			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)

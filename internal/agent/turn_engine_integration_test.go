@@ -298,7 +298,6 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	// Real executor
 	exec, err := executor.BuildOrchestrator(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 

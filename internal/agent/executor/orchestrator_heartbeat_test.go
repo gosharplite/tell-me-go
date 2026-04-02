@@ -62,7 +62,6 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 		WithLongRunningTimeout(2*time.Second),
 	)
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: hangingTool.Name}
@@ -110,7 +109,6 @@ func TestOrchestrator_HeartbeatSuccess(t *testing.T) {
 		WithLongRunningTimeout(2*time.Second),
 	)
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: livelyTool.Name}

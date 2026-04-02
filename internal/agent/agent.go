@@ -217,10 +217,6 @@ func (a *agent) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.executor != nil {
-		a.executor.Shutdown()
-	}
-
 	if a.events != nil {
 		if err := a.events.Flush(ctx); err != nil {
 			a.getLogger().Debug("event bus flush incomplete during shutdown", slog.Any("error", err))

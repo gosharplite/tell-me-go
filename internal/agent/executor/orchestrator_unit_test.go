@@ -39,7 +39,6 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 	// Create Orchestrator but replace runtime with mockExecutor
 	exec, err := BuildOrchestrator(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
-	defer exec.Shutdown()
 
 	releaseCh := make(chan struct{})
 	var startedCount atomic.Int32
@@ -103,7 +102,6 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	// Create Orchestrator but replace runtime with mockExecutor
 	exec, err := BuildOrchestrator(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
-	defer exec.Shutdown()
 
 	releaseCh1 := make(chan struct{})
 	releaseCh2 := make(chan struct{})

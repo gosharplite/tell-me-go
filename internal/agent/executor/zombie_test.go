@@ -73,7 +73,6 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 
 	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 
@@ -128,7 +127,6 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 		withToolTimeout(200*time.Millisecond),
 	)
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	hangingTool := &tools.ToolDeclaration{Name: "hanging_tool"}
 
@@ -207,7 +205,6 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 		WithLongRunningTimeout(5*time.Second),
 	)
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	fc := &llm.FunctionCall{Name: "hanging_tool"}
 	tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)

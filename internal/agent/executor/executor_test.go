@@ -16,7 +16,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -93,7 +92,6 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 
 	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -144,65 +142,12 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_LeakPrevention(t *testing.T) {
-	t.Parallel()
-	pool := concurrency.NewWorkerPool(1)
-	t.Cleanup(pool.Shutdown)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	started := make(chan struct{})
-	finished := make(chan struct{})
-
-	task := func(taskCtx context.Context) {
-		close(started)
-		select {
-		case <-taskCtx.Done(): // Pool context
-		case <-ctx.Done(): // Task context (our local one)
-		}
-		close(finished)
-	}
-
-	err := pool.Submit(task)
-	require.NoError(t, err)
-	<-started
-
-	cancel() // Cancel the task context
-
-	timer3 := time.NewTimer(100 * time.Millisecond)
-	defer timer3.Stop()
-
-	select {
-	case <-finished:
-		// Worker should be free now
-	case <-timer3.C:
-		t.Error("Worker did not release after task context cancellation")
-	}
-
-	// Pool should still be functional for other tasks
-	task2Started := make(chan struct{})
-	err = pool.Submit(func(ctx context.Context) {
-		close(task2Started)
-	})
-	assert.NoError(t, err)
-
-	timer4 := time.NewTimer(100 * time.Millisecond)
-	defer timer4.Stop()
-
-	select {
-	case <-task2Started:
-		// Success
-	case <-timer4.C:
-		t.Error("Worker pool became unresponsive after task cancellation")
-	}
-}
 
 func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
 	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.Shutdown() // Deterministically close the pool
 
 	calls := []*llm.FunctionCall{
 		{ID: "1", Name: "test_tool"},
@@ -236,7 +181,6 @@ func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 	}
 	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
 	// Setup trace context
 	trace := telemetry.NewTurnTrace()
@@ -407,7 +351,6 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 	exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).authorizer = auth
-	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -460,7 +403,6 @@ func TestNewOrchestrator_DefaultConfig(t *testing.T) {
 	executor, err := NewOrchestrator(cfg, pipeline, nil, logger, observer)
 	require.NoError(t, err)
 	require.NotNil(t, executor)
-	defer executor.Shutdown()
 
 	state := executor.state.Load()
 	assert.Equal(t, 5, state.config.MaxConcurrentTools)
@@ -503,7 +445,6 @@ func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
 	exec, err := BuildOrchestrator(reg, sm, bus, logger, &MockLogger{})
 	require.NoError(t, err)
 	exec.SetConcurrency(2)
-	defer exec.Shutdown()
 
 	content := &llm.Content{}
 	for i := 0; i < 10; i++ {
@@ -573,7 +514,6 @@ func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
 	cfg := OrchestratorConfig{MaxConcurrentTools: 2}
 	exec, err := NewOrchestrator(cfg, pipeline, bus, logger, &MockLogger{})
 	require.NoError(t, err)
-	defer exec.Shutdown()
 
 	content := &llm.Content{
 		Parts: []*llm.Part{

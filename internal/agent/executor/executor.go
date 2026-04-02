@@ -15,7 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 )
 
 type toolExecResult struct {
@@ -115,7 +114,6 @@ func NewDefaultToolPipeline(
 
 type orchestratorState struct {
 	config OrchestratorConfig
-	pool   *concurrency.WorkerPool
 }
 
 type Orchestrator struct {
@@ -187,7 +185,6 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 
 	initialState := &orchestratorState{
 		config: cfg,
-		pool:   concurrency.NewWorkerPool(cfg.MaxConcurrentTools),
 	}
 	e.state.Store(initialState)
 
@@ -199,13 +196,11 @@ func (e *Orchestrator) SetConcurrency(maxConcurrent int) {
 		oldState := e.state.Load()
 		newState := &orchestratorState{
 			config: oldState.config,
-			pool:   oldState.pool,
 		}
 
 		changed := false
 		if maxConcurrent > 0 && maxConcurrent != oldState.config.MaxConcurrentTools {
 			newState.config.MaxConcurrentTools = maxConcurrent
-			newState.pool = concurrency.NewWorkerPool(maxConcurrent)
 			changed = true
 		}
 
@@ -214,18 +209,8 @@ func (e *Orchestrator) SetConcurrency(maxConcurrent int) {
 		}
 
 		if e.state.CompareAndSwap(oldState, newState) {
-			if oldState.pool != newState.pool && oldState.pool != nil {
-				oldState.pool.Shutdown()
-			}
 			return
 		}
-	}
-}
-
-func (e *Orchestrator) Shutdown() {
-	state := e.state.Load()
-	if state != nil && state.pool != nil {
-		state.pool.Shutdown()
 	}
 }
 
