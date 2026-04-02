@@ -1,4 +1,4 @@
-# 2026-04 Accept Dual-Write for Telemetry and UI Events
+# ADR-010: Accept Dual-Write for Telemetry and UI Events
 
 ## Status
 Accepted

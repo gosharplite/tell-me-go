@@ -1,4 +1,4 @@
-# ADR: Dynamic Tool Discovery via Capability Toolkits
+# ADR-012: Dynamic Tool Discovery via Capability Toolkits
 
 ## 1. Context and Problem Statement
 As `tell-me-go` expands its integrations (File System, Git, Kubernetes, Azure DevOps, Jira, etc.), the number of registered `ToolDeclarations` has grown significantly. 

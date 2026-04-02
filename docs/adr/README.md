@@ -15,6 +15,10 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-007** | Extract Agent Configuration via Functional Options | 2026-02 | Accepted | [2026-02-agent-options-extraction.md](2026-02-agent-options-extraction.md) |
 | **ADR-008** | Bubble Tea Interactive History Browser | 2026-02 | Implemented | [2026-02-bubble-tea-history-browser.md](2026-02-bubble-tea-history-browser.md) |
 | **ADR-009** | TUI Interactive Prompt Mode with Auto-completion | 2026-02 | Proposed | [2026-02-tui-prompt-mode.md](2026-02-tui-prompt-mode.md) |
+| **ADR-010** | Accept Dual-Write for Telemetry and UI Events | 2026-04 | Accepted | [2026-04-accept-dual-write-for-telemetry-events.md](2026-04-accept-dual-write-for-telemetry-events.md) |
+| **ADR-011** | Refactor UI Bridge to Actor Model for Thread-Safe Asynchronous Rendering | 2026-04 | Accepted | [2026-04-uibridge-actor-model.md](2026-04-uibridge-actor-model.md) |
+| **ADR-012** | Dynamic Tool Discovery via Capability Toolkits | 2026-04 | Accepted | [2026-04-dynamic-tool-discovery.md](2026-04-dynamic-tool-discovery.md) |
+| **ADR-013** | Asynchronous Event-Driven Orchestration | 2026-04 | Accepted | [2026-04-asynchronous-event-driven-orchestration.md](2026-04-asynchronous-event-driven-orchestration.md) |
 
 ## How to Create a New ADR
 
