@@ -270,7 +270,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 				// Non-blocking case: fail fast if regression causes a hang
 				done := make(chan struct{})
 				go func() {
-					bridge.handleEvent(ctx, tt.event)
+					_ = bridge.handleEvent(ctx, tt.event)
 					close(done)
 				}()
 

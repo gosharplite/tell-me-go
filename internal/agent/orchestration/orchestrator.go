@@ -250,7 +250,9 @@ func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Cha
 	)
 	bridge.Start(ctx)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
-		_ = bridge.handleEvent(ctx, e)
+		if err := bridge.handleEvent(ctx, e); err != nil {
+			logger.Warn("Failed to handle bridge event", "error", err, "event", fmt.Sprintf("%T", e))
+		}
 	})
 	return bridge
 }
@@ -309,25 +311,25 @@ const (
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
-	cancel         context.CancelFunc
-	renderer       ports.UIRenderer
-	logger         *slog.Logger
-	showThoughts   bool
-	showTools      bool
-	rawOutput      bool
-	useColor       bool
-	logFile        string
-	state          UIState
-	stopSpinner    func()
-	activePhase    events.Event
-	eventCh        chan events.Event
-	closeOnce      sync.Once
-	cleanupOnce    sync.Once
+	cancel             context.CancelFunc
+	renderer           ports.UIRenderer
+	logger             *slog.Logger
+	showThoughts       bool
+	showTools          bool
+	rawOutput          bool
+	useColor           bool
+	logFile            string
+	state              UIState
+	stopSpinner        func()
+	activePhase        events.Event
+	eventCh            chan events.Event
+	closeOnce          sync.Once
+	cleanupOnce        sync.Once
 	cleanupInvocations int32
-	wg             sync.WaitGroup
-	cleanupTimeout time.Duration
-	isPoisoned     bool
-	isClosed       atomic.Bool
+	wg                 sync.WaitGroup
+	cleanupTimeout     time.Duration
+	isPoisoned         bool
+	isClosed           atomic.Bool
 }
 
 func (b *uiBridge) transition(next UIState) {

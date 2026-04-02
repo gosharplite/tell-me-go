@@ -32,7 +32,7 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 			expectEnqueue: false,
 		},
 		{
-			name: "caller context is cancelled",
+			name:  "caller context is cancelled",
 			setup: func(b *uiBridge) {},
 			ctx: func() context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
@@ -172,7 +172,7 @@ func TestUIBridge_EnqueueEvent_CriticalBlocking(t *testing.T) {
 	duration := time.Since(start)
 
 	assert.GreaterOrEqual(t, duration, 50*time.Millisecond)
-	
+
 	// Verify queue still has only the filler
 	e := <-b.eventCh
 	assert.IsType(t, events.TurnStarted{}, e)
