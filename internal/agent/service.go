@@ -24,7 +24,7 @@ import (
 // Container defines the interface for building session dependencies and provides factories.
 // This interface is defined here to break the import cycle with internal/infrastructure/di.
 type Container interface {
-	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(), error)
+	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error)
 	GetAgentFactory() ports.ChatterFactory
 	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
 	GetHistoryManager(ctx context.Context, cfg *domain_config.Config) (ports.HistoryManager, error)
@@ -93,7 +93,13 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
+		defer cancel()
+		if err := cleanup(shutdownCtx); err != nil {
+			_, _ = fmt.Fprintf(s.Stderr, "Warning: Session cleanup failed: %v\n", err)
+		}
+	}()
 
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)

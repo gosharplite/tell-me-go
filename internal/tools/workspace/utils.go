@@ -21,6 +21,21 @@ import (
 // fileProcessor is a callback function for processing a file during a walk.
 type fileProcessor func(filePath string) error
 
+// sendHeartbeat safely sends a heartbeat, ignoring panics if the channel is closed.
+func sendHeartbeat(ctx context.Context, hb chan<- struct{}) {
+	if hb == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	select {
+	case hb <- struct{}{}:
+	case <-ctx.Done():
+	default:
+	}
+}
+
 // walkAndProcess handles the generic filesystem traversal, safety checks, and directory filtering.
 func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs persistence.FileSystem, path string, hb chan<- struct{}, fn fileProcessor) error {
 	if path == "" {
@@ -50,11 +65,9 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 
 		count++
 		if count%50 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			case <-ctx.Done():
+			sendHeartbeat(ctx, hb)
+			if ctx.Err() != nil {
 				return ctx.Err()
-			default:
 			}
 		}
 
@@ -158,11 +171,9 @@ func (p *searchPipeline) walkFunc(path string, info os.FileInfo, err error) erro
 
 	// Heartbeat while walking
 	if p.hb != nil {
-		select {
-		case p.hb <- struct{}{}:
-		case <-p.ctx.Done():
+		sendHeartbeat(p.ctx, p.hb)
+		if p.ctx.Err() != nil {
 			return p.ctx.Err()
-		default:
 		}
 	}
 
@@ -203,11 +214,9 @@ func (p *searchPipeline) scanFile(path string) error {
 
 	// Heartbeat before scanning a file
 	if p.hb != nil {
-		select {
-		case p.hb <- struct{}{}:
-		case <-p.ctx.Done():
+		sendHeartbeat(p.ctx, p.hb)
+		if p.ctx.Err() != nil {
 			return p.ctx.Err()
-		default:
 		}
 	}
 

@@ -50,10 +50,7 @@ func (t *interactionTool) askUser(ctx context.Context, args map[string]interface
 				return
 			case <-ticker.C:
 				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
+					sendHeartbeat(ctx, hb)
 				}
 			}
 		}

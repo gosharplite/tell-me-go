@@ -55,7 +55,11 @@ func (c *browseCommand) Execute(ctx stdctx.Context, args []string) error {
 
 func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
 	capturer, cleanup := c.setupCapturer()
-	defer cleanup()
+	defer func() {
+		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
+		defer cancel()
+		_ = cleanup(shutdownCtx)
+	}()
 
 	// Bubble Tea requires a TTY for interactive operation.
 	if !capturer.IsTTY(os.Stdout) {
@@ -65,12 +69,12 @@ func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
 	return c.ctx.ChatService.BrowseHistory(ctx, configPath, capturer)
 }
 
-func (c *browseCommand) setupCapturer() (ports.Capturer, func()) {
+func (c *browseCommand) setupCapturer() (ports.Capturer, func(stdctx.Context) error) {
 	capturer := ui.NewCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer, false).(ports.Capturer)
 	if sm, ok := c.ctx.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
 		sm.SetInteractor(capturer.(domain_security.UserInteractor))
 	}
-	return capturer, func() {}
+	return capturer, func(stdctx.Context) error { return nil }
 }

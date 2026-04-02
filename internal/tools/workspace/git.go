@@ -159,10 +159,7 @@ func (m *gitManager) runGitCommand(ctx context.Context, hb chan<- struct{}, args
 				return
 			case <-ticker.C:
 				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
+					sendHeartbeat(ctx, hb)
 				}
 			}
 		}

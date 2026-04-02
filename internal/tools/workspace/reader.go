@@ -101,10 +101,7 @@ func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent stri
 
 	// Emit heartbeat
 	if hb != nil {
-		select {
-		case hb <- struct{}{}:
-		default:
-		}
+		sendHeartbeat(ctx, hb)
 	}
 
 	entries, err := fs.ReadDir(ctx, path)
@@ -264,10 +261,7 @@ func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{},
 	for i, path := range params.FilePaths {
 		// Emit heartbeat every 5 files
 		if i%5 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
+			sendHeartbeat(ctx, hb)
 		}
 		if err := r.processSingleFile(ctx, path, &sb); err != nil {
 			return tools.ToolResult{}, err
