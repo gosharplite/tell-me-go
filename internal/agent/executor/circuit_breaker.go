@@ -118,8 +118,8 @@ func (c *toolCircuit) tripToOpen() {
 
 	state := c.state.Load()
 	if state == int32(StateClosed) || state == int32(StateHalfOpen) {
-		c.state.Store(int32(StateOpen))
 		c.openedAt.Store(c.clock.Now().UnixNano())
+		c.state.Store(int32(StateOpen))
 		c.failures.Store(0) // Explicitly clear counters!
 	}
 }
