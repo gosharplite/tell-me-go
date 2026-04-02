@@ -10,7 +10,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 )
 
 // A mocked ToolPipeline for tests that previously mocked Registry, SM, etc.
@@ -47,24 +46,30 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	// Circuit breaker is moved to orchestrator loop
 	exec = newTracingDecorator(exec, registry, logger)
 
-	// Create a pointer to Orchestrator to capture timeouts dynamically
-	o := &Orchestrator{
-		events:   bus,
-		logger:   logger,
-		observer: observer,
-		zombie:   zombie,
+	var o *Orchestrator
+
+	getToolTimeout := func() time.Duration {
+		if o != nil && o.state.Load() != nil {
+			return o.state.Load().config.ToolTimeout
+		}
+		return cfg.ToolTimeout
 	}
 
-	o.state.Store(&orchestratorState{
-		config: cfg,
-		pool:   concurrency.NewWorkerPool(cfg.MaxConcurrentTools),
-	})
+	getLongRunningTimeout := func() time.Duration {
+		if o != nil && o.state.Load() != nil {
+			return o.state.Load().config.LongRunningTimeout
+		}
+		return cfg.LongRunningTimeout
+	}
 
-	exec = newSafetyDecorator(exec, registry, logger, bus, zombie,
-		func() time.Duration { return o.state.Load().config.ToolTimeout },
-		func() time.Duration { return o.state.Load().config.LongRunningTimeout },
-		func() time.Duration { return o.state.Load().config.ZombieTimeout },
-	)
+	getZombieTimeout := func() time.Duration {
+		if o != nil && o.state.Load() != nil {
+			return o.state.Load().config.ZombieTimeout
+		}
+		return cfg.ZombieTimeout
+	}
+
+	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
 
 	basePipeline := &defaultToolPipeline{
 		resolver:   newToolResolutionService(registry),
@@ -74,13 +79,13 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	}
 	pipeline := NewCircuitBreakerPipeline(basePipeline, 3, 5*time.Minute)
 
-	o.pipeline = pipeline
-	// Run options which might update config or other things
-	for _, opt := range opts {
-		opt(o)
+	res, err := NewOrchestrator(cfg, pipeline, bus, logger, observer, opts...)
+	if err != nil {
+		return nil, err
 	}
 
-	o.strategy = &markdownStrategy{}
+	res.zombie = zombie
+	o = res
 
 	return o, nil
 }

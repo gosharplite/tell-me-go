@@ -255,29 +255,31 @@ func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 }
 
 func TestNewOrchestrator_NilObserver(t *testing.T) {
-	reg := &mockToolRegistry{}
-	_, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, nil)
+	cfg := OrchestratorConfig{}
+	pipeline := &defaultToolPipeline{}
+	_, err := NewOrchestrator(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
 
 func TestNewOrchestrator_NilRegistry(t *testing.T) {
-	// Call with nil registry
-	executor, err := BuildOrchestrator(nil, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	cfg := OrchestratorConfig{}
+	executor, err := NewOrchestrator(cfg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "registry is required")
+	require.Contains(t, err.Error(), "pipeline is required")
 	require.Nil(t, executor)
 }
 
 func TestNewOrchestrator_NilLogger(t *testing.T) {
 	t.Parallel()
-	reg := &mockToolRegistry{}
+	cfg := OrchestratorConfig{}
+	pipeline := &defaultToolPipeline{}
 	observer := &MockLogger{}
 
 	// Explicitly pass nil for the logger
-	_, err := BuildOrchestrator(reg, nil, nil, nil, observer)
+	_, err := NewOrchestrator(cfg, pipeline, nil, nil, observer)
 	require.Error(t, err)
 	assert.Equal(t, "logger is required", err.Error())
 }
@@ -443,4 +445,22 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 	}
 
 	assert.True(t, hasFinished, "ConsentFinishedEvent should be published even if context is cancelled")
+}
+
+func TestNewOrchestrator_DefaultConfig(t *testing.T) {
+	cfg := OrchestratorConfig{}
+	pipeline := &defaultToolPipeline{}
+	observer := &MockLogger{}
+	logger := &ports.NoOpLogger{}
+
+	executor, err := NewOrchestrator(cfg, pipeline, nil, logger, observer)
+	require.NoError(t, err)
+	require.NotNil(t, executor)
+	defer executor.Shutdown()
+
+	state := executor.state.Load()
+	assert.Equal(t, 5, state.config.MaxConcurrentTools)
+	assert.Equal(t, 30*time.Second, state.config.ToolTimeout)
+	assert.Equal(t, 5*time.Minute, state.config.LongRunningTimeout)
+	assert.Equal(t, 5*time.Minute, state.config.ZombieTimeout)
 }
