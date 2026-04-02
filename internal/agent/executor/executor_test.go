@@ -614,3 +614,43 @@ func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
 	assert.True(t, foundSuccess, "success_tool should have completed successfully")
 	assert.True(t, foundPanic, "panic_tool should have completed with panic error")
 }
+
+func TestExecutor_PanicRecovery(t *testing.T) {
+	t.Parallel()
+
+	// Create a mock registry that panics when a specific tool is executed
+	reg := &mockToolRegistry{
+		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			if name == "panic_tool" {
+				panic("simulated fatal error")
+			}
+			return tools.ToolResult{Text: "success"}, nil
+		},
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "panic_tool"}}
+		},
+	}
+
+	// We need a proper pipeline to test ExecuteTool
+	pipeline := NewDefaultToolPipeline(
+		reg,
+		&mockSecurityManager{allowAll: true},
+		&mockEventBus{},
+		&ports.NoOpLogger{},
+		nil,
+		30*time.Second,
+		5*time.Minute,
+		5*time.Minute,
+	)
+
+	call := &llm.FunctionCall{Name: "panic_tool"}
+
+	// Action: Execute the tool which will panic
+	result := pipeline.ExecuteTool(context.Background(), call)
+
+	// Assert that we gracefully caught the panic and mapped it to llm.ErrTerminal
+	require.Error(t, result.Error)
+	assert.ErrorIs(t, result.Error, llm.ErrTerminal, "Panic should be wrapped in llm.ErrTerminal")
+	assert.Contains(t, result.Text, "encountered an internal fatal error (panic)")
+	assert.Contains(t, result.Error.Error(), "simulated fatal error")
+}

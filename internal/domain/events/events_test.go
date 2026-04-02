@@ -411,7 +411,7 @@ func TestSafePublish_UncooperativeSubscriber(t *testing.T) {
 }
 
 type uncooperativeSubscriber struct {
-	block chan struct{}
+	block             chan struct{}
 	startedProcessing chan struct{}
 }
 
@@ -509,4 +509,60 @@ func TestEventBus_SlowSubscriber(t *testing.T) {
 
 	// Unblock E1
 	close(block)
+}
+
+func TestEventBus_DefensiveErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ErrBusNotInitialized", func(t *testing.T) {
+		var bus *events.SimpleEventBus = nil
+		ctx := context.Background()
+
+		errPublish := bus.Publish(ctx, testEvent{typeName: "nil_test"})
+		if !errors.Is(errPublish, events.ErrBusNotInitialized) {
+			t.Errorf("expected Publish on nil bus to return ErrBusNotInitialized, got %v", errPublish)
+		}
+
+		errFlush := bus.Flush(ctx)
+		if !errors.Is(errFlush, events.ErrBusNotInitialized) {
+			t.Errorf("expected Flush on nil bus to return ErrBusNotInitialized, got %v", errFlush)
+		}
+
+		errShutdown := bus.Shutdown(ctx)
+		if !errors.Is(errShutdown, events.ErrBusNotInitialized) {
+			t.Errorf("expected Shutdown on nil bus to return ErrBusNotInitialized, got %v", errShutdown)
+		}
+
+		errSafePublish := events.SafePublish(ctx, bus, testEvent{typeName: "nil_test"})
+		if !errors.Is(errSafePublish, events.ErrBusNotInitialized) {
+			t.Errorf("expected SafePublish on nil bus to return ErrBusNotInitialized, got %v", errSafePublish)
+		}
+	})
+
+	t.Run("ErrBusClosed", func(t *testing.T) {
+		ctx := context.Background()
+		bus := events.NewSimpleEventBus(ctx, events.WithWorkers(0))
+		inframock.CleanupBus(t, bus)
+
+		errShutdown1 := bus.Shutdown(ctx)
+		if errShutdown1 != nil {
+			t.Fatalf("first shutdown failed: %v", errShutdown1)
+		}
+
+		// The second shutdown should be a no-op (graceful), wait, let's check Shutdown behavior.
+		errShutdown2 := bus.Shutdown(ctx)
+		if errShutdown2 != nil {
+			t.Errorf("second shutdown should be no-op, got %v", errShutdown2)
+		}
+
+		errPublish := bus.Publish(ctx, testEvent{typeName: "closed_test"})
+		if !errors.Is(errPublish, events.ErrBusClosed) {
+			t.Errorf("expected Publish on closed bus to return ErrBusClosed, got %v", errPublish)
+		}
+
+		errFlush := bus.Flush(ctx)
+		if !errors.Is(errFlush, events.ErrBusClosed) {
+			t.Errorf("expected Flush on closed bus to return ErrBusClosed, got %v", errFlush)
+		}
+	})
 }

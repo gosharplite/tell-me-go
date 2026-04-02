@@ -150,7 +150,7 @@ type mockClock struct {
 	CurrentTime time.Time
 }
 
-func (m *mockClock) Now() time.Time { return m.CurrentTime }
+func (m *mockClock) Now() time.Time                  { return m.CurrentTime }
 func (m *mockClock) Since(t time.Time) time.Duration { return m.CurrentTime.Sub(t) }
 func (m *mockClock) Sleep(d time.Duration) {
 	m.CurrentTime = m.CurrentTime.Add(d)

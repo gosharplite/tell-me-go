@@ -75,7 +75,7 @@ func (c *toolCircuit) allowRequest() error {
 func (c *toolCircuit) tryTransitionToHalfOpen() bool {
 	c.transitionMu.Lock()
 	defer c.transitionMu.Unlock()
-	
+
 	if c.state.Load() == int32(StateOpen) {
 		c.state.Store(int32(StateHalfOpen))
 		return true
@@ -104,7 +104,7 @@ func (c *toolCircuit) resetToClosed() {
 
 func (c *toolCircuit) recordFailure() {
 	count := c.failures.Add(1)
-	
+
 	state := c.state.Load()
 	if (state == int32(StateClosed) && count >= int64(c.threshold)) || state == int32(StateHalfOpen) {
 		c.tripToOpen()
@@ -114,7 +114,7 @@ func (c *toolCircuit) recordFailure() {
 func (c *toolCircuit) tripToOpen() {
 	c.transitionMu.Lock()
 	defer c.transitionMu.Unlock()
-	
+
 	state := c.state.Load()
 	if state == int32(StateClosed) || state == int32(StateHalfOpen) {
 		c.state.Store(int32(StateOpen))

@@ -45,7 +45,7 @@ func TestRequestBatchConsent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			gotCtx, gotResult := authorizer.RequestBatchConsent(ctx, tt.calls)
-			
+
 			assert.NotNil(t, gotCtx)
 			assert.Equal(t, tt.wantResult, gotResult)
 		})
@@ -54,14 +54,14 @@ func TestRequestBatchConsent(t *testing.T) {
 
 func TestBuildOrchestrator(t *testing.T) {
 	tests := []struct {
-		name       string
-		registry   tools.Registry
-		sm         domain_security.Manager
-		bus        events.EventBus
-		logger     ports.Logger
-		observer   tools.ExecutionObserver
-		opts       []executorOption
-		wantErr    bool
+		name     string
+		registry tools.Registry
+		sm       domain_security.Manager
+		bus      events.EventBus
+		logger   ports.Logger
+		observer tools.ExecutionObserver
+		opts     []executorOption
+		wantErr  bool
 	}{
 		{
 			name:     "valid setup",
@@ -112,11 +112,11 @@ func TestBuildOrchestrator(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, orch)
 			assert.NotNil(t, orch.pipeline)
-			
+
 			state := orch.state.Load()
 			assert.NotNil(t, state)
 			assert.Equal(t, 5, state.config.MaxConcurrentTools) // Default check
-			
+
 			orch.Shutdown() // Avoid goleak
 		})
 	}

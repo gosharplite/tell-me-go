@@ -13,13 +13,13 @@ import (
 
 func TestNewDefaultToolPipeline(t *testing.T) {
 	tests := []struct {
-		name       string
-		registry   tools.Registry
-		sm         domain_security.Manager
-		bus        events.EventBus
-		logger     ports.Logger
-		zombie     *tools.ZombieTool
-		wantErr    bool // Not returned by NewDefaultToolPipeline but for structure
+		name     string
+		registry tools.Registry
+		sm       domain_security.Manager
+		bus      events.EventBus
+		logger   ports.Logger
+		zombie   *tools.ZombieTool
+		wantErr  bool // Not returned by NewDefaultToolPipeline but for structure
 	}{
 		{
 			name:     "valid dependencies initializes successfully",
@@ -60,7 +60,7 @@ func TestNewDefaultToolPipeline(t *testing.T) {
 			}
 
 			assert.NotNil(t, pipeline)
-			
+
 			// Type assert to verify internal fields
 			defaultPipeline, ok := pipeline.(*defaultToolPipeline)
 			assert.True(t, ok)
