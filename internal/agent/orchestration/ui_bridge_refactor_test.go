@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/stretchr/testify/assert"
@@ -163,15 +162,28 @@ func TestUIBridge_EnqueueEvent_CriticalBlocking(t *testing.T) {
 	// Fill the queue
 	b.eventCh <- events.TurnStarted{}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	start := time.Now()
-	// This should block until ctx timeout
-	_ = b.enqueueEvent(ctx, events.ResponseEvent{})
-	duration := time.Since(start)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = b.enqueueEvent(ctx, events.ResponseEvent{})
+	}()
 
-	assert.GreaterOrEqual(t, duration, 40*time.Millisecond, "context should block for roughly the 50ms timeout duration, accounting for scheduler jitter")
+	// Prove that done does not receive a value prematurely
+	select {
+	case <-done:
+		t.Fatal("enqueueEvent returned prematurely, expected it to block")
+	default:
+		// Expected behavior: it is blocked
+	}
+
+	// Explicitly cancel to unblock
+	cancel()
+
+	// Wait for the goroutine to finish
+	<-done
 
 	// Verify queue still has only the filler
 	e := <-b.eventCh

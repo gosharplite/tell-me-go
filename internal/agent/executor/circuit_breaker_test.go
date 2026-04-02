@@ -15,85 +15,84 @@ import (
 func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 	errSimulated := errors.New("simulated tool error")
 	threshold := 3
-	resetTimeout := 50 * time.Millisecond // short timeout for testing
+	resetTimeout := 50 * time.Millisecond
 
-	tests := []struct {
-		name          string
-		toolName      string
-		executions    int // number of initial executions
-		simulateError bool
-		wantFinalErr  error
-		waitTimeout   bool // wait for resetTimeout before next check
-		afterWaitErr  error
-	}{
-		{
-			name:          "success keeps circuit closed",
-			toolName:      "reliable_tool",
-			executions:    5,
-			simulateError: false,
-			wantFinalErr:  nil,
-		},
-		{
-			name:          "failures trigger open circuit",
-			toolName:      "failing_tool",
-			executions:    threshold,
-			simulateError: true,
-			wantFinalErr:  tools.ErrToolCircuitOpen,
-		},
-		{
-			name:          "half-open transition after timeout",
-			toolName:      "recovering_tool",
-			executions:    threshold,
-			simulateError: true,
-			wantFinalErr:  tools.ErrToolCircuitOpen,
-			waitTimeout:   true,
-			afterWaitErr:  errSimulated, // Next call still fails because simulateError is still true, but it doesn't return ErrToolCircuitOpen immediately
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mock := &MockToolPipeline{
-				ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
-					if tt.simulateError {
-						return tools.ToolResult{Error: errSimulated}
-					}
-					return tools.ToolResult{Text: "success"}
-				},
-				IsSerialFunc: func(n string) bool { return false },
+	t.Run("SuccessKeepsCircuitClosed", func(t *testing.T) {
+		mock := &MockToolPipeline{
+			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+				return tools.ToolResult{Text: "success"}
+			},
+			IsSerialFunc: func(n string) bool { return false },
+		}
+		mockClock := clock.NewMockClock(time.Now())
+		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+		
+		call := &llm.FunctionCall{Name: "reliable_tool"}
+		for i := 0; i < 5; i++ {
+			res := cbPipeline.ExecuteTool(context.Background(), call)
+			if res.Error != nil {
+				t.Fatalf("expected success, got error: %v", res.Error)
 			}
+		}
+	})
 
-			mockClock := clock.NewMockClock(time.Now())
-			cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
-			call := &llm.FunctionCall{Name: tt.toolName}
+	t.Run("FailuresTriggerOpenCircuit", func(t *testing.T) {
+		mock := &MockToolPipeline{
+			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+				return tools.ToolResult{Error: errSimulated}
+			},
+			IsSerialFunc: func(n string) bool { return false },
+		}
+		mockClock := clock.NewMockClock(time.Now())
+		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+		call := &llm.FunctionCall{Name: "failing_tool"}
 
-			var lastResult tools.ToolResult
-			for i := 0; i < tt.executions; i++ {
-				lastResult = cbPipeline.ExecuteTool(context.Background(), call)
+		// Hit the threshold
+		for i := 0; i < threshold; i++ {
+			res := cbPipeline.ExecuteTool(context.Background(), call)
+			if res.Error == nil {
+				t.Fatalf("expected tool error, got success on execution %d", i)
 			}
+		}
 
-			// If we expected it to open, the next call should instantly fail with ErrToolCircuitOpen
-			if tt.wantFinalErr == tools.ErrToolCircuitOpen {
-				res := cbPipeline.ExecuteTool(context.Background(), call)
-				if res.Error == nil || !errors.Is(res.Error, tools.ErrToolCircuitOpen) {
-					t.Errorf("expected circuit open error, got: %v", res.Error)
-				}
-			} else {
-				if lastResult.Error != nil && tt.wantFinalErr == nil {
-					t.Errorf("expected success, got error: %v", lastResult.Error)
-				}
-			}
+		// Next call should fail immediately with ErrToolCircuitOpen
+		res := cbPipeline.ExecuteTool(context.Background(), call)
+		if !errors.Is(res.Error, tools.ErrToolCircuitOpen) {
+			t.Fatalf("expected circuit open error, got: %v", res.Error)
+		}
+	})
 
-			if tt.waitTimeout {
-				mockClock.Advance(resetTimeout * 2)
-				res := cbPipeline.ExecuteTool(context.Background(), call)
-				// Should have transitioned to half-open, meaning it actually called the mock again
-				if res.Error == nil || errors.Is(res.Error, tools.ErrToolCircuitOpen) {
-					t.Errorf("expected mock error after wait (half-open state), got: %v", res.Error)
-				}
-			}
-		})
-	}
+	t.Run("HalfOpenTransitionAfterTimeout", func(t *testing.T) {
+		mock := &MockToolPipeline{
+			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+				return tools.ToolResult{Error: errSimulated}
+			},
+			IsSerialFunc: func(n string) bool { return false },
+		}
+		mockClock := clock.NewMockClock(time.Now())
+		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+		call := &llm.FunctionCall{Name: "recovering_tool"}
+
+		// Hit the threshold to open circuit
+		for i := 0; i < threshold; i++ {
+			cbPipeline.ExecuteTool(context.Background(), call)
+		}
+
+		// Verify circuit is open
+		res := cbPipeline.ExecuteTool(context.Background(), call)
+		if !errors.Is(res.Error, tools.ErrToolCircuitOpen) {
+			t.Fatalf("expected circuit open error, got: %v", res.Error)
+		}
+
+		// Advance clock past the reset timeout
+		mockClock.Advance(resetTimeout * 2)
+
+		// Next call should transition to half-open, try the tool again, and get the mock tool error
+		res = cbPipeline.ExecuteTool(context.Background(), call)
+		if res.Error == nil || errors.Is(res.Error, tools.ErrToolCircuitOpen) {
+			t.Fatalf("expected simulated mock error in half-open state, got: %v", res.Error)
+		}
+	})
 }
 
 func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
@@ -172,7 +171,6 @@ func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
 
 	mock := &MockToolPipeline{
 		ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
-			time.Sleep(1 * time.Millisecond)
 			return tools.ToolResult{Error: errors.New("simulated concurrent failure")}
 		},
 		IsSerialFunc: func(n string) bool { return false },
@@ -184,6 +182,17 @@ func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
 
 	numGoroutines := 150
 	errCh := make(chan error, numGoroutines*5)
+
+	var isClosed bool
+	var closeMu sync.Mutex
+	t.Cleanup(func() {
+		closeMu.Lock()
+		defer closeMu.Unlock()
+		if !isClosed {
+			close(errCh)
+			isClosed = true
+		}
+	})
 
 	var startWg sync.WaitGroup
 	var doneWg sync.WaitGroup
@@ -203,7 +212,13 @@ func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
 
 	startWg.Done()
 	doneWg.Wait()
-	close(errCh)
+	
+	closeMu.Lock()
+	if !isClosed {
+		close(errCh)
+		isClosed = true
+	}
+	closeMu.Unlock()
 
 	var circuitOpenErrors int
 	for err := range errCh {
