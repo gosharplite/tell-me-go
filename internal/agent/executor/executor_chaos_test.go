@@ -15,14 +15,14 @@ import (
 func TestOrchestrator_ChaosScenarios(t *testing.T) {
 	tests := []struct {
 		name          string
-		mockSetup     func() *MockToolPipeline
+		mockSetup     func(syncChan chan struct{}) *MockToolPipeline
 		calls         []*llm.FunctionCall
 		wantPanicText string // or specific error assertion
 		wantTimeout   bool
 	}{
 		{
 			name: "parallel tool panics mid-flight",
-			mockSetup: func() *MockToolPipeline {
+			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
 				return &MockToolPipeline{
 					IsSerialFunc: func(n string) bool { return false },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
@@ -49,7 +49,7 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 		},
 		{
 			name: "serial tool panics mid-flight",
-			mockSetup: func() *MockToolPipeline {
+			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
 				return &MockToolPipeline{
 					IsSerialFunc: func(n string) bool { return true },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
@@ -67,11 +67,13 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 		},
 		{
 			name: "context deadline exceeded during fan-in",
-			mockSetup: func() *MockToolPipeline {
+			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
 				return &MockToolPipeline{
 					IsSerialFunc: func(n string) bool { return false },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 						if call.Name == "hang_tool" {
+							// Signal that the tool has started
+							close(syncChan)
 							// Block until context is canceled
 							<-ctx.Done()
 							return tools.ToolResult{Text: "aborted", Error: ctx.Err()}
@@ -97,12 +99,16 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mock := tt.mockSetup()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			syncChan := make(chan struct{})
+			mock := tt.mockSetup(syncChan)
 
 			// Setup minimal orchestrator state
 			cfg := OrchestratorConfig{
 				MaxConcurrentTools: 5,
-				ToolTimeout:        100 * time.Millisecond,
+				ToolTimeout:        1 * time.Hour,
 			}
 
 			o := &Orchestrator{
@@ -113,30 +119,32 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 			o.state.Store(&orchestratorState{
 				config: cfg,
 			})
-			t.Cleanup(func() {
-			})
-
-			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-			if !tt.wantTimeout {
-				// if we don't expect a timeout from the test, give it more time
-				// wait, but waitTimeout=false means we don't test context timeout
-				// Let's use a long timeout for tests that shouldn't timeout
-				cancel()
-				ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
-			}
-			defer cancel()
 
 			declinedMap := make(map[int]bool)
 			results := make([]tools.ToolResult, len(tt.calls))
 
-			err := o.runExecutionPlan(ctx, tt.calls, declinedMap, results)
-
 			if tt.wantTimeout {
+				// Run in background so we can cancel from main thread
+				errChan := make(chan error, 1)
+				go func() {
+					errChan <- o.runExecutionPlan(ctx, tt.calls, declinedMap, results)
+				}()
+
+				// Wait for the tool to start processing
+				<-syncChan
+				// Explicitly trigger the timeout/cancellation condition
+				cancel()
+
+				// Wait for orchestrator to finish
+				err := <-errChan
 				if err == nil {
 					t.Errorf("expected context cancellation error, got nil")
 				}
-				return // Nothing more to check for timeout
+				return // Test successful
 			}
+
+			// For non-timeout tests, run synchronously
+			err := o.runExecutionPlan(ctx, tt.calls, declinedMap, results)
 
 			// For panic tests, verify we didn't deadlock and the result captures the panic string
 			if err != nil {
