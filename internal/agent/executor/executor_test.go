@@ -194,83 +194,9 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 	}
 }
 
-func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
-	t.Parallel()
-	reg := &mockToolRegistry{}
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
 
-	batch := taskBatch{
-		isSerial: false,
-		tasks:    []int{0},
-	}
-	calls := []*llm.FunctionCall{
-		{Name: "test_tool"},
-	}
-	resChan := make(chan toolExecResult, 1)
 
-	exec.executeParallelBatch(ctx, batch, calls, resChan)
-
-	timer5 := time.NewTimer(ciSafeTimeout)
-	defer timer5.Stop()
-
-	select {
-	case res := <-resChan:
-		assert.Equal(t, 0, res.index)
-		assert.Equal(t, "test_tool", res.name)
-		assert.ErrorContains(t, res.tr.Error, "batch interrupted")
-	case <-timer5.C:
-		t.Fatal("Expected result on resChan, but got none")
-	}
-}
-
-func TestBuildExecutionBatches_PreservesOrder(t *testing.T) {
-	t.Parallel()
-	reg := &orderMockRegistry{
-		serialTools: map[string]bool{
-			"S1": true,
-			"S2": true,
-		},
-	}
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	calls := []*llm.FunctionCall{
-		{Name: "P1"},
-		{Name: "S1"},
-		{Name: "P2"},
-		{Name: "P3"},
-		{Name: "S2"},
-	}
-
-	resChan := make(chan toolExecResult, len(calls))
-	batches := exec.buildExecutionBatches(calls, nil, resChan)
-
-	// Expected batches:
-	// 1. Parallel: [P1] (index 0)
-	// 2. Serial: [S1] (index 1)
-	// 3. Parallel: [P2, P3] (index 2, 3)
-	// 4. Serial: [S2] (index 4)
-
-	assert.Equal(t, 4, len(batches), "Should have 4 batches")
-
-	assert.False(t, batches[0].isSerial)
-	assert.Equal(t, []int{0}, batches[0].tasks)
-
-	assert.True(t, batches[1].isSerial)
-	assert.Equal(t, []int{1}, batches[1].tasks)
-
-	assert.False(t, batches[2].isSerial)
-	assert.Equal(t, []int{2, 3}, batches[2].tasks)
-
-	assert.True(t, batches[3].isSerial)
-	assert.Equal(t, []int{4}, batches[3].tasks)
-}
 
 type orderMockRegistry struct {
 	serialTools map[string]bool
@@ -475,66 +401,9 @@ func TestOrchestrator_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
 	assert.False(t, mockLogger.errorCalled, "Expected Error NOT to be called on logger for ErrBusNotInitialized")
 }
 
-func TestResultCollector_EmitEvent(t *testing.T) {
-	// Setup
-	mockLogger := &capturingLogger{}
-	genericErr := errors.New("publish error")
-	mockBus := &errorEventBus{err: genericErr}
 
-	exec, err := BuildOrchestrator(&mockToolRegistry{}, nil, mockBus, mockLogger, &MockLogger{})
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
 
-	collector := exec.newResultCollector(nil, mockBus)
 
-	// Action: Manually trigger an event emission from collector's context
-	evt := events.ToolResultEvent{Name: "test"}
-	collector.executor.emitEvent(context.Background(), collector.bus, evt)
-
-	// Assert
-	assert.True(t, mockLogger.errorCalled)
-	assert.Equal(t, "event_publish_failed", mockLogger.lastMsg)
-}
-
-func TestOrchestrator_Execute_PlanPanic(t *testing.T) {
-	t.Parallel()
-	reg := &mockToolRegistry{}
-
-	// Create a mock event bus to track events
-	bus := &mockEventBus{}
-
-	// Inject an execution plan that panics
-	exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)},
-		withExecutionPlan(func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
-			panic("test panic")
-		}))
-	require.NoError(t, err)
-	t.Cleanup(exec.Shutdown)
-
-	respContent := &llm.Content{
-		Parts: []*llm.Part{
-			{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
-		},
-	}
-
-	// Execute should return an error derived from the panic, and specifically NOT deadlock/hang.
-	// The resultCollector.Wait should terminate because the errgroup context is canceled by the panic/err.
-	_, execErr := exec.Execute(context.Background(), respContent, 0, 10)
-
-	assert.Error(t, execErr)
-	assert.Contains(t, execErr.Error(), "execution plan panicked: test panic")
-
-	// Verify event sequencing
-	var eventTypes []string
-	bus.mu.Lock()
-	for _, e := range bus.Published {
-		eventTypes = append(eventTypes, e.Type())
-	}
-	bus.mu.Unlock()
-
-	assert.Contains(t, eventTypes, "ConsentStartedEvent")
-	assert.Contains(t, eventTypes, "ConsentFinishedEvent")
-}
 
 type mockAuthorizer struct {
 	RequestBatchConsentFunc func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)

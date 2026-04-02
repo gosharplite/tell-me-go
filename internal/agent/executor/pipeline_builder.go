@@ -75,12 +75,11 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	authService := newSecurityAuthorizer(sm, registry)
 	
 	exec = newAuthDecorator(exec, authService)
-	exec = newCircuitBreakerDecorator(exec, failures)
+	// Circuit breaker is moved to orchestrator loop
 	exec = newTracingDecorator(exec, registry, logger)
 	
 	// Create a pointer to Orchestrator to capture timeouts dynamically
 	o := &Orchestrator{
-		config:   cfg,
 		events:   bus,
 		logger:   logger,
 		failures: failures,
@@ -88,10 +87,15 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 		zombie:   zombie,
 	}
 
+	o.state.Store(&orchestratorState{
+		config: cfg,
+		pool:   concurrency.NewWorkerPool(cfg.MaxConcurrentTools),
+	})
+
 	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, 
-		func() time.Duration { o.mu.RLock(); defer o.mu.RUnlock(); return o.config.ToolTimeout },
-		func() time.Duration { o.mu.RLock(); defer o.mu.RUnlock(); return o.config.LongRunningTimeout },
-		func() time.Duration { o.mu.RLock(); defer o.mu.RUnlock(); return o.config.ZombieTimeout },
+		func() time.Duration { return o.state.Load().config.ToolTimeout },
+		func() time.Duration { return o.state.Load().config.LongRunningTimeout },
+		func() time.Duration { return o.state.Load().config.ZombieTimeout },
 	)
 
 	pipeline := &defaultToolPipeline{
@@ -107,7 +111,6 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 		opt(o)
 	}
 	
-	o.pool = concurrency.NewWorkerPool(o.config.MaxConcurrentTools)
 	o.strategy = &markdownStrategy{}
 
 	return o, nil

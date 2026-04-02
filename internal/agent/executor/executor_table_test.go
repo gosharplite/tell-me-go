@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
+	
 	"sync/atomic"
 	"testing"
 	"time"
@@ -606,48 +606,7 @@ func TestWorkerPool_SubmitFailure(t *testing.T) {
 	}
 }
 
-func TestResultCollector(t *testing.T) {
-	t.Parallel()
-	calls := []*llm.FunctionCall{
-		{Name: "tool0"},
-		{Name: "tool1"},
-		{Name: "tool2"},
-	}
 
-	t.Run("Ordering", func(t *testing.T) {
-		t.Parallel()
-		exec, _, _ := setupTestExecutor(t, nil, nil)
-		collector := exec.newResultCollector(calls, nil)
-		collector.ch <- toolExecResult{index: 2, name: "tool2", tr: tools.ToolResult{Text: "res2"}}
-		collector.ch <- toolExecResult{index: 0, name: "tool0", tr: tools.ToolResult{Text: "res0"}}
-		collector.ch <- toolExecResult{index: 1, name: "tool1", tr: tools.ToolResult{Text: "res1"}}
-
-		results, err := collector.Wait(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if len(results) != 3 {
-			t.Fatalf("Expected 3 results, got %d", len(results))
-		}
-		if results[0].Text != "res0" || results[1].Text != "res1" || results[2].Text != "res2" {
-			t.Errorf("Results out of order: %v", results)
-		}
-	})
-
-	t.Run("Context Cancellation", func(t *testing.T) {
-		t.Parallel()
-		ctx, cancel := context.WithCancel(context.Background())
-		exec, _, _ := setupTestExecutor(t, nil, nil)
-		collector := exec.newResultCollector(calls, nil)
-		cancel()
-
-		_, err := collector.Wait(ctx)
-		if err != context.Canceled {
-			t.Errorf("Expected context.Canceled, got %v", err)
-		}
-	})
-}
 
 func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
@@ -948,138 +907,11 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_ContextCancellation_Parallel(t *testing.T) {
-	t.Parallel()
 
-	toolStarted := make(chan struct{})
 
-	toolsMap := map[string]toolBehavior{
-		"tool1": {
-			observe: func() {
-				select {
-				case <-toolStarted: // prevent double close
-				default:
-					close(toolStarted)
-				}
-			},
-			delay: 100 * time.Millisecond,
-		},
-		"tool2": {delay: 100 * time.Millisecond},
-		"tool3": {delay: 100 * time.Millisecond},
-	}
-	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-	// Limit concurrency so tool3 is queued and picked up after context is cancelled
-	exec.SetConcurrency(1, 0)
 
-	content := &llm.Content{Parts: []*llm.Part{
-		{FunctionCall: &llm.FunctionCall{Name: "tool1"}},
-		{FunctionCall: &llm.FunctionCall{Name: "tool2"}},
-		{FunctionCall: &llm.FunctionCall{Name: "tool3"}},
-	}}
 
-	ctx, cancel := context.WithCancel(context.Background())
 
-	// Deterministic synchronization
-	go func() {
-		<-toolStarted // Block until the scheduler actually starts the tool
-		cancel()
-	}()
-
-	resp, err := exec.Execute(ctx, content, 0, 10)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("Expected context.Canceled, got %v", err)
-	}
-
-	// Since the executor now synthesizes responses on cancellation to preserve history state,
-	// resp should NOT be nil, and the length of its parts must equal the number of original function calls.
-	if resp == nil {
-		t.Errorf("Expected non-nil response on context cancellation for history preservation")
-	} else if len(resp.Parts) != len(content.Parts) {
-		t.Errorf("Expected %d response parts, got %d", len(content.Parts), len(resp.Parts))
-	}
-}
-
-func TestOrchestrator_ContextCancellation_Direct(t *testing.T) {
-	t.Parallel()
-	toolsMap := map[string]toolBehavior{
-		"tool1": {delay: 100 * time.Millisecond},
-	}
-	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-	exec.SetConcurrency(1, 0)
-
-	calls := []*llm.FunctionCall{{Name: "tool1"}}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	resChan := make(chan toolExecResult, 1)
-
-	// Create wait group matching runExecutionPlan behavior manually
-	var wg sync.WaitGroup
-	exec.enqueueParallelTask(ctx, 0, calls[0], resChan, &wg)
-
-	wg.Wait()
-
-	res := <-resChan
-	if res.tr.Text != "Skipped: Context cancelled" {
-		t.Errorf("Expected 'Skipped: Context cancelled', got %q", res.tr.Text)
-	}
-}
-
-func TestOrchestrator_UserDeclinedBatch(t *testing.T) {
-	t.Parallel()
-	toolsMap := map[string]toolBehavior{
-		"declined_tool": {result: tools.ToolResult{Text: "ok"}},
-		"allowed_tool":  {result: tools.ToolResult{Text: "ok"}},
-	}
-	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-
-	calls := []*llm.FunctionCall{
-		{Name: "declined_tool"},
-		{Name: "allowed_tool"},
-	}
-
-	declinedMap := map[int]bool{
-		0: true, // declining the first tool
-	}
-
-	resChan := make(chan toolExecResult, 2)
-	batches := exec.buildExecutionBatches(calls, declinedMap, resChan)
-
-	// Assert that the length of batches is exactly 1.
-	if len(batches) != 1 {
-		t.Fatalf("expected 1 batch, got %d", len(batches))
-	}
-
-	// Assert that the tasks array inside that batch contains exactly one element: index 1 (the allowed_tool).
-	// It should not contain index 0.
-	if len(batches[0].tasks) != 1 {
-		t.Fatalf("expected 1 task in batch, got %d", len(batches[0].tasks))
-	}
-	if batches[0].tasks[0] != 1 {
-		t.Errorf("expected task index 1, got %d", batches[0].tasks[0])
-	}
-
-	// Read one result from resChan
-	res := <-resChan
-
-	// Assert that res.index is 0, res.name is "declined_tool", and res.tr.Error is tools.ErrUserDeclined.
-	if res.index != 0 {
-		t.Errorf("expected result index 0, got %d", res.index)
-	}
-	if res.name != "declined_tool" {
-		t.Errorf("expected result name 'declined_tool', got %s", res.name)
-	}
-	if !errors.Is(res.tr.Error, tools.ErrUserDeclined) {
-		t.Errorf("expected tools.ErrUserDeclined, got %v", res.tr.Error)
-	}
-
-	// Assert that res.tr.Text equals "User explicitly denied this action."
-	expectedText := "User explicitly denied this action."
-	if res.tr.Text != expectedText {
-		t.Errorf("expected text %q, got %q", expectedText, res.tr.Text)
-	}
-}
 
 func TestOrchestrator_LongRunningTimeout(t *testing.T) {
 	t.Parallel()

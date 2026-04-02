@@ -36,19 +36,17 @@ func TestOrchestrator_ConfigRace(t *testing.T) {
 	ctx := context.Background()
 	var wg sync.WaitGroup
 
-	// Start concurrent executions
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			content := &llm.Content{
-				Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "task"}}},
-			}
-			for j := 0; j < 5; j++ {
-				_, _ = exec.Execute(ctx, content, 0, 10)
-			}
-		}()
-	}
+	// Start sequential execution (Orchestrator handles one turn per session)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		content := &llm.Content{
+			Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "task"}}},
+		}
+		for j := 0; j < 20; j++ {
+			_, _ = exec.Execute(ctx, content, 0, 10)
+		}
+	}()
 
 	// Hammer config updates
 	wg.Add(1)

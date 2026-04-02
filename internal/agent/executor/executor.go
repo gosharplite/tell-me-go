@@ -1,6 +1,3 @@
-// Copyright (c) 2026 gosharplite@gmail.com
-// SPDX-License-Identifier: MIT
-
 package executor
 
 import (
@@ -8,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -16,7 +14,6 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
-	"golang.org/x/sync/errgroup"
 )
 
 type toolExecResult struct {
@@ -25,11 +22,6 @@ type toolExecResult struct {
 	tr    tools.ToolResult
 }
 
-// executionPlanFunc defines the signature for the tool execution plan.
-type executionPlanFunc func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error
-
-// Orchestrator handles the execution of tools, using a WorkerPool for concurrency.
-// OrchestratorConfig holds configuration parameters for the Orchestrator.
 type OrchestratorConfig struct {
 	MaxConcurrentTools int
 	ToolTimeout        time.Duration
@@ -37,7 +29,6 @@ type OrchestratorConfig struct {
 	ZombieTimeout      time.Duration
 }
 
-// ToolPipeline encapsulates the resolution, authorization, and execution of a tool.
 type ToolPipeline interface {
 	ExecuteTool(ctx context.Context, call *llm.FunctionCall) tools.ToolResult
 	RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
@@ -93,7 +84,6 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 	return result
 }
 
-// NewDefaultToolPipeline creates a new DefaultToolPipeline.
 func NewDefaultToolPipeline(
 	registry tools.Registry,
 	sm domain_security.Manager,
@@ -110,7 +100,7 @@ func NewDefaultToolPipeline(
 
 	var exec ToolExecutor = newBaseRuntime(registry)
 	exec = newAuthDecorator(exec, authService)
-	exec = newCircuitBreakerDecorator(exec, failures)
+	// Circuit breaker is moved to orchestrator loop
 	exec = newTracingDecorator(exec, registry, logger)
 	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
 
@@ -122,46 +112,51 @@ func NewDefaultToolPipeline(
 	}
 }
 
-// Orchestrator handles the execution of tools, using a WorkerPool for concurrency.
+type orchestratorState struct {
+	config OrchestratorConfig
+	pool   *concurrency.WorkerPool
+}
+
 type Orchestrator struct {
-	mu       sync.RWMutex
-	config   OrchestratorConfig
+	state    atomic.Pointer[orchestratorState]
 	pipeline ToolPipeline
 	events   events.EventBus
 	logger   ports.Logger
-	pool     *concurrency.WorkerPool
 	strategy resultStrategy
 	failures *failureTracker
 	observer tools.ExecutionObserver
 	zombie   *tools.ZombieTool
-	execPlan executionPlanFunc
 }
 
-// executorOption allows configuring the Orchestrator.
 type executorOption func(*Orchestrator)
 
-// WithLongRunningTimeout sets the timeout for long-running tools.
 func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
-		e.config.LongRunningTimeout = timeout
+		oldState := e.state.Load()
+		newState := &orchestratorState{config: oldState.config, pool: oldState.pool}
+		newState.config.LongRunningTimeout = timeout
+		e.state.Store(newState)
 	}
 }
 
-// withExecutionPlan allows injecting a custom execution plan for testing or strategy changes.
-func withExecutionPlan(fn executionPlanFunc) executorOption {
-	return func(e *Orchestrator) {
-		e.execPlan = fn
-	}
-}
-
-// withZombieTimeout sets the timeout for zombie tool detection.
 func withZombieTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
-		e.config.ZombieTimeout = timeout
+		oldState := e.state.Load()
+		newState := &orchestratorState{config: oldState.config, pool: oldState.pool}
+		newState.config.ZombieTimeout = timeout
+		e.state.Store(newState)
 	}
 }
 
-// NewOrchestrator creates a new Orchestrator.
+func withToolTimeout(timeout time.Duration) executorOption {
+	return func(e *Orchestrator) {
+		oldState := e.state.Load()
+		newState := &orchestratorState{config: oldState.config, pool: oldState.pool}
+		newState.config.ToolTimeout = timeout
+		e.state.Store(newState)
+	}
+}
+
 func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
 	if pipeline == nil {
 		return nil, errors.New("pipeline is required")
@@ -187,29 +182,29 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 	}
 
 	e := &Orchestrator{
-		config:             cfg,
-		pipeline:           pipeline,
-		events:             bus,
-		logger:             logger,
-		pool:               concurrency.NewWorkerPool(cfg.MaxConcurrentTools),
-		strategy:           &markdownStrategy{},
-		failures:           newFailureTracker(3), // Default threshold of 3
-		observer:           observer,
+		pipeline: pipeline,
+		events:   bus,
+		logger:   logger,
+		strategy: &markdownStrategy{},
+		failures: newFailureTracker(3),
+		observer: observer,
 	}
+
+	initialState := &orchestratorState{
+		config: cfg,
+		pool:   concurrency.NewWorkerPool(cfg.MaxConcurrentTools),
+	}
+	e.state.Store(initialState)
 
 	for _, opt := range opts {
 		opt(e)
 	}
 
-	// In the new model, zombie is created and injected along with pipeline.
-	// But to avoid breaking opts that rely on zombie, we will let options do nothing or we just don't need zombie inside orchestrator anymore!
-	// Wait, we need to adapt options.
-
 	return e, nil
 }
 
 type failureTracker struct {
-	mu        sync.RWMutex
+	mu sync.RWMutex
 	failures  map[string]int
 	threshold int
 }
@@ -255,81 +250,44 @@ func (f *failureTracker) Check(toolName string) error {
 }
 
 func (e *Orchestrator) SetConcurrency(maxConcurrent int, timeout time.Duration) {
-	var oldPool *concurrency.WorkerPool
-	e.mu.Lock()
-
-	if maxConcurrent > 0 && maxConcurrent != e.config.MaxConcurrentTools {
-		e.config.MaxConcurrentTools = maxConcurrent
-		if e.pool != nil {
-			oldPool = e.pool
+	for {
+		oldState := e.state.Load()
+		newState := &orchestratorState{
+			config: oldState.config,
+			pool:   oldState.pool,
 		}
-		e.pool = concurrency.NewWorkerPool(maxConcurrent)
-	}
-	if timeout > 0 {
-		e.config.ToolTimeout = timeout
-	}
-	e.mu.Unlock()
 
-	if oldPool != nil {
-		oldPool.Shutdown()
+		changed := false
+		if maxConcurrent > 0 && maxConcurrent != oldState.config.MaxConcurrentTools {
+			newState.config.MaxConcurrentTools = maxConcurrent
+			newState.pool = concurrency.NewWorkerPool(maxConcurrent)
+			changed = true
+		}
+		if timeout > 0 && timeout != oldState.config.ToolTimeout {
+			newState.config.ToolTimeout = timeout
+			changed = true
+		}
+
+		if !changed {
+			return
+		}
+
+		if e.state.CompareAndSwap(oldState, newState) {
+			if oldState.pool != newState.pool && oldState.pool != nil {
+				oldState.pool.Shutdown()
+			}
+			return
+		}
 	}
 }
 
-// Shutdown shuts down the internal worker pool.
 func (e *Orchestrator) Shutdown() {
-	e.mu.Lock()
-	pool := e.pool
-	e.mu.Unlock()
-
-	if pool != nil {
-		pool.Shutdown()
+	state := e.state.Load()
+	if state != nil && state.pool != nil {
+		state.pool.Shutdown()
 	}
 }
 
-type resultCollector struct {
-	executor *Orchestrator
-	calls    []*llm.FunctionCall
-	bus      events.EventBus
-	trs      []tools.ToolResult
-	ch       chan toolExecResult
-}
-
-func (e *Orchestrator) newResultCollector(calls []*llm.FunctionCall, bus events.EventBus) *resultCollector {
-	return &resultCollector{
-		executor: e,
-		calls:    calls,
-		bus:      bus,
-		trs:      make([]tools.ToolResult, len(calls)),
-		ch:       make(chan toolExecResult, len(calls)),
-	}
-}
-
-func (c *resultCollector) Wait(ctx context.Context) ([]tools.ToolResult, error) {
-	completedCount := 0
-	isCompleted := make([]bool, len(c.calls))
-	for completedCount < len(c.calls) {
-		select {
-		case <-ctx.Done():
-			for i := range c.trs {
-				if !isCompleted[i] {
-					c.trs[i] = tools.ToolResult{Text: "Execution was interrupted or cancelled by the user."}
-				}
-			}
-			return c.trs, ctx.Err()
-		case res := <-c.ch:
-			if !isCompleted[res.index] {
-				c.trs[res.index] = res.tr
-				isCompleted[res.index] = true
-				evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
-				c.executor.emitEvent(ctx, c.bus, evt)
-				completedCount++
-			}
-		}
-	}
-	return c.trs, nil
-}
-
-// emitEvent consolidates error handling for event publishing.
 func (e *Orchestrator) emitEvent(ctx context.Context, bus events.EventBus, evt events.Event) {
 	if err := events.SafePublish(ctx, bus, evt); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
@@ -340,7 +298,6 @@ func (e *Orchestrator) emitEvent(ctx context.Context, bus events.EventBus, evt e
 	}
 }
 
-// Execute handles the execution of function calls from the model response.
 func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 	calls := e.extractFunctionCalls(respContent)
 	if len(calls) == 0 {
@@ -348,58 +305,32 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	}
 
 	if turn >= maxToolTurns {
-		e.publishLimitError(ctx, maxToolTurns)
+		evt := events.SystemMessageEvent{
+			Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
+			Level:   "error",
+		}
+		e.emitEvent(ctx, e.events, evt)
 		return nil, llm.ErrMaxTurnsReached
 	}
 
-	e.publishCallEvent(ctx, calls, turn, maxToolTurns)
-
-	e.mu.RLock()
-	bus := e.events
-	pipeline := e.pipeline
-	e.mu.RUnlock()
+	e.emitEvent(ctx, e.events, events.ToolCallEvent{
+		Calls:    calls,
+		Turn:     turn,
+		MaxTurns: maxToolTurns,
+	})
 
 	var declinedMap map[int]bool
 	func() {
-		// ARCHITECTURAL FIX: Use a detached context for UI state signals
-		// to ensure the bridge state is reset even if the turn is cancelled.
 		eventCtx := context.WithoutCancel(ctx)
-		e.emitEvent(eventCtx, bus, events.ConsentStartedEvent{})
-
-		// Local defer ensures UI is unlocked immediately after the user provides input
-		defer e.emitEvent(eventCtx, bus, events.ConsentFinishedEvent{})
-
-		// Update outer variables
-		// The actual consent request remains interruptible
-		ctx, declinedMap = pipeline.RequestBatchConsent(ctx, calls)
+		e.emitEvent(eventCtx, e.events, events.ConsentStartedEvent{})
+		defer e.emitEvent(eventCtx, e.events, events.ConsentFinishedEvent{})
+		ctx, declinedMap = e.pipeline.RequestBatchConsent(ctx, calls)
 	}()
 
-	// Orchestrate Execution
-	collector := e.newResultCollector(calls, bus)
 	startTime := time.Now()
 
-	// [SCALABILITY FIX] Bounding the execution plan goroutine to prevent leaks on context cancellation.
-	// This ensures that all goroutines started by the plan are properly joined.
-	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("execution plan panicked: %v", r)
-			}
-		}()
-		if e.execPlan != nil {
-			return e.execPlan(e, gCtx, calls, collector.ch, declinedMap)
-		}
-		return e.runExecutionPlan(gCtx, calls, collector.ch, declinedMap)
-	})
-
-	results, waitErr := collector.Wait(gCtx)
-	if err := g.Wait(); err != nil {
-		// Prioritize the errgroup error if the collector was interrupted by context cancellation
-		if waitErr == nil || errors.Is(waitErr, context.Canceled) {
-			waitErr = err
-		}
-	}
+	results := make([]tools.ToolResult, len(calls))
+	waitErr := e.runExecutionPlan(ctx, calls, declinedMap, results)
 
 	duration := time.Since(startTime)
 
@@ -417,17 +348,13 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 		)
 	}
 
-	// Notify about circuit breaker events
 	for _, tr := range results {
 		if errors.Is(tr.Error, tools.ErrToolCircuitOpen) {
-			e.mu.RLock()
-			bus := e.events
-			e.mu.RUnlock()
 			evt := events.SystemMessageEvent{
 				Message: tr.Text,
 				Level:   "warn",
 			}
-			e.emitEvent(ctx, bus, evt)
+			e.emitEvent(ctx, e.events, evt)
 		}
 	}
 
@@ -444,37 +371,10 @@ func (e *Orchestrator) extractFunctionCalls(respContent *llm.Content) []*llm.Fun
 	return functionCalls
 }
 
-func (e *Orchestrator) publishLimitError(ctx context.Context, maxToolTurns int) {
-	e.mu.RLock()
-	bus := e.events
-	e.mu.RUnlock()
-	evt := events.SystemMessageEvent{
-		Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
-		Level:   "error",
-	}
-	e.emitEvent(ctx, bus, evt)
-}
-
-func (e *Orchestrator) publishCallEvent(ctx context.Context, calls []*llm.FunctionCall, turn int, maxToolTurns int) {
-	e.mu.RLock()
-	bus := e.events
-	e.mu.RUnlock()
-	evt := events.ToolCallEvent{
-		Calls:    calls,
-		Turn:     turn,
-		MaxTurns: maxToolTurns,
-	}
-	e.emitEvent(ctx, bus, evt)
-}
-
 func (e *Orchestrator) assembleResponse(calls []*llm.FunctionCall, results []tools.ToolResult) *llm.Content {
-	e.mu.RLock()
-	strategy := e.strategy
-	e.mu.RUnlock()
-
 	var responseParts []*llm.Part
 	for i, tr := range results {
-		responseParts = append(responseParts, strategy.Format(calls[i], tr))
+		responseParts = append(responseParts, e.strategy.Format(calls[i], tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &llm.Part{
 				InlineData: &llm.Blob{
@@ -484,7 +384,6 @@ func (e *Orchestrator) assembleResponse(calls []*llm.FunctionCall, results []too
 			})
 		}
 	}
-
 	return &llm.Content{
 		Role:  "user",
 		Parts: responseParts,
@@ -493,30 +392,89 @@ func (e *Orchestrator) assembleResponse(calls []*llm.FunctionCall, results []too
 
 type taskBatch struct {
 	isSerial bool
-	tasks    []int // Contains indices into the 'calls' slice
+	tasks    []int
 }
 
-func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
-	batches := e.buildExecutionBatches(calls, declinedMap, resChan)
+func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult) error {
+	batches := e.buildExecutionBatches(calls, declinedMap, results)
+	state := e.state.Load()
 
 	for batchIdx, batch := range batches {
 		if err := ctx.Err(); err != nil {
 			e.logger.Debug("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
-			e.failRemainingTasks(batches, batchIdx, -1, calls, resChan, err, "batch interrupted")
+			e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
 			return err
 		}
 
 		batchStart := time.Now()
+
+		resultsCh := make(chan toolExecResult, len(batch.tasks))
+
+		// 1. Fan-out
 		if batch.isSerial {
-			if !e.executeSerialBatch(ctx, batch, calls, resChan) {
-				e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
-					"batch_idx", batchIdx,
-					"tool_name", calls[batch.tasks[0]].Name)
-				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, resChan, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
-				return nil // Exit the execution plan early
+			taskIdx := batch.tasks[0]
+			fc := calls[taskIdx]
+			if err := e.failures.Check(fc.Name); err != nil {
+				resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tools.ToolResult{Text: err.Error(), Error: err}}
+			} else {
+				tr := e.pipeline.ExecuteTool(ctx, fc)
+				resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tr}
 			}
+			close(resultsCh)
 		} else {
-			e.executeParallelBatch(ctx, batch, calls, resChan)
+			var wg sync.WaitGroup
+			for _, taskIdx := range batch.tasks {
+				i := taskIdx
+				fc := calls[i]
+
+				if err := e.failures.Check(fc.Name); err != nil {
+					resultsCh <- toolExecResult{index: i, name: fc.Name, tr: tools.ToolResult{Text: err.Error(), Error: err}}
+					continue
+				}
+
+				wg.Add(1)
+				task := func(_ context.Context) {
+					defer wg.Done()
+					if ctx.Err() != nil {
+						resultsCh <- toolExecResult{
+							index: i,
+							name:  fc.Name,
+							tr:    tools.ToolResult{Text: "Skipped: Context cancelled"},
+						}
+						return
+					}
+					tr := e.pipeline.ExecuteTool(ctx, fc)
+					resultsCh <- toolExecResult{index: i, name: fc.Name, tr: tr}
+				}
+
+				if err := state.pool.Submit(task); err != nil {
+					wg.Done()
+					var msg string
+					if errors.Is(err, concurrency.ErrPoolSaturated) {
+						msg = "Error: Tool execution queue is full (pool saturated). Please try again later."
+					} else {
+						msg = "Error: Task submission failed (pool closed or context cancelled)"
+					}
+					resultsCh <- toolExecResult{
+						index: i,
+						name:  fc.Name,
+						tr:    tools.ToolResult{Text: msg, Error: err},
+					}
+				}
+			}
+
+			go func() {
+				wg.Wait()
+				close(resultsCh)
+			}()
+		}
+
+		// 2. Fan-in Aggregator Loop (lock-free mutation of failures)
+		for res := range resultsCh {
+			results[res.index] = res.tr
+			e.failures.Record(res.name, res.tr.Error == nil)
+			evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
+			e.emitEvent(ctx, e.events, evt)
 		}
 
 		e.logger.Debug("Batch execution completed",
@@ -524,15 +482,26 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			"is_serial", batch.isSerial,
 			"task_count", len(batch.tasks),
 			"duration_ms", time.Since(batchStart).Milliseconds())
+
+		// Serial halt logic
+		if batch.isSerial {
+			if results[batch.tasks[0]].Error != nil || ctx.Err() != nil {
+				e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
+					"batch_idx", batchIdx,
+					"tool_name", calls[batch.tasks[0]].Name)
+				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
+				return ctx.Err()
+			}
+		}
 	}
-	return nil
+	return ctx.Err()
 }
 
-func (e *Orchestrator) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, calls []*llm.FunctionCall, resChan chan<- toolExecResult, err error, reason string) {
+func (e *Orchestrator) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, calls []*llm.FunctionCall, results []tools.ToolResult, err error, reason string) {
 	for j := startBatchIdx; j < len(batches); j++ {
 		for _, skippedIdx := range batches[j].tasks {
 			if j == startBatchIdx && skippedIdx <= skipTaskIdx {
-				continue // Already executed or failed
+				continue
 			}
 
 			var text string
@@ -545,67 +514,28 @@ func (e *Orchestrator) failRemainingTasks(batches []taskBatch, startBatchIdx int
 				resErr = nil
 			}
 
-			resChan <- toolExecResult{
-				index: skippedIdx,
-				name:  calls[skippedIdx].Name,
-				tr: tools.ToolResult{
-					Text:  text,
-					Error: resErr,
-				},
+			results[skippedIdx] = tools.ToolResult{
+				Text:  text,
+				Error: resErr,
 			}
 		}
 	}
 }
 
-func (e *Orchestrator) executeSerialBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, resChan chan<- toolExecResult) bool {
-	taskIdx := batch.tasks[0]
-	fc := calls[taskIdx]
-	return e.executeSerialTask(ctx, taskIdx, fc, resChan)
-}
-
-func (e *Orchestrator) executeParallelBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, resChan chan<- toolExecResult) {
-	var wg sync.WaitGroup
-	for _, taskIdx := range batch.tasks {
-		if err := ctx.Err(); err != nil {
-			resChan <- toolExecResult{
-				index: taskIdx,
-				name:  calls[taskIdx].Name,
-				tr: tools.ToolResult{
-					Text:  fmt.Sprintf("batch interrupted: %v", err),
-					Error: fmt.Errorf("batch interrupted: %w", err),
-				},
-			}
-			continue
-		}
-		fc := calls[taskIdx]
-		e.enqueueParallelTask(ctx, taskIdx, fc, resChan, &wg)
-	}
-	wg.Wait()
-}
-
-func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declinedMap map[int]bool, resChan chan<- toolExecResult) []taskBatch {
-	e.mu.RLock()
-	pipeline := e.pipeline
-	e.mu.RUnlock()
-
+func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult) []taskBatch {
 	var batches []taskBatch
 	var currentParallelBatch []int
 
 	for i, fc := range calls {
 		if declinedMap[i] {
-			resChan <- toolExecResult{
-				index: i,
-				name:  fc.Name,
-				tr: tools.ToolResult{
-					Text:  "User explicitly denied this action.",
-					Error: tools.ErrUserDeclined,
-				},
+			results[i] = tools.ToolResult{
+				Text:  "User explicitly denied this action.",
+				Error: tools.ErrUserDeclined,
 			}
 			continue
 		}
 
-		if pipeline.IsSerial(fc.Name) {
-			// Close current parallel batch if any
+		if e.pipeline.IsSerial(fc.Name) {
 			if len(currentParallelBatch) > 0 {
 				batches = append(batches, taskBatch{
 					isSerial: false,
@@ -613,7 +543,6 @@ func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declined
 				})
 				currentParallelBatch = nil
 			}
-			// Add serial batch
 			batches = append(batches, taskBatch{
 				isSerial: true,
 				tasks:    []int{i},
@@ -623,7 +552,6 @@ func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declined
 		}
 	}
 
-	// Add final parallel batch if any
 	if len(currentParallelBatch) > 0 {
 		batches = append(batches, taskBatch{
 			isSerial: false,
@@ -634,56 +562,6 @@ func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declined
 	return batches
 }
 
-func (e *Orchestrator) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult) bool {
-	tr := e.pipeline.ExecuteTool(ctx, fc)
-	resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
-
-	// If the serial tool failed, timed out, or context was cancelled, we CANNOT safely
-	// continue (especially for timeouts/cancellations where the goroutine is orphaned).
-	return ctx.Err() == nil && tr.Error == nil
-}
-
-func (e *Orchestrator) enqueueParallelTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult, wg *sync.WaitGroup) {
-	wg.Add(1)
-
-	e.mu.RLock()
-	pool := e.pool
-	e.mu.RUnlock()
-
-	task := func(_ context.Context) {
-		defer wg.Done()
-
-		if ctx.Err() != nil {
-			resChan <- toolExecResult{
-				index: i,
-				name:  fc.Name,
-				tr:    tools.ToolResult{Text: "Skipped: Context cancelled"},
-			}
-			return
-		}
-
-		tr := e.pipeline.ExecuteTool(ctx, fc)
-		resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
-	}
-
-	if err := pool.Submit(task); err != nil {
-		wg.Done()
-		var msg string
-		if errors.Is(err, concurrency.ErrPoolSaturated) {
-			msg = "Error: Tool execution queue is full (pool saturated). Please try again later."
-		} else {
-			msg = "Error: Task submission failed (pool closed or context cancelled)"
-		}
-		resChan <- toolExecResult{
-			index: i,
-			name:  fc.Name,
-			tr:    tools.ToolResult{Text: msg},
-		}
-	}
-}
-
-
-
 func buildFunctionResponse(callID, name, output string) *llm.Part {
 	return &llm.Part{
 		FunctionResponse: &llm.FunctionResponse{
@@ -691,12 +569,5 @@ func buildFunctionResponse(callID, name, output string) *llm.Part {
 			Name:     name,
 			Response: map[string]interface{}{"result": output},
 		},
-	}
-}
-
-// withToolTimeout sets the timeout for tools.
-func withToolTimeout(timeout time.Duration) executorOption {
-	return func(e *Orchestrator) {
-		e.config.ToolTimeout = timeout
 	}
 }
