@@ -160,7 +160,7 @@ func TestOrchestrator_Success(t *testing.T) {
 			"tool2": {result: tools.ToolResult{Text: "res2"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(2, 0)
+		exec.SetConcurrency(2)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "tool1"}},
@@ -178,7 +178,7 @@ func TestOrchestrator_Success(t *testing.T) {
 			"tool2":       {result: tools.ToolResult{Text: "res2"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(2, 0)
+		exec.SetConcurrency(2)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "serial_tool"}},
@@ -258,8 +258,7 @@ func TestOrchestrator_SafetyLimits(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"slow": {delay: 500 * time.Millisecond, result: tools.ToolResult{Text: "too late"}},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(0, 50*time.Millisecond)
+		exec, bus, _ := setupTestExecutor(t, toolsMap, nil, withToolTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "slow"}},
@@ -290,8 +289,7 @@ func TestOrchestrator_SafetyLimits(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "finally finished"}, long: true},
 		}
-		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(0, 50*time.Millisecond)
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil, withToolTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "long_tool"}},
@@ -369,7 +367,7 @@ func TestOrchestrator_Concurrency(t *testing.T) {
 			"t3": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "r3"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(1, 0)
+		exec.SetConcurrency(2)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "t1"}},
@@ -389,7 +387,7 @@ func TestOrchestrator_Concurrency(t *testing.T) {
 			"s1": {result: tools.ToolResult{Text: "sr1"}, serial: true},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
-		exec.SetConcurrency(2, 0)
+		exec.SetConcurrency(2)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "p1"}},
@@ -455,7 +453,7 @@ func TestOrchestrator_ConcurrencyLimit_Strict(t *testing.T) {
 
 	exec, err := BuildOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.SetConcurrency(2, 0)
+	exec.SetConcurrency(2)
 	t.Cleanup(exec.Shutdown)
 
 	content := createTestToolContent(5)
@@ -865,7 +863,7 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 		},
 	}
 	exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
-	exec.SetConcurrency(1, 0) // serial to ensure deterministic failure counting
+	exec.SetConcurrency(1) // serial to ensure deterministic failure counting
 
 	content := &llm.Content{Parts: []*llm.Part{
 		{FunctionCall: &llm.FunctionCall{Name: "flakey_tool"}},

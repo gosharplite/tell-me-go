@@ -65,12 +65,12 @@ type safetyDecorator struct {
 	logger             ports.Logger
 	events             events.EventBus
 	zombie             *tools.ZombieTool
-	toolTimeout        func() time.Duration
-	longRunningTimeout func() time.Duration
-	zombieTimeout      func() time.Duration
+	toolTimeout        time.Duration
+	longRunningTimeout time.Duration
+	zombieTimeout      time.Duration
 }
 
-func newSafetyDecorator(next ToolExecutor, registry tools.Registry, logger ports.Logger, bus events.EventBus, zombie *tools.ZombieTool, toolTimeout, longRunningTimeout, zombieTimeout func() time.Duration) ToolExecutor {
+func newSafetyDecorator(next ToolExecutor, registry tools.Registry, logger ports.Logger, bus events.EventBus, zombie *tools.ZombieTool, toolTimeout, longRunningTimeout, zombieTimeout time.Duration) ToolExecutor {
 	return &safetyDecorator{
 		next:               next,
 		registry:           registry,
@@ -85,9 +85,9 @@ func newSafetyDecorator(next ToolExecutor, registry tools.Registry, logger ports
 
 func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, heartbeat chan<- struct{}) (result tools.ToolResult, err error) {
 	opts := d.registry.GetOptions(call.Name)
-	activeTimeout := d.toolTimeout()
+	activeTimeout := d.toolTimeout
 	if opts.LongRunning {
-		activeTimeout = d.longRunningTimeout()
+		activeTimeout = d.longRunningTimeout
 	}
 
 	ctx, cancel := context.WithTimeout(parentCtx, activeTimeout)
@@ -132,7 +132,7 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 			errorWrapMsg = "tool execution timed out"
 		}
 
-		go d.zombie.Monitor(context.WithoutCancel(parentCtx), call.Name, time.Now(), outCh, d.zombieTimeout())
+		go d.zombie.Monitor(context.WithoutCancel(parentCtx), call.Name, time.Now(), outCh, d.zombieTimeout)
 
 		return tools.ToolResult{
 			Text:  msg,

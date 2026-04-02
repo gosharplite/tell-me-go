@@ -43,19 +43,15 @@ func TestNewDefaultToolPipeline(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			getToolTimeout := func() time.Duration { return time.Second }
-			getLongRunningTimeout := func() time.Duration { return time.Second }
-			getZombieTimeout := func() time.Duration { return time.Second }
-
 			pipeline := NewDefaultToolPipeline(
 				tt.registry,
 				tt.sm,
 				tt.bus,
 				tt.logger,
 				tt.zombie,
-				getToolTimeout,
-				getLongRunningTimeout,
-				getZombieTimeout,
+				time.Second,
+				time.Second,
+				time.Second,
 			)
 
 			if tt.wantErr {

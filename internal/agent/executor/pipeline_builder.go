@@ -23,6 +23,10 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 		ZombieTimeout:      5 * time.Minute,
 	}
 
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	if registry == nil {
 		return nil, errors.New("registry is required")
 	}
@@ -46,30 +50,7 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	// Circuit breaker is moved to orchestrator loop
 	exec = newTracingDecorator(exec, registry, logger)
 
-	var o *Orchestrator
-
-	getToolTimeout := func() time.Duration {
-		if o != nil && o.state.Load() != nil {
-			return o.state.Load().config.ToolTimeout
-		}
-		return cfg.ToolTimeout
-	}
-
-	getLongRunningTimeout := func() time.Duration {
-		if o != nil && o.state.Load() != nil {
-			return o.state.Load().config.LongRunningTimeout
-		}
-		return cfg.LongRunningTimeout
-	}
-
-	getZombieTimeout := func() time.Duration {
-		if o != nil && o.state.Load() != nil {
-			return o.state.Load().config.ZombieTimeout
-		}
-		return cfg.ZombieTimeout
-	}
-
-	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
+	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, cfg.ToolTimeout, cfg.LongRunningTimeout, cfg.ZombieTimeout)
 
 	basePipeline := &defaultToolPipeline{
 		resolver:   newToolResolutionService(registry),
@@ -85,9 +66,8 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	}
 
 	res.zombie = zombie
-	o = res
 
-	return o, nil
+	return res, nil
 }
 
 type MockPipelineAuthorizer struct{}

@@ -155,7 +155,7 @@ func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
-			exec.SetConcurrency(1+(i%10), time.Duration(10+i)*time.Second)
+			exec.SetConcurrency(1 + (i % 10))
 		}
 	}()
 

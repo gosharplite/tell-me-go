@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -53,7 +52,7 @@ func TestOrchestrator_ConfigRace(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
-			exec.SetConcurrency(1+(i%10), time.Duration(10+i)*time.Millisecond)
+			exec.SetConcurrency(1 + (i % 10))
 			runtime.Gosched()
 		}
 	}()

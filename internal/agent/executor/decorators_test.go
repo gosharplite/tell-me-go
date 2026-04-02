@@ -174,9 +174,9 @@ func TestSafetyDecorator(t *testing.T) {
 				logger,
 				bus,
 				zombie,
-				func() time.Duration { return tt.timeout },
-				func() time.Duration { return tt.timeout },
-				func() time.Duration { return tt.timeout },
+				tt.timeout,
+				tt.timeout,
+				tt.timeout,
 			)
 
 			res, _ := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"}, nil)

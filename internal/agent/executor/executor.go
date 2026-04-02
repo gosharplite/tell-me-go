@@ -92,9 +92,9 @@ func NewDefaultToolPipeline(
 	bus events.EventBus,
 	logger ports.Logger,
 	zombie *tools.ZombieTool,
-	getToolTimeout func() time.Duration,
-	getLongRunningTimeout func() time.Duration,
-	getZombieTimeout func() time.Duration,
+	toolTimeout time.Duration,
+	longRunningTimeout time.Duration,
+	zombieTimeout time.Duration,
 ) ToolPipeline {
 	resolver := newToolResolutionService(registry)
 	authService := newSecurityAuthorizer(sm, registry)
@@ -103,7 +103,7 @@ func NewDefaultToolPipeline(
 	exec = newAuthDecorator(exec, authService)
 	// Circuit breaker is moved to orchestrator loop
 	exec = newTracingDecorator(exec, registry, logger)
-	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
+	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, toolTimeout, longRunningTimeout, zombieTimeout)
 
 	return &defaultToolPipeline{
 		resolver:   resolver,
@@ -128,36 +128,31 @@ type Orchestrator struct {
 	zombie   *tools.ZombieTool
 }
 
-type executorOption func(*Orchestrator)
+type executorOption func(*OrchestratorConfig)
 
 func WithLongRunningTimeout(timeout time.Duration) executorOption {
-	return func(e *Orchestrator) {
-		oldState := e.state.Load()
-		newState := &orchestratorState{config: oldState.config, pool: oldState.pool}
-		newState.config.LongRunningTimeout = timeout
-		e.state.Store(newState)
+	return func(cfg *OrchestratorConfig) {
+		cfg.LongRunningTimeout = timeout
 	}
 }
 
 func withZombieTimeout(timeout time.Duration) executorOption {
-	return func(e *Orchestrator) {
-		oldState := e.state.Load()
-		newState := &orchestratorState{config: oldState.config, pool: oldState.pool}
-		newState.config.ZombieTimeout = timeout
-		e.state.Store(newState)
+	return func(cfg *OrchestratorConfig) {
+		cfg.ZombieTimeout = timeout
 	}
 }
 
 func withToolTimeout(timeout time.Duration) executorOption {
-	return func(e *Orchestrator) {
-		oldState := e.state.Load()
-		newState := &orchestratorState{config: oldState.config, pool: oldState.pool}
-		newState.config.ToolTimeout = timeout
-		e.state.Store(newState)
+	return func(cfg *OrchestratorConfig) {
+		cfg.ToolTimeout = timeout
 	}
 }
 
 func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	if pipeline == nil {
 		return nil, errors.New("pipeline is required")
 	}
@@ -196,14 +191,10 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 	}
 	e.state.Store(initialState)
 
-	for _, opt := range opts {
-		opt(e)
-	}
-
 	return e, nil
 }
 
-func (e *Orchestrator) SetConcurrency(maxConcurrent int, timeout time.Duration) {
+func (e *Orchestrator) SetConcurrency(maxConcurrent int) {
 	for {
 		oldState := e.state.Load()
 		newState := &orchestratorState{
@@ -215,10 +206,6 @@ func (e *Orchestrator) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 		if maxConcurrent > 0 && maxConcurrent != oldState.config.MaxConcurrentTools {
 			newState.config.MaxConcurrentTools = maxConcurrent
 			newState.pool = concurrency.NewWorkerPool(maxConcurrent)
-			changed = true
-		}
-		if timeout > 0 && timeout != oldState.config.ToolTimeout {
-			newState.config.ToolTimeout = timeout
 			changed = true
 		}
 
