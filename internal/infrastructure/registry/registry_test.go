@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRegistry_Resilience(t *testing.T) {
@@ -107,4 +108,92 @@ func TestRegistry_GetDeclarations(t *testing.T) {
 	if len(decls) != 2 {
 		t.Errorf("expected 2 declarations, got %d", len(decls))
 	}
+}
+
+func TestRegistry_Toolkits(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+
+	// Register some tools in different toolkits
+	_ = r.RegisterToToolkit("core", &tools.ToolDeclaration{Name: "core1"}, nil)
+	_ = r.RegisterToToolkit("git", &tools.ToolDeclaration{Name: "git1"}, nil)
+	_ = r.RegisterToToolkit("git", &tools.ToolDeclaration{Name: "git2"}, nil)
+	_ = r.RegisterToToolkit("k8s", &tools.ToolDeclaration{Name: "k8s1"}, nil)
+
+	t.Run("GetCoreDeclarations", func(t *testing.T) {
+		decls := r.GetCoreDeclarations()
+		if len(decls) != 1 {
+			t.Errorf("expected 1 core declaration, got %d", len(decls))
+		}
+		if decls[0].Name != "core1" {
+			t.Errorf("expected core1, got %s", decls[0].Name)
+		}
+	})
+
+	t.Run("GetDeclarationsByToolkits - only core", func(t *testing.T) {
+		decls := r.GetDeclarationsByToolkits(nil)
+		if len(decls) != 1 {
+			t.Errorf("expected 1 declaration (only core), got %d", len(decls))
+		}
+		if decls[0].Name != "core1" {
+			t.Errorf("expected core1, got %s", decls[0].Name)
+		}
+	})
+
+	t.Run("GetDeclarationsByToolkits - core + git", func(t *testing.T) {
+		decls := r.GetDeclarationsByToolkits([]string{"git"})
+		if len(decls) != 3 {
+			t.Errorf("expected 3 declarations (core + git), got %d", len(decls))
+		}
+
+		names := make(map[string]bool)
+		for _, d := range decls {
+			names[d.Name] = true
+		}
+		if !names["core1"] || !names["git1"] || !names["git2"] {
+			t.Errorf("missing expected tools in core+git set: %v", names)
+		}
+		if names["k8s1"] {
+			t.Errorf("unrequested tool k8s1 found in core+git set")
+		}
+	})
+
+	t.Run("ListAvailableToolkits", func(t *testing.T) {
+		toolkits := r.ListAvailableToolkits()
+		if len(toolkits) != 3 {
+			t.Errorf("expected 3 toolkits, got %d: %v", len(toolkits), toolkits)
+		}
+
+		tks := make(map[string]bool)
+		for _, tk := range toolkits {
+			tks[tk] = true
+		}
+		if !tks["core"] || !tks["git"] || !tks["k8s"] {
+			tksList := make([]string, 0, len(tks))
+			for tk := range tks {
+				tksList = append(tksList, tk)
+			}
+			t.Errorf("missing expected toolkits: %v", tksList)
+		}
+	})
+}
+
+func TestRegistry_RegisterToToolkitWithOptions(t *testing.T) {
+	t.Parallel()
+	r := registry.New()
+
+	err := r.RegisterToToolkitWithOptions("git", &tools.ToolDeclaration{Name: "git_serial"}, nil, tools.ToolOptions{Serial: true})
+	assert.NoError(t, err)
+
+	assert.True(t, r.IsSerial("git_serial"))
+
+	decls := r.GetDeclarationsByToolkits([]string{"git"})
+	found := false
+	for _, d := range decls {
+		if d.Name == "git_serial" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "git_serial should be in git toolkit")
 }

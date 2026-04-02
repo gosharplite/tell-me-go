@@ -83,9 +83,22 @@ func (m *mockSessionProvider) GetInfo() ports.SessionInfo     { return m.info }
 func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) { m.info = info }
 func (m *mockSessionProvider) Close() error                   { return nil }
 
+type mockMetadataProvider struct {
+	tools.ToolMetadataProvider
+	toolkits []string
+}
+
+func (m *mockMetadataProvider) ListAvailableToolkits() []string {
+	if m.toolkits == nil {
+		return []string{"core"}
+	}
+	return m.toolkits
+}
+
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 	lt := &mockListStore{}
 	ts := services.NewTaskService(lt)
+	mp := &mockMetadataProvider{}
 
 	provider := &mockSessionProvider{
 		tasks:     ts,
@@ -96,7 +109,7 @@ func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 		},
 	}
 
-	return newpersistenceTools(provider), provider
+	return newpersistenceTools(provider, mp), provider
 }
 
 func TestPersistenceTools_GetSessionInfo(t *testing.T) {
@@ -287,7 +300,7 @@ func TestRegisterPersistence(t *testing.T) {
 }
 
 func TestNewPersistenceTools_Nil(t *testing.T) {
-	pt := newpersistenceTools(nil)
+	pt := newpersistenceTools(nil, nil)
 	if pt.state != nil {
 		t.Error("Expected nil state")
 	}

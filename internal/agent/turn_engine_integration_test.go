@@ -373,3 +373,23 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 func (m *cancelIntegrationRegistry) GetOptions(name string) tools.ToolOptions {
 	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }
+
+func (m *cancelIntegrationRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+
+func (m *cancelIntegrationRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+
+func (m *cancelIntegrationRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *cancelIntegrationRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *cancelIntegrationRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}

@@ -18,10 +18,11 @@ import (
 type persistenceTools struct {
 	tasks ports.TaskStore
 	state ports.SessionProvider
+	reg   tools.ToolMetadataProvider
 }
 
 // newpersistenceTools creates a new persistenceTools instance.
-func newpersistenceTools(state ports.SessionProvider) *persistenceTools {
+func newpersistenceTools(state ports.SessionProvider, reg tools.ToolMetadataProvider) *persistenceTools {
 	if state == nil {
 		return &persistenceTools{}
 	}
@@ -35,6 +36,7 @@ func newpersistenceTools(state ports.SessionProvider) *persistenceTools {
 	return &persistenceTools{
 		tasks: state.GetTasks(),
 		state: state,
+		reg:   reg,
 	}
 }
 
@@ -59,6 +61,10 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
 	}, t.GetSessionInfo); err != nil {
+		return err
+	}
+
+	if err := r.RegisterWithOptions(loadToolkitDef, t.handleLoadToolkit, tools.ToolOptions{Serial: true}); err != nil {
 		return err
 	}
 

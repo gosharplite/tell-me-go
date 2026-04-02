@@ -16,6 +16,7 @@ import (
 // agentConfig holds initialization-only dependencies and configuration.
 type agentConfig struct {
 	summarizer       ports.Summarizer
+	sessionProvider  ports.SessionProvider
 	skillSelector    skills.SkillSelector
 	registerInternal bool
 	model            string
@@ -30,6 +31,13 @@ type agentConfig struct {
 
 // Option defines a functional option for configuring an Agent.
 type Option func(*agentConfig)
+
+// WithSessionProvider sets the session provider for the agent.
+func WithSessionProvider(sp ports.SessionProvider) Option {
+	return func(c *agentConfig) {
+		c.sessionProvider = sp
+	}
+}
 
 // withInitContext sets the context for the agent initialization.
 func withInitContext(ctx context.Context) Option {

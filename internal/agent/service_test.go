@@ -174,6 +174,13 @@ func (m *mockServiceSessionDependencies) GetPricingData() pricing.PricingData {
 	return pricing.PricingData{}
 }
 func (m *mockServiceSessionDependencies) GetClient() llm.LLMClient { return nil }
+func (m *mockServiceSessionDependencies) GetSessionProvider() ports.SessionProvider {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.SessionProvider)
+}
 
 // mockServiceEventBus is a mock of EventBus.
 type mockServiceEventBus struct {
@@ -281,6 +288,7 @@ func TestProcessMessage(t *testing.T) {
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
 				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetSessionProvider").Return(nil)
 
 				bus.On("Shutdown", mock.Anything).Return(nil)
 

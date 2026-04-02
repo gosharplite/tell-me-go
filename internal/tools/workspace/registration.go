@@ -341,14 +341,14 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor) error {
 	m := &gitManager{sm: sm, Exec: exec}
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("git", &tools.ToolDeclaration{
 		Name:        "get_git_status",
 		Description: "Retrieves the short status of the git repository (staged, unstaged, and untracked files).",
 	}, m.getGitStatus); err != nil {
 		return err
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("git", &tools.ToolDeclaration{
 		Name:        "get_git_diff",
 		Description: "Retrieves the git diff between the working directory (or staged index) and the last commit. Use this to review changes before committing.",
 		Parameters: &tools.Schema{
@@ -364,7 +364,7 @@ func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.Comman
 		return err
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("git", &tools.ToolDeclaration{
 		Name:        "get_git_log",
 		Description: "Retrieves the git commit log.",
 		Parameters: &tools.Schema{
@@ -380,7 +380,7 @@ func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.Comman
 		return err
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("git", &tools.ToolDeclaration{
 		Name:        "get_git_show",
 		Description: "Shows the full details (diff and metadata) of a specific commit hash (runs git show).",
 		Parameters: &tools.Schema{
@@ -397,7 +397,7 @@ func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.Comman
 		return err
 	}
 
-	if err := r.Register(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkit("git", &tools.ToolDeclaration{
 		Name:        "get_git_blame",
 		Description: "Shows who changed which lines in a file.",
 		Parameters: &tools.Schema{
@@ -414,7 +414,7 @@ func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.Comman
 		return err
 	}
 
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkitWithOptions("git", &tools.ToolDeclaration{
 		Name:            "git_commit",
 		Description:     "Commits currently staged changes with a message. You MUST stage files first using 'execute_command' with 'git add <files>' before calling this tool.",
 		RequiresConsent: true,
@@ -436,7 +436,7 @@ func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.Comman
 		return err
 	}
 
-	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
+	if err := r.RegisterToToolkitWithOptions("git", &tools.ToolDeclaration{
 		Name:            "git_create_branch",
 		Description:     "Creates and checks out a new git branch.",
 		RequiresConsent: true,
@@ -462,5 +462,5 @@ func registerGit(r tools.Registry, sm domain_security.Manager, exec tools.Comman
 
 // RegisterPersistence adds persistence tools to the registry.
 func RegisterPersistence(r tools.Registry, state ports.SessionProvider) error {
-	return newpersistenceTools(state).Register(r)
+	return newpersistenceTools(state, r).Register(r)
 }

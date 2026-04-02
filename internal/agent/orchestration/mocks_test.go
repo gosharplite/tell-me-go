@@ -16,6 +16,7 @@ import (
 
 type mockToolRegistry struct {
 	declarations []*tools.ToolDeclaration
+	toolkitMap   map[string][]*tools.ToolDeclaration
 	registerErr  error
 	failAfter    int
 	callCount    int
@@ -26,16 +27,11 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 func (m *mockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
-	m.callCount++
-	if m.registerErr != nil && (m.failAfter == 0 || m.callCount > m.failAfter) {
-		return m.registerErr
-	}
-	m.declarations = append(m.declarations, declaration)
-	return nil
+	return m.RegisterToToolkit("core", declaration, implementation)
 }
 
 func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	return m.Register(def, handler)
+	return m.RegisterToToolkitWithOptions("core", def, handler, opts)
 }
 
 func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -48,6 +44,61 @@ func (m *mockToolRegistry) IsSerial(name string) bool {
 
 func (m *mockToolRegistry) IsLongRunning(name string) bool {
 	return false
+}
+
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.RegisterToToolkitWithOptions(toolkit, def, handler, tools.ToolOptions{})
+}
+
+func (m *mockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	m.callCount++
+	if m.registerErr != nil && (m.failAfter == 0 || m.callCount > m.failAfter) {
+		return m.registerErr
+	}
+	m.declarations = append(m.declarations, def)
+	if m.toolkitMap == nil {
+		m.toolkitMap = make(map[string][]*tools.ToolDeclaration)
+	}
+	m.toolkitMap[toolkit] = append(m.toolkitMap[toolkit], def)
+	return nil
+}
+
+func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.toolkitMap["core"]
+}
+
+func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	dedup := make(map[string]*tools.ToolDeclaration)
+
+	// Always add core
+	for _, d := range m.toolkitMap["core"] {
+		dedup[d.Name] = d
+	}
+
+	// Add requested toolkits
+	for _, tk := range toolkits {
+		for _, d := range m.toolkitMap[tk] {
+			dedup[d.Name] = d
+		}
+	}
+
+	res := make([]*tools.ToolDeclaration, 0, len(dedup))
+	for _, d := range dedup {
+		res = append(res, d)
+	}
+	return res
+}
+
+func (m *mockToolRegistry) ListAvailableToolkits() []string {
+	toolkits := make([]string, 0, len(m.toolkitMap))
+	for tk := range m.toolkitMap {
+		toolkits = append(toolkits, tk)
+	}
+	return toolkits
 }
 
 type mockSummarizer struct {
@@ -164,6 +215,8 @@ func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 	return actualRemoved, remainingTurns, remainingMsgs, nil
 }
 
+func (m *mockHistoryManager) GetFilePath() string { return "" }
+
 type mockGateway struct {
 	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 	sendChatFn func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
@@ -264,8 +317,26 @@ func (m *mockSessionLoader) LoadSession(path string) (*config.SessionConfig, err
 	return args.Get(0).(*config.SessionConfig), args.Error(1)
 }
 
-func (m *mockHistoryManager) GetFilePath() string { return "" }
+type mockSessionProvider struct {
+	mock.Mock
+}
 
-func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+func (m *mockSessionProvider) GetTasks() ports.TaskStore { return nil }
+func (m *mockSessionProvider) GetSettings() ports.KVStore {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.KVStore)
+}
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
+	args := m.Called()
+	return args.Get(0).(ports.SessionInfo)
+}
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) {
+	m.Called(info)
+}
+func (m *mockSessionProvider) Close() error {
+	args := m.Called()
+	return args.Error(0)
 }

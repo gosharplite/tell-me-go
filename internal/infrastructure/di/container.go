@@ -161,7 +161,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger)
+	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger, sessionProvider)
 
 	return deps, hManager, cleanup, nil
 }
@@ -255,6 +255,7 @@ func (b *bootstrapper) buildAgentOrchestrator(
 	bus events.EventBus,
 	cfg *config.Config,
 	logger *slog.Logger,
+	sessionProvider ports.SessionProvider,
 ) ports.SessionDependencies {
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
 	tracker := telemetry.NewSessionCostTracker(b.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
@@ -272,6 +273,7 @@ func (b *bootstrapper) buildAgentOrchestrator(
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
 		logger:           logger,
+		sessionProvider:  sessionProvider,
 	}
 }
 
@@ -287,6 +289,7 @@ type sessionDeps struct {
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
 	logger           *slog.Logger
+	sessionProvider  ports.SessionProvider
 }
 
 func (d *sessionDeps) GetGateway() llm.LLMGateway              { return d.gw }
@@ -296,6 +299,9 @@ func (d *sessionDeps) GetSecurityManager() security.Manager    { return d.sm }
 func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
 func (d *sessionDeps) GetLogger() *slog.Logger                 { return d.logger }
 func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
+func (d *sessionDeps) GetSessionProvider() ports.SessionProvider {
+	return d.sessionProvider
+}
 func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides
 }

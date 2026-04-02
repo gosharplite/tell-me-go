@@ -550,7 +550,19 @@ func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (respConten
 		}
 	}()
 
-	respContent, metrics, err = turn.Gateway.Generate(ctx, turn.State.PreparedHistory, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
+	var activeToolkits []string
+	if turn.CtxManager != nil && turn.CtxManager.SessionProvider != nil {
+		activeToolkits = turn.CtxManager.SessionProvider.GetInfo().ActiveToolkits
+	}
+
+	var activeTools []*tools.ToolDeclaration
+	if len(activeToolkits) > 0 {
+		activeTools = turn.Registry.GetDeclarationsByToolkits(activeToolkits)
+	} else {
+		activeTools = turn.Registry.GetCoreDeclarations()
+	}
+
+	respContent, metrics, err = turn.Gateway.Generate(ctx, turn.State.PreparedHistory, activeTools, turn.CtxManager.History.GetResolver())
 	if err == nil && respContent == nil {
 		return nil, nil, newAgentError(errLogic, "api returned nil content", nil)
 	}

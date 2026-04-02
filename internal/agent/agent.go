@@ -96,7 +96,10 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		Events:        bus,
 	}
 
-	ctxManager := orchestration.NewContextManager(strategy, hManager, bus, factory, orchestration.WithLogger(cfg.logger))
+	ctxManager := orchestration.NewContextManager(strategy, hManager, bus, factory,
+		orchestration.WithLogger(cfg.logger),
+		orchestration.WithSessionProvider(cfg.sessionProvider),
+	)
 	a.ctxManager = ctxManager
 
 	// Initialize engine

@@ -7,6 +7,7 @@ package registry
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -30,6 +31,7 @@ type registry struct {
 	mu           sync.RWMutex
 	declarations []*tools.ToolDeclaration
 	entries      map[string]toolEntry
+	toolkitMap   map[string][]*tools.ToolDeclaration
 }
 
 // New initializes an empty tool registry.
@@ -37,24 +39,38 @@ func New() tools.Registry {
 	return &registry{
 		declarations: make([]*tools.ToolDeclaration, 0),
 		entries:      make(map[string]toolEntry),
+		toolkitMap:   make(map[string][]*tools.ToolDeclaration),
 	}
 }
 
-// Register adds a new tool to the registry with default options.
+// Register adds a new tool to the registry with default options and core toolkit.
 func (r *registry) Register(def *tools.ToolDeclaration, handler toolFunc) error {
-	return r.RegisterWithOptions(def, handler, ToolOptions{})
+	return r.RegisterToToolkit("core", def, handler)
 }
 
-// RegisterWithOptions adds a new tool to the registry with specific options.
+// RegisterWithOptions adds a new tool to the registry with specific options and core toolkit.
 func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) error {
+	return r.RegisterToToolkitWithOptions("core", def, handler, opts)
+}
+
+// RegisterToToolkit adds a tool to a specific toolkit.
+func (r *registry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler toolFunc) error {
+	return r.RegisterToToolkitWithOptions(toolkit, def, handler, ToolOptions{})
+}
+
+// RegisterToToolkitWithOptions adds a tool to a specific toolkit with options.
+func (r *registry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) error {
 	if def.Name == "" {
 		return fmt.Errorf("cannot register tool with empty name")
+	}
+	if toolkit == "" {
+		toolkit = "core"
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Check for existing tool to avoid duplicates in declarations
+	// Check for existing tool to avoid duplicates in entries
 	if entry, exists := r.entries[def.Name]; exists {
 		// Update existing entry
 		entry.Declaration = def
@@ -62,13 +78,37 @@ func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolF
 		entry.Options = opts
 		r.entries[def.Name] = entry
 
-		// Update declaration in-place if possible, or just skip appending
+		// Update in declarations list
 		for i, d := range r.declarations {
 			if d.Name == def.Name {
 				r.declarations[i] = def
 				break
 			}
 		}
+
+		// Update in toolkitMap
+		// Note: we don't know which toolkit it was originally in.
+		// For now, we'll just update it in the requested toolkit if it exists there.
+		for tk, toolsList := range r.toolkitMap {
+			for i, d := range toolsList {
+				if d.Name == def.Name {
+					r.toolkitMap[tk][i] = def
+				}
+			}
+		}
+
+		// If it's not in the target toolkit, add it
+		foundInToolkit := false
+		for _, d := range r.toolkitMap[toolkit] {
+			if d.Name == def.Name {
+				foundInToolkit = true
+				break
+			}
+		}
+		if !foundInToolkit {
+			r.toolkitMap[toolkit] = append(r.toolkitMap[toolkit], def)
+		}
+
 		return nil
 	}
 
@@ -78,10 +118,11 @@ func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolF
 		Handler:     handler,
 		Options:     opts,
 	}
+	r.toolkitMap[toolkit] = append(r.toolkitMap[toolkit], def)
 	return nil
 }
 
-// GetDeclarations returns the list of function declarations.
+// GetDeclarations returns the list of all function declarations.
 func (r *registry) GetDeclarations() []*tools.ToolDeclaration {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -89,6 +130,65 @@ func (r *registry) GetDeclarations() []*tools.ToolDeclaration {
 	res := make([]*tools.ToolDeclaration, len(r.declarations))
 	copy(res, r.declarations)
 	return res
+}
+
+// GetCoreDeclarations returns all tool declarations belonging to the "core" toolkit.
+func (r *registry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	coreTools := r.toolkitMap["core"]
+	res := make([]*tools.ToolDeclaration, len(coreTools))
+	copy(res, coreTools)
+	return res
+}
+
+// GetDeclarationsByToolkits returns core tools plus tools from requested toolkits, deduplicated.
+func (r *registry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Use a map for deduplication by name
+	dedup := make(map[string]*tools.ToolDeclaration)
+
+	// Always add core
+	for _, d := range r.toolkitMap["core"] {
+		dedup[d.Name] = d
+	}
+
+	// Add requested toolkits
+	for _, tk := range toolkits {
+		if tk == "core" {
+			continue
+		}
+		for _, d := range r.toolkitMap[tk] {
+			dedup[d.Name] = d
+		}
+	}
+
+	res := make([]*tools.ToolDeclaration, 0, len(dedup))
+	for _, d := range dedup {
+		res = append(res, d)
+	}
+
+	// Sort by Name for deterministic output
+	sort.Slice(res, func(i, j int) bool {
+		return res[i].Name < res[j].Name
+	})
+
+	return res
+}
+
+// ListAvailableToolkits returns all registered toolkit names.
+func (r *registry) ListAvailableToolkits() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	toolkits := make([]string, 0, len(r.toolkitMap))
+	for tk := range r.toolkitMap {
+		toolkits = append(toolkits, tk)
+	}
+	return toolkits
 }
 
 // Execute looks up and runs a tool handler with the provided JSON-parsed arguments.

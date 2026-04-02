@@ -85,6 +85,7 @@ type sessionDependencies struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	EventBus         events.EventBus
 	Logger           *slog.Logger
+	SessionProvider  ports.SessionProvider
 }
 
 func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gateway }
@@ -98,6 +99,9 @@ func (d *sessionDependencies) GetSecurityManager() domain_security.Manager {
 func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
 func (d *sessionDependencies) GetLogger() *slog.Logger      { return d.Logger }
 func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
+func (d *sessionDependencies) GetSessionProvider() ports.SessionProvider {
+	return d.SessionProvider
+}
 func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
 	return d.PricingOverrides
 }
@@ -107,7 +111,7 @@ func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 }
 
 // newSessionDependencies creates a new sessionDependencies with all required components.
-func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger *slog.Logger) ports.SessionDependencies {
+func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger *slog.Logger, sessionProvider ports.SessionProvider) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -120,6 +124,7 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 		PricingOverrides: overrides,
 		EventBus:         bus,
 		Logger:           logger,
+		SessionProvider:  sessionProvider,
 	}
 }
 

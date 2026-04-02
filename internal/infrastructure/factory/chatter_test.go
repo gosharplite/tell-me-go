@@ -21,13 +21,14 @@ import (
 )
 
 type mockSessionDeps struct {
-	gw       llm.LLMGateway
-	hManager ports.HistoryManager
-	reg      tools.Registry
-	sm       security.Manager
-	bus      events.EventBus
-	paths    *persistence.Paths
-	tracker  pricing.CostTracker
+	gw              llm.LLMGateway
+	hManager        ports.HistoryManager
+	reg             tools.Registry
+	sm              security.Manager
+	bus             events.EventBus
+	paths           *persistence.Paths
+	tracker         pricing.CostTracker
+	sessionProvider ports.SessionProvider
 }
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
@@ -40,6 +41,7 @@ func (d *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing 
 func (d *mockSessionDeps) GetTracker() pricing.CostTracker                      { return d.tracker }
 func (d *mockSessionDeps) GetPricingData() pricing.PricingData                  { return pricing.PricingData{} }
 func (d *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
+func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return d.sessionProvider }
 
 type mockGateway struct {
 	llm.LLMGateway
@@ -52,6 +54,8 @@ type mockHistoryManager struct {
 func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
 	return 0, 0, 0, nil
 }
+
+func (m *mockHistoryManager) GetFilePath() string { return "" }
 
 type mockRegistry struct {
 	tools.Registry
@@ -78,6 +82,30 @@ func (m *mockRegistry) IsLongRunning(name string) bool {
 }
 
 func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration {
+	return nil
+}
+
+func (m *mockRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *mockRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return nil
+}
+
+func (m *mockRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return nil
+}
+
+func (m *mockRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return nil
+}
+
+func (m *mockRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return nil
+}
+
+func (m *mockRegistry) ListAvailableToolkits() []string {
 	return nil
 }
 
@@ -149,8 +177,4 @@ func TestNewChatter(t *testing.T) {
 			t.Error("expected error due to nil registry, got nil")
 		}
 	})
-}
-
-func (m *mockRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
 }
