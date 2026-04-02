@@ -78,6 +78,7 @@ func DefaultPolicy() *Policy {
 			"remove_readpath":   true,
 
 			// Code Analysis Tools
+			"load_toolkit":             true,
 			"get_definitions":          true,
 			"get_file_skeleton":        true,
 			"verify_architecture":      true,
