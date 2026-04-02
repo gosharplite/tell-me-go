@@ -427,7 +427,7 @@ func (e *Orchestrator) executeSerialBatch(ctx context.Context, batch taskBatch, 
 		defer func() {
 			if r := recover(); r != nil {
 				e.logger.Error("panic in serial execution", "panic", r, "stack", string(debug.Stack()))
-				err := fmt.Errorf("tool execution panic: %v", r)
+				err := fmt.Errorf("%w: tool execution panic: %v", llm.ErrTerminal, r)
 				tr = tools.ToolResult{Text: err.Error(), Error: err}
 			}
 		}()
@@ -476,7 +476,7 @@ func (e *Orchestrator) parallelWorker(ctx context.Context, calls []*llm.Function
 		if r := recover(); r != nil {
 			e.logger.Error("panic in worker goroutine", "panic", r, "stack", string(debug.Stack()))
 			if currentJobIdx != -1 {
-				err := fmt.Errorf("tool execution panic: %v", r)
+				err := fmt.Errorf("%w: tool execution panic: %v", llm.ErrTerminal, r)
 				resultsCh <- toolExecResult{
 					index: currentJobIdx,
 					name:  currentJobName,

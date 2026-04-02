@@ -436,7 +436,7 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 				}
 			}
 		}()
-		
+
 		b.pendingMu.Lock()
 		defer b.pendingMu.Unlock()
 		for b.pendingCount > 0 && !cancelled {
