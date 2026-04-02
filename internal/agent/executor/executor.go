@@ -482,9 +482,9 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 						// Close the channel to avoid deadlock.
 						e.logger.Error("panic in fan-in wait goroutine", "panic", r, "stack", string(debug.Stack()))
 					}
+					close(resultsCh)
 				}()
 				wg.Wait()
-				close(resultsCh)
 			}()
 		}
 
