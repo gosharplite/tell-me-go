@@ -448,7 +448,7 @@ func TestErrBusClosed_Explicit(t *testing.T) {
 	}
 }
 
-func TestSimpleEventBus_HOLBlocking(t *testing.T) {
+func TestEventBus_SlowSubscriber(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -456,12 +456,11 @@ func TestSimpleEventBus_HOLBlocking(t *testing.T) {
 	buf := inframock.NewSafeBuffer()
 	testLogger := slog.New(slog.NewJSONHandler(buf, nil))
 
-	// Small semaphore and single worker to trigger HOL blocking
+	// Setup bus with tiny queue to force backpressure quickly
 	bus := events.NewSimpleEventBus(ctx,
 		events.WithLogger(testLogger),
 		events.WithWorkers(1),
-		events.WithMaxConcurrentSubscribers(1),
-		events.WithQueueSize(10),
+		events.WithQueueSize(1),
 	)
 	inframock.CleanupBus(t, bus)
 
@@ -469,34 +468,37 @@ func TestSimpleEventBus_HOLBlocking(t *testing.T) {
 	slowSub := &uncooperativeSubscriber{block: block}
 	bus.SubscribeGlobal(slowSub)
 
-	// Publish first event - will occupy the single semaphore slot
+	// Fill the subscriber's channel
 	_ = bus.Publish(ctx, testEvent{typeName: "E1"})
+	// Wait for worker to pick up E1 and block
+	time.Sleep(10 * time.Millisecond)
 
-	// Wait a bit to ensure E1 is picked up by the worker and occupies the slot
-	time.Sleep(100 * time.Millisecond)
+	_ = bus.Publish(ctx, testEvent{typeName: "E2"}) // This will sit in the queue (size 1)
 
-	// Publish second event - should trigger timeout in dispatch (500ms) because E1 holds the slot
-	_ = bus.Publish(ctx, testEvent{typeName: "E2"})
+	// Now publish E3. The subscriber's queue is full.
+	// Publish MUST return immediately and drop the event.
+	start := time.Now()
+	err := bus.Publish(ctx, testEvent{typeName: "E3"})
+	duration := time.Since(start)
 
-	// Publish third event - should be picked up by the worker after E2 times out
-	_ = bus.Publish(ctx, testEvent{typeName: "E3"})
+	if err != nil {
+		t.Errorf("Expected Publish to return nil despite load shedding, got: %v", err)
+	}
 
-	// Give enough time for timeouts (2 * 500ms + some buffer)
-	time.Sleep(2 * time.Second)
+	if duration > 5*time.Millisecond {
+		t.Errorf("Publish took too long: %v. It must not block the publisher.", duration)
+	}
 
+	// Give it a tiny bit of time to flush the log
+	time.Sleep(50 * time.Millisecond)
 	output := buf.String()
 
-	// Verify log contains warning for E2 and E3 being skipped
-	if !strings.Contains(output, "Subscriber saturated; event skipped for this subscriber") {
-		t.Errorf("Expected warning log not found in: %s", output)
+	// Verify log contains warning for dropping E3
+	if !strings.Contains(output, "subscriber queue full, dropping event") {
+		t.Errorf("Expected load shedding log warning, got: %s", output)
 	}
-
-	if !strings.Contains(output, "event_type\":\"E2\"") {
-		t.Errorf("Expected E2 to be skipped and logged, output: %s", output)
-	}
-
 	if !strings.Contains(output, "event_type\":\"E3\"") {
-		t.Errorf("Expected E3 to be skipped and logged (was it blocked?), output: %s", output)
+		t.Errorf("Expected E3 to be logged as dropped, output: %s", output)
 	}
 
 	// Unblock E1

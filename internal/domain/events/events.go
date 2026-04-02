@@ -49,24 +49,26 @@ type EventBus interface {
 	Flush(ctx context.Context) error
 }
 
+type subscriberWrapper struct {
+	sub Subscriber
+	ch  chan Event
+}
+
 // SimpleEventBus is an implementation of EventBus.
 type SimpleEventBus struct {
 	mu                sync.RWMutex
-	subscribers       map[string][]Subscriber
-	globalSubscribers []Subscriber
+	subscribers       map[string][]*subscriberWrapper
+	globalSubscribers []*subscriberWrapper
 	closed            bool
 	closing           chan struct{}
 	ctx               context.Context
 	cancel            context.CancelFunc
 	log               *slog.Logger
 
-	// Bounded worker pool fields
-	eventQueue   chan Event
-	numWorkers   int
-	subSemaphore chan struct{}
-	wg           sync.WaitGroup // Tracks active subscriber dispatches
-	workerWG     sync.WaitGroup // Tracks active workers
-	pendingWG    sync.WaitGroup // Tracks pending events for Flush
+	queueSize  int
+	numWorkers int            // If <= 0, runs synchronously
+	workerWG   sync.WaitGroup // Tracks active worker goroutines for subscribers
+	pendingWG  sync.WaitGroup // Tracks pending events for Flush
 }
 
 // busOption defines a functional option for configuring the SimpleEventBus.
@@ -79,53 +81,42 @@ func WithLogger(l *slog.Logger) busOption {
 	}
 }
 
-// WithQueueSize sets the size of the internal event queue.
+// WithQueueSize sets the size of the per-subscriber event queue.
 func WithQueueSize(size int) busOption {
 	return func(b *SimpleEventBus) {
-		b.eventQueue = make(chan Event, size)
+		b.queueSize = size
 	}
 }
 
-// WithWorkers sets the number of worker goroutines.
-// If n is <= 0, the event bus becomes synchronous (useful for testing).
+// WithWorkers sets whether the event bus runs async (n > 0) or sync (n <= 0).
 func WithWorkers(n int) busOption {
 	return func(b *SimpleEventBus) {
 		b.numWorkers = n
 	}
 }
 
-// WithMaxConcurrentSubscribers sets the maximum number of concurrent subscriber executions.
+// WithMaxConcurrentSubscribers is deprecated and kept for backward compatibility.
 func WithMaxConcurrentSubscribers(n int) busOption {
-	return func(b *SimpleEventBus) {
-		b.subSemaphore = make(chan struct{}, n)
-	}
+	return func(b *SimpleEventBus) {}
 }
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus.
 func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 	ctx, cancel := context.WithCancel(ctx)
 	b := &SimpleEventBus{
-		subscribers: make(map[string][]Subscriber),
-		closing:     make(chan struct{}),
-		ctx:         ctx,
-		cancel:      cancel,
-		log:         slog.Default(),
-		numWorkers:  defaultWorkers,
+		subscribers:       make(map[string][]*subscriberWrapper),
+		globalSubscribers: make([]*subscriberWrapper, 0),
+		closing:           make(chan struct{}),
+		ctx:               ctx,
+		cancel:            cancel,
+		log:               slog.Default(),
+		numWorkers:        defaultWorkers,
+		queueSize:         defaultQueueSize,
 	}
 
 	for _, opt := range opts {
 		opt(b)
 	}
-
-	if b.eventQueue == nil {
-		b.eventQueue = make(chan Event, defaultQueueSize)
-	}
-
-	if b.subSemaphore == nil {
-		b.subSemaphore = make(chan struct{}, defaultMaxConcurrentSubs)
-	}
-
-	b.startWorkers()
 
 	return b
 }
@@ -161,27 +152,40 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 		return b.dispatchSync(ctx, event)
 	}
 
-	// For async mode, re-acquire RLock to ensure atomicity with Shutdown
+	// For async mode
 	b.mu.RLock()
+	defer b.mu.RUnlock()
 	if b.closed {
-		b.mu.RUnlock()
 		return ErrBusClosed
 	}
 
-	b.pendingWG.Add(1)
-	select {
-	case b.eventQueue <- event:
-		b.mu.RUnlock()
-		return nil
-	case <-ctx.Done():
-		b.pendingWG.Done()
-		b.mu.RUnlock()
-		return ctx.Err()
-	default:
-		b.pendingWG.Done()
-		b.mu.RUnlock()
-		return errQueueFull
+	specificSubs := b.subscribers[event.Type()]
+	globalSubs := b.globalSubscribers
+
+	// Create unified list of wrappers
+	wrappers := make([]*subscriberWrapper, 0, len(specificSubs)+len(globalSubs))
+	wrappers = append(wrappers, specificSubs...)
+	wrappers = append(wrappers, globalSubs...)
+
+	for _, w := range wrappers {
+		b.pendingWG.Add(1)
+		select {
+		case w.ch <- event:
+			// Successfully enqueued
+		case <-ctx.Done():
+			b.pendingWG.Done()
+			return ctx.Err()
+		default:
+			// Backpressure: Subscriber channel is full.
+			// Shed load and log to avoid blocking the hot path.
+			b.pendingWG.Done()
+			b.getLogger().Warn("subscriber queue full, dropping event",
+				slog.String("event_type", event.Type()),
+				slog.String("subscriber", fmt.Sprintf("%T", w.sub)))
+		}
 	}
+
+	return nil
 }
 
 func (b *SimpleEventBus) dispatchSync(ctx context.Context, event Event) error {
@@ -189,8 +193,12 @@ func (b *SimpleEventBus) dispatchSync(ctx context.Context, event Event) error {
 	specificSubs := b.subscribers[event.Type()]
 	globalSubs := b.globalSubscribers
 	subs := make([]Subscriber, 0, len(specificSubs)+len(globalSubs))
-	subs = append(subs, specificSubs...)
-	subs = append(subs, globalSubs...)
+	for _, w := range specificSubs {
+		subs = append(subs, w.sub)
+	}
+	for _, w := range globalSubs {
+		subs = append(subs, w.sub)
+	}
 	b.mu.RUnlock()
 
 	var errs []error
@@ -202,89 +210,48 @@ func (b *SimpleEventBus) dispatchSync(ctx context.Context, event Event) error {
 	return errors.Join(errs...)
 }
 
-func (b *SimpleEventBus) startWorkers() {
-	if b.numWorkers <= 0 {
-		return
+func (b *SimpleEventBus) newWrapper(sub Subscriber) *subscriberWrapper {
+	w := &subscriberWrapper{
+		sub: sub,
 	}
-	b.workerWG.Add(b.numWorkers)
-	for i := 0; i < b.numWorkers; i++ {
-		go b.workerLoop()
+	if b.numWorkers > 0 {
+		w.ch = make(chan Event, b.queueSize)
+		b.workerWG.Add(1)
+		go b.subscriberLoop(w)
 	}
+	return w
 }
 
-func (b *SimpleEventBus) workerLoop() {
+func (b *SimpleEventBus) subscriberLoop(w *subscriberWrapper) {
 	defer b.workerWG.Done()
 	for {
 		select {
 		case <-b.ctx.Done():
 			// Drain the queue to decrement pendingWG for unhandled events.
-			// Since b.ctx is done, Publish will also start rejecting new events.
-			// We just loop until the queue is empty.
 			for {
 				select {
-				case <-b.eventQueue:
+				case <-w.ch:
 					b.pendingWG.Done()
 				default:
 					return
 				}
 			}
-		case event, ok := <-b.eventQueue:
+		case event, ok := <-w.ch:
 			if !ok {
 				return
 			}
-			b.dispatch(event)
+
+			// Hard timeout prevents a subscriber from hanging forever
+			timeoutCtx, cancel := context.WithTimeout(b.ctx, 30*time.Second)
+			if err := b.notifySubscriber(timeoutCtx, w.sub, event); err != nil {
+				b.getLogger().ErrorContext(timeoutCtx, "subscriber failed",
+					slog.String("event_type", event.Type()),
+					slog.String("subscriber_type", fmt.Sprintf("%T", w.sub)),
+					slog.Any("error", err),
+				)
+			}
+			cancel()
 			b.pendingWG.Done()
-		}
-	}
-}
-
-func (b *SimpleEventBus) dispatch(event Event) {
-	b.mu.RLock()
-	specificSubs := b.subscribers[event.Type()]
-	globalSubs := b.globalSubscribers
-	subs := make([]Subscriber, 0, len(specificSubs)+len(globalSubs))
-	subs = append(subs, specificSubs...)
-	subs = append(subs, globalSubs...)
-	b.mu.RUnlock()
-
-	for _, sub := range subs {
-		b.wg.Add(1)
-		b.pendingWG.Add(1)
-
-		// Acquire semaphore slot with timeout to prevent Head-of-Line blocking
-		select {
-		case b.subSemaphore <- struct{}{}:
-			// Success: Slot acquired, launch the subscriber goroutine
-			go func(s Subscriber, e Event) {
-				defer b.wg.Done()
-				defer b.pendingWG.Done()
-				defer func() { <-b.subSemaphore }()
-
-				// Hard timeout prevents a subscriber from holding the semaphore token forever
-				timeoutCtx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
-				defer cancel()
-
-				if err := b.notifySubscriber(timeoutCtx, s, e); err != nil {
-					b.getLogger().ErrorContext(timeoutCtx, "subscriber failed",
-						slog.String("event_type", e.Type()),
-						slog.String("subscriber_type", fmt.Sprintf("%T", s)),
-						slog.Any("error", err),
-					)
-				}
-			}(sub, event)
-
-		case <-time.After(500 * time.Millisecond):
-			// Failure: Skip this specific subscriber to keep the bus moving
-			b.getLogger().Warn("Subscriber saturated; event skipped for this subscriber to prevent bus stall",
-				slog.String("event_type", event.Type()),
-				slog.String("subscriber", fmt.Sprintf("%T", sub)))
-			b.wg.Done()
-			b.pendingWG.Done()
-
-		case <-b.ctx.Done():
-			b.wg.Done()
-			b.pendingWG.Done()
-			return
 		}
 	}
 }
@@ -334,7 +301,8 @@ func (b *SimpleEventBus) Subscribe(sub func(context.Context, Event)) {
 		return
 	}
 
-	b.globalSubscribers = append(b.globalSubscribers, &funcSubscriber{f: sub})
+	w := b.newWrapper(&funcSubscriber{f: sub})
+	b.globalSubscribers = append(b.globalSubscribers, w)
 }
 
 // SubscribeGlobal registers a Subscriber that receives all events.
@@ -350,7 +318,8 @@ func (b *SimpleEventBus) SubscribeGlobal(sub Subscriber) {
 		return
 	}
 
-	b.globalSubscribers = append(b.globalSubscribers, sub)
+	w := b.newWrapper(sub)
+	b.globalSubscribers = append(b.globalSubscribers, w)
 }
 
 // SubscribeSubscriber registers a Subscriber for a specific event type.
@@ -366,7 +335,8 @@ func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 		return
 	}
 
-	b.subscribers[eventType] = append(b.subscribers[eventType], sub)
+	w := b.newWrapper(sub)
+	b.subscribers[eventType] = append(b.subscribers[eventType], w)
 }
 
 // Shutdown gracefully stops the event bus.
@@ -387,13 +357,10 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 		b.cancel()
 	}
 
-	// Drain queue if possible? No, we stop processing to avoid further leaks.
-
-	// Wait for workers and active dispatches to finish
+	// Wait for active workers to finish
 	done := make(chan struct{})
 	go func() {
 		b.workerWG.Wait()
-		b.wg.Wait()
 		close(done)
 	}()
 
