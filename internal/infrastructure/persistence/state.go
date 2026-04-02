@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 
 	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -23,13 +24,46 @@ type sessionState struct {
 	db        *sql.DB
 	statePath string
 	fs        domain_persistence.FileSystem
+	mu        sync.RWMutex
 }
 
 func (s *sessionState) GetTasks() ports.TaskStore  { return s.Tasks }
 func (s *sessionState) GetSettings() ports.KVStore { return s.Settings }
-func (s *sessionState) GetInfo() ports.SessionInfo { return s.Info }
+func (s *sessionState) GetInfo() ports.SessionInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	copied := ports.SessionInfo{
+		Model:    s.Info.Model,
+		Provider: s.Info.Provider,
+	}
+
+	if s.Info.Env != nil {
+		copied.Env = make(map[string]string, len(s.Info.Env))
+		for k, v := range s.Info.Env {
+			copied.Env[k] = v
+		}
+	}
+
+	if s.Info.Paths != nil {
+		copied.Paths = make(map[string]string, len(s.Info.Paths))
+		for k, v := range s.Info.Paths {
+			copied.Paths[k] = v
+		}
+	}
+
+	if s.Info.ActiveToolkits != nil {
+		copied.ActiveToolkits = make([]string, len(s.Info.ActiveToolkits))
+		copy(copied.ActiveToolkits, s.Info.ActiveToolkits)
+	}
+
+	return copied
+}
 
 func (s *sessionState) SetInfo(info ports.SessionInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.Info = info
 	// Persist to disk
 	if s.statePath != "" && s.Info.Env["STORAGE_TYPE"] != "memory" {

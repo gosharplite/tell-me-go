@@ -64,7 +64,7 @@ func (t *persistenceTools) Register(r tools.ToolRegistrar) error {
 		return err
 	}
 
-	if err := r.Register(loadToolkitDef, t.handleLoadToolkit); err != nil {
+	if err := r.RegisterWithOptions(loadToolkitDef, t.handleLoadToolkit, tools.ToolOptions{Serial: true}); err != nil {
 		return err
 	}
 
