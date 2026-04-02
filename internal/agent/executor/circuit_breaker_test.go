@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -162,5 +163,68 @@ func TestCircuitBreakerPipeline_Delegation(t *testing.T) {
 	_, m := cbPipeline.RequestBatchConsent(context.Background(), nil)
 	if !m[0] {
 		t.Error("expected RequestBatchConsent to be delegated")
+	}
+}
+
+func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
+	threshold := 5
+	resetTimeout := 50 * time.Millisecond
+
+	mock := &MockToolPipeline{
+		ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+			time.Sleep(1 * time.Millisecond)
+			return tools.ToolResult{Error: errors.New("simulated concurrent failure")}
+		},
+		IsSerialFunc: func(n string) bool { return false },
+	}
+
+	mockClock := clock.NewMockClock(time.Now())
+	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+	call := &llm.FunctionCall{Name: "concurrent_failing_tool"}
+
+	numGoroutines := 150
+	errCh := make(chan error, numGoroutines*5)
+
+	var startWg sync.WaitGroup
+	var doneWg sync.WaitGroup
+	startWg.Add(1)
+
+	for i := 0; i < numGoroutines; i++ {
+		doneWg.Add(1)
+		go func() {
+			defer doneWg.Done()
+			startWg.Wait()
+			for j := 0; j < 5; j++ {
+				res := cbPipeline.ExecuteTool(context.Background(), call)
+				errCh <- res.Error
+			}
+		}()
+	}
+
+	startWg.Done()
+	doneWg.Wait()
+	close(errCh)
+
+	var circuitOpenErrors int
+	for err := range errCh {
+		if errors.Is(err, tools.ErrToolCircuitOpen) {
+			circuitOpenErrors++
+		}
+	}
+
+	circuit := cbPipeline.getCircuit("concurrent_failing_tool")
+	state := circuit.state.Load()
+
+	if state != int32(StateOpen) {
+		t.Errorf("expected state to be StateOpen, got %d", state)
+	}
+
+	if circuitOpenErrors == 0 {
+		t.Errorf("expected some circuit open errors due to concurrency, got 0")
+	}
+
+	finalFailures := circuit.failures.Load()
+	if finalFailures > int64(numGoroutines*5) {
+		t.Errorf("expected failures to be <= %d, got %d", numGoroutines*5, finalFailures)
 	}
 }

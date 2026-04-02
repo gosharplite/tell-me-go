@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -14,21 +15,21 @@ import (
 // Ensure CircuitBreakerPipeline implements ToolPipeline
 var _ ToolPipeline = (*CircuitBreakerPipeline)(nil)
 
-type circuitState int
+type CircuitState int32
 
 const (
-	stateClosed circuitState = iota
-	stateOpen
-	stateHalfOpen
+	StateClosed CircuitState = iota
+	StateOpen
+	StateHalfOpen
 )
 
 // toolCircuit manages the state for a single tool's circuit breaker
 type toolCircuit struct {
 	name         string
-	mu           sync.RWMutex
-	failures     int
-	state        circuitState
-	lastFailure  time.Time
+	transitionMu sync.Mutex
+	failures     atomic.Int64
+	state        atomic.Int32
+	openedAt     atomic.Int64
 	threshold    int
 	resetTimeout time.Duration
 	clock        clock.Clock
@@ -38,51 +39,87 @@ func newToolCircuit(name string, threshold int, resetTimeout time.Duration, clk 
 	if clk == nil {
 		clk = clock.RealClock{}
 	}
-	return &toolCircuit{
+	c := &toolCircuit{
 		name:         name,
 		threshold:    threshold,
 		resetTimeout: resetTimeout,
-		state:        stateClosed,
 		clock:        clk,
 	}
+	c.state.Store(int32(StateClosed))
+	return c
 }
 
 func (c *toolCircuit) allowRequest() error {
-	c.mu.RLock()
-	state := c.state
-	last := c.lastFailure
-	timeout := c.resetTimeout
-	c.mu.RUnlock()
+	state := c.state.Load()
 
-	if state == stateOpen {
-		if c.clock.Since(last) > timeout {
-			// Transition to half-open
-			c.mu.Lock()
-			if c.state == stateOpen {
-				c.state = stateHalfOpen
+	if state == int32(StateOpen) {
+		openedAtUnix := c.openedAt.Load()
+		openedAt := time.Unix(0, openedAtUnix)
+		if c.clock.Since(openedAt) > c.resetTimeout {
+			// Try to transition to half-open
+			if c.tryTransitionToHalfOpen() {
+				return nil
 			}
-			c.mu.Unlock()
-			return nil
+			// If we failed to transition, another goroutine might have already done it.
+			// Let's check state again.
+			if c.state.Load() == int32(StateHalfOpen) {
+				return nil
+			}
 		}
 		return fmt.Errorf("%w: tool %q is temporarily disabled due to multiple consecutive failures", tools.ErrToolCircuitOpen, c.name)
 	}
+
 	return nil
 }
 
+func (c *toolCircuit) tryTransitionToHalfOpen() bool {
+	c.transitionMu.Lock()
+	defer c.transitionMu.Unlock()
+	
+	if c.state.Load() == int32(StateOpen) {
+		c.state.Store(int32(StateHalfOpen))
+		return true
+	}
+	return false
+}
+
 func (c *toolCircuit) recordSuccess() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.failures = 0
-	c.state = stateClosed
+	if c.state.Load() != int32(StateClosed) {
+		c.resetToClosed()
+	} else {
+		// Just clear the failures counter in the fast path
+		c.failures.Store(0)
+	}
+}
+
+func (c *toolCircuit) resetToClosed() {
+	c.transitionMu.Lock()
+	defer c.transitionMu.Unlock()
+
+	if c.state.Load() != int32(StateClosed) {
+		c.state.Store(int32(StateClosed))
+		c.failures.Store(0)
+	}
 }
 
 func (c *toolCircuit) recordFailure() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.failures++
-	c.lastFailure = c.clock.Now()
-	if c.failures >= c.threshold {
-		c.state = stateOpen
+	count := c.failures.Add(1)
+	
+	state := c.state.Load()
+	if (state == int32(StateClosed) && count >= int64(c.threshold)) || state == int32(StateHalfOpen) {
+		c.tripToOpen()
+	}
+}
+
+func (c *toolCircuit) tripToOpen() {
+	c.transitionMu.Lock()
+	defer c.transitionMu.Unlock()
+	
+	state := c.state.Load()
+	if state == int32(StateClosed) || state == int32(StateHalfOpen) {
+		c.state.Store(int32(StateOpen))
+		c.openedAt.Store(c.clock.Now().UnixNano())
+		c.failures.Store(0) // Explicitly clear counters!
 	}
 }
 
