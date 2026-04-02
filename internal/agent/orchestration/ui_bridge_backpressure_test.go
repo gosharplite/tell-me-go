@@ -34,7 +34,8 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 		<-block
 	}).Return()
 
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
+	bridge.Start(context.Background())
 	defer func() {
 		close(block)
 		bridge.CloseInput()
@@ -43,19 +44,19 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 
 	// The channel capacity is 100.
 	// 1 event is currently being processed (blocked on LogTurnStatus).
-	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+	_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 	<-inMock // Wait for the loop to block
 
 	// 100 events will fill the channel.
 	for i := 0; i < 100; i++ {
-		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+		_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 	}
 
 	// The 102nd event (transient visual event) should NOT block because of the non-blocking select with default case.
 	// It is natively synchronous and returns instantly if load shedding is working.
 	done := make(chan struct{})
 	go func() {
-		bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+		_ = bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 		close(done)
 	}()
 
@@ -93,12 +94,13 @@ func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
 	mRenderer.On("LogSystemMessage", mock.Anything, "processed", "warn").Return().Once()
 
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
+	bridge.Start(context.Background())
 
 	// 4. Send the blocking event, then send events that MUST be drained
-	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-	bridge.handleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
-	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "processed", Level: "warn"})
+	_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+	_ = bridge.handleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
+	_ = bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "processed", Level: "warn"})
 
 	// 5. Trigger shutdown concurrently
 	cleanupDone := make(chan struct{})
@@ -207,7 +209,8 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-			bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+			bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+			bridge.Start(context.Background())
 			defer func() {
 				select {
 				case <-block:
@@ -219,14 +222,14 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			}()
 
 			// 2. Send the first event to block the loop
-			bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+			_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 
 			// 3. Wait for the loop to reach the mock and block
 			<-inMock
 
 			// 4. Fill the channel (capacity 100)
 			for i := 0; i < 100; i++ {
-				bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+				_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
 			}
 
 			// 5. Execute the test case
@@ -241,7 +244,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			if tt.expectBlocking {
 				done := make(chan struct{})
 				go func() {
-					bridge.handleEvent(ctx, tt.event)
+					_ = bridge.handleEvent(ctx, tt.event)
 					close(done)
 				}()
 
@@ -307,7 +310,8 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 	defer func() {
 		select {
 		case <-block:
@@ -319,7 +323,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	}()
 
 	// 1. Send critical event to block the loop
-	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "BLOCK", Level: "info"})
+	_ = bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "BLOCK", Level: "info"})
 
 	select {
 	case <-inMock:
@@ -331,7 +335,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	// 2. Fill the channel (capacity 100)
 	for i := 0; i < 100; i++ {
 		// Use ResponseEvent to ensure they are not shed
-		bridge.handleEvent(context.Background(), events.ResponseEvent{})
+		_ = bridge.handleEvent(context.Background(), events.ResponseEvent{})
 	}
 
 	// 3. Prepare an ALREADY cancelled context
@@ -341,7 +345,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	// 4. Trigger call and assert it returns immediately without blocking
 	done := make(chan struct{})
 	go func() {
-		bridge.handleEvent(ctx, events.ResponseEvent{})
+		_ = bridge.handleEvent(ctx, events.ResponseEvent{})
 		close(done)
 	}()
 
@@ -362,20 +366,21 @@ func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
 		<-block
 	}).Return()
 
-	bridge := newUIBridge(context.Background(), mRenderer)
+	bridge := newUIBridge(mRenderer)
+	bridgeCtx := bridge.Start(context.Background())
 
 	// 1. Block the loop
-	bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+	_ = bridge.handleEvent(bridgeCtx, events.TurnStatusEvent{})
 
 	// 2. Fill the channel (capacity 100)
 	for i := 0; i < 100; i++ {
-		bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
+		_ = bridge.handleEvent(bridgeCtx, events.TurnStatusEvent{})
 	}
 
 	// 3. Start a goroutine that will block on sending a critical event
 	done := make(chan struct{})
 	go func() {
-		bridge.handleEvent(context.Background(), events.TurnStarted{})
+		_ = bridge.handleEvent(bridgeCtx, events.TurnStarted{})
 		close(done)
 	}()
 
@@ -385,7 +390,7 @@ func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
 	// 4. Cancel the bridge context
 	bridge.cancel()
 
-	// 5. Assert handleEvent unblocks via <-b.ctx.Done()
+	// 5. Assert handleEvent unblocks via <-ctx.Done() (where ctx is bridgeCtx)
 	select {
 	case <-done:
 		// Success
@@ -402,18 +407,22 @@ func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
 func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bridge := newUIBridge(mRenderer)
+	bridgeCtx := bridge.Start(ctx)
 
 	// Shutdown the bridge
 	bridge.CloseInput()
 	bridge.Cleanup()
 
 	// Assert context is cancelled
-	assert.Error(t, bridge.ctx.Err())
+	assert.Error(t, bridgeCtx.Err())
 
 	// Attempt to send a critical event. It should hit the early return.
 	// We verify it doesn't block (since channel is empty, it wouldn't anyway, but it returns early).
 	assert.NotPanics(t, func() {
-		bridge.handleEvent(context.Background(), events.TurnStarted{})
+		_ = bridge.handleEvent(bridgeCtx, events.TurnStarted{})
 	})
 }

@@ -33,17 +33,18 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	}), mock.Anything).Return().Maybe()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
 	}()
 
 	// 1. Queue events in order: Start Consent -> Block Loop -> Trigger Suppressed Event -> Finish Consent
-	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
-	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "BLOCK"})
-	bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
-	bridge.handleEvent(context.Background(), events.ConsentFinishedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "BLOCK"})
+	_ = bridge.handleEvent(context.Background(), events.SummarizationStartedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.ConsentFinishedEvent{})
 
 	// 2. Unblock the loop and ensure all queued events are processed
 	close(block)
@@ -56,20 +57,21 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(context.Background(), mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(context.Background())
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
 	}()
 
 	// 1. Start consent
-	bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
+	_ = bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
 	syncBridge(t, bridge, mRenderer)
 
 	// 2. System message arrives during consent
 	mRenderer.On("LogSystemMessage", mock.Anything, "Hello", "info").Return().Once()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
-	bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
+	_ = bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "Hello", Level: "info"})
 	syncBridge(t, bridge, mRenderer)
 
 	// Should NOT start a spinner because isWaitingForConsent is true
@@ -102,14 +104,15 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 
 	// High-iteration loop to hammer the race window
 	for i := 0; i < 500; i++ {
-		bridge := newUIBridge(context.Background(), &mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+		bridge := newUIBridge(&mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+		bridge.Start(context.Background())
 		var wg sync.WaitGroup
 		wg.Add(2)
 
 		go func() {
 			defer wg.Done()
 			// Simulation of consent cycle
-			bridge.handleEvent(ctx, events.ConsentStartedEvent{})
+			_ = bridge.handleEvent(ctx, events.ConsentStartedEvent{})
 			m.mu.Lock()
 			m.consentActive = true
 			m.mu.Unlock()
@@ -119,13 +122,13 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 			m.mu.Lock()
 			m.consentActive = false
 			m.mu.Unlock()
-			bridge.handleEvent(ctx, events.ConsentFinishedEvent{})
+			_ = bridge.handleEvent(ctx, events.ConsentFinishedEvent{})
 		}()
 
 		go func() {
 			defer wg.Done()
 			// This event triggers transitionSpinner internally
-			bridge.handleEvent(ctx, events.InferenceStartedEvent{Model: "gpt-4"})
+			_ = bridge.handleEvent(ctx, events.InferenceStartedEvent{Model: "gpt-4"})
 
 			// If transitionSpinner returns and the spinner is STILL running while consent is active, we have an overlap
 			m.mu.Lock()
