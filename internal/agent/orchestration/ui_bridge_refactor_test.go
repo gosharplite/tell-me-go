@@ -55,7 +55,7 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			// Manual setup of uiBridge to avoid starting background loop
-			loopCtx, _ := context.WithCancel(context.Background())
+			loopCtx, cancel := context.WithCancel(context.Background()); defer cancel()
 			b := &uiBridge{
 				loopCtx: loopCtx,
 				eventCh: make(chan events.Event, 10),
@@ -116,7 +116,7 @@ func TestUIBridge_EnqueueEvent_RoutingLogic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			loopCtx, _ := context.WithCancel(context.Background())
+			loopCtx, cancel := context.WithCancel(context.Background()); defer cancel()
 			b := &uiBridge{
 				loopCtx: loopCtx,
 				eventCh: make(chan events.Event, 1),
@@ -163,7 +163,7 @@ func TestUIBridge_EnqueueEvent_RoutingLogic(t *testing.T) {
 
 func TestUIBridge_EnqueueEvent_CriticalBlocking(t *testing.T) {
 	t.Parallel()
-	loopCtx, _ := context.WithCancel(context.Background())
+	loopCtx, cancel := context.WithCancel(context.Background()); defer cancel()
 	b := &uiBridge{
 		loopCtx: loopCtx,
 		eventCh: make(chan events.Event, 1),

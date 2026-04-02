@@ -15,7 +15,7 @@ func TestGetSessionEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create events table
 	_, err = db.Exec(`CREATE TABLE events (

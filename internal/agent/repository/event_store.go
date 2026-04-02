@@ -26,7 +26,7 @@ func NewEventStore(db *sql.DB) *EventStore {
 
 // GetSessionEvents fetches multiple events in a single database round-trip
 // to prevent N+1 query bottlenecks.
-func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) ([]Event, error) {
+func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) (events []Event, err error) {
 	if len(eventIDs) == 0 {
 		return nil, nil
 	}
@@ -44,9 +44,15 @@ func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			if err == nil {
+				err = closeErr
+			}
+		}
+	}()
 
-	var events []Event
 	for rows.Next() {
 		var e Event
 		var createdAtStr string
@@ -55,12 +61,16 @@ func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) ([
 		}
 
 		// Parse the string time returned by SQLite
-		t, err := time.Parse(time.RFC3339Nano, createdAtStr)
-		if err == nil {
+		t, parseErr := time.Parse(time.RFC3339Nano, createdAtStr)
+		if parseErr == nil {
 			e.CreatedAt = t
 		}
 		events = append(events, e)
 	}
 
-	return events, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return events, nil
 }
