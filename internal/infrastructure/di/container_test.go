@@ -144,7 +144,7 @@ func TestBuildSessionDependencies(t *testing.T) {
 	assert.NotNil(t, hManager)
 	assert.NotNil(t, cleanup)
 
-	cleanup(ctx)
+	_ = cleanup(ctx)
 }
 
 func TestGetAgentFactory(t *testing.T) {
@@ -314,7 +314,7 @@ func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
 	assert.Contains(t, stderr.String(), "Warning: Failed to record session cost for backup")
 	assert.Contains(t, stderr.String(), simulatedErr.Error())
 
-	cleanup(ctx)
+	_ = cleanup(ctx)
 }
 
 type mockHistoryManager struct {
@@ -352,7 +352,7 @@ func TestFinalizeSession(t *testing.T) {
 	deps, hManager, cleanup, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, cleanup)
-	defer cleanup(ctx)
+	defer func() { _ = cleanup(ctx) }()
 
 	// Test success
 	err = b.FinalizeSession(ctx, hManager, deps, cfg)
@@ -505,7 +505,7 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 	assert.NotNil(t, hManager)
 	assert.NotNil(t, cleanup)
 
-	cleanup(ctx)
+	_ = cleanup(ctx)
 }
 
 func TestSessionDeps_Getters(t *testing.T) {
@@ -680,7 +680,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				if cleanup != nil {
-					cleanup(ctx)
+					_ = cleanup(ctx)
 					if tt.name == "SessionProviderCloseFails" {
 						assert.Contains(t, stderr.String(), "Warning: Failed to close session provider")
 					}
@@ -751,7 +751,7 @@ func TestCrossSessionPersistence(t *testing.T) {
 	assert.NoError(t, err)
 	sm.AssertCalled(t, "SetBypassActive", true)
 	if cleanup != nil {
-		cleanup(ctx)
+		_ = cleanup(ctx)
 	}
 }
 
