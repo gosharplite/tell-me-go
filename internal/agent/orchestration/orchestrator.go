@@ -463,6 +463,7 @@ func (b *uiBridge) Start(ctx context.Context) context.Context {
 }
 
 func (b *uiBridge) loop(ctx context.Context) {
+	defer b.loopCancel()
 	defer func() {
 		if r := recover(); r != nil {
 			b.logger.Error("panic in uiBridge loop", "error", r, "stack", string(debug.Stack()))
