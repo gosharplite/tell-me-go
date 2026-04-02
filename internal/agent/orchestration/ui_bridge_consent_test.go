@@ -18,6 +18,7 @@ import (
 )
 
 func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	block := make(chan struct{})
 
@@ -56,6 +57,7 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 }
 
 func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
+	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	bridge.Start(context.Background())
@@ -81,6 +83,7 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 }
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
+	t.Parallel()
 	m := &collisionMock{}
 	m.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 	m.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()

@@ -13,11 +13,13 @@ import (
 )
 
 func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
+	t.Parallel()
 	errSimulated := errors.New("simulated tool error")
 	threshold := 3
 	resetTimeout := 50 * time.Millisecond
 
 	t.Run("SuccessKeepsCircuitClosed", func(t *testing.T) {
+		t.Parallel()
 		mock := &MockToolPipeline{
 			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 				return tools.ToolResult{Text: "success"}
@@ -37,6 +39,7 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 	})
 
 	t.Run("FailuresTriggerOpenCircuit", func(t *testing.T) {
+		t.Parallel()
 		mock := &MockToolPipeline{
 			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 				return tools.ToolResult{Error: errSimulated}
@@ -63,6 +66,7 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 	})
 
 	t.Run("HalfOpenTransitionAfterTimeout", func(t *testing.T) {
+		t.Parallel()
 		mock := &MockToolPipeline{
 			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 				return tools.ToolResult{Error: errSimulated}
@@ -96,6 +100,7 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 }
 
 func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
+	t.Parallel()
 	threshold := 2
 	resetTimeout := 50 * time.Millisecond
 
@@ -142,6 +147,7 @@ func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
 }
 
 func TestCircuitBreakerPipeline_Delegation(t *testing.T) {
+	t.Parallel()
 	mock := &MockToolPipeline{
 		RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
 			return ctx, map[int]bool{0: true}
@@ -166,6 +172,7 @@ func TestCircuitBreakerPipeline_Delegation(t *testing.T) {
 }
 
 func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
+	t.Parallel()
 	threshold := 5
 	resetTimeout := 50 * time.Millisecond
 

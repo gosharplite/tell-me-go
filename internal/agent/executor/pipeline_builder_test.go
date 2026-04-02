@@ -13,6 +13,7 @@ import (
 )
 
 func TestRequestBatchConsent(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		calls      []*llm.FunctionCall
@@ -43,6 +44,7 @@ func TestRequestBatchConsent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			gotCtx, gotResult := authorizer.RequestBatchConsent(ctx, tt.calls)
 
@@ -53,6 +55,7 @@ func TestRequestBatchConsent(t *testing.T) {
 }
 
 func TestBuildOrchestrator(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		registry tools.Registry
@@ -103,6 +106,7 @@ func TestBuildOrchestrator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			orch, err := BuildOrchestrator(tt.registry, tt.sm, tt.bus, tt.logger, tt.observer, tt.opts...)
 			if tt.wantErr {
 				assert.Error(t, err)

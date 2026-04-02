@@ -14,6 +14,7 @@ import (
 )
 
 func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		setup         func(b *uiBridge)
@@ -52,6 +53,7 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Manual setup of uiBridge to avoid starting background loop
 			b := &uiBridge{
 				eventCh: make(chan events.Event, 10),
@@ -82,6 +84,7 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 }
 
 func TestUIBridge_EnqueueEvent_RoutingLogic(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		event         events.Event
@@ -110,6 +113,7 @@ func TestUIBridge_EnqueueEvent_RoutingLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			b := &uiBridge{
 				eventCh: make(chan events.Event, 1),
 				logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -154,6 +158,7 @@ func TestUIBridge_EnqueueEvent_RoutingLogic(t *testing.T) {
 }
 
 func TestUIBridge_EnqueueEvent_CriticalBlocking(t *testing.T) {
+	t.Parallel()
 	b := &uiBridge{
 		eventCh: make(chan events.Event, 1),
 		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),

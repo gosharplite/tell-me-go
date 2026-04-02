@@ -12,6 +12,7 @@ import (
 )
 
 func TestIsCriticalEvent(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		event    events.Event
@@ -35,12 +36,14 @@ func TestIsCriticalEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.expected, isCriticalEvent(tt.event))
 		})
 	}
 }
 
 func TestGetSpinnerInfo(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		event    events.Event
@@ -117,6 +120,7 @@ func TestGetSpinnerInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			info, ok := getSpinnerInfo(tt.event)
 			assert.Equal(t, tt.ok, ok)
 			if tt.ok {

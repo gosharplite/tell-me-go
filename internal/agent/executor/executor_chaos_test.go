@@ -13,6 +13,7 @@ import (
 )
 
 func TestOrchestrator_ChaosScenarios(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		mockSetup     func(syncChan chan struct{}) *MockToolPipeline
@@ -99,6 +100,7 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 

@@ -57,6 +57,7 @@ func (m *panicMockRenderer) SetUseColor(use bool)       {}
 func (m *panicMockRenderer) SetForceSpinner(force bool) {}
 
 func TestUIBridge_PanicResilience(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock := &panicMockRenderer{}
 
@@ -96,6 +97,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 }
 
 func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Create a custom slog handler to capture the panic log.
@@ -134,6 +136,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 }
 
 func TestUIBridge_PanicInStopSpinner(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -181,6 +184,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 }
 
 func TestUIBridge_PoisonPill(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	logBuffer := inframock.NewSafeBuffer()
@@ -213,6 +217,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 }
 
 func TestUIBridge_SendToClosedChannel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mRenderer := new(mockUIRenderer)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
