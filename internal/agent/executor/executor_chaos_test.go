@@ -25,7 +25,7 @@ func TestToolPanicSerial(t *testing.T) {
 		isSerial: true,
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -70,7 +70,7 @@ func TestToolPanicParallel(t *testing.T) {
 		isSerial: false,
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -120,7 +120,7 @@ func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -129,7 +129,7 @@ func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
 	}
 
 	// IdentifyConsentItems has a recover block that marks it as declined
-	consentIndices, declinedMap := exec.authorizer.IdentifyConsentItems(calls)
+	consentIndices, declinedMap := exec.pipeline.(*defaultToolPipeline).authorizer.IdentifyConsentItems(calls)
 
 	assert.Empty(t, consentIndices, "Should not have consent indices if it panicked")
 	assert.True(t, declinedMap[0], "Tool should be marked as declined/denied after panic (fail closed)")
@@ -156,7 +156,7 @@ func TestZombieToolTimeout(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond), withZombieTimeout(300*time.Millisecond))
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond), withZombieTimeout(300*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -170,8 +170,8 @@ func TestZombieToolTimeout(t *testing.T) {
 	go func() {
 		defer close(doneCh)
 		fc := &llm.FunctionCall{Name: hangingTool.Name}
-		tool, _ := exec.resolver.Resolve(fc)
-		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc, nil)
+		tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
+		result, timeoutErr = exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
 	}()
 
 	select {
@@ -207,7 +207,7 @@ func TestExecuteSerialTaskRecovery(t *testing.T) {
 			panic("panic during serial resolve")
 		},
 	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -236,7 +236,7 @@ func TestEnqueueParallelTaskRecovery(t *testing.T) {
 			panic("panic during parallel resolve")
 		},
 	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 

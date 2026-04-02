@@ -89,7 +89,7 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -197,7 +197,7 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -236,7 +236,7 @@ func TestBuildExecutionBatches_PreservesOrder(t *testing.T) {
 			"S2": true,
 		},
 	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -314,7 +314,7 @@ func (m *orderMockRegistry) ListAvailableToolkits() []string {
 func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.Shutdown() // Deterministically close the pool
 
@@ -347,7 +347,7 @@ func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -373,22 +373,14 @@ func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 
 func TestNewOrchestrator_NilObserver(t *testing.T) {
 	reg := &mockToolRegistry{}
-	_, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, nil)
-	require.Error(t, err)
-	assert.Equal(t, "ExecutionObserver is required", err.Error())
-
-	// Coverage for lines 95-97: error from NewZombieTool
-	sabotageOpt := func(e *Orchestrator) {
-		e.observer = nil
-	}
-	_, err = NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{}, sabotageOpt)
+	_, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
 
 func TestNewOrchestrator_NilRegistry(t *testing.T) {
 	// Call with nil registry
-	executor, err := NewOrchestrator(nil, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	executor, err := BuildOrchestrator(nil, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)
@@ -402,7 +394,7 @@ func TestNewOrchestrator_NilLogger(t *testing.T) {
 	observer := &MockLogger{}
 
 	// Explicitly pass nil for the logger
-	_, err := NewOrchestrator(reg, nil, nil, nil, observer)
+	_, err := BuildOrchestrator(reg, nil, nil, nil, observer)
 	require.Error(t, err)
 	assert.Equal(t, "logger is required", err.Error())
 }
@@ -489,7 +481,7 @@ func TestResultCollector_EmitEvent(t *testing.T) {
 	genericErr := errors.New("publish error")
 	mockBus := &errorEventBus{err: genericErr}
 
-	exec, err := NewOrchestrator(&mockToolRegistry{}, nil, mockBus, mockLogger, &MockLogger{})
+	exec, err := BuildOrchestrator(&mockToolRegistry{}, nil, mockBus, mockLogger, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -512,7 +504,7 @@ func TestOrchestrator_Execute_PlanPanic(t *testing.T) {
 	bus := &mockEventBus{}
 
 	// Inject an execution plan that panics
-	exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)},
+	exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)},
 		withExecutionPlan(func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error {
 			panic("test panic")
 		}))
@@ -584,9 +576,9 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.authorizer = auth
+	exec.pipeline.(*defaultToolPipeline).authorizer = auth
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -89,7 +89,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	sm := setupMockSecurityManager(allowedTools)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	exec, err := BuildOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -453,7 +453,7 @@ func TestOrchestrator_ConcurrencyLimit_Strict(t *testing.T) {
 		require.NoError(t, reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc))
 	}
 
-	exec, err := NewOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.SetConcurrency(2, 0)
 	t.Cleanup(exec.Shutdown)
@@ -652,7 +652,7 @@ func TestResultCollector(t *testing.T) {
 func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	e, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 	require.NoError(t, err)
 	t.Cleanup(e.Shutdown)
 
@@ -731,7 +731,7 @@ func TestOrchestrator_EventPublishing(t *testing.T) {
 	require.NoError(t, err)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -758,7 +758,7 @@ func TestOrchestrator_EventPublishing(t *testing.T) {
 func TestOrchestrator_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	t.Cleanup(e.Shutdown)
 
@@ -777,7 +777,7 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
 
@@ -797,7 +797,7 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 		t.Cleanup(exec.Shutdown)
 
@@ -1114,7 +1114,7 @@ func TestOrchestrator_ZombieTool(t *testing.T) {
 	}, registry.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := NewOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := BuildOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)

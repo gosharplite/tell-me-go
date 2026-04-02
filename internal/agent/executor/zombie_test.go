@@ -71,7 +71,7 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(exec.Shutdown)
 
@@ -84,8 +84,8 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 	go func() {
 		defer close(doneCh)
 		fc := &llm.FunctionCall{Name: hangingTool.Name}
-		tool, _ := exec.resolver.Resolve(fc)
-		result, timeoutErr = exec.runtime.Execute(ctx, tool, fc, nil)
+		tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
+		result, timeoutErr = exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
 	}()
 
 	select {
@@ -123,7 +123,7 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	}
 
 	// Use short zombie timeout, but generous enough for -race
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
 		withZombieTimeout(200*time.Millisecond),
 		withToolTimeout(200*time.Millisecond),
 	)
@@ -137,8 +137,8 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	go func() {
 		defer close(doneCh)
 		fc := &llm.FunctionCall{Name: hangingTool.Name}
-		tool, _ := exec.resolver.Resolve(fc)
-		_, _ = exec.runtime.Execute(context.Background(), tool, fc, nil)
+		tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
+		_, _ = exec.pipeline.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
 	}()
 
 	select {
@@ -202,7 +202,7 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 	}
 
 	// Orchestrator with long global timeout (5s) but short liveness threshold (100ms)
-	exec, err := NewOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
+	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
 		withToolTimeout(5*time.Second),
 		WithLongRunningTimeout(5*time.Second),
 	)
@@ -210,14 +210,14 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 	t.Cleanup(exec.Shutdown)
 
 	fc := &llm.FunctionCall{Name: "hanging_tool"}
-	tool, _ := exec.resolver.Resolve(fc)
+	tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
 
 	start := time.Now()
 	doneCh := make(chan struct{})
 	var result tools.ToolResult
 	go func() {
 		defer close(doneCh)
-		result, _ = exec.runtime.Execute(context.Background(), tool, fc, nil)
+		result, _ = exec.pipeline.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
 	}()
 
 	select {

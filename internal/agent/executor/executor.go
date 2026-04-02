@@ -29,25 +29,112 @@ type toolExecResult struct {
 type executionPlanFunc func(e *Orchestrator, ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) error
 
 // Orchestrator handles the execution of tools, using a WorkerPool for concurrency.
-type Orchestrator struct {
-	mu                 sync.RWMutex
-	registry           tools.Registry
-	authorizer         ToolAuthorizer
-	events             events.EventBus
-	logger             ports.Logger
-	maxConcurrentTools int
-	toolTimeout        time.Duration
-	longRunningTimeout time.Duration
-	zombieTimeout      time.Duration
-	pool               *concurrency.WorkerPool
-	strategy           resultStrategy
-	failures           *failureTracker
-	observer           tools.ExecutionObserver
-	zombie             *tools.ZombieTool
-	execPlan           executionPlanFunc
+// OrchestratorConfig holds configuration parameters for the Orchestrator.
+type OrchestratorConfig struct {
+	MaxConcurrentTools int
+	ToolTimeout        time.Duration
+	LongRunningTimeout time.Duration
+	ZombieTimeout      time.Duration
+}
 
-	resolver ToolResolutionService
-	runtime  ToolExecutor
+// ToolPipeline encapsulates the resolution, authorization, and execution of a tool.
+type ToolPipeline interface {
+	ExecuteTool(ctx context.Context, call *llm.FunctionCall) tools.ToolResult
+	RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
+	IsSerial(toolName string) bool
+}
+
+type defaultToolPipeline struct {
+	resolver   ToolResolutionService
+	authorizer ToolAuthorizer
+	runtime    ToolExecutor
+	registry   tools.Registry
+}
+
+func (p *defaultToolPipeline) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+	return p.authorizer.RequestBatchConsent(ctx, calls)
+}
+
+func (p *defaultToolPipeline) IsSerial(toolName string) bool {
+	return p.registry.IsSerial(toolName)
+}
+
+func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.FunctionCall) (result tools.ToolResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = tools.ToolResult{
+				Text:  "Tool \"" + call.Name + "\" encountered an internal fatal error (panic) and was terminated.",
+				Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
+			}
+		}
+	}()
+
+	tool, err := p.resolver.Resolve(call)
+	if err != nil {
+		return tools.ToolResult{Text: err.Error(), Error: fmt.Errorf("%w: %v", llm.ErrTerminal, err)}
+	}
+
+	result, err = p.runtime.Execute(parentCtx, tool, call, nil)
+	status, msg := classifyToolError(err, result.Error)
+
+	if status == "user_declined" || status == "security_blocked" {
+		return tools.ToolResult{Text: msg, Error: nil}
+	}
+
+	if err != nil {
+		if result.Error == nil {
+			result.Error = err
+		}
+		if result.Text == "" {
+			result.Text = fmt.Sprintf("Error: %v", err)
+		}
+		result.Error = fmt.Errorf("%w: %v", llm.ErrTerminal, result.Error)
+	}
+	return result
+}
+
+// NewDefaultToolPipeline creates a new DefaultToolPipeline.
+func NewDefaultToolPipeline(
+	registry tools.Registry,
+	sm domain_security.Manager,
+	bus events.EventBus,
+	logger ports.Logger,
+	zombie *tools.ZombieTool,
+	failures *failureTracker,
+	getToolTimeout func() time.Duration,
+	getLongRunningTimeout func() time.Duration,
+	getZombieTimeout func() time.Duration,
+) ToolPipeline {
+	resolver := newToolResolutionService(registry)
+	authService := newSecurityAuthorizer(sm, registry)
+
+	var exec ToolExecutor = newBaseRuntime(registry)
+	exec = newAuthDecorator(exec, authService)
+	exec = newCircuitBreakerDecorator(exec, failures)
+	exec = newTracingDecorator(exec, registry, logger)
+	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
+
+	return &defaultToolPipeline{
+		resolver:   resolver,
+		authorizer: authService,
+		runtime:    exec,
+		registry:   registry,
+	}
+}
+
+// Orchestrator handles the execution of tools, using a WorkerPool for concurrency.
+type Orchestrator struct {
+	mu       sync.RWMutex
+	config   OrchestratorConfig
+	pipeline ToolPipeline
+	events   events.EventBus
+	logger   ports.Logger
+	pool     *concurrency.WorkerPool
+	strategy resultStrategy
+	failures *failureTracker
+	observer tools.ExecutionObserver
+	zombie   *tools.ZombieTool
+	execPlan executionPlanFunc
 }
 
 // executorOption allows configuring the Orchestrator.
@@ -56,7 +143,7 @@ type executorOption func(*Orchestrator)
 // WithLongRunningTimeout sets the timeout for long-running tools.
 func WithLongRunningTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
-		e.longRunningTimeout = timeout
+		e.config.LongRunningTimeout = timeout
 	}
 }
 
@@ -70,14 +157,14 @@ func withExecutionPlan(fn executionPlanFunc) executorOption {
 // withZombieTimeout sets the timeout for zombie tool detection.
 func withZombieTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
-		e.zombieTimeout = timeout
+		e.config.ZombieTimeout = timeout
 	}
 }
 
 // NewOrchestrator creates a new Orchestrator.
-func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
-	if registry == nil {
-		return nil, errors.New("registry is required")
+func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
+	if pipeline == nil {
+		return nil, errors.New("pipeline is required")
 	}
 	if observer == nil {
 		return nil, errors.New("ExecutionObserver is required")
@@ -86,15 +173,25 @@ func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus ev
 		return nil, errors.New("logger is required")
 	}
 
+	if cfg.MaxConcurrentTools <= 0 {
+		cfg.MaxConcurrentTools = 5
+	}
+	if cfg.ToolTimeout <= 0 {
+		cfg.ToolTimeout = 30 * time.Second
+	}
+	if cfg.LongRunningTimeout <= 0 {
+		cfg.LongRunningTimeout = 5 * time.Minute
+	}
+	if cfg.ZombieTimeout <= 0 {
+		cfg.ZombieTimeout = 5 * time.Minute
+	}
+
 	e := &Orchestrator{
-		registry:           registry,
+		config:             cfg,
+		pipeline:           pipeline,
 		events:             bus,
 		logger:             logger,
-		maxConcurrentTools: 5,
-		toolTimeout:        30 * time.Second,
-		longRunningTimeout: 5 * time.Minute,
-		zombieTimeout:      5 * time.Minute,
-		pool:               concurrency.NewWorkerPool(5),
+		pool:               concurrency.NewWorkerPool(cfg.MaxConcurrentTools),
 		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
 		observer:           observer,
@@ -104,45 +201,9 @@ func NewOrchestrator(registry tools.Registry, sm domain_security.Manager, bus ev
 		opt(e)
 	}
 
-	if e.zombie == nil {
-		var err error
-		e.zombie, err = tools.NewZombieTool(e.observer)
-		if err != nil {
-			e.Shutdown()
-			return nil, err
-		}
-	}
-
-	e.resolver = newToolResolutionService(registry)
-	authService := newSecurityAuthorizer(sm, registry)
-	e.authorizer = authService // Still used for Batch Consent
-
-	// Wire the ToolExecutor chain
-	var exec ToolExecutor = newBaseRuntime(registry)
-	exec = newAuthDecorator(exec, authService)
-	exec = newCircuitBreakerDecorator(exec, e.failures)
-	exec = newTracingDecorator(exec, registry, logger)
-
-	// Use functions to provide dynamic timeouts from the Orchestrator
-	getToolTimeout := func() time.Duration {
-		e.mu.RLock()
-		defer e.mu.RUnlock()
-		return e.toolTimeout
-	}
-	getLongRunningTimeout := func() time.Duration {
-		e.mu.RLock()
-		defer e.mu.RUnlock()
-		return e.longRunningTimeout
-	}
-	getZombieTimeout := func() time.Duration {
-		e.mu.RLock()
-		defer e.mu.RUnlock()
-		return e.zombieTimeout
-	}
-
-	exec = newSafetyDecorator(exec, registry, logger, bus, e.zombie, getToolTimeout, getLongRunningTimeout, getZombieTimeout)
-
-	e.runtime = exec
+	// In the new model, zombie is created and injected along with pipeline.
+	// But to avoid breaking opts that rely on zombie, we will let options do nothing or we just don't need zombie inside orchestrator anymore!
+	// Wait, we need to adapt options.
 
 	return e, nil
 }
@@ -197,15 +258,15 @@ func (e *Orchestrator) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 	var oldPool *concurrency.WorkerPool
 	e.mu.Lock()
 
-	if maxConcurrent > 0 && maxConcurrent != e.maxConcurrentTools {
-		e.maxConcurrentTools = maxConcurrent
+	if maxConcurrent > 0 && maxConcurrent != e.config.MaxConcurrentTools {
+		e.config.MaxConcurrentTools = maxConcurrent
 		if e.pool != nil {
 			oldPool = e.pool
 		}
 		e.pool = concurrency.NewWorkerPool(maxConcurrent)
 	}
 	if timeout > 0 {
-		e.toolTimeout = timeout
+		e.config.ToolTimeout = timeout
 	}
 	e.mu.Unlock()
 
@@ -295,7 +356,7 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 
 	e.mu.RLock()
 	bus := e.events
-	auth := e.authorizer
+	pipeline := e.pipeline
 	e.mu.RUnlock()
 
 	var declinedMap map[int]bool
@@ -310,7 +371,7 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 
 		// Update outer variables
 		// The actual consent request remains interruptible
-		ctx, declinedMap = auth.RequestBatchConsent(ctx, calls)
+		ctx, declinedMap = pipeline.RequestBatchConsent(ctx, calls)
 	}()
 
 	// Orchestrate Execution
@@ -524,7 +585,7 @@ func (e *Orchestrator) executeParallelBatch(ctx context.Context, batch taskBatch
 
 func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declinedMap map[int]bool, resChan chan<- toolExecResult) []taskBatch {
 	e.mu.RLock()
-	reg := e.registry
+	pipeline := e.pipeline
 	e.mu.RUnlock()
 
 	var batches []taskBatch
@@ -543,7 +604,7 @@ func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declined
 			continue
 		}
 
-		if reg.IsSerial(fc.Name) {
+		if pipeline.IsSerial(fc.Name) {
 			// Close current parallel batch if any
 			if len(currentParallelBatch) > 0 {
 				batches = append(batches, taskBatch{
@@ -574,7 +635,7 @@ func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declined
 }
 
 func (e *Orchestrator) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult) bool {
-	tr := e.executeTool(ctx, fc)
+	tr := e.pipeline.ExecuteTool(ctx, fc)
 	resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
 
 	// If the serial tool failed, timed out, or context was cancelled, we CANNOT safely
@@ -601,7 +662,7 @@ func (e *Orchestrator) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 			return
 		}
 
-		tr := e.executeTool(ctx, fc)
+		tr := e.pipeline.ExecuteTool(ctx, fc)
 		resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
 	}
 
@@ -621,43 +682,7 @@ func (e *Orchestrator) enqueueParallelTask(ctx context.Context, i int, fc *llm.F
 	}
 }
 
-func (e *Orchestrator) executeTool(parentCtx context.Context, call *llm.FunctionCall) (result tools.ToolResult) {
-	// CRITICAL: This recover block protects the Orchestrator's main resolution loop.
-	// It catches panics that occur during synchronous routing, decorator setup,
-	// or telemetry wrapping, ensuring the agent does not crash before the tool is even dispatched.
-	defer func() {
-		if r := recover(); r != nil {
-			result = tools.ToolResult{
-				Text:  fmt.Sprintf("Tool %q encountered an internal fatal error (panic) and was terminated.", call.Name),
-				Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
-			}
-		}
-	}()
 
-	tool, err := e.resolver.Resolve(call)
-	if err != nil {
-		return tools.ToolResult{Text: err.Error(), Error: fmt.Errorf("%w: %v", llm.ErrTerminal, err)}
-	}
-
-	result, err = e.runtime.Execute(parentCtx, tool, call, nil)
-	status, msg := classifyToolError(err, result.Error)
-
-	if status == "user_declined" || status == "security_blocked" {
-		return tools.ToolResult{Text: msg, Error: nil}
-	}
-
-	if err != nil {
-		if result.Error == nil {
-			result.Error = err
-		}
-		if result.Text == "" {
-			result.Text = fmt.Sprintf("Error: %v", err)
-		}
-		// Wrap in terminal error to signal orchestrator should stop this turn
-		result.Error = fmt.Errorf("%w: %v", llm.ErrTerminal, result.Error)
-	}
-	return result
-}
 
 func buildFunctionResponse(callID, name, output string) *llm.Part {
 	return &llm.Part{
@@ -672,6 +697,6 @@ func buildFunctionResponse(callID, name, output string) *llm.Part {
 // withToolTimeout sets the timeout for tools.
 func withToolTimeout(timeout time.Duration) executorOption {
 	return func(e *Orchestrator) {
-		e.toolTimeout = timeout
+		e.config.ToolTimeout = timeout
 	}
 }

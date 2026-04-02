@@ -37,7 +37,7 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 	observer := &MockLogger{}
 
 	// Create Orchestrator but replace runtime with mockExecutor
-	exec, err := NewOrchestrator(reg, nil, bus, logger, observer)
+	exec, err := BuildOrchestrator(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
 	defer exec.Shutdown()
 
@@ -55,7 +55,7 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 			wg.Done()
 		},
 	}
-	exec.runtime = mock
+	exec.pipeline.(*defaultToolPipeline).runtime = mock
 
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -101,7 +101,7 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	observer := &MockLogger{}
 
 	// Create Orchestrator but replace runtime with mockExecutor
-	exec, err := NewOrchestrator(reg, nil, bus, logger, observer)
+	exec, err := BuildOrchestrator(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
 	defer exec.Shutdown()
 
@@ -136,7 +136,7 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	currentReleaseCh := make(chan struct{})
 	mock.BlockCh = currentReleaseCh
 
-	exec.runtime = mock
+	exec.pipeline.(*defaultToolPipeline).runtime = mock
 
 	content := &llm.Content{
 		Parts: []*llm.Part{
