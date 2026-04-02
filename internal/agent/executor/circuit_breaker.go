@@ -58,17 +58,18 @@ func (c *toolCircuit) allowRequest() error {
 		if c.clock.Since(openedAt) > c.resetTimeout {
 			// Try to transition to half-open
 			if c.tryTransitionToHalfOpen() {
-				return nil
-			}
-			// If we failed to transition, another goroutine might have already done it.
-			// Let's check state again.
-			if c.state.Load() == int32(StateHalfOpen) {
-				return nil
+				return nil // This is the chosen, single probe request
 			}
 		}
 		return fmt.Errorf("%w: tool %q is temporarily disabled due to multiple consecutive failures", tools.ErrToolCircuitOpen, c.name)
 	}
 
+	if state == int32(StateHalfOpen) {
+		// REJECT all concurrent requests while the single elected probe is in flight
+		return fmt.Errorf("%w: tool %q is currently probing", tools.ErrToolCircuitOpen, c.name)
+	}
+
+	// StateClosed
 	return nil
 }
 
