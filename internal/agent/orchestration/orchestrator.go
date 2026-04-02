@@ -311,6 +311,8 @@ const (
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
+	loopCtx            context.Context
+	loopCancel         context.CancelFunc
 	cancel             context.CancelFunc
 	renderer           ports.UIRenderer
 	logger             *slog.Logger
@@ -435,7 +437,10 @@ func (b *uiBridge) Cleanup() {
 
 // newUIBridge creates a new uiBridge.
 func newUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
+	loopCtx, loopCancel := context.WithCancel(context.Background())
 	b := &uiBridge{
+		loopCtx:        loopCtx,
+		loopCancel:     loopCancel,
 		renderer:       renderer,
 		logger:         slog.Default(),
 		eventCh:        make(chan events.Event, 100),
@@ -533,6 +538,8 @@ func (b *uiBridge) enqueueEvent(ctx context.Context, e events.Event) error {
 		case <-ctx.Done():
 			b.logger.Debug("Caller context cancelled while waiting to queue critical event")
 			return ctx.Err()
+		case <-b.loopCtx.Done(): // NEW: Consumer liveness check
+			return fmt.Errorf("uiBridge actor is dead: %w", b.loopCtx.Err())
 		}
 	}
 
@@ -542,6 +549,8 @@ func (b *uiBridge) enqueueEvent(ctx context.Context, e events.Event) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-b.loopCtx.Done(): // NEW: Consumer liveness check
+		return fmt.Errorf("uiBridge actor is dead: %w", b.loopCtx.Err())
 	default:
 		b.logger.Debug("UI Bridge queue full, shedding load/visual event")
 		return nil
