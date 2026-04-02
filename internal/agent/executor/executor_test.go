@@ -400,7 +400,7 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 
 	exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.pipeline.(*defaultToolPipeline).authorizer = auth
+	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).authorizer = auth
 	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())

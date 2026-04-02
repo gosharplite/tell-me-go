@@ -68,7 +68,6 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	if err != nil {
 		return nil, err
 	}
-	failures := newFailureTracker(3)
 
 	var exec ToolExecutor = newBaseRuntime(registry)
 
@@ -82,7 +81,6 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	o := &Orchestrator{
 		events:   bus,
 		logger:   logger,
-		failures: failures,
 		observer: observer,
 		zombie:   zombie,
 	}
@@ -98,12 +96,13 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 		func() time.Duration { return o.state.Load().config.ZombieTimeout },
 	)
 
-	pipeline := &defaultToolPipeline{
+	basePipeline := &defaultToolPipeline{
 		resolver:   newToolResolutionService(registry),
 		authorizer: authService,
 		runtime:    exec,
 		registry:   registry,
 	}
+	pipeline := NewCircuitBreakerPipeline(basePipeline, 3, 5*time.Minute)
 
 	o.pipeline = pipeline
 	// Run options which might update config or other things

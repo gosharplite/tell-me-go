@@ -92,7 +92,6 @@ func NewDefaultToolPipeline(
 	bus events.EventBus,
 	logger ports.Logger,
 	zombie *tools.ZombieTool,
-	failures *failureTracker,
 	getToolTimeout func() time.Duration,
 	getLongRunningTimeout func() time.Duration,
 	getZombieTimeout func() time.Duration,
@@ -125,7 +124,6 @@ type Orchestrator struct {
 	events   events.EventBus
 	logger   ports.Logger
 	strategy resultStrategy
-	failures *failureTracker
 	observer tools.ExecutionObserver
 	zombie   *tools.ZombieTool
 }
@@ -188,7 +186,7 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 		events:   bus,
 		logger:   logger,
 		strategy: &markdownStrategy{},
-		failures: newFailureTracker(3),
+
 		observer: observer,
 	}
 
@@ -203,52 +201,6 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 	}
 
 	return e, nil
-}
-
-type failureTracker struct {
-	mu        sync.RWMutex
-	failures  map[string]int
-	threshold int
-}
-
-func newFailureTracker(threshold int) *failureTracker {
-	return &failureTracker{
-		failures:  make(map[string]int),
-		threshold: threshold,
-	}
-}
-
-func (f *failureTracker) recordFailure(toolName string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.failures[toolName]++
-}
-
-func (f *failureTracker) recordSuccess(toolName string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.failures[toolName] = 0
-}
-
-func (f *failureTracker) Record(toolName string, success bool) {
-	if success {
-		f.recordSuccess(toolName)
-	} else {
-		f.recordFailure(toolName)
-	}
-}
-
-func (f *failureTracker) isOpen(toolName string) bool {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	return f.failures[toolName] >= f.threshold
-}
-
-func (f *failureTracker) Check(toolName string) error {
-	if f.isOpen(toolName) {
-		return fmt.Errorf("%w: tool %q is temporarily disabled due to multiple consecutive failures", tools.ErrToolCircuitOpen, toolName)
-	}
-	return nil
 }
 
 func (e *Orchestrator) SetConcurrency(maxConcurrent int, timeout time.Duration) {
@@ -416,23 +368,14 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		if batch.isSerial {
 			taskIdx := batch.tasks[0]
 			fc := calls[taskIdx]
-			if err := e.failures.Check(fc.Name); err != nil {
-				resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tools.ToolResult{Text: err.Error(), Error: err}}
-			} else {
-				tr := e.pipeline.ExecuteTool(ctx, fc)
-				resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tr}
-			}
+			tr := e.pipeline.ExecuteTool(ctx, fc)
+			resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tr}
 			close(resultsCh)
 		} else {
 			var wg sync.WaitGroup
 			for _, taskIdx := range batch.tasks {
 				i := taskIdx
 				fc := calls[i]
-
-				if err := e.failures.Check(fc.Name); err != nil {
-					resultsCh <- toolExecResult{index: i, name: fc.Name, tr: tools.ToolResult{Text: err.Error(), Error: err}}
-					continue
-				}
 
 				wg.Add(1)
 				task := func(_ context.Context) {
@@ -491,7 +434,6 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		// 2. Fan-in Aggregator Loop (lock-free mutation of failures)
 		for res := range resultsCh {
 			results[res.index] = res.tr
-			e.failures.Record(res.name, res.tr.Error == nil)
 			evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
 			e.emitEvent(ctx, e.events, evt)
 		}

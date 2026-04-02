@@ -84,8 +84,8 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 	go func() {
 		defer close(doneCh)
 		fc := &llm.FunctionCall{Name: hangingTool.Name}
-		tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
-		result, timeoutErr = exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
+		tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
+		result, timeoutErr = exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
 	}()
 
 	select {
@@ -137,8 +137,8 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	go func() {
 		defer close(doneCh)
 		fc := &llm.FunctionCall{Name: hangingTool.Name}
-		tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
-		_, _ = exec.pipeline.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
+		tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
+		_, _ = exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
 	}()
 
 	select {
@@ -210,14 +210,14 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 	t.Cleanup(exec.Shutdown)
 
 	fc := &llm.FunctionCall{Name: "hanging_tool"}
-	tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
+	tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
 
 	start := time.Now()
 	doneCh := make(chan struct{})
 	var result tools.ToolResult
 	go func() {
 		defer close(doneCh)
-		result, _ = exec.pipeline.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
+		result, _ = exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
 	}()
 
 	select {
