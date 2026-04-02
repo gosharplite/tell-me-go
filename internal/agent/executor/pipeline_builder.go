@@ -14,36 +14,6 @@ import (
 )
 
 // A mocked ToolPipeline for tests that previously mocked Registry, SM, etc.
-type MockToolPipeline struct {
-	Registry                tools.Registry
-	ExecuteFunc             func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult
-	RequestBatchConsentFunc func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
-	IsSerialFunc            func(toolName string) bool
-}
-
-func (m *MockToolPipeline) ExecuteTool(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
-	if m.ExecuteFunc != nil {
-		return m.ExecuteFunc(ctx, call)
-	}
-	return tools.ToolResult{Text: "mocked execute"}
-}
-
-func (m *MockToolPipeline) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
-	if m.RequestBatchConsentFunc != nil {
-		return m.RequestBatchConsentFunc(ctx, calls)
-	}
-	return ctx, make(map[int]bool)
-}
-
-func (m *MockToolPipeline) IsSerial(toolName string) bool {
-	if m.IsSerialFunc != nil {
-		return m.IsSerialFunc(toolName)
-	}
-	if m.Registry != nil {
-		return m.Registry.IsSerial(toolName)
-	}
-	return false
-}
 
 // Wrapper for tests to ease migration
 func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {

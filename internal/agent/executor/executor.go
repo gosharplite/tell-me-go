@@ -368,7 +368,18 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		if batch.isSerial {
 			taskIdx := batch.tasks[0]
 			fc := calls[taskIdx]
-			tr := e.pipeline.ExecuteTool(ctx, fc)
+
+			var tr tools.ToolResult
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						err := fmt.Errorf("panic during serial tool execution: %v", r)
+						tr = tools.ToolResult{Text: err.Error(), Error: err}
+					}
+				}()
+				tr = e.pipeline.ExecuteTool(ctx, fc)
+			}()
+
 			resultsCh <- toolExecResult{index: taskIdx, name: fc.Name, tr: tr}
 			close(resultsCh)
 		} else {
@@ -379,6 +390,7 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 				wg.Add(1)
 				task := func(_ context.Context) {
+					defer wg.Done()
 					defer func() {
 						if r := recover(); r != nil {
 							err := fmt.Errorf("panic during tool execution: %v", r)
@@ -389,7 +401,6 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 							}
 						}
 					}()
-					defer wg.Done()
 					if ctx.Err() != nil {
 						resultsCh <- toolExecResult{
 							index: i,
