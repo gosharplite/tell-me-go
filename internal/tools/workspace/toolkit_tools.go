@@ -72,13 +72,13 @@ func (t *persistenceTools) handleLoadToolkit(ctx context.Context, args map[strin
 
 	var sb strings.Builder
 	if len(loaded) > 0 {
-		sb.WriteString(fmt.Sprintf("Successfully loaded toolkits: [%s]. You now have access to those tools. ", strings.Join(loaded, ", ")))
+		fmt.Fprintf(&sb, "Successfully loaded toolkits: [%s]. You now have access to those tools. ", strings.Join(loaded, ", "))
 	}
 	if len(alreadyActive) > 0 {
-		sb.WriteString(fmt.Sprintf("Toolkits already active: [%s]. ", strings.Join(alreadyActive, ", ")))
+		fmt.Fprintf(&sb, "Toolkits already active: [%s]. ", strings.Join(alreadyActive, ", "))
 	}
 	if len(missing) > 0 {
-		sb.WriteString(fmt.Sprintf("Warning: Unknown toolkits requested and skipped: [%s]. ", strings.Join(missing, ", ")))
+		fmt.Fprintf(&sb, "Warning: Unknown toolkits requested and skipped: [%s]. ", strings.Join(missing, ", "))
 	}
 
 	if sb.Len() == 0 {

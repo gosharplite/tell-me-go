@@ -15,11 +15,11 @@ import (
 )
 
 type mockToolRegistry struct {
-	declarations   []*tools.ToolDeclaration
-	toolkitMap     map[string][]*tools.ToolDeclaration
-	registerErr    error
-	failAfter      int
-	callCount      int
+	declarations []*tools.ToolDeclaration
+	toolkitMap   map[string][]*tools.ToolDeclaration
+	registerErr  error
+	failAfter    int
+	callCount    int
 }
 
 func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {

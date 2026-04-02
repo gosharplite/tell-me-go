@@ -77,7 +77,7 @@ func TestSessionState_Persistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer state2.Close()
+	defer func() { _ = state2.Close() }()
 
 	// 3. Verify ActiveToolkits is restored
 	restoredInfo := state2.GetInfo()

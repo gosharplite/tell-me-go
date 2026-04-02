@@ -43,15 +43,6 @@ func (d *mockSessionDeps) GetPricingData() pricing.PricingData                  
 func (d *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
 func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return d.sessionProvider }
 
-type mockSessionProvider struct {
-	ports.SessionProvider
-}
-
-func (m *mockSessionProvider) GetSettings() ports.KVStore { return nil }
-func (m *mockSessionProvider) GetInfo() ports.SessionInfo { return ports.SessionInfo{} }
-func (m *mockSessionProvider) Close() error               { return nil }
-
-
 type mockGateway struct {
 	llm.LLMGateway
 }

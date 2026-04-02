@@ -7,6 +7,7 @@ package registry
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -166,11 +167,14 @@ func (r *registry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDec
 	}
 
 	res := make([]*tools.ToolDeclaration, 0, len(dedup))
-	// We want to maintain some order for consistency, maybe core first then others.
-	// But the simplest is just to collect them.
 	for _, d := range dedup {
 		res = append(res, d)
 	}
+
+	// Sort by Name for deterministic output
+	sort.Slice(res, func(i, j int) bool {
+		return res[i].Name < res[j].Name
+	})
 
 	return res
 }
