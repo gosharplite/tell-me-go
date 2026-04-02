@@ -281,6 +281,10 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 			"error", waitErr.Error(),
 			"duration_ms", duration.Milliseconds(),
 		)
+		if ctx.Err() != nil {
+			return e.assembleResponse(calls, results), ctx.Err()
+		}
+		waitErr = nil
 	} else {
 		e.logger.Debug("Tool execution turn completed",
 			"turn", turn,
@@ -340,11 +344,14 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 	batches := e.buildExecutionBatches(calls, declinedMap, results)
 	state := e.state.Load()
 
+	var planErrors []error
+
 	for batchIdx, batch := range batches {
 		if err := ctx.Err(); err != nil {
 			e.logger.Debug("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
 			e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
-			return err
+			planErrors = append(planErrors, err)
+			return errors.Join(planErrors...)
 		}
 
 		batchStart := time.Now()
@@ -360,7 +367,8 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						err := fmt.Errorf("panic during serial tool execution: %v", r)
+						e.logger.Error("panic in serial execution", "panic", r, "stack", string(debug.Stack()))
+						err := fmt.Errorf("tool execution panic: %v", r)
 						tr = tools.ToolResult{Text: err.Error(), Error: err}
 					}
 				}()
@@ -386,6 +394,23 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
+					var currentJobIdx = -1
+					var currentJobName string
+
+					defer func() {
+						if r := recover(); r != nil {
+							e.logger.Error("panic in worker goroutine", "panic", r, "stack", string(debug.Stack()))
+							if currentJobIdx != -1 {
+								err := fmt.Errorf("tool execution panic: %v", r)
+								resultsCh <- toolExecResult{
+									index: currentJobIdx,
+									name:  currentJobName,
+									tr:    tools.ToolResult{Text: err.Error(), Error: err},
+								}
+							}
+						}
+					}()
+
 					for {
 						select {
 						case <-ctx.Done():
@@ -399,19 +424,15 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 							if !ok {
 								return
 							}
+							currentJobIdx = i
 							fc := calls[i]
+							currentJobName = fc.Name
 
-							var tr tools.ToolResult
-							func() {
-								defer func() {
-									if r := recover(); r != nil {
-										err := fmt.Errorf("panic during tool execution: %v", r)
-										tr = tools.ToolResult{Text: err.Error(), Error: err}
-									}
-								}()
-								tr = e.pipeline.ExecuteTool(ctx, fc)
-							}()
+							tr := e.pipeline.ExecuteTool(ctx, fc)
 							resultsCh <- toolExecResult{index: i, name: fc.Name, tr: tr}
+
+							currentJobIdx = -1
+							currentJobName = ""
 						}
 					}
 				}()
@@ -437,6 +458,10 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			results[res.index] = res.tr
 			evt := events.ToolResultEvent{Name: res.name, Result: res.tr}
 			e.emitEvent(ctx, e.events, evt)
+
+			if res.tr.Error != nil {
+				planErrors = append(planErrors, res.tr.Error)
+			}
 		}
 
 		e.logger.Debug("Batch execution completed",
@@ -452,16 +477,34 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 					"batch_idx", batchIdx,
 					"tool_name", calls[batch.tasks[0]].Name)
 				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
+
+				if ctx.Err() != nil {
+					planErrors = append(planErrors, ctx.Err())
+				}
+
+				if len(planErrors) > 0 {
+					return errors.Join(planErrors...)
+				}
 				return ctx.Err()
 			}
 		} else {
 			if err := ctx.Err(); err != nil {
 				e.logger.Debug("Parallel batch interrupted, halting execution plan", "batch_idx", batchIdx)
 				e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
-				return err
+				planErrors = append(planErrors, err)
+				return errors.Join(planErrors...)
 			}
 		}
 	}
+
+	if ctx.Err() != nil {
+		planErrors = append(planErrors, ctx.Err())
+	}
+
+	if len(planErrors) > 0 {
+		return errors.Join(planErrors...)
+	}
+
 	return ctx.Err()
 }
 

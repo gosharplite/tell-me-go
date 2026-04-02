@@ -128,8 +128,9 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 		t.Fatal("Execute did not return after context cancellation")
 	}
 
-	t.Logf("execErr: %v", execErr); assert.Error(t, execErr)
-	assert.Equal(t, context.Canceled, execErr)
+	t.Logf("execErr: %v", execErr)
+	assert.Error(t, execErr)
+	assert.ErrorIs(t, execErr, context.Canceled)
 
 	// Verify tool also finished
 	timer2 := time.NewTimer(ciSafeTimeout)
@@ -524,11 +525,11 @@ func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
 	// Verify short-circuiting happened
 	assert.Error(t, execErr)
 	t.Logf("execErr (type: %T): %+v", execErr, execErr)
-	
+
 	if execErr == nil {
 		t.Fatalf("execErr is nil")
 	}
-	
+
 	if !errors.Is(execErr, llm.ErrTransient) && !errors.Is(execErr, context.DeadlineExceeded) && !errors.Is(execErr, context.Canceled) {
 		t.Errorf("expected DeadlineExceeded, Canceled, or ErrTransient, got %v", execErr)
 	}
@@ -542,4 +543,74 @@ func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
 	// An exact match might be flaky due to background test runners, but we expect no massive leak (like 10 new goroutines).
 	// We just ensure the number hasn't skyrocketed.
 	assert.InDelta(t, initialGoroutines, finalGoroutines, 5, "Number of goroutines should remain stable, proving bounded workers have exited")
+}
+
+type mockPanicPipeline struct {
+	panicOn string
+}
+
+func (m *mockPanicPipeline) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+	return ctx, nil
+}
+
+func (m *mockPanicPipeline) IsSerial(toolName string) bool {
+	return false
+}
+
+func (m *mockPanicPipeline) ExecuteTool(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
+	if call.Name == m.panicOn {
+		panic("simulated nil pointer dereference")
+	}
+	return tools.ToolResult{Text: "success"}
+}
+
+func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
+	bus := &mockEventBus{}
+	logger := &ports.NoOpLogger{}
+
+	pipeline := &mockPanicPipeline{panicOn: "panic_tool"}
+
+	cfg := OrchestratorConfig{MaxConcurrentTools: 2}
+	exec, err := NewOrchestrator(cfg, pipeline, bus, logger, &MockLogger{})
+	require.NoError(t, err)
+	defer exec.Shutdown()
+
+	content := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "success_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "panic_tool"}},
+		},
+	}
+
+	ctx := context.Background()
+
+	// 1. The test suite should not crash (the panic is recovered)
+	results := make([]tools.ToolResult, 2)
+	calls := []*llm.FunctionCall{content.Parts[0].FunctionCall, content.Parts[1].FunctionCall}
+	declinedMap := make(map[int]bool)
+
+	execErr := exec.runExecutionPlan(ctx, calls, declinedMap, results)
+
+	// 2. The recovered panic is returned as an error from runExecutionPlan
+	assert.Error(t, execErr)
+
+	// 4. The error string contains "simulated nil pointer dereference"
+	assert.Contains(t, execErr.Error(), "simulated nil pointer dereference")
+
+	// 3. The successfully executed tool's result is still handled or acknowledged
+	var foundSuccess bool
+	var foundPanic bool
+	for i, tr := range results {
+		switch calls[i].Name {
+		case "success_tool":
+			assert.Equal(t, "success", tr.Text)
+			foundSuccess = true
+		case "panic_tool":
+			assert.Contains(t, tr.Text, "simulated nil pointer dereference")
+			foundPanic = true
+		}
+	}
+
+	assert.True(t, foundSuccess, "success_tool should have completed successfully")
+	assert.True(t, foundPanic, "panic_tool should have completed with panic error")
 }
