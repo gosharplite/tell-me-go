@@ -412,9 +412,16 @@ func TestSafePublish_UncooperativeSubscriber(t *testing.T) {
 
 type uncooperativeSubscriber struct {
 	block chan struct{}
+	startedProcessing chan struct{}
 }
 
 func (s *uncooperativeSubscriber) Handle(ctx context.Context, e events.Event) error {
+	if s.startedProcessing != nil {
+		select {
+		case s.startedProcessing <- struct{}{}:
+		default:
+		}
+	}
 	<-s.block
 	return nil
 }
@@ -465,13 +472,14 @@ func TestEventBus_SlowSubscriber(t *testing.T) {
 	inframock.CleanupBus(t, bus)
 
 	block := make(chan struct{})
-	slowSub := &uncooperativeSubscriber{block: block}
+	startedProcessing := make(chan struct{}, 1)
+	slowSub := &uncooperativeSubscriber{block: block, startedProcessing: startedProcessing}
 	bus.SubscribeGlobal(slowSub)
 
 	// Fill the subscriber's channel
 	_ = bus.Publish(ctx, testEvent{typeName: "E1"})
 	// Wait for worker to pick up E1 and block
-	time.Sleep(10 * time.Millisecond)
+	<-slowSub.startedProcessing
 
 	_ = bus.Publish(ctx, testEvent{typeName: "E2"}) // This will sit in the queue (size 1)
 
@@ -489,8 +497,6 @@ func TestEventBus_SlowSubscriber(t *testing.T) {
 		t.Errorf("Publish took too long: %v. It must not block the publisher.", duration)
 	}
 
-	// Give it a tiny bit of time to flush the log
-	time.Sleep(50 * time.Millisecond)
 	output := buf.String()
 
 	// Verify log contains warning for dropping E3
