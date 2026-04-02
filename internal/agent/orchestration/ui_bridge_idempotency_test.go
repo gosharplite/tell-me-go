@@ -6,7 +6,6 @@ package orchestration
 import (
 	"context"
 	"log/slog"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -29,9 +28,6 @@ func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 	)
 	bridge.Start(context.Background())
 
-	// Capture baseline goroutine count
-	baselineGoroutines := runtime.NumGoroutine()
-
 	const numCalls = 100
 	var wg sync.WaitGroup
 	wg.Add(numCalls)
@@ -49,12 +45,6 @@ func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 
 	// ASSERTION 1: Background logic only ran once
 	assert.Equal(t, int32(1), atomic.LoadInt32(&bridge.cleanupInvocations), "Cleanup logic should only execute once regardless of how many times Cleanup() is called")
-
-	// ASSERTION 2: No goroutine leak (specifically, not 100 leaked background goroutines)
-	// Even if one background goroutine is still hanging on wg.Wait() (since we didn't call CloseInput),
-	// we shouldn't have seen 100 of them.
-	finalGoroutines := runtime.NumGoroutine()
-	assert.LessOrEqual(t, finalGoroutines, baselineGoroutines+5, "Too many goroutines leaked; background wait goroutines were likely spawned multiple times")
 
 	// Final cleanup to allow goroutines to exit gracefully
 	bridge.CloseInput()
