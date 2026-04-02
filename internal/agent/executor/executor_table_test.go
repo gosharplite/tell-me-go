@@ -117,8 +117,16 @@ func assertExecutionSuccess(t *testing.T, resp *llm.Content, err error, expected
 
 func assertExecutionError(t *testing.T, resp *llm.Content, err error, bus *inframock.TestEventBus, expectedMsg string, expectedErr error) {
 	t.Helper()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if expectedErr != nil && errors.Is(expectedErr, llm.ErrTerminal) {
+		if err == nil {
+			t.Fatalf("expected terminal error, got nil")
+		} else if !errors.Is(err, llm.ErrTerminal) {
+			t.Fatalf("expected error to wrap llm.ErrTerminal, got: %v", err)
+		}
+	} else {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	}
 	verifyErrorResponse(t, resp, expectedMsg)
 	if bus != nil && expectedErr != nil {
@@ -216,7 +224,7 @@ func TestOrchestrator_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Did you mean \"list_files\"?", nil)
+		assertExecutionError(t, resp, err, nil, "Did you mean \"list_files\"?", llm.ErrTerminal)
 	})
 
 	t.Run("Security Violation", func(t *testing.T) {
@@ -337,8 +345,8 @@ func TestOrchestrator_PanicRecovery(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		if err == nil || !errors.Is(err, llm.ErrTerminal) {
+			t.Fatalf("expected terminal error, got: %v", err)
 		}
 		if resp == nil || len(resp.Parts) < 2 {
 			t.Fatalf("expected at least 2 parts, got %v", resp)
@@ -723,8 +731,8 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		if err == nil || !errors.Is(err, llm.ErrTerminal) {
+			t.Fatalf("expected terminal error, got: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool \"any\" encountered an internal fatal error (panic) and was terminated.")
 		verifyToolEventError(t, bus, llm.ErrTerminal)
@@ -742,8 +750,8 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		if err == nil || !errors.Is(err, llm.ErrTerminal) {
+			t.Fatalf("expected terminal error, got: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool \"any\" encountered an internal fatal error (panic) and was terminated.")
 		verifyToolEventError(t, bus, llm.ErrTerminal)

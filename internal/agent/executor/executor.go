@@ -289,6 +289,11 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 		if ctx.Err() != nil {
 			return e.assembleResponse(calls, results), ctx.Err()
 		}
+		
+		if errors.Is(waitErr, llm.ErrTerminal) {
+			return e.assembleResponse(calls, results), waitErr
+		}
+		
 		waitErr = nil
 	} else {
 		e.logger.Debug("Tool execution turn completed",
