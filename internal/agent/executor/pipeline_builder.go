@@ -15,10 +15,10 @@ import (
 
 // A mocked ToolPipeline for tests that previously mocked Registry, SM, etc.
 type MockToolPipeline struct {
-	Registry tools.Registry
-	ExecuteFunc func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult
+	Registry                tools.Registry
+	ExecuteFunc             func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult
 	RequestBatchConsentFunc func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
-	IsSerialFunc func(toolName string) bool
+	IsSerialFunc            func(toolName string) bool
 }
 
 func (m *MockToolPipeline) ExecuteTool(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
@@ -71,13 +71,13 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	failures := newFailureTracker(3)
 
 	var exec ToolExecutor = newBaseRuntime(registry)
-	
+
 	authService := newSecurityAuthorizer(sm, registry)
-	
+
 	exec = newAuthDecorator(exec, authService)
 	// Circuit breaker is moved to orchestrator loop
 	exec = newTracingDecorator(exec, registry, logger)
-	
+
 	// Create a pointer to Orchestrator to capture timeouts dynamically
 	o := &Orchestrator{
 		events:   bus,
@@ -92,7 +92,7 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 		pool:   concurrency.NewWorkerPool(cfg.MaxConcurrentTools),
 	})
 
-	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, 
+	exec = newSafetyDecorator(exec, registry, logger, bus, zombie,
 		func() time.Duration { return o.state.Load().config.ToolTimeout },
 		func() time.Duration { return o.state.Load().config.LongRunningTimeout },
 		func() time.Duration { return o.state.Load().config.ZombieTimeout },
@@ -110,13 +110,14 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	for _, opt := range opts {
 		opt(o)
 	}
-	
+
 	o.strategy = &markdownStrategy{}
 
 	return o, nil
 }
 
 type MockPipelineAuthorizer struct{}
+
 func (m *MockPipelineAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
 	return ctx, make(map[int]bool)
 }

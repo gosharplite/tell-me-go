@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	
+
 	"sync/atomic"
 	"testing"
 	"time"
@@ -606,8 +606,6 @@ func TestWorkerPool_SubmitFailure(t *testing.T) {
 	}
 }
 
-
-
 func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
@@ -906,12 +904,6 @@ func TestOrchestrator_CircuitBreaker(t *testing.T) {
 		t.Errorf("Expected exactly 3 attempts, got %d", attempts)
 	}
 }
-
-
-
-
-
-
 
 func TestOrchestrator_LongRunningTimeout(t *testing.T) {
 	t.Parallel()

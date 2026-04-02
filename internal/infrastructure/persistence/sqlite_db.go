@@ -111,7 +111,7 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 		Status    string
 		CreatedAt string
 	}
-	
+
 	rows := make([]taskRow, len(tasks))
 	for i, t := range tasks {
 		rows[i] = taskRow{
@@ -133,7 +133,7 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 
 		query := "INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES "
 		var args []interface{}
-		
+
 		for j, r := range batch {
 			if j > 0 {
 				query += ", "

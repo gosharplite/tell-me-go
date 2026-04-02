@@ -204,7 +204,7 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 }
 
 type failureTracker struct {
-	mu sync.RWMutex
+	mu        sync.RWMutex
 	failures  map[string]int
 	threshold int
 }

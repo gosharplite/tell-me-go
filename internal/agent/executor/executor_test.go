@@ -194,10 +194,6 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 	}
 }
 
-
-
-
-
 type orderMockRegistry struct {
 	serialTools map[string]bool
 }
@@ -400,10 +396,6 @@ func TestOrchestrator_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
 	// Assert
 	assert.False(t, mockLogger.errorCalled, "Expected Error NOT to be called on logger for ErrBusNotInitialized")
 }
-
-
-
-
 
 type mockAuthorizer struct {
 	RequestBatchConsentFunc func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool)
