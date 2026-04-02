@@ -232,17 +232,17 @@ func (r *stdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 			defer r.locker.TerminalUnlock()
 		}
 		ui := r.getUIState()
-		r.renderMetricsLine(ui, m, startTime)
+		r.renderMetricsLine(ui, m, startTime, 0)
 	}
 }
 
-func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime time.Time) {
+func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime time.Time, turns int) {
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
-	r.renderMetricsLineLocked(ui, m, startTime)
+	r.renderMetricsLineLocked(ui, m, startTime, turns)
 }
 
-func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, startTime time.Time) {
+func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, startTime time.Time, turns int) {
 	if m == nil {
 		return
 	}
@@ -276,7 +276,11 @@ func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, star
 
 	if !startTime.IsZero() {
 		totalSessionDuration := ui.clock.Now().Sub(startTime).Seconds()
-		timingStr = fmt.Sprintf("%s / %.2fs%s", timingStr, totalSessionDuration, ui.c(colorGray))
+		if turns > 0 {
+			timingStr = fmt.Sprintf("%s / %.2fs (%.2f)%s", timingStr, totalSessionDuration, totalSessionDuration/float64(turns), ui.c(colorGray))
+		} else {
+			timingStr = fmt.Sprintf("%s / %.2fs%s", timingStr, totalSessionDuration, ui.c(colorGray))
+		}
 	}
 
 	// Prepare cost string
@@ -607,7 +611,7 @@ func (r *stdUIRenderer) LogToolResult(ctx context.Context, name string, result t
 	}
 
 	if m, ok := result.Metadata["metrics"].(*llm.Metrics); ok {
-		r.renderMetricsLineLocked(ui, m, time.Time{}) // Render the usage line after the result
+		r.renderMetricsLineLocked(ui, m, time.Time{}, 0) // Render the usage line after the result
 	}
 }
 
@@ -733,7 +737,7 @@ func (r *stdUIRenderer) renderPostCallStatus(ui uiState, status events.TurnStatu
 	}
 
 	r.printTokenLine(ui, timestamp, int(m.PromptTokens), status.MaxHistoryTokens, true, status.Mode)
-	r.renderMetricsLineLocked(ui, m, status.StartTime)
+	r.renderMetricsLineLocked(ui, m, status.StartTime, status.CurrentTurns+1)
 }
 
 func (r *stdUIRenderer) renderFinalSummary(ui uiState, status events.TurnStatus) {

@@ -90,8 +90,9 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, 
 	outStr := string(output)
 	if err != nil {
 		outStr = stringsutil.TruncateOutput(outStr, 100)
-		// Return the failure output in the result, but still return an error for the status
-		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, fmt.Errorf("tests failed: %w", err)
+		// Return the failure output in the result so the LLM can read the test failures and fix them.
+		// We do NOT return a Go error here because test failure is a valid output of the tool, not a tool execution crash.
+		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s\nError: %v", outStr, err)}, nil
 	}
 
 	return tools.ToolResult{Text: stringsutil.TruncateOutput(outStr, 100)}, nil

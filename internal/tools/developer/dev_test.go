@@ -429,9 +429,12 @@ func TestRunTests_Failure(t *testing.T) {
 		return []byte("FAIL"), errors.New("exit status 1")
 	}
 
-	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."}, nil)
-	if err == nil {
-		t.Error("expected error, got nil")
+	res, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."}, nil)
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+	if !strings.Contains(res.Text, "FAIL") {
+		t.Errorf("expected FAIL in result, got %q", res.Text)
 	}
 }
 
