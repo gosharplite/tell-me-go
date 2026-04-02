@@ -19,6 +19,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-011** | Refactor UI Bridge to Actor Model for Thread-Safe Asynchronous Rendering | 2026-04 | Accepted | [2026-04-uibridge-actor-model.md](2026-04-uibridge-actor-model.md) |
 | **ADR-012** | Dynamic Tool Discovery via Capability Toolkits | 2026-04 | Accepted | [2026-04-dynamic-tool-discovery.md](2026-04-dynamic-tool-discovery.md) |
 | **ADR-013** | Asynchronous Event-Driven Orchestration | 2026-04 | Accepted | [2026-04-asynchronous-event-driven-orchestration.md](2026-04-asynchronous-event-driven-orchestration.md) |
+| **ADR-014** | Event-Driven Orchestration and Circuit Breaker Pipeline | 2026-05 | Accepted | [2026-05-event-driven-orchestration.md](2026-05-event-driven-orchestration.md) |
 
 ## How to Create a New ADR
 
