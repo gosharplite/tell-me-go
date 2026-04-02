@@ -71,7 +71,7 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -122,7 +122,7 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	}
 
 	// Use short zombie timeout, but generous enough for -race
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
 		withZombieTimeout(200*time.Millisecond),
 		withToolTimeout(200*time.Millisecond),
 	)
@@ -200,7 +200,7 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 	}
 
 	// Orchestrator with long global timeout (5s) but short liveness threshold (100ms)
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
 		withToolTimeout(5*time.Second),
 		WithLongRunningTimeout(5*time.Second),
 	)

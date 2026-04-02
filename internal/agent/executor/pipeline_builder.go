@@ -1,21 +1,19 @@
 package executor
 
 import (
-	"context"
 	"errors"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// A mocked ToolPipeline for tests that previously mocked Registry, SM, etc.
-
-// Wrapper for tests to ease migration
-func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
+// NewPipelineOrchestrator is the primary production constructor for the execution pipeline.
+// It assembles all necessary decorators (authorization, tracing, safety, circuit breaker)
+// and returns a fully configured Orchestrator ready for domain use.
+func NewPipelineOrchestrator(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
 	cfg := OrchestratorConfig{
 		MaxConcurrentTools: 5,
 		ToolTimeout:        30 * time.Second,
@@ -72,14 +70,4 @@ func BuildOrchestrator(registry tools.Registry, sm domain_security.Manager, bus 
 	return res, nil
 }
 
-type MockPipelineAuthorizer struct{}
 
-func (m *MockPipelineAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
-	return ctx, make(map[int]bool)
-}
-func (m *MockPipelineAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
-	return nil
-}
-func (m *MockPipelineAuthorizer) IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
-	return []int{}, make(map[int]bool)
-}

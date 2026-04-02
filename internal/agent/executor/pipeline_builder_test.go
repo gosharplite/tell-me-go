@@ -54,7 +54,7 @@ func TestRequestBatchConsent(t *testing.T) {
 	}
 }
 
-func TestBuildOrchestrator(t *testing.T) {
+func TestNewPipelineOrchestrator(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -107,7 +107,7 @@ func TestBuildOrchestrator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			orch, err := BuildOrchestrator(tt.registry, tt.sm, tt.bus, tt.logger, tt.observer, tt.opts...)
+			orch, err := NewPipelineOrchestrator(tt.registry, tt.sm, tt.bus, tt.logger, tt.observer, tt.opts...)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, orch)
@@ -123,4 +123,16 @@ func TestBuildOrchestrator(t *testing.T) {
 
 		})
 	}
+}
+
+type MockPipelineAuthorizer struct{}
+
+func (m *MockPipelineAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+	return ctx, make(map[int]bool)
+}
+func (m *MockPipelineAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
+	return nil
+}
+func (m *MockPipelineAuthorizer) IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
+	return []int{}, make(map[int]bool)
 }

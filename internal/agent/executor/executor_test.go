@@ -90,7 +90,7 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,7 +145,7 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{
@@ -178,7 +178,7 @@ func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	// Setup trace context
@@ -347,7 +347,7 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 		},
 	}
 
-	exec, err := BuildOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).authorizer = auth
 
@@ -440,8 +440,8 @@ func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
 	// We need to bypass the security manager for the test, or the tools will be automatically declined
 	sm := &mockSecurityManager{allowAll: true}
 
-	// Use BuildOrchestrator to ensure full pipeline hookup
-	exec, err := BuildOrchestrator(reg, sm, bus, logger, &MockLogger{})
+	// Use NewPipelineOrchestrator to ensure full pipeline hookup
+	exec, err := NewPipelineOrchestrator(reg, sm, bus, logger, &MockLogger{})
 	require.NoError(t, err)
 	exec.SetConcurrency(2)
 

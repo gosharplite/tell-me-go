@@ -119,7 +119,7 @@ func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
-	exec, err := executor.BuildOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
 
 	toolProceedTask := make(chan struct{})

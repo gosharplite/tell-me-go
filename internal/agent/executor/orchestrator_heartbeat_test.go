@@ -57,7 +57,7 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 	}
 
 	// Orchestrator with safety decorator
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)
@@ -104,7 +104,7 @@ func TestOrchestrator_HeartbeatSuccess(t *testing.T) {
 		},
 	}
 
-	exec, err := BuildOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
+	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)

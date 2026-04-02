@@ -37,7 +37,7 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 	observer := &MockLogger{}
 
 	// Create Orchestrator but replace runtime with mockExecutor
-	exec, err := BuildOrchestrator(reg, nil, bus, logger, observer)
+	exec, err := NewPipelineOrchestrator(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
 
 	releaseCh := make(chan struct{})
@@ -100,7 +100,7 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	observer := &MockLogger{}
 
 	// Create Orchestrator but replace runtime with mockExecutor
-	exec, err := BuildOrchestrator(reg, nil, bus, logger, observer)
+	exec, err := NewPipelineOrchestrator(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
 
 	releaseCh1 := make(chan struct{})
