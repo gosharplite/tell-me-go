@@ -179,8 +179,6 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	startTime := time.Now()
 	resp, err := c.httpClient.Do(req)
-	duration := time.Since(startTime).Seconds()
-
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -188,12 +186,23 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		_ = resp.Body.Close()
 	}()
 
-	if err := c.checkResponse(resp); err != nil {
-		return nil, nil, err
+	// Read entire response body BEFORE measuring duration
+	// This captures streaming/chunked transfer time
+	bodyBytes, err := io.ReadAll(resp.Body)
+	duration := time.Since(startTime).Seconds()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, &llmerr.APIError{
+			Status: resp.StatusCode,
+			Body:   string(bodyBytes),
+		}
 	}
 
 	var msgResp messagesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
+	if err := json.Unmarshal(bodyBytes, &msgResp); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 

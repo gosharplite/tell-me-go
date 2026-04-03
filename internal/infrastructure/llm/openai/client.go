@@ -351,8 +351,6 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	startTime := time.Now()
 	resp, err := c.httpClient.Do(req)
-	duration := time.Since(startTime).Seconds()
-
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -360,24 +358,31 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		_ = resp.Body.Close()
 	}()
 
+	// CRITICAL: Read entire response body BEFORE measuring duration
+	// This captures streaming/chunked transfer time
+	bodyBytes, err := io.ReadAll(resp.Body)
+	duration := time.Since(startTime).Seconds()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
+		return nil, nil, &llmerr.APIError{
+			Status: resp.StatusCode,
+			Body:   string(bodyBytes),
 		}
-		return nil, nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
 
 	if endpoint == "/responses" {
 		var chatResp responsesAPIResponse
-		if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		if err := json.Unmarshal(bodyBytes, &chatResp); err != nil {
 			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 		return c.fromResponsesAPIResponse(&chatResp, duration)
 	}
 
 	var chatResp chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+	if err := json.Unmarshal(bodyBytes, &chatResp); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
