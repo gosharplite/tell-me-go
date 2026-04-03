@@ -201,17 +201,17 @@ func TestDispatcher_WithActiveTrace_RecordsExecution(t *testing.T) {
 	assert.Equal(t, "success", trace.ToolExecutions[0].Status)
 }
 
-func TestNewDispatcher_NilObserver(t *testing.T) {
+func Test_newDispatcher_NilObserver(t *testing.T) {
 	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
-	_, err := NewDispatcher(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
+	_, err := newDispatcher(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
 
-func TestNewDispatcher_NilRegistry(t *testing.T) {
+func Test_newDispatcher_NilRegistry(t *testing.T) {
 	cfg := dispatcherConfig{}
-	executor, err := NewDispatcher(cfg, nil, nil, &ports.NoOpLogger{}, &mockLogger{})
+	executor, err := newDispatcher(cfg, nil, nil, &ports.NoOpLogger{}, &mockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)
@@ -219,14 +219,14 @@ func TestNewDispatcher_NilRegistry(t *testing.T) {
 	require.Nil(t, executor)
 }
 
-func TestNewDispatcher_NilLogger(t *testing.T) {
+func Test_newDispatcher_NilLogger(t *testing.T) {
 	t.Parallel()
 	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
 	observer := &mockLogger{}
 
 	// Explicitly pass nil for the logger
-	_, err := NewDispatcher(cfg, pipeline, nil, nil, observer)
+	_, err := newDispatcher(cfg, pipeline, nil, nil, observer)
 	require.Error(t, err)
 	assert.Equal(t, "logger is required", err.Error())
 }
@@ -393,13 +393,13 @@ func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 	assert.True(t, hasFinished, "ConsentFinishedEvent should be published even if context is cancelled")
 }
 
-func TestNewDispatcher_DefaultConfig(t *testing.T) {
+func Test_newDispatcher_DefaultConfig(t *testing.T) {
 	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
 	observer := &mockLogger{}
 	logger := &ports.NoOpLogger{}
 
-	executor, err := NewDispatcher(cfg, pipeline, nil, logger, observer)
+	executor, err := newDispatcher(cfg, pipeline, nil, logger, observer)
 	require.NoError(t, err)
 	require.NotNil(t, executor)
 
@@ -511,7 +511,7 @@ func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
 	pipeline := &mockPanicPipeline{panicOn: "panic_tool"}
 
 	cfg := dispatcherConfig{MaxConcurrentTools: 2}
-	exec, err := NewDispatcher(cfg, pipeline, bus, logger, &mockLogger{})
+	exec, err := newDispatcher(cfg, pipeline, bus, logger, &mockLogger{})
 	require.NoError(t, err)
 
 	content := &llm.Content{
@@ -571,7 +571,7 @@ func TestExecutor_PanicRecovery(t *testing.T) {
 	}
 
 	// We need a proper pipeline to test ExecuteTool
-	pipeline := NewDefaultToolPipeline(
+	pipeline := newDefaultToolPipeline(
 		reg,
 		&mockSecurityManager{allowAll: true},
 		&mockEventBus{},

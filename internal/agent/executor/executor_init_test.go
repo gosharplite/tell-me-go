@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewDefaultToolPipeline(t *testing.T) {
+func Test_newDefaultToolPipeline(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -20,7 +20,7 @@ func TestNewDefaultToolPipeline(t *testing.T) {
 		bus      events.EventBus
 		logger   ports.Logger
 		zombie   *tools.ZombieTool
-		wantErr  bool // Not returned by NewDefaultToolPipeline but for structure
+		wantErr  bool // Not returned by newDefaultToolPipeline but for structure
 	}{
 		{
 			name:     "valid dependencies initializes successfully",
@@ -45,7 +45,7 @@ func TestNewDefaultToolPipeline(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			pipeline := NewDefaultToolPipeline(
+			pipeline := newDefaultToolPipeline(
 				tt.registry,
 				tt.sm,
 				tt.bus,

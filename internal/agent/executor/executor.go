@@ -85,7 +85,7 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 	return result
 }
 
-func NewDefaultToolPipeline(
+func newDefaultToolPipeline(
 	registry tools.Registry,
 	sm domain_security.Manager,
 	bus events.EventBus,
@@ -174,7 +174,7 @@ func validateDispatcherDeps(pipeline ToolPipeline, logger ports.Logger, observer
 	return nil
 }
 
-func NewDispatcher(cfg dispatcherConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
+func newDispatcher(cfg dispatcherConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
 	if err := validateDispatcherDeps(pipeline, logger, observer); err != nil {
 		return nil, err
 	}

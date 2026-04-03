@@ -57,7 +57,7 @@ func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, 
 		registry:   registry,
 	}
 
-	res, err := NewDispatcher(cfg, basePipeline, bus, logger, observer, opts...)
+	res, err := newDispatcher(cfg, basePipeline, bus, logger, observer, opts...)
 	if err != nil {
 		return nil, err
 	}
