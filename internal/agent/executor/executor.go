@@ -65,7 +65,7 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 
 	tool, err := p.resolver.Resolve(call)
 	if err != nil {
-		return tools.ToolResult{Text: err.Error(), Error: fmt.Errorf("%w: %v", llm.ErrTerminal, err)}
+		return tools.ToolResult{Text: err.Error(), Error: err}
 	}
 
 	result, err = p.runtime.Execute(parentCtx, tool, call, nil)
@@ -82,7 +82,7 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 		if result.Text == "" {
 			result.Text = fmt.Sprintf("Error: %v", err)
 		}
-		result.Error = fmt.Errorf("%w: %v", llm.ErrTerminal, result.Error)
+		// Do not wrap in llm.ErrTerminal so the LLM can see the error and retry.
 	}
 	return result
 }

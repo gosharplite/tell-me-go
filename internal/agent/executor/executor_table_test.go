@@ -204,13 +204,16 @@ func TestDispatcher_Errors(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"existing": {result: tools.ToolResult{Text: "ok"}},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "missing"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, bus, "Tool \"missing\" is not defined", llm.ErrTerminal)
+		if err != nil {
+			t.Fatalf("expected nil error, got: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Tool \"missing\" is not defined")
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -224,7 +227,10 @@ func TestDispatcher_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Did you mean \"list_files\"?", llm.ErrTerminal)
+		if err != nil {
+			t.Fatalf("expected nil error, got: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Did you mean \"list_files\"?")
 	})
 
 	t.Run("Security Violation", func(t *testing.T) {
@@ -246,13 +252,16 @@ func TestDispatcher_Errors(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"fail_tool": {err: errors.New("tool failed")},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "fail_tool"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, bus, "tool execution failed: fail_tool: tool failed", llm.ErrTerminal)
+		if err != nil {
+			t.Fatalf("expected nil error, got: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Error: tool execution failed: fail_tool: tool failed")
 	})
 }
 

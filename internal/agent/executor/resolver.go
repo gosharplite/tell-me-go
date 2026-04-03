@@ -45,7 +45,7 @@ func (r *defaultResolver) Resolve(call *llm.FunctionCall) (*tools.ToolDeclaratio
 
 		errorMessage += " Please check the spelling or use a different tool from the authorized list."
 
-		return nil, fmt.Errorf("%w: %s", llm.ErrTerminal, errorMessage)
+		return nil, fmt.Errorf("%s", errorMessage)
 	}
 
 	return tool, nil
@@ -100,7 +100,7 @@ func resolveTool(reg tools.Registry, call *llm.FunctionCall) (*tools.ToolDeclara
 
 		errorMessage += " Please check the spelling or use a different tool from the authorized list."
 
-		return nil, fmt.Errorf("%w: %s", llm.ErrTerminal, errorMessage)
+		return nil, fmt.Errorf("%s", errorMessage)
 	}
 
 	return tool, nil
