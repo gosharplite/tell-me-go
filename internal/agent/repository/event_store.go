@@ -26,12 +26,32 @@ func NewEventStore(db *sql.DB) *EventStore {
 
 // GetSessionEvents fetches multiple events in a single database round-trip
 // to prevent N+1 query bottlenecks.
-func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) (events []Event, err error) {
+func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) ([]Event, error) {
 	if len(eventIDs) == 0 {
 		return nil, nil
 	}
 
-	// Dynamically build the IN clause with placeholders.
+	query, args := buildSessionEventsQuery(eventIDs)
+	
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events, err := parseSessionEvents(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}
+
+func buildSessionEventsQuery(eventIDs []string) (string, []interface{}) {
 	placeholders := strings.Repeat("?,", len(eventIDs)-1) + "?"
 	query := "SELECT id, payload, created_at FROM events WHERE id IN (" + placeholders + ")"
 
@@ -39,20 +59,11 @@ func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) (e
 	for i, id := range eventIDs {
 		args[i] = id
 	}
+	return query, args
+}
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
-			if err == nil {
-				err = closeErr
-			}
-		}
-	}()
-
+func parseSessionEvents(rows *sql.Rows) ([]Event, error) {
+	var events []Event
 	for rows.Next() {
 		var e Event
 		var createdAtStr string
@@ -61,16 +72,10 @@ func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) (e
 		}
 
 		// Parse the string time returned by SQLite
-		t, parseErr := time.Parse(time.RFC3339Nano, createdAtStr)
-		if parseErr == nil {
+		if t, parseErr := time.Parse(time.RFC3339Nano, createdAtStr); parseErr == nil {
 			e.CreatedAt = t
 		}
 		events = append(events, e)
 	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
 	return events, nil
 }
