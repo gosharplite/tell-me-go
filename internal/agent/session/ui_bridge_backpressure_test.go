@@ -228,9 +228,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			<-inMock
 
 			// 4. Fill the channel (capacity 100)
-			for i := 0; i < 100; i++ {
-				_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-			}
+			fillBridgeQueue(bridge, events.TurnStatusEvent{})
 
 			// 5. Execute the test case
 			ctx := context.Background()
@@ -242,48 +240,9 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 
 			// 6. Assert blocking behavior
 			if tt.expectBlocking {
-				done := make(chan struct{})
-				started := make(chan struct{})
-				go func() {
-					close(started)
-					_ = bridge.handleEvent(ctx, tt.event)
-					close(done)
-				}()
-
-				<-started
-
-				// To be truly deterministic without sleeps, we check that it hasn't finished yet.
-				// Given the queue is full and loop is blocked, it MUST block.
-				select {
-				case <-done:
-					t.Fatalf("%s: bridge.handleEvent should have blocked but returned early", tt.name)
-				default:
-					// Proceed
-				}
-
-				// Deterministic: Unblock the queue and assert successful delivery!
-				close(block)
-
-				select {
-				case <-done:
-					// Success: It successfully waited and then delivered the event.
-				case <-time.After(timeout):
-					t.Fatalf("%s: Deadlock! Event never processed after queue unblocked", tt.name)
-				}
+				assertBlockingBehavior(t, bridge, ctx, tt.event, block, timeout, tt.name)
 			} else {
-				// Non-blocking case: fail fast if regression causes a hang
-				done := make(chan struct{})
-				go func() {
-					_ = bridge.handleEvent(ctx, tt.event)
-					close(done)
-				}()
-
-				select {
-				case <-done:
-					// Success: it load-shed or respected context cancellation and returned immediately
-				case <-time.After(timeout):
-					t.Fatalf("%s: Regression: Load-shedding failed, handleEvent blocked unexpectedly", tt.name)
-				}
+				assertNonBlockingBehavior(t, bridge, ctx, tt.event, timeout, tt.name)
 			}
 		})
 	}
@@ -337,28 +296,15 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 	}
 
 	// 2. Fill the channel (capacity 100)
-	for i := 0; i < 100; i++ {
-		// Use ResponseEvent to ensure they are not shed
-		_ = bridge.handleEvent(context.Background(), events.ResponseEvent{})
-	}
+	// Use ResponseEvent to ensure they are not shed
+	fillBridgeQueue(bridge, events.ResponseEvent{})
 
 	// 3. Prepare an ALREADY cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
 	// 4. Trigger call and assert it returns immediately without blocking
-	done := make(chan struct{})
-	go func() {
-		_ = bridge.handleEvent(ctx, events.ResponseEvent{})
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Success: Goroutine returned immediately due to pre-cancelled context
-	case <-time.After(timeout):
-		t.Fatal("handleEvent did not respect cancelled context immediately")
-	}
+	assertNonBlockingBehavior(t, bridge, ctx, events.ResponseEvent{}, timeout, "TestUIBridge_ContextCancellationMidFlight")
 }
 
 func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
@@ -431,4 +377,52 @@ func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 	assert.NotPanics(t, func() {
 		_ = bridge.handleEvent(bridgeCtx, events.TurnStarted{})
 	})
+}
+
+func assertBlockingBehavior(t *testing.T, bridge *uiBridge, ctx context.Context, event events.Event, block chan struct{}, timeout time.Duration, name string) {
+	t.Helper()
+	done := make(chan struct{})
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		_ = bridge.handleEvent(ctx, event)
+		close(done)
+	}()
+
+	<-started
+
+	select {
+	case <-done:
+		t.Fatalf("%s: bridge.handleEvent should have blocked but returned early", name)
+	default:
+	}
+
+	close(block)
+
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		t.Fatalf("%s: Deadlock! Event never processed after queue unblocked", name)
+	}
+}
+
+func assertNonBlockingBehavior(t *testing.T, bridge *uiBridge, ctx context.Context, event events.Event, timeout time.Duration, name string) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		_ = bridge.handleEvent(ctx, event)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		t.Fatalf("%s: Regression: Load-shedding failed, handleEvent blocked unexpectedly", name)
+	}
+}
+
+func fillBridgeQueue(bridge *uiBridge, event events.Event) {
+	for i := 0; i < 100; i++ {
+		_ = bridge.handleEvent(context.Background(), event)
+	}
 }

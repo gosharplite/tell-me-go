@@ -21,6 +21,31 @@ func NewInternalTools(cm *ContextManager) *InternalTools {
 	return &InternalTools{ctxManager: cm}
 }
 
+// emitHeartbeats sends periodic heartbeats until the done channel is closed.
+func emitHeartbeats(done <-chan struct{}, hb chan<- struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Prevent crashing the tool execution silently
+			fmt.Printf("panic in summarize history background drainer: %v\n", r)
+		}
+	}()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if hb != nil {
+				select {
+				case hb <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
+}
+
 // summarizeHistory wraps ContextManager.SummarizeRange as a tool.
 func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
@@ -39,29 +64,7 @@ func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]in
 	// Emit heartbeat while waiting for the slow summarization process
 	done := make(chan struct{})
 	defer close(done)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				// Prevent crashing the tool execution silently
-				fmt.Printf("panic in summarize history background drainer: %v\n", r)
-			}
-		}()
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	go emitHeartbeats(done, hb)
 
 	res, metrics, err := t.ctxManager.SummarizeRange(ctx, targetTurns, params.Focus)
 	if err != nil {
