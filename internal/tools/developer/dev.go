@@ -115,7 +115,7 @@ func (m *devManager) validateTestCommand(command string) ([]string, error) {
 
 	// 2. Path Safety: Ensure arguments don't escape allowed boundaries
 	if safe, reason := m.validator.CheckPathSafety(parts); !safe {
-		return nil, fmt.Errorf("security violation: %s", reason)
+		return nil, fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
 	}
 
 	baseCmd := parts[0]
@@ -132,7 +132,7 @@ func (m *devManager) validateTestCommand(command string) ([]string, error) {
 	isAllowedScript := baseCmd == "./run_tests.sh" || baseCmd == "run_tests.sh"
 
 	if !allowedTools[baseCmd] && !isAllowedScript {
-		return nil, fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
+		return nil, fmt.Errorf("%w: command '%s' is not an authorized test tool", domain_security.ErrSandboxViolation, baseCmd)
 	}
 
 	return parts, nil

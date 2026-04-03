@@ -479,12 +479,13 @@ func TestSecurityGate(t *testing.T) {
 				"TELL_ME_MOCK_URL=" + server.URL,
 			}
 
-			_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
-			if err == nil {
-				t.Fatalf("CLI succeeded when it should have failed due to security violation")
+			// It should NOT crash, but should gracefully tell the model about the security violation
+			stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
+			if err != nil {
+				t.Fatalf("CLI failed when it should have gracefully handled the security violation: %v\nStderr: %s", err, stderr)
 			}
-			if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") {
-				t.Errorf("Expected security violation error in stderr or response. stderr: %s, response: %q", stderr, *receivedResponse)
+			if !strings.Contains(string(stderr), "security policy") && !strings.Contains(*receivedResponse, "security policy") && !strings.Contains(stdout, "security policy") {
+				t.Errorf("Expected security policy error in stdout, stderr, or response. stdout: %s, stderr: %s, response: %q", stdout, stderr, *receivedResponse)
 			}
 		})
 	}
@@ -514,13 +515,13 @@ func TestSymlinkAttack(t *testing.T) {
 		"TELL_ME_MOCK_URL=" + server.URL,
 	}
 
-	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
-	if err == nil {
-		t.Fatalf("CLI succeeded when it should have failed due to symlink attack")
+	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
+	if err != nil {
+		t.Fatalf("CLI failed when it should have gracefully handled the symlink attack: %v\nStderr: %s", err, stderr)
 	}
 
-	if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") {
-		t.Errorf("Expected security violation for symlink attack. stderr: %s, response: %q", stderr, *receivedResponse)
+	if !strings.Contains(string(stderr), "security policy") && !strings.Contains(*receivedResponse, "security policy") && !strings.Contains(stdout, "security policy") {
+		t.Errorf("Expected security policy for symlink attack. stdout: %s, stderr: %s, response: %q", stdout, stderr, *receivedResponse)
 	}
 }
 

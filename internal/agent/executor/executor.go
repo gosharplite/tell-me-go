@@ -82,7 +82,7 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 		}
 		return tools.ToolResult{
 			Text:  msg,
-			Error: fmt.Errorf("%w: %v", llm.ErrTerminal, secErr),
+			Error: secErr, // Do not wrap in llm.ErrTerminal so the LLM can retry or gracefully handle the rejection
 		}
 	}
 

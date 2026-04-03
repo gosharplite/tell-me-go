@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 // pathPolicy manages allowed boundaries and validates paths.
@@ -112,7 +114,7 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	if writable {
 		mode = "writable"
 	}
-	return "", fmt.Errorf("security violation: path '%s' is not in a %s boundary", path, mode)
+	return "", fmt.Errorf("%w: path '%s' is not in a %s boundary", domain_security.ErrSandboxViolation, path, mode)
 }
 
 func (p *pathPolicy) isSystemDirectory(absPath string) error {
@@ -122,7 +124,7 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 		if absPath == s || strings.HasPrefix(absPath, s+"/") {
 			// Special exception for /tmp handled by checkDefaultBoundaries
 			if !strings.HasPrefix(absPath, "/tmp") {
-				return fmt.Errorf("security violation: access to system directory '%s' is forbidden", s)
+				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
 			}
 		}
 	}
