@@ -29,7 +29,7 @@ func TestGetSessionEvents(t *testing.T) {
 
 	// Insert test data
 	now := time.Now().UTC()
-	events := []Event{
+	events := []event{
 		{ID: "event-1", Payload: `{"status": "started"}`, CreatedAt: now},
 		{ID: "event-2", Payload: `{"status": "running"}`, CreatedAt: now.Add(time.Second)},
 		{ID: "event-3", Payload: `{"status": "completed"}`, CreatedAt: now.Add(2 * time.Second)},
@@ -43,13 +43,13 @@ func TestGetSessionEvents(t *testing.T) {
 		}
 	}
 
-	store := NewEventStore(db)
+	store := newEventStore(db)
 
 	// Test 1: Fetch multiple events (Batch Query)
 	t.Run("Fetch multiple IDs", func(t *testing.T) {
 		ctx := context.Background()
 		ids := []string{"event-1", "event-3"}
-		fetched, err := store.GetSessionEvents(ctx, ids)
+		fetched, err := store.getSessionEvents(ctx, ids)
 		if err != nil {
 			t.Fatalf("GetSessionEvents failed: %v", err)
 		}
@@ -69,9 +69,9 @@ func TestGetSessionEvents(t *testing.T) {
 	// Test 2: Fetch empty slice
 	t.Run("Fetch empty slice", func(t *testing.T) {
 		ctx := context.Background()
-		fetched, err := store.GetSessionEvents(ctx, []string{})
+		fetched, err := store.getSessionEvents(ctx, []string{})
 		if err != nil {
-			t.Fatalf("GetSessionEvents failed: %v", err)
+			t.Fatalf("getSessionEvents failed: %v", err)
 		}
 
 		if fetched != nil {
@@ -82,9 +82,9 @@ func TestGetSessionEvents(t *testing.T) {
 	// Test 3: Fetch non-existent ID
 	t.Run("Fetch non-existent ID", func(t *testing.T) {
 		ctx := context.Background()
-		fetched, err := store.GetSessionEvents(ctx, []string{"unknown"})
+		fetched, err := store.getSessionEvents(ctx, []string{"unknown"})
 		if err != nil {
-			t.Fatalf("GetSessionEvents failed: %v", err)
+			t.Fatalf("getSessionEvents failed: %v", err)
 		}
 
 		if len(fetched) != 0 {

@@ -7,26 +7,26 @@ import (
 	"time"
 )
 
-// Event represents an orchestration event.
-type Event struct {
+// event represents an orchestration event.
+type event struct {
 	ID        string
 	Payload   string
 	CreatedAt time.Time
 }
 
-// EventStore handles database access for events.
-type EventStore struct {
+// eventStore handles database access for events.
+type eventStore struct {
 	db *sql.DB
 }
 
-// NewEventStore creates a new EventStore.
-func NewEventStore(db *sql.DB) *EventStore {
-	return &EventStore{db: db}
+// newEventStore creates a new eventStore.
+func newEventStore(db *sql.DB) *eventStore {
+	return &eventStore{db: db}
 }
 
-// GetSessionEvents fetches multiple events in a single database round-trip
+// getSessionEvents fetches multiple events in a single database round-trip
 // to prevent N+1 query bottlenecks.
-func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) ([]Event, error) {
+func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) ([]event, error) {
 	if len(eventIDs) == 0 {
 		return nil, nil
 	}
@@ -62,10 +62,10 @@ func buildSessionEventsQuery(eventIDs []string) (string, []interface{}) {
 	return query, args
 }
 
-func parseSessionEvents(rows *sql.Rows) ([]Event, error) {
-	var events []Event
+func parseSessionEvents(rows *sql.Rows) ([]event, error) {
+	var events []event
 	for rows.Next() {
-		var e Event
+		var e event
 		var createdAtStr string
 		if err := rows.Scan(&e.ID, &e.Payload, &createdAtStr); err != nil {
 			return nil, err
