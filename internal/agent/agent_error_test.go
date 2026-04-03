@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -31,7 +31,7 @@ func TestAgent_ConfigFailure(t *testing.T) {
 	inframock.CleanupBus(t, bus)
 	a := &agent{
 		events: bus,
-		ctxManager: &orchestration.ContextManager{
+		ctxManager: &session.ContextManager{
 			History: hm,
 		},
 	}

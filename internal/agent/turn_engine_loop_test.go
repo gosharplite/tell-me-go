@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -25,18 +25,18 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	inframock.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
-	counter := &orchestration.HeuristicTokenCounter{}
-	strategy := orchestration.NewContextStrategy(counter)
+	counter := &session.HeuristicTokenCounter{}
+	strategy := session.NewContextStrategy(counter)
 	gw := &limitMockLLMGateway{}
 	exec := &limitMockExecutor{}
 	reg := &limitMockRegistry{}
 
-	factory := &orchestration.PipelineFactory{
+	factory := &session.PipelineFactory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := orchestration.NewContextManager(strategy, h, bus, factory)
+	cm := session.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
@@ -87,18 +87,18 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	inframock.CleanupBus(t, bus)
 	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
-	counter := &orchestration.HeuristicTokenCounter{}
-	strategy := orchestration.NewContextStrategy(counter)
+	counter := &session.HeuristicTokenCounter{}
+	strategy := session.NewContextStrategy(counter)
 	gw := &limitMockLLMGateway{}
 	exec := &limitMockExecutor{}
 	reg := &limitMockRegistry{}
 
-	factory := &orchestration.PipelineFactory{
+	factory := &session.PipelineFactory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := orchestration.NewContextManager(strategy, h, bus, factory)
+	cm := session.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)

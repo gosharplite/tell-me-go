@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -312,7 +312,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	a.(*agent).ctxManager.SetPipeline(a.(*agent).ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	err = orchestration.RegisterInternal(reg, a.(*agent).ctxManager)
+	err = session.RegisterInternal(reg, a.(*agent).ctxManager)
 	require.NoError(t, err)
 
 	// Verify that at least one transformer has the registry
@@ -326,7 +326,7 @@ func TestAgent_PinningFlow(t *testing.T) {
 		defer cancel()
 		_ = a.Shutdown(shutdownCtx)
 	})
-	it := orchestration.NewInternalTools(a.(*agent).ctxManager)
+	it := session.NewInternalTools(a.(*agent).ctxManager)
 
 	t.Run("PinTurn", func(t *testing.T) {
 		verifyPinAction(t, it, h, ctx, "pin", 0)
@@ -337,7 +337,7 @@ func TestAgent_PinningFlow(t *testing.T) {
 	})
 }
 
-func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h ports.HistoryManager, ctx context.Context, action string, index float64) {
+func verifyPinAction(t *testing.T, it *session.InternalTools, h ports.HistoryManager, ctx context.Context, action string, index float64) {
 	t.Helper()
 	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": action, "index": index}, nil)
 	if err != nil {
@@ -443,7 +443,7 @@ func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
 	}
 }
 
-func verifyPinningResults(t *testing.T, meta *orchestration.Metadata, prepared []*llm.Content) {
+func verifyPinningResults(t *testing.T, meta *session.Metadata, prepared []*llm.Content) {
 	// Look for "u1" (the pinned turn)
 	foundPinned := false
 	for _, c := range prepared {
@@ -749,7 +749,7 @@ func TestAgent_ApplyConfig_ContextCancellation(t *testing.T) {
 	inframock.CleanupBus(t, bus)
 	a := &agent{
 		events:        bus,
-		configWatcher: orchestration.NewNoOpConfigWatcher(1000, 5, 10),
+		configWatcher: session.NewNoOpConfigWatcher(1000, 5, 10),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -770,7 +770,7 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 
 	a := &agent{
 		events:        mockBus,
-		configWatcher: orchestration.NewNoOpConfigWatcher(1000, 5, 10),
+		configWatcher: session.NewNoOpConfigWatcher(1000, 5, 10),
 	}
 
 	err := a.applyConfig(context.Background())
@@ -794,7 +794,7 @@ func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
 
 	// Force the mock's registration method to return a predefined error
 	// Architectural Instruction: The pattern provided uses "RegisterInternal".
-	// Since orchestration.RegisterInternal calls RegisterWithOptions, we bridge them here.
+	// Since session.RegisterInternal calls RegisterWithOptions, we bridge them here.
 	mockRegistry.On("RegisterInternal", mock.Anything).Return(expectedErr)
 
 	// Attempt to create the agent (adjust parameters to match your actual constructor)

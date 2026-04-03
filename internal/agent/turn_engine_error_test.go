@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -44,7 +44,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 	return nil, nil
 }
 
-func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
+func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tracker *errorPhaseTracker) (*turnEngine, *session.ContextManager) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 	reg := &mockToolRegistry{}
@@ -52,13 +52,13 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec toolExecutor, tr
 	tmpDir := t.TempDir()
 	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
-	strategy := orchestration.NewContextStrategy(&mockTokenCounter{})
-	factory := &orchestration.PipelineFactory{
+	strategy := session.NewContextStrategy(&mockTokenCounter{})
+	factory := &session.PipelineFactory{
 		History:   hManager,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := orchestration.NewContextManager(strategy, hManager, bus, factory)
+	cm := session.NewContextManager(strategy, hManager, bus, factory)
 
 	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
@@ -345,7 +345,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	step := &inferenceStep{}
 
 	hm := &mockHistoryManager{}
-	cm := &orchestration.ContextManager{
+	cm := &session.ContextManager{
 		History: hm,
 	}
 	reg := &mockToolRegistry{}
@@ -386,7 +386,7 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 	step := &persistenceStep{}
 
 	turn := &turn{
-		CtxManager: &orchestration.ContextManager{
+		CtxManager: &session.ContextManager{
 			History: hm,
 		},
 		State: &turnState{
@@ -421,7 +421,7 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 	step := &persistenceStep{}
 
 	turn := &turn{
-		CtxManager: &orchestration.ContextManager{
+		CtxManager: &session.ContextManager{
 			History: hm,
 		},
 		State: &turnState{

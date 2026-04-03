@@ -44,7 +44,7 @@ func (r *EventStore) GetSessionEvents(ctx context.Context, eventIDs []string) (e
 	if err != nil {
 		return nil, err
 	}
-	
+
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
 			if err == nil {

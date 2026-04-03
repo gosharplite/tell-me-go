@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -230,12 +230,12 @@ func (m *mockEngineCostTracker) GetStats(ctx context.Context) (domain_pricing.Us
 
 func (m *mockEngineCostTracker) Warmup() {}
 
-func minimalPipeline() *orchestration.ContextPipeline {
-	return orchestration.NewContextPipeline()
+func minimalPipeline() *session.ContextPipeline {
+	return session.NewContextPipeline()
 }
 
-func newTestContextManager(s *orchestration.ContextStrategy, h ports.HistoryManager, bus events.EventBus) *orchestration.ContextManager {
-	cm := orchestration.NewContextManager(s, h, bus, nil)
+func newTestContextManager(s *session.ContextStrategy, h ports.HistoryManager, bus events.EventBus) *session.ContextManager {
+	cm := session.NewContextManager(s, h, bus, nil)
 	cm.Pipeline = minimalPipeline()
 	return cm
 }
@@ -245,7 +245,7 @@ type testTurnEnv struct {
 	gw       *mockGateway
 	reg      *mockToolRegistry
 	bus      *events.SimpleEventBus
-	cm       *orchestration.ContextManager
+	cm       *session.ContextManager
 	hManager ports.HistoryManager
 }
 
@@ -255,7 +255,7 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	// Use synchronous event bus for deterministic test results
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	cm := newTestContextManager(strategy, hManager, bus)
 	gw := &mockGateway{}
@@ -365,13 +365,13 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 			HasToolCalls: hasTools,
 			RetryCount:   0,
 			LastError:    &agentError{Category: llm.ErrTransient, Message: "err"},
-			Metadata: &orchestration.Metadata{
+			Metadata: &session.Metadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},
-		CtxManager: &orchestration.ContextManager{
+		CtxManager: &session.ContextManager{
 			History:  &mockHistoryManager{},
-			Strategy: orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg)),
+			Strategy: session.NewContextStrategy(session.NewHeuristicTokenCounter(reg)),
 		},
 		Gateway: mockGw,
 		executor: &mockExecutor{
@@ -384,7 +384,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 		Clock:        &clock.RealClock{},
 	}
 	if phase == phaseRefining || phase == phaseGuard {
-		turn.CtxManager.Pipeline = orchestration.NewContextPipeline()
+		turn.CtxManager.Pipeline = session.NewContextPipeline()
 	}
 	return turn
 }

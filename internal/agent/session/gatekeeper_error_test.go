@@ -1,0 +1,258 @@
+package session
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"testing"
+	"time"
+
+	"crypto/rand"
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/stretchr/testify/require"
+	"log/slog"
+)
+
+type mockFailingSummarizer struct{}
+
+func (m *mockFailingSummarizer) Summarize(ctx context.Context, history []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	return "", nil, errors.New("summarizer failed")
+}
+
+func (m *mockFailingSummarizer) SummarizeRange(ctx context.Context, turns int, focus string) (string, *llm.Metrics, error) {
+	return "", nil, errors.New("summarizer failed")
+}
+
+func TestGatekeeper_ErrorHandling(t *testing.T) {
+
+	ctx := context.Background()
+	req := &ports.ContextRequest{
+		History:  make([]*llm.Content, 20),
+		Metadata: ports.ContextMetadata{},
+	}
+	for i := 0; i < 20; i++ {
+		role := "user"
+		if i%2 != 0 {
+			role = "model"
+		}
+		req.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
+	}
+
+	gatekeeper := &tokenGatekeeper{
+		MaxTokens:  100,
+		Estimator:  &mockEstimator{tokens: 95},
+		Summarizer: &mockFailingSummarizer{},
+	}
+
+	err := gatekeeper.Transform(ctx, req)
+	if err == nil || err.Error() != "summarizer failed" {
+		t.Errorf("Expected 'summarizer failed' error from handleSafetyPressure, got: %v", err)
+	}
+
+	req2 := &ports.ContextRequest{
+		History:  make([]*llm.Content, 20),
+		Metadata: ports.ContextMetadata{},
+	}
+	for i := 0; i < 20; i++ {
+		role := "user"
+		if i%2 != 0 {
+			role = "model"
+		}
+		req2.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
+	}
+
+	tc := &mockTokenCounter{tokens: 95}
+	cs := NewContextStrategy(tc)
+	cs.setTieredThreshold(10)
+
+	gatekeeper2 := &tokenGatekeeper{
+		MaxTokens:  100,
+		Estimator:  cs,
+		Summarizer: &mockFailingSummarizer{},
+	}
+
+	err = gatekeeper2.Transform(ctx, req2)
+	if err == nil || err.Error() != "summarizer failed" {
+		t.Errorf("Expected 'summarizer failed' error from handleTieredThreshold, got: %v", err)
+	}
+}
+
+func TestContextManager_FirstMessageRoleError(t *testing.T) {
+	tc := &mockTokenCounter{tokens: 10}
+	cs := NewContextStrategy(tc)
+	hm := &mockHistoryManager{}
+	cm := NewContextManager(cs, hm, nil, nil)
+
+	err := cm.AddContent(context.Background(), &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "first"}}})
+	if err == nil || err.Error() != "first message must be 'user', got 'model'" {
+		t.Errorf("Expected role error, got: %v", err)
+	}
+}
+
+func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
+	hr := &historyRepairer{}
+	req := &ports.ContextRequest{History: nil}
+	err := hr.Transform(context.Background(), req)
+	if err != nil {
+		t.Errorf("Expected nil error for empty history, got: %v", err)
+	}
+}
+
+func TestInternalTools_Errors(t *testing.T) {
+	tc := &mockTokenCounter{tokens: 10}
+	cs := NewContextStrategy(tc)
+	hm := &mockHistoryManager{}
+	cm := NewContextManager(cs, hm, nil, nil)
+
+	it := NewInternalTools(cm)
+
+	_, err := it.summarizeHistory(context.Background(), map[string]interface{}{"turns": "invalid"}, nil)
+	if err == nil {
+		t.Error("Expected error from unmarshal in summarizeHistory")
+	}
+
+	_, err = it.summarizeHistory(context.Background(), map[string]interface{}{"turns": float64(1)}, nil)
+	if err == nil || err.Error() != "terminal error: summarizer not initialized" {
+		t.Errorf("Expected summarizer error, got: %v", err)
+	}
+
+	_, err = it.ManageHistory(context.Background(), map[string]interface{}{"index": "invalid"}, nil)
+	if err == nil {
+		t.Error("Expected error from unmarshal in ManageHistory")
+	}
+}
+
+type mockFailingChatter struct {
+	err error
+}
+
+func (m *mockFailingChatter) Chat(ctx context.Context, session *ports.Session, prompt string) error {
+	return nil
+}
+func (m *mockFailingChatter) Shutdown(ctx context.Context) error                    { return nil }
+func (m *mockFailingChatter) Subscribe(handler func(context.Context, events.Event)) {}
+func (m *mockFailingChatter) SetLimits(ctx context.Context, maxToolTurns, contextWindow, maxHistoryTurns int) error {
+	return m.err
+}
+func (m *mockFailingChatter) SetTieredThreshold(ctx context.Context, tieredThreshold int) error {
+	return nil
+}
+func (m *mockFailingChatter) SetCostTracker(tracker domain_pricing.CostTracker) {}
+func (m *mockFailingChatter) GetName() string                                   { return "mock" }
+
+type mockFailingCapturer struct{}
+
+func (m *mockFailingCapturer) IsTTY(any) bool { return false }
+func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, ...ports.CaptureOption) (string, error) {
+	return "", nil
+}
+func (m *mockFailingCapturer) Close(context.Context) error { return nil }
+
+type mockFailingUIRenderer struct{}
+
+func (m *mockFailingUIRenderer) SetUseColor(bool)                                 {}
+func (m *mockFailingUIRenderer) SetForceSpinner(bool)                             {}
+func (m *mockFailingUIRenderer) LogTurnStatus(context.Context, events.TurnStatus) {}
+func (m *mockFailingUIRenderer) StartSpinner(ctx context.Context) func()          { return func() {} }
+func (m *mockFailingUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	return func() {}
+}
+func (m *mockFailingUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
+	return func() {}
+}
+func (m *mockFailingUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
+}
+func (m *mockFailingUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
+}
+func (m *mockFailingUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+}
+func (m *mockFailingUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
+}
+func (m *mockFailingUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
+}
+
+func TestSessionManager_ConfigError(t *testing.T) {
+	agentFactory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
+		return &mockFailingChatter{err: errors.New("config failed")}, nil
+	}
+
+	o := NewSessionManager("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
+
+	cfg := &config.Config{
+		SelectedProvider: "test",
+	}
+	sc := newSessionConfig("", false, 0, 0, false, "test prompt", cfg)
+
+	ic := &mockFailingCapturer{}
+	sd := newSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), new(mockSessionProvider))
+
+	err := o.Run(context.Background(), sc, sd, ic)
+	if err == nil || err.Error() != "failed to apply configuration: config failed" {
+		t.Errorf("Expected config failed error, got: %v", err)
+	}
+}
+
+func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
+	// Create a mock event bus that always returns an error
+	mockBus := &inframock.TestEventBus{}
+	mockBus.SetPublishErr(context.Canceled)
+
+	// Create a strategy that will trigger warnings to force event publishing
+	counter := &mockTokenCounter{tokens: 200}
+	strategy := NewContextStrategy(counter)
+	strategy.setTieredThreshold(100) // Trigger tiered threshold
+
+	gatekeeper := &tokenGatekeeper{
+		MaxTokens: 1000,
+		Estimator: strategy,
+		Events:    mockBus,
+	}
+
+	// We need a large payload to trigger the token limit warning (if tiered threshold wasn't enough)
+	largeText := ""
+	for i := 0; i < 200; i++ {
+		largeText += "token "
+	}
+
+	req := &ports.ContextRequest{
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: largeText}}},
+		},
+		Metadata: ports.ContextMetadata{},
+	}
+
+	// 1. Test Transform (Should fail when emitting warning)
+	err := gatekeeper.Transform(context.Background(), req)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{})
+
+	gatekeeper := &tokenGatekeeper{
+		MaxTokens: 10,
+		Estimator: strategy,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Provide enough history to trigger a summarization check
+	history := []*llm.Content{
+		{Role: "system", Parts: []*llm.Part{{Text: "System prompt"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "Message 1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "Response 1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "Message 2"}}},
+	}
+
+	_, _, _, err := gatekeeper.findSummarizableRange(ctx, history)
+	require.ErrorIs(t, err, context.Canceled)
+}

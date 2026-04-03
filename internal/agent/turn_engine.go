@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -107,22 +107,22 @@ type turnHook interface {
 
 // turnState carries data between the phases of a turn and tracks the current phase.
 type turnState struct {
-	Phase                turnPhase               `json:"phase"`
-	HasToolCalls         bool                    `json:"has_tool_calls"`
-	Metrics              *llm.Metrics            `json:"metrics,omitempty"`
-	Tokens               int                     `json:"tokens"`
-	CurrentTurns         int                     `json:"current_turns"`
-	Metadata             *orchestration.Metadata `json:"metadata,omitempty"`
-	Response             *llm.Content            `json:"response,omitempty"`
-	ToolResponse         *llm.Content            `json:"tool_response,omitempty"`
-	LastError            error                   `json:"-"`
-	RetryCount           int                     `json:"retry_count"`
-	HasSeenRateLimit     bool                    `json:"-"`
-	ToolCallCount        map[string]int          `json:"-"`
-	RecentResponseHashes []string                `json:"-"`
-	PreparedHistory      []*llm.Content          `json:"-"`
-	TaskCost             float64                 `json:"task_cost"`
-	ToolReasons          []string                `json:"-"`
+	Phase                turnPhase         `json:"phase"`
+	HasToolCalls         bool              `json:"has_tool_calls"`
+	Metrics              *llm.Metrics      `json:"metrics,omitempty"`
+	Tokens               int               `json:"tokens"`
+	CurrentTurns         int               `json:"current_turns"`
+	Metadata             *session.Metadata `json:"metadata,omitempty"`
+	Response             *llm.Content      `json:"response,omitempty"`
+	ToolResponse         *llm.Content      `json:"tool_response,omitempty"`
+	LastError            error             `json:"-"`
+	RetryCount           int               `json:"retry_count"`
+	HasSeenRateLimit     bool              `json:"-"`
+	ToolCallCount        map[string]int    `json:"-"`
+	RecentResponseHashes []string          `json:"-"`
+	PreparedHistory      []*llm.Content    `json:"-"`
+	TaskCost             float64           `json:"task_cost"`
+	ToolReasons          []string          `json:"-"`
 }
 
 // toolExecutor defines the interface for tool execution.
@@ -151,7 +151,7 @@ type turn struct {
 	Index        int
 	StartTime    time.Time
 	State        *turnState
-	CtxManager   *orchestration.ContextManager
+	CtxManager   *session.ContextManager
 	Gateway      llm.LLMGateway
 	executor     toolExecutor
 	Registry     tools.Registry
@@ -172,7 +172,7 @@ type turn struct {
 // turnEngine manages the "Think -> Act -> Observe" cycle using a state machine.
 type turnEngine struct {
 	mu               sync.RWMutex
-	ctxManager       *orchestration.ContextManager
+	ctxManager       *session.ContextManager
 	gateway          llm.LLMGateway
 	executor         toolExecutor
 	registry         tools.Registry
@@ -241,7 +241,7 @@ func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.CostT
 }
 
 // newTurnEngine creates a new turnEngine with a default pipeline.
-func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *orchestration.ContextManager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
+func newTurnEngine(gw llm.LLMGateway, ex toolExecutor, cm *session.ContextManager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
 	e := &turnEngine{
 		gateway:      gw,
 		executor:     ex,

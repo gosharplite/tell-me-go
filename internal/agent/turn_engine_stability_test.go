@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -156,7 +156,7 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 		State:    &turnState{},
 		Clock:    &mockClock{},
 		Registry: &mockToolRegistry{},
-		CtxManager: &orchestration.ContextManager{
+		CtxManager: &session.ContextManager{
 			History: &mockHistoryManager{},
 		},
 	}

@@ -11,7 +11,7 @@ import (
 	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -116,7 +116,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	uiRenderer := ui.NewRenderer(s.SM, s.Stdout, s.Stderr, clock.RealClock{}, s.Container.GetSystemMetricsProvider())
 	historyRenderer := &ui.StdHistoryRenderer{}
 
-	err = orchestration.Run(ctx, orchestration.RunParams{
+	err = session.Run(ctx, session.RunParams{
 		HomeDir:         s.HomeDir,
 		Version:         s.Version,
 		Loader:          s.Loader,
