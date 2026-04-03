@@ -658,7 +658,6 @@ func (p *executionStep) handleToolExecutionError(err error) error {
 	return newAgentError(category, "tool execution failed", err)
 }
 
-
 // persistenceStep saves the response and tool results to history.
 type persistenceStep struct{}
 

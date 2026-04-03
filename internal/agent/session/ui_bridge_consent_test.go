@@ -125,7 +125,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		defer wg.Done()
 		// 1. Simulation of consent cycle
 		_ = bridge.handleEvent(ctx, events.ConsentStartedEvent{})
-		
+
 		// 2. Block until the asynchronous worker signals it has processed the state
 		syncBridge(t, bridge, mRenderer)
 

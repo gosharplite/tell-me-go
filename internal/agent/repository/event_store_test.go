@@ -48,12 +48,12 @@ func TestGetSessionEvents(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	tests := []struct {
-		name        string
-		ids         []string
-		wantLen     int
-		wantIDs     []string
-		wantErr     bool
-		wantNil     bool
+		name    string
+		ids     []string
+		wantLen int
+		wantIDs []string
+		wantErr bool
+		wantNil bool
 	}{
 		{
 			name:    "Fetch multiple IDs",

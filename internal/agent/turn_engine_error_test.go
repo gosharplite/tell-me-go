@@ -440,7 +440,6 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 	}
 }
 
-
 func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 	t.Parallel()
 	step := &executionStep{}

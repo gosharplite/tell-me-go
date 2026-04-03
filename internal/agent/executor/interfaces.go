@@ -24,4 +24,3 @@ type ToolResolutionService interface {
 type ToolAuthService interface {
 	Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error
 }
-

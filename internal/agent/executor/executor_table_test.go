@@ -851,7 +851,6 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 	})
 }
 
-
 func TestDispatcher_LongRunningTimeout(t *testing.T) {
 	t.Parallel()
 

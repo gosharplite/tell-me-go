@@ -267,7 +267,7 @@ func (d *tracingDecorator) Execute(parentCtx context.Context, tool *tools.ToolDe
 		logAttrs = append(logAttrs, "error_reason", errStr)
 	}
 
-	if status == "error" || status == "circuit_open" {
+	if status == "error" {
 		d.logger.Debug("Tool execution failed", logAttrs...)
 	} else {
 		d.logger.Debug("Tool execution completed", logAttrs...)

@@ -45,7 +45,6 @@ func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, 
 	authService := newSecurityAuthorizer(sm, registry)
 
 	exec = newAuthDecorator(exec, authService)
-	// Circuit breaker is moved to dispatcher loop
 	exec = newTracingDecorator(exec, registry, logger)
 
 	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, cfg.ToolTimeout, cfg.LongRunningTimeout, cfg.ZombieTimeout)

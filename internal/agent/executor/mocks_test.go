@@ -57,7 +57,6 @@ func (m *mockToolAuthService) Authorize(ctx context.Context, tool *tools.ToolDec
 	return nil
 }
 
-
 type mockEventBus struct {
 	events.EventBus
 	mu        sync.Mutex

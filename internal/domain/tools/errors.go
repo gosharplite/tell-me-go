@@ -6,7 +6,7 @@ package tools
 import "errors"
 
 var (
-	ErrNotImplemented  = errors.New("not implemented")
-	ErrUserDeclined    = errors.New("user explicitly declined the action")
-	ErrSecurityPolicy  = errors.New("action blocked by security policy")
+	ErrNotImplemented = errors.New("not implemented")
+	ErrUserDeclined   = errors.New("user explicitly declined the action")
+	ErrSecurityPolicy = errors.New("action blocked by security policy")
 )

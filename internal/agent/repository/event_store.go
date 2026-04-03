@@ -32,7 +32,7 @@ func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) (e
 	}
 
 	query, args := buildSessionEventsQuery(eventIDs)
-	
+
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

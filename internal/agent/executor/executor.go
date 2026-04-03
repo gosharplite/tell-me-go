@@ -114,7 +114,6 @@ func newDefaultToolPipeline(
 
 	var exec ToolExecutor = newBaseRuntime(registry)
 	exec = newAuthDecorator(exec, authService)
-	// Circuit breaker is moved to dispatcher loop
 	exec = newTracingDecorator(exec, registry, logger)
 	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, toolTimeout, longRunningTimeout, zombieTimeout)
 

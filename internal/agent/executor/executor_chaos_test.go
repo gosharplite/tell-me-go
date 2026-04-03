@@ -176,7 +176,7 @@ func assertPanicResult(t *testing.T, results []tools.ToolResult, wantPanicText s
 			return
 		}
 	}
-	
+
 	t.Errorf("expected to find panic text %q in results, got none", wantPanicText)
 	for i, r := range results {
 		t.Logf("Result %d: Text=%q, Err=%v", i, r.Text, r.Error)
