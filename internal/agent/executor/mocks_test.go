@@ -57,24 +57,6 @@ func (m *mockToolAuthService) Authorize(ctx context.Context, tool *tools.ToolDec
 	return nil
 }
 
-type mockCircuitBreakerManager struct {
-	CheckFunc  func(toolName string) error
-	RecordFunc func(toolName string, success bool)
-}
-
-func (m *mockCircuitBreakerManager) Check(toolName string) error {
-	if m.CheckFunc != nil {
-		return m.CheckFunc(toolName)
-	}
-	return nil
-}
-
-func (m *mockCircuitBreakerManager) Record(toolName string, success bool) {
-	if m.RecordFunc != nil {
-		m.RecordFunc(toolName, success)
-	}
-}
-
 type mockEventBus struct {
 	events.EventBus
 	mu        sync.Mutex

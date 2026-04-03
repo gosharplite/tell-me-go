@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAuthDecorator(t *testing.T) {
@@ -69,72 +68,11 @@ func TestAuthDecorator(t *testing.T) {
 	}
 }
 
-func TestCircuitBreakerDecorator(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name            string
-		checkErr        error
-		nextResult      tools.ToolResult
-		nextCalled      bool
-		expectedText    string
-		expectedErr     error
-		recordedSuccess *bool
-	}{
-		{
-			name:            "Circuit Closed - Success",
-			checkErr:        nil,
-			nextResult:      tools.ToolResult{Text: "ok"},
-			nextCalled:      true,
-			expectedText:    "ok",
-			recordedSuccess: func() *bool { b := true; return &b }(),
-		},
-		{
-			name:         "Circuit Open - Failure",
-			checkErr:     errors.New("circuit open"),
-			nextCalled:   false,
-			expectedText: "circuit open",
-			expectedErr:  errors.New("circuit open"),
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			next := &mockExecutor{Result: tt.nextResult}
-			var lastRecordedSuccess *bool
-			cb := &mockCircuitBreakerManager{
-				CheckFunc: func(toolName string) error { return tt.checkErr },
-				RecordFunc: func(toolName string, success bool) {
-					lastRecordedSuccess = &success
-				},
-			}
-			decorator := newCircuitBreakerDecorator(next, cb)
-
-			res, err := decorator.Execute(context.Background(), &tools.ToolDeclaration{Name: "test"}, &llm.FunctionCall{Name: "test"}, nil)
-
-			assert.NoError(t, err)
-			assert.Equal(t, tt.nextCalled, next.Called)
-			assert.Equal(t, tt.expectedText, res.Text)
-			if tt.expectedErr != nil {
-				assert.Equal(t, tt.expectedErr, res.Error)
-			} else {
-				assert.NoError(t, res.Error)
-			}
-			if tt.recordedSuccess != nil {
-				require.NotNil(t, lastRecordedSuccess)
-				assert.Equal(t, *tt.recordedSuccess, *lastRecordedSuccess)
-			}
-		})
-	}
-}
-
 func TestSafetyDecorator(t *testing.T) {
 	t.Parallel()
 	logger := &ports.NoOpLogger{}
 	bus := &mockEventBus{}
-	observer := &MockLogger{}
+	observer := &mockLogger{}
 	zombie, _ := tools.NewZombieTool(observer)
 	registry := &panicRegistry{}
 

@@ -17,7 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// Event represents a generic signal from the Orchestrator.
+// Event represents a generic signal from the SessionManager.
 type Event interface {
 	Type() string
 }

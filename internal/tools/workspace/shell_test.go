@@ -186,25 +186,25 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Empty command", func(t *testing.T) {
-		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": ""}, nil)
-		if err == nil {
+		res, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": ""}, nil)
+		if res.Error == nil && err == nil {
 			t.Error("expected error for empty command")
 		}
 	})
 
 	t.Run("Invalid shlex", func(t *testing.T) {
-		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": "ls 'unclosed"}, nil)
-		if err == nil {
+		res, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": "ls 'unclosed"}, nil)
+		if res.Error == nil && err == nil {
 			t.Error("expected error for invalid shlex")
 		}
 	})
 
 	t.Run("Invalid output path", func(t *testing.T) {
-		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+		res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
 			"command":     "ls",
 			"output_file": "/root/secret.txt",
 		}, nil)
-		if err == nil {
+		if res.Error == nil && err == nil {
 			t.Error("expected error for invalid output path")
 		}
 	})
@@ -298,8 +298,8 @@ func TestShellTool_PipeCommands(t *testing.T) {
 			"commands": []interface{}{"echo hello", "invalid-cmd-12345"},
 			"reason":   "test pipe failure",
 		}
-		_, err := tool.PipeCommands(ctx, args, nil)
-		if err == nil {
+		res, err := tool.PipeCommands(ctx, args, nil)
+		if res.Error == nil && err == nil {
 			t.Error("expected error for invalid command in pipe")
 		}
 	})
@@ -309,22 +309,22 @@ func TestShellTool_PipeCommands(t *testing.T) {
 			"commands": []interface{}{"echo hello", "grep hi > out.txt"},
 			"reason":   "test pipe security",
 		}
-		_, err := tool.PipeCommands(ctx, args, nil)
-		if err == nil {
+		res, err := tool.PipeCommands(ctx, args, nil)
+		if res.Error == nil && err == nil {
 			t.Error("expected error for shell operator in pipe")
 		}
 	})
 
 	t.Run("Empty commands list", func(t *testing.T) {
-		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": []interface{}{}}, nil)
-		if err == nil {
+		res, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": []interface{}{}}, nil)
+		if res.Error == nil && err == nil {
 			t.Error("expected error for empty commands list")
 		}
 	})
 
 	t.Run("Invalid commands type", func(t *testing.T) {
-		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": "not a list"}, nil)
-		if err == nil {
+		res, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": "not a list"}, nil)
+		if res.Error == nil && err == nil {
 			t.Error("expected error for invalid commands type")
 		}
 	})
@@ -484,24 +484,24 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 				tool := newshellTool(mockSec, validator)
 
 				// 3. Action: Attempt to execute a command
-				_, err := tool.ExecuteCommand(context.Background(), map[string]interface{}{
+				res, err := tool.ExecuteCommand(context.Background(), map[string]interface{}{
 					"command": "rm -rf /",
 					"reason":  "testing denial",
 				}, nil)
 
 				// 4. Assertion: Verify the exact sentinel error is returned
-				if !errors.Is(err, tt.expectedErr) {
+				if !errors.Is(res.Error, tt.expectedErr) && !errors.Is(err, tt.expectedErr) {
 					t.Errorf("ExecuteCommand: expected error %v, got %v", tt.expectedErr, err)
 				}
 
 				// 5. Action: Attempt to execute piped commands
-				_, err = tool.PipeCommands(context.Background(), map[string]interface{}{
+				res, err = tool.PipeCommands(context.Background(), map[string]interface{}{
 					"commands": []interface{}{"ls", "grep foo"},
 					"reason":   "testing denial",
 				}, nil)
 
 				// 6. Assertion: Verify the exact sentinel error is returned
-				if !errors.Is(err, tt.expectedErr) {
+				if !errors.Is(res.Error, tt.expectedErr) && !errors.Is(err, tt.expectedErr) {
 					t.Errorf("PipeCommands: expected error %v, got %v", tt.expectedErr, err)
 				}
 			})

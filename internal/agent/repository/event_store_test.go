@@ -9,15 +9,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestGetSessionEvents(t *testing.T) {
-	// Set up an in-memory SQLite database
+func setupTestEventStore(t *testing.T) (*eventStore, *sql.DB) {
+	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open db: %v", err)
 	}
-	defer func() { _ = db.Close() }()
 
-	// Create events table
 	_, err = db.Exec(`CREATE TABLE events (
 		id TEXT PRIMARY KEY,
 		payload TEXT,
@@ -27,15 +25,14 @@ func TestGetSessionEvents(t *testing.T) {
 		t.Fatalf("Failed to create table: %v", err)
 	}
 
-	// Insert test data
 	now := time.Now().UTC()
-	events := []Event{
+	eventsData := []event{
 		{ID: "event-1", Payload: `{"status": "started"}`, CreatedAt: now},
 		{ID: "event-2", Payload: `{"status": "running"}`, CreatedAt: now.Add(time.Second)},
 		{ID: "event-3", Payload: `{"status": "completed"}`, CreatedAt: now.Add(2 * time.Second)},
 	}
 
-	for _, e := range events {
+	for _, e := range eventsData {
 		_, err := db.Exec("INSERT INTO events (id, payload, created_at) VALUES (?, ?, ?)",
 			e.ID, e.Payload, e.CreatedAt.Format(time.RFC3339Nano))
 		if err != nil {
@@ -43,52 +40,77 @@ func TestGetSessionEvents(t *testing.T) {
 		}
 	}
 
-	store := NewEventStore(db)
+	return newEventStore(db), db
+}
 
-	// Test 1: Fetch multiple events (Batch Query)
-	t.Run("Fetch multiple IDs", func(t *testing.T) {
-		ctx := context.Background()
-		ids := []string{"event-1", "event-3"}
-		fetched, err := store.GetSessionEvents(ctx, ids)
-		if err != nil {
-			t.Fatalf("GetSessionEvents failed: %v", err)
-		}
+func TestGetSessionEvents(t *testing.T) {
+	store, db := setupTestEventStore(t)
+	defer func() { _ = db.Close() }()
 
-		if len(fetched) != 2 {
-			t.Fatalf("Expected 2 events, got %d", len(fetched))
-		}
+	tests := []struct {
+		name    string
+		ids     []string
+		wantLen int
+		wantIDs []string
+		wantErr bool
+		wantNil bool
+	}{
+		{
+			name:    "Fetch multiple IDs",
+			ids:     []string{"event-1", "event-3"},
+			wantLen: 2,
+			wantIDs: []string{"event-1", "event-3"},
+			wantErr: false,
+		},
+		{
+			name:    "Fetch empty slice",
+			ids:     []string{},
+			wantLen: 0,
+			wantNil: true,
+			wantErr: false,
+		},
+		{
+			name:    "Fetch non-existent ID",
+			ids:     []string{"unknown"},
+			wantLen: 0,
+			wantErr: false,
+		},
+	}
 
-		if fetched[0].ID != "event-1" && fetched[1].ID != "event-1" {
-			t.Errorf("Expected event-1 to be fetched")
-		}
-		if fetched[0].ID != "event-3" && fetched[1].ID != "event-3" {
-			t.Errorf("Expected event-3 to be fetched")
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			fetched, err := store.getSessionEvents(ctx, tt.ids)
 
-	// Test 2: Fetch empty slice
-	t.Run("Fetch empty slice", func(t *testing.T) {
-		ctx := context.Background()
-		fetched, err := store.GetSessionEvents(ctx, []string{})
-		if err != nil {
-			t.Fatalf("GetSessionEvents failed: %v", err)
-		}
+			assertEventResults(t, fetched, err, tt.wantErr, tt.wantNil, tt.wantLen, tt.wantIDs)
+		})
+	}
+}
 
-		if fetched != nil {
-			t.Errorf("Expected nil slice for empty input, got %v", fetched)
-		}
-	})
+func assertEventResults(t *testing.T, fetched []event, err error, wantErr, wantNil bool, wantLen int, wantIDs []string) {
+	t.Helper()
+	if (err != nil) != wantErr {
+		t.Fatalf("GetSessionEvents error = %v, wantErr %v", err, wantErr)
+	}
 
-	// Test 3: Fetch non-existent ID
-	t.Run("Fetch non-existent ID", func(t *testing.T) {
-		ctx := context.Background()
-		fetched, err := store.GetSessionEvents(ctx, []string{"unknown"})
-		if err != nil {
-			t.Fatalf("GetSessionEvents failed: %v", err)
-		}
+	if wantNil && fetched != nil {
+		t.Errorf("Expected nil slice, got %v", fetched)
+	}
 
-		if len(fetched) != 0 {
-			t.Errorf("Expected 0 events, got %d", len(fetched))
+	if len(fetched) != wantLen {
+		t.Fatalf("Expected %d events, got %d", wantLen, len(fetched))
+	}
+
+	for _, wantID := range wantIDs {
+		found := false
+		for _, f := range fetched {
+			if f.ID == wantID {
+				found = true
+				break
+			}
 		}
-	})
+		if !found {
+			t.Errorf("Expected to find event ID %s", wantID)
+		}
+	}
 }

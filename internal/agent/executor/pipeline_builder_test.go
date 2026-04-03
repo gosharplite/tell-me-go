@@ -40,7 +40,7 @@ func TestRequestBatchConsent(t *testing.T) {
 		},
 	}
 
-	authorizer := &MockPipelineAuthorizer{}
+	authorizer := &mockPipelineAuthorizer{}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRequestBatchConsent(t *testing.T) {
 	}
 }
 
-func TestNewPipelineOrchestrator(t *testing.T) {
+func TestNewPipelineDispatcher(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -72,7 +72,7 @@ func TestNewPipelineOrchestrator(t *testing.T) {
 			sm:       &mockSecurityManager{},
 			bus:      &mockEventBus{},
 			logger:   &ports.NoOpLogger{},
-			observer: &MockLogger{},
+			observer: &mockLogger{},
 			wantErr:  false,
 		},
 		{
@@ -81,7 +81,7 @@ func TestNewPipelineOrchestrator(t *testing.T) {
 			sm:       &mockSecurityManager{},
 			bus:      &mockEventBus{},
 			logger:   &ports.NoOpLogger{},
-			observer: &MockLogger{},
+			observer: &mockLogger{},
 			wantErr:  true,
 		},
 		{
@@ -90,7 +90,7 @@ func TestNewPipelineOrchestrator(t *testing.T) {
 			sm:       &mockSecurityManager{},
 			bus:      &mockEventBus{},
 			logger:   nil,
-			observer: &MockLogger{},
+			observer: &mockLogger{},
 			wantErr:  true,
 		},
 		{
@@ -107,7 +107,7 @@ func TestNewPipelineOrchestrator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			orch, err := NewPipelineOrchestrator(tt.registry, tt.sm, tt.bus, tt.logger, tt.observer, tt.opts...)
+			orch, err := NewPipelineDispatcher(tt.registry, tt.sm, tt.bus, tt.logger, tt.observer, tt.opts...)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, orch)
@@ -125,14 +125,14 @@ func TestNewPipelineOrchestrator(t *testing.T) {
 	}
 }
 
-type MockPipelineAuthorizer struct{}
+type mockPipelineAuthorizer struct{}
 
-func (m *MockPipelineAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
+func (m *mockPipelineAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
 	return ctx, make(map[int]bool)
 }
-func (m *MockPipelineAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
+func (m *mockPipelineAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error {
 	return nil
 }
-func (m *MockPipelineAuthorizer) IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
+func (m *mockPipelineAuthorizer) IdentifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
 	return []int{}, make(map[int]bool)
 }

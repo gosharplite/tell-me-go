@@ -12,7 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func TestOrchestrator_ConcurrentSerialAndParallelTools(t *testing.T) {
+func TestDispatcher_ConcurrentSerialAndParallelTools(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")

@@ -12,19 +12,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func TestOrchestrator_ChaosScenarios(t *testing.T) {
+func TestDispatcher_ChaosScenarios(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name          string
-		mockSetup     func(syncChan chan struct{}) *MockToolPipeline
+		mockSetup     func(syncChan chan struct{}) *mockToolPipeline
 		calls         []*llm.FunctionCall
 		wantPanicText string // or specific error assertion
 		wantTimeout   bool
 	}{
 		{
 			name: "parallel tool panics mid-flight",
-			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
-				return &MockToolPipeline{
+			mockSetup: func(syncChan chan struct{}) *mockToolPipeline {
+				return &mockToolPipeline{
 					IsSerialFunc: func(n string) bool { return false },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 						if call.Name == "dangerous_tool" {
@@ -50,8 +50,8 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 		},
 		{
 			name: "serial tool panics mid-flight",
-			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
-				return &MockToolPipeline{
+			mockSetup: func(syncChan chan struct{}) *mockToolPipeline {
+				return &mockToolPipeline{
 					IsSerialFunc: func(n string) bool { return true },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 						panic("simulated serial crash")
@@ -68,8 +68,8 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 		},
 		{
 			name: "context deadline exceeded during fan-in",
-			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
-				return &MockToolPipeline{
+			mockSetup: func(syncChan chan struct{}) *mockToolPipeline {
+				return &mockToolPipeline{
 					IsSerialFunc: func(n string) bool { return false },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 						if call.Name == "hang_tool" {
@@ -107,18 +107,18 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 			syncChan := make(chan struct{})
 			mock := tt.mockSetup(syncChan)
 
-			// Setup minimal orchestrator state
-			cfg := OrchestratorConfig{
+			// Setup minimal dispatcher state
+			cfg := dispatcherConfig{
 				MaxConcurrentTools: 5,
 				ToolTimeout:        1 * time.Hour,
 			}
 
-			o := &Orchestrator{
+			o := &Dispatcher{
 				pipeline: mock,
 				events:   events.NewSimpleEventBus(context.Background()),
 				logger:   &ports.NoOpLogger{},
 			}
-			o.state.Store(&orchestratorState{
+			o.state.Store(&dispatcherState{
 				config: cfg,
 			})
 
@@ -126,54 +126,68 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 			results := make([]tools.ToolResult, len(tt.calls))
 
 			if tt.wantTimeout {
-				// Run in background so we can cancel from main thread
-				errChan := make(chan error, 1)
-				go func() {
-					errChan <- o.runExecutionPlan(ctx, tt.calls, declinedMap, results)
-				}()
-
-				// Wait for the tool to start processing
-				<-syncChan
-				// Explicitly trigger the timeout/cancellation condition
-				cancel()
-
-				// Wait for orchestrator to finish
-				err := <-errChan
-				if err == nil {
-					t.Errorf("expected context cancellation error, got nil")
-				}
+				assertTimeoutScenario(t, o, ctx, tt.calls, declinedMap, results, syncChan, cancel)
 				return // Test successful
 			}
 
 			// For non-timeout tests, run synchronously
-			err := o.runExecutionPlan(ctx, tt.calls, declinedMap, results)
-
-			// For panic tests, verify we didn't deadlock and the result captures the panic string
-			if err != nil {
-				t.Logf("runExecutionPlan returned error (could be acceptable depending on panic): %v", err)
-			}
-
-			foundPanic := false
-			for i, res := range results {
-				if tt.wantPanicText != "" {
-					if res.Error != nil && strings.Contains(res.Error.Error(), tt.wantPanicText) {
-						foundPanic = true
-					} else if strings.Contains(res.Text, tt.wantPanicText) {
-						foundPanic = true
-					}
-				} else {
-					if res.Error != nil {
-						t.Errorf("unexpected error for call %d: %v", i, res.Error)
-					}
-				}
-			}
-
-			if tt.wantPanicText != "" && !foundPanic {
-				t.Errorf("expected to find panic text %q in results, got none", tt.wantPanicText)
-				for i, r := range results {
-					t.Logf("Result %d: Text=%q, Err=%v", i, r.Text, r.Error)
-				}
-			}
+			assertPanicScenario(t, o, ctx, tt.calls, declinedMap, results, tt.wantPanicText)
 		})
+	}
+}
+
+func assertTimeoutScenario(t *testing.T, o *Dispatcher, ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult, syncChan chan struct{}, cancel context.CancelFunc) {
+	t.Helper()
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- o.runExecutionPlan(ctx, calls, declinedMap, results)
+	}()
+
+	<-syncChan
+	cancel()
+
+	err := <-errChan
+	if err == nil {
+		t.Errorf("expected context cancellation error, got nil")
+	}
+}
+
+func assertPanicScenario(t *testing.T, o *Dispatcher, ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult, wantPanicText string) {
+	t.Helper()
+	err := o.runExecutionPlan(ctx, calls, declinedMap, results)
+	if err != nil {
+		t.Logf("runExecutionPlan returned error: %v", err)
+	}
+
+	if wantPanicText != "" {
+		assertPanicResult(t, results, wantPanicText)
+	} else {
+		assertNoErrorResult(t, results)
+	}
+}
+
+func assertPanicResult(t *testing.T, results []tools.ToolResult, wantPanicText string) {
+	t.Helper()
+	for _, res := range results {
+		if res.Error != nil && strings.Contains(res.Error.Error(), wantPanicText) {
+			return
+		}
+		if strings.Contains(res.Text, wantPanicText) {
+			return
+		}
+	}
+
+	t.Errorf("expected to find panic text %q in results, got none", wantPanicText)
+	for i, r := range results {
+		t.Logf("Result %d: Text=%q, Err=%v", i, r.Text, r.Error)
+	}
+}
+
+func assertNoErrorResult(t *testing.T, results []tools.ToolResult) {
+	t.Helper()
+	for i, res := range results {
+		if res.Error != nil {
+			t.Errorf("unexpected error for call %d: %v", i, res.Error)
+		}
 	}
 }

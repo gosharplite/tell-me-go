@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -67,9 +67,9 @@ func TestWithStatusReporter(t *testing.T) {
 			mw := e.WithStatusReporter()
 			next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
 
-			cs := orchestration.NewContextStrategy(nil)
+			cs := session.NewContextStrategy(nil)
 			h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
-			cm := &orchestration.ContextManager{Strategy: cs, History: h}
+			cm := &session.ContextManager{Strategy: cs, History: h}
 
 			turn := &turn{
 				State:      &turnState{Phase: tt.phase, Metrics: &llm.Metrics{}},

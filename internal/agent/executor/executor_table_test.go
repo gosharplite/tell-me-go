@@ -83,12 +83,12 @@ func setupMockSecurityManager(allowedTools []string) *mockSecurityManager {
 	return &mockSecurityManager{allowAll: true}
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...executorOption) (*Orchestrator, *inframock.TestEventBus, map[string]*toolBehavior) {
+func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...executorOption) (*Dispatcher, *inframock.TestEventBus, map[string]*toolBehavior) {
 	reg, behaviors := setupTestRegistry(t, toolsMap)
 	sm := setupMockSecurityManager(allowedTools)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	exec, err := NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
 
 	return exec, bus, behaviors
@@ -156,7 +156,7 @@ func verifyToolEventError(t *testing.T, bus *inframock.TestEventBus, expectedErr
 	}
 }
 
-func TestOrchestrator_Success(t *testing.T) {
+func TestDispatcher_Success(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Parallel Execution", func(t *testing.T) {
@@ -196,7 +196,7 @@ func TestOrchestrator_Success(t *testing.T) {
 	})
 }
 
-func TestOrchestrator_Errors(t *testing.T) {
+func TestDispatcher_Errors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Tool Not Found", func(t *testing.T) {
@@ -204,13 +204,16 @@ func TestOrchestrator_Errors(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"existing": {result: tools.ToolResult{Text: "ok"}},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "missing"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, bus, "Tool \"missing\" is not defined", llm.ErrTerminal)
+		if err != nil {
+			t.Fatalf("expected nil error, got: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Tool \"missing\" is not defined")
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -224,7 +227,10 @@ func TestOrchestrator_Errors(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Did you mean \"list_files\"?", llm.ErrTerminal)
+		if err != nil {
+			t.Fatalf("expected nil error, got: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Did you mean \"list_files\"?")
 	})
 
 	t.Run("Security Violation", func(t *testing.T) {
@@ -246,17 +252,20 @@ func TestOrchestrator_Errors(t *testing.T) {
 		toolsMap := map[string]toolBehavior{
 			"fail_tool": {err: errors.New("tool failed")},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "fail_tool"}},
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, bus, "tool execution failed: fail_tool: tool failed", llm.ErrTerminal)
+		if err != nil {
+			t.Fatalf("expected nil error, got: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Error: tool execution failed: fail_tool: tool failed")
 	})
 }
 
-func TestOrchestrator_SafetyLimits(t *testing.T) {
+func TestDispatcher_SafetyLimits(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Tool Timeout", func(t *testing.T) {
@@ -315,7 +324,7 @@ func TestOrchestrator_SafetyLimits(t *testing.T) {
 	})
 }
 
-func TestOrchestrator_PanicRecovery(t *testing.T) {
+func TestDispatcher_PanicRecovery(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Parallel Panic", func(t *testing.T) {
@@ -362,7 +371,7 @@ func TestOrchestrator_PanicRecovery(t *testing.T) {
 	})
 }
 
-func TestOrchestrator_Concurrency(t *testing.T) {
+func TestDispatcher_Concurrency(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Concurrency Limit", func(t *testing.T) {
@@ -406,7 +415,7 @@ func TestOrchestrator_Concurrency(t *testing.T) {
 	})
 }
 
-func TestOrchestrator_ExecutionControl(t *testing.T) {
+func TestDispatcher_ExecutionControl(t *testing.T) {
 	t.Parallel()
 
 	t.Run("No Function Calls", func(t *testing.T) {
@@ -444,7 +453,7 @@ func TestOrchestrator_ExecutionControl(t *testing.T) {
 	})
 }
 
-func TestOrchestrator_ConcurrencyLimit_Strict(t *testing.T) {
+func TestDispatcher_ConcurrencyLimit_Strict(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
 	var activeCount, maxActive int32
@@ -457,7 +466,7 @@ func TestOrchestrator_ConcurrencyLimit_Strict(t *testing.T) {
 		require.NoError(t, reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc))
 	}
 
-	exec, err := NewPipelineOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.SetConcurrency(2)
 
@@ -501,7 +510,7 @@ func createTestToolContent(count int) *llm.Content {
 	return content
 }
 
-func executeConcurrentWorkers(t *testing.T, exec *Orchestrator, content *llm.Content, startedCh <-chan struct{}, waitCount int) *errgroup.Group {
+func executeConcurrentWorkers(t *testing.T, exec *Dispatcher, content *llm.Content, startedCh <-chan struct{}, waitCount int) *errgroup.Group {
 	t.Helper()
 	g, _ := errgroup.WithContext(context.Background())
 	g.Go(func() error {
@@ -537,7 +546,7 @@ func assertConcurrencyLimit(t *testing.T, activeCount, maxActive *int32, expecte
 	}
 }
 
-func TestOrchestrator_SuggestTool(t *testing.T) {
+func TestDispatcher_SuggestTool(t *testing.T) {
 	t.Parallel()
 	validTools := []string{"list_files", "read_file", "write_file", "git_status", "ls", "patch"}
 
@@ -598,10 +607,10 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
+func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	e, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{})
 	require.NoError(t, err)
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
@@ -670,7 +679,7 @@ func TestOrchestrator_AssembleResponse_Binary(t *testing.T) {
 	})
 }
 
-func TestOrchestrator_EventPublishing(t *testing.T) {
+func TestDispatcher_EventPublishing(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
 	err := reg.Register(&tools.ToolDeclaration{Name: "test_tool"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -679,7 +688,7 @@ func TestOrchestrator_EventPublishing(t *testing.T) {
 	require.NoError(t, err)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	content := &llm.Content{
@@ -702,10 +711,10 @@ func TestOrchestrator_EventPublishing(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_Strategies(t *testing.T) {
+func TestDispatcher_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
@@ -716,14 +725,14 @@ func TestOrchestrator_Strategies(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
+func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Serial executeTool Panic", func(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -742,7 +751,7 @@ func TestOrchestrator_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -782,7 +791,7 @@ func assertInlineData(t *testing.T, part *llm.Part, expectedMime string, expecte
 	}
 }
 
-func TestOrchestrator_SecurityAndConsentRejections(t *testing.T) {
+func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 	t.Parallel()
 
 	t.Run("User Declined Return Error", func(t *testing.T) {
@@ -810,7 +819,7 @@ func TestOrchestrator_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", nil)
+		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", llm.ErrTerminal)
 	})
 
 	t.Run("User Declined Result Error", func(t *testing.T) {
@@ -838,59 +847,11 @@ func TestOrchestrator_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", nil)
+		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", llm.ErrTerminal)
 	})
 }
 
-func TestOrchestrator_CircuitBreaker(t *testing.T) {
-	t.Parallel()
-	var attempts int32
-	toolsMap := map[string]toolBehavior{
-		"flakey_tool": {
-			observe: func() { atomic.AddInt32(&attempts, 1) },
-			err:     errors.New("flakey error"),
-		},
-	}
-	exec, bus, _ := setupTestExecutor(t, toolsMap, nil, WithCBThreshold(2))
-	exec.SetConcurrency(1) // serial to ensure deterministic failure counting
-
-	content := &llm.Content{Parts: []*llm.Part{
-		{FunctionCall: &llm.FunctionCall{Name: "flakey_tool"}},
-	}}
-
-	// 1st failure
-	_, _ = exec.Execute(context.Background(), content, 0, 10)
-	// 2nd failure
-	_, _ = exec.Execute(context.Background(), content, 0, 10)
-
-	// Circuit should now be open
-	resp, err := exec.Execute(context.Background(), content, 0, 10)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	verifyErrorResponse(t, resp, "temporarily disabled due to multiple consecutive failures")
-
-	// Ensure SystemMessageEvent was published for circuit open
-	evs := bus.FilterEvents(reflect.TypeOf(events.SystemMessageEvent{}))
-	foundWarn := false
-	for _, ev := range evs {
-		sme := ev.(events.SystemMessageEvent)
-		if sme.Level == "warn" && strings.Contains(sme.Message, "temporarily disabled") {
-			foundWarn = true
-			break
-		}
-	}
-	if !foundWarn {
-		t.Errorf("Expected SystemMessageEvent with level 'warn' for circuit breaker")
-	}
-
-	if atomic.LoadInt32(&attempts) != 2 {
-		t.Errorf("Expected exactly 2 attempts, got %d", attempts)
-	}
-}
-
-func TestOrchestrator_LongRunningTimeout(t *testing.T) {
+func TestDispatcher_LongRunningTimeout(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Long Running Tool - Timeout Exceeded", func(t *testing.T) {
@@ -912,7 +873,7 @@ func TestOrchestrator_LongRunningTimeout(t *testing.T) {
 	})
 }
 
-func TestOrchestrator_ZombieTool(t *testing.T) {
+func TestDispatcher_ZombieTool(t *testing.T) {
 	t.Parallel()
 
 	reg := registry.New()
@@ -923,7 +884,7 @@ func TestOrchestrator_ZombieTool(t *testing.T) {
 	}, registry.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := NewPipelineOrchestrator(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)

@@ -68,7 +68,7 @@ func (m *mockToolRegistry) ListAvailableToolkits() []string {
 	return []string{"core"}
 }
 
-func TestOrchestrator_ContextCancellation(t *testing.T) {
+func TestDispatcher_ContextCancellation(t *testing.T) {
 	t.Parallel()
 	// Setup a tool that blocks until context is cancelled
 
@@ -90,7 +90,7 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -142,10 +142,10 @@ func TestOrchestrator_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
+func TestDispatcher_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{
@@ -171,14 +171,14 @@ func TestOrchestrator_PoolClosed_FailsGracefully(t *testing.T) {
 	assert.Contains(t, resultStr, "ok")
 }
 
-func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
+func TestDispatcher_WithActiveTrace_RecordsExecution(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	// Setup trace context
@@ -201,17 +201,17 @@ func TestOrchestrator_WithActiveTrace_RecordsExecution(t *testing.T) {
 	assert.Equal(t, "success", trace.ToolExecutions[0].Status)
 }
 
-func TestNewOrchestrator_NilObserver(t *testing.T) {
-	cfg := OrchestratorConfig{}
+func Test_newDispatcher_NilObserver(t *testing.T) {
+	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
-	_, err := NewOrchestrator(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
+	_, err := newDispatcher(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "ExecutionObserver is required", err.Error())
 }
 
-func TestNewOrchestrator_NilRegistry(t *testing.T) {
-	cfg := OrchestratorConfig{}
-	executor, err := NewOrchestrator(cfg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+func Test_newDispatcher_NilRegistry(t *testing.T) {
+	cfg := dispatcherConfig{}
+	executor, err := newDispatcher(cfg, nil, nil, &ports.NoOpLogger{}, &mockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)
@@ -219,14 +219,14 @@ func TestNewOrchestrator_NilRegistry(t *testing.T) {
 	require.Nil(t, executor)
 }
 
-func TestNewOrchestrator_NilLogger(t *testing.T) {
+func Test_newDispatcher_NilLogger(t *testing.T) {
 	t.Parallel()
-	cfg := OrchestratorConfig{}
+	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
-	observer := &MockLogger{}
+	observer := &mockLogger{}
 
 	// Explicitly pass nil for the logger
-	_, err := NewOrchestrator(cfg, pipeline, nil, nil, observer)
+	_, err := newDispatcher(cfg, pipeline, nil, nil, observer)
 	require.Error(t, err)
 	assert.Equal(t, "logger is required", err.Error())
 }
@@ -253,13 +253,13 @@ func (m *errorEventBus) Subscribe(sub func(context.Context, events.Event)) {}
 func (m *errorEventBus) Shutdown(ctx context.Context) error                { return nil }
 func (m *errorEventBus) Flush(ctx context.Context) error                   { return nil }
 
-func TestOrchestrator_EmitEvent_ErrorLogging(t *testing.T) {
+func TestDispatcher_EmitEvent_ErrorLogging(t *testing.T) {
 	// Setup
 	mockLogger := &capturingLogger{}
 	genericErr := errors.New("generic publish error")
 	mockBus := &errorEventBus{err: genericErr}
 
-	exec := &Orchestrator{
+	exec := &Dispatcher{
 		logger: mockLogger,
 	}
 
@@ -288,12 +288,12 @@ func TestOrchestrator_EmitEvent_ErrorLogging(t *testing.T) {
 	assert.ErrorContains(t, attrs["error"].(error), "generic publish error")
 }
 
-func TestOrchestrator_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
+func TestDispatcher_EmitEvent_ErrBusNotInitialized_NoLogging(t *testing.T) {
 	// Setup
 	mockLogger := &capturingLogger{}
 	mockBus := &errorEventBus{err: events.ErrBusNotInitialized}
 
-	exec := &Orchestrator{
+	exec := &Dispatcher{
 		logger: mockLogger,
 	}
 
@@ -326,7 +326,7 @@ func (m *mockAuthorizer) RequestBatchConsent(ctx context.Context, calls []*llm.F
 	return ctx, nil
 }
 
-func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
+func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
 	bus := &mockEventBus{}
@@ -347,9 +347,9 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineOrchestrator(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).authorizer = auth
+	exec.pipeline.(*defaultToolPipeline).authorizer = auth
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -393,13 +393,13 @@ func TestOrchestrator_ConsentEvents_DetachedContext(t *testing.T) {
 	assert.True(t, hasFinished, "ConsentFinishedEvent should be published even if context is cancelled")
 }
 
-func TestNewOrchestrator_DefaultConfig(t *testing.T) {
-	cfg := OrchestratorConfig{}
+func Test_newDispatcher_DefaultConfig(t *testing.T) {
+	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
-	observer := &MockLogger{}
+	observer := &mockLogger{}
 	logger := &ports.NoOpLogger{}
 
-	executor, err := NewOrchestrator(cfg, pipeline, nil, logger, observer)
+	executor, err := newDispatcher(cfg, pipeline, nil, logger, observer)
 	require.NoError(t, err)
 	require.NotNil(t, executor)
 
@@ -440,8 +440,8 @@ func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
 	// We need to bypass the security manager for the test, or the tools will be automatically declined
 	sm := &mockSecurityManager{allowAll: true}
 
-	// Use NewPipelineOrchestrator to ensure full pipeline hookup
-	exec, err := NewPipelineOrchestrator(reg, sm, bus, logger, &MockLogger{})
+	// Use NewPipelineDispatcher to ensure full pipeline hookup
+	exec, err := NewPipelineDispatcher(reg, sm, bus, logger, &mockLogger{})
 	require.NoError(t, err)
 	exec.SetConcurrency(2)
 
@@ -510,8 +510,8 @@ func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
 
 	pipeline := &mockPanicPipeline{panicOn: "panic_tool"}
 
-	cfg := OrchestratorConfig{MaxConcurrentTools: 2}
-	exec, err := NewOrchestrator(cfg, pipeline, bus, logger, &MockLogger{})
+	cfg := dispatcherConfig{MaxConcurrentTools: 2}
+	exec, err := newDispatcher(cfg, pipeline, bus, logger, &mockLogger{})
 	require.NoError(t, err)
 
 	content := &llm.Content{
@@ -571,7 +571,7 @@ func TestExecutor_PanicRecovery(t *testing.T) {
 	}
 
 	// We need a proper pipeline to test ExecuteTool
-	pipeline := NewDefaultToolPipeline(
+	pipeline := newDefaultToolPipeline(
 		reg,
 		&mockSecurityManager{allowAll: true},
 		&mockEventBus{},

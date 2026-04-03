@@ -38,26 +38,6 @@ func (d *authDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration
 	return d.next.Execute(ctx, tool, call, hb)
 }
 
-// circuitBreakerDecorator handles circuit breaking logic.
-type circuitBreakerDecorator struct {
-	next ToolExecutor
-	cb   CircuitBreakerManager
-}
-
-func newCircuitBreakerDecorator(next ToolExecutor, cb CircuitBreakerManager) ToolExecutor {
-	return &circuitBreakerDecorator{next: next, cb: cb}
-}
-
-func (d *circuitBreakerDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hb chan<- struct{}) (tools.ToolResult, error) {
-	if err := d.cb.Check(call.Name); err != nil {
-		return tools.ToolResult{Text: err.Error(), Error: err}, nil
-	}
-
-	result, err := d.next.Execute(ctx, tool, call, hb)
-	d.cb.Record(call.Name, err == nil && result.Error == nil)
-	return result, err
-}
-
 // safetyDecorator handles timeouts, panics, and zombie detection.
 type safetyDecorator struct {
 	next               ToolExecutor
@@ -106,7 +86,7 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 		// CRITICAL: This recover block protects the isolated tool execution thread.
 		// It catches panics originating inside the actual tool implementation (e.g., nil pointer dereferences
 		// in a third-party SDK) and safely converts them into tool execution errors.
-		// Do NOT remove this, as the Orchestrator's main recover block cannot catch panics in this detached goroutine.
+		// Do NOT remove this, as the Dispatcher's main recover block cannot catch panics in this detached goroutine.
 		defer func() {
 			if r := recover(); r != nil {
 				outCh <- tools.ToolOutput{
@@ -287,7 +267,7 @@ func (d *tracingDecorator) Execute(parentCtx context.Context, tool *tools.ToolDe
 		logAttrs = append(logAttrs, "error_reason", errStr)
 	}
 
-	if status == "error" || status == "circuit_open" {
+	if status == "error" {
 		d.logger.Debug("Tool execution failed", logAttrs...)
 	} else {
 		d.logger.Debug("Tool execution completed", logAttrs...)
@@ -313,9 +293,6 @@ func classifyToolError(err error, resultErr error) (string, string) {
 	if checkBoth(err, resultErr, isSecurityError) {
 		return "security_blocked", "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
 	}
-	if checkBoth(err, resultErr, isCircuitOpen) {
-		return "circuit_open", ""
-	}
 	// Logic remains identical to original: cancellation and other errors both return "error"
 	if checkBoth(err, resultErr, isCancellationError) || err != nil || resultErr != nil {
 		return "error", ""
@@ -328,15 +305,14 @@ func checkBoth(err1, err2 error, predicate func(error) bool) bool {
 }
 
 func isSecurityError(err error) bool {
-	return errors.Is(err, tools.ErrSecurityPolicy)
+	if errors.Is(err, tools.ErrSecurityPolicy) || errors.Is(err, domain_security.ErrSandboxViolation) {
+		return true
+	}
+	return false
 }
 
 func isUserDeclined(err error) bool {
 	return errors.Is(err, tools.ErrUserDeclined)
-}
-
-func isCircuitOpen(err error) bool {
-	return errors.Is(err, tools.ErrToolCircuitOpen)
 }
 
 func isCancellationError(err error) bool {

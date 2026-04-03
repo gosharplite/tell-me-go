@@ -85,12 +85,12 @@ func TestCheckVulnerabilities(t *testing.T) {
 			executeOut: "VULNERABILITY FOUND",
 			executeErr: errors.New("exit status 3"),
 			wantSubstr: "VULNERABILITY FOUND",
-			wantErr:    true,
+			wantErr:    false, // We no longer return an error, it's inside the text!
 		},
 		{
 			name:       "Execution failure no output",
 			executeErr: errors.New("something went wrong"),
-			wantSubstr: "govulncheck failed",
+			wantSubstr: "govulncheck execution failed",
 			wantErr:    true,
 		},
 	}
@@ -173,22 +173,22 @@ func TestGetCoverage(t *testing.T) {
 			name:       "Failure due to test errors",
 			executeOut: "FAIL",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "tests failed",
-			wantErr:    true,
+			wantSubstr: "Tests failed or coverage error",
+			wantErr:    false,
 		},
 		{
 			name:       "Failure due to missing package",
 			executeOut: "can't load package",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "tests failed",
-			wantErr:    true,
+			wantSubstr: "Tests failed or coverage error",
+			wantErr:    false,
 		},
 		{
 			name:       "Summary failure",
 			executeOut: "ok",
 			summaryErr: errors.New("failed to run go tool cover"),
-			wantSubstr: "failed to generate coverage summary",
-			wantErr:    true,
+			wantSubstr: "Failed to generate coverage summary",
+			wantErr:    false,
 		},
 		{
 			name:       "Temp file failure",
@@ -271,7 +271,7 @@ func TestRunLinter(t *testing.T) {
 			executeOut: "problem at line 1",
 			executeErr: errors.New("exit status 1"),
 			wantSubstr: "problem at line 1",
-			wantErr:    true,
+			wantErr:    false,
 		},
 		{
 			name:       "no linter found",
@@ -340,9 +340,12 @@ func TestGoTidy_Errors(t *testing.T) {
 				return []byte("ok"), nil
 			}
 
-			_, err := m.goTidy(context.Background(), nil, nil)
-			if err == nil {
-				t.Errorf("expected error for %s, got nil", tt.name)
+			res, err := m.goTidy(context.Background(), nil, nil)
+			if err != nil {
+				t.Errorf("expected nil error for %s, got %v", tt.name, err)
+			}
+			if !strings.Contains(res.Text, tt.cmdFail+" failed") {
+				t.Errorf("expected failure text in result, got %q", res.Text)
 			}
 		})
 	}
@@ -355,9 +358,12 @@ func TestRunBenchmark_Error(t *testing.T) {
 		return []byte("error output"), errors.New("benchmark failed")
 	}
 
-	_, err := m.runBenchmark(context.Background(), nil, nil)
-	if err == nil {
-		t.Error("expected error, got nil")
+	res, err := m.runBenchmark(context.Background(), nil, nil)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if !strings.Contains(res.Text, "Benchmark failed") {
+		t.Errorf("expected error in text, got %q", res.Text)
 	}
 }
 

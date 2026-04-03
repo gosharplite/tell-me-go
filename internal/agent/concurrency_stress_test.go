@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -111,7 +111,7 @@ func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content
 	return m.sendChatFn(ctx, input, tools, resolver)
 }
 
-func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
+func TestDispatcher_ConcurrentExecutionAndConfig(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow stress test in short mode")
@@ -119,7 +119,7 @@ func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
-	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
+	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
 
 	toolProceedTask := make(chan struct{})
@@ -176,13 +176,13 @@ func TestContextManager_Race(t *testing.T) {
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil))
-	factory := &orchestration.PipelineFactory{
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(nil))
+	factory := &session.PipelineFactory{
 		Estimator: strategy,
 		Events:    bus,
 		History:   h,
 	}
-	cm := orchestration.NewContextManager(strategy, h, bus, factory)
+	cm := session.NewContextManager(strategy, h, bus, factory)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -265,9 +265,9 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	}
 
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg))
-	cm := orchestration.NewContextManager(strategy, h, bus, nil)
-	cm.Pipeline = orchestration.NewContextPipeline()
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
+	cm := session.NewContextManager(strategy, h, bus, nil)
+	cm.Pipeline = session.NewContextPipeline()
 
 	tracker := &mockEngineCostTracker{} // Returns 0.05 per call
 

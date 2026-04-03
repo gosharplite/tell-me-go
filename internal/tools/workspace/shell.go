@@ -38,21 +38,21 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		Append     bool   `json:"append"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	if params.Command == "" {
-		return tools.ToolResult{}, fmt.Errorf("command argument is required")
+		return tools.ToolResult{Error: fmt.Errorf("command argument is required"), Text: "command argument is required"}, nil
 	}
 
 	parts, err := t.prepareCommand(params.Command)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	outputFile, err := t.resolveOutputFile(params.OutputFile)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	safe, _ := t.validator.IsSafe(params.Command)
@@ -76,7 +76,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	})
 
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	return tools.ToolResult{Text: t.formatResult(res, false)}, nil
@@ -90,16 +90,16 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		Append     bool     `json:"append"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	if len(params.Commands) < 2 {
-		return tools.ToolResult{}, fmt.Errorf("at least two commands are required for piping")
+		return tools.ToolResult{Error: fmt.Errorf("at least two commands are required for piping"), Text: "at least two commands are required for piping"}, nil
 	}
 
 	outputFile, err := t.resolveOutputFile(params.OutputFile)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	// 1. Authorize
@@ -122,7 +122,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	// 2. Execute
 	pipedParts, err := t.splitPipeline(params.Commands)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	stopHB := t.startHeartbeat(hb)
@@ -139,7 +139,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	})
 
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
 	return tools.ToolResult{Text: t.formatResult(res, true)}, nil
@@ -171,7 +171,7 @@ func (t *shellTool) splitPipeline(commands []string) ([][]string, error) {
 
 func (t *shellTool) handleAuthResult(approved bool, err error, label string) (tools.ToolResult, error) {
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 	return t.deniedResult(label), tools.ErrUserDeclined
 }

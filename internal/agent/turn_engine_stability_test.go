@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -72,18 +72,6 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 
 func TestTurnEngine_NilGuards_Robustness(t *testing.T) {
 	t.Parallel()
-	t.Run("injectCircuitBreakerWarning handles nil toolResponse", func(t *testing.T) {
-		t.Parallel()
-		step := &executionStep{}
-		// Assert no panic occurs
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("injectCircuitBreakerWarning panicked with nil toolResponse: %v", r)
-			}
-		}()
-		step.injectCircuitBreakerWarning(context.Background(), &turn{}, nil)
-	})
-
 	t.Run("hasToolCalls handles nil content", func(t *testing.T) {
 		t.Parallel()
 		step := &inferenceStep{}
@@ -156,7 +144,7 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 		State:    &turnState{},
 		Clock:    &mockClock{},
 		Registry: &mockToolRegistry{},
-		CtxManager: &orchestration.ContextManager{
+		CtxManager: &session.ContextManager{
 			History: &mockHistoryManager{},
 		},
 	}

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -78,7 +78,7 @@ func (m *dynamicMockCounter) Count(contents []*llm.Content) int {
 		return m.historyVal
 	}
 
-	h := &orchestration.HeuristicTokenCounter{}
+	h := &session.HeuristicTokenCounter{}
 	return h.Count(contents)
 }
 
@@ -96,17 +96,17 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
 		counter := &dynamicMockCounter{}
-		strategy := orchestration.NewContextStrategy(counter)
+		strategy := session.NewContextStrategy(counter)
 		const maxTokens = 10000
 		strategy.SetLimits(maxTokens, 10, 10)
 
-		factory := &orchestration.PipelineFactory{
+		factory := &session.PipelineFactory{
 			History:   h,
 			Events:    bus,
 			Estimator: strategy,
 		}
 
-		cm := orchestration.NewContextManager(strategy, h, bus, factory)
+		cm := session.NewContextManager(strategy, h, bus, factory)
 		cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: maxTokens, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 		gw := &integrationMockLLMGateway{}
@@ -169,17 +169,17 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
 		counter := &dynamicMockCounter{}
-		strategy := orchestration.NewContextStrategy(counter)
+		strategy := session.NewContextStrategy(counter)
 		const maxTokens = 10000
 		strategy.SetLimits(maxTokens, 10, 10)
 
-		factory := &orchestration.PipelineFactory{
+		factory := &session.PipelineFactory{
 			History:   h,
 			Events:    bus,
 			Estimator: strategy,
 		}
 
-		cm := orchestration.NewContextManager(strategy, h, bus, factory)
+		cm := session.NewContextManager(strategy, h, bus, factory)
 		cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: maxTokens, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 		gw := &integrationMockLLMGateway{}
@@ -280,23 +280,23 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	}, tools.ToolOptions{})
 	require.NoError(t, regErr)
 
-	counter := &orchestration.HeuristicTokenCounter{}
-	strategy := orchestration.NewContextStrategy(counter)
+	counter := &session.HeuristicTokenCounter{}
+	strategy := session.NewContextStrategy(counter)
 	const maxTokens = 10000
 	strategy.SetLimits(maxTokens, 10, 10)
 
-	factory := &orchestration.PipelineFactory{
+	factory := &session.PipelineFactory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
 
-	cm := orchestration.NewContextManager(strategy, h, bus, factory)
+	cm := session.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: maxTokens, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	gw := &integrationMockLLMGateway{}
 	// Real executor
-	exec, err := executor.NewPipelineOrchestrator(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
+	exec, err := executor.NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)

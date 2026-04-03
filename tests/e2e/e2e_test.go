@@ -483,8 +483,8 @@ func TestSecurityGate(t *testing.T) {
 			if err == nil {
 				t.Fatalf("CLI succeeded when it should have failed due to security violation")
 			}
-			if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") {
-				t.Errorf("Expected security violation error in stderr or response. stderr: %s, response: %q", stderr, *receivedResponse)
+			if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") && !strings.Contains(string(stderr), "security policy") && !strings.Contains(*receivedResponse, "security policy") {
+				t.Errorf("Expected security error in stderr or response. stderr: %s, response: %q", stderr, *receivedResponse)
 			}
 		})
 	}
@@ -519,8 +519,8 @@ func TestSymlinkAttack(t *testing.T) {
 		t.Fatalf("CLI succeeded when it should have failed due to symlink attack")
 	}
 
-	if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") {
-		t.Errorf("Expected security violation for symlink attack. stderr: %s, response: %q", stderr, *receivedResponse)
+	if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") && !strings.Contains(string(stderr), "security policy") && !strings.Contains(*receivedResponse, "security policy") {
+		t.Errorf("Expected security error for symlink attack. stderr: %s, response: %q", stderr, *receivedResponse)
 	}
 }
 

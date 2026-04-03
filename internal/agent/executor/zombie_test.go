@@ -52,7 +52,7 @@ func (m *mockZombieRegistry) IsSerial(name string) bool {
 	return false
 }
 
-func TestOrchestrator_GoroutineLeak(t *testing.T) {
+func TestDispatcher_GoroutineLeak(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")
@@ -71,7 +71,7 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -83,8 +83,8 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 	go func() {
 		defer close(doneCh)
 		fc := &llm.FunctionCall{Name: hangingTool.Name}
-		tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
-		result, timeoutErr = exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
+		tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
+		result, timeoutErr = exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
 	}()
 
 	select {
@@ -105,10 +105,10 @@ func TestOrchestrator_GoroutineLeak(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
+func TestDispatcher_ZombieTool_LogCritical(t *testing.T) {
 	t.Parallel()
 
-	mockLog := &MockLogger{CriticalLogs: make(chan string, 1)}
+	mockLog := &mockLogger{CriticalLogs: make(chan string, 1)}
 	finishCh := make(chan struct{})
 	defer close(finishCh)
 
@@ -122,7 +122,7 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	}
 
 	// Use short zombie timeout, but generous enough for -race
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
 		withZombieTimeout(200*time.Millisecond),
 		withToolTimeout(200*time.Millisecond),
 	)
@@ -135,8 +135,8 @@ func TestOrchestrator_ZombieTool_LogCritical(t *testing.T) {
 	go func() {
 		defer close(doneCh)
 		fc := &llm.FunctionCall{Name: hangingTool.Name}
-		tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
-		_, _ = exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
+		tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
+		_, _ = exec.pipeline.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
 	}()
 
 	select {
@@ -166,10 +166,10 @@ func (m *mockZombieRegistry) GetOptions(name string) tools.ToolOptions {
 	}
 }
 
-func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
+func TestDispatcher_ZombieHeartbeatDetection(t *testing.T) {
 	t.Parallel()
 
-	mockLog := &MockLogger{CriticalLogs: make(chan string, 10)}
+	mockLog := &mockLogger{CriticalLogs: make(chan string, 10)}
 
 	// Create a tool that emits heartbeats for a while, then goes "zombie"
 	reg := &mockZombieRegistry{
@@ -186,7 +186,7 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 			}
 
 			// Become a zombie: infinite loop without heartbeats
-			// Must still check ctx.Done() to allow clean exit when orchestrator cancels it.
+			// Must still check ctx.Done() to allow clean exit when dispatcher cancels it.
 			for {
 				select {
 				case <-ctx.Done():
@@ -199,22 +199,22 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 		},
 	}
 
-	// Orchestrator with long global timeout (5s) but short liveness threshold (100ms)
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
+	// Dispatcher with long global timeout (5s) but short liveness threshold (100ms)
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, mockLog,
 		withToolTimeout(5*time.Second),
 		WithLongRunningTimeout(5*time.Second),
 	)
 	require.NoError(t, err)
 
 	fc := &llm.FunctionCall{Name: "hanging_tool"}
-	tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
+	tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
 
 	start := time.Now()
 	doneCh := make(chan struct{})
 	var result tools.ToolResult
 	go func() {
 		defer close(doneCh)
-		result, _ = exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
+		result, _ = exec.pipeline.(*defaultToolPipeline).runtime.Execute(context.Background(), tool, fc, nil)
 	}()
 
 	select {
@@ -227,7 +227,7 @@ func TestOrchestrator_ZombieHeartbeatDetection(t *testing.T) {
 		assert.Error(t, result.Error)
 		assert.Contains(t, result.Error.Error(), "failed")
 	case <-time.After(6 * time.Second):
-		t.Fatal("Test timed out: Orchestrator failed to cancel the zombie tool")
+		t.Fatal("Test timed out: Dispatcher failed to cancel the zombie tool")
 	}
 }
 

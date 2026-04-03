@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -36,10 +36,10 @@ type agent struct {
 	mu            sync.RWMutex
 	gateway       domain_llm.LLMGateway
 	engine        *turnEngine
-	ctxManager    *orchestration.ContextManager
-	configWatcher orchestration.ConfigWatcher
-	strategy      *orchestration.ContextStrategy
-	executor      *executor.Orchestrator
+	ctxManager    *session.ContextManager
+	configWatcher session.ConfigWatcher
+	strategy      *session.ContextStrategy
+	executor      *executor.Dispatcher
 	events        events.EventBus
 	tracker       domain_pricing.CostTracker
 	logger        *slog.Logger
@@ -54,16 +54,16 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		opt(cfg)
 	}
 
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry))
-	exec, err := executor.NewPipelineOrchestrator(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(registry))
+	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
 
-	cw := orchestration.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
+	cw := session.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
 
 	if cfg.loader != nil || cfg.sessionLoader != nil {
-		cw = orchestration.NewFileConfigWatcher(cfg.loader, cfg.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, cfg.logger)
+		cw = session.NewFileConfigWatcher(cfg.loader, cfg.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, cfg.logger)
 	}
 
 	a := &agent{
@@ -87,7 +87,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		},
 	}
 
-	factory := &orchestration.PipelineFactory{
+	factory := &session.PipelineFactory{
 		Registry:      registry,
 		History:       hManager,
 		Summarizer:    cfg.summarizer,
@@ -96,9 +96,9 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		Events:        bus,
 	}
 
-	ctxManager := orchestration.NewContextManager(strategy, hManager, bus, factory,
-		orchestration.WithLogger(cfg.logger),
-		orchestration.WithSessionProvider(cfg.sessionProvider),
+	ctxManager := session.NewContextManager(strategy, hManager, bus, factory,
+		session.WithLogger(cfg.logger),
+		session.WithSessionProvider(cfg.sessionProvider),
 	)
 	a.ctxManager = ctxManager
 
@@ -110,7 +110,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	)
 
 	if cfg.registerInternal {
-		if err := orchestration.RegisterInternal(registry, ctxManager); err != nil {
+		if err := session.RegisterInternal(registry, ctxManager); err != nil {
 			return nil, fmt.Errorf("failed to register internal tools: %w", err)
 		}
 	}
