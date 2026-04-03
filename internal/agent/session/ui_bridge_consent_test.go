@@ -10,7 +10,9 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
@@ -174,4 +176,38 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 		t.Fatalf("Spinner overlapped with Consent Prompt!")
 	}
 	mu.Unlock()
+}
+
+func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
+	t.Parallel()
+	mRenderer := new(mockUIRenderer)
+	bridge := newUIBridge(mRenderer)
+	
+	// Start the bridge to initialize everything
+	ctx := context.Background()
+	bridge.Start(ctx)
+	
+	// Simulate the consumer dying unexpectedly (e.g., panic or external cancellation)
+	// Canceling the parent loop context forces the loop to exit and triggers defer bridge.loopCancel()
+	if bridge.cancel != nil {
+		bridge.cancel()
+	}
+	
+	// Wait for the consumer loop to exit to ensure it's truly dead and not reading
+	bridge.wg.Wait()
+	
+	// Fill the bridge's event channel buffer to its capacity (100)
+	// This ensures that `b.eventCh <- e` blocks deterministically,
+	// forcing the `select` block to rely on `<-b.loopCtx.Done()`
+	for i := 0; i < 100; i++ {
+		// Bypass the enqueue method to strictly fill the channel
+		bridge.eventCh <- events.TurnStarted{}
+	}
+	
+	// Attempt to send a critical event that requires delivery (e.g., ConsentStartedEvent)
+	err := bridge.handleEvent(context.Background(), events.ConsentStartedEvent{})
+	
+	// Assert it immediately unblocks and returns the specific liveness check error
+	require.Error(t, err, "Expected handleEvent to fail because the bridge is dead")
+	assert.Contains(t, err.Error(), "uiBridge actor is dead")
 }
