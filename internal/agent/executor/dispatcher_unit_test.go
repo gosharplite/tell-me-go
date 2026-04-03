@@ -172,20 +172,20 @@ func TestDispatcher_ExecuteTool_PanicRecovery(t *testing.T) {
 		mockRuntime := &mockExecutor{
 			Panic: true, // mockExecutor will panic("mock panic")
 		}
-		
+
 		// 2. Initialize the pipeline/dispatcher with the mock
 		resolver := &mockToolResolver{
 			decl: &tools.ToolDeclaration{Name: "crash_tool"},
 		}
 
 		pipeline := &defaultToolPipeline{
-			resolver:   resolver,
-			runtime:    mockRuntime,
+			resolver: resolver,
+			runtime:  mockRuntime,
 		}
 
 		// 3. Execute the tool
 		res := pipeline.ExecuteTool(context.Background(), &llm.FunctionCall{Name: "crash_tool"})
-		
+
 		// 4. Assert the panic was recovered and transformed into a safe error
 		assert.ErrorIs(t, res.Error, llm.ErrTerminal)
 		assert.Contains(t, res.Text, "encountered an internal fatal error (panic)")
@@ -201,4 +201,149 @@ type mockToolResolver struct {
 
 func (m *mockToolResolver) Resolve(call *llm.FunctionCall) (*tools.ToolDeclaration, error) {
 	return m.decl, m.err
+}
+
+func TestDispatcher_ContextCanceledEarlyExit(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockZombieRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{
+				{Name: "slow_tool"},
+			}
+		},
+	}
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+
+	dispatcher, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
+	require.NoError(t, err)
+
+	var invokeCount atomic.Int32
+	mockRuntime := &mockExecutor{
+		Result: tools.ToolResult{Text: "should not be seen"},
+		ExecuteHook: func() {
+			invokeCount.Add(1)
+		},
+	}
+	dispatcher.pipeline.(*defaultToolPipeline).runtime = mockRuntime
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately BEFORE calling the dispatcher
+
+	content := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "slow_tool"}},
+		},
+	}
+
+	resp, err := dispatcher.Execute(ctx, content, 0, 10)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, int32(0), invokeCount.Load(), "tool should not have been executed")
+
+	require.NotNil(t, resp)
+	require.Len(t, resp.Parts, 1)
+}
+
+func TestDispatcher_ContextCanceledMidFlight_Serial(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockZombieRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{
+				{Name: "s1"},
+				{Name: "s2"},
+			}
+		},
+		isSerialFn: func(name string) bool { return true },
+	}
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+
+	dispatcher, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var invokeCount atomic.Int32
+	mockRuntime := &mockExecutor{
+		Result: tools.ToolResult{Text: "first complete"},
+		ExecuteHook: func() {
+			count := invokeCount.Add(1)
+			if count == 1 {
+				cancel()
+			}
+		},
+	}
+	dispatcher.pipeline.(*defaultToolPipeline).runtime = mockRuntime
+
+	content := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "s1"}},
+			{FunctionCall: &llm.FunctionCall{Name: "s2"}},
+		},
+	}
+
+	resp, err := dispatcher.Execute(ctx, content, 0, 10)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, int32(1), invokeCount.Load(), "second task should not be executed")
+	require.NotNil(t, resp)
+}
+
+func TestDispatcher_ContextCanceledMidFlight_Parallel(t *testing.T) {
+	t.Parallel()
+
+	reg := &mockZombieRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{
+				{Name: "p1"},
+				{Name: "p2"},
+			}
+		},
+		isSerialFn: func(name string) bool { return false },
+	}
+
+	logger := &ports.NoOpLogger{}
+	bus := &mockEventBus{}
+	observer := &mockLogger{}
+
+	dispatcher, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var invokeCount atomic.Int32
+	mockRuntime := &mockExecutor{
+		Result: tools.ToolResult{Text: "complete"},
+		ExecuteHook: func() {
+			count := invokeCount.Add(1)
+			if count == 1 {
+				cancel()
+			}
+		},
+	}
+	dispatcher.pipeline.(*defaultToolPipeline).runtime = mockRuntime
+
+	content := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "p1"}},
+			{FunctionCall: &llm.FunctionCall{Name: "p2"}},
+		},
+	}
+
+	resp, err := dispatcher.Execute(ctx, content, 0, 10)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	require.NotNil(t, resp)
 }
