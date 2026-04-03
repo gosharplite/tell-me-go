@@ -47,8 +47,10 @@ func TestTurnHeaderFormat(t *testing.T) {
 	payloadLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: ~\d+/\d+ tokens - ` + mode + `$`)
 	// Metrics line pattern: timestamp, provider/model in brackets, M: N H: N C: N Th: N, and trailing timing block
 	metricsLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] \[[^\]]+\] M: \d+ H: \d+ C: \d+ Th: \d+.*\[.*\]$`)
+	// Ready line prefix (may have optional cost summary)
+	readyLinePrefix := "╰─⠿ Ready"
 
-	var horizIdx, turnIdx, payloadIdx, metricsIdx = -1, -1, -1, -1
+	var horizIdx, turnIdx, payloadIdx, metricsIdx, readyIdx = -1, -1, -1, -1, -1
 	for i, line := range lines {
 		if strings.Contains(line, horizRule) {
 			horizIdx = i
@@ -61,6 +63,9 @@ func TestTurnHeaderFormat(t *testing.T) {
 		}
 		if metricsLineRegex.MatchString(line) {
 			metricsIdx = i
+		}
+		if strings.HasPrefix(line, readyLinePrefix) {
+			readyIdx = i
 		}
 	}
 
@@ -86,7 +91,11 @@ func TestTurnHeaderFormat(t *testing.T) {
 		t.Errorf("Metrics line not found in stderr. Expected pattern: [HH:MM:SS] [provider] M: N H: N C: N Th: N [...]")
 	}
 
-	// Ordering: horizontal rule → turn line → (estimated) payload line → (actual payload line) → metrics line
+	if readyIdx == -1 {
+		t.Errorf("Ready line not found in stderr. Expected prefix: %s", readyLinePrefix)
+	}
+
+	// Ordering: horizontal rule → turn line → (estimated) payload line → (actual payload line) → metrics line → ready line
 	if horizIdx != -1 && turnIdx != -1 && horizIdx >= turnIdx {
 		t.Errorf("Horizontal rule should appear before turn line. horizIdx=%d, turnIdx=%d", horizIdx, turnIdx)
 	}
@@ -95,6 +104,9 @@ func TestTurnHeaderFormat(t *testing.T) {
 	}
 	if payloadIdx != -1 && metricsIdx != -1 && payloadIdx >= metricsIdx {
 		t.Errorf("Payload line should appear before metrics line. payloadIdx=%d, metricsIdx=%d", payloadIdx, metricsIdx)
+	}
+	if metricsIdx != -1 && readyIdx != -1 && metricsIdx >= readyIdx {
+		t.Errorf("Metrics line should appear before ready line. metricsIdx=%d, readyIdx=%d", metricsIdx, readyIdx)
 	}
 
 	// Ensure the horizontal rule is exactly the 64‑dash line.
