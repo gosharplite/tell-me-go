@@ -160,39 +160,50 @@ func withCBResetTimeout(timeout time.Duration) executorOption {
 	}
 }
 
+func (c *dispatcherConfig) applyDefaults() {
+	if c.MaxConcurrentTools <= 0 {
+		c.MaxConcurrentTools = 5
+	}
+	if c.ToolTimeout <= 0 {
+		c.ToolTimeout = 30 * time.Second
+	}
+	if c.LongRunningTimeout <= 0 {
+		c.LongRunningTimeout = 5 * time.Minute
+	}
+	if c.ZombieTimeout <= 0 {
+		c.ZombieTimeout = 5 * time.Minute
+	}
+	if c.CBThreshold <= 0 {
+		c.CBThreshold = 3
+	}
+	if c.CBResetTimeout <= 0 {
+		c.CBResetTimeout = 5 * time.Minute
+	}
+}
+
+func validateDispatcherDeps(pipeline ToolPipeline, logger ports.Logger, observer tools.ExecutionObserver) error {
+	if pipeline == nil {
+		return errors.New("pipeline is required")
+	}
+	if observer == nil {
+		return errors.New("ExecutionObserver is required")
+	}
+	if logger == nil {
+		return errors.New("logger is required")
+	}
+	return nil
+}
+
 func NewDispatcher(cfg dispatcherConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
+	if err := validateDispatcherDeps(pipeline, logger, observer); err != nil {
+		return nil, err
+	}
+
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
-	if pipeline == nil {
-		return nil, errors.New("pipeline is required")
-	}
-	if observer == nil {
-		return nil, errors.New("ExecutionObserver is required")
-	}
-	if logger == nil {
-		return nil, errors.New("logger is required")
-	}
-
-	if cfg.MaxConcurrentTools <= 0 {
-		cfg.MaxConcurrentTools = 5
-	}
-	if cfg.ToolTimeout <= 0 {
-		cfg.ToolTimeout = 30 * time.Second
-	}
-	if cfg.LongRunningTimeout <= 0 {
-		cfg.LongRunningTimeout = 5 * time.Minute
-	}
-	if cfg.ZombieTimeout <= 0 {
-		cfg.ZombieTimeout = 5 * time.Minute
-	}
-	if cfg.CBThreshold <= 0 {
-		cfg.CBThreshold = 3
-	}
-	if cfg.CBResetTimeout <= 0 {
-		cfg.CBResetTimeout = 5 * time.Minute
-	}
+	cfg.applyDefaults()
 
 	e := &Dispatcher{
 		pipeline: pipeline,
