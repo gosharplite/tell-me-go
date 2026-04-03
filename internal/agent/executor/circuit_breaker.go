@@ -15,12 +15,12 @@ import (
 // Ensure CircuitBreakerPipeline implements ToolPipeline
 var _ ToolPipeline = (*CircuitBreakerPipeline)(nil)
 
-type CircuitState int32
+type circuitState int32
 
 const (
-	StateClosed CircuitState = iota
-	StateOpen
-	StateHalfOpen
+	stateClosed circuitState = iota
+	stateOpen
+	stateHalfOpen
 )
 
 // toolCircuit manages the state for a single tool's circuit breaker
@@ -45,14 +45,14 @@ func newToolCircuit(name string, threshold int, resetTimeout time.Duration, clk 
 		resetTimeout: resetTimeout,
 		clock:        clk,
 	}
-	c.state.Store(int32(StateClosed))
+	c.state.Store(int32(stateClosed))
 	return c
 }
 
 func (c *toolCircuit) allowRequest() error {
 	state := c.state.Load()
 
-	if state == int32(StateOpen) {
+	if state == int32(stateOpen) {
 		openedAtUnix := c.openedAt.Load()
 		openedAt := time.Unix(0, openedAtUnix)
 		if c.clock.Since(openedAt) > c.resetTimeout {
@@ -64,12 +64,12 @@ func (c *toolCircuit) allowRequest() error {
 		return fmt.Errorf("%w: tool %q is temporarily disabled due to multiple consecutive failures", tools.ErrToolCircuitOpen, c.name)
 	}
 
-	if state == int32(StateHalfOpen) {
+	if state == int32(stateHalfOpen) {
 		// REJECT all concurrent requests while the single elected probe is in flight
 		return fmt.Errorf("%w: tool %q is currently probing", tools.ErrToolCircuitOpen, c.name)
 	}
 
-	// StateClosed
+	// stateClosed
 	return nil
 }
 
@@ -77,15 +77,15 @@ func (c *toolCircuit) tryTransitionToHalfOpen() bool {
 	c.transitionMu.Lock()
 	defer c.transitionMu.Unlock()
 
-	if c.state.Load() == int32(StateOpen) {
-		c.state.Store(int32(StateHalfOpen))
+	if c.state.Load() == int32(stateOpen) {
+		c.state.Store(int32(stateHalfOpen))
 		return true
 	}
 	return false
 }
 
 func (c *toolCircuit) recordSuccess() {
-	if c.state.Load() != int32(StateClosed) {
+	if c.state.Load() != int32(stateClosed) {
 		c.resetToClosed()
 	} else {
 		// Just clear the failures counter in the fast path
@@ -97,8 +97,8 @@ func (c *toolCircuit) resetToClosed() {
 	c.transitionMu.Lock()
 	defer c.transitionMu.Unlock()
 
-	if c.state.Load() != int32(StateClosed) {
-		c.state.Store(int32(StateClosed))
+	if c.state.Load() != int32(stateClosed) {
+		c.state.Store(int32(stateClosed))
 		c.failures.Store(0)
 	}
 }
@@ -107,7 +107,7 @@ func (c *toolCircuit) recordFailure() {
 	count := c.failures.Add(1)
 
 	state := c.state.Load()
-	if (state == int32(StateClosed) && count >= int64(c.threshold)) || state == int32(StateHalfOpen) {
+	if (state == int32(stateClosed) && count >= int64(c.threshold)) || state == int32(stateHalfOpen) {
 		c.tripToOpen()
 	}
 }
@@ -117,9 +117,9 @@ func (c *toolCircuit) tripToOpen() {
 	defer c.transitionMu.Unlock()
 
 	state := c.state.Load()
-	if state == int32(StateClosed) || state == int32(StateHalfOpen) {
+	if state == int32(stateClosed) || state == int32(stateHalfOpen) {
 		c.openedAt.Store(c.clock.Now().UnixNano())
-		c.state.Store(int32(StateOpen))
+		c.state.Store(int32(stateOpen))
 		c.failures.Store(0) // Explicitly clear counters!
 	}
 }
@@ -133,18 +133,18 @@ type CircuitBreakerPipeline struct {
 	clock        clock.Clock
 }
 
-// CircuitBreakerOption defines functional options for CircuitBreakerPipeline.
-type CircuitBreakerOption func(*CircuitBreakerPipeline)
+// circuitBreakerOption defines functional options for CircuitBreakerPipeline.
+type circuitBreakerOption func(*CircuitBreakerPipeline)
 
-// WithClock injects a custom clock.
-func WithClock(clk clock.Clock) CircuitBreakerOption {
+// withClock injects a custom clock.
+func withClock(clk clock.Clock) circuitBreakerOption {
 	return func(c *CircuitBreakerPipeline) {
 		c.clock = clk
 	}
 }
 
 // NewCircuitBreakerPipeline creates a new CircuitBreakerPipeline.
-func NewCircuitBreakerPipeline(next ToolPipeline, threshold int, resetTimeout time.Duration, opts ...CircuitBreakerOption) *CircuitBreakerPipeline {
+func NewCircuitBreakerPipeline(next ToolPipeline, threshold int, resetTimeout time.Duration, opts ...circuitBreakerOption) *CircuitBreakerPipeline {
 	c := &CircuitBreakerPipeline{
 		next:         next,
 		threshold:    threshold,

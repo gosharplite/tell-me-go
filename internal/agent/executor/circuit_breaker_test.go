@@ -27,7 +27,7 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 			IsSerialFunc: func(n string) bool { return false },
 		}
 		mockClock := clock.NewMockClock(time.Now())
-		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 
 		call := &llm.FunctionCall{Name: "reliable_tool"}
 		for i := 0; i < 5; i++ {
@@ -47,7 +47,7 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 			IsSerialFunc: func(n string) bool { return false },
 		}
 		mockClock := clock.NewMockClock(time.Now())
-		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 		call := &llm.FunctionCall{Name: "failing_tool"}
 
 		// Hit the threshold
@@ -74,7 +74,7 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 			IsSerialFunc: func(n string) bool { return false },
 		}
 		mockClock := clock.NewMockClock(time.Now())
-		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 		call := &llm.FunctionCall{Name: "recovering_tool"}
 
 		// Hit the threshold to open circuit
@@ -116,7 +116,7 @@ func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
 	}
 
 	mockClock := clock.NewMockClock(time.Now())
-	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 	call := &llm.FunctionCall{Name: "flaky_tool"}
 
 	// 1. Force Failures to open circuit
@@ -184,7 +184,7 @@ func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
 	}
 
 	mockClock := clock.NewMockClock(time.Now())
-	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, WithClock(mockClock))
+	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 	call := &llm.FunctionCall{Name: "concurrent_failing_tool"}
 
 	numGoroutines := 150
@@ -237,8 +237,8 @@ func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
 	circuit := cbPipeline.getCircuit("concurrent_failing_tool")
 	state := circuit.state.Load()
 
-	if state != int32(StateOpen) {
-		t.Errorf("expected state to be StateOpen, got %d", state)
+	if state != int32(stateOpen) {
+		t.Errorf("expected state to be stateOpen, got %d", state)
 	}
 
 	if circuitOpenErrors == 0 {

@@ -23,7 +23,7 @@ type toolExecResult struct {
 	tr    tools.ToolResult
 }
 
-type DispatcherConfig struct {
+type dispatcherConfig struct {
 	MaxConcurrentTools int
 	ToolTimeout        time.Duration
 	LongRunningTimeout time.Duration
@@ -115,7 +115,7 @@ func NewDefaultToolPipeline(
 }
 
 type dispatcherState struct {
-	config DispatcherConfig
+	config dispatcherConfig
 }
 
 type Dispatcher struct {
@@ -128,39 +128,39 @@ type Dispatcher struct {
 	zombie   *tools.ZombieTool
 }
 
-type executorOption func(*DispatcherConfig)
+type executorOption func(*dispatcherConfig)
 
 func WithLongRunningTimeout(timeout time.Duration) executorOption {
-	return func(cfg *DispatcherConfig) {
+	return func(cfg *dispatcherConfig) {
 		cfg.LongRunningTimeout = timeout
 	}
 }
 
 func withZombieTimeout(timeout time.Duration) executorOption {
-	return func(cfg *DispatcherConfig) {
+	return func(cfg *dispatcherConfig) {
 		cfg.ZombieTimeout = timeout
 	}
 }
 
 func withToolTimeout(timeout time.Duration) executorOption {
-	return func(cfg *DispatcherConfig) {
+	return func(cfg *dispatcherConfig) {
 		cfg.ToolTimeout = timeout
 	}
 }
 
-func WithCBThreshold(threshold int) executorOption {
-	return func(cfg *DispatcherConfig) {
+func withCBThreshold(threshold int) executorOption {
+	return func(cfg *dispatcherConfig) {
 		cfg.CBThreshold = threshold
 	}
 }
 
-func WithCBResetTimeout(timeout time.Duration) executorOption {
-	return func(cfg *DispatcherConfig) {
+func withCBResetTimeout(timeout time.Duration) executorOption {
+	return func(cfg *dispatcherConfig) {
 		cfg.CBResetTimeout = timeout
 	}
 }
 
-func NewDispatcher(cfg DispatcherConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
+func NewDispatcher(cfg dispatcherConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
 	for _, opt := range opts {
 		opt(&cfg)
 	}

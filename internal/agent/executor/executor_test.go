@@ -202,7 +202,7 @@ func TestDispatcher_WithActiveTrace_RecordsExecution(t *testing.T) {
 }
 
 func TestNewDispatcher_NilObserver(t *testing.T) {
-	cfg := DispatcherConfig{}
+	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
 	_, err := NewDispatcher(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
@@ -210,7 +210,7 @@ func TestNewDispatcher_NilObserver(t *testing.T) {
 }
 
 func TestNewDispatcher_NilRegistry(t *testing.T) {
-	cfg := DispatcherConfig{}
+	cfg := dispatcherConfig{}
 	executor, err := NewDispatcher(cfg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
 
 	// Should return an error and a nil executor
@@ -221,7 +221,7 @@ func TestNewDispatcher_NilRegistry(t *testing.T) {
 
 func TestNewDispatcher_NilLogger(t *testing.T) {
 	t.Parallel()
-	cfg := DispatcherConfig{}
+	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
 	observer := &MockLogger{}
 
@@ -394,7 +394,7 @@ func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 }
 
 func TestNewDispatcher_DefaultConfig(t *testing.T) {
-	cfg := DispatcherConfig{}
+	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
 	observer := &MockLogger{}
 	logger := &ports.NoOpLogger{}
@@ -510,7 +510,7 @@ func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
 
 	pipeline := &mockPanicPipeline{panicOn: "panic_tool"}
 
-	cfg := DispatcherConfig{MaxConcurrentTools: 2}
+	cfg := dispatcherConfig{MaxConcurrentTools: 2}
 	exec, err := NewDispatcher(cfg, pipeline, bus, logger, &MockLogger{})
 	require.NoError(t, err)
 

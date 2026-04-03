@@ -851,7 +851,7 @@ func TestDispatcher_CircuitBreaker(t *testing.T) {
 			err:     errors.New("flakey error"),
 		},
 	}
-	exec, bus, _ := setupTestExecutor(t, toolsMap, nil, WithCBThreshold(2))
+	exec, bus, _ := setupTestExecutor(t, toolsMap, nil, withCBThreshold(2))
 	exec.SetConcurrency(1) // serial to ensure deterministic failure counting
 
 	content := &llm.Content{Parts: []*llm.Part{

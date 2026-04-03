@@ -108,7 +108,7 @@ func TestDispatcher_ChaosScenarios(t *testing.T) {
 			mock := tt.mockSetup(syncChan)
 
 			// Setup minimal dispatcher state
-			cfg := DispatcherConfig{
+			cfg := dispatcherConfig{
 				MaxConcurrentTools: 5,
 				ToolTimeout:        1 * time.Hour,
 			}

@@ -14,7 +14,7 @@ import (
 // It assembles all necessary decorators (authorization, tracing, safety, circuit breaker)
 // and returns a fully configured Dispatcher ready for domain use.
 func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
-	cfg := DispatcherConfig{
+	cfg := dispatcherConfig{
 		MaxConcurrentTools: 5,
 		ToolTimeout:        30 * time.Second,
 		LongRunningTimeout: 5 * time.Minute,
