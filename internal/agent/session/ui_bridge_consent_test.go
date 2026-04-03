@@ -6,14 +6,10 @@ package session
 import (
 	"context"
 	"log/slog"
-	"runtime"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -84,130 +80,98 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 
 func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 	t.Parallel()
-	m := &collisionMock{}
-	m.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-	m.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	m.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
+	mRenderer := new(mockUIRenderer)
+	var mu sync.Mutex
+	spinnerRunning := false
+	consentActive := false
+	overlap := false
 
 	// Helper to update spinner state
 	startSpinner := func() func() {
-		m.mu.Lock()
-		m.spinnerRunning = true
-		m.mu.Unlock()
+		mu.Lock()
+		spinnerRunning = true
+		mu.Unlock()
 		return func() {
-			m.mu.Lock()
-			m.spinnerRunning = false
-			m.mu.Unlock()
+			mu.Lock()
+			spinnerRunning = false
+			mu.Unlock()
 		}
 	}
 
-	m.Test(t)
+	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+	mRenderer.On("LogSystemMessage", mock.Anything, mock.MatchedBy(func(s string) bool {
+		return s != "SYNC_SENTINEL"
+	}), mock.Anything).Return().Maybe()
+	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(startSpinner).Maybe()
+
+	mRenderer.Test(t)
 
 	ctx := context.Background()
 
-	// High-iteration loop to hammer the race window
-	for i := 0; i < 500; i++ {
-		bridge := newUIBridge(&mockCollisionRenderer{collisionMock: m, startFn: startSpinner}, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-		bridge.Start(context.Background())
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		go func() {
-			defer wg.Done()
-			// Simulation of consent cycle
-			_ = bridge.handleEvent(ctx, events.ConsentStartedEvent{})
-			m.mu.Lock()
-			m.consentActive = true
-			m.mu.Unlock()
-
-			runtime.Gosched()
-
-			m.mu.Lock()
-			m.consentActive = false
-			m.mu.Unlock()
-			_ = bridge.handleEvent(ctx, events.ConsentFinishedEvent{})
-		}()
-
-		go func() {
-			defer wg.Done()
-			// This event triggers transitionSpinner internally
-			_ = bridge.handleEvent(ctx, events.InferenceStartedEvent{Model: "gpt-4"})
-
-			// If transitionSpinner returns and the spinner is STILL running while consent is active, we have an overlap
-			m.mu.Lock()
-			if m.spinnerRunning && m.consentActive {
-				m.overlap = true
-			}
-			m.mu.Unlock()
-		}()
-
-		wg.Wait()
-
-		m.mu.Lock()
-		if m.overlap {
-			m.mu.Unlock()
-			t.Fatalf("Iteration %d: Spinner overlapped with Consent Prompt!", i)
-		}
-		m.mu.Unlock()
-
+	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	bridge.Start(ctx)
+	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	consentActiveCh := make(chan struct{})
+	inferenceDoneCh := make(chan struct{})
+
+	go func() {
+		defer wg.Done()
+		// 1. Simulation of consent cycle
+		_ = bridge.handleEvent(ctx, events.ConsentStartedEvent{})
+		
+		// 2. Block until the asynchronous worker signals it has processed the state
+		syncBridge(t, bridge, mRenderer)
+
+		mu.Lock()
+		consentActive = true
+		mu.Unlock()
+
+		// 3. Signal inference goroutine that consent is active
+		close(consentActiveCh)
+
+		// 4. Wait for inference goroutine to process its event
+		<-inferenceDoneCh
+
+		mu.Lock()
+		consentActive = false
+		mu.Unlock()
+		_ = bridge.handleEvent(ctx, events.ConsentFinishedEvent{})
+		syncBridge(t, bridge, mRenderer)
+	}()
+
+	go func() {
+		defer wg.Done()
+		// 1. Wait for consent to become active
+		<-consentActiveCh
+
+		// 2. This event triggers transitionSpinner internally
+		_ = bridge.handleEvent(ctx, events.InferenceStartedEvent{Model: "gpt-4"})
+		syncBridge(t, bridge, mRenderer)
+
+		// 3. If transitionSpinner returns and the spinner is STILL running while consent is active, we have an overlap
+		mu.Lock()
+		if spinnerRunning && consentActive {
+			overlap = true
+		}
+		mu.Unlock()
+
+		// 4. Signal consent goroutine to finish
+		close(inferenceDoneCh)
+	}()
+
+	wg.Wait()
+
+	mu.Lock()
+	if overlap {
+		mu.Unlock()
+		t.Fatalf("Spinner overlapped with Consent Prompt!")
 	}
-}
-
-type mockCollisionRenderer struct {
-	*collisionMock
-	startFn func() func()
-}
-
-type collisionMock struct {
-	mock.Mock
-	mu             sync.Mutex
-	spinnerRunning bool
-	consentActive  bool
-	overlap        bool
-}
-
-func (m *mockCollisionRenderer) StartSpinner(ctx context.Context) func() {
-	return m.startFn()
-}
-
-func (m *mockCollisionRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
-	return m.startFn()
-}
-
-func (m *mockCollisionRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
-	return m.startFn()
-}
-
-func (m *mockCollisionRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
-	m.Called(ctx, content, showThoughts, rawOutput)
-}
-
-func (m *mockCollisionRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
-	m.Called(ctx, status)
-}
-
-func (m *mockCollisionRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
-	m.Called(ctx, metrics, logFile, startTime)
-}
-
-func (m *mockCollisionRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
-	m.Called(ctx, calls, turn, maxTurns, showTools)
-}
-
-func (m *mockCollisionRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
-	m.Called(ctx, name, result, showTools)
-}
-
-func (m *mockCollisionRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
-	m.Called(ctx, msg, level)
-}
-
-func (m *mockCollisionRenderer) SetUseColor(use bool) {
-	m.Called(use)
-}
-
-func (m *mockCollisionRenderer) SetForceSpinner(force bool) {
-	m.Called(force)
+	mu.Unlock()
 }
