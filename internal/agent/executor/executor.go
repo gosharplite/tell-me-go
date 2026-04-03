@@ -28,8 +28,6 @@ type dispatcherConfig struct {
 	ToolTimeout        time.Duration
 	LongRunningTimeout time.Duration
 	ZombieTimeout      time.Duration
-	CBThreshold        int
-	CBResetTimeout     time.Duration
 }
 
 type ToolPipeline interface {
@@ -148,18 +146,6 @@ func withToolTimeout(timeout time.Duration) executorOption {
 	}
 }
 
-func withCBThreshold(threshold int) executorOption {
-	return func(cfg *dispatcherConfig) {
-		cfg.CBThreshold = threshold
-	}
-}
-
-func withCBResetTimeout(timeout time.Duration) executorOption {
-	return func(cfg *dispatcherConfig) {
-		cfg.CBResetTimeout = timeout
-	}
-}
-
 func (c *dispatcherConfig) applyDefaults() {
 	if c.MaxConcurrentTools <= 0 {
 		c.MaxConcurrentTools = 5
@@ -172,12 +158,6 @@ func (c *dispatcherConfig) applyDefaults() {
 	}
 	if c.ZombieTimeout <= 0 {
 		c.ZombieTimeout = 5 * time.Minute
-	}
-	if c.CBThreshold <= 0 {
-		c.CBThreshold = 3
-	}
-	if c.CBResetTimeout <= 0 {
-		c.CBResetTimeout = 5 * time.Minute
 	}
 }
 
@@ -312,16 +292,6 @@ func (e *Dispatcher) Execute(ctx context.Context, respContent *llm.Content, turn
 			"tool_calls", len(calls),
 			"duration_ms", duration.Milliseconds(),
 		)
-	}
-
-	for _, tr := range results {
-		if errors.Is(tr.Error, tools.ErrToolCircuitOpen) {
-			evt := events.SystemMessageEvent{
-				Message: tr.Text,
-				Level:   "warn",
-			}
-			e.emitEvent(ctx, e.events, evt)
-		}
 	}
 
 	return e.assembleResponse(calls, results), waitErr

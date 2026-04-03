@@ -65,10 +65,10 @@ func TestDispatcher_HeartbeatTimeout(t *testing.T) {
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: hangingTool.Name}
-	tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
+	tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
 
 	// Execute
-	result, err := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
+	result, err := exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
 	require.NoError(t, err)
 
 	// Should have timed out due to heartbeat missing
@@ -112,10 +112,10 @@ func TestDispatcher_HeartbeatSuccess(t *testing.T) {
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: livelyTool.Name}
-	tool, _ := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).resolver.Resolve(fc)
+	tool, _ := exec.pipeline.(*defaultToolPipeline).resolver.Resolve(fc)
 
 	// Execute
-	result, err := exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
+	result, err := exec.pipeline.(*defaultToolPipeline).runtime.Execute(ctx, tool, fc, nil)
 
 	// Should succeed because heartbeats kept it alive
 	assert.NoError(t, err)

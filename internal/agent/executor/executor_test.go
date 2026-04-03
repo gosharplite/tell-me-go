@@ -349,7 +349,7 @@ func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 
 	exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
-	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).authorizer = auth
+	exec.pipeline.(*defaultToolPipeline).authorizer = auth
 
 	ctx, cancel := context.WithCancel(context.Background())
 

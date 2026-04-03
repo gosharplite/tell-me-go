@@ -25,8 +25,3 @@ type ToolAuthService interface {
 	Authorize(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall) error
 }
 
-// CircuitBreakerManager abstracts the tool execution failure tracking.
-type CircuitBreakerManager interface {
-	Check(toolName string) error
-	Record(toolName string, success bool)
-}

@@ -72,18 +72,6 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 
 func TestTurnEngine_NilGuards_Robustness(t *testing.T) {
 	t.Parallel()
-	t.Run("injectCircuitBreakerWarning handles nil toolResponse", func(t *testing.T) {
-		t.Parallel()
-		step := &executionStep{}
-		// Assert no panic occurs
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("injectCircuitBreakerWarning panicked with nil toolResponse: %v", r)
-			}
-		}()
-		step.injectCircuitBreakerWarning(context.Background(), &turn{}, nil)
-	})
-
 	t.Run("hasToolCalls handles nil content", func(t *testing.T) {
 		t.Parallel()
 		step := &inferenceStep{}

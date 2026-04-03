@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -635,7 +634,6 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 
 	if toolResponse != nil {
 		turn.State.ToolResponse = toolResponse
-		p.injectCircuitBreakerWarning(ctx, turn, toolResponse)
 		p.validatePayloadLimits(ctx, turn)
 	}
 
@@ -660,26 +658,6 @@ func (p *executionStep) handleToolExecutionError(err error) error {
 	return newAgentError(category, "tool execution failed", err)
 }
 
-func (p *executionStep) injectCircuitBreakerWarning(ctx context.Context, turn *turn, toolResponse *llm.Content) {
-	if toolResponse == nil {
-		return
-	}
-	// Check if any tool triggered the circuit breaker
-	for _, part := range toolResponse.Parts {
-		if part.FunctionResponse != nil {
-			if res, ok := part.FunctionResponse.Response["result"].(string); ok {
-				if strings.Contains(res, "temporarily disabled") && strings.Contains(res, "multiple consecutive failures") {
-					// Append the safety warning directly to the tool response
-					// so it gets persisted in the correct chronological order during the persistenceStep.
-					toolResponse.Parts = append(toolResponse.Parts, &llm.Part{
-						Text: "SYSTEM WARNING: A tool has been temporarily disabled due to multiple consecutive failures. Please continue the task without attempting to use that specific tool again.",
-					})
-					break
-				}
-			}
-		}
-	}
-}
 
 // persistenceStep saves the response and tool results to history.
 type persistenceStep struct{}

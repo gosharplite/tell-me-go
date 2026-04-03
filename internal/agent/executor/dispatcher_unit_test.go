@@ -54,7 +54,7 @@ func TestDispatcher_BatchingAndConcurrency(t *testing.T) {
 			wg.Done()
 		},
 	}
-	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime = mock
+	exec.pipeline.(*defaultToolPipeline).runtime = mock
 
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -134,7 +134,7 @@ func TestDispatcher_SerialBatching(t *testing.T) {
 	currentReleaseCh := make(chan struct{})
 	mock.BlockCh = currentReleaseCh
 
-	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).runtime = mock
+	exec.pipeline.(*defaultToolPipeline).runtime = mock
 
 	content := &llm.Content{
 		Parts: []*llm.Part{

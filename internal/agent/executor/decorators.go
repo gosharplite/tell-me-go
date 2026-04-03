@@ -38,26 +38,6 @@ func (d *authDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration
 	return d.next.Execute(ctx, tool, call, hb)
 }
 
-// circuitBreakerDecorator handles circuit breaking logic.
-type circuitBreakerDecorator struct {
-	next ToolExecutor
-	cb   CircuitBreakerManager
-}
-
-func newCircuitBreakerDecorator(next ToolExecutor, cb CircuitBreakerManager) ToolExecutor {
-	return &circuitBreakerDecorator{next: next, cb: cb}
-}
-
-func (d *circuitBreakerDecorator) Execute(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hb chan<- struct{}) (tools.ToolResult, error) {
-	if err := d.cb.Check(call.Name); err != nil {
-		return tools.ToolResult{Text: err.Error(), Error: err}, nil
-	}
-
-	result, err := d.next.Execute(ctx, tool, call, hb)
-	d.cb.Record(call.Name, err == nil && result.Error == nil)
-	return result, err
-}
-
 // safetyDecorator handles timeouts, panics, and zombie detection.
 type safetyDecorator struct {
 	next               ToolExecutor
@@ -313,9 +293,6 @@ func classifyToolError(err error, resultErr error) (string, string) {
 	if checkBoth(err, resultErr, isSecurityError) {
 		return "security_blocked", "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
 	}
-	if checkBoth(err, resultErr, isCircuitOpen) {
-		return "circuit_open", ""
-	}
 	// Logic remains identical to original: cancellation and other errors both return "error"
 	if checkBoth(err, resultErr, isCancellationError) || err != nil || resultErr != nil {
 		return "error", ""
@@ -335,9 +312,6 @@ func isUserDeclined(err error) bool {
 	return errors.Is(err, tools.ErrUserDeclined)
 }
 
-func isCircuitOpen(err error) bool {
-	return errors.Is(err, tools.ErrToolCircuitOpen)
-}
 
 func isCancellationError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)

@@ -851,53 +851,6 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 	})
 }
 
-func TestDispatcher_CircuitBreaker(t *testing.T) {
-	t.Parallel()
-	var attempts int32
-	toolsMap := map[string]toolBehavior{
-		"flakey_tool": {
-			observe: func() { atomic.AddInt32(&attempts, 1) },
-			err:     errors.New("flakey error"),
-		},
-	}
-	exec, bus, _ := setupTestExecutor(t, toolsMap, nil, withCBThreshold(2))
-	exec.SetConcurrency(1) // serial to ensure deterministic failure counting
-
-	content := &llm.Content{Parts: []*llm.Part{
-		{FunctionCall: &llm.FunctionCall{Name: "flakey_tool"}},
-	}}
-
-	// 1st failure
-	_, _ = exec.Execute(context.Background(), content, 0, 10)
-	// 2nd failure
-	_, _ = exec.Execute(context.Background(), content, 0, 10)
-
-	// Circuit should now be open
-	resp, err := exec.Execute(context.Background(), content, 0, 10)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	verifyErrorResponse(t, resp, "temporarily disabled due to multiple consecutive failures")
-
-	// Ensure SystemMessageEvent was published for circuit open
-	evs := bus.FilterEvents(reflect.TypeOf(events.SystemMessageEvent{}))
-	foundWarn := false
-	for _, ev := range evs {
-		sme := ev.(events.SystemMessageEvent)
-		if sme.Level == "warn" && strings.Contains(sme.Message, "temporarily disabled") {
-			foundWarn = true
-			break
-		}
-	}
-	if !foundWarn {
-		t.Errorf("Expected SystemMessageEvent with level 'warn' for circuit breaker")
-	}
-
-	if atomic.LoadInt32(&attempts) != 2 {
-		t.Errorf("Expected exactly 2 attempts, got %d", attempts)
-	}
-}
 
 func TestDispatcher_LongRunningTimeout(t *testing.T) {
 	t.Parallel()

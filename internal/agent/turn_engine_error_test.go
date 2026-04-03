@@ -440,49 +440,6 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 	}
 }
 
-func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
-	t.Parallel()
-	step := &executionStep{}
-
-	ctx := context.Background()
-	turnObj := &turn{
-		State: &turnState{
-			HasToolCalls: true,
-			Response:     &llm.Content{},
-		},
-		executor: &errorMockExecutor{
-			executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-				return &llm.Content{
-					Role: "user",
-					Parts: []*llm.Part{
-						{
-							FunctionResponse: &llm.FunctionResponse{
-								Name: "failing_tool",
-								Response: map[string]interface{}{
-									"result": "temporarily disabled after multiple consecutive failures",
-								},
-							},
-						},
-					},
-				}, nil
-			},
-		},
-		Clock: &mockClock{},
-	}
-
-	_, err := step.process(ctx, turnObj)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	// Check if the warning was appended
-	parts := turnObj.State.ToolResponse.Parts
-	if len(parts) != 2 {
-		t.Errorf("Expected 2 parts after warning injection, got %d", len(parts))
-	} else if !strings.Contains(parts[1].Text, "SYSTEM WARNING") {
-		t.Errorf("Expected SYSTEM WARNING injected, got: %s", parts[1].Text)
-	}
-}
 
 func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 	t.Parallel()
