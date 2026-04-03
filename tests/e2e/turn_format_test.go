@@ -45,8 +45,10 @@ func TestTurnHeaderFormat(t *testing.T) {
 	horizRule := "────────────────────────────────────────────────────────────────────────────────"
 	turnLinePrefix := "╭─⠿ Turn 1 - " + mode
 	payloadLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: ~\d+/\d+ tokens - ` + mode + `$`)
+	// Metrics line pattern: timestamp, provider/model in brackets, M: N H: N C: N Th: N, and trailing timing block
+	metricsLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] \[[^\]]+\] M: \d+ H: \d+ C: \d+ Th: \d+.*\[.*\]$`)
 
-	var horizIdx, turnIdx, payloadIdx = -1, -1, -1
+	var horizIdx, turnIdx, payloadIdx, metricsIdx = -1, -1, -1, -1
 	for i, line := range lines {
 		if strings.Contains(line, horizRule) {
 			horizIdx = i
@@ -56,6 +58,9 @@ func TestTurnHeaderFormat(t *testing.T) {
 		}
 		if payloadLineRegex.MatchString(line) {
 			payloadIdx = i
+		}
+		if metricsLineRegex.MatchString(line) {
+			metricsIdx = i
 		}
 	}
 
@@ -77,12 +82,19 @@ func TestTurnHeaderFormat(t *testing.T) {
 		t.Errorf("Payload line not found in stderr. Expected pattern: [HH:MM:SS] Payload: ~NNN/MMM tokens - %s", mode)
 	}
 
-	// Ordering: horizontal rule before turn line before payload line
+	if metricsIdx == -1 {
+		t.Errorf("Metrics line not found in stderr. Expected pattern: [HH:MM:SS] [provider] M: N H: N C: N Th: N [...]")
+	}
+
+	// Ordering: horizontal rule → turn line → (estimated) payload line → (actual payload line) → metrics line
 	if horizIdx != -1 && turnIdx != -1 && horizIdx >= turnIdx {
 		t.Errorf("Horizontal rule should appear before turn line. horizIdx=%d, turnIdx=%d", horizIdx, turnIdx)
 	}
 	if turnIdx != -1 && payloadIdx != -1 && turnIdx >= payloadIdx {
 		t.Errorf("Turn line should appear before payload line. turnIdx=%d, payloadIdx=%d", turnIdx, payloadIdx)
+	}
+	if payloadIdx != -1 && metricsIdx != -1 && payloadIdx >= metricsIdx {
+		t.Errorf("Payload line should appear before metrics line. payloadIdx=%d, metricsIdx=%d", payloadIdx, metricsIdx)
 	}
 
 	// Ensure the horizontal rule is exactly the 64‑dash line.
@@ -98,5 +110,17 @@ func TestTurnHeaderFormat(t *testing.T) {
 	// Ensure payload line matches timestamp pattern and token counts are digits.
 	if payloadIdx != -1 && !payloadLineRegex.MatchString(lines[payloadIdx]) {
 		t.Errorf("Payload line mismatch.\nExpected pattern: %v\nGot: %q", payloadLineRegex, lines[payloadIdx])
+	}
+
+	// Ensure metrics line contains required components.
+	if metricsIdx != -1 {
+		metricsLine := lines[metricsIdx]
+		if !strings.Contains(metricsLine, " M: ") ||
+			!strings.Contains(metricsLine, " H: ") ||
+			!strings.Contains(metricsLine, " C: ") ||
+			!strings.Contains(metricsLine, " Th: ") ||
+			!strings.Contains(metricsLine, " [") {
+			t.Errorf("Metrics line missing required components: %q", metricsLine)
+		}
 	}
 }
