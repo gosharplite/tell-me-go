@@ -184,7 +184,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
-	o := NewSessionManager("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
+	o := newSessionManager("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
 
 	cfg := &config.Config{
 		SelectedProvider: "test",

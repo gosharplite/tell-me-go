@@ -128,8 +128,8 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 	}
 }
 
-// NewSessionManager creates a new sessionManager.
-func NewSessionManager(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
+// newSessionManager creates a new sessionManager.
+func newSessionManager(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
 	return &sessionManager{
 		HomeDir:         homeDir,
 		Version:         version,
@@ -710,7 +710,7 @@ func Run(ctx context.Context, params RunParams) error {
 		entropy = rand.Reader
 	}
 
-	orch := NewSessionManager(
+	orch := newSessionManager(
 		params.HomeDir,
 		params.Version,
 		params.Loader,

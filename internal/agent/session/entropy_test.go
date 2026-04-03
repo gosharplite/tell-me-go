@@ -47,7 +47,7 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, &stderr, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+	orch := newSessionManager("home", "1.0.0", nil, nil, io.Discard, &stderr, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",

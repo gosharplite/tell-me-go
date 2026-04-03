@@ -96,7 +96,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		return mChatter, nil
 	}
 
-	orch := NewSessionManager("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
+	orch := newSessionManager("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
 
 	// 2. Mock Agent Behavior
 	// When Chat is called, it will emit events via the event bus.
