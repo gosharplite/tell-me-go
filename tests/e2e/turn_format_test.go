@@ -45,12 +45,13 @@ func TestTurnHeaderFormat(t *testing.T) {
 	horizRule := "────────────────────────────────────────────────────────────────────────────────"
 	turnLinePrefix := "╭─⠿ Turn 1 - " + mode
 	payloadLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: ~\d+/\d+ tokens - ` + mode + `$`)
+	actualPayloadLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: \d+/\d+ tokens - ` + mode + `$`)
 	// Metrics line pattern: timestamp, provider/model in brackets, M: N H: N C: N Th: N, and trailing timing block
 	metricsLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] \[[^\]]+\] M: \d+ H: \d+ C: \d+ Th: \d+.*\[.*\]$`)
 	// Ready line prefix (may have optional cost summary)
 	readyLinePrefix := "╰─⠿ Ready"
 
-	var horizIdx, turnIdx, payloadIdx, metricsIdx, readyIdx = -1, -1, -1, -1, -1
+	var horizIdx, turnIdx, payloadIdx, actualPayloadIdx, metricsIdx, readyIdx = -1, -1, -1, -1, -1, -1
 	for i, line := range lines {
 		if strings.Contains(line, horizRule) {
 			horizIdx = i
@@ -60,6 +61,9 @@ func TestTurnHeaderFormat(t *testing.T) {
 		}
 		if payloadLineRegex.MatchString(line) {
 			payloadIdx = i
+		}
+		if actualPayloadLineRegex.MatchString(line) {
+			actualPayloadIdx = i
 		}
 		if metricsLineRegex.MatchString(line) {
 			metricsIdx = i
@@ -87,6 +91,10 @@ func TestTurnHeaderFormat(t *testing.T) {
 		t.Errorf("Payload line not found in stderr. Expected pattern: [HH:MM:SS] Payload: ~NNN/MMM tokens - %s", mode)
 	}
 
+	if actualPayloadIdx == -1 {
+		t.Errorf("Actual payload line not found in stderr. Expected pattern: [HH:MM:SS] Payload: NNN/MMM tokens - %s", mode)
+	}
+
 	if metricsIdx == -1 {
 		t.Errorf("Metrics line not found in stderr. Expected pattern: [HH:MM:SS] [provider] M: N H: N C: N Th: N [...]")
 	}
@@ -101,6 +109,12 @@ func TestTurnHeaderFormat(t *testing.T) {
 	}
 	if turnIdx != -1 && payloadIdx != -1 && turnIdx >= payloadIdx {
 		t.Errorf("Turn line should appear before payload line. turnIdx=%d, payloadIdx=%d", turnIdx, payloadIdx)
+	}
+	if payloadIdx != -1 && actualPayloadIdx != -1 && payloadIdx >= actualPayloadIdx {
+		t.Errorf("Estimated payload line should appear before actual payload line. estimatedIdx=%d, actualIdx=%d", payloadIdx, actualPayloadIdx)
+	}
+	if actualPayloadIdx != -1 && metricsIdx != -1 && actualPayloadIdx >= metricsIdx {
+		t.Errorf("Actual payload line should appear before metrics line. actualIdx=%d, metricsIdx=%d", actualPayloadIdx, metricsIdx)
 	}
 	if payloadIdx != -1 && metricsIdx != -1 && payloadIdx >= metricsIdx {
 		t.Errorf("Payload line should appear before metrics line. payloadIdx=%d, metricsIdx=%d", payloadIdx, metricsIdx)
@@ -122,6 +136,9 @@ func TestTurnHeaderFormat(t *testing.T) {
 	// Ensure payload line matches timestamp pattern and token counts are digits.
 	if payloadIdx != -1 && !payloadLineRegex.MatchString(lines[payloadIdx]) {
 		t.Errorf("Payload line mismatch.\nExpected pattern: %v\nGot: %q", payloadLineRegex, lines[payloadIdx])
+	}
+	if actualPayloadIdx != -1 && !actualPayloadLineRegex.MatchString(lines[actualPayloadIdx]) {
+		t.Errorf("Actual payload line mismatch.\nExpected pattern: %v\nGot: %q", actualPayloadLineRegex, lines[actualPayloadIdx])
 	}
 
 	// Ensure metrics line contains required components.

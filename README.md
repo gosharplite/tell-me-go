@@ -36,6 +36,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
 
 ## 📋 Prerequisites
 *   **Go**: 1.26.1 or higher.
+*   **Development Tools** (optional): For building from source, running tests, and contributing, install `golangci-lint`, `staticcheck`, `govulncheck`, and `goimports`. See the Development section below.
 
 ## 🛠️ Installation
 ```bash
@@ -177,8 +178,35 @@ alias b-install='(cd $TELL_ME_HOME && git pull && go install ./cmd/tell-me-go)'
 
 For advanced usage with piped multi-agent workflows, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md).
 
-## ⚖️ License
-This project is licensed under the [MIT License](LICENSE).
+## 🛠️ Development
+
+To build from source, run tests, or contribute to `tell-me-go`, install the following Go development tools:
+
+```bash
+# Install linting and analysis tools
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+go install honnef.co/go/tools/cmd/staticcheck@latest
+go install golang.org/x/vuln/cmd/govulncheck@latest
+go install golang.org/x/tools/cmd/goimports@latest
+```
+
+Then run the standard Go workflow:
+
+```bash
+# Build the binary
+make build
+
+# Run all tests
+make test
+
+# Format code
+make fmt
+```
+
+See the [Makefile](Makefile) for additional targets.
 
 ## Design Decisions
 Significant architectural decisions are documented in our [Architecture Decision Records (ADRs)](docs/adr/README.md).
+
+## ⚖️ License
+This project is licensed under the [MIT License](LICENSE).
