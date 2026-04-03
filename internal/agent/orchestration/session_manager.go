@@ -27,8 +27,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
-// orchestrator manages the session lifecycle and agent execution.
-type orchestrator struct {
+// sessionManager manages the session lifecycle and agent execution.
+type sessionManager struct {
 	HomeDir         string
 	Version         string
 	Loader          config.ConfigLoader
@@ -128,9 +128,9 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 	}
 }
 
-// newOrchestrator creates a new orchestrator.
-func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) Orchestrator {
-	return &orchestrator{
+// NewSessionManager creates a new sessionManager.
+func NewSessionManager(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
+	return &sessionManager{
 		HomeDir:         homeDir,
 		Version:         version,
 		Loader:          loader,
@@ -146,7 +146,7 @@ func newOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 }
 
 // Run executes the session orchestration.
-func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic ports.Capturer) error {
+func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic ports.Capturer) error {
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
@@ -200,7 +200,7 @@ func (o *orchestrator) Run(ctx context.Context, sc ports.SessionConfig, sd ports
 }
 
 // Rollback deletes the specified number of turns from history.
-func (o *orchestrator) Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies) error {
+func (o *sessionManager) Rollback(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies) error {
 	if sc.GetBackN() <= 0 {
 		return nil
 	}
@@ -216,7 +216,7 @@ func (o *orchestrator) Rollback(ctx context.Context, sc ports.SessionConfig, sd 
 }
 
 // RenderHistory renders the last N messages from history.
-func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool) {
+func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports.SessionConfig, isTTY bool) {
 	cfg := sCfg.GetConfig()
 	o.HistoryRenderer.Render(o.Stdout, hManager, sCfg.GetLastN(), ports.HistoryRenderOptions{
 		Raw:          sCfg.GetRawOutput(),
@@ -225,7 +225,7 @@ func (o *orchestrator) RenderHistory(hManager ports.HistoryManager, sCfg ports.S
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*uiBridge, error) {
+func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*uiBridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
 	pData := sd.GetPricingData()
@@ -237,7 +237,7 @@ func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent ports.C
 	return bridge, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) *uiBridge {
+func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) *uiBridge {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(o.UIRenderer,
@@ -384,7 +384,7 @@ func (b *uiBridge) resumeActiveSpinner(ctx context.Context) {
 }
 
 // CloseInput safely closes the event channel. This MUST be called by the producer
-// (Orchestrator) after all sending goroutines have finished.
+// (SessionManager) after all sending goroutines have finished.
 func (b *uiBridge) CloseInput() {
 	b.closeOnce.Do(func() {
 		b.isClosed.Store(true)
@@ -710,7 +710,7 @@ func Run(ctx context.Context, params RunParams) error {
 		entropy = rand.Reader
 	}
 
-	orch := newOrchestrator(
+	orch := NewSessionManager(
 		params.HomeDir,
 		params.Version,
 		params.Loader,

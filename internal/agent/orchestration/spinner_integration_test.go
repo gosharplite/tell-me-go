@@ -96,11 +96,11 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		return mChatter, nil
 	}
 
-	orch := newOrchestrator("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
+	orch := NewSessionManager("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
 
 	// 2. Mock Agent Behavior
 	// When Chat is called, it will emit events via the event bus.
-	// Since we are testing the Orchestrator's wiring, we need to capture the bridge's handleEvent function.
+	// Since we are testing the SessionManager's wiring, we need to capture the bridge's handleEvent function.
 	var capturedHandler func(context.Context, events.Event)
 	mChatter.On("Subscribe", mock.Anything).Run(func(args mock.Arguments) {
 		sub := args.Get(0).(func(context.Context, events.Event))

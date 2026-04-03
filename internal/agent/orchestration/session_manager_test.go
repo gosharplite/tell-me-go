@@ -148,7 +148,7 @@ func (m *mockCapturer) Close(ctx context.Context) error {
 
 // --- Tests ---
 
-func TestOrchestrator_Run_Success(t *testing.T) {
+func TestSessionManager_Run_Success(t *testing.T) {
 	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
@@ -162,7 +162,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+	orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -479,7 +479,7 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	})
 }
 
-func TestOrchestrator_Run_Error(t *testing.T) {
+func TestSessionManager_Run_Error(t *testing.T) {
 	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
@@ -493,7 +493,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+	orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -516,7 +516,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mChatter.AssertExpectations(t)
 }
 
-func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
+func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 	t.Parallel()
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
@@ -557,11 +557,11 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mHistoryRenderer.AssertExpectations(t)
 }
 
-func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
+func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	t.Parallel()
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+	orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 
@@ -580,7 +580,7 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 
 	deps := newSessionDependencies(paths, nil, nil, nil, nil, nil, nil, pData, nil, nil, slog.Default(), new(mockSessionProvider))
 
-	bridge, err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer)
+	bridge, err := orch.(*sessionManager).applyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
 	require.NotNil(t, bridge)
@@ -758,7 +758,7 @@ func (m *behaviorMockCapturer) Close(ctx context.Context) error {
 	return args.Error(0)
 }
 
-func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
+func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 	t.Parallel()
 	tracker := &behaviorTracker{}
 	mChatter := &behaviorMockChatter{tracker: tracker}
@@ -841,7 +841,7 @@ func TestOrchestrator_Run_BehaviorSequence(t *testing.T) {
 		"UIRenderer.StopSpinner", // Stop Consumer second (deterministic)
 	}
 
-	assert.Equal(t, expectedSequence, tracker.sequence, "Orchestrator must follow exact coordination sequence")
+	assert.Equal(t, expectedSequence, tracker.sequence, "SessionManager must follow exact coordination sequence")
 
 	mChatter.AssertExpectations(t)
 	mCapturer.AssertExpectations(t)
@@ -871,10 +871,10 @@ func TestSessionDependencies_Accessors(t *testing.T) {
 	require.Nil(t, deps.GetLogger())
 }
 
-func TestOrchestrator_AgentFactory_Error(t *testing.T) {
+func TestSessionManager_AgentFactory_Error(t *testing.T) {
 	t.Parallel()
-	// Create an orchestrator with a failing factory
-	o := &orchestrator{
+	// Create an sessionManager with a failing factory
+	o := &sessionManager{
 		AgentFactory: func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 			return nil, fmt.Errorf("factory failed")
 		},
@@ -900,7 +900,7 @@ func TestOrchestrator_AgentFactory_Error(t *testing.T) {
 	require.Contains(t, err.Error(), "factory failed")
 }
 
-func TestOrchestrator_Rollback(t *testing.T) {
+func TestSessionManager_Rollback(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -940,7 +940,7 @@ func TestOrchestrator_Rollback(t *testing.T) {
 			}
 			mHistoryRenderer := new(mockHistoryRenderer)
 			mUIRenderer := new(mockUIRenderer)
-			orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+			orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 			mHistory.rollbackErr = tt.rollbackErr
 			sCfg := &sessionConfig{BackN: tt.backN}
@@ -1287,7 +1287,7 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
+func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1328,7 +1328,7 @@ func TestOrchestrator_Run_ErrorPropagation(t *testing.T) {
 
 			mHistoryRenderer := new(mockHistoryRenderer)
 			mUIRenderer := new(mockUIRenderer)
-			orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
+			orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 			sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 				Model: "model",
@@ -1523,7 +1523,7 @@ func (m *mockClock) Jitter(base float64) float64 {
 	return args.Get(0).(float64)
 }
 
-func TestOrchestrator_SessionID_Fallback(t *testing.T) {
+func TestSessionManager_SessionID_Fallback(t *testing.T) {
 	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
@@ -1547,7 +1547,7 @@ func TestOrchestrator_SessionID_Fallback(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+	orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -1576,7 +1576,7 @@ func TestOrchestrator_SessionID_Fallback(t *testing.T) {
 	mChatter.AssertExpectations(t)
 }
 
-func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
+func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
@@ -1598,7 +1598,7 @@ func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+	orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
@@ -1626,7 +1626,7 @@ func TestOrchestrator_SessionID_DeterministicEntropy(t *testing.T) {
 	mChatter.AssertExpectations(t)
 }
 
-func TestOrchestrator_SessionID_ShortRead_Fallback(t *testing.T) {
+func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 	t.Parallel()
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
@@ -1658,7 +1658,7 @@ func TestOrchestrator_SessionID_ShortRead_Fallback(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := newOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+	orch := NewSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",

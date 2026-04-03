@@ -179,12 +179,12 @@ func (m *mockFailingUIRenderer) LogToolResult(ctx context.Context, name string, 
 func (m *mockFailingUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
 }
 
-func TestOrchestrator_ConfigError(t *testing.T) {
+func TestSessionManager_ConfigError(t *testing.T) {
 	agentFactory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
-	o := newOrchestrator("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
+	o := NewSessionManager("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
 
 	cfg := &config.Config{
 		SelectedProvider: "test",
