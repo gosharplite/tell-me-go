@@ -39,7 +39,7 @@ type agent struct {
 	ctxManager    *orchestration.ContextManager
 	configWatcher orchestration.ConfigWatcher
 	strategy      *orchestration.ContextStrategy
-	executor      *executor.Orchestrator
+	executor      *executor.Dispatcher
 	events        events.EventBus
 	tracker       domain_pricing.CostTracker
 	logger        *slog.Logger
@@ -55,7 +55,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	}
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry))
-	exec, err := executor.NewPipelineOrchestrator(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
+	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}

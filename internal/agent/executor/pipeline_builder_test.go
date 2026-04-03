@@ -54,7 +54,7 @@ func TestRequestBatchConsent(t *testing.T) {
 	}
 }
 
-func TestNewPipelineOrchestrator(t *testing.T) {
+func TestNewPipelineDispatcher(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -107,7 +107,7 @@ func TestNewPipelineOrchestrator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			orch, err := NewPipelineOrchestrator(tt.registry, tt.sm, tt.bus, tt.logger, tt.observer, tt.opts...)
+			orch, err := NewPipelineDispatcher(tt.registry, tt.sm, tt.bus, tt.logger, tt.observer, tt.opts...)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, orch)

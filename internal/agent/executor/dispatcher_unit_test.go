@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
+func TestDispatcher_BatchingAndConcurrency(t *testing.T) {
 	t.Parallel()
 
 	// Registry that defines tools as parallel
@@ -36,8 +36,8 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 	bus := &mockEventBus{}
 	observer := &MockLogger{}
 
-	// Create Orchestrator but replace runtime with mockExecutor
-	exec, err := NewPipelineOrchestrator(reg, nil, bus, logger, observer)
+	// Create Dispatcher but replace runtime with mockExecutor
+	exec, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
 
 	releaseCh := make(chan struct{})
@@ -81,7 +81,7 @@ func TestOrchestrator_BatchingAndConcurrency(t *testing.T) {
 	assert.Equal(t, int32(5), startedCount.Load(), "Expected 5 tools to have started in parallel")
 }
 
-func TestOrchestrator_SerialBatching(t *testing.T) {
+func TestDispatcher_SerialBatching(t *testing.T) {
 	t.Parallel()
 
 	// Registry that defines tools as serial
@@ -99,8 +99,8 @@ func TestOrchestrator_SerialBatching(t *testing.T) {
 	bus := &mockEventBus{}
 	observer := &MockLogger{}
 
-	// Create Orchestrator but replace runtime with mockExecutor
-	exec, err := NewPipelineOrchestrator(reg, nil, bus, logger, observer)
+	// Create Dispatcher but replace runtime with mockExecutor
+	exec, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
 	require.NoError(t, err)
 
 	releaseCh1 := make(chan struct{})

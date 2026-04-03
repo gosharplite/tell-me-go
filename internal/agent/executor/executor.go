@@ -23,7 +23,7 @@ type toolExecResult struct {
 	tr    tools.ToolResult
 }
 
-type OrchestratorConfig struct {
+type DispatcherConfig struct {
 	MaxConcurrentTools int
 	ToolTimeout        time.Duration
 	LongRunningTimeout time.Duration
@@ -102,7 +102,7 @@ func NewDefaultToolPipeline(
 
 	var exec ToolExecutor = newBaseRuntime(registry)
 	exec = newAuthDecorator(exec, authService)
-	// Circuit breaker is moved to orchestrator loop
+	// Circuit breaker is moved to dispatcher loop
 	exec = newTracingDecorator(exec, registry, logger)
 	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, toolTimeout, longRunningTimeout, zombieTimeout)
 
@@ -114,12 +114,12 @@ func NewDefaultToolPipeline(
 	}
 }
 
-type orchestratorState struct {
-	config OrchestratorConfig
+type dispatcherState struct {
+	config DispatcherConfig
 }
 
-type Orchestrator struct {
-	state    atomic.Pointer[orchestratorState]
+type Dispatcher struct {
+	state    atomic.Pointer[dispatcherState]
 	pipeline ToolPipeline
 	events   events.EventBus
 	logger   ports.Logger
@@ -128,39 +128,39 @@ type Orchestrator struct {
 	zombie   *tools.ZombieTool
 }
 
-type executorOption func(*OrchestratorConfig)
+type executorOption func(*DispatcherConfig)
 
 func WithLongRunningTimeout(timeout time.Duration) executorOption {
-	return func(cfg *OrchestratorConfig) {
+	return func(cfg *DispatcherConfig) {
 		cfg.LongRunningTimeout = timeout
 	}
 }
 
 func withZombieTimeout(timeout time.Duration) executorOption {
-	return func(cfg *OrchestratorConfig) {
+	return func(cfg *DispatcherConfig) {
 		cfg.ZombieTimeout = timeout
 	}
 }
 
 func withToolTimeout(timeout time.Duration) executorOption {
-	return func(cfg *OrchestratorConfig) {
+	return func(cfg *DispatcherConfig) {
 		cfg.ToolTimeout = timeout
 	}
 }
 
 func WithCBThreshold(threshold int) executorOption {
-	return func(cfg *OrchestratorConfig) {
+	return func(cfg *DispatcherConfig) {
 		cfg.CBThreshold = threshold
 	}
 }
 
 func WithCBResetTimeout(timeout time.Duration) executorOption {
-	return func(cfg *OrchestratorConfig) {
+	return func(cfg *DispatcherConfig) {
 		cfg.CBResetTimeout = timeout
 	}
 }
 
-func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
+func NewDispatcher(cfg DispatcherConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -194,7 +194,7 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 		cfg.CBResetTimeout = 5 * time.Minute
 	}
 
-	e := &Orchestrator{
+	e := &Dispatcher{
 		pipeline: pipeline,
 		events:   bus,
 		logger:   logger,
@@ -203,7 +203,7 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 		observer: observer,
 	}
 
-	initialState := &orchestratorState{
+	initialState := &dispatcherState{
 		config: cfg,
 	}
 	e.state.Store(initialState)
@@ -211,10 +211,10 @@ func NewOrchestrator(cfg OrchestratorConfig, pipeline ToolPipeline, bus events.E
 	return e, nil
 }
 
-func (e *Orchestrator) SetConcurrency(maxConcurrent int) {
+func (e *Dispatcher) SetConcurrency(maxConcurrent int) {
 	for {
 		oldState := e.state.Load()
-		newState := &orchestratorState{
+		newState := &dispatcherState{
 			config: oldState.config,
 		}
 
@@ -234,7 +234,7 @@ func (e *Orchestrator) SetConcurrency(maxConcurrent int) {
 	}
 }
 
-func (e *Orchestrator) emitEvent(ctx context.Context, bus events.EventBus, evt events.Event) {
+func (e *Dispatcher) emitEvent(ctx context.Context, bus events.EventBus, evt events.Event) {
 	if err := events.SafePublish(ctx, bus, evt); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			e.logger.Error("event_publish_failed",
@@ -244,7 +244,7 @@ func (e *Orchestrator) emitEvent(ctx context.Context, bus events.EventBus, evt e
 	}
 }
 
-func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+func (e *Dispatcher) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 	calls := e.extractFunctionCalls(respContent)
 	if len(calls) == 0 {
 		return nil, nil
@@ -316,7 +316,7 @@ func (e *Orchestrator) Execute(ctx context.Context, respContent *llm.Content, tu
 	return e.assembleResponse(calls, results), waitErr
 }
 
-func (e *Orchestrator) extractFunctionCalls(respContent *llm.Content) []*llm.FunctionCall {
+func (e *Dispatcher) extractFunctionCalls(respContent *llm.Content) []*llm.FunctionCall {
 	var functionCalls []*llm.FunctionCall
 	for _, part := range respContent.Parts {
 		if part.FunctionCall != nil {
@@ -326,7 +326,7 @@ func (e *Orchestrator) extractFunctionCalls(respContent *llm.Content) []*llm.Fun
 	return functionCalls
 }
 
-func (e *Orchestrator) assembleResponse(calls []*llm.FunctionCall, results []tools.ToolResult) *llm.Content {
+func (e *Dispatcher) assembleResponse(calls []*llm.FunctionCall, results []tools.ToolResult) *llm.Content {
 	var responseParts []*llm.Part
 	for i, tr := range results {
 		responseParts = append(responseParts, e.strategy.Format(calls[i], tr))
@@ -350,7 +350,7 @@ type taskBatch struct {
 	tasks    []int
 }
 
-func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult) error {
+func (e *Dispatcher) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult) error {
 	batches := e.buildExecutionBatches(calls, declinedMap, results)
 	state := e.state.Load()
 
@@ -401,7 +401,7 @@ func (e *Orchestrator) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 	return ctx.Err()
 }
 
-func (e *Orchestrator) checkPreconditions(ctx context.Context, batchIdx int, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) error {
+func (e *Dispatcher) checkPreconditions(ctx context.Context, batchIdx int, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) error {
 	if err := ctx.Err(); err != nil {
 		e.logger.Debug("Execution plan interrupted", "reason", "context cancelled", "batch_idx", batchIdx)
 		e.failRemainingTasks(batches, batchIdx, -1, calls, results, err, "batch interrupted")
@@ -410,7 +410,7 @@ func (e *Orchestrator) checkPreconditions(ctx context.Context, batchIdx int, bat
 	return nil
 }
 
-func (e *Orchestrator) executeBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult) {
+func (e *Dispatcher) executeBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult) {
 	if batch.isSerial {
 		e.executeSerialBatch(ctx, batch, calls, resultsCh)
 	} else {
@@ -418,7 +418,7 @@ func (e *Orchestrator) executeBatch(ctx context.Context, batch taskBatch, calls 
 	}
 }
 
-func (e *Orchestrator) executeSerialBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, resultsCh chan<- toolExecResult) {
+func (e *Dispatcher) executeSerialBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, resultsCh chan<- toolExecResult) {
 	taskIdx := batch.tasks[0]
 	fc := calls[taskIdx]
 
@@ -438,7 +438,7 @@ func (e *Orchestrator) executeSerialBatch(ctx context.Context, batch taskBatch, 
 	close(resultsCh)
 }
 
-func (e *Orchestrator) executeParallelBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult) {
+func (e *Dispatcher) executeParallelBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, maxWorkers int, resultsCh chan<- toolExecResult) {
 	jobsCh := make(chan int, len(batch.tasks))
 	for _, taskIdx := range batch.tasks {
 		jobsCh <- taskIdx
@@ -467,7 +467,7 @@ func (e *Orchestrator) executeParallelBatch(ctx context.Context, batch taskBatch
 	}()
 }
 
-func (e *Orchestrator) parallelWorker(ctx context.Context, calls []*llm.FunctionCall, jobsCh <-chan int, resultsCh chan<- toolExecResult, wg *sync.WaitGroup) {
+func (e *Dispatcher) parallelWorker(ctx context.Context, calls []*llm.FunctionCall, jobsCh <-chan int, resultsCh chan<- toolExecResult, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var currentJobIdx = -1
 	var currentJobName string
@@ -512,7 +512,7 @@ func (e *Orchestrator) parallelWorker(ctx context.Context, calls []*llm.Function
 	}
 }
 
-func (e *Orchestrator) handleBatchResults(ctx context.Context, resultsCh <-chan toolExecResult, results []tools.ToolResult, planErrors []error) []error {
+func (e *Dispatcher) handleBatchResults(ctx context.Context, resultsCh <-chan toolExecResult, results []tools.ToolResult, planErrors []error) []error {
 	for res := range resultsCh {
 		if res.index == -1 {
 			// cancellation signal
@@ -529,7 +529,7 @@ func (e *Orchestrator) handleBatchResults(ctx context.Context, resultsCh <-chan 
 	return planErrors
 }
 
-func (e *Orchestrator) evaluateBatchOutcome(ctx context.Context, batchIdx int, batch taskBatch, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) (bool, error) {
+func (e *Dispatcher) evaluateBatchOutcome(ctx context.Context, batchIdx int, batch taskBatch, batches []taskBatch, calls []*llm.FunctionCall, results []tools.ToolResult) (bool, error) {
 	if batch.isSerial {
 		if results[batch.tasks[0]].Error != nil || ctx.Err() != nil {
 			e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
@@ -552,7 +552,7 @@ func (e *Orchestrator) evaluateBatchOutcome(ctx context.Context, batchIdx int, b
 	return false, nil
 }
 
-func (e *Orchestrator) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, calls []*llm.FunctionCall, results []tools.ToolResult, err error, reason string) {
+func (e *Dispatcher) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, calls []*llm.FunctionCall, results []tools.ToolResult, err error, reason string) {
 	for j := startBatchIdx; j < len(batches); j++ {
 		for _, skippedIdx := range batches[j].tasks {
 			if j == startBatchIdx && skippedIdx <= skipTaskIdx {
@@ -581,7 +581,7 @@ func (e *Orchestrator) failRemainingTasks(batches []taskBatch, startBatchIdx int
 	}
 }
 
-func (e *Orchestrator) buildExecutionBatches(calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult) []taskBatch {
+func (e *Dispatcher) buildExecutionBatches(calls []*llm.FunctionCall, declinedMap map[int]bool, results []tools.ToolResult) []taskBatch {
 	var batches []taskBatch
 	var currentParallelBatch []int
 

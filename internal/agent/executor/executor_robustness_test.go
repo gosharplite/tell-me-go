@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOrchestrator_ConfigRace(t *testing.T) {
+func TestDispatcher_ConfigRace(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow robustness test in short mode")
@@ -29,12 +29,12 @@ func TestOrchestrator_ConfigRace(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	ctx := context.Background()
 	var wg sync.WaitGroup
 
-	// Start sequential execution (Orchestrator handles one turn per session)
+	// Start sequential execution (Dispatcher handles one turn per session)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -59,7 +59,7 @@ func TestOrchestrator_ConfigRace(t *testing.T) {
 	wg.Wait()
 }
 
-func TestOrchestrator_ContextCancellation_MidBatch(t *testing.T) {
+func TestDispatcher_ContextCancellation_MidBatch(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow robustness test in short mode")
@@ -83,7 +83,7 @@ func TestOrchestrator_ContextCancellation_MidBatch(t *testing.T) {
 	})
 	require.NoError(t, regErr)
 
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

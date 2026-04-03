@@ -106,7 +106,7 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 		// CRITICAL: This recover block protects the isolated tool execution thread.
 		// It catches panics originating inside the actual tool implementation (e.g., nil pointer dereferences
 		// in a third-party SDK) and safely converts them into tool execution errors.
-		// Do NOT remove this, as the Orchestrator's main recover block cannot catch panics in this detached goroutine.
+		// Do NOT remove this, as the Dispatcher's main recover block cannot catch panics in this detached goroutine.
 		defer func() {
 			if r := recover(); r != nil {
 				outCh <- tools.ToolOutput{

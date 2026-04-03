@@ -12,7 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func TestOrchestrator_ChaosScenarios(t *testing.T) {
+func TestDispatcher_ChaosScenarios(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name          string
@@ -107,18 +107,18 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 			syncChan := make(chan struct{})
 			mock := tt.mockSetup(syncChan)
 
-			// Setup minimal orchestrator state
-			cfg := OrchestratorConfig{
+			// Setup minimal dispatcher state
+			cfg := DispatcherConfig{
 				MaxConcurrentTools: 5,
 				ToolTimeout:        1 * time.Hour,
 			}
 
-			o := &Orchestrator{
+			o := &Dispatcher{
 				pipeline: mock,
 				events:   events.NewSimpleEventBus(context.Background()),
 				logger:   &ports.NoOpLogger{},
 			}
-			o.state.Store(&orchestratorState{
+			o.state.Store(&dispatcherState{
 				config: cfg,
 			})
 
@@ -137,7 +137,7 @@ func TestOrchestrator_ChaosScenarios(t *testing.T) {
 				// Explicitly trigger the timeout/cancellation condition
 				cancel()
 
-				// Wait for orchestrator to finish
+				// Wait for dispatcher to finish
 				err := <-errChan
 				if err == nil {
 					t.Errorf("expected context cancellation error, got nil")

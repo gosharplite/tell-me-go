@@ -10,11 +10,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// NewPipelineOrchestrator is the primary production constructor for the execution pipeline.
+// NewPipelineDispatcher is the primary production constructor for the execution pipeline.
 // It assembles all necessary decorators (authorization, tracing, safety, circuit breaker)
-// and returns a fully configured Orchestrator ready for domain use.
-func NewPipelineOrchestrator(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Orchestrator, error) {
-	cfg := OrchestratorConfig{
+// and returns a fully configured Dispatcher ready for domain use.
+func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
+	cfg := DispatcherConfig{
 		MaxConcurrentTools: 5,
 		ToolTimeout:        30 * time.Second,
 		LongRunningTimeout: 5 * time.Minute,
@@ -47,7 +47,7 @@ func NewPipelineOrchestrator(registry tools.Registry, sm domain_security.Manager
 	authService := newSecurityAuthorizer(sm, registry)
 
 	exec = newAuthDecorator(exec, authService)
-	// Circuit breaker is moved to orchestrator loop
+	// Circuit breaker is moved to dispatcher loop
 	exec = newTracingDecorator(exec, registry, logger)
 
 	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, cfg.ToolTimeout, cfg.LongRunningTimeout, cfg.ZombieTimeout)
@@ -60,7 +60,7 @@ func NewPipelineOrchestrator(registry tools.Registry, sm domain_security.Manager
 	}
 	pipeline := NewCircuitBreakerPipeline(basePipeline, cfg.CBThreshold, cfg.CBResetTimeout)
 
-	res, err := NewOrchestrator(cfg, pipeline, bus, logger, observer, opts...)
+	res, err := NewDispatcher(cfg, pipeline, bus, logger, observer, opts...)
 	if err != nil {
 		return nil, err
 	}

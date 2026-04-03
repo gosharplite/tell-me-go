@@ -111,7 +111,7 @@ func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content
 	return m.sendChatFn(ctx, input, tools, resolver)
 }
 
-func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
+func TestDispatcher_ConcurrentExecutionAndConfig(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow stress test in short mode")
@@ -119,7 +119,7 @@ func TestOrchestrator_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
-	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
+	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
 
 	toolProceedTask := make(chan struct{})

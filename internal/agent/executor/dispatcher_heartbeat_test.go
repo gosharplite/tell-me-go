@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
+func TestDispatcher_HeartbeatTimeout(t *testing.T) {
 	t.Parallel()
 
 	hangingTool := &tools.ToolDeclaration{
@@ -56,8 +56,8 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 		},
 	}
 
-	// Orchestrator with safety decorator
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
+	// Dispatcher with safety decorator
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)
@@ -76,7 +76,7 @@ func TestOrchestrator_HeartbeatTimeout(t *testing.T) {
 	assert.True(t, strings.Contains(result.Error.Error(), "timed out") || strings.Contains(result.Error.Error(), "canceled"), "Error should be timeout/canceled, got: %v", result.Error)
 }
 
-func TestOrchestrator_HeartbeatSuccess(t *testing.T) {
+func TestDispatcher_HeartbeatSuccess(t *testing.T) {
 	t.Parallel()
 
 	livelyTool := &tools.ToolDeclaration{
@@ -104,7 +104,7 @@ func TestOrchestrator_HeartbeatSuccess(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineOrchestrator(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)

@@ -77,7 +77,7 @@ func TestNewDefaultToolPipeline(t *testing.T) {
 func TestWithCBResetTimeout(t *testing.T) {
 	t.Parallel()
 	timeout := 10 * time.Minute
-	cfg := OrchestratorConfig{}
+	cfg := DispatcherConfig{}
 	opt := WithCBResetTimeout(timeout)
 	opt(&cfg)
 	assert.Equal(t, timeout, cfg.CBResetTimeout)

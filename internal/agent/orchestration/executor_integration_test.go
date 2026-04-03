@@ -109,7 +109,7 @@ func (s *integrationSecurityManager) IsCommandAllowed(command string) bool      
 func (s *integrationSecurityManager) IsBypassActive() bool                         { return false }
 func (s *integrationSecurityManager) Close() error                                 { return nil }
 
-func TestOrchestrator_EndToEnd_BarrierPattern(t *testing.T) {
+func TestDispatcher_EndToEnd_BarrierPattern(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")
 	}
@@ -118,7 +118,7 @@ func TestOrchestrator_EndToEnd_BarrierPattern(t *testing.T) {
 	bus := &mockEventBus{} // from mocks_test.go
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
+	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
 
 	var executionCounter int32
@@ -162,7 +162,7 @@ func TestOrchestrator_EndToEnd_BarrierPattern(t *testing.T) {
 	assert.True(t, pOrder < sOrder, "Sequential Integrity Failure: Parallel tool must finish BEFORE subsequent serial tool starts.")
 }
 
-func TestOrchestrator_EndToEnd_SequentialOrder(t *testing.T) {
+func TestDispatcher_EndToEnd_SequentialOrder(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")
 	}
@@ -171,7 +171,7 @@ func TestOrchestrator_EndToEnd_SequentialOrder(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
+	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(500*time.Millisecond))
 	require.NoError(t, err)
 
 	var executionCounter int32
@@ -213,7 +213,7 @@ func TestOrchestrator_EndToEnd_SequentialOrder(t *testing.T) {
 	assert.True(t, sOrder < pOrder, "Sequential Integrity Failure: Serial tool must finish BEFORE subsequent parallel tool starts.")
 }
 
-func TestOrchestrator_EndToEnd_ContextCancellation(t *testing.T) {
+func TestDispatcher_EndToEnd_ContextCancellation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow integration test in short mode")
 	}
@@ -223,7 +223,7 @@ func TestOrchestrator_EndToEnd_ContextCancellation(t *testing.T) {
 	bus := &mockEventBus{}
 	sm := &integrationSecurityManager{}
 
-	exec, err := executor.NewPipelineOrchestrator(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(timeout))
+	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{}, executor.WithLongRunningTimeout(timeout))
 	require.NoError(t, err)
 
 	exitSignal := make(chan struct{})
