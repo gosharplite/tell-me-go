@@ -9,7 +9,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
@@ -20,13 +19,13 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 
 	t.Run("SuccessKeepsCircuitClosed", func(t *testing.T) {
 		t.Parallel()
-		mock := &MockToolPipeline{
+		mock := &mockToolPipeline{
 			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 				return tools.ToolResult{Text: "success"}
 			},
 			IsSerialFunc: func(n string) bool { return false },
 		}
-		mockClock := clock.NewMockClock(time.Now())
+		mockClock := newMockClock(time.Now())
 		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 
 		call := &llm.FunctionCall{Name: "reliable_tool"}
@@ -40,13 +39,13 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 
 	t.Run("FailuresTriggerOpenCircuit", func(t *testing.T) {
 		t.Parallel()
-		mock := &MockToolPipeline{
+		mock := &mockToolPipeline{
 			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 				return tools.ToolResult{Error: errSimulated}
 			},
 			IsSerialFunc: func(n string) bool { return false },
 		}
-		mockClock := clock.NewMockClock(time.Now())
+		mockClock := newMockClock(time.Now())
 		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 		call := &llm.FunctionCall{Name: "failing_tool"}
 
@@ -67,13 +66,13 @@ func TestCircuitBreakerPipeline_StateTransitions(t *testing.T) {
 
 	t.Run("HalfOpenTransitionAfterTimeout", func(t *testing.T) {
 		t.Parallel()
-		mock := &MockToolPipeline{
+		mock := &mockToolPipeline{
 			ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 				return tools.ToolResult{Error: errSimulated}
 			},
 			IsSerialFunc: func(n string) bool { return false },
 		}
-		mockClock := clock.NewMockClock(time.Now())
+		mockClock := newMockClock(time.Now())
 		cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 		call := &llm.FunctionCall{Name: "recovering_tool"}
 
@@ -106,7 +105,7 @@ func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
 
 	var forceError bool
 
-	mock := &MockToolPipeline{
+	mock := &mockToolPipeline{
 		ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 			if forceError {
 				return tools.ToolResult{Error: errors.New("forced failure")}
@@ -115,7 +114,7 @@ func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
 		},
 	}
 
-	mockClock := clock.NewMockClock(time.Now())
+	mockClock := newMockClock(time.Now())
 	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 	call := &llm.FunctionCall{Name: "flaky_tool"}
 
@@ -148,7 +147,7 @@ func TestCircuitBreakerPipeline_Recovery(t *testing.T) {
 
 func TestCircuitBreakerPipeline_Delegation(t *testing.T) {
 	t.Parallel()
-	mock := &MockToolPipeline{
+	mock := &mockToolPipeline{
 		RequestBatchConsentFunc: func(ctx context.Context, calls []*llm.FunctionCall) (context.Context, map[int]bool) {
 			return ctx, map[int]bool{0: true}
 		},
@@ -176,14 +175,14 @@ func TestCircuitBreakerPipeline_ConcurrentTripping(t *testing.T) {
 	threshold := 5
 	resetTimeout := 50 * time.Millisecond
 
-	mock := &MockToolPipeline{
+	mock := &mockToolPipeline{
 		ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 			return tools.ToolResult{Error: errors.New("simulated concurrent failure")}
 		},
 		IsSerialFunc: func(n string) bool { return false },
 	}
 
-	mockClock := clock.NewMockClock(time.Now())
+	mockClock := newMockClock(time.Now())
 	cbPipeline := NewCircuitBreakerPipeline(mock, threshold, resetTimeout, withClock(mockClock))
 	call := &llm.FunctionCall{Name: "concurrent_failing_tool"}
 

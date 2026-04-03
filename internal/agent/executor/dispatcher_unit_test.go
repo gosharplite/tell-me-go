@@ -34,7 +34,7 @@ func TestDispatcher_BatchingAndConcurrency(t *testing.T) {
 
 	logger := &ports.NoOpLogger{}
 	bus := &mockEventBus{}
-	observer := &MockLogger{}
+	observer := &mockLogger{}
 
 	// Create Dispatcher but replace runtime with mockExecutor
 	exec, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
@@ -97,7 +97,7 @@ func TestDispatcher_SerialBatching(t *testing.T) {
 
 	logger := &ports.NoOpLogger{}
 	bus := &mockEventBus{}
-	observer := &MockLogger{}
+	observer := &mockLogger{}
 
 	// Create Dispatcher but replace runtime with mockExecutor
 	exec, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)

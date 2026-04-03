@@ -16,15 +16,15 @@ func TestDispatcher_ChaosScenarios(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name          string
-		mockSetup     func(syncChan chan struct{}) *MockToolPipeline
+		mockSetup     func(syncChan chan struct{}) *mockToolPipeline
 		calls         []*llm.FunctionCall
 		wantPanicText string // or specific error assertion
 		wantTimeout   bool
 	}{
 		{
 			name: "parallel tool panics mid-flight",
-			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
-				return &MockToolPipeline{
+			mockSetup: func(syncChan chan struct{}) *mockToolPipeline {
+				return &mockToolPipeline{
 					IsSerialFunc: func(n string) bool { return false },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 						if call.Name == "dangerous_tool" {
@@ -50,8 +50,8 @@ func TestDispatcher_ChaosScenarios(t *testing.T) {
 		},
 		{
 			name: "serial tool panics mid-flight",
-			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
-				return &MockToolPipeline{
+			mockSetup: func(syncChan chan struct{}) *mockToolPipeline {
+				return &mockToolPipeline{
 					IsSerialFunc: func(n string) bool { return true },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 						panic("simulated serial crash")
@@ -68,8 +68,8 @@ func TestDispatcher_ChaosScenarios(t *testing.T) {
 		},
 		{
 			name: "context deadline exceeded during fan-in",
-			mockSetup: func(syncChan chan struct{}) *MockToolPipeline {
-				return &MockToolPipeline{
+			mockSetup: func(syncChan chan struct{}) *mockToolPipeline {
+				return &mockToolPipeline{
 					IsSerialFunc: func(n string) bool { return false },
 					ExecuteToolFunc: func(ctx context.Context, call *llm.FunctionCall) tools.ToolResult {
 						if call.Name == "hang_tool" {

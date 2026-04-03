@@ -88,7 +88,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 	sm := setupMockSecurityManager(allowedTools)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	exec, err := NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
 
 	return exec, bus, behaviors
@@ -457,7 +457,7 @@ func TestDispatcher_ConcurrencyLimit_Strict(t *testing.T) {
 		require.NoError(t, reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc))
 	}
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.SetConcurrency(2)
 
@@ -601,7 +601,7 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	e, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{})
 	require.NoError(t, err)
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
@@ -679,7 +679,7 @@ func TestDispatcher_EventPublishing(t *testing.T) {
 	require.NoError(t, err)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	content := &llm.Content{
@@ -705,7 +705,7 @@ func TestDispatcher_EventPublishing(t *testing.T) {
 func TestDispatcher_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
@@ -723,7 +723,7 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -742,7 +742,7 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -923,7 +923,7 @@ func TestDispatcher_ZombieTool(t *testing.T) {
 	}, registry.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)

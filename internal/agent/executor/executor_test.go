@@ -90,7 +90,7 @@ func TestDispatcher_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,7 +145,7 @@ func TestDispatcher_ContextCancellation(t *testing.T) {
 func TestDispatcher_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{
@@ -178,7 +178,7 @@ func TestDispatcher_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	// Setup trace context
@@ -211,7 +211,7 @@ func TestNewDispatcher_NilObserver(t *testing.T) {
 
 func TestNewDispatcher_NilRegistry(t *testing.T) {
 	cfg := dispatcherConfig{}
-	executor, err := NewDispatcher(cfg, nil, nil, &ports.NoOpLogger{}, &MockLogger{})
+	executor, err := NewDispatcher(cfg, nil, nil, &ports.NoOpLogger{}, &mockLogger{})
 
 	// Should return an error and a nil executor
 	require.Error(t, err)
@@ -223,7 +223,7 @@ func TestNewDispatcher_NilLogger(t *testing.T) {
 	t.Parallel()
 	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
-	observer := &MockLogger{}
+	observer := &mockLogger{}
 
 	// Explicitly pass nil for the logger
 	_, err := NewDispatcher(cfg, pipeline, nil, nil, observer)
@@ -347,7 +347,7 @@ func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.pipeline.(*CircuitBreakerPipeline).next.(*defaultToolPipeline).authorizer = auth
 
@@ -396,7 +396,7 @@ func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 func TestNewDispatcher_DefaultConfig(t *testing.T) {
 	cfg := dispatcherConfig{}
 	pipeline := &defaultToolPipeline{}
-	observer := &MockLogger{}
+	observer := &mockLogger{}
 	logger := &ports.NoOpLogger{}
 
 	executor, err := NewDispatcher(cfg, pipeline, nil, logger, observer)
@@ -441,7 +441,7 @@ func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
 	sm := &mockSecurityManager{allowAll: true}
 
 	// Use NewPipelineDispatcher to ensure full pipeline hookup
-	exec, err := NewPipelineDispatcher(reg, sm, bus, logger, &MockLogger{})
+	exec, err := NewPipelineDispatcher(reg, sm, bus, logger, &mockLogger{})
 	require.NoError(t, err)
 	exec.SetConcurrency(2)
 
@@ -511,7 +511,7 @@ func TestRunExecutionPlan_PanicRecovery(t *testing.T) {
 	pipeline := &mockPanicPipeline{panicOn: "panic_tool"}
 
 	cfg := dispatcherConfig{MaxConcurrentTools: 2}
-	exec, err := NewDispatcher(cfg, pipeline, bus, logger, &MockLogger{})
+	exec, err := NewDispatcher(cfg, pipeline, bus, logger, &mockLogger{})
 	require.NoError(t, err)
 
 	content := &llm.Content{

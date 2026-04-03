@@ -134,7 +134,7 @@ func TestSafetyDecorator(t *testing.T) {
 	t.Parallel()
 	logger := &ports.NoOpLogger{}
 	bus := &mockEventBus{}
-	observer := &MockLogger{}
+	observer := &mockLogger{}
 	zombie, _ := tools.NewZombieTool(observer)
 	registry := &panicRegistry{}
 

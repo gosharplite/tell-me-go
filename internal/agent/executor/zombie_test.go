@@ -71,7 +71,7 @@ func TestDispatcher_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &MockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
+	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -108,7 +108,7 @@ func TestDispatcher_GoroutineLeak(t *testing.T) {
 func TestDispatcher_ZombieTool_LogCritical(t *testing.T) {
 	t.Parallel()
 
-	mockLog := &MockLogger{CriticalLogs: make(chan string, 1)}
+	mockLog := &mockLogger{CriticalLogs: make(chan string, 1)}
 	finishCh := make(chan struct{})
 	defer close(finishCh)
 
@@ -169,7 +169,7 @@ func (m *mockZombieRegistry) GetOptions(name string) tools.ToolOptions {
 func TestDispatcher_ZombieHeartbeatDetection(t *testing.T) {
 	t.Parallel()
 
-	mockLog := &MockLogger{CriticalLogs: make(chan string, 10)}
+	mockLog := &mockLogger{CriticalLogs: make(chan string, 10)}
 
 	// Create a tool that emits heartbeats for a while, then goes "zombie"
 	reg := &mockZombieRegistry{
