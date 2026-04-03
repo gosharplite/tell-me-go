@@ -819,7 +819,7 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", nil)
+		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", llm.ErrTerminal)
 	})
 
 	t.Run("User Declined Result Error", func(t *testing.T) {
@@ -847,7 +847,7 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 		}}
 
 		resp, err := exec.Execute(context.Background(), content, 0, 10)
-		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", nil)
+		assertExecutionError(t, resp, err, nil, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.", llm.ErrTerminal)
 	})
 }
 

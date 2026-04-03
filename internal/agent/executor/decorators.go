@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -305,7 +306,13 @@ func checkBoth(err1, err2 error, predicate func(error) bool) bool {
 }
 
 func isSecurityError(err error) bool {
-	return errors.Is(err, tools.ErrSecurityPolicy)
+	if errors.Is(err, tools.ErrSecurityPolicy) {
+		return true
+	}
+	if err != nil && strings.Contains(err.Error(), "security violation") {
+		return true
+	}
+	return false
 }
 
 func isUserDeclined(err error) bool {
