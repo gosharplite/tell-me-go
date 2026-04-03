@@ -165,3 +165,40 @@ func TestDispatcher_SerialBatching(t *testing.T) {
 	require.NotNil(t, resp)
 	assert.Len(t, resp.Parts, 2)
 }
+
+func TestDispatcher_ExecuteTool_PanicRecovery(t *testing.T) {
+	t.Run("PanicRecovery", func(t *testing.T) {
+		// 1. Create a mock that forces a panic
+		mockRuntime := &mockExecutor{
+			Panic: true, // mockExecutor will panic("mock panic")
+		}
+		
+		// 2. Initialize the pipeline/dispatcher with the mock
+		resolver := &mockToolResolver{
+			decl: &tools.ToolDeclaration{Name: "crash_tool"},
+		}
+
+		pipeline := &defaultToolPipeline{
+			resolver:   resolver,
+			runtime:    mockRuntime,
+		}
+
+		// 3. Execute the tool
+		res := pipeline.ExecuteTool(context.Background(), &llm.FunctionCall{Name: "crash_tool"})
+		
+		// 4. Assert the panic was recovered and transformed into a safe error
+		assert.ErrorIs(t, res.Error, llm.ErrTerminal)
+		assert.Contains(t, res.Text, "encountered an internal fatal error (panic)")
+		assert.Contains(t, res.Error.Error(), "mock panic")
+	})
+}
+
+// local mock for ToolResolutionService
+type mockToolResolver struct {
+	decl *tools.ToolDeclaration
+	err  error
+}
+
+func (m *mockToolResolver) Resolve(call *llm.FunctionCall) (*tools.ToolDeclaration, error) {
+	return m.decl, m.err
+}
