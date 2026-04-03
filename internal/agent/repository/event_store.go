@@ -26,7 +26,7 @@ func newEventStore(db *sql.DB) *eventStore {
 
 // getSessionEvents fetches multiple events in a single database round-trip
 // to prevent N+1 query bottlenecks.
-func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) ([]event, error) {
+func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) (events []event, err error) {
 	if len(eventIDs) == 0 {
 		return nil, nil
 	}
@@ -37,14 +37,20 @@ func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			if err == nil {
+				err = closeErr
+			}
+		}
+	}()
 
-	events, err := parseSessionEvents(rows)
+	events, err = parseSessionEvents(rows)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 

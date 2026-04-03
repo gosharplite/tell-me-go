@@ -69,9 +69,10 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 	result, err = p.runtime.Execute(parentCtx, tool, call, nil)
 	status, msg := classifyToolError(err, result.Error)
 
-	if status == "user_declined" {
+	switch status {
+	case "user_declined":
 		return tools.ToolResult{Text: msg, Error: nil}
-	} else if status == "security_blocked" {
+	case "security_blocked":
 		// Identify the actual security error
 		secErr := err
 		if secErr == nil {
