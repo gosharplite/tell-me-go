@@ -4,9 +4,7 @@
 package e2e
 
 import (
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -17,22 +15,21 @@ func TestTurnHeaderFormat(t *testing.T) {
 		t.Skip("skipping slow E2E test in short mode")
 	}
 
-	// TODO: Choose a provider (e.g., "google")
 	provider := "google"
+	mode := "architect"
 
-	// TODO: Setup mock LLM server that returns a simple text response
-	// (no tool calls) to trigger a single turn.
-	server := setupSimpleTextMockServer(t, provider, "Hello, this is a simple text response.")
+	// Setup mock LLM server that returns a simple text response (no tool calls)
+	server := setupSimpleTextMockServer(t, provider)
 	defer server.Close()
 
 	homeDir := t.TempDir()
-	configPath := createTempConfig(t, provider, server.URL)
+	configPath := createTempConfigWithMode(t, provider, server.URL, mode)
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL,
 	}
 
-	// Run the CLI with a prompt.
+	// Run the CLI with a simple prompt.
 	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "Say hello")
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
@@ -41,37 +38,65 @@ func TestTurnHeaderFormat(t *testing.T) {
 	// Capture stderr and strip ANSI codes.
 	errOut := stripANSI(stderr)
 
-	// TODO: Assert that stderr contains, in order:
-	// - An empty line (or newline before the horizontal rule)
-	// - The horizontal rule (────────────────────────────────────────────────────────────────────────────────)
-	// - The turn line (╭─⠿ Turn X - mode)
-	// - The payload line ([timestamp] Payload: ~NNN/MMM tokens - mode)
-	t.Logf("Stderr output (stripped):\n%s", errOut)
-}
+	// Split into lines for easier analysis.
+	lines := strings.Split(errOut, "\n")
 
-// TODO: Implement setupSimpleTextMockServer that returns a server that responds with a simple text message.
-func setupSimpleTextMockServer(t *testing.T, provider, text string) *httptest.Server {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Validate endpoint mapping based on provider (same as existing)
-		if provider == "google" && !strings.Contains(r.URL.Path, "generateContent") {
-			t.Errorf("Google provider should use generateContent endpoint, got: %s", r.URL.Path)
-			return
-		}
-		if provider == "openai" && !strings.HasSuffix(r.URL.Path, "/chat/completions") {
-			t.Errorf("OpenAI provider should use /chat/completions endpoint, got: %s", r.URL.Path)
-			return
-		}
-		if provider == "anthropic" && !strings.HasSuffix(r.URL.Path, "/messages") {
-			t.Errorf("Anthropic provider should use /messages endpoint, got: %s", r.URL.Path)
-			return
-		}
+	// Find indices of key lines.
+	horizRule := "────────────────────────────────────────────────────────────────────────────────"
+	turnLinePrefix := "╭─⠿ Turn 1 - " + mode
+	payloadLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: ~\d+/\d+ tokens - ` + mode + `$`)
 
-		w.Header().Set("Content-Type", "application/json")
-		// Always return a simple text response (no tool calls)
-		response := createTextResponse(provider, text)
-		t.Logf("MOCK_SERVER_RESPONSE [%s]: %s\n", provider, response)
-		_, _ = fmt.Fprint(w, response)
-	}))
-	return server
+	var horizIdx, turnIdx, payloadIdx = -1, -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, horizRule) {
+			horizIdx = i
+		}
+		if strings.HasPrefix(line, turnLinePrefix) {
+			turnIdx = i
+		}
+		if payloadLineRegex.MatchString(line) {
+			payloadIdx = i
+		}
+	}
+
+	// Assertions
+	if horizIdx == -1 {
+		t.Errorf("Horizontal rule not found in stderr.\nStderr output:\n%s", errOut)
+	} else {
+		// Check empty line before horizontal rule: either horizIdx == 0 (first line) or previous line is empty.
+		if horizIdx > 0 && strings.TrimSpace(lines[horizIdx-1]) != "" {
+			t.Errorf("Horizontal rule should be preceded by an empty line, but preceding line is: %q", lines[horizIdx-1])
+		}
+	}
+
+	if turnIdx == -1 {
+		t.Errorf("Turn line not found in stderr. Expected prefix: %s", turnLinePrefix)
+	}
+
+	if payloadIdx == -1 {
+		t.Errorf("Payload line not found in stderr. Expected pattern: [HH:MM:SS] Payload: ~NNN/MMM tokens - %s", mode)
+	}
+
+	// Ordering: horizontal rule before turn line before payload line
+	if horizIdx != -1 && turnIdx != -1 && horizIdx >= turnIdx {
+		t.Errorf("Horizontal rule should appear before turn line. horizIdx=%d, turnIdx=%d", horizIdx, turnIdx)
+	}
+	if turnIdx != -1 && payloadIdx != -1 && turnIdx >= payloadIdx {
+		t.Errorf("Turn line should appear before payload line. turnIdx=%d, payloadIdx=%d", turnIdx, payloadIdx)
+	}
+
+	// Ensure the horizontal rule is exactly the 64‑dash line.
+	if horizIdx != -1 && lines[horizIdx] != horizRule {
+		t.Errorf("Horizontal rule mismatch.\nExpected: %q\nGot: %q", horizRule, lines[horizIdx])
+	}
+
+	// Ensure turn line matches exactly "╭─⠿ Turn 1 - architect" (no extra characters before)
+	if turnIdx != -1 && !strings.HasPrefix(lines[turnIdx], turnLinePrefix) {
+		t.Errorf("Turn line mismatch.\nExpected prefix: %q\nGot: %q", turnLinePrefix, lines[turnIdx])
+	}
+
+	// Ensure payload line matches timestamp pattern and token counts are digits.
+	if payloadIdx != -1 && !payloadLineRegex.MatchString(lines[payloadIdx]) {
+		t.Errorf("Payload line mismatch.\nExpected pattern: %v\nGot: %q", payloadLineRegex, lines[payloadIdx])
+	}
 }
