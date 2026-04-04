@@ -16,8 +16,58 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	telemetry "github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
+
+// controllableClock is a test clock that allows manual advancement of time and ticking.
+type controllableClock struct {
+	mu       sync.RWMutex
+	now      time.Time
+	tickChan chan time.Time
+}
+
+func (c *controllableClock) Now() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.now
+}
+
+func (c *controllableClock) Since(t time.Time) time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.now.Sub(t)
+}
+
+func (c *controllableClock) Sleep(d time.Duration) {}
+
+func (c *controllableClock) After(d time.Duration) <-chan time.Time {
+	// Not used by spinner; return nil channel that never fires.
+	return nil
+}
+
+func (c *controllableClock) NewTicker(d time.Duration) clock.Ticker {
+	return &controllableTicker{c: c.tickChan}
+}
+
+func (c *controllableClock) Jitter(base float64) float64 { return base }
+
+func (c *controllableClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	c.mu.Unlock()
+}
+
+func (c *controllableClock) tick() {
+	c.tickChan <- c.Now()
+}
+
+type controllableTicker struct {
+	c <-chan time.Time
+}
+
+func (t *controllableTicker) C() <-chan time.Time { return t.c }
+func (t *controllableTicker) Stop()               {}
 
 // mockMetricsProvider simulates a macOS metrics provider that returns
 // host‑level ticks (idle > 0) and a memory percentage.
@@ -122,8 +172,25 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			// Build the UI renderer with the mock provider
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
-			renderer := NewRenderer(nil, stdout, stderr, nil, provider)
+			renderer := NewRenderer(nil, stdout, stderr, nil, provider).(*stdUIRenderer)
 			renderer.SetForceSpinner(true)
+
+			// Create controllable clock for deterministic timing
+			startTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+			clock := &controllableClock{
+				now:      startTime,
+				tickChan: make(chan time.Time, 10), // buffered to avoid blocking
+			}
+			renderer.SetClock(clock)
+
+			// Channel to receive draw events
+			drawChan := make(chan struct{}, 10)
+			renderer.SetOnDraw(func() {
+				select {
+				case drawChan <- struct{}{}:
+				default:
+				}
+			})
 
 			// Start a spinner that shows metrics
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -132,21 +199,39 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			stop := renderer.StartSpinnerWithMetrics(ctx, "Testing")
 			defer stop()
 
-			// Wait a little to let the spinner draw at least one frame
-			time.Sleep(200 * time.Millisecond)
+			// Wait for the first synchronous draw (already happened, but ensure we receive it)
+			select {
+			case <-drawChan:
+				// First draw completed
+			case <-time.After(100 * time.Millisecond):
+				t.Fatal("timeout waiting for first spinner draw")
+			}
 
 			// Update the provider to return the second sample
 			provider.SetCPUStats(tt.total2, tt.idle2)
 
-			// Wait at least 1 second total since spinner start so that CPU
-			// percentage is recalculated (the renderer only updates CPU after
-			// at least one second). The spinner started at time.Now(), we already
-			// waited 200ms, wait another 900ms to guarantee >=1 second elapsed.
-			time.Sleep(900 * time.Millisecond)
+			// Advance clock by 1 second to trigger CPU recalculation
+			clock.advance(1 * time.Second)
+			// Send a tick to cause the spinner goroutine to draw again
+			clock.tick()
+
+			// Wait for the draw that includes updated CPU metrics
+			select {
+			case <-drawChan:
+				// Frame drawn with updated metrics
+			case <-time.After(100 * time.Millisecond):
+				t.Fatal("timeout waiting for spinner draw after CPU update")
+			}
 
 			// Stop the spinner and capture the final stderr output
 			stop()
-			time.Sleep(10 * time.Millisecond) // allow final clear
+			// Allow final clear (spinner goroutine will exit and clear)
+			select {
+			case <-drawChan:
+				// Final clear draw
+			case <-time.After(100 * time.Millisecond):
+				// No more draws expected, continue
+			}
 
 			output := stderr.String()
 			t.Logf("Spinner output:\n%s", output)
