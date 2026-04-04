@@ -106,20 +106,29 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	}
 
 	// Assembly root: wire dependencies for orchestration
-	container := di.NewBootstrapper(a.homeDir, a.sm, a.Version, a.Stdout, a.Stderr, a.logger, nil)
+	bootstrapper := di.NewBootstrapper(a.homeDir, a.sm, a.Version, a.Stdout, a.Stderr, a.logger, nil)
 	loader := &config.YAMLConfigLoader{}
-	chatService := agent.NewChatService(a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm, loader, container)
+	chatService := agent.NewChatService(
+		a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm,
+		bootstrapper,
+		bootstrapper.GetAgentFactory(),
+		bootstrapper.GetUIRenderer(),
+		bootstrapper.GetHistoryRenderer(),
+		bootstrapper.GetHistoryBrowser(),
+	)
 
 	cmdCtx := &context{
-		Version:     a.Version,
-		Stdin:       a.Stdin,
-		Stdout:      a.Stdout,
-		Stderr:      a.Stderr,
-		HomeDir:     a.homeDir,
-		SM:          a.sm,
-		ChatService: chatService,
-		MockPrompt:  a.mockPrompt,
-		MockAnswer:  a.mockAnswer,
+		Version:      a.Version,
+		Stdin:        a.Stdin,
+		Stdout:       a.Stdout,
+		Stderr:       a.Stderr,
+		HomeDir:      a.homeDir,
+		SM:           a.sm,
+		ChatService:  chatService,
+		Bootstrapper: bootstrapper,
+		Loader:       loader,
+		MockPrompt:   a.mockPrompt,
+		MockAnswer:   a.mockAnswer,
 	}
 
 	cmd := factory(cmdCtx)

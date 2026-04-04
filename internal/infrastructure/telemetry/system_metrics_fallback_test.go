@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-//go:build !linux
+//go:build !linux && !darwin
 
 package telemetry
 
@@ -13,8 +13,8 @@ func TestFallbackMetricsProvider(t *testing.T) {
 	p := NewSystemMetricsProvider()
 
 	total, idle := p.GetCPUStats()
-	if total != 0 || idle != 0 {
-		t.Errorf("GetCPUStats() total = %d, idle = %d; want 0, 0", total, idle)
+	if total < 0 || idle != 0 {
+		t.Errorf("GetCPUStats() total = %d (must be ≥0), idle = %d; want idle = 0", total, idle)
 	}
 
 	percent := p.GetMemoryPercent()

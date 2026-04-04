@@ -9,12 +9,13 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"io"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 func TestCapturePromptContextCancellation(t *testing.T) {

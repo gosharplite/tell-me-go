@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -66,15 +67,30 @@ func (c *browseCommand) runBrowse(ctx stdctx.Context, configPath string) error {
 		return fmt.Errorf("browse command requires an interactive TTY")
 	}
 
-	return c.ctx.ChatService.BrowseHistory(ctx, configPath, capturer)
+	cfg, err := c.ctx.Loader.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("error loading config [%s]: %w", configPath, err)
+	}
+
+	hManager, err := c.ctx.Bootstrapper.GetHistoryManager(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to get history manager: %w", err)
+	}
+
+	provider, err := c.ctx.Bootstrapper.GetUnifiedHistoryProvider(ctx, cfg, hManager)
+	if err != nil {
+		return fmt.Errorf("failed to get unified history provider: %w", err)
+	}
+
+	return c.ctx.ChatService.BrowseHistory(ctx, provider, hManager)
 }
 
-func (c *browseCommand) setupCapturer() (ports.Capturer, func(stdctx.Context) error) {
-	capturer := ui.NewCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer, false).(ports.Capturer)
+func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error) {
+	capturer := ui.NewCapturer(c.ctx.Stdin, c.ctx.Stdout, c.ctx.Stderr, c.ctx.SM, clock.RealClock{}, c.ctx.MockPrompt, c.ctx.MockAnswer, false).(agent.CapturerInteractor)
 	if sm, ok := c.ctx.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
-		sm.SetInteractor(capturer.(domain_security.UserInteractor))
+		sm.SetInteractor(capturer)
 	}
 	return capturer, func(stdctx.Context) error { return nil }
 }

@@ -522,6 +522,7 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 
 	// Move to start of line, clear current line, then print the indicator.
 	_, _ = fmt.Fprintf(ui.stderr, "\r%s%s%s%s%s", ui.c(termClearLine), ui.c(colorGray), frame, msg, ui.c(colorReset))
+
 }
 
 func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {

@@ -871,3 +871,966 @@ func TestHandleToolUseBlock(t *testing.T) {
 		t.Errorf("expected tool ID 'call_123', got %q", part.FunctionCall.ID)
 	}
 }
+
+func TestResponsesAPIEndpoint(t *testing.T) {
+	t.Run("Successful Responses API Call", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			// Verify request body structure
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("Failed to decode request: %v", err)
+			}
+
+			if req.Model != "gpt-5.4" {
+				t.Errorf("Expected model gpt-5.4, got %s", req.Model)
+			}
+			if len(req.Input) == 0 {
+				t.Error("Expected input field to be populated for /responses endpoint")
+			}
+			if req.Reasoning == nil || req.Reasoning.Effort != "high" {
+				t.Errorf("Expected reasoning effort 'high', got %v", req.Reasoning)
+			}
+			if len(req.Tools) == 0 {
+				t.Error("Expected tools to be present")
+			}
+
+			// Return a valid responsesAPIResponse with multiple output items
+			resp := responsesAPIResponse{
+				ID: "resp_test_123",
+				Output: []responseOutputItem{
+					{
+						Type: "text",
+						Text: "This is a text response",
+					},
+					{
+						Type: "message",
+						Message: &struct {
+							Role      string         `json:"role"`
+							Content   []contentBlock `json:"content"`
+							ToolCalls []toolCall     `json:"tool_calls"`
+						}{
+							Role: "assistant",
+							Content: []contentBlock{
+								{
+									Type: "text",
+									Text: "I'm processing your request",
+								},
+							},
+							ToolCalls: []toolCall{
+								{
+									ID:   "call_abc123",
+									Type: "function",
+									Function: functionCall{
+										Name:      "test_tool",
+										Arguments: `{"param": "value"}`,
+									},
+								},
+							},
+						},
+					},
+				},
+				Usage: usage{
+					PromptTokens:     50,
+					CompletionTokens: 100,
+					TotalTokens:      150,
+				},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		// Create client with model that triggers RequiresResponsesAPI
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		// Create tool declaration to satisfy the condition
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+			Parameters: &tools.Schema{
+				Type: "object",
+				Properties: map[string]*tools.Schema{
+					"param": {Type: "string"},
+				},
+				Required: []string{"param"},
+			},
+		}
+
+		// Send chat with tool declaration
+		history := []*llm.Content{
+			{
+				Role: "user",
+				Parts: []*llm.Part{
+					{Text: "Hello, please use the test tool"},
+				},
+			},
+		}
+
+		resp, metrics, err := client.SendChat(context.Background(), history, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		// Verify response structure
+		if resp.Role != "model" {
+			t.Errorf("Expected role 'model', got %s", resp.Role)
+		}
+
+		// Should contain at least 2 parts: text and tool call
+		if len(resp.Parts) < 2 {
+			t.Errorf("Expected at least 2 parts, got %d", len(resp.Parts))
+		}
+
+		// Check for text part
+		var foundText bool
+		var foundToolCall bool
+		for _, part := range resp.Parts {
+			if part.Text != "" {
+				foundText = true
+				if part.Text != "This is a text response" && part.Text != "I'm processing your request" {
+					t.Errorf("Unexpected text: %s", part.Text)
+				}
+			}
+			if part.FunctionCall != nil && part.FunctionCall.Name == "test_tool" {
+				foundToolCall = true
+				if part.FunctionCall.ID != "call_abc123" {
+					t.Errorf("Expected tool call ID 'call_abc123', got %s", part.FunctionCall.ID)
+				}
+			}
+		}
+
+		if !foundText {
+			t.Error("Expected at least one text part in response")
+		}
+		if !foundToolCall {
+			t.Error("Expected tool call in response")
+		}
+
+		// Verify metrics
+		if metrics.PromptTokens != 50 {
+			t.Errorf("Expected 50 prompt tokens, got %d", metrics.PromptTokens)
+		}
+		if metrics.ResponseTokens != 100 {
+			t.Errorf("Expected 100 response tokens, got %d", metrics.ResponseTokens)
+		}
+		if metrics.TotalTokens != 150 {
+			t.Errorf("Expected 150 total tokens, got %d", metrics.TotalTokens)
+		}
+	})
+
+	t.Run("Malformed JSON Response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			// Return invalid JSON
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{invalid json}`))
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		_, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err == nil {
+			t.Fatal("Expected error for malformed JSON, got nil")
+		}
+
+		if !strings.Contains(err.Error(), "failed to decode response") {
+			t.Errorf("Expected 'failed to decode response' error, got: %v", err)
+		}
+	})
+
+	t.Run("HTTP 400 Bad Request", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			w.WriteHeader(http.StatusBadRequest)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"error": {"message": "Invalid request", "type": "invalid_request_error"}}`))
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		_, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err == nil {
+			t.Fatal("Expected error for HTTP 400, got nil")
+		}
+
+		var apiErr *llmerr.APIError
+		if !errors.As(err, &apiErr) {
+			t.Fatalf("Expected llmerr.APIError, got %T: %v", err, err)
+		}
+
+		if apiErr.Status != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", apiErr.Status)
+		}
+
+		if !strings.Contains(apiErr.Body, "Invalid request") {
+			t.Errorf("Expected error body to contain 'Invalid request', got: %s", apiErr.Body)
+		}
+	})
+
+	t.Run("Response with Usage in Output Items", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			resp := responsesAPIResponse{
+				ID: "resp_test_456",
+				Output: []responseOutputItem{
+					{
+						Type: "message",
+						Message: &struct {
+							Role      string         `json:"role"`
+							Content   []contentBlock `json:"content"`
+							ToolCalls []toolCall     `json:"tool_calls"`
+						}{
+							Role: "assistant",
+							Content: []contentBlock{
+								{
+									Type: "text",
+									Text: "First part",
+								},
+							},
+						},
+						Usage: &usage{
+							PromptTokens:     10,
+							CompletionTokens: 20,
+							TotalTokens:      30,
+						},
+					},
+					{
+						Type: "message",
+						Message: &struct {
+							Role      string         `json:"role"`
+							Content   []contentBlock `json:"content"`
+							ToolCalls []toolCall     `json:"tool_calls"`
+						}{
+							Role: "assistant",
+							Content: []contentBlock{
+								{
+									Type: "text",
+									Text: "Second part",
+								},
+							},
+						},
+						Usage: &usage{
+							PromptTokens:     5,
+							CompletionTokens: 15,
+							TotalTokens:      20,
+						},
+					},
+				},
+				Usage: usage{
+					PromptTokens:     15, // Should accumulate from items
+					CompletionTokens: 35,
+					TotalTokens:      50,
+				},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		_, metrics, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		// Should use accumulated usage from response (not items)
+		if metrics.PromptTokens != 15 {
+			t.Errorf("Expected 15 prompt tokens (from top-level usage), got %d", metrics.PromptTokens)
+		}
+		if metrics.ResponseTokens != 35 {
+			t.Errorf("Expected 35 response tokens, got %d", metrics.ResponseTokens)
+		}
+		if metrics.TotalTokens != 50 {
+			t.Errorf("Expected 50 total tokens, got %d", metrics.TotalTokens)
+		}
+	})
+}
+
+func TestResponsesAPIEdgeCases(t *testing.T) {
+	t.Run("Direct Content Blocks Without Message Wrapper", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			resp := responsesAPIResponse{
+				ID: "resp_test_edge_1",
+				Output: []responseOutputItem{
+					{
+						Type: "message",
+						Role: "assistant",
+						Content: []contentBlock{
+							{
+								Type: "text",
+								Text: "Direct text block",
+							},
+							{
+								Type:    "thought",
+								Thought: "I'm thinking",
+							},
+							{
+								Type: "tool_use",
+								Name: "calculator",
+								ID:   "call_calc_123",
+								Input: map[string]interface{}{
+									"operation": "add",
+									"numbers":   []interface{}{1, 2},
+								},
+							},
+						},
+					},
+				},
+				Usage: usage{
+					PromptTokens:     10,
+					CompletionTokens: 30,
+					TotalTokens:      40,
+				},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "calculator",
+			Description: "A calculator tool",
+		}
+
+		resp, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		var foundText, foundThought, foundToolCall bool
+		for _, part := range resp.Parts {
+			if part.Text == "Direct text block" && !part.IsThought {
+				foundText = true
+			}
+			if part.Text == "I'm thinking" && part.IsThought {
+				foundThought = true
+			}
+			if part.FunctionCall != nil && part.FunctionCall.Name == "calculator" {
+				foundToolCall = true
+				if part.FunctionCall.ID != "call_calc_123" {
+					t.Errorf("Expected tool call ID 'call_calc_123', got %s", part.FunctionCall.ID)
+				}
+			}
+		}
+
+		if !foundText {
+			t.Error("Expected text block in response")
+		}
+		if !foundThought {
+			t.Error("Expected thought block in response")
+		}
+		if !foundToolCall {
+			t.Error("Expected tool call in response")
+		}
+	})
+
+	t.Run("Refusal Block", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			resp := responsesAPIResponse{
+				ID: "resp_test_refusal",
+				Output: []responseOutputItem{
+					{
+						Type: "message",
+						Message: &struct {
+							Role      string         `json:"role"`
+							Content   []contentBlock `json:"content"`
+							ToolCalls []toolCall     `json:"tool_calls"`
+						}{
+							Role: "assistant",
+							Content: []contentBlock{
+								{
+									Type:    "refusal",
+									Refusal: "I cannot answer that question.",
+								},
+							},
+						},
+					},
+				},
+				Usage: usage{
+					PromptTokens:     5,
+					CompletionTokens: 10,
+					TotalTokens:      15,
+				},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		resp, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if len(resp.Parts) != 1 {
+			t.Errorf("Expected 1 part, got %d", len(resp.Parts))
+		}
+
+		if resp.Parts[0].Text != "I cannot answer that question." {
+			t.Errorf("Expected refusal text, got: %s", resp.Parts[0].Text)
+		}
+	})
+
+	t.Run("Top-Level Tool Call (type: call)", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			resp := responsesAPIResponse{
+				ID: "resp_test_top_level_call",
+				Output: []responseOutputItem{
+					{
+						Type: "call",
+						ID:   "call_top_123",
+						Function: &functionCall{
+							Name:      "execute_command",
+							Arguments: `{"command": "ls -la"}`,
+						},
+					},
+				},
+				Usage: usage{
+					PromptTokens:     20,
+					CompletionTokens: 25,
+					TotalTokens:      45,
+				},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "execute_command",
+			Description: "Execute a shell command",
+		}
+
+		resp, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if len(resp.Parts) != 1 {
+			t.Errorf("Expected 1 part, got %d", len(resp.Parts))
+		}
+
+		if resp.Parts[0].FunctionCall == nil {
+			t.Fatal("Expected function call part")
+		}
+
+		if resp.Parts[0].FunctionCall.Name != "execute_command" {
+			t.Errorf("Expected tool name 'execute_command', got %s", resp.Parts[0].FunctionCall.Name)
+		}
+
+		if resp.Parts[0].FunctionCall.ID != "call_top_123" {
+			t.Errorf("Expected tool call ID 'call_top_123', got %s", resp.Parts[0].FunctionCall.ID)
+		}
+	})
+
+	t.Run("Mixed Input and Output Text Blocks", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			resp := responsesAPIResponse{
+				ID: "resp_test_mixed",
+				Output: []responseOutputItem{
+					{
+						Type:       "text",
+						InputText:  "User said: Hello",
+						OutputText: "Assistant says: Hi there",
+					},
+					{
+						Type:    "thought",
+						Thought: "Processing greeting",
+					},
+				},
+				Usage: usage{
+					PromptTokens:     15,
+					CompletionTokens: 25,
+					TotalTokens:      40,
+				},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		resp, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		// Should extract OutputText over InputText
+		foundOutputText := false
+		foundThought := false
+		for _, part := range resp.Parts {
+			if part.Text == "Assistant says: Hi there" {
+				foundOutputText = true
+			}
+			if part.Text == "Processing greeting" && part.IsThought {
+				foundThought = true
+			}
+		}
+
+		if !foundOutputText {
+			t.Error("Expected output text to be extracted")
+		}
+		if !foundThought {
+			t.Error("Expected thought to be extracted")
+		}
+	})
+}
+
+func TestResponsesAPIErrorPaths(t *testing.T) {
+	t.Run("Tool Response with Empty ID", func(t *testing.T) {
+		// This test doesn't need a mock server because the error should occur before the HTTP request
+		client := NewClient(
+			"http://localhost:9999", // Won't be used
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		// Create history with a tool response that has empty ID (should trigger error)
+		history := []*llm.Content{
+			{
+				Role: "tool",
+				Parts: []*llm.Part{
+					{
+						FunctionResponse: &llm.FunctionResponse{
+							ID:       "", // Empty ID should trigger error
+							Name:     "test_tool",
+							Response: map[string]interface{}{"result": "test"},
+						},
+					},
+				},
+			},
+		}
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		_, _, err := client.SendChat(context.Background(), history, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err == nil {
+			t.Fatal("Expected error for tool response with empty ID, got nil")
+		}
+
+		if !strings.Contains(err.Error(), "invalid tool payload") {
+			t.Errorf("Expected error about invalid tool payload, got: %v", err)
+		}
+	})
+
+	t.Run("Invalid Tool Arguments JSON", func(t *testing.T) {
+		// This test would require mocking the server but the error happens during request preparation
+		// The marshalArgs function is called when classifying parts
+		// We need to create a function call with invalid arguments that can't be marshaled
+		// However, in Go, almost anything can be marshaled to JSON
+		// We'll skip this as it's hard to trigger without a custom marshaler
+		t.Skip("Hard to trigger JSON marshaling error with standard types")
+	})
+
+	t.Run("Response with Invalid Tool Call Arguments", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			resp := responsesAPIResponse{
+				ID: "resp_test_invalid_args",
+				Output: []responseOutputItem{
+					{
+						Type: "message",
+						Message: &struct {
+							Role      string         `json:"role"`
+							Content   []contentBlock `json:"content"`
+							ToolCalls []toolCall     `json:"tool_calls"`
+						}{
+							Role: "assistant",
+							ToolCalls: []toolCall{
+								{
+									ID:   "call_invalid_123",
+									Type: "function",
+									Function: functionCall{
+										Name:      "test_tool",
+										Arguments: "{invalid json}", // Invalid JSON
+									},
+								},
+							},
+						},
+					},
+				},
+				Usage: usage{
+					PromptTokens:     10,
+					CompletionTokens: 20,
+					TotalTokens:      30,
+				},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		_, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err == nil {
+			t.Fatal("Expected error for invalid tool call arguments JSON, got nil")
+		}
+
+		if !strings.Contains(err.Error(), "failed to unmarshal tool arguments") {
+			t.Errorf("Expected error about unmarshaling tool arguments, got: %v", err)
+		}
+	})
+
+	t.Run("Empty Output Array", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/responses" {
+				t.Errorf("Expected path /responses, got %s", r.URL.Path)
+			}
+
+			resp := responsesAPIResponse{
+				ID:     "resp_test_empty",
+				Output: []responseOutputItem{}, // Empty output
+				Usage: usage{
+					PromptTokens:     5,
+					CompletionTokens: 0,
+					TotalTokens:      5,
+				},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("Failed to encode response: %v", err)
+			}
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		resp, metrics, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		// Should have empty parts but valid response
+		if len(resp.Parts) != 0 {
+			t.Errorf("Expected 0 parts for empty output, got %d", len(resp.Parts))
+		}
+
+		if metrics.PromptTokens != 5 {
+			t.Errorf("Expected 5 prompt tokens, got %d", metrics.PromptTokens)
+		}
+	})
+}
+
+func TestResponsesAPIRouting(t *testing.T) {
+	t.Run("Routes to /responses when all conditions met", func(t *testing.T) {
+		var requestPath string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestPath = r.URL.Path
+			resp := responsesAPIResponse{
+				ID: "test",
+				Output: []responseOutputItem{
+					{Type: "text", Text: "OK"},
+				},
+				Usage: usage{
+					PromptTokens:     1,
+					CompletionTokens: 1,
+					TotalTokens:      2,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		// All conditions: gpt-5.4 model, tools, reasoning_effort header
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		_, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if requestPath != "/responses" {
+			t.Errorf("Expected path /responses, got %s", requestPath)
+		}
+	})
+
+	t.Run("Routes to /chat/completions when missing tools", func(t *testing.T) {
+		var requestPath string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestPath = r.URL.Path
+			resp := chatResponse{
+				ID: "test",
+				Choices: []choice{
+					{Message: message{Role: "assistant", Content: "OK"}},
+				},
+				Usage: usage{
+					PromptTokens:     1,
+					CompletionTokens: 1,
+					TotalTokens:      2,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		// Has gpt-5.4 model and reasoning_effort, but no tools
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		// No tools provided
+		_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if requestPath != "/chat/completions" {
+			t.Errorf("Expected path /chat/completions when no tools, got %s", requestPath)
+		}
+	})
+
+	t.Run("Routes to /chat/completions when missing reasoning_effort", func(t *testing.T) {
+		var requestPath string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestPath = r.URL.Path
+			resp := chatResponse{
+				ID: "test",
+				Choices: []choice{
+					{Message: message{Role: "assistant", Content: "OK"}},
+				},
+				Usage: usage{
+					PromptTokens:     1,
+					CompletionTokens: 1,
+					TotalTokens:      2,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		// Has gpt-5.4 model and tools, but no reasoning_effort header
+		client := NewClient(
+			server.URL,
+			"gpt-5.4",
+			&auth.BearerAuth{Token: "test-key"},
+			// No WithHeaders
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		_, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if requestPath != "/chat/completions" {
+			t.Errorf("Expected path /chat/completions when no reasoning_effort, got %s", requestPath)
+		}
+	})
+
+	t.Run("Routes to /chat/completions for non-gpt-5.4 model", func(t *testing.T) {
+		var requestPath string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestPath = r.URL.Path
+			resp := chatResponse{
+				ID: "test",
+				Choices: []choice{
+					{Message: message{Role: "assistant", Content: "OK"}},
+				},
+				Usage: usage{
+					PromptTokens:     1,
+					CompletionTokens: 1,
+					TotalTokens:      2,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		t.Cleanup(func() { server.Close() })
+
+		// Has tools and reasoning_effort, but model is gpt-4 (not gpt-5.4+)
+		client := NewClient(
+			server.URL,
+			"gpt-4",
+			&auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"reasoning_effort": "high"}),
+		)
+
+		toolDecl := &tools.ToolDeclaration{
+			Name:        "test_tool",
+			Description: "A test tool",
+		}
+
+		_, _, err := client.SendChat(context.Background(), nil, []*tools.ToolDeclaration{toolDecl}, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if requestPath != "/chat/completions" {
+			t.Errorf("Expected path /chat/completions for gpt-4 model, got %s", requestPath)
+		}
+	})
+}

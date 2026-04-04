@@ -6,7 +6,6 @@ package llm
 import (
 	"context"
 	"encoding/json"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"

@@ -6,11 +6,12 @@ package agent
 import (
 	"context"
 	"errors"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"

@@ -4,9 +4,10 @@
 package session
 
 import (
+	"testing"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestCalculateSummarizationEndIndex(t *testing.T) {

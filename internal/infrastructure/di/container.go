@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -31,7 +32,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui"
 )
 
 // ConfigurableSecurityManager extends the domain security manager with configuration methods.
@@ -44,20 +48,8 @@ type ConfigurableSecurityManager interface {
 	RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error
 }
 
-// Container defines the interface for building session dependencies and provides factories.
-type Container interface {
-	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error)
-	GetAgentFactory() ports.ChatterFactory
-	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error
-	GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error)
-	GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
-	GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error)
-	GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error)
-	GetSystemMetricsProvider() ports.SystemMetricsProvider
-}
-
-// bootstrapper handles the instantiation and wiring of system components.
-type bootstrapper struct {
+// Bootstrapper handles the instantiation and wiring of system components.
+type Bootstrapper struct {
 	HomeDir          string
 	SM               ConfigurableSecurityManager
 	Version          string
@@ -71,15 +63,15 @@ type bootstrapper struct {
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
-// NewBootstrapper creates a new Container instance.
-func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, logger *slog.Logger, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) Container {
+// NewBootstrapper creates a new Bootstrapper instance.
+func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, logger *slog.Logger, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) *Bootstrapper {
 	if clientFactory == nil {
 		clientFactory = infra_llm.NewClient
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &bootstrapper{
+	return &Bootstrapper{
 		HomeDir:          homeDir,
 		SM:               sm,
 		Version:          version,
@@ -95,7 +87,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
-func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
 	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, nil, nil, err
@@ -166,7 +158,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	return deps, hManager, cleanup, nil
 }
 
-func (b *bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistence.Paths) (*history.Manager, error) {
+func (b *Bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistence.Paths) (*history.Manager, error) {
 	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
 	if err := hManager.Load(ctx); err != nil {
 		if !errors.Is(err, ports.ErrHistoryNotFound) {
@@ -176,7 +168,7 @@ func (b *bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistenc
 	return hManager, nil
 }
 
-func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationParams) (tools.Registry, error) {
+func (b *Bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationParams) (tools.Registry, error) {
 	reg := registry.New()
 	params.Registry = reg
 
@@ -194,7 +186,7 @@ func (b *bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationPara
 	return reg, nil
 }
 
-func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(stdctx.Context) error, error) {
+func (b *Bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(stdctx.Context) error, error) {
 	var sessionProvider ports.SessionProvider
 	state, err := b.NewSessionState(ctx, paths.ModeDir)
 	if err != nil {
@@ -219,7 +211,7 @@ func (b *bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persisten
 	return sessionProvider, cleanup, nil
 }
 
-func (b *bootstrapper) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider) {
+func (b *Bootstrapper) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider) {
 	if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
 		b.SM.SetBypassActive(true)
 	}
@@ -246,7 +238,7 @@ func loadPathsFromSettings(ctx stdctx.Context, kv ports.KVStore, key string, reg
 	}
 }
 
-func (b *bootstrapper) buildAgentOrchestrator(
+func (b *Bootstrapper) buildAgentOrchestrator(
 	paths *persistence.Paths,
 	hManager ports.HistoryManager,
 	client llm.LLMClient,
@@ -312,12 +304,12 @@ func (d *sessionDeps) GetPricingData() pricing.PricingData { return d.pricingDat
 func (d *sessionDeps) GetClient() llm.LLMClient            { return d.client }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
-func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
+func (b *Bootstrapper) GetAgentFactory() ports.ChatterFactory {
 	return factory.NewChatter
 }
 
 // FinalizeSession saves history and records session cost.
-func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
 	var errs []error
 
 	// Finalize session
@@ -334,7 +326,7 @@ func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.Histor
 }
 
 // getPricingOverrides extracts pricing overrides from the configuration.
-func (b *bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricing.ModelPricing {
+func (b *Bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricing.ModelPricing {
 	pricingOverrides := make(map[string]pricing.ModelPricing)
 	for k, v := range cfg.Models {
 		if v.Pricing.Comp > 0 {
@@ -345,14 +337,14 @@ func (b *bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 }
 
 // setupSecurity configures the security manager with necessary paths.
-func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) error {
+func (b *Bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) error {
 	b.SM.RegisterSafePath(filepath.Join(b.HomeDir, "output"))
 	b.SM.RegisterReadOnlyPath(configPath)
 	return nil
 }
 
 // handleNewSession manages session rotation and cost recording for new sessions.
-func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
+func (b *Bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, b.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
@@ -372,7 +364,7 @@ func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 	return nil
 }
 
-func (b *bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
 	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize session paths: %w", err)
@@ -387,7 +379,7 @@ func (b *bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config)
 }
 
 // GetUnifiedHistoryProvider assembles the read-model for the history browser.
-func (b *bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
+func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
 	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize session paths: %w", err)
@@ -399,7 +391,7 @@ func (b *bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config
 }
 
 // GetToolNames retrieves the names of all available tools without starting a full session.
-func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error) {
+func (b *Bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error) {
 	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize paths: %w", err)
@@ -452,7 +444,7 @@ func (b *bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, conf
 }
 
 // GetSuggestionService initializes and returns the suggestion service.
-func (b *bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
+func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
 	tracker, err := history.NewGlobalPromptTracker(b.HomeDir)
 	if err != nil {
 		b.Logger.Warn("failed to initialize global prompt tracker, falling back to no-op", "error", err)
@@ -463,6 +455,50 @@ func (b *bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []
 }
 
 // GetSystemMetricsProvider returns the system metrics provider based on the platform.
-func (b *bootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider {
+func (b *Bootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider {
 	return telemetry.NewSystemMetricsProvider()
+}
+
+// GetUIRenderer returns a UI renderer configured with the bootstrapper's output writers.
+func (b *Bootstrapper) GetUIRenderer() ports.UIRenderer {
+	return ui.NewRenderer(b.SM, b.Stdout, b.Stderr, clock.RealClock{}, b.GetSystemMetricsProvider())
+}
+
+// GetHistoryRenderer returns a history renderer.
+func (b *Bootstrapper) GetHistoryRenderer() ports.HistoryRenderer {
+	return &ui.StdHistoryRenderer{}
+}
+
+// tuiHistoryBrowser implements ports.HistoryBrowser using the TUI.
+type tuiHistoryBrowser struct {
+	stdout io.Writer
+	stderr io.Writer
+	logger *slog.Logger
+}
+
+// Browse launches the TUI history browser.
+func (b *tuiHistoryBrowser) Browse(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
+	if closer, err := tui.InitLogger(); err == nil {
+		defer func() {
+			if closeErr := closer.Close(); closeErr != nil {
+				b.logger.Warn("failed to close tui logger", "error", closeErr)
+			}
+		}()
+	}
+
+	model := tui.NewRootBrowserModel(ctx, provider, hManager)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("tui program error: %w", err)
+	}
+	return nil
+}
+
+// GetHistoryBrowser returns a history browser that launches the TUI.
+func (b *Bootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
+	return &tuiHistoryBrowser{
+		stdout: b.Stdout,
+		stderr: b.Stderr,
+		logger: b.Logger,
+	}
 }

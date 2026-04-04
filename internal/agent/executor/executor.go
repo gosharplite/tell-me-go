@@ -81,9 +81,11 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 		if secErr == nil {
 			secErr = tools.ErrSecurityPolicy // fallback
 		}
+		// Return the security error without wrapping as terminal.
+		// The LLM will see the message and can adjust its behavior.
 		return tools.ToolResult{
 			Text:  msg,
-			Error: fmt.Errorf("%w: %v", llm.ErrTerminal, secErr),
+			Error: secErr, // NOT wrapped with llm.ErrTerminal
 		}
 	}
 

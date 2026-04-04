@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	infra_config "github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
@@ -32,15 +32,17 @@ func init() {
 
 // chatCommand implements the main chat command.
 type chatCommand struct {
-	Version     string
-	HomeDir     string
-	Stdin       io.Reader
-	Stdout      io.Writer
-	Stderr      io.Writer
-	SM          domain_security.Manager
-	ChatService agent.ChatService
-	MockPrompt  string
-	MockAnswer  string
+	Version      string
+	HomeDir      string
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	SM           domain_security.Manager
+	ChatService  agent.ChatService
+	Bootstrapper Bootstrapper
+	Loader       domain_config.ConfigLoader
+	MockPrompt   string
+	MockAnswer   string
 }
 
 type cliOptions struct {
@@ -57,15 +59,17 @@ type cliOptions struct {
 // newChatCommand creates a new Chat Command with default factories.
 func newChatCommand(ctx *context) *chatCommand {
 	return &chatCommand{
-		Version:     ctx.Version,
-		HomeDir:     ctx.HomeDir,
-		Stdin:       ctx.Stdin,
-		Stdout:      ctx.Stdout,
-		Stderr:      ctx.Stderr,
-		SM:          ctx.SM,
-		ChatService: ctx.ChatService,
-		MockPrompt:  ctx.MockPrompt,
-		MockAnswer:  ctx.MockAnswer,
+		Version:      ctx.Version,
+		HomeDir:      ctx.HomeDir,
+		Stdin:        ctx.Stdin,
+		Stdout:       ctx.Stdout,
+		Stderr:       ctx.Stderr,
+		SM:           ctx.SM,
+		ChatService:  ctx.ChatService,
+		Bootstrapper: ctx.Bootstrapper,
+		Loader:       ctx.Loader,
+		MockPrompt:   ctx.MockPrompt,
+		MockAnswer:   ctx.MockAnswer,
 	}
 }
 
@@ -92,7 +96,12 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// 3. Invoking a Use Case / Service interface
-	capturer, cleanup := c.buildCapturer(ctx, opts)
+	cfg, err := c.Loader.Load(opts.configPath)
+	if err != nil {
+		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
+	}
+
+	capturer, cleanup := c.buildCapturer(ctx, cfg, opts)
 	defer func() {
 		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
 		defer cancel()
@@ -107,7 +116,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	// Delegate all business logic and orchestration to the ChatService
-	return c.ChatService.ProcessMessage(ctx, agent.ChatOptions{
+	return c.ChatService.ProcessMessage(ctx, cfg, agent.ChatOptions{
 		ConfigPath:   opts.configPath,
 		NewSession:   opts.newSession,
 		LastN:        opts.lastN,
@@ -129,8 +138,7 @@ func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet,
 	}
 
 	// Configuration Merge
-	loader := &infra_config.YAMLConfigLoader{}
-	cfg, _ := loader.Load(opts.configPath)
+	cfg, _ := c.Loader.Load(opts.configPath)
 	// Only auto-enable TUI from config if no other actions are requested
 	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
 		opts.tuiPrompt = true
@@ -139,29 +147,34 @@ func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet,
 	return opts, fs, nil
 }
 
-func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports.Capturer, func(stdctx.Context) error) {
+func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error) {
 	if opts.tuiPrompt {
 		// Try to get at least the last user message for the trie
-		lastMsg, _, _ := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
+		hManager, _ := c.Bootstrapper.GetHistoryManager(ctx, cfg)
+		var lastMsg string
+		if hManager != nil {
+			lastMsg, _, _ = c.ChatService.GetLastUserMessage(ctx, hManager)
+		}
+
 		var recentHistory []string
 		if lastMsg != "" {
 			recentHistory = append(recentHistory, lastMsg)
 		}
 
-		svc, err := c.ChatService.GetSuggestionService(ctx, recentHistory)
+		svc, err := c.Bootstrapper.GetSuggestionService(ctx, recentHistory)
 
 		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 		if !ok {
 			// Fallback: use a dummy cleanup or return an error if TUI requires BaseCapturer
-			c, ok := capturerInterface.(ports.Capturer)
+			ci, ok := capturerInterface.(agent.CapturerInteractor)
 			if !ok {
 				return nil, func(stdctx.Context) error { return nil }
 			}
-			return c, func(stdctx.Context) error { return nil }
+			return ci, func(stdctx.Context) error { return nil }
 		}
 
-		var capturer ports.Capturer
+		var capturer agent.CapturerInteractor
 		cleanup := func(stdctx.Context) error { return nil }
 
 		if err != nil {
@@ -182,18 +195,17 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 		if sm, ok := c.SM.(interface {
 			SetInteractor(domain_security.UserInteractor)
 		}); ok {
-			if interactor, ok := capturer.(domain_security.UserInteractor); ok {
-				sm.SetInteractor(interactor)
-			}
+			// capturer already implements UserInteractor via CapturerInteractor
+			sm.SetInteractor(capturer)
 		}
 		return capturer, cleanup
 	}
 	return c.setupCapturer()
 }
 
-func (c *chatCommand) setupCapturer() (ports.Capturer, func(stdctx.Context) error) {
+func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error) {
 	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
-	capturer, ok := capturerInterface.(ports.Capturer)
+	capturer, ok := capturerInterface.(agent.CapturerInteractor)
 	if !ok {
 		return nil, func(stdctx.Context) error { return nil }
 	}
@@ -205,7 +217,7 @@ func (c *chatCommand) setupCapturer() (ports.Capturer, func(stdctx.Context) erro
 	return capturer, func(stdctx.Context) error { return nil }
 }
 
-func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer ports.Capturer) (string, error) {
+func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer agent.CapturerInteractor) (string, error) {
 	captureOpts := c.prepareCaptureOptions(opts)
 	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
 	if err != nil {
@@ -219,7 +231,17 @@ func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *
 }
 
 func (c *chatCommand) handleRetryFlow(ctx stdctx.Context, opts *cliOptions) (prompt string, backN int, abort bool, err error) {
-	lastMsg, turns, err := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
+	cfg, err := c.Loader.Load(opts.configPath)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("failed to load config for retry: %w", err)
+	}
+
+	hManager, err := c.Bootstrapper.GetHistoryManager(ctx, cfg)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("failed to get history manager for retry: %w", err)
+	}
+
+	lastMsg, turns, err := c.ChatService.GetLastUserMessage(ctx, hManager)
 	if err != nil {
 		return "", 0, false, fmt.Errorf("failed to get last user message for retry: %w", err)
 	}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
+
+const maxResponseBytes = 10 * 1024 * 1024 // 10 MB safety limit for LLM responses (prevents OOM from malformed/malicious payloads)
 
 // client implements the llm.LLMClient interface for the Anthropic Messages API.
 type client struct {
@@ -179,7 +182,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	startTime := time.Now()
 	resp, err := c.httpClient.Do(req)
-	duration := time.Since(startTime).Seconds()
+	ttfb := time.Since(startTime) // Time To First Byte
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
@@ -188,16 +191,38 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		_ = resp.Body.Close()
 	}()
 
-	if err := c.checkResponse(resp); err != nil {
-		return nil, nil, err
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		if err != nil {
+			return nil, nil, fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
+		}
+		return nil, nil, &llmerr.APIError{
+			Status: resp.StatusCode,
+			Body:   string(bodyBytes),
+		}
 	}
 
+	// Stream the JSON decoding to avoid large memory allocations
+	bodyReadStart := time.Now()
 	var msgResp messagesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&msgResp); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+	bodyReadTime := time.Since(bodyReadStart)
+	totalDuration := time.Since(startTime)
 
-	return c.fromAnthropicResponse(&msgResp, duration)
+	// Log platform-aware timing breakdown
+	c.logger.Debug("http_timing_breakdown",
+		"platform", runtime.GOOS,
+		"provider", "anthropic",
+		"model", c.model,
+		"ttfb_ms", ttfb.Milliseconds(),
+		"body_read_ms", bodyReadTime.Milliseconds(),
+		"total_ms", totalDuration.Milliseconds(),
+		"endpoint", "/messages",
+	)
+
+	return c.fromAnthropicResponse(&msgResp, totalDuration.Seconds())
 }
 
 func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message, error) {
@@ -422,6 +447,30 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 		Duration:       duration,
 	}
 
+	// Log token throughput for diagnostics
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
+		c.logger.Debug("token_throughput",
+			"platform", runtime.GOOS,
+			"provider", "anthropic",
+			"model", c.model,
+			"response_tokens", metrics.ResponseTokens,
+			"duration_sec", metrics.Duration,
+			"tokens_per_sec", tokensPerSec,
+			"cached_tokens", metrics.CachedTokens,
+			"thinking_tokens", metrics.ThinkingTokens,
+		)
+
+		// Warn if throughput is implausible (already caught by turn_engine validation)
+		if tokensPerSec > 100 {
+			c.logger.Warn("implausible_throughput_detected",
+				"platform", runtime.GOOS,
+				"tokens_per_sec", tokensPerSec,
+				"likely_cause", "platform_network_stack_variance",
+			)
+		}
+	}
+
 	return content, metrics, nil
 }
 
@@ -514,17 +563,6 @@ func (c *client) buildHTTPRequest(ctx context.Context, body []byte) (*http.Reque
 	}
 
 	return req, nil
-}
-
-func (c *client) checkResponse(resp *http.Response) error {
-	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
-		}
-		return &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
-	}
-	return nil
 }
 
 func marshalResponse(res map[string]interface{}) string {

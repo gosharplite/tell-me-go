@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"crypto/rand"
+	"log/slog"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -18,7 +20,6 @@ import (
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/require"
-	"log/slog"
 )
 
 type mockFailingSummarizer struct{}

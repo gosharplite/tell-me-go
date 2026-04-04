@@ -5,10 +5,11 @@ package llm
 
 import (
 	"context"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"os"
 	"path/filepath"
 	"testing"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"

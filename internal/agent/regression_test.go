@@ -6,10 +6,11 @@ package agent
 import (
 	"context"
 	"fmt"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"

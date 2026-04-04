@@ -57,22 +57,31 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 
 	// Wrap bootstrapper to override AgentFactory
 	container := &wrappedContainer{
-		Container: bootstrapper,
+		Bootstrapper: bootstrapper,
 		AgentFactory: func(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 			return &integrationMockChatter{}, nil
 		},
 	}
 
 	loader := &config.YAMLConfigLoader{}
-	chatService := agent.NewChatService(tmpDir, "1.0.0", &stdout, &stderr, sm, loader, container)
+	chatService := agent.NewChatService(
+		tmpDir, "1.0.0", &stdout, &stderr, sm,
+		container,
+		container.GetAgentFactory(),
+		container.GetUIRenderer(),
+		container.GetHistoryRenderer(),
+		container.GetHistoryBrowser(),
+	)
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader("hello"),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: chatService,
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader("hello"),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  chatService,
+		Bootstrapper: container,
+		Loader:       loader,
 	}
 
 	ctx := stdctx.Background()
@@ -97,7 +106,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 }
 
 type wrappedContainer struct {
-	di.Container
+	*di.Bootstrapper
 	AgentFactory ports.ChatterFactory
 }
 

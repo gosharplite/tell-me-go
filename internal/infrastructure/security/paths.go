@@ -37,9 +37,19 @@ func (p *pathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error
 		}
 	}
 
+	// Existing: user-specific temp directory
 	if ok, _ := p.checkBoundary(absPath, os.TempDir()); ok {
 		return true, nil
 	}
+
+	// NEW: System-wide /tmp (including symlink resolution)
+	if ok, _ := p.checkBoundary(absPath, "/tmp"); ok {
+		return true, nil
+	}
+	if ok, _ := p.checkBoundary(absPath, "/private/tmp"); ok {
+		return true, nil
+	}
+
 	return false, nil
 }
 

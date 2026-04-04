@@ -5,11 +5,12 @@ package factory
 
 import (
 	"context"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"

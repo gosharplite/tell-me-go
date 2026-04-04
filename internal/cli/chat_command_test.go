@@ -10,36 +10,104 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/mock"
 )
 
 type mockChatService struct {
-	chatCalled              bool
-	lastParams              agent.ChatOptions
-	getSuggestionServiceErr error
+	chatCalled bool
+	lastParams agent.ChatOptions
 }
 
-func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOptions, capturer ports.Capturer) error {
+func (m *mockChatService) ProcessMessage(ctx stdctx.Context, cfg *config.Config, opts agent.ChatOptions, capturer agent.CapturerInteractor) error {
 	m.chatCalled = true
 	m.lastParams = opts
 	return nil
 }
 
-func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, configPath string) (string, int, error) {
+func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, hManager ports.HistoryManager) (string, int, error) {
 	return "retry test", 1, nil
 }
 
-func (m *mockChatService) BrowseHistory(ctx stdctx.Context, configPath string, capturer ports.Capturer) error {
+func (m *mockChatService) BrowseHistory(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
 	return nil
 }
 
-func (m *mockChatService) GetToolNames(ctx stdctx.Context, configPath string) ([]string, error) {
+func (m *mockChatService) GetToolNames(ctx stdctx.Context, reg tools.Registry) ([]string, error) {
 	return []string{"test_tool"}, nil
 }
 
-func (m *mockChatService) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
-	return &mockSuggestionService{}, m.getSuggestionServiceErr
+type mockBootstrapper struct {
+	mock.Mock
+}
+
+func (m *mockBootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+	args := m.Called(ctx, cfg, configPath, newSession, capturer)
+	return args.Get(0).(ports.SessionDependencies), args.Get(1).(ports.HistoryManager), args.Get(2).(func(stdctx.Context) error), args.Error(3)
+}
+
+func (m *mockBootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+	return m.Called(ctx, hManager, deps, cfg).Error(0)
+}
+
+func (m *mockBootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
+	args := m.Called(ctx, cfg)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.HistoryManager), args.Error(1)
+}
+
+func (m *mockBootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
+	args := m.Called(ctx, cfg, hManager)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.UnifiedHistoryProvider), args.Error(1)
+}
+
+func (m *mockBootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
+	args := m.Called(ctx, recentHistory)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(ports.SuggestionService), args.Error(1)
+}
+
+func (m *mockBootstrapper) GetAgentFactory() ports.ChatterFactory {
+	return m.Called().Get(0).(ports.ChatterFactory)
+}
+
+func (m *mockBootstrapper) GetUIRenderer() ports.UIRenderer {
+	return m.Called().Get(0).(ports.UIRenderer)
+}
+
+func (m *mockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer {
+	return m.Called().Get(0).(ports.HistoryRenderer)
+}
+
+func (m *mockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
+	return m.Called().Get(0).(ports.HistoryBrowser)
+}
+
+type mockLoader struct {
+	mock.Mock
+}
+
+func (m *mockLoader) Load(path string) (*config.Config, error) {
+	args := m.Called(path)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*config.Config), args.Error(1)
+}
+
+func (m *mockLoader) Watch(ctx stdctx.Context, path string) (<-chan *config.Config, error) {
+	args := m.Called(ctx, path)
+	return args.Get(0).(<-chan *config.Config), args.Error(1)
 }
 
 type mockSuggestionService struct{}
@@ -59,21 +127,33 @@ func (m *mockSM) TerminalLock()                                           {}
 func (m *mockSM) TerminalUnlock()                                         {}
 func (m *mockSM) Close() error                                            { return nil }
 
+func setupMocks() (*mockBootstrapper, *mockLoader) {
+	mb := &mockBootstrapper{}
+	ml := &mockLoader{}
+	ml.On("Load", mock.Anything).Return(&config.Config{}, nil).Maybe()
+	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(&mockSuggestionService{}, nil).Maybe()
+	return mb, ml
+}
+
 func TestChatCommand_Execute(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
+	mb, ml := setupMocks()
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader(""),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: mService,
-		MockPrompt:  "hello",
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		MockPrompt:   "hello",
 	}
 
 	ctx := stdctx.Background()
@@ -99,14 +179,17 @@ func TestChatCommand_Execute_LastN(t *testing.T) {
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
+	mb, ml := setupMocks()
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader(""),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: mService,
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
 	}
 
 	ctx := stdctx.Background()
@@ -132,14 +215,17 @@ func TestChatCommand_Execute_BackN(t *testing.T) {
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
+	mb, ml := setupMocks()
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader(""),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: mService,
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
 	}
 
 	ctx := stdctx.Background()
@@ -165,14 +251,17 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
+	mb, ml := setupMocks()
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader("y\n"),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: mService,
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader("y\n"),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
 	}
 
 	ctx := stdctx.Background()
@@ -206,14 +295,17 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
+	mb, ml := setupMocks()
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader("n\n"),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: mService,
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader("n\n"),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
 	}
 
 	ctx := stdctx.Background()
@@ -247,15 +339,18 @@ func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 	}
 
 	mService := &mockChatService{}
+	mb, ml := setupMocks()
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader("hello\n"),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          trackingSM,
-		ChatService: mService,
-		HomeDir:     t.TempDir(),
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader("hello\n"),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           trackingSM,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		HomeDir:      t.TempDir(),
 	}
 
 	ctx := stdctx.Background()
@@ -286,18 +381,22 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{
-		getSuggestionServiceErr: errors.New("initialization failed"),
-	}
+	mService := &mockChatService{}
+	mb, ml := setupMocks()
+	mb.ExpectedCalls = nil
+	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(nil, errors.New("initialization failed")).Maybe()
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader("fallback test\n"),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: mService,
-		HomeDir:     t.TempDir(),
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader("fallback test\n"),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		HomeDir:      t.TempDir(),
 	}
 
 	ctx := stdctx.Background()

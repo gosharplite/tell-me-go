@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
+
+const maxResponseBytes = 10 * 1024 * 1024 // 10 MB safety limit for LLM responses (prevents OOM from malformed/malicious payloads)
 
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
@@ -351,7 +354,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	startTime := time.Now()
 	resp, err := c.httpClient.Do(req)
-	duration := time.Since(startTime).Seconds()
+	ttfb := time.Since(startTime) // Time To First Byte
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
@@ -361,27 +364,60 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
+		bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		if err != nil {
 			return nil, nil, fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
 		}
-		return nil, nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
+		return nil, nil, &llmerr.APIError{
+			Status: resp.StatusCode,
+			Body:   string(bodyBytes),
+		}
 	}
+
+	// Stream the JSON decoding to avoid large memory allocations
+	bodyReadStart := time.Now()
 
 	if endpoint == "/responses" {
 		var chatResp responsesAPIResponse
-		if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
 			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
-		return c.fromResponsesAPIResponse(&chatResp, duration)
+
+		bodyReadTime := time.Since(bodyReadStart)
+		totalDuration := time.Since(startTime)
+
+		c.logger.Debug("http_timing_breakdown",
+			"platform", runtime.GOOS,
+			"provider", "openai",
+			"model", c.model,
+			"ttfb_ms", ttfb.Milliseconds(),
+			"body_read_ms", bodyReadTime.Milliseconds(),
+			"total_ms", totalDuration.Milliseconds(),
+			"endpoint", endpoint,
+		)
+
+		return c.fromResponsesAPIResponse(&chatResp, totalDuration.Seconds())
 	}
 
 	var chatResp chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return c.fromOpenAIResponse(&chatResp, duration)
+	bodyReadTime := time.Since(bodyReadStart)
+	totalDuration := time.Since(startTime)
+
+	c.logger.Debug("http_timing_breakdown",
+		"platform", runtime.GOOS,
+		"provider", "openai",
+		"model", c.model,
+		"ttfb_ms", ttfb.Milliseconds(),
+		"body_read_ms", bodyReadTime.Milliseconds(),
+		"total_ms", totalDuration.Milliseconds(),
+		"endpoint", endpoint,
+	)
+
+	return c.fromOpenAIResponse(&chatResp, totalDuration.Seconds())
 }
 
 type openaiSink interface {
@@ -763,6 +799,29 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 		metrics.ThinkingTokens = u.CompletionTokensDetails.ReasoningTokens
 	}
 
+	// Log token throughput for diagnostics
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
+		c.logger.Debug("token_throughput",
+			"platform", runtime.GOOS,
+			"provider", "openai",
+			"model", c.model,
+			"response_tokens", metrics.ResponseTokens,
+			"duration_sec", metrics.Duration,
+			"tokens_per_sec", tokensPerSec,
+			"cached_tokens", metrics.CachedTokens,
+		)
+
+		// Warn if throughput is implausible (already caught by turn_engine validation)
+		if tokensPerSec > 100 {
+			c.logger.Warn("implausible_throughput_detected",
+				"platform", runtime.GOOS,
+				"tokens_per_sec", tokensPerSec,
+				"likely_cause", "platform_network_stack_variance",
+			)
+		}
+	}
+
 	return metrics
 }
 
@@ -879,6 +938,29 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 
 	if resp.Usage.CompletionTokensDetails != nil {
 		metrics.ThinkingTokens = resp.Usage.CompletionTokensDetails.ReasoningTokens
+	}
+
+	// Log token throughput for diagnostics
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
+		c.logger.Debug("token_throughput",
+			"platform", runtime.GOOS,
+			"provider", "openai",
+			"model", c.model,
+			"response_tokens", metrics.ResponseTokens,
+			"duration_sec", metrics.Duration,
+			"tokens_per_sec", tokensPerSec,
+			"cached_tokens", metrics.CachedTokens,
+		)
+
+		// Warn if throughput is implausible (already caught by turn_engine validation)
+		if tokensPerSec > 100 {
+			c.logger.Warn("implausible_throughput_detected",
+				"platform", runtime.GOOS,
+				"tokens_per_sec", tokensPerSec,
+				"likely_cause", "platform_network_stack_variance",
+			)
+		}
 	}
 
 	return content, metrics, nil

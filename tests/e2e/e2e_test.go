@@ -479,10 +479,8 @@ func TestSecurityGate(t *testing.T) {
 				"TELL_ME_MOCK_URL=" + server.URL,
 			}
 
-			_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
-			if err == nil {
-				t.Fatalf("CLI succeeded when it should have failed due to security violation")
-			}
+			_, stderr, _ := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
+
 			if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") && !strings.Contains(string(stderr), "security policy") && !strings.Contains(*receivedResponse, "security policy") {
 				t.Errorf("Expected security error in stderr or response. stderr: %s, response: %q", stderr, *receivedResponse)
 			}
@@ -514,10 +512,7 @@ func TestSymlinkAttack(t *testing.T) {
 		"TELL_ME_MOCK_URL=" + server.URL,
 	}
 
-	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
-	if err == nil {
-		t.Fatalf("CLI succeeded when it should have failed due to symlink attack")
-	}
+	_, stderr, _ := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
 
 	if !strings.Contains(string(stderr), "security violation") && !strings.Contains(*receivedResponse, "security violation") && !strings.Contains(string(stderr), "security policy") && !strings.Contains(*receivedResponse, "security policy") {
 		t.Errorf("Expected security error for symlink attack. stderr: %s, response: %q", stderr, *receivedResponse)
@@ -583,6 +578,48 @@ PROVIDERS:
 		t.Fatalf("Failed to write temp config: %v", err)
 	}
 	return path
+}
+
+func createTempConfigWithMode(t *testing.T, providerType, mockURL, mode string) string {
+	content := fmt.Sprintf(`
+MODE: "%s"
+SELECTED_PROVIDER: "mock"
+PROVIDERS:
+  mock:
+    TYPE: "%s"
+    URL: "%s"
+    API_KEY: "dummy"
+    MODEL: "gpt-4"
+`, mode, providerType, mockURL)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write temp config: %v", err)
+	}
+	return path
+}
+
+func setupSimpleTextMockServer(t *testing.T, provider string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Validate endpoint mapping based on provider
+		if provider == "google" && !strings.Contains(r.URL.Path, "generateContent") {
+			t.Errorf("Google provider should use generateContent endpoint, got: %s", r.URL.Path)
+			return
+		}
+		if provider == "openai" && !strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			t.Errorf("OpenAI provider should use /chat/completions endpoint, got: %s", r.URL.Path)
+			return
+		}
+		if provider == "anthropic" && !strings.HasSuffix(r.URL.Path, "/messages") {
+			t.Errorf("Anthropic provider should use /messages endpoint, got: %s", r.URL.Path)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		// Return a simple text response for any request
+		resp := createTextResponse(provider, "Hello, I'm the model.")
+		_, _ = fmt.Fprint(w, resp)
+	}))
 }
 
 func setupProviderMockServer(t *testing.T, provider string, toolName string, toolArgs map[string]interface{}, onToolResponse func(string) string) (*httptest.Server, *string) {
