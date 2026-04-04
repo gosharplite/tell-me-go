@@ -191,15 +191,25 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		_ = resp.Body.Close()
 	}()
 
-	// Read entire response body
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		if err != nil {
+			return nil, nil, fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
+		}
+		return nil, nil, &llmerr.APIError{
+			Status: resp.StatusCode,
+			Body:   string(bodyBytes),
+		}
+	}
+
+	// Stream the JSON decoding to avoid large memory allocations
 	bodyReadStart := time.Now()
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	var msgResp messagesResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&msgResp); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
+	}
 	bodyReadTime := time.Since(bodyReadStart)
 	totalDuration := time.Since(startTime)
-
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-	}
 
 	// Log platform-aware timing breakdown
 	c.logger.Debug("http_timing_breakdown",
@@ -212,21 +222,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		"endpoint", "/messages",
 	)
 
-	duration := totalDuration.Seconds() // Keep for backward compatibility
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil, &llmerr.APIError{
-			Status: resp.StatusCode,
-			Body:   string(bodyBytes),
-		}
-	}
-
-	var msgResp messagesResponse
-	if err := json.Unmarshal(bodyBytes, &msgResp); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return c.fromAnthropicResponse(&msgResp, duration)
+	return c.fromAnthropicResponse(&msgResp, totalDuration.Seconds())
 }
 
 func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message, error) {

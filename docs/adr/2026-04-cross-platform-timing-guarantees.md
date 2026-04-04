@@ -23,12 +23,12 @@ A three‑part solution was implemented to ensure accurate cross‑platform timi
 **Location**: `internal/infrastructure/llm/openai/client.go` and `internal/infrastructure/llm/anthropic/client.go` – `SendChat` methods
 
 **Changes**:
-1. **Measure Total Transaction Time**: Duration is now measured **after** `io.ReadAll(resp.Body)` completes, capturing the full HTTP transaction (headers + body transfer).
+1. **Measure Total Transaction Time**: Duration is now measured **after** the JSON stream decoding (`json.NewDecoder(resp.Body).Decode(&resp)`) completes, capturing the full HTTP transaction (headers + streaming body transfer).
 2. **Explicit Timing Breakdown**: Introduced separate timing variables:
    - `ttfb` – time‑to‑first‑byte (headers received)
-   - `bodyReadTime` – time spent reading the entire response body
+   - `bodyReadTime` – time spent consuming the response stream during JSON decoding
    - `totalDuration` – sum of both, used as the official LLM response duration
-3. **Replace Streaming Decoder**: Changed from `json.NewDecoder(resp.Body).Decode(...)` to `json.Unmarshal(bodyBytes, …)` after reading the complete body, guaranteeing that the measured duration includes all chunked‑transfer overhead.
+3. **Preserve Streaming Scalability**: Retained `json.NewDecoder` to parse responses concurrently as they arrive over the network, avoiding `io.ReadAll` O(N) memory allocations for large tool-call payloads on success paths.
 
 ### Part B: Throughput Validation
 **Location**: `internal/agent/turn_engine.go` – `inferenceStep.validateMetrics` method
@@ -56,7 +56,6 @@ A three‑part solution was implemented to ensure accurate cross‑platform timi
 - **Non‑Invasive**: Diagnostics are debug‑level only (`LOG_LEVEL=debug`) and do not affect production performance.
 
 ### Negative
-- **Memory Overhead**: Reading the entire response body into memory before unmarshaling increases peak memory usage for large responses (mitigated by typical response sizes < 1 MB).
 - **Log Volume**: Additional debug logs may increase storage/bandwidth in production environments (mitigated by default‑off logging).
 - **Complexity**: More timing‑related code in LLM clients requires careful maintenance and testing across platforms.
 

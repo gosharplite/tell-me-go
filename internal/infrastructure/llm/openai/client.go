@@ -363,17 +363,50 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		_ = resp.Body.Close()
 	}()
 
-	// Read entire response body
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		if err != nil {
+			return nil, nil, fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
+		}
+		return nil, nil, &llmerr.APIError{
+			Status: resp.StatusCode,
+			Body:   string(bodyBytes),
+		}
+	}
+
+	// Stream the JSON decoding to avoid large memory allocations
 	bodyReadStart := time.Now()
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+
+	if endpoint == "/responses" {
+		var chatResp responsesAPIResponse
+		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		
+		bodyReadTime := time.Since(bodyReadStart)
+		totalDuration := time.Since(startTime)
+		
+		c.logger.Debug("http_timing_breakdown",
+			"platform", runtime.GOOS,
+			"provider", "openai",
+			"model", c.model,
+			"ttfb_ms", ttfb.Milliseconds(),
+			"body_read_ms", bodyReadTime.Milliseconds(),
+			"total_ms", totalDuration.Milliseconds(),
+			"endpoint", endpoint,
+		)
+		
+		return c.fromResponsesAPIResponse(&chatResp, totalDuration.Seconds())
+	}
+
+	var chatResp chatResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
 	bodyReadTime := time.Since(bodyReadStart)
 	totalDuration := time.Since(startTime)
 
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Log platform-aware timing breakdown
 	c.logger.Debug("http_timing_breakdown",
 		"platform", runtime.GOOS,
 		"provider", "openai",
@@ -384,29 +417,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		"endpoint", endpoint,
 	)
 
-	duration := totalDuration.Seconds() // Keep for backward compatibility
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil, &llmerr.APIError{
-			Status: resp.StatusCode,
-			Body:   string(bodyBytes),
-		}
-	}
-
-	if endpoint == "/responses" {
-		var chatResp responsesAPIResponse
-		if err := json.Unmarshal(bodyBytes, &chatResp); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-		}
-		return c.fromResponsesAPIResponse(&chatResp, duration)
-	}
-
-	var chatResp chatResponse
-	if err := json.Unmarshal(bodyBytes, &chatResp); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return c.fromOpenAIResponse(&chatResp, duration)
+	return c.fromOpenAIResponse(&chatResp, totalDuration.Seconds())
 }
 
 type openaiSink interface {
