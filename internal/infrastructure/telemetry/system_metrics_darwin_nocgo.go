@@ -6,12 +6,11 @@
 package telemetry
 
 import (
-	"encoding/binary"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"golang.org/x/sys/unix"
 )
 
 type darwinNoCGoMetricsProvider struct{}
@@ -45,19 +44,19 @@ func (p *darwinNoCGoMetricsProvider) GetMemoryPercent() float64 {
 	}
 
 	// 2. Try to get free page count via sysctl "vm.page_free_count"
-	freePages, err := syscall.SysctlUint32("vm.page_free_count")
+	freePages, err := unix.SysctlUint32("vm.page_free_count")
 	if err != nil {
 		return fallbackMemory(totalBytes)
 	}
-	pageSize := uint64(syscall.Getpagesize())
+	pageSize := uint64(unix.Getpagesize())
 	availablePages := uint64(freePages)
 
 	// Add speculative pages if available (they are allocated but not yet used)
-	if specPages, err := syscall.SysctlUint32("vm.page_speculative_count"); err == nil {
+	if specPages, err := unix.SysctlUint32("vm.page_speculative_count"); err == nil {
 		availablePages += uint64(specPages)
 	}
 	// Add purgeable pages (can be reclaimed)
-	if purgePages, err := syscall.SysctlUint32("vm.page_purgeable_count"); err == nil {
+	if purgePages, err := unix.SysctlUint32("vm.page_purgeable_count"); err == nil {
 		availablePages += uint64(purgePages)
 	}
 
@@ -80,26 +79,14 @@ func (p *darwinNoCGoMetricsProvider) GetMemoryPercent() float64 {
 
 // getTotalMemory returns the total physical memory in bytes.
 func getTotalMemory() (uint64, error) {
-	s, err := syscall.Sysctl("hw.memsize")
-	if err != nil {
-		return 0, err
-	}
-	buf := []byte(s)
-	for len(buf) < 8 {
-		buf = append(buf, 0)
-	}
-	if len(buf) > 8 {
-		buf = buf[:8]
-	}
-	totalBytes := binary.LittleEndian.Uint64(buf)
-	return totalBytes, nil
+	return unix.SysctlUint64("hw.memsize")
 }
 
 // fallbackMemory attempts to estimate memory pressure from swap usage,
 // then returns a plausible constant value.
 func fallbackMemory(totalBytes uint64) float64 {
 	// Try swap usage
-	swap, err := syscall.Sysctl("vm.swapusage")
+	swap, err := unix.Sysctl("vm.swapusage")
 	if err == nil && len(swap) > 0 {
 		if usedMB := parseSwapUsed(swap); usedMB > 0 {
 			usedBytes := usedMB * 1024 * 1024

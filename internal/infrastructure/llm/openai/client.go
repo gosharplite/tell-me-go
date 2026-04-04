@@ -382,10 +382,10 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&chatResp); err != nil {
 			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
-		
+
 		bodyReadTime := time.Since(bodyReadStart)
 		totalDuration := time.Since(startTime)
-		
+
 		c.logger.Debug("http_timing_breakdown",
 			"platform", runtime.GOOS,
 			"provider", "openai",
@@ -395,7 +395,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 			"total_ms", totalDuration.Milliseconds(),
 			"endpoint", endpoint,
 		)
-		
+
 		return c.fromResponsesAPIResponse(&chatResp, totalDuration.Seconds())
 	}
 

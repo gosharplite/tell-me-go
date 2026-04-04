@@ -12,11 +12,10 @@ package telemetry
 import "C"
 
 import (
-	"encoding/binary"
-	"syscall"
 	"unsafe"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"golang.org/x/sys/unix"
 )
 
 type darwinMetricsProvider struct{}
@@ -57,19 +56,10 @@ func (p *darwinMetricsProvider) GetCPUStats() (int64, int64) {
 // GetMemoryPercent returns the host memory‑usage percentage (0‑100) using sysctl.
 func (p *darwinMetricsProvider) GetMemoryPercent() float64 {
 	// 1. Get total physical memory via sysctl
-	s, err := syscall.Sysctl("hw.memsize")
+	total, err := unix.SysctlUint64("hw.memsize")
 	if err != nil {
 		return 0.0
 	}
-	buf := []byte(s)
-	// sysctl strips trailing zero bytes; pad to 8 bytes (size of uint64)
-	for len(buf) < 8 {
-		buf = append(buf, 0)
-	}
-	if len(buf) > 8 {
-		buf = buf[:8]
-	}
-	total := binary.LittleEndian.Uint64(buf)
 
 	// 2. Get used memory via vm_statistics
 	var vmStats C.vm_statistics64_data_t
@@ -81,7 +71,7 @@ func (p *darwinMetricsProvider) GetMemoryPercent() float64 {
 	}
 
 	// 3. Compute used memory (active + wired + compressed)
-	pageSize := uint64(syscall.Getpagesize())
+	pageSize := uint64(unix.Getpagesize())
 	active := uint64(vmStats.active_count)
 	wired := uint64(vmStats.wire_count)
 	compressor := uint64(vmStats.compressor_page_count)
