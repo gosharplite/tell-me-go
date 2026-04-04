@@ -54,7 +54,7 @@ If any check fails, the Assistant reports the issue and stops the workflow (or a
 The Assistant invokes the Architect role with a fresh session:
 
 ```bash
-tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/architect.yaml \
+tell-me-go -new -r -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/architect.yaml \
   "Review the changes in branch $(git branch --show-current) for architectural concerns. \
    Focus on: \
    1. Component dependencies and interface boundaries. \
@@ -88,7 +88,7 @@ Example prompt:
 **Only executed if human approved in Step 4.** The Assistant instructs the Coder role to implement the changes recommended by the Architect, starting a fresh session:
 
 ```bash
-tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/coder.yaml \
+tell-me-go -new -r -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/coder.yaml \
   "Implement the changes recommended by the Architect. Follow TDD: \
    1. Write failing tests for each new requirement. \
    2. Write minimal code to pass the tests. \
@@ -102,7 +102,7 @@ tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/ya
 The Assistant invokes the Tester role with a fresh session to validate test quality and coverage:
 
 ```bash
-tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/tester.yaml \
+tell-me-go -new -r -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/tester.yaml \
   "Evaluate the test suite for branch $(git branch --show-current). \
    Focus on: \
    1. Testability of the code (dependency injection, observability). \
@@ -119,7 +119,7 @@ tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/ya
 The Assistant invokes the Reviewer role with a fresh session for idiomatic Go, security, and concurrency checks:
 
 ```bash
-tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/reviewer.yaml \
+tell-me-go -new -r -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/reviewer.yaml \
   "Perform a detailed code review of branch $(git branch --show-current). \
    Focus on: \
    1. Security: injections, path traversal, exposed secrets. \
@@ -187,11 +187,11 @@ Once approved, the Assistant merges the source branch using the project's prefer
 ## Appendix
 
 ### Orchestration Mechanism
-The Assistant coordinates the specialist roles by using the `execute_command` tool to run `tell-me-go` with the appropriate configuration file and prompt. Each invocation **must** include the `-new` flag to guarantee a clean session. Example:
+The Assistant coordinates the specialist roles by using the `execute_command` tool to run `tell-me-go` with the appropriate configuration file and prompt. Each invocation **must** include the `-new` flag to guarantee a clean session and the `-r` flag to obtain raw output (no markdown formatting) for easier parsing. Example:
 
 ```bash
 # Simulated internal command executed by the Assistant
-tell-me-go -new -c /path/to/architect.yaml "Review the changes..."
+tell-me-go -new -r -c /path/to/architect.yaml "Review the changes..."
 ```
 
 The Assistant maintains state across invocations, aggregating findings and determining when to proceed to the next step.
@@ -218,4 +218,5 @@ A bash script that automates the above steps can be placed in the project's `scr
 | 1.1 | $(date +%Y‑%m‑%d) | AI Assistant | Revised for Assistant‑orchestrated workflow with human approval gate |
 | 1.2 | $(date +%Y‑%m‑%d) | AI Assistant | Added implementation approval step before Coder begins coding |
 | 1.3 | $(date +%Y‑%m‑%d) | AI Assistant | Added `-new` flag to all role invocations to start fresh conversations |
+| 1.4 | $(date +%Y‑%m‑%d) | AI Assistant | Added `-r` flag to all role invocations for raw output |
 
