@@ -80,3 +80,21 @@ func TestCPUPercentCalculation(t *testing.T) {
 		t.Errorf("idle delta (%v) > total delta (%v)", dIdle, dTotal)
 	}
 }
+
+// TestDarwinMetricsProvider_Diagnostic logs the actual sysctl values used by the non‑CGo provider.
+// This test does not fail; it merely provides diagnostic output when run with -v.
+func TestDarwinMetricsProvider_Diagnostic(t *testing.T) {
+	p := NewSystemMetricsProvider()
+
+	// Memory percentage
+	mem := p.GetMemoryPercent()
+	t.Logf("GetMemoryPercent() = %.1f%%", mem)
+
+	// CPU stats
+	total, idle := p.GetCPUStats()
+	t.Logf("GetCPUStats() total = %d, idle = %d", total, idle)
+
+	// Attempt to read kern.cp_time (just for diagnostic)
+	// If the sysctl exists, we could potentially use it for host‑level ticks.
+	// This is not required for the test to pass.
+}

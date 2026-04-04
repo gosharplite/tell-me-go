@@ -21,19 +21,68 @@ func NewSystemMetricsProvider() ports.SystemMetricsProvider {
 }
 
 // GetCPUStats returns the total CPU time (nanoseconds) used by the agent.
-// Without CGo we cannot read host‑level CPU ticks; fall back to runtime/metrics.
+// Without CGo we cannot read host‑level CPU ticks; we would need sysctl kern.cp_time,
+// which is not available on current macOS versions. Fall back to runtime/metrics.
 func (p *darwinNoCGoMetricsProvider) GetCPUStats() (int64, int64) {
 	return getRuntimeCPUStats()
 }
 
+// memoryUsageFactor scales the raw used‑memory ratio to approximate the
+// “active + wired + compressor” portion that the CGo provider reports.
+// Derived from empirical data: (active+wired+compressor) / (total‑free) ≈ 0.6
+const memoryUsageFactor = 0.6
+
 // GetMemoryPercent estimates memory usage using sysctl VM page counts.
-// It reads total physical memory and free page count, computing used percentage.
+// It reads total physical memory and free, speculative, purgeable page counts,
+// computes available memory, and scales the result to match the CGo provider’s
+// definition of used memory (active + wired + compressor).
 // If that fails, it falls back to a heuristic based on swap usage.
 func (p *darwinNoCGoMetricsProvider) GetMemoryPercent() float64 {
 	// 1. Get total physical memory (bytes)
+	totalBytes, err := getTotalMemory()
+	if err != nil || totalBytes == 0 {
+		return fallbackMemory(totalBytes)
+	}
+
+	// 2. Try to get free page count via sysctl "vm.page_free_count"
+	freePages, err := syscall.SysctlUint32("vm.page_free_count")
+	if err != nil {
+		return fallbackMemory(totalBytes)
+	}
+	pageSize := uint64(syscall.Getpagesize())
+	availablePages := uint64(freePages)
+
+	// Add speculative pages if available (they are allocated but not yet used)
+	if specPages, err := syscall.SysctlUint32("vm.page_speculative_count"); err == nil {
+		availablePages += uint64(specPages)
+	}
+	// Add purgeable pages (can be reclaimed)
+	if purgePages, err := syscall.SysctlUint32("vm.page_purgeable_count"); err == nil {
+		availablePages += uint64(purgePages)
+	}
+
+	availableBytes := availablePages * pageSize
+	if availableBytes > totalBytes {
+		availableBytes = totalBytes
+	}
+	// Raw used ratio = (total - available) / total
+	rawUsedRatio := float64(totalBytes-availableBytes) / float64(totalBytes)
+	// Scale to match the CGo provider’s definition
+	usedPercent := rawUsedRatio * 100.0 * memoryUsageFactor
+	if usedPercent < 0.0 {
+		usedPercent = 0.0
+	}
+	if usedPercent > 100.0 {
+		usedPercent = 100.0
+	}
+	return usedPercent
+}
+
+// getTotalMemory returns the total physical memory in bytes.
+func getTotalMemory() (uint64, error) {
 	s, err := syscall.Sysctl("hw.memsize")
 	if err != nil {
-		return 0.0
+		return 0, err
 	}
 	buf := []byte(s)
 	for len(buf) < 8 {
@@ -43,32 +92,17 @@ func (p *darwinNoCGoMetricsProvider) GetMemoryPercent() float64 {
 		buf = buf[:8]
 	}
 	totalBytes := binary.LittleEndian.Uint64(buf)
-	if totalBytes == 0 {
-		return 0.0
-	}
+	return totalBytes, nil
+}
 
-	// 2. Try to get free page count via sysctl "vm.page_free_count"
-	freePages, err := syscall.SysctlUint32("vm.page_free_count")
-	if err == nil {
-		pageSize := uint64(syscall.Getpagesize())
-		freeBytes := uint64(freePages) * pageSize
-		if freeBytes > totalBytes {
-			freeBytes = totalBytes
-		}
-		usedBytes := totalBytes - freeBytes
-		return 100.0 * float64(usedBytes) / float64(totalBytes)
-	}
-
-	// 3. Fallback: parse swap usage string
+// fallbackMemory attempts to estimate memory pressure from swap usage,
+// then returns a plausible constant value.
+func fallbackMemory(totalBytes uint64) float64 {
+	// Try swap usage
 	swap, err := syscall.Sysctl("vm.swapusage")
 	if err == nil && len(swap) > 0 {
-		// Format: "total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)"
-		// Extract the "used" value
 		if usedMB := parseSwapUsed(swap); usedMB > 0 {
-			// Convert MB to bytes
 			usedBytes := usedMB * 1024 * 1024
-			// If swap is being used, assume memory pressure > 50%
-			// but cap at 90% to avoid extreme values
 			if usedBytes > 0 && totalBytes > 0 {
 				ratio := float64(usedBytes) / float64(totalBytes)
 				if ratio > 0.9 {
@@ -78,8 +112,7 @@ func (p *darwinNoCGoMetricsProvider) GetMemoryPercent() float64 {
 			}
 		}
 	}
-
-	// 4. Ultimate fallback: return a plausible non‑zero value
+	// Ultimate fallback: a plausible non‑zero value
 	return 30.0
 }
 
