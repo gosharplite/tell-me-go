@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	telemetry "github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // controllableClock is a test clock that allows manual advancement of time and ticking.

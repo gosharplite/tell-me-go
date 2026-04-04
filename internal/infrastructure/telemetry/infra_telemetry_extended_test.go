@@ -6,11 +6,12 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	_ "modernc.org/sqlite"
 

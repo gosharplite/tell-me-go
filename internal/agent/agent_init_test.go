@@ -5,9 +5,10 @@ package agent
 
 import (
 	"context"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"sync"
 	"testing"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"

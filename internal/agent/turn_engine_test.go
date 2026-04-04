@@ -1428,7 +1428,6 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	}
 }
 
-
 func TestValidateMetrics(t *testing.T) {
 	t.Parallel()
 

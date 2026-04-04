@@ -7,10 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"strings"
 	"testing"
 	"time"
+
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
