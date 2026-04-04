@@ -38,8 +38,9 @@ const (
 
 // Maximum plausible token generation speed in tokens per second.
 // Used to detect measurement bugs (e.g., HTTP streaming timing errors).
-// Current state‑of‑the‑art LLMs (GPT‑4, Claude, Gemini) generate ≤ 100 tokens/sec.
-const maxPlausibleTokensPerSecond = 100
+// Modern high-performance LLM inference engines (Groq, Cerebras, etc.) can exceed 100 TPS.
+// Set to 5000 TPS as a true hardware sanity check.
+const maxPlausibleTokensPerSecond = 5000
 
 // processResult describes the outcome of a phase execution.
 type processResult struct {

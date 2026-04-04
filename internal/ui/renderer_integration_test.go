@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,17 +22,35 @@ import (
 // mockMetricsProvider simulates a macOS metrics provider that returns
 // host‑level ticks (idle > 0) and a memory percentage.
 type mockMetricsProvider struct {
+	mu         sync.RWMutex
 	totalTicks int64
 	idleTicks  int64
 	memPercent float64
 }
 
 func (m *mockMetricsProvider) GetCPUStats() (int64, int64) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.totalTicks, m.idleTicks
 }
 
 func (m *mockMetricsProvider) GetMemoryPercent() float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.memPercent
+}
+
+func (m *mockMetricsProvider) SetCPUStats(total, idle int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.totalTicks = total
+	m.idleTicks = idle
+}
+
+func (m *mockMetricsProvider) SetMemoryPercent(mem float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memPercent = mem
 }
 
 var _ ports.SystemMetricsProvider = (*mockMetricsProvider)(nil)
@@ -117,8 +136,7 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			time.Sleep(200 * time.Millisecond)
 
 			// Update the provider to return the second sample
-			provider.totalTicks = tt.total2
-			provider.idleTicks = tt.idle2
+			provider.SetCPUStats(tt.total2, tt.idle2)
 
 			// Wait at least 1 second total since spinner start so that CPU
 			// percentage is recalculated (the renderer only updates CPU after

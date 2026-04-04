@@ -34,7 +34,7 @@ A three‑part solution was implemented to ensure accurate cross‑platform timi
 **Location**: `internal/agent/turn_engine.go` – `inferenceStep.validateMetrics` method
 
 **Changes**:
-1. **Plausibility Constant**: Added `maxPlausibleTokensPerSecond = 100` constant, representing the state‑of‑the‑art upper bound for current LLMs (GPT‑4, Claude, Gemini).
+1. **Plausibility Constant**: Added `maxPlausibleTokensPerSecond = 5000` constant, representing a hardware‑sanity‑check upper bound that far exceeds current and near‑future LLM inference speeds (modern high‑performance engines can reach 150‑800+ TPS).
 2. **Runtime Validation**: `validateMetrics` calculates token‑throughput (`response_tokens / duration`) and logs a structured warning when the value exceeds the hardware‑plausible limit.
 3. **Non‑Blocking Design**: The warning does not interrupt execution, preserving forward compatibility while alerting engineers to potential measurement bugs.
 
@@ -77,7 +77,7 @@ A three‑part solution was implemented to ensure accurate cross‑platform timi
 The fix can be verified by:
 1. Enabling debug logging (`LOG_LEVEL=debug`) and observing `http_timing_breakdown` and `token_throughput` events.
 2. Comparing TTFB vs total duration for streaming responses (body‑read time should be positive).
-3. Confirming token‑throughput values remain below 100 tokens/sec for realistic workloads.
+3. Confirming token‑throughput values remain below the hardware sanity limit (5000 tokens/sec) for realistic workloads.
 4. Testing across macOS and Linux to ensure consistent timing measurements.
 
 ---
