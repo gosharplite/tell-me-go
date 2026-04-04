@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -179,6 +180,8 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	startTime := time.Now()
 	resp, err := c.httpClient.Do(req)
+	ttfb := time.Since(startTime) // Time To First Byte
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -186,13 +189,28 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		_ = resp.Body.Close()
 	}()
 
-	// Read entire response body BEFORE measuring duration
-	// This captures streaming/chunked transfer time
+	// Read entire response body
+	bodyReadStart := time.Now()
 	bodyBytes, err := io.ReadAll(resp.Body)
-	duration := time.Since(startTime).Seconds()
+	bodyReadTime := time.Since(bodyReadStart)
+	totalDuration := time.Since(startTime)
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 	}
+
+	// Log platform-aware timing breakdown
+	c.logger.Debug("http_timing_breakdown",
+		"platform", runtime.GOOS,
+		"provider", "anthropic",
+		"model", c.model,
+		"ttfb_ms", ttfb.Milliseconds(),
+		"body_read_ms", bodyReadTime.Milliseconds(),
+		"total_ms", totalDuration.Milliseconds(),
+		"endpoint", "/messages",
+	)
+
+	duration := totalDuration.Seconds() // Keep for backward compatibility
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil, &llmerr.APIError{
@@ -429,6 +447,30 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 		CachedTokens:   resp.Usage.CacheReadInputTokens,
 		TotalTokens:    resp.Usage.InputTokens + resp.Usage.OutputTokens,
 		Duration:       duration,
+	}
+
+	// Log token throughput for diagnostics
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
+		c.logger.Debug("token_throughput",
+			"platform", runtime.GOOS,
+			"provider", "anthropic",
+			"model", c.model,
+			"response_tokens", metrics.ResponseTokens,
+			"duration_sec", metrics.Duration,
+			"tokens_per_sec", tokensPerSec,
+			"cached_tokens", metrics.CachedTokens,
+			"thinking_tokens", metrics.ThinkingTokens,
+		)
+
+		// Warn if throughput is implausible (already caught by turn_engine validation)
+		if tokensPerSec > 100 {
+			c.logger.Warn("implausible_throughput_detected",
+				"platform", runtime.GOOS,
+				"tokens_per_sec", tokensPerSec,
+				"likely_cause", "platform_network_stack_variance",
+			)
+		}
 	}
 
 	return content, metrics, nil

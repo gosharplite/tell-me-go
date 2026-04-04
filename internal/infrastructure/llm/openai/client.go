@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -351,6 +352,8 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	startTime := time.Now()
 	resp, err := c.httpClient.Do(req)
+	ttfb := time.Since(startTime) // Time To First Byte
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -358,13 +361,28 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		_ = resp.Body.Close()
 	}()
 
-	// CRITICAL: Read entire response body BEFORE measuring duration
-	// This captures streaming/chunked transfer time
+	// Read entire response body
+	bodyReadStart := time.Now()
 	bodyBytes, err := io.ReadAll(resp.Body)
-	duration := time.Since(startTime).Seconds()
+	bodyReadTime := time.Since(bodyReadStart)
+	totalDuration := time.Since(startTime)
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 	}
+
+	// Log platform-aware timing breakdown
+	c.logger.Debug("http_timing_breakdown",
+		"platform", runtime.GOOS,
+		"provider", "openai",
+		"model", c.model,
+		"ttfb_ms", ttfb.Milliseconds(),
+		"body_read_ms", bodyReadTime.Milliseconds(),
+		"total_ms", totalDuration.Milliseconds(),
+		"endpoint", endpoint,
+	)
+
+	duration := totalDuration.Seconds() // Keep for backward compatibility
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil, &llmerr.APIError{
@@ -768,6 +786,29 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 		metrics.ThinkingTokens = u.CompletionTokensDetails.ReasoningTokens
 	}
 
+	// Log token throughput for diagnostics
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
+		c.logger.Debug("token_throughput",
+			"platform", runtime.GOOS,
+			"provider", "openai",
+			"model", c.model,
+			"response_tokens", metrics.ResponseTokens,
+			"duration_sec", metrics.Duration,
+			"tokens_per_sec", tokensPerSec,
+			"cached_tokens", metrics.CachedTokens,
+		)
+
+		// Warn if throughput is implausible (already caught by turn_engine validation)
+		if tokensPerSec > 100 {
+			c.logger.Warn("implausible_throughput_detected",
+				"platform", runtime.GOOS,
+				"tokens_per_sec", tokensPerSec,
+				"likely_cause", "platform_network_stack_variance",
+			)
+		}
+	}
+
 	return metrics
 }
 
@@ -884,6 +925,29 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 
 	if resp.Usage.CompletionTokensDetails != nil {
 		metrics.ThinkingTokens = resp.Usage.CompletionTokensDetails.ReasoningTokens
+	}
+
+	// Log token throughput for diagnostics
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
+		c.logger.Debug("token_throughput",
+			"platform", runtime.GOOS,
+			"provider", "openai",
+			"model", c.model,
+			"response_tokens", metrics.ResponseTokens,
+			"duration_sec", metrics.Duration,
+			"tokens_per_sec", tokensPerSec,
+			"cached_tokens", metrics.CachedTokens,
+		)
+
+		// Warn if throughput is implausible (already caught by turn_engine validation)
+		if tokensPerSec > 100 {
+			c.logger.Warn("implausible_throughput_detected",
+				"platform", runtime.GOOS,
+				"tokens_per_sec", tokensPerSec,
+				"likely_cause", "platform_network_stack_variance",
+			)
+		}
 	}
 
 	return content, metrics, nil
