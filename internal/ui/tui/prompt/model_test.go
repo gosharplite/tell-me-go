@@ -6,7 +6,6 @@ package prompt
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -28,177 +27,339 @@ func (m *mockSuggestionSvc) Close(ctx context.Context) error {
 	return nil
 }
 
-type promptUpdateTestCase struct {
-	name          string
-	initialInput  string
-	initialSuggs  []string
-	initialIdx    int
-	msg           tea.Msg
-	wantSubmitted bool
-	wantAborted   bool
-	wantCmd       bool
-	wantFinal     string
-	wantIdx       int
-}
-
-func submissionTestCases() []promptUpdateTestCase {
-	return []promptUpdateTestCase{
-		{
-			name:          "Empty input Alt+Enter",
-			initialInput:  "   ",
-			initialIdx:    -1,
-			msg:           tea.KeyMsg{Type: tea.KeyEnter, Alt: true},
-			wantSubmitted: false,
-			wantCmd:       false,
-			wantIdx:       -1,
-		},
-		{
-			name:          "Empty input Ctrl+S",
-			initialInput:  "   ",
-			initialIdx:    -1,
-			msg:           tea.KeyMsg{Type: tea.KeyCtrlS},
-			wantSubmitted: false,
-			wantCmd:       false,
-			wantIdx:       -1,
-		},
-		{
-			name:          "Valid input Ctrl+S",
-			initialInput:  "  hello  ",
-			initialIdx:    -1,
-			msg:           tea.KeyMsg{Type: tea.KeyCtrlS},
-			wantSubmitted: true,
-			wantCmd:       true,
-			wantFinal:     "hello",
-			wantIdx:       -1,
-		},
+// Test helpers to keep cyclomatic complexity low in TestModel_Update.
+func assertSubmitted(t *testing.T, m PromptModel, want bool) {
+	t.Helper()
+	pm := m.(*promptModel)
+	if pm.submitted != want {
+		t.Errorf("submitted = %v, want %v", pm.submitted, want)
 	}
 }
 
-func abortionTestCases() []promptUpdateTestCase {
-	return []promptUpdateTestCase{
-		{
-			name:        "Abort Esc",
-			initialIdx:  -1,
-			msg:         tea.KeyMsg{Type: tea.KeyEsc},
-			wantAborted: true,
-			wantCmd:     true,
-			wantIdx:     -1,
-		},
-		{
-			name:        "Abort Ctrl+C",
-			initialIdx:  -1,
-			msg:         tea.KeyMsg{Type: tea.KeyCtrlC},
-			wantAborted: true,
-			wantCmd:     true,
-			wantIdx:     -1,
-		},
+func assertAborted(t *testing.T, m PromptModel, want bool) {
+	t.Helper()
+	if m.Aborted() != want {
+		t.Errorf("aborted = %v, want %v", m.Aborted(), want)
 	}
 }
 
-func navigationTestCases() []promptUpdateTestCase {
-	return []promptUpdateTestCase{
-		{
-			name:         "Tab cycle 1",
-			initialIdx:   -1,
-			initialSuggs: []string{"foo", "bar"},
-			msg:          tea.KeyMsg{Type: tea.KeyTab},
-			wantFinal:    "foo",
-			wantIdx:      0,
-		},
-		{
-			name:         "Tab cycle 2",
-			initialInput: "foo",
-			initialIdx:   0,
-			initialSuggs: []string{"foo", "bar"},
-			msg:          tea.KeyMsg{Type: tea.KeyTab},
-			wantFinal:    "bar",
-			wantIdx:      1,
-		},
-		{
-			name:         "ShiftTab cycle",
-			initialInput: "bar",
-			initialIdx:   1,
-			initialSuggs: []string{"foo", "bar"},
-			msg:          tea.KeyMsg{Type: tea.KeyShiftTab},
-			wantFinal:    "foo",
-			wantIdx:      0,
-		},
+func assertValue(t *testing.T, m PromptModel, want string) {
+	t.Helper()
+	pm := m.(*promptModel)
+	if pm.input.Value() != want {
+		t.Errorf("input value = %q, want %q", pm.input.Value(), want)
 	}
 }
 
-func systemTestCases() []promptUpdateTestCase {
-	return []promptUpdateTestCase{
-		{
-			name:       "Input changed (debounce)",
-			initialIdx: -1,
-			msg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}},
-			wantCmd:    true,
-			wantFinal:  "a",
-			wantIdx:    -1,
-		},
-		{
-			name:       "Window resize",
-			initialIdx: -1,
-			msg:        tea.WindowSizeMsg{Width: 100, Height: 50},
-			wantIdx:    -1,
-		},
-		{
-			name:       "Suggestions message",
-			initialIdx: -1,
-			msg:        suggestionsMsg([]string{"foo", "bar"}),
-			wantIdx:    -1,
-		},
+func assertIndex(t *testing.T, m PromptModel, want int) {
+	t.Helper()
+	pm := m.(*promptModel)
+	if pm.suggester.Index != want {
+		t.Errorf("suggester index = %d, want %d", pm.suggester.Index, want)
+	}
+}
+
+func assertFinalPrompt(t *testing.T, m PromptModel, want string) {
+	t.Helper()
+	if m.FinalPrompt() != want {
+		t.Errorf("finalPrompt = %q, want %q", m.FinalPrompt(), want)
 	}
 }
 
 func TestModel_Update(t *testing.T) {
-	var tests []promptUpdateTestCase
-	tests = append(tests, submissionTestCases()...)
-	tests = append(tests, abortionTestCases()...)
-	tests = append(tests, navigationTestCases()...)
-	tests = append(tests, systemTestCases()...)
+	tests := []struct {
+		name        string
+		setupModel  func() PromptModel
+		msg         tea.Msg
+		assertState func(*testing.T, PromptModel)
+		wantCmd     bool
+	}{
+		{
+			name: "empty_input_alt_enter_ignored",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("   ")
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyEnter, Alt: true},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertSubmitted(t, m, false)
+			},
+			wantCmd: false,
+		},
+		{
+			name: "empty_input_ctrl_s_ignored",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("   ")
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyCtrlS},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertSubmitted(t, m, false)
+			},
+			wantCmd: false,
+		},
+		{
+			name: "valid_input_ctrl_s_submits",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("  hello  ")
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyCtrlS},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertSubmitted(t, m, true)
+				assertFinalPrompt(t, m, "hello")
+			},
+			wantCmd: true,
+		},
+		{
+			name: "abort_with_esc",
+			setupModel: func() PromptModel {
+				return NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
+			},
+			msg: tea.KeyMsg{Type: tea.KeyEsc},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertAborted(t, m, true)
+			},
+			wantCmd: true,
+		},
+		{
+			name: "abort_with_ctrl_c",
+			setupModel: func() PromptModel {
+				return NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
+			},
+			msg: tea.KeyMsg{Type: tea.KeyCtrlC},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertAborted(t, m, true)
+			},
+			wantCmd: true,
+		},
+		{
+			name: "tab_cycles_suggestions_forward",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.suggester.Suggestions = []string{"foo", "bar"}
+				m.suggester.Index = -1
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyTab},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertIndex(t, m, 0)
+				assertValue(t, m, "foo")
+			},
+			wantCmd: false,
+		},
+		{
+			name: "tab_cycles_suggestions_forward_twice",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.suggester.Suggestions = []string{"foo", "bar"}
+				m.suggester.Index = 0
+				m.input.SetValue("foo")
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyTab},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertIndex(t, m, 1)
+				assertValue(t, m, "bar")
+			},
+			wantCmd: false,
+		},
+		{
+			name: "shift_tab_cycles_suggestions_backward",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.suggester.Suggestions = []string{"foo", "bar"}
+				m.suggester.Index = 1
+				m.input.SetValue("bar")
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyShiftTab},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertIndex(t, m, 0)
+				assertValue(t, m, "foo")
+			},
+			wantCmd: false,
+		},
+		{
+			name: "input_change_triggers_debounce",
+			setupModel: func() PromptModel {
+				return NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
+			},
+			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertValue(t, m, "a")
+			},
+			wantCmd: true,
+		},
+		{
+			name: "window_resize_updates_input_width",
+			setupModel: func() PromptModel {
+				return NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
+			},
+			msg: tea.WindowSizeMsg{Width: 100, Height: 50},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				pm := m.(*promptModel)
+				// Underlying textarea accounts for internal padding/borders.
+				// 100 (msg) - 4 (fixed offset) - 2 (internal padding) = 94.
+				if pm.input.Model.Width() != 94 {
+					t.Errorf("expected width 94, got %d", pm.input.Model.Width())
+				}
+			},
+			wantCmd: false,
+		},
+		{
+			name: "suggestions_msg_updates_suggester",
+			setupModel: func() PromptModel {
+				return NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
+			},
+			msg: suggestionsMsg([]string{"foo", "bar"}),
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				pm := m.(*promptModel)
+				if len(pm.suggester.Suggestions) != 2 {
+					t.Errorf("expected 2 suggestions, got %d", len(pm.suggester.Suggestions))
+				}
+			},
+			wantCmd: false,
+		},
+		{
+			name: "debounce_msg_triggers_fetch",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("test")
+				return m
+			},
+			msg:     debounceMsg{value: "test"},
+			wantCmd: true,
+		},
+		{
+			name: "debounce_msg_value_mismatch_ignored",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("new value")
+				return m
+			},
+			msg:     debounceMsg{value: "old value"},
+			wantCmd: false,
+		},
+		{
+			name: "error_msg_sets_error_state",
+			setupModel: func() PromptModel {
+				return NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
+			},
+			msg: errors.New("test error"),
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				pm := m.(*promptModel)
+				if pm.err == nil || pm.err.Error() != "test error" {
+					t.Errorf("expected error 'test error', got %v", pm.err)
+				}
+			},
+			wantCmd: false,
+		},
+		{
+			name: "unhandled_message_returns_model_as_is",
+			setupModel: func() PromptModel {
+				return NewModel(&mockSuggestionSvc{}, 1*time.Millisecond)
+			},
+			msg:     struct{ tea.Msg }{Msg: nil},
+			wantCmd: false,
+		},
+		{
+			name: "token_aware_replace_last_word_file_path",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("What is the content of ./f")
+				m.suggester.Suggestions = []string{"./foo.txt"}
+				m.suggester.Index = -1
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyTab},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertValue(t, m, "What is the content of ./foo.txt")
+			},
+			wantCmd: false,
+		},
+		{
+			name: "token_aware_replace_entire_line_suggestion_with_space",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("How do")
+				m.suggester.Suggestions = []string{"How do I reverse a string?"}
+				m.suggester.Index = -1
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyTab},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertValue(t, m, "How do I reverse a string?")
+			},
+			wantCmd: false,
+		},
+		{
+			name: "token_aware_replace_entire_line_no_space_in_input",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("./f")
+				m.suggester.Suggestions = []string{"./foo.txt"}
+				m.suggester.Index = -1
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyTab},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertValue(t, m, "./foo.txt")
+			},
+			wantCmd: false,
+		},
+		{
+			name: "token_aware_replace_last_word_many_spaces",
+			setupModel: func() PromptModel {
+				m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+				m.input.SetValue("cat /etc/p")
+				m.suggester.Suggestions = []string{"/etc/passwd"}
+				m.suggester.Index = -1
+				return m
+			},
+			msg: tea.KeyMsg{Type: tea.KeyTab},
+			assertState: func(t *testing.T, m PromptModel) {
+				t.Helper()
+				assertValue(t, m, "cat /etc/passwd")
+			},
+			wantCmd: false,
+		},
+	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
+			t.Parallel()
+			m := tt.setupModel()
 			defer m.Destroy()
-			if tt.initialInput != "" {
-				m.input.SetValue(tt.initialInput)
-			}
-			if len(tt.initialSuggs) > 0 {
-				m.suggester.Suggestions = tt.initialSuggs
-			}
-			m.suggester.Index = tt.initialIdx
 
-			_, cmd := m.Update(tt.msg)
+			newModel, cmd := m.Update(tt.msg)
+			updatedModel := newModel.(PromptModel)
 
 			if (cmd != nil) != tt.wantCmd {
 				t.Errorf("got cmd presence %v, want %v", cmd != nil, tt.wantCmd)
 			}
-			if m.submitted != tt.wantSubmitted {
-				t.Errorf("got submitted %v, want %v", m.submitted, tt.wantSubmitted)
-			}
-			if m.Aborted() != tt.wantAborted {
-				t.Errorf("got aborted %v, want %v", m.Aborted(), tt.wantAborted)
-			}
-			if tt.wantSubmitted && m.FinalPrompt() != tt.wantFinal {
-				t.Errorf("got finalPrompt %q, want %q", m.FinalPrompt(), tt.wantFinal)
-			}
-			if !tt.wantSubmitted && tt.wantFinal != "" && m.input.Value() != tt.wantFinal {
-				t.Errorf("got input value %q, want %q", m.input.Value(), tt.wantFinal)
-			}
-			if m.suggester.Index != tt.wantIdx {
-				t.Errorf("got suggester index %d, want %d", m.suggester.Index, tt.wantIdx)
-			}
-			if ws, ok := tt.msg.(tea.WindowSizeMsg); ok {
-				if m.input.Model.Width() == 80 {
-					t.Errorf("expected width to change from default 80 for WindowSizeMsg %v", ws)
-				}
-			}
-			if sm, ok := tt.msg.(suggestionsMsg); ok {
-				if len(m.suggester.Suggestions) != len(sm) {
-					t.Errorf("got %d suggestions, want %d", len(m.suggester.Suggestions), len(sm))
-				}
+
+			if tt.assertState != nil {
+				tt.assertState(t, updatedModel)
 			}
 		})
 	}
@@ -341,97 +502,6 @@ func TestModel_TeaInterface(t *testing.T) {
 	_ = m.Init()
 	_, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
 	_ = m.View()
-}
-
-func TestModel_Update_TokenAwareAutocomplete(t *testing.T) {
-	tests := []struct {
-		name         string
-		initialInput string
-		suggestions  []string
-		wantValue    string
-	}{
-		{
-			name:         "replace only last word with file path",
-			initialInput: "What is the content of ./f",
-			suggestions:  []string{"./foo.txt"},
-			wantValue:    "What is the content of ./foo.txt",
-		},
-		{
-			name:         "replace entire line when suggestion contains space",
-			initialInput: "How do",
-			suggestions:  []string{"How do I reverse a string?"},
-			wantValue:    "How do I reverse a string?",
-		},
-		{
-			name:         "replace entire line when input has no space",
-			initialInput: "./f",
-			suggestions:  []string{"./foo.txt"},
-			wantValue:    "./foo.txt",
-		},
-		{
-			name:         "replace only last word even if input has many spaces",
-			initialInput: "cat /etc/p",
-			suggestions:  []string{"/etc/passwd"},
-			wantValue:    "cat /etc/passwd",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel(&mockSuggestionSvc{}, 1*time.Millisecond).(*promptModel)
-			defer m.Destroy()
-			m.input.SetValue(tt.initialInput)
-			m.suggester.Suggestions = tt.suggestions
-			m.suggester.Index = -1 // No selection initially
-
-			// Trigger Tab
-			m.Update(tea.KeyMsg{Type: tea.KeyTab})
-
-			if m.input.Value() != tt.wantValue {
-				t.Errorf("got input value %q; want %q", m.input.Value(), tt.wantValue)
-			}
-		})
-	}
-}
-
-func TestModel_Update_AdditionalCases(t *testing.T) {
-	svc := &mockSuggestionSvc{}
-	m := NewModel(svc, 1*time.Millisecond).(*promptModel)
-	defer m.Destroy()
-
-	t.Run("debounce message", func(t *testing.T) {
-		m.input.SetValue("test")
-		_, cmd := m.Update(debounceMsg{value: "test"})
-		if cmd == nil {
-			t.Error("expected cmd for debounceMsg")
-		}
-	})
-
-	t.Run("debounce message value mismatch", func(t *testing.T) {
-		m.input.SetValue("new value")
-		_, cmd := m.Update(debounceMsg{value: "old value"})
-		if cmd != nil {
-			t.Error("expected nil cmd for mismatched debounceMsg")
-		}
-	})
-
-	t.Run("error message", func(t *testing.T) {
-		err := fmt.Errorf("test error")
-		_, cmd := m.Update(err)
-		if cmd != nil {
-			t.Error("expected nil cmd for error")
-		}
-		if !errors.Is(m.err, err) {
-			t.Errorf("expected error %v, got %v", err, m.err)
-		}
-	})
-
-	t.Run("unhandled message", func(t *testing.T) {
-		_, cmd := m.Update(struct{ tea.Msg }{Msg: nil})
-		if cmd != nil {
-			t.Error("expected nil cmd for unhandled message")
-		}
-	})
 }
 
 type integrationMockSuggestionSvc struct {

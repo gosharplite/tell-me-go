@@ -4,7 +4,6 @@
 package integrations
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -110,52 +109,26 @@ func truncateUTF8(s string, maxBytes int) string {
 
 func (t *networkTool) sanitizeHTML(content string) string {
 	var sb strings.Builder
-	tokenizer := html.NewTokenizer(strings.NewReader(content))
+	z := html.NewTokenizer(strings.NewReader(content))
 	skip := 0
-	lastIsSpace := true // Start with true to avoid leading spaces
-
-	isForbidden := func(tagName []byte) bool {
-		return bytes.EqualFold(tagName, []byte("script")) || bytes.EqualFold(tagName, []byte("style"))
-	}
-
-	for {
-		tt := tokenizer.Next()
-		if tt == html.ErrorToken {
-			break
-		}
-		switch tt {
-		case html.StartTagToken, html.EndTagToken, html.SelfClosingTagToken:
-			tagName, _ := tokenizer.TagName()
-			if isForbidden(tagName) {
-				if tt == html.StartTagToken {
-					skip++
-				} else if tt == html.EndTagToken && skip > 0 {
-					skip--
-				}
-			}
-			if !lastIsSpace {
-				sb.WriteByte(' ')
-				lastIsSpace = true
-			}
-		case html.TextToken:
+	for z.Next() != html.ErrorToken {
+		tok := z.Token()
+		if tok.Type == html.TextToken {
 			if skip == 0 {
-				text := tokenizer.Text()
-				for _, b := range text {
-					isSpace := b == ' ' || b == '\t' || b == '\n' || b == '\r'
-					if isSpace {
-						if !lastIsSpace {
-							sb.WriteByte(' ')
-							lastIsSpace = true
-						}
-					} else {
-						sb.WriteByte(b)
-						lastIsSpace = false
-					}
-				}
+				sb.WriteString(tok.Data)
+			}
+			continue
+		}
+		sb.WriteByte(' ')
+		if tok.Data == "script" || tok.Data == "style" {
+			if tok.Type == html.StartTagToken {
+				skip++
+			} else if tok.Type == html.EndTagToken && skip > 0 {
+				skip--
 			}
 		}
 	}
-	return strings.TrimSpace(sb.String())
+	return strings.Join(strings.Fields(sb.String()), " ")
 }
 
 func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

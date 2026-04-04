@@ -15,9 +15,18 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-var procRoot = "/"
+type linuxMetricsProvider struct {
+	// root is the base directory for system files (e.g., /proc).
+	// Defaults to "/" if empty.
+	root string
+}
 
-type linuxMetricsProvider struct{}
+func (p *linuxMetricsProvider) getRoot() string {
+	if p.root != "" {
+		return p.root
+	}
+	return "/"
+}
 
 func NewSystemMetricsProvider() ports.SystemMetricsProvider {
 	return &linuxMetricsProvider{}
@@ -25,7 +34,7 @@ func NewSystemMetricsProvider() ports.SystemMetricsProvider {
 
 func (p *linuxMetricsProvider) GetCPUStats() (int64, int64) {
 	// Try to get host CPU stats from /proc/stat first for better visibility of tool execution
-	f, err := os.Open(filepath.Join(procRoot, "proc", "stat"))
+	f, err := os.Open(filepath.Join(p.getRoot(), "proc", "stat"))
 	if err == nil {
 		defer func() { _ = f.Close() }()
 		scanner := bufio.NewScanner(f)
@@ -54,7 +63,7 @@ func (p *linuxMetricsProvider) GetCPUStats() (int64, int64) {
 }
 
 func (p *linuxMetricsProvider) GetMemoryPercent() float64 {
-	f, err := os.Open(filepath.Join(procRoot, "proc", "meminfo"))
+	f, err := os.Open(filepath.Join(p.getRoot(), "proc", "meminfo"))
 	if err != nil {
 		return 0.0
 	}
