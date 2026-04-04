@@ -11,117 +11,133 @@ import (
 	"testing"
 )
 
+type linuxMetricsTestCase struct {
+	name           string
+	createStat     bool
+	procStat       string
+	createMeminfo  bool
+	procMeminfo    string
+	wantCPUTotal   int64
+	wantCPUIdle    int64
+	wantMemPercent float64
+	checkCPU       bool
+}
+
 func TestLinuxMetricsProvider(t *testing.T) {
-	// Setup mock filesystem
-	tmpDir := t.TempDir()
-	procDir := filepath.Join(tmpDir, "proc")
-	err := os.Mkdir(procDir, 0755)
-	if err != nil {
-		t.Fatalf("failed to create proc dir: %v", err)
-	}
-
-	// Override procRoot
-	originalRoot := procRoot
-	procRoot = tmpDir + "/"
-	defer func() { procRoot = originalRoot }()
-
-	p := &linuxMetricsProvider{}
-
-	t.Run("NewSystemMetricsProvider", func(t *testing.T) {
+	t.Run("NewSystemMetricsProvider_ReturnsLinuxProvider", func(t *testing.T) {
 		provider := NewSystemMetricsProvider()
 		if _, ok := provider.(*linuxMetricsProvider); !ok {
 			t.Errorf("NewSystemMetricsProvider() did not return a *linuxMetricsProvider")
 		}
 	})
 
-	t.Run("Happy Path: GetCPUStats", func(t *testing.T) {
-		// Mock /proc/stat
-		// cpu 100 200 300 400 ...
-		// index 1: user, 2: nice, 3: system, 4: idle
-		statContent := "cpu 100 200 300 400 50 10 5 0 0 0\n"
-		err := os.WriteFile(filepath.Join(procDir, "stat"), []byte(statContent), 0644)
-		if err != nil {
+	tests := []linuxMetricsTestCase{
+		{
+			name:           "valid_proc_stat_and_meminfo_parses_correctly",
+			createStat:     true,
+			procStat:       "cpu 100 200 300 400 50 10 5 0 0 0\n",
+			createMeminfo:  true,
+			procMeminfo:    "MemTotal: 1000 kB\nMemAvailable: 250 kB\n",
+			wantCPUTotal:   1065, // 100+200+300+400+50+10+5
+			wantCPUIdle:    400,
+			wantMemPercent: 75.0,
+			checkCPU:       true,
+		},
+		{
+			name:           "missing_proc_files_falls_back_gracefully",
+			createStat:     false,
+			createMeminfo:  false,
+			wantMemPercent: 0.0,
+			checkCPU:       false,
+		},
+		{
+			name:           "corrupted_stat_format_returns_zero_or_fallback",
+			createStat:     true,
+			procStat:       "cpu not-a-number\n",
+			createMeminfo:  true,
+			procMeminfo:    "MemTotal: 1000 kB\nMemAvailable: 250 kB\n",
+			wantMemPercent: 75.0,
+			checkCPU:       false,
+		},
+		{
+			name:           "corrupted_meminfo_format_returns_zero",
+			createStat:     true,
+			procStat:       "cpu 100 200 300 400 50 10 5 0 0 0\n",
+			createMeminfo:  true,
+			procMeminfo:    "MemTotal: invalid\nMemAvailable: 0\n",
+			wantCPUTotal:   1065,
+			wantCPUIdle:    400,
+			wantMemPercent: 0.0,
+			checkCPU:       true,
+		},
+		{
+			name:           "empty_proc_files_do_not_panic",
+			createStat:     true,
+			procStat:       "",
+			createMeminfo:  true,
+			procMeminfo:    "",
+			wantMemPercent: 0.0,
+			checkCPU:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runLinuxMetricsTest(t, tt)
+		})
+	}
+}
+
+func runLinuxMetricsTest(t *testing.T, tt linuxMetricsTestCase) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	procDir := filepath.Join(tmpDir, "proc")
+	if err := os.Mkdir(procDir, 0755); err != nil {
+		t.Fatalf("failed to create proc dir: %v", err)
+	}
+
+	setupMockFiles(t, procDir, tt)
+
+	p := &linuxMetricsProvider{root: tmpDir}
+
+	verifyCPUStats(t, p, tt)
+	verifyMemoryPercent(t, p, tt)
+}
+
+func setupMockFiles(t *testing.T, procDir string, tt linuxMetricsTestCase) {
+	t.Helper()
+	if tt.createStat {
+		if err := os.WriteFile(filepath.Join(procDir, "stat"), []byte(tt.procStat), 0644); err != nil {
 			t.Fatalf("failed to write mock stat: %v", err)
 		}
-
-		total, idle := p.GetCPUStats()
-		expectedTotal := int64(100 + 200 + 300 + 400 + 50 + 10 + 5)
-		expectedIdle := int64(400)
-
-		if total != expectedTotal {
-			t.Errorf("GetCPUStats() total = %d, want %d", total, expectedTotal)
-		}
-		if idle != expectedIdle {
-			t.Errorf("GetCPUStats() idle = %d, want %d", idle, expectedIdle)
-		}
-	})
-
-	t.Run("Happy Path: GetMemoryPercent", func(t *testing.T) {
-		// Mock /proc/meminfo
-		meminfoContent := "MemTotal: 1000 kB\nMemAvailable: 250 kB\n"
-		err := os.WriteFile(filepath.Join(procDir, "meminfo"), []byte(meminfoContent), 0644)
-		if err != nil {
+	}
+	if tt.createMeminfo {
+		if err := os.WriteFile(filepath.Join(procDir, "meminfo"), []byte(tt.procMeminfo), 0644); err != nil {
 			t.Fatalf("failed to write mock meminfo: %v", err)
 		}
+	}
+}
 
-		percent := p.GetMemoryPercent()
-		// 100 * (1 - (250/1000)) = 100 * (1 - 0.25) = 75.0
-		expected := 75.0
+func verifyCPUStats(t *testing.T, p *linuxMetricsProvider, tt linuxMetricsTestCase) {
+	t.Helper()
+	total, idle := p.GetCPUStats()
+	if tt.checkCPU {
+		if total != tt.wantCPUTotal {
+			t.Errorf("GetCPUStats() total = %d, want %d", total, tt.wantCPUTotal)
+		}
+		if idle != tt.wantCPUIdle {
+			t.Errorf("GetCPUStats() idle = %d, want %d", idle, tt.wantCPUIdle)
+		}
+	}
+}
 
-		if percent != expected {
-			t.Errorf("GetMemoryPercent() = %f, want %f", percent, expected)
-		}
-	})
-
-	t.Run("Edge Case: Missing Files", func(t *testing.T) {
-		_ = os.Remove(filepath.Join(procDir, "stat"))
-		_ = os.Remove(filepath.Join(procDir, "meminfo"))
-
-		// GetCPUStats should fallback to runtime/metrics which returns 0 in tests usually or at least doesn't panic
-		_, idle := p.GetCPUStats()
-		// We don't assert 0 for total since it might return runtime metrics, but it shouldn't panic.
-		// If idle is 0, it means the /proc/stat read failed and it fell back.
-		if idle != 0 {
-			t.Errorf("expected idle 0 for missing file, got %d", idle)
-		}
-
-		percent := p.GetMemoryPercent()
-		if percent != 0.0 {
-			t.Errorf("expected 0.0 for missing meminfo, got %f", percent)
-		}
-	})
-
-	t.Run("Edge Case: Corrupted Format", func(t *testing.T) {
-		err := os.WriteFile(filepath.Join(procDir, "stat"), []byte("cpu not-a-number\n"), 0644)
-		if err != nil {
-			t.Fatalf("failed to write mock stat: %v", err)
-		}
-		total, idle := p.GetCPUStats()
-		if total != 0 || idle != 0 {
-			t.Logf("Fallback or partial read detected during corrupted format test: total=%d, idle=%d", total, idle)
-		}
-
-		err = os.WriteFile(filepath.Join(procDir, "meminfo"), []byte("MemTotal: invalid\nMemAvailable: 0\n"), 0644)
-		if err != nil {
-			t.Fatalf("failed to write mock meminfo: %v", err)
-		}
-		percent := p.GetMemoryPercent()
-		if percent != 0.0 {
-			t.Errorf("expected 0.0 for invalid meminfo, got %f", percent)
-		}
-	})
-
-	t.Run("Edge Case: Empty Files", func(t *testing.T) {
-		err := os.WriteFile(filepath.Join(procDir, "stat"), []byte(""), 0644)
-		if err != nil {
-			t.Fatalf("failed to write mock stat: %v", err)
-		}
-		p.GetCPUStats() // No panic
-
-		err = os.WriteFile(filepath.Join(procDir, "meminfo"), []byte(""), 0644)
-		if err != nil {
-			t.Fatalf("failed to write mock meminfo: %v", err)
-		}
-		p.GetMemoryPercent() // No panic
-	})
+func verifyMemoryPercent(t *testing.T, p *linuxMetricsProvider, tt linuxMetricsTestCase) {
+	t.Helper()
+	mem := p.GetMemoryPercent()
+	if mem != tt.wantMemPercent {
+		t.Errorf("GetMemoryPercent() = %f, want %f", mem, tt.wantMemPercent)
+	}
 }

@@ -958,10 +958,10 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 
 	return []responsesAPITestCase{
 		{
-			name:  "valid_request_returns_200",
-			model: "gpt-5.4",
+			name:    "valid_request_returns_200",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			history: []*llm.Content{
 				{
 					Role: "user",
@@ -1026,20 +1026,20 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			},
 		},
 		{
-			name:  "malformed_json_response_returns_error",
-			model: "gpt-5.4",
+			name:    "malformed_json_response_returns_error",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				_, _ = w.Write([]byte(`{invalid json}`))
 			},
 			wantErr: "failed to decode response",
 		},
 		{
-			name:  "http_400_returns_api_error",
-			model: "gpt-5.4",
+			name:    "http_400_returns_api_error",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte(`{"error": {"message": "Invalid request"}}`))
@@ -1049,15 +1049,15 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:  "usage_accumulated_from_items_over_top_level",
-			model: "gpt-5.4",
+			name:    "usage_accumulated_from_items_over_top_level",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				resp := responsesAPIResponse{
 					Output: []responseOutputItem{
 						{
-							Type: "message",
+							Type:  "message",
 							Usage: &usage{PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30},
 						},
 					},
@@ -1072,10 +1072,10 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			},
 		},
 		{
-			name:  "direct_content_blocks_without_wrapper",
-			model: "gpt-5.4",
+			name:    "direct_content_blocks_without_wrapper",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				resp := responsesAPIResponse{
 					Output: []responseOutputItem{
@@ -1086,9 +1086,9 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 								{Type: "text", Text: "Direct text block"},
 								{Type: "thought", Thought: "I'm thinking"},
 								{
-									Type: "tool_use",
-									Name: "test_tool",
-									ID:   "call_calc_123",
+									Type:  "tool_use",
+									Name:  "test_tool",
+									ID:    "call_calc_123",
 									Input: map[string]interface{}{"operation": "add"},
 								},
 							},
@@ -1100,9 +1100,15 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			validate: func(t *testing.T, resp *llm.Content, metrics *llm.Metrics) {
 				var foundText, foundThought, foundToolCall bool
 				for _, part := range resp.Parts {
-					if part.Text == "Direct text block" && !part.IsThought { foundText = true }
-					if part.Text == "I'm thinking" && part.IsThought { foundThought = true }
-					if part.FunctionCall != nil && part.FunctionCall.Name == "test_tool" { foundToolCall = true }
+					if part.Text == "Direct text block" && !part.IsThought {
+						foundText = true
+					}
+					if part.Text == "I'm thinking" && part.IsThought {
+						foundThought = true
+					}
+					if part.FunctionCall != nil && part.FunctionCall.Name == "test_tool" {
+						foundToolCall = true
+					}
 				}
 				if !foundText || !foundThought || !foundToolCall {
 					t.Errorf("missing components: text=%v, thought=%v, tool=%v", foundText, foundThought, foundToolCall)
@@ -1110,10 +1116,10 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			},
 		},
 		{
-			name:  "refusal_block_handling",
-			model: "gpt-5.4",
+			name:    "refusal_block_handling",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				resp := responsesAPIResponse{
 					Output: []responseOutputItem{
@@ -1124,7 +1130,7 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 								Content   []contentBlock `json:"content"`
 								ToolCalls []toolCall     `json:"tool_calls"`
 							}{
-								Role: "assistant",
+								Role:    "assistant",
 								Content: []contentBlock{{Type: "refusal", Refusal: "I cannot answer that"}},
 							},
 						},
@@ -1139,10 +1145,10 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			},
 		},
 		{
-			name:  "top_level_tool_call_type_call",
-			model: "gpt-5.4",
+			name:    "top_level_tool_call_type_call",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				resp := responsesAPIResponse{
 					Output: []responseOutputItem{
@@ -1165,10 +1171,10 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			},
 		},
 		{
-			name:  "mixed_input_and_output_text_blocks",
-			model: "gpt-5.4",
+			name:    "mixed_input_and_output_text_blocks",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				resp := responsesAPIResponse{
 					Output: []responseOutputItem{
@@ -1188,10 +1194,10 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			},
 		},
 		{
-			name:  "tool_response_missing_id_returns_error",
-			model: "gpt-5.4",
+			name:    "tool_response_missing_id_returns_error",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			history: []*llm.Content{
 				{
 					Role: "tool",
@@ -1209,10 +1215,10 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			wantErr: "invalid tool payload",
 		},
 		{
-			name:  "response_with_invalid_tool_call_arguments_returns_error",
-			model: "gpt-5.4",
+			name:    "response_with_invalid_tool_call_arguments_returns_error",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				resp := responsesAPIResponse{
 					Output: []responseOutputItem{
@@ -1243,10 +1249,10 @@ func getResponsesAPITestCases(t *testing.T) []responsesAPITestCase {
 			wantErr: "failed to unmarshal tool arguments",
 		},
 		{
-			name:  "empty_output_array_returns_empty_parts",
-			model: "gpt-5.4",
+			name:    "empty_output_array_returns_empty_parts",
+			model:   "gpt-5.4",
 			headers: map[string]string{"reasoning_effort": "high"},
-			tools: []*tools.ToolDeclaration{toolDecl},
+			tools:   []*tools.ToolDeclaration{toolDecl},
 			mockHandler: func(w http.ResponseWriter, r *http.Request) {
 				resp := responsesAPIResponse{
 					ID:     "resp_test_empty",
