@@ -26,10 +26,32 @@ func NewSystemMetricsProvider() ports.SystemMetricsProvider {
 	return &darwinMetricsProvider{}
 }
 
-// GetCPUStats returns the total CPU time (nanoseconds) used by the agent.
-// It reuses the platform‑agnostic runtime/metrics fallback for now.
+// GetCPUStats returns the total and idle CPU ticks for the entire host.
+// It uses the Mach host_statistics64 API with HOST_CPU_LOAD_INFO.
 func (p *darwinMetricsProvider) GetCPUStats() (int64, int64) {
-	return getRuntimeCPUStats()
+	// Use Mach host_statistics64 with HOST_CPU_LOAD_INFO
+	var cpuInfo C.host_cpu_load_info_data_t
+	var count C.mach_msg_type_number_t = C.HOST_CPU_LOAD_INFO_COUNT
+	host := C.mach_host_self()
+	ret := C.host_statistics64(host, C.HOST_CPU_LOAD_INFO, (C.host_info64_t)(unsafe.Pointer(&cpuInfo)), &count)
+	if ret != C.KERN_SUCCESS {
+		// Fall back to the agent‑only runtime/metrics if Mach API fails
+		return getRuntimeCPUStats()
+	}
+
+	// cpuInfo.cpu_ticks is an array of integer_t[CPU_STATE_MAX] where:
+	// [CPU_STATE_USER]   = 0  (user ticks)
+	// [CPU_STATE_SYSTEM] = 1  (system ticks)
+	// [CPU_STATE_IDLE]   = 2  (idle ticks)
+	// [CPU_STATE_NICE]   = 3  (nice ticks, usually zero on macOS)
+	user := uint64(cpuInfo.cpu_ticks[C.CPU_STATE_USER])
+	system := uint64(cpuInfo.cpu_ticks[C.CPU_STATE_SYSTEM])
+	idle := uint64(cpuInfo.cpu_ticks[C.CPU_STATE_IDLE])
+	nice := uint64(cpuInfo.cpu_ticks[C.CPU_STATE_NICE])
+	total := user + nice + system + idle
+
+	// Return as int64 (ticks)
+	return int64(total), int64(idle)
 }
 
 // GetMemoryPercent returns the host memory‑usage percentage (0‑100) using sysctl.
