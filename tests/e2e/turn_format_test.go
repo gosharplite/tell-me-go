@@ -15,141 +15,144 @@ func TestTurnHeaderFormat(t *testing.T) {
 		t.Skip("skipping slow E2E test in short mode")
 	}
 
-	provider := "google"
-	mode := "architect"
-
-	// Setup mock LLM server that returns a simple text response (no tool calls)
-	server := setupSimpleTextMockServer(t, provider)
-	defer server.Close()
-
-	homeDir := t.TempDir()
-	configPath := createTempConfigWithMode(t, provider, server.URL, mode)
-	env := []string{
-		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL,
+	tests := []struct {
+		name     string
+		provider string
+		mode     string
+	}{
+		{
+			name:     "google_architect_header_format",
+			provider: "google",
+			mode:     "architect",
+		},
+		{
+			name:     "openai_coder_header_format",
+			provider: "openai",
+			mode:     "coder",
+		},
 	}
 
-	// Run the CLI with a simple prompt.
-	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "Say hello")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Setup mock LLM server that returns a simple text response
+			server := setupSimpleTextMockServer(t, tt.provider)
+			defer server.Close()
+
+			homeDir := t.TempDir()
+			configPath := createTempConfigWithMode(t, tt.provider, server.URL, tt.mode)
+			env := []string{
+				"TELL_ME_HOME=" + homeDir,
+				"TELL_ME_MOCK_URL=" + server.URL,
+			}
+
+			// Run the CLI with a simple prompt.
+			_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "Say hello")
+			if err != nil {
+				t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+			}
+
+			// Capture stderr and strip ANSI codes.
+			assertHeaderFormat(t, stripANSI(stderr), tt.mode)
+		})
 	}
+}
 
-	// Capture stderr and strip ANSI codes.
-	errOut := stripANSI(stderr)
-
-	// Split into lines for easier analysis.
+// assertHeaderFormat verifies the visual structure of the CLI output for a single turn.
+func assertHeaderFormat(t *testing.T, errOut string, mode string) {
+	t.Helper()
 	lines := strings.Split(errOut, "\n")
 
-	// Find indices of key lines.
-	horizRule := "────────────────────────────────────────────────────────────────────────────────"
-	turnLinePrefix := "╭─⠿ Turn 1 - " + mode
-	payloadLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: ~\d+/\d+ tokens - ` + mode + `$`)
-	actualPayloadLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: \d+/\d+ tokens - ` + mode + `$`)
-	// Metrics line pattern: timestamp, provider/model in brackets, M: N H: N C: N Th: N, and trailing timing block
-	metricsLineRegex := regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] \[[^\]]+\] M: \d+ H: \d+ C: \d+ Th: \d+.*\[.*\]$`)
-	// Ready line prefix (may have optional cost summary)
-	readyLinePrefix := "╰─⠿ Ready"
+	// Define patterns to look for in the output
+	patterns := []struct {
+		name  string
+		regex *regexp.Regexp
+		match string
+	}{
+		{
+			name:  "horizontal_rule",
+			match: "────────────────────────────────────────────────────────────────────────────────",
+		},
+		{
+			name:  "turn_line",
+			match: "╭─⠿ Turn 1 - " + mode,
+		},
+		{
+			name:  "estimated_payload",
+			regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: ~\d+/\d+ tokens - ` + mode + `$`),
+		},
+		{
+			name:  "actual_payload",
+			regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] Payload: \d+/\d+ tokens - ` + mode + `$`),
+		},
+		{
+			name:  "metrics_line",
+			regex: regexp.MustCompile(`^\[\d{2}:\d{2}:\d{2}\] \[[^\]]+\] M: \d+ H: \d+ C: \d+ Th: \d+.*\[.*\]$`),
+		},
+		{
+			name:  "ready_line",
+			match: "╰─⠿ Ready",
+		},
+	}
 
-	var horizIdx, turnIdx, payloadIdx, actualPayloadIdx, metricsIdx, readyIdx = -1, -1, -1, -1, -1, -1
+	// Find indices of each pattern
+	indices := make(map[string]int)
+	for _, p := range patterns {
+		indices[p.name] = -1
+	}
+
 	for i, line := range lines {
-		if strings.Contains(line, horizRule) {
-			horizIdx = i
-		}
-		if strings.HasPrefix(line, turnLinePrefix) {
-			turnIdx = i
-		}
-		if payloadLineRegex.MatchString(line) {
-			payloadIdx = i
-		}
-		if actualPayloadLineRegex.MatchString(line) {
-			actualPayloadIdx = i
-		}
-		if metricsLineRegex.MatchString(line) {
-			metricsIdx = i
-		}
-		if strings.HasPrefix(line, readyLinePrefix) {
-			readyIdx = i
+		for _, p := range patterns {
+			if indices[p.name] != -1 {
+				continue
+			}
+			if p.regex != nil && p.regex.MatchString(line) {
+				indices[p.name] = i
+			} else if p.match != "" && strings.HasPrefix(line, p.match) {
+				indices[p.name] = i
+			}
 		}
 	}
 
-	// Assertions
-	if horizIdx == -1 {
-		t.Errorf("Horizontal rule not found in stderr.\nStderr output:\n%s", errOut)
-	} else {
-		// Check empty line before horizontal rule: either horizIdx == 0 (first line) or previous line is empty.
-		if horizIdx > 0 && strings.TrimSpace(lines[horizIdx-1]) != "" {
-			t.Errorf("Horizontal rule should be preceded by an empty line, but preceding line is: %q", lines[horizIdx-1])
+	// 1. Assert Presence
+	for _, p := range patterns {
+		if indices[p.name] == -1 {
+			t.Errorf("%s not found in stderr. (mode: %s)\nFull Output:\n%s", p.name, mode, errOut)
 		}
 	}
 
-	if turnIdx == -1 {
-		t.Errorf("Turn line not found in stderr. Expected prefix: %s", turnLinePrefix)
+	// 2. Assert Formatting specifics
+	if hIdx := indices["horizontal_rule"]; hIdx != -1 {
+		// Rule should be exactly the expected string
+		if lines[hIdx] != patterns[0].match {
+			t.Errorf("Horizontal rule mismatch.\nExpected: %q\nGot: %q", patterns[0].match, lines[hIdx])
+		}
+		// Rule should be preceded by an empty line (unless it's the very first line)
+		if hIdx > 0 && strings.TrimSpace(lines[hIdx-1]) != "" {
+			t.Errorf("Horizontal rule should be preceded by an empty line, but preceding line is: %q", lines[hIdx-1])
+		}
 	}
 
-	if payloadIdx == -1 {
-		t.Errorf("Payload line not found in stderr. Expected pattern: [HH:MM:SS] Payload: ~NNN/MMM tokens - %s", mode)
+	if mIdx := indices["metrics_line"]; mIdx != -1 {
+		metricsLine := lines[mIdx]
+		required := []string{" M: ", " H: ", " C: ", " Th: ", " ["}
+		for _, r := range required {
+			if !strings.Contains(metricsLine, r) {
+				t.Errorf("Metrics line missing required component %q: %q", r, metricsLine)
+			}
+		}
 	}
 
-	if actualPayloadIdx == -1 {
-		t.Errorf("Actual payload line not found in stderr. Expected pattern: [HH:MM:SS] Payload: NNN/MMM tokens - %s", mode)
-	}
-
-	if metricsIdx == -1 {
-		t.Errorf("Metrics line not found in stderr. Expected pattern: [HH:MM:SS] [provider] M: N H: N C: N Th: N [...]")
-	}
-
-	if readyIdx == -1 {
-		t.Errorf("Ready line not found in stderr. Expected prefix: %s", readyLinePrefix)
-	}
-
-	// Ordering: horizontal rule → turn line → (estimated) payload line → (actual payload line) → metrics line → ready line
-	if horizIdx != -1 && turnIdx != -1 && horizIdx >= turnIdx {
-		t.Errorf("Horizontal rule should appear before turn line. horizIdx=%d, turnIdx=%d", horizIdx, turnIdx)
-	}
-	if turnIdx != -1 && payloadIdx != -1 && turnIdx >= payloadIdx {
-		t.Errorf("Turn line should appear before payload line. turnIdx=%d, payloadIdx=%d", turnIdx, payloadIdx)
-	}
-	if payloadIdx != -1 && actualPayloadIdx != -1 && payloadIdx >= actualPayloadIdx {
-		t.Errorf("Estimated payload line should appear before actual payload line. estimatedIdx=%d, actualIdx=%d", payloadIdx, actualPayloadIdx)
-	}
-	if actualPayloadIdx != -1 && metricsIdx != -1 && actualPayloadIdx >= metricsIdx {
-		t.Errorf("Actual payload line should appear before metrics line. actualIdx=%d, metricsIdx=%d", actualPayloadIdx, metricsIdx)
-	}
-	if payloadIdx != -1 && metricsIdx != -1 && payloadIdx >= metricsIdx {
-		t.Errorf("Payload line should appear before metrics line. payloadIdx=%d, metricsIdx=%d", payloadIdx, metricsIdx)
-	}
-	if metricsIdx != -1 && readyIdx != -1 && metricsIdx >= readyIdx {
-		t.Errorf("Metrics line should appear before ready line. metricsIdx=%d, readyIdx=%d", metricsIdx, readyIdx)
-	}
-
-	// Ensure the horizontal rule is exactly the 64‑dash line.
-	if horizIdx != -1 && lines[horizIdx] != horizRule {
-		t.Errorf("Horizontal rule mismatch.\nExpected: %q\nGot: %q", horizRule, lines[horizIdx])
-	}
-
-	// Ensure turn line matches exactly "╭─⠿ Turn 1 - architect" (no extra characters before)
-	if turnIdx != -1 && !strings.HasPrefix(lines[turnIdx], turnLinePrefix) {
-		t.Errorf("Turn line mismatch.\nExpected prefix: %q\nGot: %q", turnLinePrefix, lines[turnIdx])
-	}
-
-	// Ensure payload line matches timestamp pattern and token counts are digits.
-	if payloadIdx != -1 && !payloadLineRegex.MatchString(lines[payloadIdx]) {
-		t.Errorf("Payload line mismatch.\nExpected pattern: %v\nGot: %q", payloadLineRegex, lines[payloadIdx])
-	}
-	if actualPayloadIdx != -1 && !actualPayloadLineRegex.MatchString(lines[actualPayloadIdx]) {
-		t.Errorf("Actual payload line mismatch.\nExpected pattern: %v\nGot: %q", actualPayloadLineRegex, lines[actualPayloadIdx])
-	}
-
-	// Ensure metrics line contains required components.
-	if metricsIdx != -1 {
-		metricsLine := lines[metricsIdx]
-		if !strings.Contains(metricsLine, " M: ") ||
-			!strings.Contains(metricsLine, " H: ") ||
-			!strings.Contains(metricsLine, " C: ") ||
-			!strings.Contains(metricsLine, " Th: ") ||
-			!strings.Contains(metricsLine, " [") {
-			t.Errorf("Metrics line missing required components: %q", metricsLine)
+	// 3. Assert Order
+	// Expected sequence: horizontal_rule -> turn_line -> estimated_payload -> actual_payload -> metrics_line -> ready_line
+	order := []string{"horizontal_rule", "turn_line", "estimated_payload", "actual_payload", "metrics_line", "ready_line"}
+	for i := 0; i < len(order)-1; i++ {
+		idx1 := indices[order[i]]
+		idx2 := indices[order[i+1]]
+		if idx1 != -1 && idx2 != -1 && idx1 >= idx2 {
+			t.Errorf("%s (idx %d) should appear before %s (idx %d)", order[i], idx1, order[i+1], idx2)
 		}
 	}
 }
