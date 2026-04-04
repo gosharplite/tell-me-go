@@ -42,7 +42,7 @@ type stdUIRenderer struct {
 	lastSampleTime  time.Time
 	lastCPUPercent  float64
 	lastMemPercent  float64
-	onDraw          func() // optional callback for test synchronization
+
 }
 
 type defaultMetricsProvider struct{}
@@ -111,12 +111,7 @@ func (r *stdUIRenderer) SetForceSpinner(force bool) {
 	r.forceSpinner = force
 }
 
-// SetOnDraw sets a callback that will be invoked each time the spinner draws a frame (primarily for testing).
-func (r *stdUIRenderer) SetOnDraw(f func()) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.onDraw = f
-}
+
 
 // SetWriters allows overriding the output writers (primarily for testing).
 func (r *stdUIRenderer) SetWriters(stdout, stderr io.Writer) {
@@ -531,12 +526,7 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 	// Move to start of line, clear current line, then print the indicator.
 	_, _ = fmt.Fprintf(ui.stderr, "\r%s%s%s%s%s", ui.c(termClearLine), ui.c(colorGray), frame, msg, ui.c(colorReset))
 
-	r.mu.RLock()
-	onDraw := r.onDraw
-	r.mu.RUnlock()
-	if onDraw != nil {
-		onDraw()
-	}
+
 }
 
 func (r *stdUIRenderer) clearLoadingIndicator(ui uiState, rawOutput bool) {

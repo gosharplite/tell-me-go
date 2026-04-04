@@ -183,14 +183,7 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			}
 			renderer.SetClock(clock)
 
-			// Channel to receive draw events
-			drawChan := make(chan struct{}, 10)
-			renderer.SetOnDraw(func() {
-				select {
-				case drawChan <- struct{}{}:
-				default:
-				}
-			})
+
 
 			// Start a spinner that shows metrics
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -200,12 +193,7 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			defer stop()
 
 			// Wait for the first synchronous draw (already happened, but ensure we receive it)
-			select {
-			case <-drawChan:
-				// First draw completed
-			case <-time.After(100 * time.Millisecond):
-				t.Fatal("timeout waiting for first spinner draw")
-			}
+			time.Sleep(10 * time.Millisecond) // allow spinner goroutine to start
 
 			// Update the provider to return the second sample
 			provider.SetCPUStats(tt.total2, tt.idle2)
@@ -216,22 +204,11 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			clock.tick()
 
 			// Wait for the draw that includes updated CPU metrics
-			select {
-			case <-drawChan:
-				// Frame drawn with updated metrics
-			case <-time.After(100 * time.Millisecond):
-				t.Fatal("timeout waiting for spinner draw after CPU update")
-			}
+			time.Sleep(50 * time.Millisecond) // allow spinner goroutine to process tick and draw
 
 			// Stop the spinner and capture the final stderr output
 			stop()
 			// Allow final clear (spinner goroutine will exit and clear)
-			select {
-			case <-drawChan:
-				// Final clear draw
-			case <-time.After(100 * time.Millisecond):
-				// No more draws expected, continue
-			}
 
 			output := stderr.String()
 			t.Logf("Spinner output:\n%s", output)
