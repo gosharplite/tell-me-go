@@ -62,11 +62,28 @@ tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/ar
    Provide findings categorized as [ARCHITECTURAL BLOCKER], [TECHNICAL DEBT], or [REFACTOR]."
 ```
 
-**Expected Output:** A list of architectural findings with clear “Current vs. Scalable” examples.  
+**Expected Output:** A list of architectural findings with clear "Current vs. Scalable" examples.  
 **Exit Criteria:** No `[ARCHITECTURAL BLOCKER]` items remain.
 
-### Step 4 – Coder Implementation (Assistant → Coder)
-If the Architect identifies required changes, the Assistant instructs the Coder role to implement them:
+### Step 4 – Implementation Approval (Assistant → Human)
+After receiving architectural findings from the Architect, the Assistant presents them to the human along with a proposed implementation plan. The Assistant requests explicit confirmation using the `ask_user` tool before any code changes are made.
+
+Example prompt:
+
+> **Architectural Findings & Implementation Plan**  
+> - [ARCHITECTURAL BLOCKER]: Found God Object in service layer (needs refactoring).  
+> - [TECHNICAL DEBT]: Circular dependency between packages A and B.  
+> - Proposed fix: Split service into smaller components, introduce interface.  
+> - Estimated effort: ~2 hours of coding + testing.  
+>   
+> **Approve implementation?** (yes/no)
+
+**Human must explicitly approve** before proceeding. If the human responds "yes" (or equivalent), the Assistant proceeds to Step 5. If "no" or if no response is received within a timeout, the workflow stops for further discussion.
+
+*Note:* If the Architect reports no required changes, the Assistant can skip directly to Step 6 (Testing Review).
+
+### Step 5 – Coder Implementation (Assistant → Coder)
+**Only executed if human approved in Step 4.** The Assistant instructs the Coder role to implement the changes recommended by the Architect:
 
 ```bash
 tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/coder.yaml \
@@ -79,7 +96,7 @@ tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/co
 
 **Note:** The Coder is the only role that can modify files. All other roles provide read‑only guidance.
 
-### Step 5 – Testing Review (Assistant → Tester)
+### Step 6 – Testing Review (Assistant → Tester)
 The Assistant invokes the Tester role to validate test quality and coverage:
 
 ```bash
@@ -96,7 +113,7 @@ tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/te
 **Expected Output:** Specific, actionable instructions for improving test coverage and robustness.  
 **Exit Criteria:** No `[TEST BLOCKER]` items remain; coverage meets project minimum.
 
-### Step 6 – Code Review (Assistant → Reviewer)
+### Step 7 – Code Review (Assistant → Reviewer)
 The Assistant invokes the Reviewer role for idiomatic Go, security, and concurrency checks:
 
 ```bash
@@ -110,25 +127,25 @@ tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/re
    Categorize findings by priority: [CRITICAL], [HIGH], [MEDIUM]."
 ```
 
-**Expected Output:** A prioritized list of issues with “Bad vs. Good” code examples.  
+**Expected Output:** A prioritized list of issues with "Bad vs. Good" code examples.  
 **Exit Criteria:** No `[CRITICAL]` or `[HIGH]` items remain.
 
-### Step 7 – Feedback Integration (Assistant)
+### Step 8 – Feedback Integration (Assistant)
 1. Collect all findings from Architect, Tester, and Reviewer.
 2. For each finding, decide whether to:
    - **Fix now** – instruct the Coder role to address it.
    - **Defer** – document as technical debt (requires team approval).
    - **Reject** – provide justification in the merge request.
-3. Re‑run steps 3–6 after fixes to verify resolution.
+3. Re‑run steps 3–7 after fixes to verify resolution.
 
-### Step 8 – Final Verification (Assistant)
+### Step 9 – Final Verification (Assistant)
 Before requesting human approval, the Assistant confirms:
 - [ ] All automated checks (Step 2) still pass.
 - [ ] No open architectural, testing, or review blockers.
 - [ ] Branch is rebased onto the latest target branch.
 - [ ] Commit history is clean (squashed/logical commits).
 
-### Step 9 – Human Approval
+### Step 10 – Human Approval (Pre‑Merge)
 The Assistant presents a concise summary to the human, including:
 - List of issues found and resolved.
 - Current test coverage percentage.
@@ -145,12 +162,12 @@ The Assistant then requests explicit confirmation using the `ask_user` tool (or 
 >  
 > **Approve merge?** (yes/no)
 
-**Human must explicitly approve** the merge. If the human responds “yes” (or equivalent), the Assistant proceeds to merge. If “no” or if no response is received within a timeout, the workflow stops and the branch remains unmerged.
+**Human must explicitly approve** the merge. If the human responds "yes" (or equivalent), the Assistant proceeds to Step 11. If "no" or if no response is received within a timeout, the workflow stops and the branch remains unmerged.
 
 *Note:* In non‑interactive environments (CI/CD), approval can be bypassed by setting an environment variable (e.g., `AUTO_APPROVE=1`) or by pre‑approving via a command‑line flag.
 
-### Step 10 – Merge (Assistant)
-Once approved, the Assistant merges the source branch using the project’s preferred strategy (fast‑forward, squash, or merge commit). The merge is tracked (e.g., via GitLab/GitHub merge request, Jira ticket closure).
+### Step 11 – Merge (Assistant)
+Once approved, the Assistant merges the source branch using the project's preferred strategy (fast‑forward, squash, or merge commit). The merge is tracked (e.g., via GitLab/GitHub merge request, Jira ticket closure).
 
 ## Troubleshooting
 
@@ -177,7 +194,7 @@ tell-me-go -c /path/to/architect.yaml "Review the changes..."
 The Assistant maintains state across invocations, aggregating findings and determining when to proceed to the next step.
 
 ### Example Multi‑Agent Workflow Script
-A bash script that automates the above steps can be placed in the project’s `scripts/` directory. See `../../user/piped-multi-agent-workflow.md` for advanced piping patterns.
+A bash script that automates the above steps can be placed in the project's `scripts/` directory. See `../../user/piped-multi-agent-workflow.md` for advanced piping patterns.
 
 ### Configuration File Locations
 - Default role configurations: `/Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/`
@@ -196,3 +213,4 @@ A bash script that automates the above steps can be placed in the project’s `s
 |---------|------|--------|---------|
 | 1.0 | $(date +%Y-%m‑%d) | AI Assistant | Initial SOP (manual role invocation) |
 | 1.1 | $(date +%Y-%m‑%d) | AI Assistant | Revised for Assistant‑orchestrated workflow with human approval gate |
+| 1.2 | $(date +%Y-%m‑%d) | AI Assistant | Added implementation approval step before Coder begins coding |
