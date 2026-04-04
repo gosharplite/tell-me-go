@@ -567,17 +567,6 @@ func (c *client) buildHTTPRequest(ctx context.Context, body []byte) (*http.Reque
 	return req, nil
 }
 
-func (c *client) checkResponse(resp *http.Response) error {
-	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("api returned status %d; additionally, failed to read response body: %w", resp.StatusCode, err)
-		}
-		return &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
-	}
-	return nil
-}
-
 func marshalResponse(res map[string]interface{}) string {
 	if res == nil {
 		return ""
