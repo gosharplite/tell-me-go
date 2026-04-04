@@ -49,7 +49,7 @@ func (p *pathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error
 	if ok, _ := p.checkBoundary(absPath, "/private/tmp"); ok {
 		return true, nil
 	}
-	
+
 	return false, nil
 }
 
