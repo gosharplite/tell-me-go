@@ -7,15 +7,18 @@ To ensure that a source branch meets quality standards across architecture, code
 Applies to all feature, bug‑fix, and refactoring branches that are candidates for merging into a protected target branch.
 
 ## Roles & Responsibilities
-| Role | Configuration File | Responsibility |
-|------|-------------------|----------------|
-| **Assistant** | `assistant.yaml` | Orchestrates the quality‑gate process, invokes specialist roles, coordinates fixes, and presents summary for human approval. |
-| **Architect** | `architect.yaml` | Assess architectural integrity, dependency boundaries, scalability, and adherence to established patterns. |
-| **Coder** | `coder.yaml` | Implement changes, write tests, enforce coding standards (the only role with write access). |
-| **Tester** | `tester.yaml` | Evaluate test coverage, edge‑case handling, flaky‑test risks, and testing strategy. |
-| **Reviewer** | `reviewer.yaml` | Review code for idiomatic Go, security vulnerabilities, concurrency issues, and error‑handling correctness. |
+| Role | Configuration File | Responsibility | **Prohibited Actions** |
+|------|-------------------|----------------|------------------------|
+| **Assistant** | `assistant.yaml` | Orchestrates the quality‑gate process: invokes specialist roles (Architect, Coder, Tester, Reviewer), coordinates fixes, aggregates findings, and presents summary for human approval. | **MUST NOT perform technical analysis, code review, architectural assessment, or testing evaluation directly.** The Assistant's only technical tasks are administrative checks in Step 2 (CI status, merge conflicts, formatting, static analysis, test suite, coverage). All substantive technical review MUST be delegated to the appropriate specialist role. |
+| **Architect** | `architect.yaml` | Assess architectural integrity, dependency boundaries, scalability, and adherence to established patterns. | Must not modify files; provides instructions to Coder. |
+| **Coder** | `coder.yaml` | Implement changes, write tests, enforce coding standards (the only role with write access). | Must only modify files when explicitly instructed by Architect/Tester/Reviewer findings. |
+| **Tester** | `tester.yaml` | Evaluate test coverage, edge‑case handling, flaky‑test risks, and testing strategy. | Must not modify files; provides instructions to Coder. |
+| **Reviewer** | `reviewer.yaml` | Review code for idiomatic Go, security vulnerabilities, concurrency issues, and error‑handling correctness. | Must not modify files; provides instructions to Coder. |
 
 **Workflow:** Human starts the Assistant role; the Assistant coordinates the other four roles by invoking `tell-me-go` with their respective configuration files.
+
+**Role Boundary Enforcement Principle:**  
+The multi‑agent workflow enforces strict separation of concerns. The **Assistant is a pure orchestrator** – it MUST NOT perform substantive technical analysis, architectural review, code review, or testing evaluation. These tasks MUST be delegated to the appropriate specialist role (Architect, Reviewer, Tester). Violation of this boundary constitutes a workflow failure and requires restarting the quality‑gate process from Step 1.
 
 ## Prerequisites
 1. `tell-me-go` installed and available in `PATH`.
@@ -40,6 +43,8 @@ tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/ya
 The Assistant will then perform the following steps autonomously.
 
 ### Step 2 – Automated Checks (Assistant)
+**Boundary Note:** These are **administrative/pre‑flight checks only** – verifying that automated tooling passes. The Assistant MUST NOT perform substantive technical analysis, architectural assessment, code review, or testing evaluation. Those tasks MUST be delegated to the specialist roles (Architect, Reviewer, Tester).
+
 The Assistant verifies the branch satisfies the following prerequisites:
 - [ ] **CI Pipeline** passes (green status).
 - [ ] **No merge conflicts** with the target branch.
@@ -182,6 +187,7 @@ Once approved, the Assistant merges the source branch using the project's prefer
 | Coverage does not meet threshold | Tests missing for new or changed code | Use `go test -coverprofile=coverage.out ./...` and `go tool cover -func=coverage.out` to identify uncovered lines. The Assistant can instruct the Coder to add missing tests. |
 | Human approval step hangs | The `ask_user` tool may be waiting for input on a non‑interactive terminal | Ensure the Assistant is running in an interactive session. If running in CI/CD, pre‑approve via a flag or environment variable. |
 | Merge fails due to permissions | The Assistant lacks Git push/merge rights | Verify Git credentials are configured and the Assistant has the necessary permissions on the repository. |
+| Assistant performs technical analysis directly | Assistant violated role boundaries by executing specialist tasks (architectural review, code review, testing evaluation) instead of delegating | **Workflow failure** – Stop immediately and restart from Step 1. Update Assistant configuration to enforce orchestrator‑only behavior. The Assistant MUST use `execute_command` to invoke specialist roles, not perform their work directly. |
 | Role session retains unwanted context | Missing `-new` flag when invoking a role | Always include `-new` flag when the Assistant invokes a specialist role to ensure a fresh conversation without residual context. |
 
 ## Appendix
@@ -219,4 +225,5 @@ A bash script that automates the above steps can be placed in the project's `scr
 | 1.2 | $(date +%Y‑%m‑%d) | AI Assistant | Added implementation approval step before Coder begins coding |
 | 1.3 | $(date +%Y‑%m‑%d) | AI Assistant | Added `-new` flag to all role invocations to start fresh conversations |
 | 1.4 | $(date +%Y‑%m‑%d) | AI Assistant | Added `-r` flag to all role invocations for raw output |
+| 1.5 | $(date +%Y‑%m‑%d) | AI Assistant | Added explicit Assistant prohibitions and clarified role boundaries: 1) Assistant MUST NOT perform technical analysis; 2) Defined clear separation of concerns between orchestrator (Assistant) and specialist roles |
 
