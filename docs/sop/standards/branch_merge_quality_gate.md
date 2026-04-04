@@ -29,11 +29,13 @@ Applies to all feature, bug‑fix, and refactoring branches that are candidates 
 The human starts the Assistant role with a command that triggers the quality‑gate workflow:
 
 ```bash
-tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/assistant.yaml \
+tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/assistant.yaml \
   "Execute the branch‑merge quality‑gate SOP for branch $(git branch --show-current). \
    Coordinate the Architect, Coder, Tester, and Reviewer roles to ensure the branch is ready to merge into main. \
    Provide me with a final summary before proceeding with the merge."
 ```
+
+**Note:** The `-new` flag ensures the Assistant starts a fresh conversation, preventing any residual context from interfering with the quality‑gate assessment.
 
 The Assistant will then perform the following steps autonomously.
 
@@ -49,10 +51,10 @@ The Assistant verifies the branch satisfies the following prerequisites:
 If any check fails, the Assistant reports the issue and stops the workflow (or attempts to fix it via the Coder role if appropriate).
 
 ### Step 3 – Architectural Review (Assistant → Architect)
-The Assistant invokes the Architect role:
+The Assistant invokes the Architect role with a fresh session:
 
 ```bash
-tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/architect.yaml \
+tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/architect.yaml \
   "Review the changes in branch $(git branch --show-current) for architectural concerns. \
    Focus on: \
    1. Component dependencies and interface boundaries. \
@@ -83,10 +85,10 @@ Example prompt:
 *Note:* If the Architect reports no required changes, the Assistant can skip directly to Step 6 (Testing Review).
 
 ### Step 5 – Coder Implementation (Assistant → Coder)
-**Only executed if human approved in Step 4.** The Assistant instructs the Coder role to implement the changes recommended by the Architect:
+**Only executed if human approved in Step 4.** The Assistant instructs the Coder role to implement the changes recommended by the Architect, starting a fresh session:
 
 ```bash
-tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/coder.yaml \
+tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/coder.yaml \
   "Implement the changes recommended by the Architect. Follow TDD: \
    1. Write failing tests for each new requirement. \
    2. Write minimal code to pass the tests. \
@@ -97,10 +99,10 @@ tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/co
 **Note:** The Coder is the only role that can modify files. All other roles provide read‑only guidance.
 
 ### Step 6 – Testing Review (Assistant → Tester)
-The Assistant invokes the Tester role to validate test quality and coverage:
+The Assistant invokes the Tester role with a fresh session to validate test quality and coverage:
 
 ```bash
-tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/tester.yaml \
+tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/tester.yaml \
   "Evaluate the test suite for branch $(git branch --show-current). \
    Focus on: \
    1. Testability of the code (dependency injection, observability). \
@@ -114,10 +116,10 @@ tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/te
 **Exit Criteria:** No `[TEST BLOCKER]` items remain; coverage meets project minimum.
 
 ### Step 7 – Code Review (Assistant → Reviewer)
-The Assistant invokes the Reviewer role for idiomatic Go, security, and concurrency checks:
+The Assistant invokes the Reviewer role with a fresh session for idiomatic Go, security, and concurrency checks:
 
 ```bash
-tell-me-go -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/reviewer.yaml \
+tell-me-go -new -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/reviewer.yaml \
   "Perform a detailed code review of branch $(git branch --show-current). \
    Focus on: \
    1. Security: injections, path traversal, exposed secrets. \
@@ -180,15 +182,16 @@ Once approved, the Assistant merges the source branch using the project's prefer
 | Coverage does not meet threshold | Tests missing for new or changed code | Use `go test -coverprofile=coverage.out ./...` and `go tool cover -func=coverage.out` to identify uncovered lines. The Assistant can instruct the Coder to add missing tests. |
 | Human approval step hangs | The `ask_user` tool may be waiting for input on a non‑interactive terminal | Ensure the Assistant is running in an interactive session. If running in CI/CD, pre‑approve via a flag or environment variable. |
 | Merge fails due to permissions | The Assistant lacks Git push/merge rights | Verify Git credentials are configured and the Assistant has the necessary permissions on the repository. |
+| Role session retains unwanted context | Missing `-new` flag when invoking a role | Always include `-new` flag when the Assistant invokes a specialist role to ensure a fresh conversation without residual context. |
 
 ## Appendix
 
 ### Orchestration Mechanism
-The Assistant coordinates the specialist roles by using the `execute_command` tool to run `tell-me-go` with the appropriate configuration file and prompt. Example:
+The Assistant coordinates the specialist roles by using the `execute_command` tool to run `tell-me-go` with the appropriate configuration file and prompt. Each invocation **must** include the `-new` flag to guarantee a clean session. Example:
 
 ```bash
 # Simulated internal command executed by the Assistant
-tell-me-go -c /path/to/architect.yaml "Review the changes..."
+tell-me-go -new -c /path/to/architect.yaml "Review the changes..."
 ```
 
 The Assistant maintains state across invocations, aggregating findings and determining when to proceed to the next step.
@@ -211,6 +214,8 @@ A bash script that automates the above steps can be placed in the project's `scr
 **Revision History**
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0 | $(date +%Y-%m‑%d) | AI Assistant | Initial SOP (manual role invocation) |
-| 1.1 | $(date +%Y-%m‑%d) | AI Assistant | Revised for Assistant‑orchestrated workflow with human approval gate |
-| 1.2 | $(date +%Y-%m‑%d) | AI Assistant | Added implementation approval step before Coder begins coding |
+| 1.0 | $(date +%Y‑%m‑%d) | AI Assistant | Initial SOP (manual role invocation) |
+| 1.1 | $(date +%Y‑%m‑%d) | AI Assistant | Revised for Assistant‑orchestrated workflow with human approval gate |
+| 1.2 | $(date +%Y‑%m‑%d) | AI Assistant | Added implementation approval step before Coder begins coding |
+| 1.3 | $(date +%Y‑%m‑%d) | AI Assistant | Added `-new` flag to all role invocations to start fresh conversations |
+
