@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -32,6 +33,9 @@ import (
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/ui"
+	"github.com/gosharplite/tell-me-go/internal/ui/tui"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // ConfigurableSecurityManager extends the domain security manager with configuration methods.
@@ -44,17 +48,7 @@ type ConfigurableSecurityManager interface {
 	RegisterPolicyTools(r tools.Registry, kv ports.KVStore) error
 }
 
-// Container defines the interface for building session dependencies and provides factories.
-type Container interface {
-	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error)
-	GetAgentFactory() ports.ChatterFactory
-	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error
-	GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error)
-	GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error)
-	GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error)
-	GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error)
-	GetSystemMetricsProvider() ports.SystemMetricsProvider
-}
+
 
 // bootstrapper handles the instantiation and wiring of system components.
 type bootstrapper struct {
@@ -72,7 +66,7 @@ type bootstrapper struct {
 }
 
 // NewBootstrapper creates a new Container instance.
-func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, logger *slog.Logger, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) Container {
+func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, logger *slog.Logger, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) ports.Container {
 	if clientFactory == nil {
 		clientFactory = infra_llm.NewClient
 	}
@@ -466,3 +460,49 @@ func (b *bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []
 func (b *bootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider {
 	return telemetry.NewSystemMetricsProvider()
 }
+
+
+// GetUIRenderer returns a UI renderer configured with the bootstrapper's output writers.
+func (b *bootstrapper) GetUIRenderer() ports.UIRenderer {
+	return ui.NewRenderer(b.SM, b.Stdout, b.Stderr, clock.RealClock{}, b.GetSystemMetricsProvider())
+}
+
+// GetHistoryRenderer returns a history renderer.
+func (b *bootstrapper) GetHistoryRenderer() ports.HistoryRenderer {
+	return &ui.StdHistoryRenderer{}
+}
+
+// tuiHistoryBrowser implements ports.HistoryBrowser using the TUI.
+type tuiHistoryBrowser struct {
+	stdout io.Writer
+	stderr io.Writer
+	logger *slog.Logger
+}
+
+// Browse launches the TUI history browser.
+func (b *tuiHistoryBrowser) Browse(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
+	if closer, err := tui.InitLogger(); err == nil {
+		defer func() {
+			if closeErr := closer.Close(); closeErr != nil {
+				b.logger.Warn("failed to close tui logger", "error", closeErr)
+			}
+		}()
+	}
+
+	model := tui.NewRootBrowserModel(ctx, provider, hManager)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("tui program error: %w", err)
+	}
+	return nil
+}
+
+// GetHistoryBrowser returns a history browser that launches the TUI.
+func (b *bootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
+	return &tuiHistoryBrowser{
+		stdout: b.Stdout,
+		stderr: b.Stderr,
+		logger: b.Logger,
+	}
+}
+var _ ports.Container = (*bootstrapper)(nil)

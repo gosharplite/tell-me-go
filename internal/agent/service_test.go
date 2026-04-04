@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -22,6 +23,33 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+// stubUIRenderer is a stub implementation of ports.UIRenderer for testing.
+type stubUIRenderer struct{}
+
+func (s *stubUIRenderer) StartSpinner(ctx context.Context) func() { return func() {} }
+func (s *stubUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() { return func() {} }
+func (s *stubUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() { return func() {} }
+func (s *stubUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {}
+func (s *stubUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {}
+func (s *stubUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {}
+func (s *stubUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time) {}
+func (s *stubUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {}
+func (s *stubUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {}
+func (s *stubUIRenderer) SetUseColor(use bool) {}
+func (s *stubUIRenderer) SetForceSpinner(force bool) {}
+
+// stubHistoryRenderer is a stub implementation of ports.HistoryRenderer for testing.
+type stubHistoryRenderer struct{}
+
+func (s *stubHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {}
+
+// stubHistoryBrowser is a stub implementation of ports.HistoryBrowser for testing.
+type stubHistoryBrowser struct{}
+
+func (s *stubHistoryBrowser) Browse(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
+	return nil
+}
 
 // mockServiceConfigLoader is a mock of ConfigLoader.
 type mockServiceConfigLoader struct {
@@ -142,6 +170,30 @@ func (m *mockServiceContainer) GetSystemMetricsProvider() ports.SystemMetricsPro
 		return nil
 	}
 	return args.Get(0).(ports.SystemMetricsProvider)
+}
+
+func (m *mockServiceContainer) GetUIRenderer() ports.UIRenderer {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.UIRenderer)
+}
+
+func (m *mockServiceContainer) GetHistoryRenderer() ports.HistoryRenderer {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.HistoryRenderer)
+}
+
+func (m *mockServiceContainer) GetHistoryBrowser() ports.HistoryBrowser {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.HistoryBrowser)
 }
 
 // mockServiceSessionDependencies is a mock of SessionDependencies.
@@ -277,7 +329,10 @@ func TestProcessMessage(t *testing.T) {
 
 				mockHM := &mockHistoryManagerForRetry{}
 				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
-				c.On("GetSystemMetricsProvider").Return(ports.SystemMetricsProvider(nil))
+				c.On("GetSystemMetricsProvider").Maybe().Return(ports.SystemMetricsProvider(nil))
+				c.On("GetUIRenderer").Return(&stubUIRenderer{})
+				c.On("GetHistoryRenderer").Return(&stubHistoryRenderer{})
+				c.On("GetHistoryBrowser").Maybe().Return(&stubHistoryBrowser{})
 				c.On("GetAgentFactory").Return(ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
 					return agent, nil
 				}))
