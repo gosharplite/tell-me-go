@@ -2,7 +2,7 @@
 Request Architect Review.
 ```bash
 echo "Is the different between dev branch and main branch good enough to be merged into main branch?" | \
-tell-me-go -new -r -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/architect.yaml 2> /dev/null
+tell-me-go -new -r -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait/yaml/architect.yaml &> /dev/null
 ```
 
 ## Step 2
@@ -12,5 +12,4 @@ tell-me-go -l 3 -r -c /Users/johndoe/tmp/dualnets/seed/notebooks/mbp-johndoe/ait
 ```
 
 ## Step 3
-Did Step 1 command complete successfully?
 Does the Architect Review look ok?
