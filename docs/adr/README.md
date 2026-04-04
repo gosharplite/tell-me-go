@@ -20,6 +20,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-012** | Dynamic Tool Discovery via Capability Toolkits | 2026-04 | Accepted | [2026-04-dynamic-tool-discovery.md](2026-04-dynamic-tool-discovery.md) |
 | **ADR-013** | Asynchronous Event-Driven Orchestration | 2026-04 | Accepted | [2026-04-asynchronous-event-driven-orchestration.md](2026-04-asynchronous-event-driven-orchestration.md) |
 | **ADR-014** | Event-Driven Orchestration and Circuit Breaker Pipeline | 2026-04 | Accepted | [2026-04-event-driven-orchestration.md](2026-04-event-driven-orchestration.md) |
+| **ADR-015** | Cross‑Platform Timing Guarantees and HTTP‑Streaming Duration Measurement | 2026-04 | Accepted | [2026-04-cross-platform-timing-guarantees.md](2026-04-cross-platform-timing-guarantees.md) |
 
 ## How to Create a New ADR
 
