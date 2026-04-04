@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-//go:build darwin
+//go:build darwin && cgo
 
 package telemetry
 
