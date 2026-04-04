@@ -14,47 +14,50 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// Container defines the interface for building session dependencies and provides factories.
-// This interface is defined here to break the import cycle with internal/infrastructure/di.
-
-
 type chatService struct {
-	HomeDir   string
-	Version   string
-	Stdout    io.Writer
-	Stderr    io.Writer
-	SM        domain_security.Manager
-	Loader    domain_config.ConfigLoader
-	Container ports.Container
+	HomeDir string
+	Version string
+	Stdout  io.Writer
+	Stderr  io.Writer
+	SM      domain_security.Manager
+
+	SessionFactory  ports.SessionFactory
+	ChatterFactory  ports.ChatterFactory
+	UIRenderer      ports.UIRenderer
+	HistoryRenderer ports.HistoryRenderer
+	HistoryBrowser  ports.HistoryBrowser
 }
 
-// NewChatService creates a new concrete implementation of ChatService.
-func NewChatService(homeDir, version string, stdout, stderr io.Writer, sm domain_security.Manager, loader domain_config.ConfigLoader, container ports.Container) ChatService {
+// NewChatService creates a new concrete implementation of ChatService with explicit dependency injection.
+func NewChatService(
+	homeDir, version string,
+	stdout, stderr io.Writer,
+	sm domain_security.Manager,
+	sessionFactory ports.SessionFactory,
+	chatterFactory ports.ChatterFactory,
+	uiRenderer ports.UIRenderer,
+	historyRenderer ports.HistoryRenderer,
+	historyBrowser ports.HistoryBrowser,
+) ChatService {
 	return &chatService{
-		HomeDir:   homeDir,
-		Version:   version,
-		Stdout:    stdout,
-		Stderr:    stderr,
-		SM:        sm,
-		Loader:    loader,
-		Container: container,
+		HomeDir:         homeDir,
+		Version:         version,
+		Stdout:          stdout,
+		Stderr:          stderr,
+		SM:              sm,
+		SessionFactory:  sessionFactory,
+		ChatterFactory:  chatterFactory,
+		UIRenderer:      uiRenderer,
+		HistoryRenderer: historyRenderer,
+		HistoryBrowser:  historyBrowser,
 	}
 }
 
 // GetLastUserMessage implements ChatService.
-func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string) (string, int, error) {
-	cfg, err := s.Loader.Load(configPath)
-	if err != nil {
-		return "", 0, fmt.Errorf("error loading config [%s]: %w", configPath, err)
-	}
-
-	hManager, err := s.Container.GetHistoryManager(ctx, cfg)
-	if err != nil {
-		return "", 0, fmt.Errorf("failed to load history manager: %w", err)
-	}
-
+func (s *chatService) GetLastUserMessage(ctx context.Context, hManager ports.HistoryManager) (string, int, error) {
 	msg, turns, err := hManager.GetLastUserMessage(ctx)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to get last user message: %w", err)
@@ -63,16 +66,9 @@ func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string)
 }
 
 // ProcessMessage implements ChatService.
-func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capturer CapturerInteractor) error {
-	// 1. Load configuration
-	cfg, err := s.Loader.Load(opts.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("error loading config [%s]: %w", opts.ConfigPath, err)
-	}
-
-	// 2. Build session dependencies
-
-	deps, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer)
+func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, opts ChatOptions, capturer CapturerInteractor) error {
+	// 1. Build session dependencies
+	deps, hManager, cleanup, err := s.SessionFactory.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer)
 	if err != nil {
 		return err
 	}
@@ -95,20 +91,16 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 		}
 	}()
 
-	// 3. Delegate to agent orchestration
-	uiRenderer := s.Container.GetUIRenderer()
-	historyRenderer := s.Container.GetHistoryRenderer()
-
+	// 2. Delegate to agent orchestration
 	err = session.Run(ctx, session.RunParams{
 		HomeDir:         s.HomeDir,
 		Version:         s.Version,
-		Loader:          s.Loader,
 		SM:              s.SM,
 		Stdout:          s.Stdout,
 		Stderr:          s.Stderr,
-		AgentFactory:    s.Container.GetAgentFactory(),
-		HistoryRenderer: historyRenderer,
-		UIRenderer:      uiRenderer,
+		AgentFactory:    s.ChatterFactory,
+		HistoryRenderer: s.HistoryRenderer,
+		UIRenderer:      s.UIRenderer,
 		ConfigPath:      opts.ConfigPath,
 		NewSession:      opts.NewSession,
 		LastN:           opts.LastN,
@@ -120,8 +112,8 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 		Capturer:        capturer,
 	})
 
-	// 4. Finalize session state
-	if finalizeErr := s.Container.FinalizeSession(ctx, hManager, deps, cfg); finalizeErr != nil {
+	// 3. Finalize session state
+	if finalizeErr := s.SessionFactory.FinalizeSession(ctx, hManager, deps, cfg); finalizeErr != nil {
 		if err != nil {
 			return fmt.Errorf("session processing failed: %w; additionally, finalize session failed: %w", err, finalizeErr)
 		}
@@ -132,37 +124,16 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 }
 
 // BrowseHistory initializes the TUI history browser and runs the Bubble Tea loop.
-func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capturer CapturerInteractor) error {
-	cfg, err := s.Loader.Load(configPath)
-	if err != nil {
-		return fmt.Errorf("error loading config [%s]: %w", configPath, err)
-	}
-
-	hManager, err := s.Container.GetHistoryManager(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("failed to load history manager: %w", err)
-	}
-
-	provider, err := s.Container.GetUnifiedHistoryProvider(ctx, cfg, hManager)
-	if err != nil {
-		return fmt.Errorf("failed to load unified history provider: %w", err)
-	}
-
-	browser := s.Container.GetHistoryBrowser()
-	return browser.Browse(ctx, provider, hManager)
+func (s *chatService) BrowseHistory(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
+	return s.HistoryBrowser.Browse(ctx, provider, hManager)
 }
 
 // GetToolNames retrieves the names of all available tools.
-func (s *chatService) GetToolNames(ctx context.Context, configPath string) ([]string, error) {
-	cfg, err := s.Loader.Load(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("error loading config [%s]: %w", configPath, err)
+func (s *chatService) GetToolNames(ctx context.Context, reg tools.Registry) ([]string, error) {
+	declarations := reg.GetDeclarations()
+	names := make([]string, 0, len(declarations))
+	for _, d := range declarations {
+		names = append(names, d.Name)
 	}
-
-	return s.Container.GetToolNames(ctx, cfg, configPath)
-}
-
-// GetSuggestionService implements ChatService.
-func (s *chatService) GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error) {
-	return s.Container.GetSuggestionService(ctx, recentHistory)
+	return names, nil
 }

@@ -28,21 +28,30 @@ import (
 type stubUIRenderer struct{}
 
 func (s *stubUIRenderer) StartSpinner(ctx context.Context) func() { return func() {} }
-func (s *stubUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() { return func() {} }
-func (s *stubUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() { return func() {} }
-func (s *stubUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {}
-func (s *stubUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {}
+func (s *stubUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	return func() {}
+}
+func (s *stubUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
+	return func() {}
+}
+func (s *stubUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
+}
+func (s *stubUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus)    {}
 func (s *stubUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {}
-func (s *stubUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time) {}
-func (s *stubUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {}
-func (s *stubUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {}
-func (s *stubUIRenderer) SetUseColor(use bool) {}
+func (s *stubUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time) {
+}
+func (s *stubUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+}
+func (s *stubUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
+}
+func (s *stubUIRenderer) SetUseColor(use bool)       {}
 func (s *stubUIRenderer) SetForceSpinner(force bool) {}
 
 // stubHistoryRenderer is a stub implementation of ports.HistoryRenderer for testing.
 type stubHistoryRenderer struct{}
 
-func (s *stubHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {}
+func (s *stubHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
+}
 
 // stubHistoryBrowser is a stub implementation of ports.HistoryBrowser for testing.
 type stubHistoryBrowser struct{}
@@ -51,22 +60,27 @@ func (s *stubHistoryBrowser) Browse(ctx context.Context, provider ports.UnifiedH
 	return nil
 }
 
-// mockServiceConfigLoader is a mock of ConfigLoader.
-type mockServiceConfigLoader struct {
+// mockSessionFactory is a mock of SessionFactory.
+type mockSessionFactory struct {
 	mock.Mock
 }
 
-func (m *mockServiceConfigLoader) Load(path string) (*config.Config, error) {
-	args := m.Called(path)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+func (m *mockSessionFactory) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
+	args := m.Called(ctx, cfg, configPath, newSession, capturer)
+	var deps ports.SessionDependencies
+	if args.Get(0) != nil {
+		deps = args.Get(0).(ports.SessionDependencies)
 	}
-	return args.Get(0).(*config.Config), args.Error(1)
+	var hManager ports.HistoryManager
+	if args.Get(1) != nil {
+		hManager = args.Get(1).(ports.HistoryManager)
+	}
+	return deps, hManager, args.Get(2).(func(context.Context) error), args.Error(3)
 }
 
-func (m *mockServiceConfigLoader) Watch(ctx context.Context, path string) (<-chan *config.Config, error) {
-	args := m.Called(ctx, path)
-	return args.Get(0).(<-chan *config.Config), args.Error(1)
+func (m *mockSessionFactory) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+	args := m.Called(ctx, hManager, deps, cfg)
+	return args.Error(0)
 }
 
 // mockServiceSecurityManager is a mock of Manager.
@@ -106,95 +120,6 @@ func (m *mockServiceSecurityManager) IsCommandAllowed(command string) bool {
 }
 func (m *mockServiceSecurityManager) IsBypassActive() bool { return m.Called().Bool(0) }
 func (m *mockServiceSecurityManager) Close() error         { return m.Called().Error(0) }
-
-// mockServiceContainer is a mock of Container.
-type mockServiceContainer struct {
-	mock.Mock
-}
-
-func (m *mockServiceContainer) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
-	args := m.Called(ctx, cfg, configPath, newSession, capturer)
-	var deps ports.SessionDependencies
-	if args.Get(0) != nil {
-		deps = args.Get(0).(ports.SessionDependencies)
-	}
-	var hManager ports.HistoryManager
-	if args.Get(1) != nil {
-		hManager = args.Get(1).(ports.HistoryManager)
-	}
-	return deps, hManager, args.Get(2).(func(context.Context) error), args.Error(3)
-}
-
-func (m *mockServiceContainer) GetAgentFactory() ports.ChatterFactory {
-	args := m.Called()
-	return args.Get(0).(ports.ChatterFactory)
-}
-
-func (m *mockServiceContainer) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
-	args := m.Called(ctx, hManager, deps, cfg)
-	return args.Error(0)
-}
-
-func (m *mockServiceContainer) GetHistoryManager(ctx context.Context, cfg *config.Config) (ports.HistoryManager, error) {
-	args := m.Called(ctx, cfg)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(ports.HistoryManager), args.Error(1)
-}
-
-func (m *mockServiceContainer) GetUnifiedHistoryProvider(ctx context.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
-	args := m.Called(ctx, cfg)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(ports.UnifiedHistoryProvider), args.Error(1)
-}
-
-func (m *mockServiceContainer) GetToolNames(ctx context.Context, cfg *config.Config, configPath string) ([]string, error) {
-	args := m.Called(ctx, cfg, configPath)
-	return args.Get(0).([]string), args.Error(1)
-}
-
-func (m *mockServiceContainer) GetSuggestionService(ctx context.Context, recentHistory []string) (ports.SuggestionService, error) {
-	args := m.Called(ctx, recentHistory)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(ports.SuggestionService), args.Error(1)
-}
-
-func (m *mockServiceContainer) GetSystemMetricsProvider() ports.SystemMetricsProvider {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.SystemMetricsProvider)
-}
-
-func (m *mockServiceContainer) GetUIRenderer() ports.UIRenderer {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.UIRenderer)
-}
-
-func (m *mockServiceContainer) GetHistoryRenderer() ports.HistoryRenderer {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.HistoryRenderer)
-}
-
-func (m *mockServiceContainer) GetHistoryBrowser() ports.HistoryBrowser {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(ports.HistoryBrowser)
-}
 
 // mockServiceSessionDependencies is a mock of SessionDependencies.
 type mockServiceSessionDependencies struct {
@@ -300,13 +225,13 @@ func (m *mockServiceCapturer) Close(ctx context.Context) error {
 }
 
 func TestProcessMessage(t *testing.T) {
-	errFileNotFound := errors.New("file not found")
 	errBuild := errors.New("build error")
 
 	tests := []struct {
 		name        string
-		setupMock   func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error
+		setupMock   func(sf *mockSessionFactory, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error
 		opts        ChatOptions
+		cfg         *config.Config
 		wantErr     bool
 		errMsg      string
 		expectedErr error
@@ -314,7 +239,14 @@ func TestProcessMessage(t *testing.T) {
 		{
 			name: "Success",
 			opts: ChatOptions{ConfigPath: "config.yaml", Prompt: "hello"},
-			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
+			cfg: &config.Config{
+				Mode: "assistant",
+				Providers: map[string]config.LLMProvider{
+					"test": {Model: "test-model"},
+				},
+				SelectedProvider: "test",
+			},
+			setupMock: func(sf *mockSessionFactory, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -322,21 +254,12 @@ func TestProcessMessage(t *testing.T) {
 					},
 					SelectedProvider: "test",
 				}
-				l.On("Load", "config.yaml").Return(cfg, nil)
-
 				cleanupCalled := false
 				cleanup := func(context.Context) error { cleanupCalled = true; return nil }
 
 				mockHM := &mockHistoryManagerForRetry{}
-				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
-				c.On("GetSystemMetricsProvider").Maybe().Return(ports.SystemMetricsProvider(nil))
-				c.On("GetUIRenderer").Return(&stubUIRenderer{})
-				c.On("GetHistoryRenderer").Return(&stubHistoryRenderer{})
-				c.On("GetHistoryBrowser").Maybe().Return(&stubHistoryBrowser{})
-				c.On("GetAgentFactory").Return(ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
-					return agent, nil
-				}))
-				c.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(nil)
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(nil)
 
 				deps.On("GetEventBus").Return(bus)
 				deps.On("GetPaths").Return(&persistence.Paths{})
@@ -365,48 +288,43 @@ func TestProcessMessage(t *testing.T) {
 		{
 			name: "BuildSessionDepsError",
 			opts: ChatOptions{ConfigPath: "config.yaml"},
-			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
+			cfg:  &config.Config{Mode: "assistant"},
+			setupMock: func(sf *mockSessionFactory, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
-				l.On("Load", "config.yaml").Return(cfg, nil)
-				c.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 				return nil
 			},
 			wantErr:     true,
 			errMsg:      "build error",
 			expectedErr: errBuild,
 		},
-		{
-			name: "ConfigLoadError",
-			opts: ChatOptions{ConfigPath: "invalid.yaml"},
-			setupMock: func(l *mockServiceConfigLoader, c *mockServiceContainer, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
-				l.On("Load", "invalid.yaml").Return((*config.Config)(nil), errFileNotFound)
-				return nil
-			},
-			wantErr:     true,
-			errMsg:      "invalid.yaml",
-			expectedErr: errFileNotFound,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			loader := &mockServiceConfigLoader{}
-			container := &mockServiceContainer{}
+			sf := &mockSessionFactory{}
 			sm := &mockServiceSecurityManager{}
 			capturer := &mockServiceCapturer{}
 			deps := &mockServiceSessionDependencies{}
 			bus := &mockServiceEventBus{}
 			agent := &mockServiceAgent{}
 
-			service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
+			chatterFactory := ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
+				return agent, nil
+			})
+
+			service := NewChatService(
+				"home", "v1", io.Discard, io.Discard, sm,
+				sf, chatterFactory, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{},
+			)
 
 			var verify func(context.Context) error
 			if tt.setupMock != nil {
-				verify = tt.setupMock(loader, container, sm, capturer, deps, bus, agent)
+				verify = tt.setupMock(sf, sm, capturer, deps, bus, agent)
 			}
 
-			err := service.ProcessMessage(ctx, tt.opts, capturer)
+			err := service.ProcessMessage(ctx, tt.cfg, tt.opts, capturer)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -424,8 +342,7 @@ func TestProcessMessage(t *testing.T) {
 				_ = verify(context.Background())
 			}
 
-			loader.AssertExpectations(t)
-			container.AssertExpectations(t)
+			sf.AssertExpectations(t)
 			if !tt.wantErr {
 				bus.AssertExpectations(t)
 				agent.AssertExpectations(t)
@@ -435,29 +352,21 @@ func TestProcessMessage(t *testing.T) {
 }
 
 func TestGetLastUserMessage(t *testing.T) {
-	configPath := "assistant.yaml"
-
 	ctx := context.Background()
-	loader := &mockServiceConfigLoader{}
-	container := &mockServiceContainer{}
 	sm := &mockServiceSecurityManager{}
 
-	cfg := &config.Config{Mode: "assistant"}
-	loader.On("Load", configPath).Return(cfg, nil)
-
 	mockHM := &mockHistoryManagerForRetry{msg: "last message", turns: 1}
-	container.On("GetHistoryManager", ctx, cfg).Return(mockHM, nil)
 
-	service := NewChatService("home", "v1", io.Discard, io.Discard, sm, loader, container)
+	service := NewChatService(
+		"home", "v1", io.Discard, io.Discard, sm,
+		nil, nil, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{},
+	)
 
-	msg, turns, err := service.GetLastUserMessage(ctx, configPath)
+	msg, turns, err := service.GetLastUserMessage(ctx, mockHM)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "last message", msg)
 	assert.Equal(t, 1, turns)
-
-	loader.AssertExpectations(t)
-	container.AssertExpectations(t)
 }
 
 type mockHistoryManagerForRetry struct {

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
 func TestChatCommand_Execute_ConfigMerge(t *testing.T) {
@@ -31,15 +33,21 @@ AIMODEL: "test-model"
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
+	mb, ml := setupMocks()
+	// Override setupMocks to return our actual config from loader mock
+	ml.ExpectedCalls = nil
+	ml.On("Load", configPath).Return(&config.Config{UseTUIPrompt: true}, nil)
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader(""),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: mService,
-		MockPrompt:  "hello",
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		MockPrompt:   "hello",
 	}
 
 	ctx := stdctx.Background()
@@ -79,15 +87,20 @@ USE_TUI_PROMPT: false
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
+	mb, ml := setupMocks()
+	ml.ExpectedCalls = nil
+	ml.On("Load", configPath).Return(&config.Config{UseTUIPrompt: false}, nil).Maybe()
 
 	cmd := &chatCommand{
-		Version:     "1.0.0",
-		Stdin:       strings.NewReader(""),
-		Stdout:      &stdout,
-		Stderr:      &stderr,
-		SM:          sm,
-		ChatService: mService,
-		MockPrompt:  "hello",
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+		MockPrompt:   "hello",
 	}
 
 	ctx := stdctx.Background()
