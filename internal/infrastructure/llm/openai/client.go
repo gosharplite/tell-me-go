@@ -20,6 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
+const maxResponseBytes = 10 * 1024 * 1024 // 10 MB safety limit for LLM responses (prevents OOM from malformed/malicious payloads)
 
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
@@ -363,7 +364,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	// Read entire response body
 	bodyReadStart := time.Now()
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	bodyReadTime := time.Since(bodyReadStart)
 	totalDuration := time.Since(startTime)
 
