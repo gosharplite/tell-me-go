@@ -139,7 +139,7 @@ func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet,
 	return opts, fs, nil
 }
 
-func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports.Capturer, func(stdctx.Context) error) {
+func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error) {
 	if opts.tuiPrompt {
 		// Try to get at least the last user message for the trie
 		lastMsg, _, _ := c.ChatService.GetLastUserMessage(ctx, opts.configPath)
@@ -154,14 +154,14 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 		if !ok {
 			// Fallback: use a dummy cleanup or return an error if TUI requires BaseCapturer
-			c, ok := capturerInterface.(ports.Capturer)
+			ci, ok := capturerInterface.(agent.CapturerInteractor)
 			if !ok {
 				return nil, func(stdctx.Context) error { return nil }
 			}
-			return c, func(stdctx.Context) error { return nil }
+			return ci, func(stdctx.Context) error { return nil }
 		}
 
-		var capturer ports.Capturer
+		var capturer agent.CapturerInteractor
 		cleanup := func(stdctx.Context) error { return nil }
 
 		if err != nil {
@@ -182,18 +182,17 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, opts *cliOptions) (ports
 		if sm, ok := c.SM.(interface {
 			SetInteractor(domain_security.UserInteractor)
 		}); ok {
-			if interactor, ok := capturer.(domain_security.UserInteractor); ok {
-				sm.SetInteractor(interactor)
-			}
+			// capturer already implements UserInteractor via CapturerInteractor
+			sm.SetInteractor(capturer)
 		}
 		return capturer, cleanup
 	}
 	return c.setupCapturer()
 }
 
-func (c *chatCommand) setupCapturer() (ports.Capturer, func(stdctx.Context) error) {
+func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Context) error) {
 	capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
-	capturer, ok := capturerInterface.(ports.Capturer)
+	capturer, ok := capturerInterface.(agent.CapturerInteractor)
 	if !ok {
 		return nil, func(stdctx.Context) error { return nil }
 	}
@@ -205,7 +204,7 @@ func (c *chatCommand) setupCapturer() (ports.Capturer, func(stdctx.Context) erro
 	return capturer, func(stdctx.Context) error { return nil }
 }
 
-func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer ports.Capturer) (string, error) {
+func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer agent.CapturerInteractor) (string, error) {
 	captureOpts := c.prepareCaptureOptions(opts)
 	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
 	if err != nil {

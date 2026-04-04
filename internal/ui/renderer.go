@@ -42,7 +42,6 @@ type stdUIRenderer struct {
 	lastSampleTime  time.Time
 	lastCPUPercent  float64
 	lastMemPercent  float64
-
 }
 
 type defaultMetricsProvider struct{}
@@ -110,8 +109,6 @@ func (r *stdUIRenderer) SetForceSpinner(force bool) {
 	defer r.mu.Unlock()
 	r.forceSpinner = force
 }
-
-
 
 // SetWriters allows overriding the output writers (primarily for testing).
 func (r *stdUIRenderer) SetWriters(stdout, stderr io.Writer) {
@@ -525,7 +522,6 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 
 	// Move to start of line, clear current line, then print the indicator.
 	_, _ = fmt.Fprintf(ui.stderr, "\r%s%s%s%s%s", ui.c(termClearLine), ui.c(colorGray), frame, msg, ui.c(colorReset))
-
 
 }
 

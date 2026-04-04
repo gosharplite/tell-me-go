@@ -77,7 +77,7 @@ func (s *chatService) GetLastUserMessage(ctx context.Context, configPath string)
 }
 
 // ProcessMessage implements ChatService.
-func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capturer ports.Capturer) error {
+func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capturer CapturerInteractor) error {
 	// 1. Load configuration
 	cfg, err := s.Loader.Load(opts.ConfigPath)
 	if err != nil {
@@ -85,11 +85,8 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 	}
 
 	// 2. Build session dependencies
-	interactor, ok := capturer.(domain_security.UserInteractor)
-	if !ok {
-		return fmt.Errorf("internal error: capturer does not implement UserInteractor")
-	}
-	deps, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, interactor)
+
+	deps, hManager, cleanup, err := s.Container.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer)
 	if err != nil {
 		return err
 	}
@@ -149,7 +146,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, opts ChatOptions, capt
 }
 
 // BrowseHistory initializes the TUI history browser and runs the Bubble Tea loop.
-func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capturer ports.Capturer) error {
+func (s *chatService) BrowseHistory(ctx context.Context, configPath string, capturer CapturerInteractor) error {
 	cfg, err := s.Loader.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("error loading config [%s]: %w", configPath, err)

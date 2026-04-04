@@ -183,8 +183,6 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			}
 			renderer.SetClock(clock)
 
-
-
 			// Start a spinner that shows metrics
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()

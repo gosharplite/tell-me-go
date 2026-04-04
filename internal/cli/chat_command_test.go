@@ -20,7 +20,7 @@ type mockChatService struct {
 	getSuggestionServiceErr error
 }
 
-func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOptions, capturer ports.Capturer) error {
+func (m *mockChatService) ProcessMessage(ctx stdctx.Context, opts agent.ChatOptions, capturer agent.CapturerInteractor) error {
 	m.chatCalled = true
 	m.lastParams = opts
 	return nil
@@ -30,7 +30,7 @@ func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, configPath stri
 	return "retry test", 1, nil
 }
 
-func (m *mockChatService) BrowseHistory(ctx stdctx.Context, configPath string, capturer ports.Capturer) error {
+func (m *mockChatService) BrowseHistory(ctx stdctx.Context, configPath string, capturer agent.CapturerInteractor) error {
 	return nil
 }
 
