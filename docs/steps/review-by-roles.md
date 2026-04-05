@@ -27,6 +27,8 @@ Role-specific configuration files must be specified via the `CONFIG_DIR` environ
 ## Prerequisites
 
 Before requesting reviews, ensure:
+- You are in the project root directory (where `.git/` is located).
+- CONFIG_DIR environment variable is set and points to the directory containing role configuration files.
 - The source branch is fully rebased onto the latest target branch.
 - All automated checks pass:
   ```bash
@@ -40,11 +42,11 @@ Use the following prompt for each reviewer role:
 
 ```bash
 # Request review from Architect (output discarded; see note below)
-echo "Is the difference between source branch and target branch sufficient for merging?" | \
+echo "Is the difference between source branch '<source-branch>' and target branch '<target-branch>' sufficient for merging?" | \
 tell-me-go -new -r -c ${CONFIG_DIR}/architect.yaml &> /dev/null
 ```
 
-**Note:** The `&> /dev/null` discards stdout and stderr. If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
+**Note:** Replace `<source-branch>` and `<target-branch>` with the actual branch names (e.g., `feature/xyz` and `main`). The `&> /dev/null` discards stdout and stderr. If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
 
 Repeat for tester and reviewer by replacing the config path accordingly.
 
