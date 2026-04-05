@@ -15,7 +15,16 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
+	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
 )
+
+type DevOption func(*devManager)
+
+func WithHeartbeatInterval(d time.Duration) DevOption {
+	return func(m *devManager) {
+		m.heartbeatInterval = d
+	}
+}
 
 type devManager struct {
 	sm                devSecurity
@@ -147,7 +156,7 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}, hb
 
 	m.logToolAction("Running go mod tidy and go fmt")
 
-	defer m.startHeartbeat(hb)()
+	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("go mod tidy failed:\n%s\nError: %v", stringsutil.TruncateOutput(string(out), 50), err)}, nil
@@ -203,7 +212,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	_ = f.Close()
 	defer func() { _ = os.Remove(tempName) }()
 
-	defer m.startHeartbeat(hb)()
+	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
 	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, "--", path)
 
@@ -345,30 +354,6 @@ func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
 }
 
-// startHeartbeat manages background telemetry and returns a cleanup closure.
-func (m *devManager) startHeartbeat(hb chan<- struct{}) func() {
-	if hb == nil {
-		return func() {} // No-op for nil channels
-	}
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(m.heartbeatInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				select {
-				case hb <- struct{}{}:
-				default:
-				}
-			}
-		}
-	}()
-	return func() { close(done) }
-}
-
 // resolveLinter determines the best available linter and its default arguments.
 func (m *devManager) resolveLinter() (command string, args []string, err error) {
 	if _, lookErr := m.executor.LookPath("golangci-lint"); lookErr == nil {
@@ -418,20 +403,24 @@ func (m *devManager) executeWithHeartbeat(
 	m.logToolAction("Running %s: %s", strings.ToLower(actionName), fullCmd)
 
 	// 3. Telemetry/Heartbeat (Safe concurrency)
-	defer m.startHeartbeat(hb)()
+	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
 	// 4. Execution
 	return m.executor.Execute(ctx, command, args...)
 }
 
-func newDevManager(sm devSecurity, validator domain_security.CommandValidator) *devManager {
-	return &devManager{
+func newDevManager(sm devSecurity, validator domain_security.CommandValidator, opts ...DevOption) *devManager {
+	m := &devManager{
 		sm:                sm,
 		validator:         validator,
 		executor:          &realExecutor{},
 		createTempFile:    os.CreateTemp,
-		heartbeatInterval: 2 * time.Second,
+		heartbeatInterval: 2 * time.Second, // Default
 	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
 }
 
 type devSecurity interface {

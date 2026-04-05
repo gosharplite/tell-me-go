@@ -13,33 +13,31 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
-var resolvedTempDir string
-
-func init() {
-	// Resolve the true physical path of the OS temp directory once at startup
-	// This handles macOS symlinks like /var/folders -> /private/var/folders
-	if temp := os.TempDir(); temp != "" {
-		resolved, err := filepath.EvalSymlinks(temp)
-		if err == nil {
-			// Ensure trailing slash for safe prefix matching
-			resolvedTempDir = filepath.Clean(resolved) + string(filepath.Separator)
-		} else {
-			resolvedTempDir = filepath.Clean(temp) + string(filepath.Separator)
-		}
-	}
-}
-
 // pathPolicy manages allowed boundaries and validates paths.
 type pathPolicy struct {
 	safePaths       []string
 	safePathsMu     sync.RWMutex
 	readOnlyPaths   []string
 	readOnlyPathsMu sync.RWMutex
+	resolvedTempDir string
 }
 
 // newPathPolicy creates a new pathPolicy.
-func newPathPolicy() *pathPolicy {
-	return &pathPolicy{}
+func newPathPolicy(safePaths []string) *pathPolicy {
+	policy := &pathPolicy{
+		safePaths: safePaths,
+	}
+
+	if temp := os.TempDir(); temp != "" {
+		resolved, err := filepath.EvalSymlinks(temp)
+		if err == nil {
+			policy.resolvedTempDir = filepath.Clean(resolved) + string(filepath.Separator)
+		} else {
+			policy.resolvedTempDir = filepath.Clean(temp) + string(filepath.Separator)
+		}
+	}
+
+	return policy
 }
 
 type pathRule func(absPath string, writable bool) (bool, error)
@@ -145,7 +143,7 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 
 func (p *pathPolicy) isSystemDirectory(absPath string) error {
 	// 1. Explicitly exempt the evaluated OS temporary directory
-	if resolvedTempDir != "" && strings.HasPrefix(absPath, resolvedTempDir) {
+	if p.resolvedTempDir != "" && strings.HasPrefix(absPath, p.resolvedTempDir) {
 		return nil
 	}
 

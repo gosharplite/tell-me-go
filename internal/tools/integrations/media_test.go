@@ -17,6 +17,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	infra_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
 	"go.uber.org/goleak"
 )
 
@@ -274,12 +275,11 @@ func TestMediaTools_StartHeartbeat(t *testing.T) {
 		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
 	)
 	hbInterval := 10 * time.Millisecond
-	m := &mediaManager{heartbeatInterval: hbInterval}
 	hb := make(chan struct{}, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stop := m.startHeartbeat(ctx, hb)
+	stop := telemetry.StartHeartbeat(ctx, hbInterval, hb)
 
 	// Ensure heartbeat is working and emits multiple signals quickly
 	for i := 0; i < 3; i++ {
@@ -311,11 +311,10 @@ func TestMediaTools_StartHeartbeat_Cancellation(t *testing.T) {
 		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
 	)
 	hbInterval := 10 * time.Millisecond
-	m := &mediaManager{heartbeatInterval: hbInterval}
 	hb := make(chan struct{}, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	_ = m.startHeartbeat(ctx, hb)
+	_ = telemetry.StartHeartbeat(ctx, hbInterval, hb)
 	cancel()
 
 	// Ensure no more heartbeats after cancellation

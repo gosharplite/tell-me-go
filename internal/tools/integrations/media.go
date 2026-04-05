@@ -9,12 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
 )
 
 type mediaManager struct {
@@ -45,7 +45,11 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 		prompt = fmt.Sprintf("%s (aspect ratio %s)", prompt, req.AspectRatio)
 	}
 
-	stop := m.startHeartbeat(ctx, hb)
+	interval := m.heartbeatInterval
+	if interval == 0 {
+		interval = 2 * time.Second
+	}
+	stop := telemetry.StartHeartbeat(ctx, interval, hb)
 	defer stop()
 
 	images, err := m.client.GenerateImages(ctx, req.Model, prompt, "image/png")
@@ -75,41 +79,6 @@ func (m *mediaManager) parseImageArgs(args map[string]interface{}) (*imageReques
 		AspectRatio: a.AspectRatio,
 		Model:       a.Model,
 	}, nil
-}
-
-func (m *mediaManager) startHeartbeat(ctx context.Context, hb chan<- struct{}) (stop func()) {
-	interval := m.heartbeatInterval
-	if interval == 0 {
-		interval = 2 * time.Second
-	}
-
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			close(done)
-		})
-	}
 }
 
 func (m *mediaManager) saveImagesToDisk(images [][]byte, prompt string) (tools.ToolResult, error) {
