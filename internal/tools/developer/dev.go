@@ -77,15 +77,11 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, 
 		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
 
-	outStr := string(output)
-	if err != nil {
-		outStr = stringsutil.TruncateOutput(outStr, 100)
-		// Return the failure output in the result so the LLM can read the test failures and fix them.
-		// We do NOT return a Go error here because test failure is a valid output of the tool, not a tool execution crash.
-		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s\nError: %v", outStr, err)}, nil
+	res := formatExecutionResult("Test execution", output, err, 100, "")
+	if res.Error != nil {
+		return tools.ToolResult{}, res.Error
 	}
-
-	return tools.ToolResult{Text: stringsutil.TruncateOutput(outStr, 100)}, nil
+	return res, nil
 }
 
 func (m *devManager) validateTestCommand(command string) ([]string, error) {
@@ -159,11 +155,19 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}, hb
 	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("go mod tidy failed:\n%s\nError: %v", stringsutil.TruncateOutput(string(out), 50), err)}, nil
+		res := formatExecutionResult("Go mod tidy", out, err, 50, "")
+		if res.Error != nil {
+			return tools.ToolResult{}, res.Error
+		}
+		return res, nil
 	}
 
 	if out, err := m.executor.Execute(ctx, "go", "fmt", "./..."); err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("go fmt failed:\n%s\nError: %v", stringsutil.TruncateOutput(string(out), 50), err)}, nil
+		res := formatExecutionResult("Go fmt", out, err, 50, "")
+		if res.Error != nil {
+			return tools.ToolResult{}, res.Error
+		}
+		return res, nil
 	}
 
 	return tools.ToolResult{Text: "Success: Project tidied and formatted."}, nil
@@ -192,8 +196,18 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
 	}
 
-	command := fmt.Sprintf("go test -coverprofile=coverage.out -- %s", path)
-	approved, err := m.authorizeAction(ctx, "Test Coverage", command, "Getting test coverage summary")
+	// Create temp file FIRST
+	f, err := m.createTempFile("", "coverage-*.out")
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create temp coverage file: %w", err)
+	}
+	tempName := f.Name()
+	_ = f.Close()
+	defer func() { _ = os.Remove(tempName) }()
+
+	// Now format the command with the actual temp file path
+	command := fmt.Sprintf("go test -coverprofile=%s -- %s", tempName, path)
+	approved, err := m.authorizeAction(ctx, "Test Coverage", command, "Getting test coverage summary (redirected to temporary file)")
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -203,30 +217,24 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 
 	m.logToolAction("Getting test coverage for %s", path)
 
-	// Use a temporary file for coverage profile
-	f, err := m.createTempFile("", "coverage-*.out")
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tempName := f.Name()
-	_ = f.Close()
-	defer func() { _ = os.Remove(tempName) }()
-
 	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
 	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, "--", path)
-
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Tests failed or coverage error:\n%s\nError: %v", stringsutil.TruncateOutput(string(out), 50), err)}, nil
+		res := formatExecutionResult("Coverage test", out, err, 50, "")
+		if res.Error != nil {
+			return tools.ToolResult{}, res.Error
+		}
+		return res, nil
 	}
 
 	// Get summary
 	summaryOut, err := m.executor.Execute(ctx, "go", "tool", "cover", "-func="+tempName)
-	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Failed to generate coverage summary:\n%s\nError: %v", stringsutil.TruncateOutput(string(summaryOut), 50), err)}, nil
+	res := formatExecutionResult("Coverage summary", summaryOut, err, 100, "")
+	if res.Error != nil {
+		return tools.ToolResult{}, res.Error
 	}
-
-	return tools.ToolResult{Text: stringsutil.TruncateOutput(string(summaryOut), 100)}, nil
+	return res, nil
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -254,7 +262,11 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{},
 	}
 
 	// 4. Format and return
-	return formatLinterResult(out, err), nil
+	res := formatExecutionResult("Linter", out, err, 100, "Linter passed successfully.")
+	if res.Error != nil {
+		return tools.ToolResult{}, res.Error
+	}
+	return res, nil
 }
 
 func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -302,11 +314,11 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
 
-	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Benchmark failed:\n%s\nError: %v", stringsutil.TruncateOutput(string(out), 100), err)}, nil
+	res := formatExecutionResult("Benchmark", out, err, 100, "Benchmark completed.")
+	if res.Error != nil {
+		return tools.ToolResult{}, res.Error
 	}
-
-	return tools.ToolResult{Text: string(out)}, nil
+	return res, nil
 }
 
 func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -332,20 +344,11 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
 
-	if err != nil && len(out) == 0 {
-		return tools.ToolResult{}, fmt.Errorf("govulncheck execution failed: %w", err)
+	res := formatExecutionResult("Govulncheck", out, err, 100, "No vulnerabilities found.")
+	if res.Error != nil {
+		return tools.ToolResult{}, res.Error
 	}
-
-	outStr := stringsutil.TruncateOutput(string(out), 100)
-	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Vulnerabilities found or check failed:\n%s\nError: %v", outStr, err)}, nil
-	}
-
-	if len(out) == 0 {
-		return tools.ToolResult{Text: "No vulnerabilities found."}, nil
-	}
-
-	return tools.ToolResult{Text: outStr}, nil
+	return res, nil
 }
 
 func (m *devManager) logToolAction(format string, a ...any) {
@@ -365,20 +368,24 @@ func (m *devManager) resolveLinter() (command string, args []string, err error) 
 	return "", nil, errors.New("no supported linter found (golangci-lint or staticcheck)")
 }
 
-func formatLinterResult(out []byte, execErr error) tools.ToolResult {
+func formatExecutionResult(displayName string, out []byte, execErr error, truncateLimit int, emptySuccessMsg string) tools.ToolResult {
 	if execErr != nil && len(out) == 0 {
-		return tools.ToolResult{Error: fmt.Errorf("linter execution failed: %w", execErr)}
+		return tools.ToolResult{Error: fmt.Errorf("%s execution failed: %w", displayName, execErr)}
 	}
 
-	outStr := stringsutil.TruncateOutput(string(out), 100)
+	outStr := string(out)
+	if truncateLimit > 0 {
+		outStr = stringsutil.TruncateOutput(outStr, truncateLimit)
+	}
+
 	if execErr != nil {
 		return tools.ToolResult{
-			Text: fmt.Sprintf("Linter failed or found issues:\n%s\nError: %v", outStr, execErr),
+			Text: fmt.Sprintf("%s failed or found issues:\n%s\nError: %v", displayName, outStr, execErr),
 		}
 	}
 
-	if len(out) == 0 {
-		return tools.ToolResult{Text: "Linter passed successfully."}
+	if len(out) == 0 && emptySuccessMsg != "" {
+		return tools.ToolResult{Text: emptySuccessMsg}
 	}
 
 	return tools.ToolResult{Text: outStr}

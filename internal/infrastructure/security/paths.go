@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -25,7 +26,7 @@ type pathPolicy struct {
 // newPathPolicy creates a new pathPolicy.
 func newPathPolicy(safePaths []string) *pathPolicy {
 	policy := &pathPolicy{
-		safePaths: append([]string(nil), safePaths...), // Defensive copy
+		safePaths: slices.Clone(safePaths),
 	}
 
 	if temp := os.TempDir(); temp != "" {

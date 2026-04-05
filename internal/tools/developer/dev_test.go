@@ -103,7 +103,7 @@ func TestCheckVulnerabilities(t *testing.T) {
 		{
 			name:       "Execution failure no output",
 			executeErr: errors.New("something went wrong"),
-			wantSubstr: "govulncheck execution failed",
+			wantSubstr: "Govulncheck execution failed",
 			wantErr:    true,
 		},
 	}
@@ -120,15 +120,20 @@ func TestCheckVulnerabilities(t *testing.T) {
 			}
 
 			res, err := m.checkVulnerabilities(context.Background(), nil, nil)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("checkVulnerabilities() error = %v, wantErr %v", err, tt.wantErr)
+			actualErr := err
+			if actualErr == nil {
+				actualErr = res.Error
+			}
+
+			if (actualErr != nil) != tt.wantErr {
+				t.Errorf("checkVulnerabilities() error = %v, wantErr %v", actualErr, tt.wantErr)
 			}
 			fullOutput := res.Text
-			if err != nil {
-				fullOutput += " " + err.Error()
+			if actualErr != nil {
+				fullOutput += " " + actualErr.Error()
 			}
 			if !strings.Contains(fullOutput, tt.wantSubstr) {
-				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
+				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, actualErr)
 			}
 		})
 	}
@@ -186,27 +191,27 @@ func TestGetCoverage(t *testing.T) {
 			name:       "Failure due to test errors",
 			executeOut: "FAIL",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "Tests failed or coverage error",
+			wantSubstr: "Coverage test failed or found issues",
 			wantErr:    false,
 		},
 		{
 			name:       "Failure due to missing package",
 			executeOut: "can't load package",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "Tests failed or coverage error",
+			wantSubstr: "Coverage test failed or found issues",
 			wantErr:    false,
 		},
 		{
 			name:       "Summary failure",
 			executeOut: "ok",
 			summaryErr: errors.New("failed to run go tool cover"),
-			wantSubstr: "Failed to generate coverage summary",
-			wantErr:    false,
+			wantSubstr: "Coverage summary execution failed",
+			wantErr:    true,
 		},
 		{
 			name:       "Temp file failure",
 			tempErr:    errors.New("failed to create temp file"),
-			wantSubstr: "failed to create temp file",
+			wantSubstr: "failed to create temp coverage file",
 			wantErr:    true,
 		},
 	}
@@ -218,11 +223,16 @@ func TestGetCoverage(t *testing.T) {
 			setupCoverageMock(t, m, executor, tt.executeOut, tt.executeErr, tt.summaryOut, tt.summaryErr, tt.tempErr)
 
 			res, err := m.getCoverage(context.Background(), nil, nil)
+			actualErr := err
+			if actualErr == nil {
+				actualErr = res.Error
+			}
+
 			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantSubstr)
+				require.Error(t, actualErr)
+				assert.Contains(t, actualErr.Error(), tt.wantSubstr)
 			} else {
-				require.NoError(t, err)
+				require.NoError(t, actualErr)
 				assert.Contains(t, res.Text, tt.wantSubstr)
 			}
 		})
@@ -284,7 +294,7 @@ func TestRunLinter(t *testing.T) {
 			lookPath:   "staticcheck",
 			executeOut: "problem at line 1",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "problem at line 1",
+			wantSubstr: "Linter failed or found issues:",
 			wantErr:    false,
 		},
 		{
@@ -379,7 +389,11 @@ func TestGoTidy_Errors(t *testing.T) {
 			if err != nil {
 				t.Errorf("expected nil error for %s, got %v", tt.name, err)
 			}
-			if !strings.Contains(res.Text, tt.cmdFail+" failed") {
+			displayName := "Go mod tidy"
+			if tt.cmdFail == "fmt" {
+				displayName = "Go fmt"
+			}
+			if !strings.Contains(res.Text, displayName+" failed or found issues:") {
 				t.Errorf("expected failure text in result, got %q", res.Text)
 			}
 		})
@@ -397,7 +411,7 @@ func TestRunBenchmark_Error(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
-	if !strings.Contains(res.Text, "Benchmark failed") {
+	if !strings.Contains(res.Text, "Benchmark failed or found issues:") {
 		t.Errorf("expected error in text, got %q", res.Text)
 	}
 }
@@ -474,8 +488,8 @@ func TestRunTests_Failure(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
-	if !strings.Contains(res.Text, "FAIL") {
-		t.Errorf("expected FAIL in result, got %q", res.Text)
+	if !strings.Contains(res.Text, "Test execution failed or found issues:") {
+		t.Errorf("expected Test execution failed or found issues: in result, got %q", res.Text)
 	}
 }
 
@@ -581,52 +595,77 @@ func TestResolveLinter(t *testing.T) {
 	}
 }
 
-func TestFormatLinterResult(t *testing.T) {
+func TestFormatExecutionResult(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name       string
-		out        []byte
-		execErr    error
-		wantSubstr string
-		wantErrObj bool
+		name            string
+		toolName        string
+		out             []byte
+		execErr         error
+		truncate        int
+		emptySuccessMsg string
+		wantSubstr      string
+		wantErrObj      bool
 	}{
 		{
 			name:       "Execution failure no output",
+			toolName:   "Linter",
 			out:        []byte(""),
 			execErr:    errors.New("crash"),
 			wantErrObj: true,
-			wantSubstr: "linter execution failed",
+			wantSubstr: "Linter execution failed",
 		},
 		{
 			name:       "Execution failure with output",
+			toolName:   "Linter",
 			out:        []byte("problem found"),
 			execErr:    errors.New("exit status 1"),
 			wantSubstr: "Linter failed or found issues",
 		},
 		{
-			name:       "Success with no output",
-			out:        []byte(""),
-			execErr:    nil,
-			wantSubstr: "Linter passed successfully",
+			name:            "Success with no output",
+			toolName:        "Linter",
+			out:             []byte(""),
+			execErr:         nil,
+			emptySuccessMsg: "Linter passed successfully.",
+			wantSubstr:      "Linter passed successfully",
 		},
 		{
 			name:       "Success with output",
+			toolName:   "Linter",
 			out:        []byte("some warnings"),
 			execErr:    nil,
 			wantSubstr: "some warnings",
 		},
 		{
 			name:       "Output truncation",
+			toolName:   "linter",
 			out:        []byte(strings.Repeat("a", 200)),
 			execErr:    nil,
+			truncate:   100,
 			wantSubstr: strings.Repeat("a", 100),
+		},
+		{
+			name:       "Empty tool name handling",
+			toolName:   "",
+			out:        []byte("output"),
+			execErr:    errors.New("error"),
+			wantSubstr: " failed or found issues:\noutput",
+		},
+		{
+			name:       "Zero truncate limit does not truncate",
+			toolName:   "test",
+			out:        []byte(strings.Repeat("a", 200)),
+			execErr:    nil,
+			truncate:   0,
+			wantSubstr: strings.Repeat("a", 200),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := formatLinterResult(tt.out, tt.execErr)
+			res := formatExecutionResult(tt.toolName, tt.out, tt.execErr, tt.truncate, tt.emptySuccessMsg)
 			if tt.wantErrObj {
 				assert.Error(t, res.Error)
 				assert.Contains(t, res.Error.Error(), tt.wantSubstr)
