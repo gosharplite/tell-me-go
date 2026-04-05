@@ -1,6 +1,6 @@
-# Dev to Main Branch Merge Checklist
+# Review by Roles Checklist
 
-This checklist guides the quality-gate process for merging `dev` branch into `main` using specialized reviewer roles.
+This checklist guides the quality-gate process for merging any source branch into a target branch using specialized reviewer roles.
 
 ## Configuration Files
 
@@ -17,7 +17,7 @@ Set `CONFIG_DIR` environment variable to override the default location.
 ## Prerequisites
 
 Before requesting reviews, ensure:
-- The `dev` branch is fully rebased onto the latest `main`.
+- The source branch is fully rebased onto the latest target branch.
 - All automated checks pass:
   ```bash
   go mod tidy && go fmt ./... && go vet ./... && go test -race ./... && go build ./...
@@ -26,11 +26,11 @@ Before requesting reviews, ensure:
 
 ## Step 1 – Request Reviews
 
-Use the following prompt (corrected grammar) for each reviewer role:
+Use the following prompt for each reviewer role:
 
 ```bash
 # Request review from Architect (output discarded; see note below)
-echo "Is the difference between dev branch and main branch sufficient for merging into main branch?" | \
+echo "Is the difference between source branch and target branch sufficient for merging?" | \
 tell-me-go -new -r -c ${CONFIG_DIR}/architect.yaml &> /dev/null
 ```
 
@@ -63,13 +63,15 @@ If any role identifies blocking issues (marked as **[HIGH]** or **[ARCHITECTURAL
 
 ## Step 4 – Merge Approval
 
-Once all three reviews are satisfactory (no blocking issues), you may proceed with merging `dev` into `main`:
+Once all three reviews are satisfactory (no blocking issues), you may proceed with merging the source branch into the target branch:
 
 ```bash
-git checkout main
-git merge dev
-git push origin main
+git checkout <target-branch>
+git merge <source-branch>
+git push origin <target-branch>
 ```
+
+Replace `<target-branch>` and `<source-branch>` with the actual branch names (e.g., `main` and `feature/xyz`).
 
 ## Related Documentation
 
@@ -81,6 +83,7 @@ git push origin main
 
 - **2025‑01‑15**: Simplified the original 209‑line SOP into this checklist while preserving essential steps and referencing existing documentation. Fixed hard‑coded paths and grammatical errors.
 - **2025‑01‑15**: Added clarifying comments about `-l 3` flag and output redirection.
+- **2025‑01‑15**: Renamed from `dev-to-main.md` to `review-by-roles.md` and generalized content to use source/target branch terminology.
 
 ---
 
