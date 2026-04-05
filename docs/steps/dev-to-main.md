@@ -29,9 +29,12 @@ Before requesting reviews, ensure:
 Use the following prompt (corrected grammar) for each reviewer role:
 
 ```bash
+# Request review from Architect (output discarded; see note below)
 echo "Is the difference between dev branch and main branch sufficient for merging into main branch?" | \
 tell-me-go -new -r -c ${CONFIG_DIR}/architect.yaml &> /dev/null
 ```
+
+**Note:** The `&> /dev/null` discards stdout and stderr. If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
 
 Repeat for tester and reviewer by replacing the config path accordingly.
 
@@ -40,8 +43,11 @@ Repeat for tester and reviewer by replacing the config path accordingly.
 After each review request, retrieve the responses:
 
 ```bash
+# Retrieve the last 3 responses from the Architect review
 tell-me-go -l 3 -r -c ${CONFIG_DIR}/architect.yaml
 ```
+
+The `-l 3` flag limits output to the last 3 messages. Adjust the number as needed.
 
 Again, repeat for tester and reviewer.
 
@@ -74,6 +80,7 @@ git push origin main
 ## Changelog
 
 - **2025‑01‑15**: Simplified the original 209‑line SOP into this checklist while preserving essential steps and referencing existing documentation. Fixed hard‑coded paths and grammatical errors.
+- **2025‑01‑15**: Added clarifying comments about `-l 3` flag and output redirection.
 
 ---
 
