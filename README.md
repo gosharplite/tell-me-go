@@ -176,7 +176,7 @@ alias b-new='b -new'
 alias b-install='(cd $TELL_ME_HOME && git pull && go install ./cmd/tell-me-go)'
 ```
 
-For advanced usage with piped multi-agent workflows and role-based review checklists, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md) and [docs/steps/review-by-roles.md](docs/steps/review-by-roles.md).
+For advanced usage with piped multi-agent workflows and role-based review checklists, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md), [docs/steps/review-by-roles.md](docs/steps/review-by-roles.md), and [docs/steps/reduce-cyclomatic-complexity.md](docs/steps/reduce-cyclomatic-complexity.md).
 
 ## 🛠️ Development
 

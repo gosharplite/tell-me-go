@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -40,6 +41,18 @@ func (m *mockDevExecutor) LookPath(file string) (string, error) {
 		return m.lookPathFunc(file)
 	}
 	return "/usr/bin/" + file, nil
+}
+
+type mockValidator struct {
+	domain_security.CommandValidator
+	isSafeFunc func(command string) (bool, string)
+}
+
+func (mv *mockValidator) IsSafe(command string) (bool, string) {
+	if mv.isSafeFunc != nil {
+		return mv.isSafeFunc(command)
+	}
+	return mv.CommandValidator.IsSafe(command)
 }
 
 func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
@@ -90,7 +103,7 @@ func TestCheckVulnerabilities(t *testing.T) {
 		{
 			name:       "Execution failure no output",
 			executeErr: errors.New("something went wrong"),
-			wantSubstr: "govulncheck execution failed",
+			wantSubstr: "Govulncheck execution failed",
 			wantErr:    true,
 		},
 	}
@@ -107,15 +120,20 @@ func TestCheckVulnerabilities(t *testing.T) {
 			}
 
 			res, err := m.checkVulnerabilities(context.Background(), nil, nil)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("checkVulnerabilities() error = %v, wantErr %v", err, tt.wantErr)
+			actualErr := err
+			if actualErr == nil {
+				actualErr = res.Error
+			}
+
+			if (actualErr != nil) != tt.wantErr {
+				t.Errorf("checkVulnerabilities() error = %v, wantErr %v", actualErr, tt.wantErr)
 			}
 			fullOutput := res.Text
-			if err != nil {
-				fullOutput += " " + err.Error()
+			if actualErr != nil {
+				fullOutput += " " + actualErr.Error()
 			}
 			if !strings.Contains(fullOutput, tt.wantSubstr) {
-				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
+				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, actualErr)
 			}
 		})
 	}
@@ -173,27 +191,27 @@ func TestGetCoverage(t *testing.T) {
 			name:       "Failure due to test errors",
 			executeOut: "FAIL",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "Tests failed or coverage error",
+			wantSubstr: "Coverage test failed or found issues",
 			wantErr:    false,
 		},
 		{
 			name:       "Failure due to missing package",
 			executeOut: "can't load package",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "Tests failed or coverage error",
+			wantSubstr: "Coverage test failed or found issues",
 			wantErr:    false,
 		},
 		{
 			name:       "Summary failure",
 			executeOut: "ok",
 			summaryErr: errors.New("failed to run go tool cover"),
-			wantSubstr: "Failed to generate coverage summary",
-			wantErr:    false,
+			wantSubstr: "Coverage summary execution failed",
+			wantErr:    true,
 		},
 		{
 			name:       "Temp file failure",
 			tempErr:    errors.New("failed to create temp file"),
-			wantSubstr: "failed to create temp file",
+			wantSubstr: "failed to create temp coverage file",
 			wantErr:    true,
 		},
 	}
@@ -205,11 +223,16 @@ func TestGetCoverage(t *testing.T) {
 			setupCoverageMock(t, m, executor, tt.executeOut, tt.executeErr, tt.summaryOut, tt.summaryErr, tt.tempErr)
 
 			res, err := m.getCoverage(context.Background(), nil, nil)
+			actualErr := err
+			if actualErr == nil {
+				actualErr = res.Error
+			}
+
 			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantSubstr)
+				require.Error(t, actualErr)
+				assert.Contains(t, actualErr.Error(), tt.wantSubstr)
 			} else {
-				require.NoError(t, err)
+				require.NoError(t, actualErr)
 				assert.Contains(t, res.Text, tt.wantSubstr)
 			}
 		})
@@ -254,6 +277,7 @@ func TestRunLinter(t *testing.T) {
 		executeErr error
 		wantSubstr string
 		wantErr    bool
+		decline    bool
 	}{
 		{
 			name:       "golangci-lint success",
@@ -270,7 +294,7 @@ func TestRunLinter(t *testing.T) {
 			lookPath:   "staticcheck",
 			executeOut: "problem at line 1",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "problem at line 1",
+			wantSubstr: "Linter failed or found issues:",
 			wantErr:    false,
 		},
 		{
@@ -279,12 +303,33 @@ func TestRunLinter(t *testing.T) {
 			wantErr:    true,
 			wantSubstr: "no supported linter found",
 		},
+		{
+			name:       "user declined",
+			lookPath:   "golangci-lint",
+			decline:    true,
+			wantSubstr: "Action denied by user.",
+			wantErr:    true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, executor, _ := setupDevManager(t)
+			m, executor, sm := setupDevManager(t)
+			if tt.decline {
+				sm.SetBypassActive(false)
+				sm.GetInteractor().(*security.MockInteractor).Answer = "n"
+
+				m.validator = &mockValidator{
+					CommandValidator: m.validator,
+					isSafeFunc: func(command string) (bool, string) {
+						if strings.Contains(command, "golangci-lint") || strings.Contains(command, "staticcheck") {
+							return false, "forced prompt for test"
+						}
+						return true, ""
+					},
+				}
+			}
 			executor.lookPathFunc = func(file string) (string, error) {
 				if file == tt.lookPath {
 					return "/usr/bin/" + file, nil
@@ -344,7 +389,11 @@ func TestGoTidy_Errors(t *testing.T) {
 			if err != nil {
 				t.Errorf("expected nil error for %s, got %v", tt.name, err)
 			}
-			if !strings.Contains(res.Text, tt.cmdFail+" failed") {
+			displayName := "Go mod tidy"
+			if tt.cmdFail == "fmt" {
+				displayName = "Go fmt"
+			}
+			if !strings.Contains(res.Text, displayName+" failed or found issues:") {
 				t.Errorf("expected failure text in result, got %q", res.Text)
 			}
 		})
@@ -362,7 +411,7 @@ func TestRunBenchmark_Error(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
-	if !strings.Contains(res.Text, "Benchmark failed") {
+	if !strings.Contains(res.Text, "Benchmark failed or found issues:") {
 		t.Errorf("expected error in text, got %q", res.Text)
 	}
 }
@@ -385,7 +434,7 @@ func TestRunTests(t *testing.T) {
 	interactor := sm.GetInteractor().(*security.MockInteractor)
 	found := false
 	for _, w := range interactor.Warns {
-		if strings.Contains(w, "[Tool Action] Running Tests") {
+		if strings.Contains(w, "[Tool Action] Running test execution") {
 			found = true
 			break
 		}
@@ -439,8 +488,8 @@ func TestRunTests_Failure(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
-	if !strings.Contains(res.Text, "FAIL") {
-		t.Errorf("expected FAIL in result, got %q", res.Text)
+	if !strings.Contains(res.Text, "Test execution failed or found issues:") {
+		t.Errorf("expected Test execution failed or found issues: in result, got %q", res.Text)
 	}
 }
 
@@ -481,4 +530,219 @@ func TestAuthorizeAction_Denied(t *testing.T) {
 	approved, err := m.authorizeAction(context.Background(), "test", "unauthorized_tool", "detail")
 	assert.NoError(t, err)
 	assert.False(t, approved)
+}
+
+func TestResolveLinter(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		lookPathMap map[string]error
+		wantCmd     string
+		wantArgs    []string
+		wantErr     bool
+	}{
+		{
+			name: "golangci-lint available",
+			lookPathMap: map[string]error{
+				"golangci-lint": nil,
+			},
+			wantCmd:  "golangci-lint",
+			wantArgs: []string{"run"},
+		},
+		{
+			name: "staticcheck available (golangci-lint not)",
+			lookPathMap: map[string]error{
+				"golangci-lint": errors.New("not found"),
+				"staticcheck":   nil,
+			},
+			wantCmd:  "staticcheck",
+			wantArgs: []string{"./..."},
+		},
+		{
+			name: "no linter available",
+			lookPathMap: map[string]error{
+				"golangci-lint": errors.New("not found"),
+				"staticcheck":   errors.New("not found"),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, executor, _ := setupDevManager(t)
+			executor.lookPathFunc = func(file string) (string, error) {
+				if err, ok := tt.lookPathMap[file]; ok {
+					if err == nil {
+						return "/usr/bin/" + file, nil
+					}
+					return "", err
+				}
+				return "", errors.New("not found")
+			}
+
+			cmd, args, err := m.resolveLinter()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("resolveLinter() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				assert.Equal(t, tt.wantCmd, cmd)
+				assert.Equal(t, tt.wantArgs, args)
+			}
+		})
+	}
+}
+
+func TestFormatExecutionResult(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name            string
+		toolName        string
+		out             []byte
+		execErr         error
+		truncate        int
+		emptySuccessMsg string
+		wantSubstr      string
+		wantErrObj      bool
+	}{
+		{
+			name:       "Execution failure no output",
+			toolName:   "Linter",
+			out:        []byte(""),
+			execErr:    errors.New("crash"),
+			wantErrObj: true,
+			wantSubstr: "Linter execution failed",
+		},
+		{
+			name:       "Execution failure with output",
+			toolName:   "Linter",
+			out:        []byte("problem found"),
+			execErr:    errors.New("exit status 1"),
+			wantSubstr: "Linter failed or found issues",
+		},
+		{
+			name:            "Success with no output",
+			toolName:        "Linter",
+			out:             []byte(""),
+			execErr:         nil,
+			emptySuccessMsg: "Linter passed successfully.",
+			wantSubstr:      "Linter passed successfully",
+		},
+		{
+			name:       "Success with output",
+			toolName:   "Linter",
+			out:        []byte("some warnings"),
+			execErr:    nil,
+			wantSubstr: "some warnings",
+		},
+		{
+			name:       "Output truncation",
+			toolName:   "linter",
+			out:        []byte(strings.Repeat("a", 200)),
+			execErr:    nil,
+			truncate:   100,
+			wantSubstr: strings.Repeat("a", 100),
+		},
+		{
+			name:       "Empty tool name handling",
+			toolName:   "",
+			out:        []byte("output"),
+			execErr:    errors.New("error"),
+			wantSubstr: " failed or found issues:\noutput",
+		},
+		{
+			name:       "Zero truncate limit does not truncate",
+			toolName:   "test",
+			out:        []byte(strings.Repeat("a", 200)),
+			execErr:    nil,
+			truncate:   0,
+			wantSubstr: strings.Repeat("a", 200),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := formatExecutionResult(tt.toolName, tt.out, tt.execErr, tt.truncate, tt.emptySuccessMsg)
+			if tt.wantErrObj {
+				assert.Error(t, res.Error)
+				assert.Contains(t, res.Error.Error(), tt.wantSubstr)
+			} else {
+				assert.NoError(t, res.Error)
+				assert.Contains(t, res.Text, tt.wantSubstr)
+			}
+		})
+	}
+}
+
+func TestExecuteWithHeartbeat_Telemetry(t *testing.T) {
+	t.Parallel()
+	m, executor, _ := setupDevManager(t)
+	m.heartbeatInterval = 1 * time.Millisecond
+
+	hb := make(chan struct{}, 100)
+	wait := make(chan struct{})
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		<-wait
+		return []byte("done"), nil
+	}
+
+	// Trigger execution in a goroutine
+	done := make(chan struct{})
+	go func() {
+		_, _ = m.executeWithHeartbeat(context.Background(), "test", "cmd", "reason", "echo", []string{"hi"}, hb)
+		close(done)
+	}()
+
+	// We expect at least a couple of heartbeats
+	select {
+	case <-hb:
+		// Observed first heartbeat
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected heartbeat, but none received")
+	}
+
+	close(wait) // Let the executor finish
+	<-done
+}
+
+func TestSecurityRemediation(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+
+	t.Run("getCoverage flag injection", func(t *testing.T) {
+		_, err := m.getCoverage(context.Background(), map[string]interface{}{"path": "-config=evil.yml"}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot start with a hyphen")
+	})
+
+	t.Run("runBenchmark flag injection", func(t *testing.T) {
+		_, err := m.runBenchmark(context.Background(), map[string]interface{}{"bench": "-evil"}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot start with a hyphen")
+	})
+
+	t.Run("getCoverage sandbox evasion", func(t *testing.T) {
+		_, err := m.getCoverage(context.Background(), map[string]interface{}{"path": "../../etc/passwd"}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "security violation")
+	})
+
+	t.Run("runBenchmark sandbox evasion", func(t *testing.T) {
+		_, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "../../etc/passwd"}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "security violation")
+	})
+}
+
+func TestDevManager_Options(t *testing.T) {
+	t.Parallel()
+	customInterval := 42 * time.Second
+	m := newDevManager(nil, nil, WithHeartbeatInterval(customInterval))
+
+	if m.heartbeatInterval != customInterval {
+		t.Errorf("expected interval %v, got %v", customInterval, m.heartbeatInterval)
+	}
 }

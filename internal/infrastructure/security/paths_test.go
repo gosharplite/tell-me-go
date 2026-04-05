@@ -11,7 +11,7 @@ import (
 
 func TestPathPolicy_ValidatePath(t *testing.T) {
 	t.Parallel()
-	p := newPathPolicy()
+	p := newPathPolicy(nil)
 	cwd, _ := os.Getwd()
 	tempDir := os.TempDir()
 
@@ -93,7 +93,7 @@ func TestPathPolicy_SymlinkBoundary(t *testing.T) {
 		t.Skip("symlinks not supported on this platform")
 	}
 
-	p := newPathPolicy()
+	p := newPathPolicy(nil)
 	p.RegisterPath(linkDir, true)
 
 	// Target is in the real directory
@@ -112,7 +112,7 @@ func TestPathPolicy_SymlinkBoundary(t *testing.T) {
 func setupSymlinkTestEnv(t *testing.T) (*pathPolicy, string) {
 	t.Helper()
 	tmpDir := t.TempDir()
-	p := newPathPolicy()
+	p := newPathPolicy(nil)
 	p.RegisterPath(tmpDir, true)
 
 	// Check if symlinks are supported
@@ -199,5 +199,23 @@ func TestPathPolicy_SymlinkBypass_MultiLevelNonExistent(t *testing.T) {
 
 	if _, err := p.ValidatePath(targetPath, true); err == nil {
 		t.Error("ValidatePath allowed creation of file in /etc/nonexistent_dir via symlink")
+	}
+}
+
+func TestNewPathPolicy_Initialization(t *testing.T) {
+	t.Parallel()
+
+	// 1. Test Defensive Copy
+	original := []string{"/tmp/safe"}
+	p := newPathPolicy(original)
+
+	original[0] = "/tmp/hacked"
+	if p.safePaths[0] == "/tmp/hacked" {
+		t.Errorf("safePaths suffered from slice reference leak")
+	}
+
+	// 2. Test Temp Dir Resolution
+	if p.resolvedTempDir == "" {
+		t.Errorf("expected resolvedTempDir to be populated")
 	}
 }

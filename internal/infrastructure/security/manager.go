@@ -32,7 +32,7 @@ func NewSecurityManager(interactor domain.UserInteractor) *SecurityManager {
 	auditor.SetInteractor(interactor)
 	policy := domain.DefaultPolicy()
 	return &SecurityManager{
-		policy:       newPathPolicy(),
+		policy:       newPathPolicy(nil),
 		interaction:  newInteractionHandler(interactor, auditor),
 		auditor:      auditor,
 		domainPolicy: policy,

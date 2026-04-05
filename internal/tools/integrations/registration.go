@@ -48,7 +48,7 @@ func RegisterAll(r tools.Registry, sm domain_security.Manager, client llm.LLMCli
 }
 
 func registerMedia(r tools.Registry, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
-	m := &mediaManager{sm: sm, client: client, assetsDir: assetsDir}
+	m := newMediaManager(sm, client, assetsDir)
 
 	if err := r.RegisterToToolkitWithOptions("media", &tools.ToolDeclaration{
 		Name:        "create_image",

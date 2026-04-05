@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -19,11 +20,25 @@ type pathPolicy struct {
 	safePathsMu     sync.RWMutex
 	readOnlyPaths   []string
 	readOnlyPathsMu sync.RWMutex
+	resolvedTempDir string
 }
 
 // newPathPolicy creates a new pathPolicy.
-func newPathPolicy() *pathPolicy {
-	return &pathPolicy{}
+func newPathPolicy(safePaths []string) *pathPolicy {
+	policy := &pathPolicy{
+		safePaths: slices.Clone(safePaths),
+	}
+
+	if temp := os.TempDir(); temp != "" {
+		resolved, err := filepath.EvalSymlinks(temp)
+		if err == nil {
+			policy.resolvedTempDir = filepath.Clean(resolved) + string(filepath.Separator)
+		} else {
+			policy.resolvedTempDir = filepath.Clean(temp) + string(filepath.Separator)
+		}
+	}
+
+	return policy
 }
 
 type pathRule func(absPath string, writable bool) (bool, error)
@@ -128,14 +143,16 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 }
 
 func (p *pathPolicy) isSystemDirectory(absPath string) error {
-	// Simple check for sensitive system directories on Unix
-	sensitive := []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys"}
+	// 1. Explicitly exempt the evaluated OS temporary directory
+	if p.resolvedTempDir != "" && strings.HasPrefix(absPath, p.resolvedTempDir) {
+		return nil
+	}
+
+	// 2. Standard Deny-List
+	sensitive := []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys", "/private/etc", "/private/var"}
 	for _, s := range sensitive {
 		if absPath == s || strings.HasPrefix(absPath, s+"/") {
-			// Special exception for /tmp handled by checkDefaultBoundaries
-			if !strings.HasPrefix(absPath, "/tmp") {
-				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
-			}
+			return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
 		}
 	}
 	return nil
