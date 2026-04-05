@@ -6,7 +6,24 @@ This checklist guides the quality-gate process for merging any source branch int
 
 To initiate the review‑by‑roles process using the Assistant, provide a prompt that specifies the source branch, target branch, and the location of your role configuration files.
 
-**Example prompt:**
+**Example prompt with individual configuration paths:**
+
+```
+Execute docs/steps/review-by-roles.md
+
+source branch: revise-steps
+target branch: dev
+
+ARCHITECT_CONFIG: /path/to/your/architect.yaml
+TESTER_CONFIG: /path/to/your/tester.yaml
+REVIEWER_CONFIG: /path/to/your/reviewer.yaml
+CODER_CONFIG: /path/to/your/coder.yaml
+ASSISTANT_CONFIG: /path/to/your/assistant.yaml
+```
+
+The Assistant will set the corresponding environment variables (ARCHITECT_CONFIG, TESTER_CONFIG, etc.) based on the values provided.
+
+**Alternatively, using a common configuration directory:**
 
 ```
 Execute docs/steps/review-by-roles.md
@@ -17,11 +34,31 @@ target branch: dev
 CONFIG_DIR: /path/to/your/configs
 ```
 
-The Assistant will then guide you through the checklist, ensuring each role (Architect, Tester, Reviewer) is consulted and that all quality gates are satisfied before merging.
+If you provide `CONFIG_DIR`, the Assistant will expect the default file names (`architect.yaml`, `tester.yaml`, etc.) in that directory.
 
 ## Configuration Files
 
-Role-specific configuration files must be specified via the `CONFIG_DIR` environment variable. By default, the tool looks for role-specific configuration files in the `configs/` directory (relative to the project root). To use a different location, set the `CONFIG_DIR` environment variable to point to your custom directory.
+Role-specific configuration files can be provided in two ways:
+
+### Option 1: Individual Configuration Paths (Recommended)
+
+Set environment variables for each role pointing to the respective configuration file:
+
+- **Architect**: `${ARCHITECT_CONFIG}` (e.g., `/path/to/architect.yaml`)
+- **Tester**: `${TESTER_CONFIG}` (e.g., `/path/to/tester.yaml`)
+- **Reviewer**: `${REVIEWER_CONFIG}` (e.g., `/path/to/reviewer.yaml`)
+- **Coder**: `${CODER_CONFIG}` (e.g., `/path/to/coder.yaml`)
+- **Assistant**: `${ASSISTANT_CONFIG}` (e.g., `/path/to/assistant.yaml`)
+
+**Example**: 
+```bash
+export ARCHITECT_CONFIG=/home/user/project/configs/architect.yaml
+export TESTER_CONFIG=/home/user/project/configs/tester.yaml
+```
+
+### Option 2: Common Configuration Directory with Default File Names
+
+Set the `CONFIG_DIR` environment variable to point to a directory containing the configuration files with the following **default** names:
 
 - **Architect**: `${CONFIG_DIR}/architect.yaml`
 - **Tester**: `${CONFIG_DIR}/tester.yaml`
@@ -31,7 +68,7 @@ Role-specific configuration files must be specified via the `CONFIG_DIR` environ
 
 **Example**: `export CONFIG_DIR=/path/to/your/configs`
 
-**Note**: If you don't set `CONFIG_DIR`, the tool will look for configuration files in the `configs/` directory relative to the project root by default. In that case, replace `${CONFIG_DIR}/` with `configs/` in the commands below.
+**Note**: If you don't set any environment variables, the tool will look for configuration files in the `configs/` directory relative to the project root by default. In that case, replace `${CONFIG_DIR}/` with `configs/` in the commands below.
 
 ## Role Responsibilities and Workflow
 
@@ -47,7 +84,7 @@ Role-specific configuration files must be specified via the `CONFIG_DIR` environ
 
 Before requesting reviews, ensure:
 - You are in the project root directory (where `.git/` is located).
-- If using the CONFIG_DIR environment variable, ensure it points to the directory containing role configuration files. The default location is the `configs/` directory relative to the project root.
+- If using individual configuration paths, ensure each `*_CONFIG` environment variable points to a valid configuration file. If using `CONFIG_DIR`, ensure it points to the directory containing role configuration files. The default location is the `configs/` directory relative to the project root.
 - The source branch is fully rebased onto the latest target branch.
 - All automated checks pass:
   ```bash
@@ -62,12 +99,14 @@ Use the following prompt for each reviewer role:
 ```bash
 # Request review from Architect (output discarded; see note below)
 echo "Is the difference between source branch '<source-branch>' and target branch '<target-branch>' sufficient for merging?" | \
-tell-me-go -new -r -c ${CONFIG_DIR}/architect.yaml &> /dev/null
+tell-me-go -new -r -c ${ARCHITECT_CONFIG} &> /dev/null
 ```
 
 **Note:** Replace `<source-branch>` and `<target-branch>` with the actual branch names (e.g., `feature/xyz` and `main`). The `&> /dev/null` discards stdout and stderr. If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
 
-Repeat for tester and reviewer by replacing the config path accordingly.
+If you are using `CONFIG_DIR` instead of individual paths, replace `${ARCHITECT_CONFIG}` with `${CONFIG_DIR}/architect.yaml`, `${TESTER_CONFIG}` with `${CONFIG_DIR}/tester.yaml`, and `${REVIEWER_CONFIG}` with `${CONFIG_DIR}/reviewer.yaml`.
+
+Repeat for tester and reviewer by replacing the config path accordingly (use ${TESTER_CONFIG} for tester, ${REVIEWER_CONFIG} for reviewer).
 
 ## Step 2 – Collect Responses
 
@@ -75,12 +114,14 @@ After each review request, retrieve the responses:
 
 ```bash
 # Retrieve the last 3 responses from the Architect review
-tell-me-go -l 3 -r -c ${CONFIG_DIR}/architect.yaml
+tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 ```
 
 The `-l 3` flag limits output to the last 3 messages. Adjust the number as needed.
 
-Again, repeat for tester and reviewer.
+If you are using `CONFIG_DIR` instead of individual paths, replace `${ARCHITECT_CONFIG}` with `${CONFIG_DIR}/architect.yaml` (and similarly for tester and reviewer).
+
+Again, repeat for tester and reviewer (using ${TESTER_CONFIG} and ${REVIEWER_CONFIG}, or ${CONFIG_DIR}/tester.yaml and ${CONFIG_DIR}/reviewer.yaml if using CONFIG_DIR).
 
 ## Step 3 – Evaluate Reviews
 
