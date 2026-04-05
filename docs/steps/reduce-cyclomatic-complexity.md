@@ -66,6 +66,12 @@ Before reducing complexity, ensure:
    go mod tidy && go fmt ./... && go vet ./... && go test -race ./... && go build ./...
    ```
 
+## Strict Role Adherence
+
+- **Assistant** MUST NOT interpret diffs, logs, or code logic.
+- **Assistant**'s primary responsibility is to relay information using `tell-me-go`.
+- If a role requires context (like a `git diff`), the Assistant should provide the raw data without adding technical commentary.
+
 ## Chatting with Roles
 
 To request action from a role, use `tell‑me‑go`. The basic pattern is:

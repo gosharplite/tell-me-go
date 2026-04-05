@@ -57,13 +57,25 @@ export TESTER_CONFIG=/home/user/project/configs/tester.yaml
 
 Before requesting reviews, ensure:
 
-1. **Branch**: Create two new branches from the source branch and target branch (e.g., `review/source-branch` and `review/target-branch`). All changes must be made in the new branches; do not alter the source branch and target branch directly.
+1. **Branch**: Create two new branches from the source branch and target branch.
+   ```bash
+   # Example setup for source:dev and target:main
+   git checkout main && git checkout -b review/main
+   git checkout dev && git checkout -b review/dev
+   ```
+   All changes must be made in the `review/source-branch`; do not alter the original branches directly.
 2. **Directory**: You are in the project root directory (where `.git/` is located).
 3. **Configuration**: Each `*_CONFIG` environment variable points to a valid YAML configuration file.
 4. **Automated checks pass**:
    ```bash
    go mod tidy && go fmt ./... && go vet ./... && go test -race ./... && go build ./...
    ```
+
+## Strict Role Adherence
+
+- **Assistant** MUST NOT interpret diffs, logs, or code logic.
+- **Assistant**'s primary responsibility is to relay information using `tell-me-go`.
+- If a role requires context (like a `git diff`), the Assistant should provide the raw data without adding technical commentary.
 
 ## Chatting with Roles
 
