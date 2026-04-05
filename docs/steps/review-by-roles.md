@@ -1,48 +1,45 @@
-# Review by Roles Checklist
+# Review by Roles
 
-This checklist guides the quality-gate process for merging any source branch into a target branch using specialized reviewer roles.
+This page check if source branch is good enough to be merged into target branch using specialized roles.
+
+- **Architect** – Reviews and approves all changes before implementation.
+- **Coder** – Executes code and file changes (the only role that writes code).
+- **Tester** – Evaluates test coverage and testing strategy.
+- **Reviewer** – Performs security, idiomatic‑Go, and correctness reviews.
+- **Assistant** – Coordinates the workflow between roles.
+
+**Key Principle**: Every instruction given to the Coder must first be approved by the Architect. This guarantees architectural decisions are validated before any implementation begins.
+
+## Tooling
+
+The workflow is driven by `tell‑me‑go`, a command‑line tool that communicates with each role using configuration files. Each role’s behavior is defined in a YAML configuration.
 
 ## Starting the SOP with Assistant
 
-To initiate the review‑by‑roles process using the Assistant, provide a prompt that specifies the source branch, target branch, and the location of your role configuration files.
+To initiate the process using the Assistant, provide a prompt that specifies the source branch, target branch and the location of your role configuration files.
 
-**Example prompt with individual configuration paths:**
+**Example prompt:**
 
 ```
 Execute docs/steps/review-by-roles.md
 
-source branch: revise-steps
-target branch: dev
+source branch: dev
+target branch: main
 
 ARCHITECT_CONFIG: /path/to/your/architect.yaml
 TESTER_CONFIG: /path/to/your/tester.yaml
 REVIEWER_CONFIG: /path/to/your/reviewer.yaml
 CODER_CONFIG: /path/to/your/coder.yaml
 ASSISTANT_CONFIG: /path/to/your/assistant.yaml
+
+You are Assistant, do not take over jobs of other roles. Do not trying to do technical work by yourself.
 ```
 
-The Assistant will set the corresponding environment variables (ARCHITECT_CONFIG, TESTER_CONFIG, etc.) based on the values provided.
-
-**Alternatively, using a common configuration directory:**
-
-```
-Execute docs/steps/review-by-roles.md
-
-source branch: revise-steps
-target branch: dev
-
-CONFIG_DIR: /path/to/your/configs
-```
-
-If you provide `CONFIG_DIR`, the Assistant will expect the default file names (`architect.yaml`, `tester.yaml`, etc.) in that directory.
+The Assistant will set the corresponding environment variables (`ARCHITECT_CONFIG`, `TESTER_CONFIG`, etc.) based on the values you provide.
 
 ## Configuration Files
 
-Role-specific configuration files can be provided in two ways:
-
-### Option 1: Individual Configuration Paths (Recommended)
-
-Set environment variables for each role pointing to the respective configuration file:
+Set environment variables for each role pointing to its respective configuration file:
 
 - **Architect**: `${ARCHITECT_CONFIG}` (e.g., `/path/to/architect.yaml`)
 - **Tester**: `${TESTER_CONFIG}` (e.g., `/path/to/tester.yaml`)
@@ -56,98 +53,54 @@ export ARCHITECT_CONFIG=/home/user/project/configs/architect.yaml
 export TESTER_CONFIG=/home/user/project/configs/tester.yaml
 ```
 
-### Option 2: Common Configuration Directory with Default File Names
-
-Set the `CONFIG_DIR` environment variable to point to a directory containing the configuration files with the following **default** names:
-
-- **Architect**: `${CONFIG_DIR}/architect.yaml`
-- **Tester**: `${CONFIG_DIR}/tester.yaml`
-- **Reviewer**: `${CONFIG_DIR}/reviewer.yaml`
-- **Coder**: `${CONFIG_DIR}/coder.yaml`
-- **Assistant**: `${CONFIG_DIR}/assistant.yaml`
-
-**Example**: `export CONFIG_DIR=/path/to/your/configs`
-
-**Note**: If you don't set any environment variables, the tool will look for configuration files in the `configs/` directory relative to the project root by default. In that case, replace `${CONFIG_DIR}/` with `configs/` in the commands below.
-
-## Role Responsibilities and Workflow
-
-- **Coder**: The only role that executes code and file changes. Detailed instructions are given to Coder via `tell-me-go`.
-- **Architect**: Must review and agree on all instructions before they are given to Coder. The Architect ensures architectural integrity before any implementation begins.
-- **Tester**: Evaluates test coverage and testing strategy after changes are implemented.
-- **Reviewer**: Performs code review for security, idiomatic Go, and correctness.
-- **Assistant**: Coordinates the workflow between roles (when used).
-
-**Key Principle**: All instructions given to Coder must be approved by Architect. This ensures architectural decisions are validated before implementation.
-
 ## Prerequisites
 
 Before requesting reviews, ensure:
-- You are in the project root directory (where `.git/` is located).
-- If using individual configuration paths, ensure each `*_CONFIG` environment variable points to a valid configuration file. If using `CONFIG_DIR`, ensure it points to the directory containing role configuration files. The default location is the `configs/` directory relative to the project root.
-- The source branch is fully rebased onto the latest target branch.
-- All automated checks pass:
-  ```bash
-  go mod tidy && go fmt ./... && go vet ./... && go test -race ./... && go build ./...
-  ```
-- No merge conflicts exist.
 
-## Step 1 – Request Reviews
+1. **Branch**: Create two new branches from the source branch and target branch. All changes must be made in the new branches; do not alter the source branch and target branch directly.
+2. **Directory**: You are in the project root directory (where `.git/` is located).
+3. **Configuration**: Each `*_CONFIG` environment variable points to a valid YAML configuration file.
+4. **Automated checks pass**:
+   ```bash
+   go mod tidy && go fmt ./... && go vet ./... && go test -race ./... && go build ./...
+   ```
 
-Use the following prompt for each reviewer role:
+## Chatting with Roles
+
+To request action from a role, use `tell‑me‑go`. The basic pattern is:
 
 ```bash
-# Request review from Architect (output discarded; see note below)
-echo "Is the difference between source branch '<source-branch>' and target branch '<target-branch>' sufficient for merging?" | \
+# Request action from Architect (output discarded; see note below)
+echo "your prompt" | \
 tell-me-go -new -r -c ${ARCHITECT_CONFIG} &> /dev/null
 ```
 
-**Note:** Replace `<source-branch>` and `<target-branch>` with the actual branch names (e.g., `feature/xyz` and `main`). The `&> /dev/null` discards stdout and stderr. If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
+**Notes:**
+- The `&> /dev/null` discards stdout and stderr. If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
+- Use `-new` when you first chat with a role. For a continuous conversation, omit `-new`.
 
-If you are using `CONFIG_DIR` instead of individual paths, replace `${ARCHITECT_CONFIG}` with `${CONFIG_DIR}/architect.yaml`, `${TESTER_CONFIG}` with `${CONFIG_DIR}/tester.yaml`, and `${REVIEWER_CONFIG}` with `${CONFIG_DIR}/reviewer.yaml`.
-
-Repeat for tester and reviewer by replacing the config path accordingly (use ${TESTER_CONFIG} for tester, ${REVIEWER_CONFIG} for reviewer).
-
-## Step 2 – Collect Responses
-
-After each review request, retrieve the responses:
+To retrieve the last responses from a role:
 
 ```bash
-# Retrieve the last 3 responses from the Architect review
+# Retrieve the last 3 responses from the Architect
 tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 ```
 
-The `-l 3` flag limits output to the last 3 messages. Adjust the number as needed.
+Adjust the number `-l 3` as needed.
 
-If you are using `CONFIG_DIR` instead of individual paths, replace `${ARCHITECT_CONFIG}` with `${CONFIG_DIR}/architect.yaml` (and similarly for tester and reviewer).
+**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it.
 
-Again, repeat for tester and reviewer (using ${TESTER_CONFIG} and ${REVIEWER_CONFIG}, or ${CONFIG_DIR}/tester.yaml and ${CONFIG_DIR}/reviewer.yaml if using CONFIG_DIR).
+## Process (Step‑by‑Step)
 
-## Step 3 – Evaluate Reviews
+1. **Ask Architect** Is the difference between new source branch and new target branch sufficient for merging?
+2. **Ask Architect** for detailed instructions to fix issues for Coder.
+3. **Give those detailed instructions** to the Coder.
+4. **Review the changes**:
+   - Architect must review the implementation.
+   - Tester must evaluate test coverage and strategy.
+   - Reviewer must perform security, idiomatic‑Go, and correctness review.
+5. **Reviews by Tester and Reviewer must be agreed by Architect** before proceeding.
+6. **Coder must address** all feedback from Architect, Tester, and Reviewer.
+7. **Assistant outputs a summary** for each task, commits the changes to the new source branch, and after all opportunities are addressed, outputs a final summary and exits the agent loop.
 
-Review the outputs from each role:
-
-- **Architect**: Assesses architectural integrity, dependency boundaries, scalability, and adherence to patterns.
-- **Tester**: Evaluates test coverage, edge‑case handling, flaky‑test risks, and testing strategy.
-- **Reviewer**: Reviews code for idiomatic Go, security vulnerabilities, concurrency issues, and error‑handling correctness.
-
-If any role identifies blocking issues (marked as **[HIGH]** or **[ARCHITECTURAL BLOCKER]**), address them before proceeding. **Important**: Any required code changes must be implemented by the **Coder** role using instructions approved by the **Architect**.
-
-Non‑blocking findings (e.g., documentation improvements) should be addressed either before merging or scheduled as follow‑up tasks.
-
-## Step 4 – Merge Approval
-
-Once all three reviews are satisfactory (no blocking issues), you may proceed with merging the source branch into the target branch:
-
-```bash
-git checkout <target-branch>
-git merge <source-branch>
-git push origin <target-branch>
-```
-
-Replace `<target-branch>` and `<source-branch>` with the actual branch names (e.g., `main` and `feature/xyz`).
-
-## Related Documentation
-
-- **Git Workflow SOP**: `docs/sop/standards/git_workflow.md`
-- **Piped Multi‑Agent Workflow**: `docs/user/piped-multi-agent-workflow.md`
+Repeat steps 1‑6 for each task until the overall quality meets the project’s standards.
