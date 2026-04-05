@@ -2,6 +2,23 @@
 
 This checklist guides the quality-gate process for merging any source branch into a target branch using specialized reviewer roles.
 
+## Starting the SOP with Assistant
+
+To initiate the review‑by‑roles process using the Assistant, provide a prompt that specifies the source branch, target branch, and the location of your role configuration files.
+
+**Example prompt:**
+
+```
+Execute docs/steps/review-by-roles.md
+
+source branch: revise-steps
+target branch: dev
+
+CONFIG_DIR: /path/to/your/configs
+```
+
+The Assistant will then guide you through the checklist, ensuring each role (Architect, Tester, Reviewer) is consulted and that all quality gates are satisfied before merging.
+
 ## Configuration Files
 
 Role-specific configuration files must be specified via the `CONFIG_DIR` environment variable. By default, the tool looks for role-specific configuration files in the `configs/` directory (relative to the project root). To use a different location, set the `CONFIG_DIR` environment variable to point to your custom directory.
