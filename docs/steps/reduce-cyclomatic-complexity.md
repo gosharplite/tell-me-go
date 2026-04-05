@@ -33,7 +33,7 @@ REVIEWER_CONFIG: /path/to/your/reviewer.yaml
 CODER_CONFIG: /path/to/your/coder.yaml
 ASSISTANT_CONFIG: /path/to/your/assistant.yaml
 
-You are Assistant, do not take over jobs of other roles.
+You are Assistant, do not take over jobs of other roles. Do not trying to reduce complexity by yourself.
 ```
 
 The Assistant will set the corresponding environment variables (`ARCHITECT_CONFIG`, `TESTER_CONFIG`, etc.) based on the values you provide.
