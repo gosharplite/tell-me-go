@@ -57,7 +57,7 @@ export TESTER_CONFIG=/home/user/project/configs/tester.yaml
 
 Before requesting reviews, ensure:
 
-1. **Branch**: Create two new branches from the source branch and target branch. All changes must be made in the new branches; do not alter the source branch and target branch directly.
+1. **Branch**: Create two new branches from the source branch and target branch (e.g., `review/source-branch` and `review/target-branch`). All changes must be made in the new branches; do not alter the source branch and target branch directly.
 2. **Directory**: You are in the project root directory (where `.git/` is located).
 3. **Configuration**: Each `*_CONFIG` environment variable points to a valid YAML configuration file.
 4. **Automated checks pass**:
@@ -70,13 +70,14 @@ Before requesting reviews, ensure:
 To request action from a role, use `tell‑me‑go`. The basic pattern is:
 
 ```bash
-# Request action from Architect (output discarded; see note below)
+# Request action from Architect (output discarded)
 echo "your prompt" | \
 tell-me-go -new -r -c ${ARCHITECT_CONFIG} &> /dev/null
 ```
 
 **Notes:**
-- The `&> /dev/null` discards stdout and stderr. If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
+- The `&> /dev/null` discards stdout and stderr to **keep token usage low** and keep the terminal clean while the role processes in the background.
+- If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
 - Use `-new` when you first chat with a role. For a continuous conversation, omit `-new`.
 
 To retrieve the last responses from a role:
@@ -92,7 +93,7 @@ Adjust the number `-l 3` as needed.
 
 ## Process (Step‑by‑Step)
 
-1. **Ask Architect** Is the difference between new source branch and new target branch sufficient for merging?
+1. **Ask Architect** to identify gaps or issues that prevent merging between the new source branch and new target branch.
 2. **Ask Architect** for detailed instructions to fix issues for Coder.
 3. **Give those detailed instructions** to the Coder.
 4. **Review the changes**:
