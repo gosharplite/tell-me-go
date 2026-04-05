@@ -4,15 +4,15 @@ This checklist guides the quality-gate process for merging any source branch int
 
 ## Configuration Files
 
-Role-specific configuration files are located in the `configs/` directory (relative to project root). You can also use absolute paths if you have custom configurations elsewhere.
+Role-specific configuration files must be specified via the `CONFIG_DIR` environment variable. There is no default location; you must set `CONFIG_DIR` explicitly.
 
-- **Architect**: `${CONFIG_DIR}/architect.yaml` (default: `configs/architect.yaml`)
-- **Tester**: `${CONFIG_DIR}/tester.yaml` (default: `configs/tester.yaml`)
-- **Reviewer**: `${CONFIG_DIR}/reviewer.yaml` (default: `configs/reviewer.yaml`)
-- **Coder**: `${CONFIG_DIR}/coder.yaml` (default: `configs/coder.yaml`)
-- **Assistant**: `${CONFIG_DIR}/assistant.yaml` (default: `configs/assistant.yaml`)
+- **Architect**: `${CONFIG_DIR}/architect.yaml`
+- **Tester**: `${CONFIG_DIR}/tester.yaml`
+- **Reviewer**: `${CONFIG_DIR}/reviewer.yaml`
+- **Coder**: `${CONFIG_DIR}/coder.yaml`
+- **Assistant**: `${CONFIG_DIR}/assistant.yaml`
 
-Set `CONFIG_DIR` environment variable to override the default location.
+**Example**: `export CONFIG_DIR=/path/to/your/configs`
 
 ## Prerequisites
 
@@ -84,6 +84,7 @@ Replace `<target-branch>` and `<source-branch>` with the actual branch names (e.
 - **2025‑01‑15**: Simplified the original 209‑line SOP into this checklist while preserving essential steps and referencing existing documentation. Fixed hard‑coded paths and grammatical errors.
 - **2025‑01‑15**: Added clarifying comments about `-l 3` flag and output redirection.
 - **2025‑01‑15**: Renamed from `dev-to-main.md` to `review-by-roles.md` and generalized content to use source/target branch terminology.
+- **2025‑01‑15**: Updated Configuration Files section to require explicit `CONFIG_DIR` setting (no default location).
 
 ---
 
