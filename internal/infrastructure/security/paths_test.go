@@ -201,3 +201,21 @@ func TestPathPolicy_SymlinkBypass_MultiLevelNonExistent(t *testing.T) {
 		t.Error("ValidatePath allowed creation of file in /etc/nonexistent_dir via symlink")
 	}
 }
+
+func TestNewPathPolicy_Initialization(t *testing.T) {
+	t.Parallel()
+	
+	// 1. Test Defensive Copy
+	original := []string{"/tmp/safe"}
+	p := newPathPolicy(original)
+	
+	original[0] = "/tmp/hacked"
+	if p.safePaths[0] == "/tmp/hacked" {
+		t.Errorf("safePaths suffered from slice reference leak")
+	}
+
+	// 2. Test Temp Dir Resolution
+	if p.resolvedTempDir == "" {
+		t.Errorf("expected resolvedTempDir to be populated")
+	}
+}

@@ -9,12 +9,12 @@ import (
 // StartHeartbeat sends a periodic signal to the hb channel until the context is canceled
 // or the returned stop function is called.
 func StartHeartbeat(ctx context.Context, interval time.Duration, hb chan<- struct{}) (stop func()) {
-	if hb == nil {
-		return func() {} // No-op
+	if hb == nil || interval <= 0 {
+		return func() {} // No-op to prevent panic on invalid interval
 	}
 
 	done := make(chan struct{})
-	go func() {
+ go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {

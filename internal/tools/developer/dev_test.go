@@ -689,3 +689,13 @@ func TestSecurityRemediation(t *testing.T) {
 		assert.Contains(t, err.Error(), "security violation")
 	})
 }
+
+func TestDevManager_Options(t *testing.T) {
+	t.Parallel()
+	customInterval := 42 * time.Second
+	m := newDevManager(nil, nil, WithHeartbeatInterval(customInterval))
+	
+	if m.heartbeatInterval != customInterval {
+		t.Errorf("expected interval %v, got %v", customInterval, m.heartbeatInterval)
+	}
+}

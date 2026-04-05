@@ -25,7 +25,7 @@ type pathPolicy struct {
 // newPathPolicy creates a new pathPolicy.
 func newPathPolicy(safePaths []string) *pathPolicy {
 	policy := &pathPolicy{
-		safePaths: safePaths,
+		safePaths: append([]string(nil), safePaths...), // Defensive copy
 	}
 
 	if temp := os.TempDir(); temp != "" {
