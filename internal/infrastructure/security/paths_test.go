@@ -204,11 +204,11 @@ func TestPathPolicy_SymlinkBypass_MultiLevelNonExistent(t *testing.T) {
 
 func TestNewPathPolicy_Initialization(t *testing.T) {
 	t.Parallel()
-	
+
 	// 1. Test Defensive Copy
 	original := []string{"/tmp/safe"}
 	p := newPathPolicy(original)
-	
+
 	original[0] = "/tmp/hacked"
 	if p.safePaths[0] == "/tmp/hacked" {
 		t.Errorf("safePaths suffered from slice reference leak")

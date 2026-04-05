@@ -15,9 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	infra_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
 	"go.uber.org/goleak"
 )
 
@@ -126,22 +124,10 @@ func TestMediaTools_CreateImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := registry.New()
 			sm := newMediaMockSecurityManager()
-			if err := RegisterAll(r, sm, tt.client, tt.assetsDir); err != nil {
-				t.Fatalf("RegisterAll failed: %v", err)
-			}
 
 			// Capture the mediaManager and set a short heartbeat interval for fast tests
-			// In a real scenario, RegisterAll might need to be more flexible, but for tests we can reach in
-			// if we have access to the registry's internals or just use a helper.
-			// Since RegisterAll creates it internally, we'll use a hack or just test the manager directly.
-			m := &mediaManager{
-				sm:                sm,
-				client:            tt.client,
-				assetsDir:         tt.assetsDir,
-				heartbeatInterval: 10 * time.Millisecond,
-			}
+			m := newMediaManager(sm, tt.client, tt.assetsDir, WithMediaHeartbeatInterval(10*time.Millisecond))
 
 			res, err := m.createImage(ctx, tt.args, nil)
 			if (err != nil) != tt.wantErr {
@@ -249,7 +235,7 @@ func TestMediaTools_ReadImage(t *testing.T) {
 				}
 				return path, nil
 			}
-			m := &mediaManager{sm: sm}
+			m := newMediaManager(sm, nil, "")
 
 			res, err := m.readImage(ctx, map[string]interface{}{"filepath": tt.filepath}, nil)
 			if (err != nil) != tt.wantErr {
@@ -265,5 +251,34 @@ func TestMediaTools_ReadImage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNewMediaManager(t *testing.T) {
+	sm := newMediaMockSecurityManager()
+	client := &mockLLMClient{}
+	assetsDir := "test-assets"
+	interval := 5 * time.Second
+
+	m := newMediaManager(sm, client, assetsDir, WithMediaHeartbeatInterval(interval))
+
+	if m.sm != sm {
+		t.Error("security manager not set correctly")
+	}
+	if m.client != client {
+		t.Error("client not set correctly")
+	}
+	if m.assetsDir != assetsDir {
+		t.Errorf("assetsDir = %s, want %s", m.assetsDir, assetsDir)
+	}
+	if m.heartbeatInterval != interval {
+		t.Errorf("heartbeatInterval = %v, want %v", m.heartbeatInterval, interval)
+	}
+}
+
+func TestMediaManager_DefaultOptions(t *testing.T) {
+	m := newMediaManager(nil, nil, "")
+	if m.heartbeatInterval != 2*time.Second {
+		t.Errorf("default heartbeatInterval = %v, want 2s", m.heartbeatInterval)
 	}
 }

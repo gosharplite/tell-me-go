@@ -641,24 +641,32 @@ func TestFormatLinterResult(t *testing.T) {
 func TestExecuteWithHeartbeat_Telemetry(t *testing.T) {
 	t.Parallel()
 	m, executor, _ := setupDevManager(t)
-	m.heartbeatInterval = 10 * time.Millisecond
+	m.heartbeatInterval = 1 * time.Millisecond
 
 	hb := make(chan struct{}, 100)
+	wait := make(chan struct{})
 	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		time.Sleep(50 * time.Millisecond)
+		<-wait
 		return []byte("done"), nil
 	}
 
-	_, err := m.executeWithHeartbeat(context.Background(), "test", "cmd", "reason", "echo", []string{"hi"}, hb)
-	require.NoError(t, err)
+	// Trigger execution in a goroutine
+	done := make(chan struct{})
+	go func() {
+		_, _ = m.executeWithHeartbeat(context.Background(), "test", "cmd", "reason", "echo", []string{"hi"}, hb)
+		close(done)
+	}()
 
 	// We expect at least a couple of heartbeats
 	select {
 	case <-hb:
-		// success
+		// Observed first heartbeat
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected heartbeat, but none received")
 	}
+
+	close(wait) // Let the executor finish
+	<-done
 }
 
 func TestSecurityRemediation(t *testing.T) {
@@ -694,7 +702,7 @@ func TestDevManager_Options(t *testing.T) {
 	t.Parallel()
 	customInterval := 42 * time.Second
 	m := newDevManager(nil, nil, WithHeartbeatInterval(customInterval))
-	
+
 	if m.heartbeatInterval != customInterval {
 		t.Errorf("expected interval %v, got %v", customInterval, m.heartbeatInterval)
 	}

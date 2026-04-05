@@ -15,7 +15,7 @@ func TestStartHeartbeat(t *testing.T) {
 	t.Run("normal stop", func(t *testing.T) {
 		hb := make(chan struct{}, 10)
 		stop := StartHeartbeat(context.Background(), 10*time.Millisecond, hb)
-		
+
 		<-hb // wait for at least one tick
 		stop()
 		stop() // verify idempotency
@@ -24,8 +24,9 @@ func TestStartHeartbeat(t *testing.T) {
 	t.Run("context cancellation", func(t *testing.T) {
 		hb := make(chan struct{}, 10)
 		ctx, cancel := context.WithCancel(context.Background())
-		
-		_ = StartHeartbeat(ctx, 10*time.Millisecond, hb)
+
+		stop := StartHeartbeat(ctx, 10*time.Millisecond, hb)
+		defer stop()
 		<-hb
 		cancel() // context cancellation should clean up the goroutine
 	})
@@ -34,5 +35,10 @@ func TestStartHeartbeat(t *testing.T) {
 		hb := make(chan struct{}, 10)
 		stop := StartHeartbeat(context.Background(), 0, hb)
 		stop() // Should not panic, should return immediately
+	})
+
+	t.Run("nil channel prevents panic", func(t *testing.T) {
+		stop := StartHeartbeat(context.Background(), 10*time.Millisecond, nil)
+		stop() // Should not panic
 	})
 }

@@ -17,6 +17,27 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
 )
 
+type MediaOption func(*mediaManager)
+
+func WithMediaHeartbeatInterval(d time.Duration) MediaOption {
+	return func(m *mediaManager) {
+		m.heartbeatInterval = d
+	}
+}
+
+func newMediaManager(sm security.PathValidator, client llm.LLMClient, assetsDir string, opts ...MediaOption) *mediaManager {
+	m := &mediaManager{
+		sm:                sm,
+		client:            client,
+		assetsDir:         assetsDir,
+		heartbeatInterval: 2 * time.Second, // Default
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
 type mediaManager struct {
 	sm                security.PathValidator
 	client            llm.LLMClient
@@ -45,11 +66,7 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 		prompt = fmt.Sprintf("%s (aspect ratio %s)", prompt, req.AspectRatio)
 	}
 
-	interval := m.heartbeatInterval
-	if interval == 0 {
-		interval = 2 * time.Second
-	}
-	stop := telemetry.StartHeartbeat(ctx, interval, hb)
+	stop := telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)
 	defer stop()
 
 	images, err := m.client.GenerateImages(ctx, req.Model, prompt, "image/png")
