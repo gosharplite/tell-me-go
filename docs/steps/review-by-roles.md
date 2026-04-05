@@ -4,7 +4,7 @@ This checklist guides the quality-gate process for merging any source branch int
 
 ## Configuration Files
 
-Role-specific configuration files must be specified via the `CONFIG_DIR` environment variable. There is no default location; you must set `CONFIG_DIR` explicitly.
+Role-specific configuration files must be specified via the `CONFIG_DIR` environment variable. By default, the tool looks for role-specific configuration files in the `configs/` directory (relative to the project root). To use a different location, set the `CONFIG_DIR` environment variable to point to your custom directory.
 
 - **Architect**: `${CONFIG_DIR}/architect.yaml`
 - **Tester**: `${CONFIG_DIR}/tester.yaml`
@@ -13,6 +13,8 @@ Role-specific configuration files must be specified via the `CONFIG_DIR` environ
 - **Assistant**: `${CONFIG_DIR}/assistant.yaml`
 
 **Example**: `export CONFIG_DIR=/path/to/your/configs`
+
+**Note**: If you don't set `CONFIG_DIR`, the tool will look for configuration files in the `configs/` directory relative to the project root by default. In that case, replace `${CONFIG_DIR}/` with `configs/` in the commands below.
 
 ## Role Responsibilities and Workflow
 
@@ -28,7 +30,7 @@ Role-specific configuration files must be specified via the `CONFIG_DIR` environ
 
 Before requesting reviews, ensure:
 - You are in the project root directory (where `.git/` is located).
-- CONFIG_DIR environment variable is set and points to the directory containing role configuration files.
+- If using the CONFIG_DIR environment variable, ensure it points to the directory containing role configuration files. The default location is the `configs/` directory relative to the project root.
 - The source branch is fully rebased onto the latest target branch.
 - All automated checks pass:
   ```bash
