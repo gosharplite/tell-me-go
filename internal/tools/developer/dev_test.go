@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -40,6 +41,18 @@ func (m *mockDevExecutor) LookPath(file string) (string, error) {
 		return m.lookPathFunc(file)
 	}
 	return "/usr/bin/" + file, nil
+}
+
+type mockValidator struct {
+	domain_security.CommandValidator
+	isSafeFunc func(command string) (bool, string)
+}
+
+func (mv *mockValidator) IsSafe(command string) (bool, string) {
+	if mv.isSafeFunc != nil {
+		return mv.isSafeFunc(command)
+	}
+	return mv.CommandValidator.IsSafe(command)
 }
 
 func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
@@ -254,6 +267,7 @@ func TestRunLinter(t *testing.T) {
 		executeErr error
 		wantSubstr string
 		wantErr    bool
+		decline    bool
 	}{
 		{
 			name:       "golangci-lint success",
@@ -279,12 +293,33 @@ func TestRunLinter(t *testing.T) {
 			wantErr:    true,
 			wantSubstr: "no supported linter found",
 		},
+		{
+			name:       "user declined",
+			lookPath:   "golangci-lint",
+			decline:    true,
+			wantSubstr: "Action denied by user.",
+			wantErr:    true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, executor, _ := setupDevManager(t)
+			m, executor, sm := setupDevManager(t)
+			if tt.decline {
+				sm.SetBypassActive(false)
+				sm.GetInteractor().(*security.MockInteractor).Answer = "n"
+
+				m.validator = &mockValidator{
+					CommandValidator: m.validator,
+					isSafeFunc: func(command string) (bool, string) {
+						if strings.Contains(command, "golangci-lint") || strings.Contains(command, "staticcheck") {
+							return false, "forced prompt for test"
+						}
+						return true, ""
+					},
+				}
+			}
 			executor.lookPathFunc = func(file string) (string, error) {
 				if file == tt.lookPath {
 					return "/usr/bin/" + file, nil
@@ -385,7 +420,7 @@ func TestRunTests(t *testing.T) {
 	interactor := sm.GetInteractor().(*security.MockInteractor)
 	found := false
 	for _, w := range interactor.Warns {
-		if strings.Contains(w, "[Tool Action] Running Tests") {
+		if strings.Contains(w, "[Tool Action] Running test execution") {
 			found = true
 			break
 		}
@@ -481,4 +516,176 @@ func TestAuthorizeAction_Denied(t *testing.T) {
 	approved, err := m.authorizeAction(context.Background(), "test", "unauthorized_tool", "detail")
 	assert.NoError(t, err)
 	assert.False(t, approved)
+}
+
+func TestResolveLinter(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		lookPathMap map[string]error
+		wantCmd     string
+		wantArgs    []string
+		wantErr     bool
+	}{
+		{
+			name: "golangci-lint available",
+			lookPathMap: map[string]error{
+				"golangci-lint": nil,
+			},
+			wantCmd:  "golangci-lint",
+			wantArgs: []string{"run"},
+		},
+		{
+			name: "staticcheck available (golangci-lint not)",
+			lookPathMap: map[string]error{
+				"golangci-lint": errors.New("not found"),
+				"staticcheck":   nil,
+			},
+			wantCmd:  "staticcheck",
+			wantArgs: []string{"./..."},
+		},
+		{
+			name: "no linter available",
+			lookPathMap: map[string]error{
+				"golangci-lint": errors.New("not found"),
+				"staticcheck":   errors.New("not found"),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, executor, _ := setupDevManager(t)
+			executor.lookPathFunc = func(file string) (string, error) {
+				if err, ok := tt.lookPathMap[file]; ok {
+					if err == nil {
+						return "/usr/bin/" + file, nil
+					}
+					return "", err
+				}
+				return "", errors.New("not found")
+			}
+
+			cmd, args, err := m.resolveLinter()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("resolveLinter() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				assert.Equal(t, tt.wantCmd, cmd)
+				assert.Equal(t, tt.wantArgs, args)
+			}
+		})
+	}
+}
+
+func TestFormatLinterResult(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		out        []byte
+		execErr    error
+		wantSubstr string
+		wantErrObj bool
+	}{
+		{
+			name:       "Execution failure no output",
+			out:        []byte(""),
+			execErr:    errors.New("crash"),
+			wantErrObj: true,
+			wantSubstr: "linter execution failed",
+		},
+		{
+			name:       "Execution failure with output",
+			out:        []byte("problem found"),
+			execErr:    errors.New("exit status 1"),
+			wantSubstr: "Linter failed or found issues",
+		},
+		{
+			name:       "Success with no output",
+			out:        []byte(""),
+			execErr:    nil,
+			wantSubstr: "Linter passed successfully",
+		},
+		{
+			name:       "Success with output",
+			out:        []byte("some warnings"),
+			execErr:    nil,
+			wantSubstr: "some warnings",
+		},
+		{
+			name:       "Output truncation",
+			out:        []byte(strings.Repeat("a", 200)),
+			execErr:    nil,
+			wantSubstr: strings.Repeat("a", 100),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := formatLinterResult(tt.out, tt.execErr)
+			if tt.wantErrObj {
+				assert.Error(t, res.Error)
+				assert.Contains(t, res.Error.Error(), tt.wantSubstr)
+			} else {
+				assert.NoError(t, res.Error)
+				assert.Contains(t, res.Text, tt.wantSubstr)
+			}
+		})
+	}
+}
+
+func TestExecuteWithHeartbeat_Telemetry(t *testing.T) {
+	t.Parallel()
+	m, executor, _ := setupDevManager(t)
+	m.heartbeatInterval = 10 * time.Millisecond
+
+	hb := make(chan struct{}, 100)
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		time.Sleep(50 * time.Millisecond)
+		return []byte("done"), nil
+	}
+
+	_, err := m.executeWithHeartbeat(context.Background(), "test", "cmd", "reason", "echo", []string{"hi"}, hb)
+	require.NoError(t, err)
+
+	// We expect at least a couple of heartbeats
+	select {
+	case <-hb:
+		// success
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected heartbeat, but none received")
+	}
+}
+
+func TestSecurityRemediation(t *testing.T) {
+	t.Parallel()
+	m, _, _ := setupDevManager(t)
+
+	t.Run("getCoverage flag injection", func(t *testing.T) {
+		_, err := m.getCoverage(context.Background(), map[string]interface{}{"path": "-config=evil.yml"}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot start with a hyphen")
+	})
+
+	t.Run("runBenchmark flag injection", func(t *testing.T) {
+		_, err := m.runBenchmark(context.Background(), map[string]interface{}{"bench": "-evil"}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot start with a hyphen")
+	})
+
+	t.Run("getCoverage sandbox evasion", func(t *testing.T) {
+		_, err := m.getCoverage(context.Background(), map[string]interface{}{"path": "../../etc/passwd"}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "security violation")
+	})
+
+	t.Run("runBenchmark sandbox evasion", func(t *testing.T) {
+		_, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "../../etc/passwd"}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "security violation")
+	})
 }

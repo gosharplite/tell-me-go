@@ -5,6 +5,7 @@ package developer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,10 +18,11 @@ import (
 )
 
 type devManager struct {
-	sm             devSecurity
-	validator      domain_security.CommandValidator
-	executor       executor
-	createTempFile func(dir, pattern string) (*os.File, error)
+	sm                devSecurity
+	validator         domain_security.CommandValidator
+	executor          executor
+	createTempFile    func(dir, pattern string) (*os.File, error)
+	heartbeatInterval time.Duration
 }
 
 // Executor defines the interface for command execution to allow mocking in tests.
@@ -52,40 +54,19 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, 
 		return tools.ToolResult{}, err
 	}
 
-	// 3. User Authorization
-	approved, err := m.authorizeAction(ctx, "Test Execution", params.Command, "Executing project tests")
-	if err != nil {
-		return tools.ToolResult{}, err
+	output, err := m.executeWithHeartbeat(
+		ctx,
+		"Test Execution",
+		params.Command,
+		"Executing project tests",
+		parts[0],
+		parts[1:],
+		hb,
+	)
+
+	if errors.Is(err, tools.ErrUserDeclined) {
+		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
-
-	m.logToolAction("Running Tests: %s", params.Command)
-
-	// Heartbeat while waiting for tests to run
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-
-	// Execute the command directly without shell wrapper
-	output, err := m.executor.Execute(ctx, parts[0], parts[1:]...)
 
 	outStr := string(output)
 	if err != nil {
@@ -166,26 +147,7 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}, hb
 
 	m.logToolAction("Running go mod tidy and go fmt")
 
-	// Heartbeat while tidy and fmt are running
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-	defer close(done)
+	defer m.startHeartbeat(hb)()
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("go mod tidy failed:\n%s\nError: %v", stringsutil.TruncateOutput(string(out), 50), err)}, nil
@@ -211,7 +173,17 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		path = "./..."
 	}
 
-	command := fmt.Sprintf("go test -coverprofile=coverage.out %s", path)
+	// 1. Prevent Flag Injection
+	if strings.HasPrefix(strings.TrimSpace(path), "-") {
+		return tools.ToolResult{}, fmt.Errorf("%w: path argument cannot start with a hyphen", domain_security.ErrSandboxViolation)
+	}
+
+	// 2. Enforce Sandbox
+	if safe, reason := m.validator.CheckPathSafety([]string{"go", path}); !safe {
+		return tools.ToolResult{}, fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
+	}
+
+	command := fmt.Sprintf("go test -coverprofile=coverage.out -- %s", path)
 	approved, err := m.authorizeAction(ctx, "Test Coverage", command, "Getting test coverage summary")
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -231,28 +203,9 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	_ = f.Close()
 	defer func() { _ = os.Remove(tempName) }()
 
-	// Heartbeat while tests and tool cover are running
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-	defer close(done)
+	defer m.startHeartbeat(hb)()
 
-	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, path)
+	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, "--", path)
 
 	if err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Tests failed or coverage error:\n%s\nError: %v", stringsutil.TruncateOutput(string(out), 50), err)}, nil
@@ -268,66 +221,31 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	// Try golangci-lint first, fallback to staticcheck
-	var command string
-	var argsList []string
-	if _, lookErr := m.executor.LookPath("golangci-lint"); lookErr == nil {
-		command = "golangci-lint"
-		argsList = []string{"run"}
-	} else if _, lookErr := m.executor.LookPath("staticcheck"); lookErr == nil {
-		command = "staticcheck"
-		argsList = []string{"./..."}
-	} else {
-		return tools.ToolResult{}, fmt.Errorf("no supported linter found (golangci-lint or staticcheck)")
-	}
-
-	fullCmd := command + " " + strings.Join(argsList, " ")
-	approved, err := m.authorizeAction(ctx, "Linter Execution", fullCmd, "Running code analysis")
+	// 1. Resolve strategy
+	command, argsList, err := m.resolveLinter()
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
+
+	// 2. Execute via standard pipeline
+	fullCmd := command + " " + strings.Join(argsList, " ")
+	out, err := m.executeWithHeartbeat(
+		ctx,
+		"Linter Execution",
+		fullCmd,
+		"Running code analysis",
+		command,
+		argsList,
+		hb,
+	)
+
+	// 3. Handle graceful user decline
+	if errors.Is(err, tools.ErrUserDeclined) {
+		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
 
-	m.logToolAction("Running linter: %s", fullCmd)
-
-	// Heartbeat while linter is running
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-	defer close(done)
-
-	out, err := m.executor.Execute(ctx, command, argsList...)
-	if err != nil && len(out) == 0 {
-		return tools.ToolResult{}, fmt.Errorf("linter execution failed: %w", err)
-	}
-
-	outStr := stringsutil.TruncateOutput(string(out), 100)
-	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Linter failed or found issues:\n%s\nError: %v", outStr, err)}, nil
-	}
-
-	if len(out) == 0 {
-		return tools.ToolResult{Text: "Linter passed successfully."}, nil
-	}
-
-	return tools.ToolResult{Text: outStr}, nil
+	// 4. Format and return
+	return formatLinterResult(out, err), nil
 }
 
 func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -348,39 +266,33 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		bench = "."
 	}
 
-	command := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ %s", bench, path)
-	approved, err := m.authorizeAction(ctx, "run_benchmark", command, "Running project benchmarks")
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
+	// 1. Prevent Flag Injection
+	if strings.HasPrefix(strings.TrimSpace(path), "-") || strings.HasPrefix(strings.TrimSpace(bench), "-") {
+		return tools.ToolResult{}, fmt.Errorf("%w: arguments cannot start with a hyphen", domain_security.ErrSandboxViolation)
 	}
 
-	m.logToolAction("Running benchmarks (%s) in %s", bench, path)
+	// 2. Enforce Sandbox
+	if safe, reason := m.validator.CheckPathSafety([]string{"go", path}); !safe {
+		return tools.ToolResult{}, fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
+	}
 
-	// Heartbeat while benchmarks are running
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-	defer close(done)
+	fullCmd := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ -- %s", bench, path)
+	argsList := []string{"test", "-bench=" + bench, "-benchmem", "-run=^$", "--", path}
 
-	out, err := m.executor.Execute(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
+	out, err := m.executeWithHeartbeat(
+		ctx,
+		"run_benchmark",
+		fullCmd,
+		"Running project benchmarks",
+		"go",
+		argsList,
+		hb,
+	)
+
+	if errors.Is(err, tools.ErrUserDeclined) {
+		return tools.ToolResult{Text: "Action denied by user."}, err
+	}
+
 	if err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Benchmark failed:\n%s\nError: %v", stringsutil.TruncateOutput(string(out), 100), err)}, nil
 	}
@@ -393,39 +305,23 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, fmt.Errorf("'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest")
 	}
 
-	command := "govulncheck ./..."
-	approved, err := m.authorizeAction(ctx, "Vulnerability Check", command, "Checking for known vulnerabilities")
-	if err != nil {
-		return tools.ToolResult{}, err
+	command := "govulncheck"
+	argsList := []string{"./..."}
+	fullCmd := command + " " + strings.Join(argsList, " ")
+
+	out, err := m.executeWithHeartbeat(
+		ctx,
+		"Vulnerability Check",
+		fullCmd,
+		"Checking for known vulnerabilities",
+		command,
+		argsList,
+		hb,
+	)
+
+	if errors.Is(err, tools.ErrUserDeclined) {
+		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
-
-	m.logToolAction("Checking for vulnerabilities: %s", command)
-
-	// Heartbeat while govulncheck is running
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
-	defer close(done)
-
-	out, err := m.executor.Execute(ctx, "govulncheck", "./...")
 
 	if err != nil && len(out) == 0 {
 		return tools.ToolResult{}, fmt.Errorf("govulncheck execution failed: %w", err)
@@ -449,12 +345,92 @@ func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
 }
 
+// startHeartbeat manages background telemetry and returns a cleanup closure.
+func (m *devManager) startHeartbeat(hb chan<- struct{}) func() {
+	if hb == nil {
+		return func() {} // No-op for nil channels
+	}
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(m.heartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				select {
+				case hb <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
+// resolveLinter determines the best available linter and its default arguments.
+func (m *devManager) resolveLinter() (command string, args []string, err error) {
+	if _, lookErr := m.executor.LookPath("golangci-lint"); lookErr == nil {
+		return "golangci-lint", []string{"run"}, nil
+	}
+	if _, lookErr := m.executor.LookPath("staticcheck"); lookErr == nil {
+		return "staticcheck", []string{"./..."}, nil
+	}
+	return "", nil, errors.New("no supported linter found (golangci-lint or staticcheck)")
+}
+
+func formatLinterResult(out []byte, execErr error) tools.ToolResult {
+	if execErr != nil && len(out) == 0 {
+		return tools.ToolResult{Error: fmt.Errorf("linter execution failed: %w", execErr)}
+	}
+
+	outStr := stringsutil.TruncateOutput(string(out), 100)
+	if execErr != nil {
+		return tools.ToolResult{
+			Text: fmt.Sprintf("Linter failed or found issues:\n%s\nError: %v", outStr, execErr),
+		}
+	}
+
+	if len(out) == 0 {
+		return tools.ToolResult{Text: "Linter passed successfully."}
+	}
+
+	return tools.ToolResult{Text: outStr}
+}
+
+func (m *devManager) executeWithHeartbeat(
+	ctx context.Context,
+	actionName, fullCmd, reason string,
+	command string, args []string,
+	hb chan<- struct{},
+) ([]byte, error) {
+	// 1. Authorization
+	approved, err := m.authorizeAction(ctx, actionName, fullCmd, reason)
+	if err != nil {
+		return nil, err
+	}
+	if !approved {
+		return nil, tools.ErrUserDeclined
+	}
+
+	// 2. Logging
+	m.logToolAction("Running %s: %s", strings.ToLower(actionName), fullCmd)
+
+	// 3. Telemetry/Heartbeat (Safe concurrency)
+	defer m.startHeartbeat(hb)()
+
+	// 4. Execution
+	return m.executor.Execute(ctx, command, args...)
+}
+
 func newDevManager(sm devSecurity, validator domain_security.CommandValidator) *devManager {
 	return &devManager{
-		sm:             sm,
-		validator:      validator,
-		executor:       &realExecutor{},
-		createTempFile: os.CreateTemp,
+		sm:                sm,
+		validator:         validator,
+		executor:          &realExecutor{},
+		createTempFile:    os.CreateTemp,
+		heartbeatInterval: 2 * time.Second,
 	}
 }
 

@@ -13,6 +13,22 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
+var resolvedTempDir string
+
+func init() {
+	// Resolve the true physical path of the OS temp directory once at startup
+	// This handles macOS symlinks like /var/folders -> /private/var/folders
+	if temp := os.TempDir(); temp != "" {
+		resolved, err := filepath.EvalSymlinks(temp)
+		if err == nil {
+			// Ensure trailing slash for safe prefix matching
+			resolvedTempDir = filepath.Clean(resolved) + string(filepath.Separator)
+		} else {
+			resolvedTempDir = filepath.Clean(temp) + string(filepath.Separator)
+		}
+	}
+}
+
 // pathPolicy manages allowed boundaries and validates paths.
 type pathPolicy struct {
 	safePaths       []string
@@ -128,14 +144,16 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 }
 
 func (p *pathPolicy) isSystemDirectory(absPath string) error {
-	// Simple check for sensitive system directories on Unix
-	sensitive := []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys"}
+	// 1. Explicitly exempt the evaluated OS temporary directory
+	if resolvedTempDir != "" && strings.HasPrefix(absPath, resolvedTempDir) {
+		return nil
+	}
+
+	// 2. Standard Deny-List
+	sensitive := []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys", "/private/etc", "/private/var"}
 	for _, s := range sensitive {
 		if absPath == s || strings.HasPrefix(absPath, s+"/") {
-			// Special exception for /tmp handled by checkDefaultBoundaries
-			if !strings.HasPrefix(absPath, "/tmp") {
-				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
-			}
+			return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
 		}
 	}
 	return nil
