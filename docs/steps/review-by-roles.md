@@ -77,15 +77,3 @@ Replace `<target-branch>` and `<source-branch>` with the actual branch names (e.
 
 - **Git Workflow SOP**: `docs/sop/standards/git_workflow.md`
 - **Piped Multi‑Agent Workflow**: `docs/user/piped-multi-agent-workflow.md`
-- **Original Quality‑Gate SOP (archived)**: `docs/sop/standards/branch_merge_quality_gate.md` (deleted; refer to the above documents for the current process.)
-
-## Changelog
-
-- **2025‑01‑15**: Simplified the original 209‑line SOP into this checklist while preserving essential steps and referencing existing documentation. Fixed hard‑coded paths and grammatical errors.
-- **2025‑01‑15**: Added clarifying comments about `-l 3` flag and output redirection.
-- **2025‑01‑15**: Renamed from `dev-to-main.md` to `review-by-roles.md` and generalized content to use source/target branch terminology.
-- **2025‑01‑15**: Updated Configuration Files section to require explicit `CONFIG_DIR` setting (no default location).
-
----
-
-*This document is intended as a quick reference. For detailed procedures, consult the linked SOPs.*
