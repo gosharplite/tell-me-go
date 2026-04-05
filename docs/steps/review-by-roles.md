@@ -1,6 +1,6 @@
 # Review by Roles
 
-This page check if source branch is good enough to be merged into target branch using specialized roles.
+This page check if new source branch is good enough to be merged into new target branch using specialized roles.
 
 - **Architect** – Reviews and approves all changes before implementation.
 - **Coder** – Executes code and file changes (the only role that writes code).
