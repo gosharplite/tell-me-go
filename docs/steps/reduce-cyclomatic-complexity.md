@@ -33,7 +33,7 @@ REVIEWER_CONFIG: /path/to/your/reviewer.yaml
 CODER_CONFIG: /path/to/your/coder.yaml
 ASSISTANT_CONFIG: /path/to/your/assistant.yaml
 
-You are Assistant, do not take over jobs of other roles. Do not trying to reduce complexity by yourself.
+You are Assistant, do not take over jobs of other roles. Do not try to reduce complexity by yourself.
 ```
 
 The Assistant will set the corresponding environment variables (`ARCHITECT_CONFIG`, `TESTER_CONFIG`, etc.) based on the values you provide.
@@ -95,7 +95,7 @@ tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 
 Adjust the number `-l 3` as needed.
 
-**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it.
+**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. For large or complex prompts, it is better to use `cat` than `echo` to pipe the prompt to tell-me-go.
 
 ## Process (Step‑by‑Step)
 

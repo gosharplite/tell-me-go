@@ -35,7 +35,7 @@ REVIEWER_CONFIG: /path/to/your/reviewer.yaml
 CODER_CONFIG: /path/to/your/coder.yaml
 ASSISTANT_CONFIG: /path/to/your/assistant.yaml
 
-You are Assistant, do not take over jobs of other roles. Do not trying to do technical work by yourself.
+You are Assistant, do not take over jobs of other roles. Do not try to do technical work by yourself.
 ```
 
 The Assistant will set the corresponding environment variables (`ARCHITECT_CONFIG`, `TESTER_CONFIG`, etc.) based on the values you provide.
@@ -97,12 +97,12 @@ tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 
 Adjust the number `-l 3` as needed.
 
-**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. For large or complex prompt, it is better to use `cat` than `echo` to pipe prompt to tell-me-go.
+**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. For large or complex prompts, it is better to use `cat` than `echo` to pipe the prompt to tell-me-go.
 
 ## Process (Step‑by‑Step)
 
-1. **Ask Architect** how to achive the task goal.
-2. **Ask Architect** for detailed instructions on the plan to achive the task goal.
+1. **Ask Architect** how to achieve the task goal.
+2. **Ask Architect** for detailed instructions on the plan to achieve the task goal.
 3. **Give those detailed instructions** to the Coder.
 4. **Review the changes**:
    - Architect must review the implementation.
@@ -110,9 +110,10 @@ Adjust the number `-l 3` as needed.
    - Reviewer must perform security, idiomatic‑Go, and correctness review.
 5. **Reviews by Tester and Reviewer must be agreed by Architect** before proceeding.
 6. **Coder must address** all feedback from Architect, Tester, and Reviewer.
-7. **Assistant outputs a summary** for each iteration, commits the changes to the new branch, and after all isuues are addressed, outputs a final summary and exits the agent loop.
+7. **Architect must sign off** on the final revisions.
+8. **Assistant outputs a summary** for each iteration, commits the changes to the new branch, and after all issues are addressed and signed off, outputs a final summary and exits the agent loop.
 
-Repeat steps 1‑6 for each iteration until the overall task goal meets the project’s standards.
+Repeat steps 1-8 for each iteration until the overall task goal meets the project’s standards.
 
 ## Example Workflow Snippet
 
