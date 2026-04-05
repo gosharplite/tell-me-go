@@ -89,7 +89,7 @@ tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 
 Adjust the number `-l 3` as needed.
 
-**Important:** Assistant must make sure prompt exists before passing to roles.
+**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it.
 
 ## Process (Step‑by‑Step)
 
@@ -102,10 +102,9 @@ Adjust the number `-l 3` as needed.
    - Reviewer must perform security, idiomatic‑Go, and correctness review.
 5. **Reviews by Tester and Reviewer must be agreed by Architect** before proceeding.
 6. **Coder must address** all feedback from Architect, Tester, and Reviewer.
-7. **Assistant will output a summary** for each task and commit to the new branch.
-8. **Assistant will output a summary** and exit the agent loop at the end.
+7. **Assistant outputs a summary** for each task, commits the changes to the new branch, and after all opportunities are addressed, outputs a final summary and exits the agent loop.
 
-Repeat steps 1‑7 for each high‑complexity opportunity until the overall complexity meets the project’s standards.
+Repeat steps 1‑6 for each high‑complexity opportunity until the overall complexity meets the project’s standards.
 
 ## Example Workflow Snippet
 
