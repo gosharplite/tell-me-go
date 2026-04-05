@@ -14,6 +14,16 @@ Role-specific configuration files must be specified via the `CONFIG_DIR` environ
 
 **Example**: `export CONFIG_DIR=/path/to/your/configs`
 
+## Role Responsibilities and Workflow
+
+- **Coder**: The only role that executes code and file changes. Detailed instructions are given to Coder via `tell-me-go`.
+- **Architect**: Must review and agree on all instructions before they are given to Coder. The Architect ensures architectural integrity before any implementation begins.
+- **Tester**: Evaluates test coverage and testing strategy after changes are implemented.
+- **Reviewer**: Performs code review for security, idiomatic Go, and correctness.
+- **Assistant**: Coordinates the workflow between roles (when used).
+
+**Key Principle**: All instructions given to Coder must be approved by Architect. This ensures architectural decisions are validated before implementation.
+
 ## Prerequisites
 
 Before requesting reviews, ensure:
@@ -59,7 +69,9 @@ Review the outputs from each role:
 - **Tester**: Evaluates test coverage, edge‑case handling, flaky‑test risks, and testing strategy.
 - **Reviewer**: Reviews code for idiomatic Go, security vulnerabilities, concurrency issues, and error‑handling correctness.
 
-If any role identifies blocking issues (marked as **[HIGH]** or **[ARCHITECTURAL BLOCKER]**), address them before proceeding. Non‑blocking findings (e.g., documentation improvements) should be addressed either before merging or scheduled as follow‑up tasks.
+If any role identifies blocking issues (marked as **[HIGH]** or **[ARCHITECTURAL BLOCKER]**), address them before proceeding. **Important**: Any required code changes must be implemented by the **Coder** role using instructions approved by the **Architect**.
+
+Non‑blocking findings (e.g., documentation improvements) should be addressed either before merging or scheduled as follow‑up tasks.
 
 ## Step 4 – Merge Approval
 
