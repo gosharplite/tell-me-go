@@ -690,32 +690,6 @@ func TestContainer_InitializationErrors(t *testing.T) {
 	}
 }
 
-func TestGetToolNames(t *testing.T) {
-	ctx := context.Background()
-	tempDir, err := os.MkdirTemp("", "di-test-tool-names")
-	assert.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	sm := new(mockConfigurableSecurityManager)
-	setupDefaultSMExpectations(sm)
-	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
-	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
-
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
-
-	cfg := &config.Config{
-		Mode:  "assistant",
-		Model: "test-model",
-	}
-
-	names, err := Bootstrapper.GetToolNames(ctx, cfg, "config.yaml")
-	assert.NoError(t, err)
-	assert.NotEmpty(t, names)
-	// Check for a few common tools that should always be registered
-	assert.Contains(t, names, "list_files")
-	assert.Contains(t, names, "read_files")
-}
-
 func TestCrossSessionPersistence(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()

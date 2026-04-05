@@ -17,15 +17,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
 )
 
-type MediaOption func(*mediaManager)
+type mediaOption func(*mediaManager)
 
-func WithMediaHeartbeatInterval(d time.Duration) MediaOption {
+func withMediaHeartbeatInterval(d time.Duration) mediaOption {
 	return func(m *mediaManager) {
 		m.heartbeatInterval = d
 	}
 }
 
-func newMediaManager(sm security.PathValidator, client llm.LLMClient, assetsDir string, opts ...MediaOption) *mediaManager {
+func newMediaManager(sm security.PathValidator, client llm.LLMClient, assetsDir string, opts ...mediaOption) *mediaManager {
 	m := &mediaManager{
 		sm:                sm,
 		client:            client,

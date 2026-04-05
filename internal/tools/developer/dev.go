@@ -18,9 +18,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
 )
 
-type DevOption func(*devManager)
+type devOption func(*devManager)
 
-func WithHeartbeatInterval(d time.Duration) DevOption {
+func withHeartbeatInterval(d time.Duration) devOption {
 	return func(m *devManager) {
 		m.heartbeatInterval = d
 	}
@@ -416,7 +416,7 @@ func (m *devManager) executeWithHeartbeat(
 	return m.executor.Execute(ctx, command, args...)
 }
 
-func newDevManager(sm devSecurity, validator domain_security.CommandValidator, opts ...DevOption) *devManager {
+func newDevManager(sm devSecurity, validator domain_security.CommandValidator, opts ...devOption) *devManager {
 	m := &devManager{
 		sm:                sm,
 		validator:         validator,

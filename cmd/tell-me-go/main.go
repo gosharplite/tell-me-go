@@ -19,7 +19,14 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/gosharplite/tell-me-go/internal/cli"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/env"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
+
+// Compile-time assertion to ensure DI Bootstrapper implements the CLI requirement.
+var _ cli.Bootstrapper = (*di.Bootstrapper)(nil)
 
 // version is the application version, usually set at build time via
 // -ldflags="-X 'main.version=vX.Y.Z'".
@@ -91,9 +98,23 @@ func run() int {
 	}()
 
 	appVersion := getVersion()
-	app, logger := cli.New(appVersion, os.Stdin, os.Stdout, os.Stderr)
-	// Set the global logger only in the main entry point.
+
+	// 1. Resolve basic environment
+	homeDir := env.ResolveHomeDir(os.Getenv, os.UserHomeDir)
+
+	// 2. Initialize Core Infrastructure
+	sm := security.NewSecurityManager(nil)
+
+	// 3. Setup Logger
+	logger := logging.NewLogger(os.Stderr, os.Getenv("TELL_ME_DEBUG"))
 	slog.SetDefault(logger)
+
+	// 4. Build DI Container
+	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, os.Stdout, os.Stderr, logger, nil)
+
+	// 5. Initialize CLI with pre-wired dependencies
+	app := cli.New(appVersion, os.Stdin, os.Stdout, os.Stderr, bootstrapper, sm, homeDir, logger)
+
 	if err := app.Run(ctx, os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1

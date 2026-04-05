@@ -14,26 +14,26 @@ import (
 	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 // app represents the tell-me-go application.
 type app struct {
-	Version    string
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
-	homeDir    string
-	sm         *security.SecurityManager
-	logger     *slog.Logger
-	mockPrompt string
-	mockAnswer string
+	Version      string
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	homeDir      string
+	sm           domain_security.Manager
+	logger       *slog.Logger
+	bootstrapper Bootstrapper
+	mockPrompt   string
+	mockAnswer   string
 }
 
-// New creates a new App instance with default IO and factories.
-func New(version string, stdin io.Reader, stdout, stderr io.Writer) (*app, *slog.Logger) {
+// New creates a new App instance with explicit dependency injection.
+func New(version string, stdin io.Reader, stdout, stderr io.Writer, b Bootstrapper, sm domain_security.Manager, homeDir string, logger *slog.Logger) *app {
 	if stdin == nil {
 		stdin = os.Stdin
 	}
@@ -43,36 +43,19 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer) (*app, *slog
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	homeDir := os.Getenv("TELL_ME_HOME")
-	if homeDir == "" {
-		homeDir = os.Getenv("AIT_HOME")
-	}
-	if homeDir == "" {
-		homeDir = "."
-	}
-
-	sm := security.NewSecurityManager(nil)
-
-	logLevel := slog.LevelWarn
-	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		logLevel = slog.LevelDebug
-	}
-	logHandler := slog.NewTextHandler(stderr, &slog.HandlerOptions{
-		Level: logLevel,
-	})
-	logger := slog.New(logHandler)
 
 	return &app{
-		Version:    version,
-		Stdin:      stdin,
-		Stdout:     stdout,
-		Stderr:     stderr,
-		homeDir:    homeDir,
-		sm:         sm,
-		logger:     logger,
-		mockPrompt: os.Getenv("TELL_ME_MOCK_PROMPT"),
-		mockAnswer: os.Getenv("TELL_ME_MOCK_ANSWER"),
-	}, logger
+		Version:      version,
+		Stdin:        stdin,
+		Stdout:       stdout,
+		Stderr:       stderr,
+		homeDir:      homeDir,
+		sm:           sm,
+		logger:       logger,
+		bootstrapper: b,
+		mockPrompt:   os.Getenv("TELL_ME_MOCK_PROMPT"),
+		mockAnswer:   os.Getenv("TELL_ME_MOCK_ANSWER"),
+	}
 }
 
 // Run executes the application logic.
@@ -105,16 +88,18 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 		return err
 	}
 
-	// Assembly root: wire dependencies for orchestration
-	bootstrapper := di.NewBootstrapper(a.homeDir, a.sm, a.Version, a.Stdout, a.Stderr, a.logger, nil)
 	loader := &config.YAMLConfigLoader{}
+	if a.bootstrapper == nil {
+		return errors.New("application bootstrapper is not initialized")
+	}
+
 	chatService := agent.NewChatService(
 		a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm,
-		bootstrapper,
-		bootstrapper.GetAgentFactory(),
-		bootstrapper.GetUIRenderer(),
-		bootstrapper.GetHistoryRenderer(),
-		bootstrapper.GetHistoryBrowser(),
+		a.bootstrapper,
+		a.bootstrapper.GetAgentFactory(),
+		a.bootstrapper.GetUIRenderer(),
+		a.bootstrapper.GetHistoryRenderer(),
+		a.bootstrapper.GetHistoryBrowser(),
 	)
 
 	cmdCtx := &context{
@@ -125,7 +110,7 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 		HomeDir:      a.homeDir,
 		SM:           a.sm,
 		ChatService:  chatService,
-		Bootstrapper: bootstrapper,
+		Bootstrapper: a.bootstrapper,
 		Loader:       loader,
 		MockPrompt:   a.mockPrompt,
 		MockAnswer:   a.mockAnswer,
