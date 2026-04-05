@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -17,9 +18,16 @@ import (
 )
 
 type mediaManager struct {
-	sm        security.PathValidator
-	client    llm.LLMClient
-	assetsDir string
+	sm                security.PathValidator
+	client            llm.LLMClient
+	assetsDir         string
+	heartbeatInterval time.Duration
+}
+
+type imageRequest struct {
+	Prompt      string
+	AspectRatio string
+	Model       string
 }
 
 func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -27,31 +35,62 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, tools.ErrNotImplemented
 	}
 
+	req, err := m.parseImageArgs(args)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("parse image args: %w", err)
+	}
+
+	prompt := req.Prompt
+	if req.AspectRatio != "" {
+		prompt = fmt.Sprintf("%s (aspect ratio %s)", prompt, req.AspectRatio)
+	}
+
+	stop := m.startHeartbeat(ctx, hb)
+	defer stop()
+
+	images, err := m.client.GenerateImages(ctx, req.Model, prompt, "image/png")
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("generate images: %w", err)
+	}
+
+	return m.saveImagesToDisk(images, req.Prompt)
+}
+
+func (m *mediaManager) parseImageArgs(args map[string]interface{}) (*imageRequest, error) {
 	var a struct {
 		Prompt      string `json:"prompt"`
 		AspectRatio string `json:"aspect_ratio"`
 		Model       string `json:"model"`
 	}
 	if err := tools.UnmarshalArgs(args, &a); err != nil {
-		return tools.ToolResult{}, err
+		return nil, fmt.Errorf("unmarshal args: %w", err)
 	}
 
 	if a.Model == "" {
 		a.Model = "imagen-3.0-generate-001"
 	}
 
-	prompt := a.Prompt
-	if a.AspectRatio != "" {
-		prompt = fmt.Sprintf("%s (aspect ratio %s)", prompt, a.AspectRatio)
+	return &imageRequest{
+		Prompt:      a.Prompt,
+		AspectRatio: a.AspectRatio,
+		Model:       a.Model,
+	}, nil
+}
+
+func (m *mediaManager) startHeartbeat(ctx context.Context, hb chan<- struct{}) (stop func()) {
+	interval := m.heartbeatInterval
+	if interval == 0 {
+		interval = 2 * time.Second
 	}
 
-	// Heartbeat while image is generating
 	done := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-done:
 				return
 			case <-ticker.C:
@@ -64,15 +103,18 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 			}
 		}
 	}()
-	defer close(done)
 
-	images, err := m.client.GenerateImages(ctx, a.Model, prompt, "image/png")
-	if err != nil {
-		return tools.ToolResult{}, err
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			close(done)
+		})
 	}
+}
 
+func (m *mediaManager) saveImagesToDisk(images [][]byte, prompt string) (tools.ToolResult, error) {
 	result := tools.ToolResult{
-		Text: fmt.Sprintf("Generated %d images for prompt: %s", len(images), a.Prompt),
+		Text: fmt.Sprintf("Generated %d images for prompt: %s", len(images), prompt),
 	}
 	for i, data := range images {
 		result.BinaryData = append(result.BinaryData, tools.BinaryData{
@@ -82,12 +124,15 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 		// Auto-save to assetsDir
 		if m.assetsDir != "" {
 			filename := filepath.Join(m.assetsDir, fmt.Sprintf("image_%d_%d.png", time.Now().Unix(), i))
-			_ = os.MkdirAll(m.assetsDir, 0755)
-			_ = os.WriteFile(filename, data, 0644)
+			if err := os.MkdirAll(m.assetsDir, 0755); err != nil {
+				return tools.ToolResult{}, fmt.Errorf("create assets directory: %w", err)
+			}
+			if err := os.WriteFile(filename, data, 0644); err != nil {
+				return tools.ToolResult{}, fmt.Errorf("write image file %s: %w", filename, err)
+			}
 			result.Text += fmt.Sprintf("\nSaved to %s", filename)
 		}
 	}
-
 	return result, nil
 }
 
@@ -96,16 +141,25 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 		Filepath string `json:"filepath"`
 	}
 	if err := tools.UnmarshalArgs(args, &a); err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("unmarshal args: %w", err)
 	}
 
-	data, err := os.ReadFile(a.Filepath)
+	if m.sm == nil {
+		return tools.ToolResult{}, fmt.Errorf("path validator is required")
+	}
+
+	safePath, err := m.sm.IsPathSafe(a.Filepath)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return tools.ToolResult{}, fmt.Errorf("security validation failed for path %s: %w", a.Filepath, err)
+	}
+
+	data, err := os.ReadFile(safePath)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("read file %s: %w", safePath, err)
 	}
 
 	mimeType := "image/png"
-	ext := strings.ToLower(filepath.Ext(a.Filepath))
+	ext := strings.ToLower(filepath.Ext(safePath))
 	switch ext {
 	case ".jpg", ".jpeg":
 		mimeType = "image/jpeg"
@@ -114,7 +168,7 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 	}
 
 	return tools.ToolResult{
-		Text: fmt.Sprintf("Successfully read image from %s", a.Filepath),
+		Text: fmt.Sprintf("Successfully read image from %s", safePath),
 		BinaryData: []tools.BinaryData{
 			{
 				MIMEType: mimeType,
