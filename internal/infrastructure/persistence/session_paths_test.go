@@ -17,9 +17,9 @@ func TestInitializePaths(t *testing.T) {
 	tmp := t.TempDir()
 	mode := "test-mode"
 
-	paths, err := InitializePaths(&OSFileSystem{}, tmp, mode)
+	paths, err := initializePaths(&OSFileSystem{}, tmp, mode)
 	if err != nil {
-		t.Fatalf("InitializePaths failed: %v", err)
+		t.Fatalf("initializePaths failed: %v", err)
 	}
 
 	expectedDir := filepath.Join(tmp, "output", mode)
@@ -38,7 +38,7 @@ func TestRotateSession(t *testing.T) {
 	homeDir := tmp
 	mode := "test-mode"
 
-	paths, err := InitializePaths(&OSFileSystem{}, homeDir, mode)
+	paths, err := initializePaths(&OSFileSystem{}, homeDir, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestCleanupOldBackups(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	mode := "test-mode"
-	paths, err := InitializePaths(&OSFileSystem{}, tmp, mode)
+	paths, err := initializePaths(&OSFileSystem{}, tmp, mode)
 	if err != nil {
 		t.Fatal(err)
 	}

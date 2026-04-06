@@ -14,8 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
-// InitializePaths creates the necessary directories and returns the Paths for the session.
-func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
+// initializePaths creates the necessary directories and returns the Paths for the session.
+func initializePaths(fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
 	paths := persistence.ResolvePaths(homeDir, mode)
 	if err := EnsureDirectories(fs, paths); err != nil {
 		return nil, err
