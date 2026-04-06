@@ -7,18 +7,14 @@ import (
 	stdctx "context"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -108,6 +104,11 @@ func (m *mockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
 	return m.Called().Get(0).(ports.HistoryBrowser)
 }
 
+func (m *mockBootstrapper) StreamTurnsLog(ctx stdctx.Context, cfg *config.Config, out io.Writer) error {
+	args := m.Called(ctx, cfg, out)
+	return args.Error(0)
+}
+
 type mockLoader struct {
 	mock.Mock
 }
@@ -168,7 +169,6 @@ func TestChatCommand_Execute(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
-		FileSystem:   &infra_persistence.OSFileSystem{},
 		MockPrompt:   "hello",
 	}
 
@@ -206,7 +206,6 @@ func TestChatCommand_Execute_LastN(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
-		FileSystem:   &infra_persistence.OSFileSystem{},
 	}
 
 	ctx := stdctx.Background()
@@ -243,7 +242,6 @@ func TestChatCommand_Execute_BackN(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
-		FileSystem:   &infra_persistence.OSFileSystem{},
 	}
 
 	ctx := stdctx.Background()
@@ -280,7 +278,6 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
-		FileSystem:   &infra_persistence.OSFileSystem{},
 	}
 
 	ctx := stdctx.Background()
@@ -325,7 +322,6 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
-		FileSystem:   &infra_persistence.OSFileSystem{},
 	}
 
 	ctx := stdctx.Background()
@@ -370,7 +366,6 @@ func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
-		FileSystem:   &infra_persistence.OSFileSystem{},
 		HomeDir:      t.TempDir(),
 	}
 
@@ -417,7 +412,6 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
-		FileSystem:   &infra_persistence.OSFileSystem{},
 		HomeDir:      t.TempDir(),
 	}
 
@@ -441,75 +435,22 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 	}
 }
 
-type mockSessionDeps struct {
-	mock.Mock
-	ports.SessionDependencies
-}
-
-func (m *mockSessionDeps) GetPaths() *persistence.Paths {
-	args := m.Called()
-	return args.Get(0).(*persistence.Paths)
-}
-
-type mockFileSystem struct {
-	infra_persistence.FileSystem
-	mock.Mock
-}
-
-func (m *mockFileSystem) Open(name string) (infra_persistence.File, error) {
-	args := m.Called(name)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(infra_persistence.File), args.Error(1)
-}
-
-func (m *mockFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	return m.Called(path, perm).Error(0)
-}
-
-type memFile struct {
-	*strings.Reader
-}
-
-func (m *memFile) Write(p []byte) (int, error)  { return 0, io.EOF }
-func (m *memFile) Sync() error                  { return nil }
-func (m *memFile) Chmod(mode os.FileMode) error { return nil }
-func (m *memFile) Name() string                 { return "memfile" }
-func (m *memFile) Close() error                 { return nil }
-
-type readErrorFile struct {
-	infra_persistence.File
-}
-
-func (m *readErrorFile) Read(_ []byte) (int, error) {
-	return 0, errors.New("read error during streaming")
-}
-
-func (m *readErrorFile) Close() error {
-	return nil
-}
-
 func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 	t.Parallel()
-
-	expectedContent := "turn 1: hello\nturn 2: world"
-	mFS := new(mockFileSystem)
-	mFile := &memFile{Reader: strings.NewReader(expectedContent)}
-
-	// We need to know what path InitializePaths will return.
-	mode := "assistant"
-	homeDir := "/Users/johndoe"
-	expectedLogPath := filepath.Join(homeDir, "output", mode, "turns.log")
-
-	mFS.On("Open", expectedLogPath).Return(mFile, nil)
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
 	mb, ml := setupMocks()
+	
+	// Setup Mocks
 	ml.ExpectedCalls = nil
-	ml.On("Load", mock.Anything).Return(&config.Config{Mode: mode}, nil)
+	cfg := &config.Config{Mode: "assistant"}
+	ml.On("Load", mock.Anything).Return(cfg, nil)
+	mb.On("StreamTurnsLog", mock.Anything, cfg, &stdout).Return(nil).Run(func(args mock.Arguments) {
+		out := args.Get(2).(io.Writer)
+		_, _ = out.Write([]byte("turn 1: hello\nturn 2: world"))
+	})
 
 	cmd := &chatCommand{
 		Version:      "1.0.0",
@@ -520,21 +461,12 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
-		FileSystem:   mFS,
-		HomeDir:      homeDir,
 	}
 
-	ctx := stdctx.Background()
-	args := []string{"chat", "-t"}
-
-	err := cmd.Execute(ctx, args)
+	err := cmd.Execute(stdctx.Background(), []string{"chat", "-t"})
 	require.NoError(t, err, "Execute should not fail")
-
-	// Replace the manual if-block with testify/assert
-	assert.Equal(t, expectedContent, stdout.String(), "The streamed log content should match the mocked file content")
-
+	assert.Equal(t, "turn 1: hello\nturn 2: world", stdout.String())
 	assert.False(t, mService.chatCalled, "expected chat service NOT to be called")
-	mFS.AssertExpectations(t)
 }
 
 func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
@@ -542,51 +474,44 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setupMock   func(mFS *mockFileSystem, ml *mockLoader)
+		setupMock   func(mb *mockBootstrapper, ml *mockLoader)
 		expectedErr string
 	}{
 		{
 			name: "Config Load Failure",
-			setupMock: func(mFS *mockFileSystem, ml *mockLoader) {
+			setupMock: func(mb *mockBootstrapper, ml *mockLoader) {
 				ml.On("Load", mock.Anything).Return(nil, errors.New("bad config"))
 			},
 			expectedErr: "error loading config",
 		},
 		{
-			name: "File Open Failure",
-			setupMock: func(mFS *mockFileSystem, ml *mockLoader) {
-				ml.On("Load", mock.Anything).Return(&config.Config{Mode: "assistant"}, nil)
-				mFS.On("Open", mock.Anything).Return(nil, os.ErrNotExist)
+			name: "StreamTurnsLog Failure",
+			setupMock: func(mb *mockBootstrapper, ml *mockLoader) {
+				cfg := &config.Config{Mode: "assistant"}
+				ml.On("Load", mock.Anything).Return(cfg, nil)
+				mb.On("StreamTurnsLog", mock.Anything, cfg, mock.Anything).Return(errors.New("stream error"))
 			},
-			expectedErr: "failed to open turns log",
-		},
-		{
-			name: "Read Error During Output",
-			setupMock: func(mFS *mockFileSystem, ml *mockLoader) {
-				ml.On("Load", mock.Anything).Return(&config.Config{Mode: "assistant"}, nil)
-				mFS.On("Open", mock.Anything).Return(&readErrorFile{}, nil)
-			},
-			expectedErr: "read error during streaming",
+			expectedErr: "stream error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mFS := new(mockFileSystem)
-			ml := new(mockLoader)
-			tt.setupMock(mFS, ml)
+			mb := &mockBootstrapper{}
+			ml := &mockLoader{}
+			tt.setupMock(mb, ml)
 
 			cmd := &chatCommand{
-				Loader:     ml,
-				FileSystem: mFS,
-				Stdout:     new(strings.Builder),
+				Loader:       ml,
+				Bootstrapper: mb,
+				Stdout:       new(strings.Builder),
 			}
 
 			err := cmd.Execute(stdctx.Background(), []string{"chat", "-t"})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 
-			mFS.AssertExpectations(t)
+			mb.AssertExpectations(t)
 			ml.AssertExpectations(t)
 		})
 	}

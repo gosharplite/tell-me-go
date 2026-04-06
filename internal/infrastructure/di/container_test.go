@@ -814,3 +814,87 @@ func TestBootstrapper_Cleanup_ClosesTurnsLogger(t *testing.T) {
 	err = deps.GetTurnsLogger().Close()
 	assert.NoError(t, err, "Subsequent Close() calls should be a no-op")
 }
+
+type minimalFile struct {
+	io.Reader
+}
+
+func (f *minimalFile) Close() error                                 { return nil }
+func (f *minimalFile) Sync() error                                  { return nil }
+func (f *minimalFile) Name() string                                 { return "dummy" }
+func (f *minimalFile) Seek(offset int64, whence int) (int64, error) { return 0, nil }
+func (f *minimalFile) Write(p []byte) (int, error)                  { return 0, nil }
+func (f *minimalFile) ReadDir(n int) ([]os.DirEntry, error)         { return nil, nil }
+func (f *minimalFile) ReadAt(p []byte, off int64) (n int, err error) { return 0, nil }
+func (f *minimalFile) Chmod(mode os.FileMode) error                  { return nil }
+
+type mockFileSystemStream struct {
+	infra_persistence.FileSystem
+	mock.Mock
+}
+
+func (m *mockFileSystemStream) Open(name string) (infra_persistence.File, error) {
+	args := m.Called(name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(infra_persistence.File), args.Error(1)
+}
+
+func TestBootstrapper_StreamTurnsLog(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	tests := []struct {
+		name        string
+		mode        string
+		setupMock   func(mFS *mockFileSystemStream)
+		expectedOut string
+		wantErr     bool
+	}{
+		{
+			name: "Success",
+			mode: "assistant",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := filepath.Join(tempDir, "output", "assistant", "turns.log")
+				mFS.On("Open", logPath).Return(&minimalFile{Reader: strings.NewReader("turn 1: hello")}, nil)
+			},
+			expectedOut: "turn 1: hello",
+			wantErr:     false,
+		},
+		{
+			name: "LogFileMissing",
+			mode: "developer",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := filepath.Join(tempDir, "output", "developer", "turns.log")
+				mFS.On("Open", logPath).Return(nil, os.ErrNotExist)
+			},
+			expectedOut: "No turns log found for this session yet.\n",
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mFS := new(mockFileSystemStream)
+			if tt.setupMock != nil {
+				tt.setupMock(mFS)
+			}
+
+			b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, mFS, nil)
+			cfg := &config.Config{Mode: tt.mode}
+
+			var out bytes.Buffer
+			err := b.StreamTurnsLog(context.Background(), cfg, &out)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedOut, out.String())
+			}
+			mFS.AssertExpectations(t)
+		})
+	}
+}

@@ -72,6 +72,14 @@ func (f *mockFile) Sync() error {
 	return nil
 }
 
+func (f *mockFile) ReadDir(n int) ([]os.DirEntry, error) {
+	return nil, nil
+}
+
+func (f *mockFile) ReadAt(p []byte, off int64) (n int, err error) {
+	return 0, nil
+}
+
 func (f *mockFile) Chmod(mode os.FileMode) error {
 	f.perm = mode
 	if f.ChmodFunc != nil {

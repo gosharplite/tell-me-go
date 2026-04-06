@@ -17,6 +17,9 @@ type File interface {
 	io.Closer
 	io.ReaderAt
 	ReadDir(n int) ([]os.DirEntry, error)
+	Sync() error
+	Name() string
+	Chmod(mode os.FileMode) error
 }
 
 // WalkFunc is the signature for the walk function.

@@ -15,7 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 var (
@@ -34,7 +33,6 @@ type AppDependencies struct {
 	Bootstrapper Bootstrapper
 	ConfigLoader domain_config.ConfigLoader
 	ChatService  agent.ChatService
-	FileSystem   infra_persistence.FileSystem
 }
 
 // App represents the tell-me-go application.
@@ -48,7 +46,6 @@ type App struct {
 	bootstrapper Bootstrapper
 	configLoader domain_config.ConfigLoader
 	chatService  agent.ChatService
-	fileSystem   infra_persistence.FileSystem
 	mockPrompt   string
 	mockAnswer   string
 }
@@ -81,11 +78,6 @@ func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 		stderr = os.Stderr
 	}
 
-	fileSystem := deps.FileSystem
-	if fileSystem == nil {
-		fileSystem = &infra_persistence.OSFileSystem{}
-	}
-
 	return &App{
 		Version:      deps.Version,
 		Stdin:        stdin,
@@ -96,7 +88,6 @@ func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 		bootstrapper: deps.Bootstrapper,
 		configLoader: deps.ConfigLoader,
 		chatService:  deps.ChatService,
-		fileSystem:   fileSystem,
 		mockPrompt:   getenv("TELL_ME_MOCK_PROMPT"),
 		mockAnswer:   getenv("TELL_ME_MOCK_ANSWER"),
 	}, nil
@@ -142,7 +133,6 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		ChatService:  a.chatService,
 		Bootstrapper: a.bootstrapper,
 		Loader:       a.configLoader,
-		FileSystem:   a.fileSystem,
 		MockPrompt:   a.mockPrompt,
 		MockAnswer:   a.mockAnswer,
 	}

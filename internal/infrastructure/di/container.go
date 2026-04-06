@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -479,4 +480,27 @@ func (b *Bootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
 		stderr: b.Stderr,
 		logger: b.Logger,
 	}
+}
+
+// StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
+func (b *Bootstrapper) StreamTurnsLog(ctx stdctx.Context, cfg *config.Config, out io.Writer) error {
+	paths := infra_persistence.ResolvePaths(b.HomeDir, cfg.Mode)
+	if paths.TurnsLogPath == "" {
+		return errors.New("turns log path not available")
+	}
+
+	file, err := b.FileSystem.Open(paths.TurnsLogPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			_, _ = fmt.Fprintln(out, "No turns log found for this session yet.")
+			return nil
+		}
+		return fmt.Errorf("failed to open turns log at %s: %w", paths.TurnsLogPath, err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		return fmt.Errorf("failed to output turns log: %w", err)
+	}
+	return nil
 }

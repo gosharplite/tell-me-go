@@ -80,7 +80,7 @@ func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
 
 	// Fixed non-deterministic assertion: messages may be dropped if buffer fills up
-	assert.Greater(t, len(lines), 0, "Should have written some lines")
+	assert.GreaterOrEqual(t, len(lines), 50, "Should have written at least 50% of the messages without dropping")
 	assert.LessOrEqual(t, len(lines), numGoroutines*msgsPerGoroutine, "Should not exceed max expected lines")
 }
 
@@ -122,6 +122,10 @@ type blockingFile struct {
 func (f *blockingFile) Write(p []byte) (n int, err error) {
 	<-f.block
 	return len(p), nil
+}
+
+func (f *blockingFile) Sync() error {
+	return nil
 }
 
 func (f *blockingFile) Close() error {
@@ -184,6 +188,10 @@ func (f *errorWriteFile) Write(_ []byte) (n int, err error) {
 	return 0, errors.New("disk full")
 }
 
+func (f *errorWriteFile) Sync() error {
+	return nil
+}
+
 func (f *errorWriteFile) Close() error {
 	return nil
 }
@@ -220,4 +228,46 @@ func TestAsyncTurnsLogger_WriteError(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "Should have logged write error warning")
+}
+
+type spyFile struct {
+	infra_persistence.File
+	syncCalled bool
+}
+
+func (f *spyFile) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
+func (f *spyFile) Sync() error {
+	f.syncCalled = true
+	return nil
+}
+
+func (f *spyFile) Close() error {
+	return nil
+}
+
+type spyFS struct {
+	infra_persistence.FileSystem
+	file *spyFile
+}
+
+func (fs *spyFS) OpenFile(name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
+	return fs.file, nil
+}
+
+func TestAsyncTurnsLogger_CallsSync(t *testing.T) {
+	file := &spyFile{}
+	fs := &spyFS{file: file}
+
+	tl, err := NewAsyncTurnsLogger(fs, "dummy", slog.Default())
+	require.NoError(t, err)
+
+	tl.LogString("test message")
+
+	err = tl.Close()
+	require.NoError(t, err)
+
+	assert.True(t, file.syncCalled, "Sync() should be called after each write")
 }

@@ -16,7 +16,6 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
@@ -41,7 +40,6 @@ type chatCommand struct {
 	ChatService  agent.ChatService
 	Bootstrapper Bootstrapper
 	Loader       domain_config.ConfigLoader
-	FileSystem   infra_persistence.FileSystem
 	HomeDir      string
 	MockPrompt   string
 	MockAnswer   string
@@ -70,7 +68,6 @@ func newChatCommand(ctx *context) *chatCommand {
 		ChatService:  ctx.ChatService,
 		Bootstrapper: ctx.Bootstrapper,
 		Loader:       ctx.Loader,
-		FileSystem:   ctx.FileSystem,
 		HomeDir:      ctx.HomeDir,
 		MockPrompt:   ctx.MockPrompt,
 		MockAnswer:   ctx.MockAnswer,
@@ -92,25 +89,8 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 		}
-
-		// Resolve paths directly using the injected HomeDir
-		paths := infra_persistence.ResolvePaths(c.HomeDir, cfg.Mode)
-		if paths.TurnsLogPath == "" {
-			return errors.New("turns log path not available")
-		}
-
-		// Use the injected FileSystem abstraction, NOT os.Open
-		file, err := c.FileSystem.Open(paths.TurnsLogPath)
-		if err != nil {
-			return fmt.Errorf("failed to open turns log at %s: %w", paths.TurnsLogPath, err)
-		}
-		defer file.Close()
-
-		// Stream the file to Stdout to avoid high memory allocation on large logs
-		if _, err := io.Copy(c.Stdout, file); err != nil {
-			return fmt.Errorf("failed to output turns log: %w", err)
-		}
-		return nil
+		
+		return c.Bootstrapper.StreamTurnsLog(ctx, cfg, c.Stdout)
 	}
 
 	var prompt string

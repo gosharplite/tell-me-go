@@ -47,6 +47,8 @@ func (l *asyncTurnsLogger) worker() {
 	for msg := range l.ch {
 		if _, err := l.file.Write([]byte(msg)); err != nil {
 			l.logger.Warn("failed to write to turns log", "error", err)
+		} else {
+			_ = l.file.Sync() // Directly call Sync()
 		}
 	}
 }

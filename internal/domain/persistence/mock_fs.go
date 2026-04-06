@@ -59,6 +59,18 @@ func (f *mockFile) Close() error {
 	return nil
 }
 
+func (f *mockFile) Sync() error {
+	return nil
+}
+
+func (f *mockFile) Name() string {
+	return f.name
+}
+
+func (f *mockFile) Chmod(mode os.FileMode) error {
+	return nil
+}
+
 // mockFileInfo implements os.FileInfo for testing.
 type mockFileInfo struct {
 	name string

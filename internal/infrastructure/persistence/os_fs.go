@@ -14,11 +14,13 @@ import (
 
 // File defines the interface for file operations to allow mocking.
 type File interface {
-	io.ReadWriteSeeker
-	io.Closer
-	Sync() error
-	Chmod(mode os.FileMode) error
+	io.ReadWriteCloser
+	io.Seeker
 	Name() string
+	Sync() error
+	ReadDir(n int) ([]os.DirEntry, error)
+	ReadAt(p []byte, off int64) (n int, err error)
+	Chmod(mode os.FileMode) error
 }
 
 // FileSystem defines the interface for filesystem operations to allow mocking.
@@ -132,14 +134,22 @@ func (f *domainFS) Open(ctx context.Context, name string) (persistence.File, err
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	return os.Open(name)
+	file, err := f.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return file.(persistence.File), nil
 }
 
 func (f *domainFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	return os.OpenFile(name, flag, perm)
+	file, err := f.fs.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return file.(persistence.File), nil
 }
 
 func (f *domainFS) Remove(ctx context.Context, name string) error {

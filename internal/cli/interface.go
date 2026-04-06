@@ -11,7 +11,6 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // Bootstrapper defines the infrastructure interface for resolving dependencies.
@@ -24,6 +23,7 @@ type Bootstrapper interface {
 	GetUIRenderer() ports.UIRenderer
 	GetHistoryRenderer() ports.HistoryRenderer
 	GetHistoryBrowser() ports.HistoryBrowser
+	StreamTurnsLog(ctx stdctx.Context, cfg *domain_config.Config, out io.Writer) error
 }
 
 // context provides shared dependencies for commands.
@@ -37,7 +37,6 @@ type context struct {
 	ChatService  agent.ChatService
 	Bootstrapper Bootstrapper
 	Loader       domain_config.ConfigLoader
-	FileSystem   infra_persistence.FileSystem
 	MockPrompt   string
 	MockAnswer   string
 }
