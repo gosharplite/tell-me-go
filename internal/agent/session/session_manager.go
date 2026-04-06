@@ -236,14 +236,21 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 	pData := sd.GetPricingData()
 	logger := sd.GetLogger()
 	turnsLogger := sd.GetTurnsLogger()
-	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, turnsLogger, capturer)
+
+	if turnsLogger != nil {
+		chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
+			turnsLogger.HandleEvent(ctx, e)
+		})
+	}
+
+	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return bridge, err
 	}
 	return bridge, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, turnsLogger ports.TurnsLogger, capturer ports.Capturer) *uiBridge {
+func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) *uiBridge {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(o.UIRenderer,
@@ -253,7 +260,6 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 		withBridgeColor(useColor),
 		withBridgeLogFile(logPath),
 		withBridgeLogger(logger),
-		withBridgeTurnsLogger(turnsLogger),
 		withBridgeClock(o.Clock),
 	)
 	bridge.Start(ctx)
@@ -298,11 +304,6 @@ func withBridgeLogger(l *slog.Logger) bridgeOption {
 	return func(b *uiBridge) { b.logger = l }
 }
 
-// withBridgeTurnsLogger sets the specialized turns logger.
-func withBridgeTurnsLogger(l ports.TurnsLogger) bridgeOption {
-	return func(b *uiBridge) { b.turnsLogger = l }
-}
-
 // withBridgeClock sets the clock for deterministic timestamps.
 func withBridgeClock(c clock.Clock) bridgeOption {
 	return func(b *uiBridge) { b.clock = c }
@@ -334,7 +335,6 @@ type uiBridge struct {
 	cancel             context.CancelFunc
 	renderer           ports.UIRenderer
 	logger             *slog.Logger
-	turnsLogger        ports.TurnsLogger
 	clock              clock.Clock
 	showThoughts       bool
 	showTools          bool
@@ -604,7 +604,6 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 
 func (b *uiBridge) handleSystemMessage(ctx context.Context, e events.Event) {
 	var msg, lvl string
-	timestamp := b.clock.Now() // Default fallback
 
 	switch ev := e.(type) {
 	case events.SystemMessageEvent:
@@ -616,9 +615,6 @@ func (b *uiBridge) handleSystemMessage(ctx context.Context, e events.Event) {
 	}
 	b.stopActiveSpinner()
 	b.renderer.LogSystemMessage(ctx, msg, lvl)
-	if b.turnsLogger != nil {
-		b.turnsLogger.LogSystemMessage(msg, lvl, timestamp)
-	}
 	b.resumeActiveSpinner(ctx)
 }
 
@@ -649,9 +645,6 @@ func (b *uiBridge) handleTurnStatus(ctx context.Context, ev events.TurnStatusEve
 	b.activePhase = nil // Clear phase on new turn/header
 	b.transition(stateIdle)
 	b.renderer.LogTurnStatus(ctx, ev.Status)
-	if b.turnsLogger != nil {
-		b.turnsLogger.LogTurnStatus(ev.Status, b.clock.Now())
-	}
 }
 
 func (b *uiBridge) handleResponse(ctx context.Context, ev events.ResponseEvent) {

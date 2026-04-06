@@ -180,9 +180,8 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
 	// Verify TurnsLogger interaction during Run
-	// (uiBridge forwards events to it)
-	mTurnsLogger.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-	mTurnsLogger.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	// (SessionManager now subscribes it directly)
+	mTurnsLogger.On("HandleEvent", mock.Anything, mock.Anything).Return().Maybe()
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
@@ -837,6 +836,7 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 		"Capturer.IsTTY",             // Initial check in Run
 		"HistoryRenderer.Render",     // Rendering history because LastN > 0
 		"AgentFactory",               // Creating the agent
+		"Chatter.Subscribe",          // Connect TurnsLogger events
 		"Capturer.IsTTY",             // Check in setupUIRendering
 		"UIRenderer.SetUseColor",     // Config UI
 		"Chatter.Subscribe",          // Connect UI events

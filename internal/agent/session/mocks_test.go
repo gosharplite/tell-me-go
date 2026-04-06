@@ -5,7 +5,6 @@ package session
 
 import (
 	"context"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -346,12 +345,10 @@ type mockTurnsLogger struct {
 	mock.Mock
 }
 
-func (m *mockTurnsLogger) LogSystemMessage(msg string, level string, timestamp time.Time) {
-	m.Called(msg, level, timestamp)
+func (m *mockTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {
+	m.Called(ctx, e)
 }
-func (m *mockTurnsLogger) LogTurnStatus(status events.TurnStatus, timestamp time.Time) {
-	m.Called(status, timestamp)
-}
+
 func (m *mockTurnsLogger) Close() error {
 	return m.Called().Error(0)
 }

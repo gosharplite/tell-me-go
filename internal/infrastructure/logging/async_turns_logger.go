@@ -4,6 +4,7 @@
 package logging
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 type asyncTurnsLogger struct {
@@ -21,6 +23,7 @@ type asyncTurnsLogger struct {
 	ch     chan string
 	wg     sync.WaitGroup
 	logger *slog.Logger
+	clock  clock.Clock
 	closed bool
 	mu     sync.RWMutex
 }
@@ -40,6 +43,7 @@ func NewAsyncTurnsLogger(fs infra_persistence.FileSystem, filePath string, logge
 		file:   f,
 		ch:     make(chan string, 100),
 		logger: logger,
+		clock:  clock.RealClock{}, // Initialize internal clock
 	}
 
 	tl.wg.Add(1)
@@ -62,12 +66,14 @@ func (l *asyncTurnsLogger) worker() {
 	}
 }
 
-func (l *asyncTurnsLogger) LogSystemMessage(msg string, level string, timestamp time.Time) {
-	l.log(l.formatSystemMessageForLog(msg, level, timestamp))
-}
-
-func (l *asyncTurnsLogger) LogTurnStatus(status events.TurnStatus, timestamp time.Time) {
-	l.log(l.formatTurnStatusForLog(status, timestamp))
+func (l *asyncTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {
+	now := l.clock.Now()
+	switch ev := e.(type) {
+	case events.SystemMessageEvent:
+		l.log(l.formatSystemMessageForLog(ev.Message, ev.Level, now))
+	case events.TurnStatusEvent:
+		l.log(l.formatTurnStatusForLog(ev.Status, now))
+	}
 }
 
 func (l *asyncTurnsLogger) log(msg string) {

@@ -830,8 +830,8 @@ type mockFileWithErrors struct {
 	closeErr error
 }
 
-func (m *mockFileWithErrors) Close() error { return m.closeErr }
-func (m *mockFileWithErrors) Sync() error  { return nil }
+func (m *mockFileWithErrors) Close() error                { return m.closeErr }
+func (m *mockFileWithErrors) Sync() error                 { return nil }
 func (m *mockFileWithErrors) Write(p []byte) (int, error) { return len(p), nil }
 
 type mockFSWithErrors struct {

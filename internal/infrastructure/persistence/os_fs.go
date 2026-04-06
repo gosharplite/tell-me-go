@@ -138,7 +138,7 @@ func (f *domainFS) Open(ctx context.Context, name string) (persistence.File, err
 	if err != nil {
 		return nil, err
 	}
-	return file.(persistence.File), nil
+	return file, nil
 }
 
 func (f *domainFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
@@ -149,7 +149,7 @@ func (f *domainFS) OpenFile(ctx context.Context, name string, flag int, perm os.
 	if err != nil {
 		return nil, err
 	}
-	return file.(persistence.File), nil
+	return file, nil
 }
 
 func (f *domainFS) Remove(ctx context.Context, name string) error {

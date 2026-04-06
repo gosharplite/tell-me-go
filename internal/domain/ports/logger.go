@@ -4,7 +4,7 @@
 package ports
 
 import (
-	"time"
+	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
@@ -26,13 +26,11 @@ func (l *NoOpLogger) Info(msg string, args ...any)  {}
 func (l *NoOpLogger) Debug(msg string, args ...any) {}
 
 type TurnsLogger interface {
-	LogSystemMessage(msg string, level string, timestamp time.Time)
-	LogTurnStatus(status events.TurnStatus, timestamp time.Time)
+	HandleEvent(ctx context.Context, e events.Event)
 	Close() error
 }
 
 type NoOpTurnsLogger struct{}
 
-func (l *NoOpTurnsLogger) LogSystemMessage(msg string, level string, timestamp time.Time) {}
-func (l *NoOpTurnsLogger) LogTurnStatus(status events.TurnStatus, timestamp time.Time)    {}
-func (l *NoOpTurnsLogger) Close() error                                                   { return nil }
+func (l *NoOpTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {}
+func (l *NoOpTurnsLogger) Close() error                                    { return nil }
