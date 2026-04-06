@@ -478,6 +478,18 @@ func (m *memFile) Chmod(mode os.FileMode) error { return nil }
 func (m *memFile) Name() string                 { return "memfile" }
 func (m *memFile) Close() error                 { return nil }
 
+type readErrorFile struct {
+	infra_persistence.File
+}
+
+func (m *readErrorFile) Read(_ []byte) (int, error) {
+	return 0, errors.New("read error during streaming")
+}
+
+func (m *readErrorFile) Close() error {
+	return nil
+}
+
 func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 	t.Parallel()
 
@@ -547,6 +559,14 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 				mFS.On("Open", mock.Anything).Return(nil, os.ErrNotExist)
 			},
 			expectedErr: "failed to open turns log",
+		},
+		{
+			name: "Read Error During Output",
+			setupMock: func(mFS *mockFileSystem, ml *mockLoader) {
+				ml.On("Load", mock.Anything).Return(&config.Config{Mode: "assistant"}, nil)
+				mFS.On("Open", mock.Anything).Return(&readErrorFile{}, nil)
+			},
+			expectedErr: "read error during streaming",
 		},
 	}
 

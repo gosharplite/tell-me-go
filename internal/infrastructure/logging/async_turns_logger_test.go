@@ -5,6 +5,7 @@ package logging
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -173,4 +174,50 @@ func TestAsyncTurnsLogger_BufferFull(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "Should have logged buffer full warning")
+}
+
+type errorWriteFile struct {
+	infra_persistence.File
+}
+
+func (f *errorWriteFile) Write(_ []byte) (n int, err error) {
+	return 0, errors.New("disk full")
+}
+
+func (f *errorWriteFile) Close() error {
+	return nil
+}
+
+type errorWriteFS struct {
+	infra_persistence.FileSystem
+}
+
+func (fs *errorWriteFS) OpenFile(_ string, _ int, _ os.FileMode) (infra_persistence.File, error) {
+	return &errorWriteFile{}, nil
+}
+
+func TestAsyncTurnsLogger_WriteError(t *testing.T) {
+	fs := &errorWriteFS{}
+	handler := &slogHandler{}
+	logger := slog.New(handler)
+
+	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
+	require.NoError(t, err)
+
+	tl.LogString("test message")
+
+	err = tl.Close()
+	require.NoError(t, err)
+
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+
+	found := false
+	for _, r := range handler.records {
+		if r.Level == slog.LevelWarn && strings.Contains(r.Message, "failed to write to turns log") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should have logged write error warning")
 }

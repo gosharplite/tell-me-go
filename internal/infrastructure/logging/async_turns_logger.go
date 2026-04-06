@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -20,7 +19,8 @@ type asyncTurnsLogger struct {
 	ch     chan string
 	wg     sync.WaitGroup
 	logger *slog.Logger
-	closed atomic.Bool
+	closed bool
+	mu     sync.RWMutex
 }
 
 // NewAsyncTurnsLogger creates a new ports.TurnsLogger that writes to a file asynchronously.
@@ -60,15 +60,12 @@ func (l *asyncTurnsLogger) LogString(msg string) {
 		msg += "\n"
 	}
 
-	if l.closed.Load() {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	if l.closed {
 		return
 	}
-
-	// Safely handle the edge case where the channel is closed exactly between
-	// the atomic check and the channel send.
-	defer func() {
-		recover()
-	}()
 
 	select {
 	case l.ch <- msg:
@@ -78,11 +75,15 @@ func (l *asyncTurnsLogger) LogString(msg string) {
 }
 
 func (l *asyncTurnsLogger) Close() error {
-	if !l.closed.CompareAndSwap(false, true) {
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
 		return nil
 	}
-
+	l.closed = true
 	close(l.ch)
+	l.mu.Unlock()
+
 	l.wg.Wait()
 	return l.file.Close()
 }
