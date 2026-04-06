@@ -2,7 +2,7 @@
 
 This document outlines the strategic evolution of `tell-me-go`. Our primary goal is to provide a unified, provider-agnostic interface for high-performance reasoning models.
 
-- **Strategic Strategy:** [ADR-001: Hybrid LLM Infrastructure Strategy](./docs/adr/2024-05-multi-llm-provider-strategy.md)
+- **Strategic Strategy:** [ADR-001: Hybrid LLM Infrastructure Strategy](./docs/adr/2026-01-multi-llm-provider-strategy.md)
 - **Technical Specification:** [Multi-Provider Implementation Plan](./docs/sop/technical/multi_provider_implementation.md)
 - **Design Standards:** [ADR Management SOP](./docs/sop/standards/adr_standards.md)
 
@@ -46,9 +46,9 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 
 ## Phase 6: Domain Decomposition & Scalability (Completed)
 - **Goal:** Address Single Responsibility Principle (SRP) violations, decompose God Objects, and standardize tool execution.
-- **Task:** Implement **High-Performance Tool Execution Engine** with concurrency and standardized timeouts. (COMPLETED - See [ADR-002](./docs/adr/2024-06-tool-execution-concurrency-and-timeouts.md))
-- **Task:** Implement **Domain Decomposition Strategy** to separate core logic from infrastructure and UI. (COMPLETED - See [ADR-003](./docs/adr/2024-07-domain-decomposition-strategy.md))
-- **Task:** Investigate the `Chatter` domain service. It currently accepts a massive `ChatterParams` struct with 13 dependencies. (COMPLETED - See [ADR-004](./docs/adr/2024-08-chatterparams-elimination.md))
+- **Task:** Implement **High-Performance Tool Execution Engine** with concurrency and standardized timeouts. (COMPLETED - See [ADR-002](./docs/adr/2026-01-tool-execution-concurrency-and-timeouts.md))
+- **Task:** Implement **Domain Decomposition Strategy** to separate core logic from infrastructure and UI. (COMPLETED - See [ADR-003](./docs/adr/2026-01-domain-decomposition-strategy.md))
+- **Task:** Investigate the `Chatter` domain service. It currently accepts a massive `ChatterParams` struct with 13 dependencies. (COMPLETED - See [ADR-004](./docs/adr/2026-01-chatterparams-elimination.md))
 - **Task:** Evaluate splitting `Chatter` into distinct pipeline stages (e.g., `ContextBuilder`, `ExecutionEngine`, `ResponseProcessor`) or applying the Facade Pattern. (COMPLETED)
 - **Task:** Continuous dependency injection audit to ensure the composition root (`container.go`) remains clean. (COMPLETED - Extracted to `internal/infrastructure/factory/chatter.go`)
 

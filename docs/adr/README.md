@@ -6,12 +6,12 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 
 | ADR # | Title | Date | Status | File |
 |-------|-------|------|--------|------|
-| **ADR-001** | Hybrid LLM Infrastructure Strategy | 2024-05 | Accepted | [2024-05-multi-llm-provider-strategy.md](2024-05-multi-llm-provider-strategy.md) |
-| **ADR-002** | Standardize Tool Execution Concurrency, Timeouts, and Context Propagation | 2024-06 | Accepted | [2024-06-tool-execution-concurrency-and-timeouts.md](2024-06-tool-execution-concurrency-and-timeouts.md) |
-| **ADR-003** | Domain Decomposition of Chatter Orchestrator | 2024-07 | Accepted | [2024-07-domain-decomposition-strategy.md](2024-07-domain-decomposition-strategy.md) |
-| **ADR-004** | Elimination of ChatterParams God Object | 2024-08 | Accepted | [2024-08-chatterparams-elimination.md](2024-08-chatterparams-elimination.md) |
-| **ADR-005** | Skill Injection Architecture | 2024-09 | Accepted | [2024-09-skill-injection-architecture.md](2024-09-skill-injection-architecture.md) |
-| **ADR-006** | History Log Compaction and Bounded Contexts | 2024-10 | Implemented | [2024-10-history-log-compaction.md](2024-10-history-log-compaction.md) |
+| **ADR-001** | Hybrid LLM Infrastructure Strategy | 2026-01 | Accepted | [2026-01-multi-llm-provider-strategy.md](2026-01-multi-llm-provider-strategy.md) |
+| **ADR-002** | Standardize Tool Execution Concurrency, Timeouts, and Context Propagation | 2026-01 | Accepted | [2026-01-tool-execution-concurrency-and-timeouts.md](2026-01-tool-execution-concurrency-and-timeouts.md) |
+| **ADR-003** | Domain Decomposition of Chatter Orchestrator | 2026-01 | Accepted | [2026-01-domain-decomposition-strategy.md](2026-01-domain-decomposition-strategy.md) |
+| **ADR-004** | Elimination of ChatterParams God Object | 2026-01 | Accepted | [2026-01-chatterparams-elimination.md](2026-01-chatterparams-elimination.md) |
+| **ADR-005** | Skill Injection Architecture | 2026-01 | Accepted | [2026-01-skill-injection-architecture.md](2026-01-skill-injection-architecture.md) |
+| **ADR-006** | History Log Compaction and Bounded Contexts | 2026-01 | Implemented | [2026-01-history-log-compaction.md](2026-01-history-log-compaction.md) |
 | **ADR-007** | Extract Agent Configuration via Functional Options | 2026-02 | Accepted | [2026-02-agent-options-extraction.md](2026-02-agent-options-extraction.md) |
 | **ADR-008** | Bubble Tea Interactive History Browser | 2026-02 | Implemented | [2026-02-bubble-tea-history-browser.md](2026-02-bubble-tea-history-browser.md) |
 | **ADR-009** | TUI Interactive Prompt Mode with Auto-completion | 2026-02 | Proposed | [2026-02-tui-prompt-mode.md](2026-02-tui-prompt-mode.md) |

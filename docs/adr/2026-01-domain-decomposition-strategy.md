@@ -4,7 +4,7 @@
 Accepted
 
 ### Implementation Status (2025)
-- **Phase 1: Elimination of ChatterParams:** COMPLETED (See [ADR-004: Elimination of ChatterParams God Object](./2024-08-chatterparams-elimination.md))
+- **Phase 1: Elimination of ChatterParams:** COMPLETED (See [ADR-004: Elimination of ChatterParams God Object](./2026-01-chatterparams-elimination.md))
 - **Phase 2: Facade Pattern & Focused Services:** IN PROGRESS (ContextPreparationService, ExecutionOrchestrator, etc. are being extracted).
 
 ## Context

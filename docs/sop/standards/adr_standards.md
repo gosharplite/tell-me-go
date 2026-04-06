@@ -14,7 +14,7 @@ An ADR should be created for any decision that has a significant impact on the p
 
 ### 2. File Location and Naming
 - **Directory:** `docs/adr/`
-- **Naming Convention:** `YYYY-MM-short-descriptive-title.md` (e.g., `2024-05-multi-provider-strategy.md`).
+- **Naming Convention:** `YYYY-MM-short-descriptive-title.md` (e.g., `2026-01-multi-provider-strategy.md`).
 
 ### 3. Required Format
 Every ADR must include the following sections:
