@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -35,6 +37,7 @@ type chatService struct {
 	UIRenderer       ports.UIRenderer
 	HistoryRenderer  ports.HistoryRenderer
 	HistoryBrowser   ports.HistoryBrowser
+	FileSystem       persistence.FileSystem
 }
 
 // NewChatService creates a new concrete implementation of ChatService with explicit dependency injection.
@@ -47,6 +50,7 @@ func NewChatService(
 	uiRenderer ports.UIRenderer,
 	historyRenderer ports.HistoryRenderer,
 	historyBrowser ports.HistoryBrowser,
+	fs persistence.FileSystem,
 ) ChatService {
 	return &chatService{
 		HomeDir:          homeDir,
@@ -59,6 +63,7 @@ func NewChatService(
 		UIRenderer:       uiRenderer,
 		HistoryRenderer:  historyRenderer,
 		HistoryBrowser:   historyBrowser,
+		FileSystem:       fs,
 	}
 }
 
@@ -143,4 +148,27 @@ func (s *chatService) GetToolNames(ctx context.Context, reg tools.Registry) ([]s
 		names = append(names, d.Name)
 	}
 	return names, nil
+}
+
+// StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
+func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Config, out io.Writer) error {
+	paths := persistence.ResolvePaths(s.HomeDir, cfg.Mode)
+	if paths.TurnsLogPath == "" {
+		return errors.New("turns log path not available")
+	}
+
+	file, err := s.FileSystem.Open(ctx, paths.TurnsLogPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			_, _ = fmt.Fprintln(out, "No turns log found for this session yet.")
+			return nil
+		}
+		return fmt.Errorf("failed to open turns log at %s: %w", paths.TurnsLogPath, err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		return fmt.Errorf("failed to output turns log: %w", err)
+	}
+	return nil
 }

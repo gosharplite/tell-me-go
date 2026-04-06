@@ -21,6 +21,7 @@ import (
 )
 
 type mockChatService struct {
+	mock.Mock
 	chatCalled bool
 	lastParams agent.ChatOptions
 }
@@ -41,6 +42,11 @@ func (m *mockChatService) BrowseHistory(ctx stdctx.Context, provider ports.Unifi
 
 func (m *mockChatService) GetToolNames(ctx stdctx.Context, reg tools.Registry) ([]string, error) {
 	return []string{"test_tool"}, nil
+}
+
+func (m *mockChatService) StreamTurnsLog(ctx stdctx.Context, cfg *config.Config, out io.Writer) error {
+	args := m.Called(ctx, cfg, out)
+	return args.Error(0)
 }
 
 type mockBootstrapper struct {
@@ -104,9 +110,8 @@ func (m *mockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
 	return m.Called().Get(0).(ports.HistoryBrowser)
 }
 
-func (m *mockBootstrapper) StreamTurnsLog(ctx stdctx.Context, cfg *config.Config, out io.Writer) error {
-	args := m.Called(ctx, cfg, out)
-	return args.Error(0)
+func (m *mockBootstrapper) GetChatService() agent.ChatService {
+	return m.Called().Get(0).(agent.ChatService)
 }
 
 type mockLoader struct {
@@ -447,7 +452,7 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 	ml.ExpectedCalls = nil
 	cfg := &config.Config{Mode: "assistant"}
 	ml.On("Load", mock.Anything).Return(cfg, nil)
-	mb.On("StreamTurnsLog", mock.Anything, cfg, &stdout).Return(nil).Run(func(args mock.Arguments) {
+	mService.On("StreamTurnsLog", mock.Anything, cfg, &stdout).Return(nil).Run(func(args mock.Arguments) {
 		out := args.Get(2).(io.Writer)
 		_, _ = out.Write([]byte("turn 1: hello\nturn 2: world"))
 	})
@@ -474,22 +479,22 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setupMock   func(mb *mockBootstrapper, ml *mockLoader)
+		setupMock   func(ms *mockChatService, ml *mockLoader)
 		expectedErr string
 	}{
 		{
 			name: "Config Load Failure",
-			setupMock: func(mb *mockBootstrapper, ml *mockLoader) {
+			setupMock: func(ms *mockChatService, ml *mockLoader) {
 				ml.On("Load", mock.Anything).Return(nil, errors.New("bad config"))
 			},
 			expectedErr: "error loading config",
 		},
 		{
 			name: "StreamTurnsLog Failure",
-			setupMock: func(mb *mockBootstrapper, ml *mockLoader) {
+			setupMock: func(ms *mockChatService, ml *mockLoader) {
 				cfg := &config.Config{Mode: "assistant"}
 				ml.On("Load", mock.Anything).Return(cfg, nil)
-				mb.On("StreamTurnsLog", mock.Anything, cfg, mock.Anything).Return(errors.New("stream error"))
+				ms.On("StreamTurnsLog", mock.Anything, cfg, mock.Anything).Return(errors.New("stream error"))
 			},
 			expectedErr: "stream error",
 		},
@@ -497,21 +502,21 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mb := &mockBootstrapper{}
+			ms := &mockChatService{}
 			ml := &mockLoader{}
-			tt.setupMock(mb, ml)
+			tt.setupMock(ms, ml)
 
 			cmd := &chatCommand{
-				Loader:       ml,
-				Bootstrapper: mb,
-				Stdout:       new(strings.Builder),
+				Loader:      ml,
+				ChatService: ms,
+				Stdout:      new(strings.Builder),
 			}
 
 			err := cmd.Execute(stdctx.Background(), []string{"chat", "-t"})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 
-			mb.AssertExpectations(t)
+			ms.AssertExpectations(t)
 			ml.AssertExpectations(t)
 		})
 	}

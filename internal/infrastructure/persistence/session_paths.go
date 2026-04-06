@@ -19,26 +19,11 @@ type paths = persistence.Paths
 
 // InitializePaths creates the necessary directories and returns the Paths for the session.
 func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
-	paths := ResolvePaths(homeDir, mode)
+	paths := persistence.ResolvePaths(homeDir, mode)
 	if err := EnsureDirectories(fs, paths); err != nil {
 		return nil, err
 	}
 	return paths, nil
-}
-
-// ResolvePaths determines the session paths based on the home directory and mode.
-func ResolvePaths(homeDir string, mode string) *persistence.Paths {
-	safeMode := filepath.Base(filepath.Clean(mode))
-	modeDir := filepath.Join(homeDir, "output", safeMode)
-	return &persistence.Paths{
-		ModeDir:            modeDir,
-		HistoryPath:        filepath.Join(modeDir, "history.jsonl"),
-		HistoryArchivePath: filepath.Join(modeDir, "history.archive.jsonl"),
-		LogPath:            filepath.Join(modeDir, "tokens.log"),
-		TracePath:          filepath.Join(modeDir, "tokens.trace.jsonl"),
-		CommandsLogPath:    filepath.Join(modeDir, "commands.log"),
-		TurnsLogPath:       filepath.Join(modeDir, "turns.log"),
-	}
 }
 
 // EnsureDirectories creates the necessary directories for the session.

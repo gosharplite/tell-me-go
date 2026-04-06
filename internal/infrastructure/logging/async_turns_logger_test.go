@@ -13,13 +13,16 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAsyncTurnsLogger_LogString(t *testing.T) {
+func TestAsyncTurnsLogger_Log(t *testing.T) {
 	fs := &infra_persistence.OSFileSystem{}
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "turns.log")
@@ -27,15 +30,21 @@ func TestAsyncTurnsLogger_LogString(t *testing.T) {
 	logger, err := NewAsyncTurnsLogger(fs, logFile, slog.Default())
 	require.NoError(t, err)
 
-	logger.LogString("hello")
-	logger.LogString("world\n")
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	logger.LogSystemMessage("hello", "info", now)
+	logger.LogTurnStatus(events.TurnStatus{
+		Timestamp:    now,
+		SessionTurns: 0,
+	}, now)
 
 	err = logger.Close()
 	require.NoError(t, err)
 
 	content, err := os.ReadFile(logFile)
 	require.NoError(t, err)
-	assert.Equal(t, "hello\nworld\n", string(content))
+	output := string(content)
+	assert.Contains(t, output, "[12:00:00] [Info] hello")
+	assert.Contains(t, output, "╭─⠿ Turn 1")
 }
 
 func TestAsyncTurnsLogger_New_Error(t *testing.T) {
@@ -58,13 +67,14 @@ func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 	wg.Add(numGoroutines)
 
 	start := make(chan struct{})
+	now := time.Now()
 
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
 			<-start
 			for j := 0; j < msgsPerGoroutine; j++ {
-				logger.LogString(fmt.Sprintf("Goroutine %d msg %d", id, j))
+				logger.LogSystemMessage(fmt.Sprintf("Goroutine %d msg %d", id, j), "info", now)
 			}
 		}(i)
 	}
@@ -157,8 +167,9 @@ func TestAsyncTurnsLogger_BufferFull(t *testing.T) {
 	// 1st message will block in the worker's Write call.
 	// Next 100 messages will fill the channel buffer (capacity 100).
 	// 102nd message will trigger the "buffer full" warning because the channel is full.
+	now := time.Now()
 	for i := 0; i < 102; i++ {
-		tl.LogString(fmt.Sprintf("msg %d", i))
+		tl.LogSystemMessage(fmt.Sprintf("msg %d", i), "info", now)
 	}
 
 	// Unblock the worker so it can finish
@@ -212,7 +223,7 @@ func TestAsyncTurnsLogger_WriteError(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
 	require.NoError(t, err)
 
-	tl.LogString("test message")
+	tl.LogSystemMessage("test message", "info", time.Now())
 
 	err = tl.Close()
 	require.NoError(t, err)
@@ -264,10 +275,196 @@ func TestAsyncTurnsLogger_CallsSync(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, "dummy", slog.Default())
 	require.NoError(t, err)
 
-	tl.LogString("test message")
+	tl.LogSystemMessage("test message", "info", time.Now())
 
 	err = tl.Close()
 	require.NoError(t, err)
 
 	assert.True(t, file.syncCalled, "Sync() should be called after each write")
+}
+
+func TestFormatSystemMessageForLog(t *testing.T) {
+	l := &asyncTurnsLogger{}
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name  string
+		msg   string
+		level string
+		want  string
+	}{
+		{"info", "hello", "info", "[12:00:00] [Info] hello"},
+		{"error", "fail", "error", "[12:00:00] [Error] fail"},
+		{"warn", "careful", "warn", "[12:00:00] [Warning] careful"},
+		{"other", "msg", "debug", "[12:00:00] [System] msg"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := l.formatSystemMessageForLog(tt.msg, tt.level, now)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFormatTurnStatusForLog(t *testing.T) {
+	l := &asyncTurnsLogger{}
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name     string
+		status   events.TurnStatus
+		contains []string
+	}{
+		{
+			name: "header minimal",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				SessionTurns:     0,
+				Tokens:           100,
+				MaxHistoryTokens: 1000,
+			},
+			contains: []string{
+				"────────────────────────────────────────────────────────────────────────────────",
+				"╭─⠿ Turn 1",
+				"[12:00:00] Payload: ~100/1000 tokens",
+			},
+		},
+		{
+			name: "header with mode",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				SessionTurns:     1,
+				MaxHistoryTurns:  10,
+				Tokens:           200,
+				MaxHistoryTokens: 2000,
+				Mode:             "coder",
+			},
+			contains: []string{
+				"╭─⠿ Turn 2/10 - coder",
+				"[12:00:00] Payload: ~200/2000 tokens - coder",
+			},
+		},
+		{
+			name: "metrics success",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				MaxHistoryTokens: 5000,
+				Metrics: &llm.Metrics{
+					PromptTokens:   1200,
+					CachedTokens:   800,
+					ResponseTokens: 300,
+					ThinkingTokens: 100,
+					Duration:       5.5,
+					ToolDuration:   2.5,
+					Cost:           0.005,
+					Model:          "gpt-4o",
+				},
+			},
+			contains: []string{
+				"[12:00:00] Payload: 1200/5000 tokens",
+				"[12:00:00] [gpt-4o] M: 400 H: 800 C: 300 Th: 100 ($0.0050) [8.00s (ΣT: 0.00s)]",
+			},
+		},
+		{
+			name: "metrics with provider priority",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				MaxHistoryTokens: 5000,
+				Metrics: &llm.Metrics{
+					PromptTokens:   1200,
+					CachedTokens:   800,
+					ResponseTokens: 300,
+					Duration:       5.5,
+					Model:          "gpt-4o",
+					Provider:       "openai",
+					TrafficType:    "ON_DEMAND_PRIORITY",
+				},
+			},
+			contains: []string{
+				"[12:00:00] [openai-priority]",
+			},
+		},
+		{
+			name: "metrics zero values",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				MaxHistoryTokens: 5000,
+				Metrics: &llm.Metrics{
+					PromptTokens:   0,
+					CachedTokens:   0,
+					ResponseTokens: 0,
+					Duration:       0,
+				},
+			},
+			contains: []string{
+				"[12:00:00] M: 0 H: 0 C: 0 Th: 0 [0.00s (ΣT: 0.00s)]",
+			},
+		},
+		{
+			name: "metrics with start time",
+			status: events.TurnStatus{
+				Timestamp:        now,
+				IsPostCall:       true,
+				StartTime:        now.Add(-10 * time.Second),
+				CurrentTurns:     1, // 2nd turn (0, 1)
+				MaxHistoryTokens: 5000,
+				Metrics: &llm.Metrics{
+					PromptTokens:           1200,
+					CachedTokens:           800,
+					ResponseTokens:         300,
+					Duration:               5.5,
+					ToolDuration:           2.5,
+					CumulativeToolDuration: 1.23,
+				},
+			},
+			contains: []string{
+				"8.00s",  // totalTurnLatency
+				"1.23s",  // CumulativeToolDuration
+				"10.00s", // totalSessionDuration
+				"5.00",   // throughput (10s / 2 turns)
+			},
+		},
+		{
+			name: "final ready summary",
+			status: events.TurnStatus{
+				Timestamp:   now,
+				IsFinal:     true,
+				SessionCost: 1.2345,
+				TaskCost:    0.0123,
+				DailyCost:   5.6789,
+				TotalM:      1000,
+				TotalH:      2000,
+				TotalO:      500,
+				Metrics: &llm.Metrics{
+					Cost: 0.005,
+				},
+			},
+			contains: []string{
+				"╰─⠿ Ready ($0.0050 $0.0123 $1.2345 $5.6789 M: 1000 H: 2000 66.7% O: 500)",
+			},
+		},
+		{
+			name: "final ready summary - div by zero safety",
+			status: events.TurnStatus{
+				Timestamp: now,
+				IsFinal:   true,
+				TotalM:    0,
+				TotalH:    0,
+			},
+			contains: []string{
+				"M: 0 H: 0 0.0% O: 0",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := l.formatTurnStatusForLog(tt.status, now)
+			for _, want := range tt.contains {
+				assert.Contains(t, got, want)
+			}
+		})
+	}
 }

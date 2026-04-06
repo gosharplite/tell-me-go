@@ -4,11 +4,14 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"io"
 	"log/slog"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,8 +238,11 @@ type mockTurnsLogger struct {
 	mock.Mock
 }
 
-func (m *mockTurnsLogger) LogString(msg string) {
-	m.Called(msg)
+func (m *mockTurnsLogger) LogSystemMessage(msg string, level string, timestamp time.Time) {
+	m.Called(msg, level, timestamp)
+}
+func (m *mockTurnsLogger) LogTurnStatus(status events.TurnStatus, timestamp time.Time) {
+	m.Called(status, timestamp)
 }
 func (m *mockTurnsLogger) Close() error {
 	return m.Called().Error(0)
@@ -340,7 +346,7 @@ func TestProcessMessage(t *testing.T) {
 
 			service := NewChatService(
 				"home", "v1", io.Discard, io.Discard, sm,
-				sf, chatterFactory, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{},
+				sf, chatterFactory, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{}, nil,
 			)
 
 			var verify func(context.Context) error
@@ -384,7 +390,7 @@ func TestGetLastUserMessage(t *testing.T) {
 
 	service := NewChatService(
 		"home", "v1", io.Discard, io.Discard, sm,
-		nil, nil, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{},
+		nil, nil, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{}, nil,
 	)
 
 	msg, turns, err := service.GetLastUserMessage(ctx, mockHM)
@@ -429,3 +435,109 @@ func (m *mockHistoryManagerForRetry) RollbackTurns(ctx context.Context, turns in
 }
 
 func (m *mockHistoryManagerForRetry) GetFilePath() string { return "" }
+
+type mockFileSystemStream struct {
+	persistence.FileSystem
+	mock.Mock
+}
+
+func (m *mockFileSystemStream) Open(ctx context.Context, name string) (persistence.File, error) {
+	args := m.Called(ctx, name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(persistence.File), args.Error(1)
+}
+
+type minimalFile struct {
+	io.Reader
+}
+
+func (f *minimalFile) Close() error                                  { return nil }
+func (f *minimalFile) ReadAt(p []byte, off int64) (n int, err error) { return 0, nil }
+func (f *minimalFile) ReadDir(n int) ([]os.DirEntry, error)          { return nil, nil }
+func (f *minimalFile) Seek(offset int64, whence int) (int64, error)  { return 0, nil }
+func (f *minimalFile) Write(p []byte) (int, error)                   { return 0, nil }
+
+type errorReader struct{}
+
+func (r *errorReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("read error")
+}
+
+func TestStreamTurnsLog(t *testing.T) {
+	ctx := context.Background()
+	homeDir := "/home/user"
+
+	tests := []struct {
+		name        string
+		mode        string
+		setupMock   func(mFS *mockFileSystemStream)
+		expectedOut string
+		wantErr     bool
+	}{
+		{
+			name: "Success",
+			mode: "assistant",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{Reader: strings.NewReader("turn 1: hello")}, nil)
+			},
+			expectedOut: "turn 1: hello",
+			wantErr:     false,
+		},
+		{
+			name: "LogFileMissing",
+			mode: "developer",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "developer").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrNotExist)
+			},
+			expectedOut: "No turns log found for this session yet.\n",
+			wantErr:     false,
+		},
+		{
+			name: "PermissionDenied",
+			mode: "assistant",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrPermission)
+			},
+			wantErr: true,
+		},
+		{
+			name: "ReadError",
+			mode: "assistant",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{Reader: &errorReader{}}, nil)
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mFS := new(mockFileSystemStream)
+			if tt.setupMock != nil {
+				tt.setupMock(mFS)
+			}
+
+			service := NewChatService(
+				homeDir, "v1", io.Discard, io.Discard, nil,
+				nil, nil, nil, nil, nil, mFS,
+			)
+
+			var out bytes.Buffer
+			err := service.StreamTurnsLog(ctx, &config.Config{Mode: tt.mode}, &out)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedOut, out.String())
+			}
+			mFS.AssertExpectations(t)
+		})
+	}
+}

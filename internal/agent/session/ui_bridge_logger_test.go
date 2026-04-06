@@ -29,10 +29,7 @@ func TestUIBridge_TurnsLogger(t *testing.T) {
 		event := events.TurnStatusEvent{Status: status}
 
 		mRenderer.On("LogTurnStatus", mock.Anything, status).Return().Once()
-		mLogger.On("LogString", mock.MatchedBy(func(s string) bool {
-			return containsAll(s, "Turn 1", "test")
-		})).Return().Once()
-		mLogger.On("LogString", mock.Anything).Return().Maybe() // SYNC_SENTINEL
+		mLogger.On("LogTurnStatus", status, mock.Anything).Return().Once()
 
 		_ = bridge.handleEvent(ctx, event)
 		syncBridge(t, bridge, mRenderer)
@@ -55,10 +52,7 @@ func TestUIBridge_TurnsLogger(t *testing.T) {
 		event := events.SystemMessageEvent{Message: msg, Level: lvl}
 
 		mRenderer.On("LogSystemMessage", mock.Anything, msg, lvl).Return().Once()
-		mLogger.On("LogString", mock.MatchedBy(func(s string) bool {
-			return containsAll(s, "[Info]", "hello")
-		})).Return().Once()
-		mLogger.On("LogString", mock.Anything).Return().Maybe() // SYNC_SENTINEL
+		mLogger.On("LogSystemMessage", msg, lvl, mock.Anything).Return().Once()
 
 		_ = bridge.handleEvent(ctx, event)
 		syncBridge(t, bridge, mRenderer)

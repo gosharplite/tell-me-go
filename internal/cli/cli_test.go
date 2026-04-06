@@ -7,7 +7,6 @@ import (
 	"bytes"
 	stdctx "context"
 	"errors"
-	"io"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -201,6 +200,4 @@ func (m *simpleMockBootstrapper) GetAgentFactory() ports.ChatterFactory     { re
 func (m *simpleMockBootstrapper) GetUIRenderer() ports.UIRenderer           { return nil }
 func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer { return nil }
 func (m *simpleMockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser   { return nil }
-func (m *simpleMockBootstrapper) StreamTurnsLog(stdctx.Context, *config.Config, io.Writer) error {
-	return nil
-}
+func (m *simpleMockBootstrapper) GetChatService() agent.ChatService         { return nil }

@@ -19,6 +19,7 @@ import (
 	domain_tools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -71,6 +72,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		container.GetUIRenderer(),
 		container.GetHistoryRenderer(),
 		container.GetHistoryBrowser(),
+		infra_persistence.NewOSFileSystem(),
 	)
 
 	cmd := &chatCommand{

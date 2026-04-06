@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -96,7 +95,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
 func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
-	paths := infra_persistence.ResolvePaths(b.HomeDir, cfg.Mode)
+	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
 	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
 		return nil, nil, nil, err
 	}
@@ -397,7 +396,7 @@ func (b *Bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 }
 
 func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
-	paths := infra_persistence.ResolvePaths(b.HomeDir, cfg.Mode)
+	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
 	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
 		return nil, fmt.Errorf("failed to initialize session paths: %w", err)
 	}
@@ -412,7 +411,7 @@ func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config)
 
 // GetUnifiedHistoryProvider assembles the read-model for the history browser.
 func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
-	paths := infra_persistence.ResolvePaths(b.HomeDir, cfg.Mode)
+	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
 	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
 		return nil, fmt.Errorf("failed to initialize session paths: %w", err)
 	}
@@ -482,25 +481,19 @@ func (b *Bootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
 	}
 }
 
-// StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
-func (b *Bootstrapper) StreamTurnsLog(ctx stdctx.Context, cfg *config.Config, out io.Writer) error {
-	paths := infra_persistence.ResolvePaths(b.HomeDir, cfg.Mode)
-	if paths.TurnsLogPath == "" {
-		return errors.New("turns log path not available")
-	}
-
-	file, err := b.FileSystem.Open(paths.TurnsLogPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			_, _ = fmt.Fprintln(out, "No turns log found for this session yet.")
-			return nil
-		}
-		return fmt.Errorf("failed to open turns log at %s: %w", paths.TurnsLogPath, err)
-	}
-	defer file.Close()
-
-	if _, err := io.Copy(out, file); err != nil {
-		return fmt.Errorf("failed to output turns log: %w", err)
-	}
-	return nil
+// GetChatService returns a chat service instance.
+func (b *Bootstrapper) GetChatService() agent.ChatService {
+	return agent.NewChatService(
+		b.HomeDir,
+		b.Version,
+		b.Stdout,
+		b.Stderr,
+		b.SM,
+		b,
+		b.GetAgentFactory(),
+		b.GetUIRenderer(),
+		b.GetHistoryRenderer(),
+		b.GetHistoryBrowser(),
+		infra_persistence.NewDomainFS(b.FileSystem),
+	)
 }

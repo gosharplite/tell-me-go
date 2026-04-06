@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestInitializePaths(t *testing.T) {
@@ -121,7 +123,7 @@ func TestCleanupOldBackups(t *testing.T) {
 
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
 	t.Parallel()
-	err := cleanupOldBackups(&OSFileSystem{}, paths{}, 0)
+	err := cleanupOldBackups(&OSFileSystem{}, persistence.Paths{}, 0)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with 0 retention should not error: %v", err)
 	}
@@ -130,7 +132,7 @@ func TestCleanupOldBackups_NoRetention(t *testing.T) {
 func TestCleanupOldBackups_NoDir(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	paths := paths{ModeDir: filepath.Join(tmp, "nonexistent")}
+	paths := persistence.Paths{ModeDir: filepath.Join(tmp, "nonexistent")}
 	err := cleanupOldBackups(&OSFileSystem{}, paths, 30)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with nonexistent dir should not error: %v", err)
@@ -149,12 +151,12 @@ func TestResolvePaths(t *testing.T) {
 		{"standard mode", "assistant", filepath.Join(homeDir, "output", "assistant")},
 		{"path traversal attempt", "../../../etc/passwd", filepath.Join(homeDir, "output", "passwd")},
 		{"nested path traversal", "subdir/../../hidden", filepath.Join(homeDir, "output", "hidden")},
-		{"empty mode", "", filepath.Join(homeDir, "output", ".")},
+		{"empty mode", "", filepath.Join(homeDir, "output", "default")},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			paths := ResolvePaths(homeDir, tt.mode)
+			paths := persistence.ResolvePaths(homeDir, tt.mode)
 			if paths.ModeDir != tt.expected {
 				t.Errorf("expected ModeDir %s, got %s", tt.expected, paths.ModeDir)
 			}
@@ -171,7 +173,7 @@ func TestEnsureDirectories(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	mode := "test-ensure"
-	paths := ResolvePaths(tmp, mode)
+	paths := persistence.ResolvePaths(tmp, mode)
 
 	fs := &OSFileSystem{}
 	err := EnsureDirectories(fs, paths)

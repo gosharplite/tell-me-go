@@ -3,6 +3,12 @@
 
 package ports
 
+import (
+	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+)
+
 // Logger defines the interface for logging within the application.
 type Logger interface {
 	Error(msg string, args ...any)
@@ -20,11 +26,13 @@ func (l *NoOpLogger) Info(msg string, args ...any)  {}
 func (l *NoOpLogger) Debug(msg string, args ...any) {}
 
 type TurnsLogger interface {
-	LogString(msg string)
+	LogSystemMessage(msg string, level string, timestamp time.Time)
+	LogTurnStatus(status events.TurnStatus, timestamp time.Time)
 	Close() error
 }
 
 type NoOpTurnsLogger struct{}
 
-func (l *NoOpTurnsLogger) LogString(msg string) {}
-func (l *NoOpTurnsLogger) Close() error         { return nil }
+func (l *NoOpTurnsLogger) LogSystemMessage(msg string, level string, timestamp time.Time) {}
+func (l *NoOpTurnsLogger) LogTurnStatus(status events.TurnStatus, timestamp time.Time)    {}
+func (l *NoOpTurnsLogger) Close() error                                                   { return nil }

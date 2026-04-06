@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"io"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -45,4 +46,7 @@ type ChatService interface {
 
 	// GetToolNames retrieves the names of all available tools.
 	GetToolNames(ctx context.Context, reg tools.Registry) ([]string, error)
+
+	// StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
+	StreamTurnsLog(ctx context.Context, cfg *config.Config, out io.Writer) error
 }

@@ -23,7 +23,7 @@ type Bootstrapper interface {
 	GetUIRenderer() ports.UIRenderer
 	GetHistoryRenderer() ports.HistoryRenderer
 	GetHistoryBrowser() ports.HistoryBrowser
-	StreamTurnsLog(ctx stdctx.Context, cfg *domain_config.Config, out io.Writer) error
+	GetChatService() agent.ChatService
 }
 
 // context provides shared dependencies for commands.

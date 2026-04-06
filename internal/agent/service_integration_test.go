@@ -41,7 +41,7 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 			service := NewChatService(
 				"home", "v1", io.Discard, io.Discard, mockSM,
-				mockSF, nil, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{},
+				mockSF, nil, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{}, nil,
 			)
 
 			// 3. Attempt ProcessMessage
