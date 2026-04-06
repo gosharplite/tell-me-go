@@ -491,7 +491,7 @@ func (b *Bootstrapper) StreamTurnsLog(ctx stdctx.Context, cfg *config.Config, ou
 
 	file, err := b.FileSystem.Open(paths.TurnsLogPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			_, _ = fmt.Fprintln(out, "No turns log found for this session yet.")
 			return nil
 		}
