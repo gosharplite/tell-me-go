@@ -44,7 +44,7 @@ type mockBootstrapper struct {
 	mock.Mock
 }
 
-func (m *mockBootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+func (m *mockBootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
 	return args.Get(0).(ports.SessionDependencies), args.Get(1).(ports.HistoryManager), args.Get(2).(func(stdctx.Context) error), args.Error(3)
 }

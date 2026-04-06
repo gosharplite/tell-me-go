@@ -7,17 +7,7 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
 )
-
-// SessionFactory defines the interface for building and finalizing sessions.
-type SessionFactory interface {
-	// BuildSessionDependencies assembles all dependencies required for a chat session.
-	BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (SessionDependencies, HistoryManager, func(context.Context) error, error)
-
-	// FinalizeSession saves history and records session cost.
-	FinalizeSession(ctx context.Context, hManager HistoryManager, deps SessionDependencies, cfg *config.Config) error
-}
 
 // HistoryManagerProvider defines the interface for providing history-related services.
 // NOTE: This interface is for infrastructure use and should be resolved by the CLI/Wiring layer.

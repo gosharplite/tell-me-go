@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -87,7 +88,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
-func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
 	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, nil, nil, err
@@ -390,59 +391,6 @@ func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config
 	return history.NewUnifiedProvider(archiveReader, hManager), nil
 }
 
-// GetToolNames retrieves the names of all available tools without starting a full session.
-func (b *Bootstrapper) GetToolNames(ctx stdctx.Context, cfg *config.Config, configPath string) ([]string, error) {
-	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize paths: %w", err)
-	}
-
-	if err := b.setupSecurity(paths, configPath); err != nil {
-		return nil, err
-	}
-
-	state, err := b.NewSessionState(ctx, paths.ModeDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize session state: %w", err)
-	}
-	defer func() {
-		if err := state.Close(); err != nil {
-			b.Logger.Error("failed to close session state", "error", err)
-		}
-	}()
-
-	pricingOverrides := b.getPricingOverrides(cfg)
-
-	// Create a minimal event bus to avoid nil panics in some tool registration
-	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithAsync(false))
-
-	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
-		SecurityManager:  b.SM,
-		CommandExecutor:  &exec.RealExecutor{},
-		CommandValidator: internal_security.NewCommandValidator(b.SM, nil),
-		SessionProvider:  state,
-		LogFile:          paths.LogPath,
-		TraceFile:        paths.TracePath,
-		Model:            cfg.Model,
-		Mode:             cfg.Mode,
-		PricingOverrides: pricingOverrides,
-		Client:           nil, // Integrations don't call client during registration
-		AssetsDir:        filepath.Join(b.HomeDir, "assets/generated"),
-		EventBus:         bus,
-		FileSystem:       infra_persistence.NewOSFileSystem(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	declarations := reg.GetDeclarations()
-	names := make([]string, 0, len(declarations))
-	for _, d := range declarations {
-		names = append(names, d.Name)
-	}
-	return names, nil
-}
-
 // GetSuggestionService initializes and returns the suggestion service.
 func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
 	tracker, err := history.NewGlobalPromptTracker(b.HomeDir)
@@ -454,14 +402,14 @@ func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []
 	return suggestions.NewMultiSourceSuggestionService(ctx, infra_persistence.NewOSFileSystem(), tracker, recentHistory, b.Stderr)
 }
 
-// GetSystemMetricsProvider returns the system metrics provider based on the platform.
-func (b *Bootstrapper) GetSystemMetricsProvider() ports.SystemMetricsProvider {
+// getSystemMetricsProvider returns the system metrics provider based on the platform.
+func (b *Bootstrapper) getSystemMetricsProvider() ports.SystemMetricsProvider {
 	return telemetry.NewSystemMetricsProvider()
 }
 
 // GetUIRenderer returns a UI renderer configured with the bootstrapper's output writers.
 func (b *Bootstrapper) GetUIRenderer() ports.UIRenderer {
-	return ui.NewRenderer(b.SM, b.Stdout, b.Stderr, clock.RealClock{}, b.GetSystemMetricsProvider())
+	return ui.NewRenderer(b.SM, b.Stdout, b.Stderr, clock.RealClock{}, b.getSystemMetricsProvider())
 }
 
 // GetHistoryRenderer returns a history renderer.

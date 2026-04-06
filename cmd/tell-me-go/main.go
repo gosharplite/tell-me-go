@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"runtime/debug"
@@ -18,8 +19,17 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/cli"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/env"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
+
+// Compile-time assertion to ensure DI Bootstrapper implements the CLI requirement.
+var _ cli.Bootstrapper = (*di.Bootstrapper)(nil)
 
 // version is the application version, usually set at build time via
 // -ldflags="-X 'main.version=vX.Y.Z'".
@@ -80,23 +90,78 @@ func main() {
 }
 
 func run() int {
-	ctx := context.Background()
-	shutdown := initTracer(ctx)
-	defer func() {
-		sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := shutdown(sCtx); err != nil {
-			fmt.Fprintf(os.Stderr, "Error shutting down tracer: %v\n", err)
-		}
-	}()
-
 	appVersion := getVersion()
-	app, logger := cli.New(appVersion, os.Stdin, os.Stdout, os.Stderr)
-	// Set the global logger only in the main entry point.
-	slog.SetDefault(logger)
-	if err := app.Run(ctx, os.Args); err != nil {
+	app, cleanup, err := buildApp(appVersion, os.Stdin, os.Stdout, os.Stderr)
+
+	// Ensure cleanup runs if it was returned, regardless of error status
+	if cleanup != nil {
+		defer cleanup()
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
+		return 1
+	}
+
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cli.App, func(), error) {
+	ctx := context.Background()
+	shutdown := initTracer(ctx)
+	cleanup := func() {
+		sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(sCtx); err != nil {
+			fmt.Fprintf(stderr, "Error shutting down tracer: %v\n", err)
+		}
+	}
+
+	// 1. Resolve basic environment
+	homeDir := env.ResolveHomeDir(os.Getenv, os.UserHomeDir)
+
+	// 2. Initialize Core Infrastructure
+	sm := security.NewSecurityManager(nil)
+
+	// 3. Setup Logger
+	isDebug := os.Getenv("TELL_ME_DEBUG") == "1"
+	logger := logging.NewLogger(stderr, isDebug)
+	slog.SetDefault(logger)
+
+	// 4. Build DI Container
+	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, stdout, stderr, logger, nil)
+
+	// 5. Instantiate ChatService
+	chatService := agent.NewChatService(
+		homeDir, appVersion, stdout, stderr, sm,
+		bootstrapper,
+		bootstrapper.GetAgentFactory(),
+		bootstrapper.GetUIRenderer(),
+		bootstrapper.GetHistoryRenderer(),
+		bootstrapper.GetHistoryBrowser(),
+	)
+
+	// 6. Initialize CLI with pre-wired dependencies
+	configLoader := &config.YAMLConfigLoader{}
+	app, err := cli.New(cli.AppDependencies{
+		Version:      appVersion,
+		Stdin:        stdin,
+		Stdout:       stdout,
+		Stderr:       stderr,
+		HomeDir:      homeDir,
+		SM:           sm,
+		Bootstrapper: bootstrapper,
+		ConfigLoader: configLoader,
+		ChatService:  chatService,
+	}, os.Getenv)
+
+	if err != nil {
+		return nil, cleanup, err
+	}
+
+	return app, cleanup, nil
 }

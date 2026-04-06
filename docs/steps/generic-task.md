@@ -1,8 +1,8 @@
-# Reduce High Cyclomatic Complexity
+# Generic Task
 
 ## Purpose
 
-This SOP (Standard Operating Procedure) guides you through reducing high cyclomatic complexity in Go code using a multi‑role workflow. The workflow ensures architectural integrity, test coverage, and code quality by coordinating five distinct roles:
+This SOP (Standard Operating Procedure) guides you through doing a task in Go code using a multi‑role workflow. The workflow ensures architectural integrity, test coverage, and code quality by coordinating five distinct roles:
 
 - **Architect** – Reviews and approves all changes before implementation.
 - **Coder** – Executes code and file changes (the only role that writes code).
@@ -25,7 +25,9 @@ To initiate the process using the Assistant, provide a prompt that specifies the
 ```
 Execute docs/steps/reduce-cyclomatic-complexity.md
 
-source branch: reduce-complexity
+task goal: your task description
+
+source branch: dev
 
 ARCHITECT_CONFIG: /path/to/your/architect.yaml
 TESTER_CONFIG: /path/to/your/tester.yaml
@@ -33,7 +35,7 @@ REVIEWER_CONFIG: /path/to/your/reviewer.yaml
 CODER_CONFIG: /path/to/your/coder.yaml
 ASSISTANT_CONFIG: /path/to/your/assistant.yaml
 
-You are Assistant, do not take over jobs of other roles. Do not try to reduce complexity by yourself.
+You are Assistant, do not take over jobs of other roles. Do not try to do technical work by yourself.
 ```
 
 The Assistant will set the corresponding environment variables (`ARCHITECT_CONFIG`, `TESTER_CONFIG`, etc.) based on the values you provide.
@@ -98,8 +100,8 @@ Adjust the number `-l 3` as needed.
 
 ## Process (Step‑by‑Step)
 
-1. **Ask Architect** to identify **one opportunity** to reduce high cyclomatic complexity.
-2. **Ask Architect** for detailed instructions on that opportunity.
+1. **Ask Architect** how to achieve the task goal.
+2. **Ask Architect** for detailed instructions on the plan to achieve the task goal.
 3. **Give those detailed instructions** to the Coder.
 4. **Review the changes**:
    - Architect must review the implementation.
@@ -107,19 +109,20 @@ Adjust the number `-l 3` as needed.
    - Reviewer must perform security, idiomatic‑Go, and correctness review.
 5. **Reviews by Tester and Reviewer must be agreed by Architect** before proceeding.
 6. **Coder must address** all feedback from Architect, Tester, and Reviewer.
-7. **Assistant outputs a summary** for each task, commits the changes to the new branch, and after all opportunities are addressed, outputs a final summary and exits the agent loop.
+7. **Architect must sign off** on the final revisions.
+8. **Assistant outputs a summary** for each iteration, commits the changes to the new branch, and after all issues are addressed and signed off, outputs a final summary and exits the agent loop.
 
-Repeat steps 1‑6 for each high‑complexity opportunity until the overall complexity meets the project’s standards.
+Repeat steps 1-8 for each iteration until the overall task goal meets the project’s standards.
 
 ## Example Workflow Snippet
 
 ```bash
 # 1. Identify an opportunity
-echo "Identify one function with high cyclomatic complexity that we can refactor." > /tmp/prompt.txt
+echo "Reduce dead_code_graph alerts." > /tmp/prompt.txt
 tell-me-go -new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 
 # 2. Get detailed instructions
-echo "Provide step‑by‑step refactoring instructions for that function." > /tmp/prompt.txt
+echo "Provide step‑by‑step instructions to reduce dead_code_graph." > /tmp/prompt.txt
 tell-me-go -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 
 # 3. Retrieve the Architect’s instructions

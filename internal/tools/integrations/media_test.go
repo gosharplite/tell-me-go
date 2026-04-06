@@ -127,7 +127,7 @@ func TestMediaTools_CreateImage(t *testing.T) {
 			sm := newMediaMockSecurityManager()
 
 			// Capture the mediaManager and set a short heartbeat interval for fast tests
-			m := newMediaManager(sm, tt.client, tt.assetsDir, WithMediaHeartbeatInterval(10*time.Millisecond))
+			m := newMediaManager(sm, tt.client, tt.assetsDir, withMediaHeartbeatInterval(10*time.Millisecond))
 
 			res, err := m.createImage(ctx, tt.args, nil)
 			if (err != nil) != tt.wantErr {
@@ -260,7 +260,7 @@ func TestNewMediaManager(t *testing.T) {
 	assetsDir := "test-assets"
 	interval := 5 * time.Second
 
-	m := newMediaManager(sm, client, assetsDir, WithMediaHeartbeatInterval(interval))
+	m := newMediaManager(sm, client, assetsDir, withMediaHeartbeatInterval(interval))
 
 	if m.sm != sm {
 		t.Error("security manager not set correctly")

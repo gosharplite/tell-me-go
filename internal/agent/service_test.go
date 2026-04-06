@@ -60,12 +60,12 @@ func (s *stubHistoryBrowser) Browse(ctx context.Context, provider ports.UnifiedH
 	return nil
 }
 
-// mockSessionFactory is a mock of SessionFactory.
-type mockSessionFactory struct {
+// mockSessionLifecycleManager is a mock of SessionLifecycleManager.
+type mockSessionLifecycleManager struct {
 	mock.Mock
 }
 
-func (m *mockSessionFactory) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
+func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
 	var deps ports.SessionDependencies
 	if args.Get(0) != nil {
@@ -78,7 +78,7 @@ func (m *mockSessionFactory) BuildSessionDependencies(ctx context.Context, cfg *
 	return deps, hManager, args.Get(2).(func(context.Context) error), args.Error(3)
 }
 
-func (m *mockSessionFactory) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
+func (m *mockSessionLifecycleManager) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
 	args := m.Called(ctx, hManager, deps, cfg)
 	return args.Error(0)
 }
@@ -229,7 +229,7 @@ func TestProcessMessage(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setupMock   func(sf *mockSessionFactory, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error
+		setupMock   func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error
 		opts        ChatOptions
 		cfg         *config.Config
 		wantErr     bool
@@ -246,7 +246,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *mockSessionFactory, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -289,7 +289,7 @@ func TestProcessMessage(t *testing.T) {
 			name: "BuildSessionDepsError",
 			opts: ChatOptions{ConfigPath: "config.yaml"},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *mockSessionFactory, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 				return nil
@@ -303,7 +303,7 @@ func TestProcessMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			sf := &mockSessionFactory{}
+			sf := &mockSessionLifecycleManager{}
 			sm := &mockServiceSecurityManager{}
 			capturer := &mockServiceCapturer{}
 			deps := &mockServiceSessionDependencies{}

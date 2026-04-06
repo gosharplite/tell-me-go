@@ -32,7 +32,7 @@ REVIEWER_CONFIG: /path/to/your/reviewer.yaml
 CODER_CONFIG: /path/to/your/coder.yaml
 ASSISTANT_CONFIG: /path/to/your/assistant.yaml
 
-You are Assistant, do not take over jobs of other roles. Do not trying to do technical work by yourself.
+You are Assistant, do not take over jobs of other roles. Do not try to do technical work by yourself.
 ```
 
 The Assistant will set the corresponding environment variables (`ARCHITECT_CONFIG`, `TESTER_CONFIG`, etc.) based on the values you provide.
@@ -83,8 +83,7 @@ To request action from a role, use `tell‑me‑go`. The basic pattern is:
 
 ```bash
 # Request action from Architect (output discarded)
-echo "your prompt" | \
-tell-me-go -new -r -c ${ARCHITECT_CONFIG} &> /dev/null
+tell-me-go -new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 ```
 
 **Notes:**
@@ -101,7 +100,7 @@ tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 
 Adjust the number `-l 3` as needed.
 
-**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it.
+**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. Save prompts in a file then use input redirection (`<`) to tell-me-go. This can avoid parsing problems of using echo prompts directly to tell-me-go. Check /tmp/prompt.txt before sending it to tell-me-go.
 
 ## Process (Step‑by‑Step)
 

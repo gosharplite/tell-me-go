@@ -8,75 +8,93 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
-// app represents the tell-me-go application.
-type app struct {
-	Version    string
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
-	homeDir    string
-	sm         *security.SecurityManager
-	logger     *slog.Logger
-	mockPrompt string
-	mockAnswer string
+var (
+	// errMissingDependency is returned when a required dependency is not provided to New().
+	errMissingDependency = errors.New("missing required dependency")
+)
+
+// AppDependencies encapsulates all dependencies for the CLI application.
+type AppDependencies struct {
+	Version      string
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	HomeDir      string
+	SM           domain_security.Manager
+	Bootstrapper Bootstrapper
+	ConfigLoader domain_config.ConfigLoader
+	ChatService  agent.ChatService
 }
 
-// New creates a new App instance with default IO and factories.
-func New(version string, stdin io.Reader, stdout, stderr io.Writer) (*app, *slog.Logger) {
+// App represents the tell-me-go application.
+type App struct {
+	Version      string
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	homeDir      string
+	sm           domain_security.Manager
+	bootstrapper Bootstrapper
+	configLoader domain_config.ConfigLoader
+	chatService  agent.ChatService
+	mockPrompt   string
+	mockAnswer   string
+}
+
+// New creates a new App instance with explicit dependency injection.
+func New(deps AppDependencies, getenv func(string) string) (*App, error) {
+	if deps.Bootstrapper == nil {
+		return nil, fmt.Errorf("%w: Bootstrapper", errMissingDependency)
+	}
+	if deps.SM == nil {
+		return nil, fmt.Errorf("%w: SM", errMissingDependency)
+	}
+	if deps.ConfigLoader == nil {
+		return nil, fmt.Errorf("%w: ConfigLoader", errMissingDependency)
+	}
+	if deps.ChatService == nil {
+		return nil, fmt.Errorf("%w: ChatService", errMissingDependency)
+	}
+
+	stdin := deps.Stdin
 	if stdin == nil {
 		stdin = os.Stdin
 	}
+	stdout := deps.Stdout
 	if stdout == nil {
 		stdout = os.Stdout
 	}
+	stderr := deps.Stderr
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	homeDir := os.Getenv("TELL_ME_HOME")
-	if homeDir == "" {
-		homeDir = os.Getenv("AIT_HOME")
-	}
-	if homeDir == "" {
-		homeDir = "."
-	}
 
-	sm := security.NewSecurityManager(nil)
-
-	logLevel := slog.LevelWarn
-	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		logLevel = slog.LevelDebug
-	}
-	logHandler := slog.NewTextHandler(stderr, &slog.HandlerOptions{
-		Level: logLevel,
-	})
-	logger := slog.New(logHandler)
-
-	return &app{
-		Version:    version,
-		Stdin:      stdin,
-		Stdout:     stdout,
-		Stderr:     stderr,
-		homeDir:    homeDir,
-		sm:         sm,
-		logger:     logger,
-		mockPrompt: os.Getenv("TELL_ME_MOCK_PROMPT"),
-		mockAnswer: os.Getenv("TELL_ME_MOCK_ANSWER"),
-	}, logger
+	return &App{
+		Version:      deps.Version,
+		Stdin:        stdin,
+		Stdout:       stdout,
+		Stderr:       stderr,
+		homeDir:      deps.HomeDir,
+		sm:           deps.SM,
+		bootstrapper: deps.Bootstrapper,
+		configLoader: deps.ConfigLoader,
+		chatService:  deps.ChatService,
+		mockPrompt:   getenv("TELL_ME_MOCK_PROMPT"),
+		mockAnswer:   getenv("TELL_ME_MOCK_ANSWER"),
+	}, nil
 }
 
 // Run executes the application logic.
-func (a *app) Run(ctx stdctx.Context, args []string) error {
+func (a *App) Run(ctx stdctx.Context, args []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -105,18 +123,6 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 		return err
 	}
 
-	// Assembly root: wire dependencies for orchestration
-	bootstrapper := di.NewBootstrapper(a.homeDir, a.sm, a.Version, a.Stdout, a.Stderr, a.logger, nil)
-	loader := &config.YAMLConfigLoader{}
-	chatService := agent.NewChatService(
-		a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm,
-		bootstrapper,
-		bootstrapper.GetAgentFactory(),
-		bootstrapper.GetUIRenderer(),
-		bootstrapper.GetHistoryRenderer(),
-		bootstrapper.GetHistoryBrowser(),
-	)
-
 	cmdCtx := &context{
 		Version:      a.Version,
 		Stdin:        a.Stdin,
@@ -124,9 +130,9 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 		Stderr:       a.Stderr,
 		HomeDir:      a.homeDir,
 		SM:           a.sm,
-		ChatService:  chatService,
-		Bootstrapper: bootstrapper,
-		Loader:       loader,
+		ChatService:  a.chatService,
+		Bootstrapper: a.bootstrapper,
+		Loader:       a.configLoader,
 		MockPrompt:   a.mockPrompt,
 		MockAnswer:   a.mockAnswer,
 	}

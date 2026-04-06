@@ -17,6 +17,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// SessionLifecycleManager defines the interface for building and finalizing sessions.
+type SessionLifecycleManager interface {
+	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error)
+	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
+}
+
 type chatService struct {
 	HomeDir string
 	Version string
@@ -24,11 +30,11 @@ type chatService struct {
 	Stderr  io.Writer
 	SM      domain_security.Manager
 
-	SessionFactory  ports.SessionFactory
-	ChatterFactory  ports.ChatterFactory
-	UIRenderer      ports.UIRenderer
-	HistoryRenderer ports.HistoryRenderer
-	HistoryBrowser  ports.HistoryBrowser
+	LifecycleManager SessionLifecycleManager
+	ChatterFactory   ports.ChatterFactory
+	UIRenderer       ports.UIRenderer
+	HistoryRenderer  ports.HistoryRenderer
+	HistoryBrowser   ports.HistoryBrowser
 }
 
 // NewChatService creates a new concrete implementation of ChatService with explicit dependency injection.
@@ -36,23 +42,23 @@ func NewChatService(
 	homeDir, version string,
 	stdout, stderr io.Writer,
 	sm domain_security.Manager,
-	sessionFactory ports.SessionFactory,
+	lifecycleManager SessionLifecycleManager,
 	chatterFactory ports.ChatterFactory,
 	uiRenderer ports.UIRenderer,
 	historyRenderer ports.HistoryRenderer,
 	historyBrowser ports.HistoryBrowser,
 ) ChatService {
 	return &chatService{
-		HomeDir:         homeDir,
-		Version:         version,
-		Stdout:          stdout,
-		Stderr:          stderr,
-		SM:              sm,
-		SessionFactory:  sessionFactory,
-		ChatterFactory:  chatterFactory,
-		UIRenderer:      uiRenderer,
-		HistoryRenderer: historyRenderer,
-		HistoryBrowser:  historyBrowser,
+		HomeDir:          homeDir,
+		Version:          version,
+		Stdout:           stdout,
+		Stderr:           stderr,
+		SM:               sm,
+		LifecycleManager: lifecycleManager,
+		ChatterFactory:   chatterFactory,
+		UIRenderer:       uiRenderer,
+		HistoryRenderer:  historyRenderer,
+		HistoryBrowser:   historyBrowser,
 	}
 }
 
@@ -68,7 +74,7 @@ func (s *chatService) GetLastUserMessage(ctx context.Context, hManager ports.His
 // ProcessMessage implements ChatService.
 func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, opts ChatOptions, capturer CapturerInteractor) error {
 	// 1. Build session dependencies
-	deps, hManager, cleanup, err := s.SessionFactory.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer)
+	deps, hManager, cleanup, err := s.LifecycleManager.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer)
 	if err != nil {
 		return err
 	}
@@ -113,7 +119,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 	})
 
 	// 3. Finalize session state
-	if finalizeErr := s.SessionFactory.FinalizeSession(ctx, hManager, deps, cfg); finalizeErr != nil {
+	if finalizeErr := s.LifecycleManager.FinalizeSession(ctx, hManager, deps, cfg); finalizeErr != nil {
 		if err != nil {
 			return fmt.Errorf("session processing failed: %w; additionally, finalize session failed: %w", err, finalizeErr)
 		}

@@ -51,13 +51,13 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 
 	mClient := &mockClient{}
 	// We use the real bootstrapper but wrap it to return our mock chatter
-	bootstrapper := di.NewBootstrapper(tmpDir, sm, "1.0.0", &stdout, &stderr, nil, func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus, logger ports.Logger) (domain_llm.ExtendedClient, error) {
+	b := di.NewBootstrapper(tmpDir, sm, "1.0.0", &stdout, &stderr, nil, func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus, logger ports.Logger) (domain_llm.ExtendedClient, error) {
 		return mClient, nil
 	})
 
 	// Wrap bootstrapper to override AgentFactory
 	container := &wrappedContainer{
-		Bootstrapper: bootstrapper,
+		Bootstrapper: b,
 		AgentFactory: func(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
 			return &integrationMockChatter{}, nil
 		},
@@ -106,7 +106,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 }
 
 type wrappedContainer struct {
-	*di.Bootstrapper
+	Bootstrapper
 	AgentFactory ports.ChatterFactory
 }
 

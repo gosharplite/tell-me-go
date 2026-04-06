@@ -8,45 +8,27 @@ import (
 	stdctx "context"
 	"errors"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
-
-func TestNew(t *testing.T) {
-	t.Run("Default home directory", func(t *testing.T) {
-		t.Setenv("TELL_ME_HOME", "")
-		t.Setenv("AIT_HOME", "")
-		app, _ := New("1.0.0", nil, nil, nil)
-		if app.homeDir != "." {
-			t.Errorf("expected homeDir to be '.', got %s", app.homeDir)
-		}
-	})
-
-	t.Run("TELL_ME_HOME environment variable", func(t *testing.T) {
-		expected := "/tmp/tell-me-home"
-		t.Setenv("TELL_ME_HOME", expected)
-		app, _ := New("1.0.0", nil, nil, nil)
-		if app.homeDir != expected {
-			t.Errorf("expected homeDir to be %s, got %s", expected, app.homeDir)
-		}
-	})
-
-	t.Run("AIT_HOME environment variable", func(t *testing.T) {
-		t.Setenv("TELL_ME_HOME", "")
-		expected := "/tmp/ait-home"
-		t.Setenv("AIT_HOME", expected)
-		app, _ := New("1.0.0", nil, nil, nil)
-		if app.homeDir != expected {
-			t.Errorf("expected homeDir to be %s, got %s", expected, app.homeDir)
-		}
-	})
-}
 
 func TestApp_Run_Version(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	version := "1.2.3"
-	app, _ := New(version, nil, stdout, stderr)
 
-	err := app.Run(stdctx.Background(), []string{"--version"})
+	deps := defaultTestDeps()
+	deps.Version = version
+	deps.Stdout = stdout
+	deps.Stderr = stderr
+	app, err := New(deps, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	err = app.Run(stdctx.Background(), []string{"--version"})
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -61,10 +43,17 @@ func TestApp_Run_Version(t *testing.T) {
 func TestApp_Run_UnknownCommand(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	app, _ := New("1.0.0", nil, stdout, stderr)
+
+	deps := defaultTestDeps()
+	deps.Stdout = stdout
+	deps.Stderr = stderr
+	app, err := New(deps, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 
 	// "chat" is not registered in this test yet, so it should fail.
-	err := app.Run(stdctx.Background(), []string{})
+	err = app.Run(stdctx.Background(), []string{})
 	if err == nil {
 		t.Fatal("expected error for unregistered 'chat' command, got nil")
 	}
@@ -86,12 +75,18 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 	})
 
 	stderr := &bytes.Buffer{}
-	app, _ := New("1.0.0", nil, nil, stderr)
+
+	deps := defaultTestDeps()
+	deps.Stderr = stderr
+	app, err := New(deps, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 
 	ctx, cancel := stdctx.WithCancel(stdctx.Background())
 	cancel() // Cancel it immediately
 
-	err := app.Run(ctx, []string{})
+	err = app.Run(ctx, []string{})
 	if err != nil {
 		t.Errorf("expected nil error on context cancellation, got %v", err)
 	}
@@ -116,45 +111,92 @@ func TestApp_Run_CommandError(t *testing.T) {
 		return &mockCommand{err: customErr}
 	})
 
-	app, _ := New("1.0.0", nil, nil, nil)
-	err := app.Run(stdctx.Background(), []string{})
+	deps := defaultTestDeps()
+	app, err := New(deps, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	err = app.Run(stdctx.Background(), []string{})
 	if !errors.Is(err, customErr) {
 		t.Errorf("expected %v, got %v", customErr, err)
 	}
 }
 
-func TestNew_LogLevel(t *testing.T) {
-	t.Run("Default to LevelWarn", func(t *testing.T) {
-		t.Setenv("TELL_ME_DEBUG", "")
-		stderr := &bytes.Buffer{}
-		_, logger := New("1.0.0", nil, nil, stderr)
+func TestNew_MissingDependencies(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(deps *AppDependencies)
+	}{
+		{
+			name:  "Missing Bootstrapper",
+			setup: func(deps *AppDependencies) { deps.Bootstrapper = nil },
+		},
+		{
+			name:  "Missing SM",
+			setup: func(deps *AppDependencies) { deps.SM = nil },
+		},
+		{
+			name:  "Missing ConfigLoader",
+			setup: func(deps *AppDependencies) { deps.ConfigLoader = nil },
+		},
+		{
+			name:  "Missing ChatService",
+			setup: func(deps *AppDependencies) { deps.ChatService = nil },
+		},
+	}
 
-		logger.Info("this info message should NOT appear")
-		logger.Warn("this warn message should appear")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deps := defaultTestDeps()
+			tt.setup(&deps)
 
-		output := stderr.String()
-		if bytes.Contains([]byte(output), []byte("level=INFO")) {
-			t.Errorf("expected no INFO log, got %q", output)
-		}
-		if !bytes.Contains([]byte(output), []byte("level=WARN")) {
-			t.Errorf("expected WARN log, got %q", output)
-		}
-	})
+			_, err := New(deps, func(string) string { return "" })
 
-	t.Run("TELL_ME_DEBUG=1 enables LevelDebug", func(t *testing.T) {
-		t.Setenv("TELL_ME_DEBUG", "1")
-		stderr := &bytes.Buffer{}
-		_, logger := New("1.0.0", nil, nil, stderr)
-
-		logger.Debug("this debug message should appear")
-		logger.Info("this info message should appear")
-
-		output := stderr.String()
-		if !bytes.Contains([]byte(output), []byte("level=DEBUG")) {
-			t.Errorf("expected DEBUG log, got %q", output)
-		}
-		if !bytes.Contains([]byte(output), []byte("level=INFO")) {
-			t.Errorf("expected INFO log, got %q", output)
-		}
-	})
+			if !errors.Is(err, errMissingDependency) {
+				t.Errorf("expected error %v for %s, got %v", errMissingDependency, tt.name, err)
+			}
+		})
+	}
 }
+
+func defaultTestDeps() AppDependencies {
+	return AppDependencies{
+		Version:      "1.0.0",
+		HomeDir:      ".",
+		SM:           &mockSM{},
+		Bootstrapper: &simpleMockBootstrapper{},
+		ConfigLoader: &cliMockLoader{},
+		ChatService:  &mockChatService{},
+	}
+}
+
+type cliMockLoader struct{}
+
+func (m *cliMockLoader) Load(path string) (*config.Config, error) {
+	return nil, errors.New("not implemented")
+}
+
+type simpleMockBootstrapper struct{}
+
+func (m *simpleMockBootstrapper) BuildSessionDependencies(stdctx.Context, *config.Config, string, bool, agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+	return nil, nil, func(stdctx.Context) error { return nil }, nil
+}
+func (m *simpleMockBootstrapper) FinalizeSession(stdctx.Context, ports.HistoryManager, ports.SessionDependencies, *config.Config) error {
+	return nil
+}
+func (m *simpleMockBootstrapper) GetHistoryManager(stdctx.Context, *config.Config) (ports.HistoryManager, error) {
+	return nil, nil
+}
+func (m *simpleMockBootstrapper) GetUnifiedHistoryProvider(stdctx.Context, *config.Config, ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
+	return nil, nil
+}
+func (m *simpleMockBootstrapper) GetSuggestionService(stdctx.Context, []string) (ports.SuggestionService, error) {
+	return nil, nil
+}
+
+// Retain ONLY the methods that are strictly invoked during app.Run() setup
+func (m *simpleMockBootstrapper) GetAgentFactory() ports.ChatterFactory     { return nil }
+func (m *simpleMockBootstrapper) GetUIRenderer() ports.UIRenderer           { return nil }
+func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer { return nil }
+func (m *simpleMockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser   { return nil }
