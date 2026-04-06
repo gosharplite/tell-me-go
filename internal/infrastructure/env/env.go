@@ -3,15 +3,15 @@
 
 package env
 
+import "os"
+
 // ResolveHomeDir determines the application's home directory based on environment variables
 // and system defaults. OS-level dependencies are injected to allow full test coverage.
-func ResolveHomeDir(getenv func(key string) string, userHomeDir func() (string, error)) string {
-	homeDir := getenv("TELL_ME_HOME")
-	if homeDir != "" {
+func ResolveHomeDir(userHomeDir func() (string, error)) string {
+	if homeDir := os.Getenv("TELL_ME_HOME"); homeDir != "" {
 		return homeDir
 	}
-	homeDir = getenv("AIT_HOME")
-	if homeDir != "" {
+	if homeDir := os.Getenv("AIT_HOME"); homeDir != "" {
 		return homeDir
 	}
 	homeDir, err := userHomeDir()

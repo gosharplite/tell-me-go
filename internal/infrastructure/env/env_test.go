@@ -48,14 +48,18 @@ func TestResolveHomeDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockGetenv := func(key string) string {
-				return tt.envVars[key]
+			// Clear system env vars that might interfere
+			t.Setenv("TELL_ME_HOME", "")
+			t.Setenv("AIT_HOME", "")
+
+			for k, v := range tt.envVars {
+				t.Setenv(k, v)
 			}
 			mockUserHomeDir := func() (string, error) {
 				return tt.homeDir, tt.homeDirErr
 			}
 
-			got := ResolveHomeDir(mockGetenv, mockUserHomeDir)
+			got := ResolveHomeDir(mockUserHomeDir)
 			if got != tt.expected {
 				t.Errorf("expected %q, got %q", tt.expected, got)
 			}

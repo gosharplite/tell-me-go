@@ -11,17 +11,17 @@ import (
 func TestNewLogger(t *testing.T) {
 	tests := []struct {
 		name        string
-		debugEnv    string
+		isDebug     bool
 		expectDebug bool
 	}{
 		{
 			name:        "Default to Warn level",
-			debugEnv:    "",
+			isDebug:     false,
 			expectDebug: false,
 		},
 		{
 			name:        "Debug level enabled",
-			debugEnv:    "1",
+			isDebug:     true,
 			expectDebug: true,
 		},
 	}
@@ -29,7 +29,7 @@ func TestNewLogger(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			logger := NewLogger(&buf, tt.debugEnv)
+			logger := NewLogger(&buf, tt.isDebug)
 
 			logger.Debug("debug message")
 			logger.Warn("warn message")

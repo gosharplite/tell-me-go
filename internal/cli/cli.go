@@ -14,8 +14,8 @@ import (
 	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 // app represents the tell-me-go application.
@@ -28,12 +28,13 @@ type app struct {
 	sm           domain_security.Manager
 	logger       *slog.Logger
 	bootstrapper Bootstrapper
+	configLoader domain_config.ConfigLoader
 	mockPrompt   string
 	mockAnswer   string
 }
 
 // New creates a new App instance with explicit dependency injection.
-func New(version string, stdin io.Reader, stdout, stderr io.Writer, b Bootstrapper, sm domain_security.Manager, homeDir string, logger *slog.Logger) *app {
+func New(version string, stdin io.Reader, stdout, stderr io.Writer, b Bootstrapper, sm domain_security.Manager, homeDir string, logger *slog.Logger, configLoader domain_config.ConfigLoader) *app {
 	if stdin == nil {
 		stdin = os.Stdin
 	}
@@ -53,6 +54,7 @@ func New(version string, stdin io.Reader, stdout, stderr io.Writer, b Bootstrapp
 		sm:           sm,
 		logger:       logger,
 		bootstrapper: b,
+		configLoader: configLoader,
 		mockPrompt:   os.Getenv("TELL_ME_MOCK_PROMPT"),
 		mockAnswer:   os.Getenv("TELL_ME_MOCK_ANSWER"),
 	}
@@ -88,7 +90,6 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 		return err
 	}
 
-	loader := &config.YAMLConfigLoader{}
 	if a.bootstrapper == nil {
 		return errors.New("application bootstrapper is not initialized")
 	}
@@ -111,7 +112,7 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 		SM:           a.sm,
 		ChatService:  chatService,
 		Bootstrapper: a.bootstrapper,
-		Loader:       loader,
+		Loader:       a.configLoader,
 		MockPrompt:   a.mockPrompt,
 		MockAnswer:   a.mockAnswer,
 	}

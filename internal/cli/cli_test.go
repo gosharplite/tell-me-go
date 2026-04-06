@@ -11,14 +11,13 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 func TestApp_Run_Version(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	version := "1.2.3"
-	app := New(version, nil, stdout, stderr, &simpleMockBootstrapper{}, nil, ".", nil)
+	app := New(version, nil, stdout, stderr, &simpleMockBootstrapper{}, nil, ".", nil, &cliMockLoader{})
 
 	err := app.Run(stdctx.Background(), []string{"--version"})
 	if err != nil {
@@ -35,7 +34,7 @@ func TestApp_Run_Version(t *testing.T) {
 func TestApp_Run_UnknownCommand(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	app := New("1.0.0", nil, stdout, stderr, &simpleMockBootstrapper{}, nil, ".", nil)
+	app := New("1.0.0", nil, stdout, stderr, &simpleMockBootstrapper{}, nil, ".", nil, &cliMockLoader{})
 
 	// "chat" is not registered in this test yet, so it should fail.
 	err := app.Run(stdctx.Background(), []string{})
@@ -60,7 +59,7 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 	})
 
 	stderr := &bytes.Buffer{}
-	app := New("1.0.0", nil, nil, stderr, &simpleMockBootstrapper{}, nil, ".", nil)
+	app := New("1.0.0", nil, nil, stderr, &simpleMockBootstrapper{}, nil, ".", nil, &cliMockLoader{})
 
 	ctx, cancel := stdctx.WithCancel(stdctx.Background())
 	cancel() // Cancel it immediately
@@ -90,30 +89,37 @@ func TestApp_Run_CommandError(t *testing.T) {
 		return &mockCommand{err: customErr}
 	})
 
-	app := New("1.0.0", nil, nil, nil, &simpleMockBootstrapper{}, nil, ".", nil)
+	app := New("1.0.0", nil, nil, nil, &simpleMockBootstrapper{}, nil, ".", nil, &cliMockLoader{})
 	err := app.Run(stdctx.Background(), []string{})
 	if !errors.Is(err, customErr) {
 		t.Errorf("expected %v, got %v", customErr, err)
 	}
 }
 
-type simpleMockBootstrapper struct{}
+func TestApp_Run_NilBootstrapper(t *testing.T) {
+	// Pass nil for the bootstrapper (5th argument)
+	app := New("1.0.0", nil, nil, nil, nil, nil, ".", nil, &cliMockLoader{})
 
-func (m *simpleMockBootstrapper) BuildSessionDependencies(stdctx.Context, *config.Config, string, bool, security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
-	return nil, nil, nil, nil
+	// Execute a command that would normally trigger the bootstrapper
+	err := app.Run(stdctx.Background(), []string{"chat"})
+
+	expectedErr := "application bootstrapper is not initialized"
+	if err == nil || err.Error() != expectedErr {
+		t.Errorf("expected error %q, got %v", expectedErr, err)
+	}
 }
-func (m *simpleMockBootstrapper) FinalizeSession(stdctx.Context, ports.HistoryManager, ports.SessionDependencies, *config.Config) error {
-	return nil
+
+type cliMockLoader struct{}
+
+func (m *cliMockLoader) Load(path string) (*config.Config, error) {
+	return nil, errors.New("not implemented")
 }
-func (m *simpleMockBootstrapper) GetHistoryManager(stdctx.Context, *config.Config) (ports.HistoryManager, error) {
-	return nil, nil
+
+type simpleMockBootstrapper struct {
+	Bootstrapper // Embed the interface to automatically satisfy unused methods
 }
-func (m *simpleMockBootstrapper) GetUnifiedHistoryProvider(stdctx.Context, *config.Config, ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
-	return nil, nil
-}
-func (m *simpleMockBootstrapper) GetSuggestionService(stdctx.Context, []string) (ports.SuggestionService, error) {
-	return nil, nil
-}
+
+// Retain ONLY the methods that are strictly invoked during app.Run() setup
 func (m *simpleMockBootstrapper) GetAgentFactory() ports.ChatterFactory     { return nil }
 func (m *simpleMockBootstrapper) GetUIRenderer() ports.UIRenderer           { return nil }
 func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer { return nil }

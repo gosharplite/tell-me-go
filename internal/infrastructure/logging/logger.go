@@ -9,9 +9,9 @@ import (
 )
 
 // NewLogger creates a configured slog.Logger based on the debug environment flag.
-func NewLogger(stderr io.Writer, debugEnv string) *slog.Logger {
+func NewLogger(stderr io.Writer, isDebug bool) *slog.Logger {
 	logLevel := slog.LevelWarn
-	if debugEnv == "1" {
+	if isDebug {
 		logLevel = slog.LevelDebug
 	}
 	logHandler := slog.NewTextHandler(stderr, &slog.HandlerOptions{
