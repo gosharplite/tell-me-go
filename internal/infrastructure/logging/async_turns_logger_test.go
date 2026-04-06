@@ -238,11 +238,11 @@ func TestAsyncTurnsLogger_BufferFull(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
 	require.NoError(t, err)
 
-	// Send 102 messages.
+	// Send 1002 messages.
 	// 1st message will block in the worker's Write call.
-	// Next 100 messages will fill the channel buffer (capacity 100).
-	// 102nd message will trigger the "buffer full" warning because the channel is full.
-	for i := 0; i < 102; i++ {
+	// Next 1000 messages will fill the channel buffer (capacity 1000).
+	// 1002nd message will trigger the "buffer full" warning because the channel is full.
+	for i := 0; i < 1002; i++ {
 		tl.HandleEvent(context.Background(), events.SystemMessageEvent{
 			Message: fmt.Sprintf("msg %d", i),
 			Level:   "info",

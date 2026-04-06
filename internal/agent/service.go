@@ -25,6 +25,11 @@ type SessionLifecycleManager interface {
 	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
 }
 
+// LogFileOpener defines the minimal interface required to open session log files.
+type LogFileOpener interface {
+	Open(ctx context.Context, name string) (persistence.File, error)
+}
+
 type chatService struct {
 	HomeDir string
 	Version string
@@ -37,7 +42,7 @@ type chatService struct {
 	UIRenderer       ports.UIRenderer
 	HistoryRenderer  ports.HistoryRenderer
 	HistoryBrowser   ports.HistoryBrowser
-	FileSystem       persistence.FileSystem
+	LogOpener        LogFileOpener
 }
 
 // NewChatService creates a new concrete implementation of ChatService with explicit dependency injection.
@@ -50,7 +55,7 @@ func NewChatService(
 	uiRenderer ports.UIRenderer,
 	historyRenderer ports.HistoryRenderer,
 	historyBrowser ports.HistoryBrowser,
-	fs persistence.FileSystem,
+	logOpener LogFileOpener,
 ) ChatService {
 	return &chatService{
 		HomeDir:          homeDir,
@@ -63,7 +68,7 @@ func NewChatService(
 		UIRenderer:       uiRenderer,
 		HistoryRenderer:  historyRenderer,
 		HistoryBrowser:   historyBrowser,
-		FileSystem:       fs,
+		LogOpener:        logOpener,
 	}
 }
 
@@ -151,13 +156,13 @@ func (s *chatService) GetToolNames(ctx context.Context, reg tools.Registry) ([]s
 }
 
 // StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
-func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Config, out io.Writer) error {
+func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Config, out io.Writer) (err error) {
 	paths := persistence.ResolvePaths(s.HomeDir, cfg.Mode)
 	if paths.TurnsLogPath == "" {
 		return errors.New("turns log path not available")
 	}
 
-	file, err := s.FileSystem.Open(ctx, paths.TurnsLogPath)
+	file, err := s.LogOpener.Open(ctx, paths.TurnsLogPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			_, _ = fmt.Fprintln(out, "No turns log found for this session yet.")
@@ -165,10 +170,30 @@ func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Con
 		}
 		return fmt.Errorf("failed to open turns log at %s: %w", paths.TurnsLogPath, err)
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close turns log: %w", cerr)
+		}
+	}()
 
-	if _, err := io.Copy(out, file); err != nil {
-		return fmt.Errorf("failed to output turns log: %w", err)
+	buf := make([]byte, 32*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		n, rErr := file.Read(buf)
+		if n > 0 {
+			if _, wErr := out.Write(buf[:n]); wErr != nil {
+				return fmt.Errorf("failed to output turns log: %w", wErr)
+			}
+		}
+		if rErr != nil {
+			if errors.Is(rErr, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("failed to read turns log: %w", rErr)
+		}
 	}
-	return nil
 }

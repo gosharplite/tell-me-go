@@ -41,7 +41,7 @@ func NewAsyncTurnsLogger(fs infra_persistence.FileSystem, filePath string, logge
 
 	tl := &asyncTurnsLogger{
 		file:   f,
-		ch:     make(chan string, 100),
+		ch:     make(chan string, 1000),
 		logger: logger,
 		clock:  clock.RealClock{}, // Initialize internal clock
 	}
