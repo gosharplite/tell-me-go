@@ -5,6 +5,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -203,9 +204,26 @@ func (r *stdUIRenderer) getUIState() uiState {
 }
 
 func (r *stdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time) {
-	if m == nil {
+	if logFile == "" || m == nil {
 		return
 	}
+
+	m.Timestamp = r.nowSafe().Format(time.RFC3339)
+
+	data, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+
+	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+	_, _ = f.Write(data)
+	_, _ = f.WriteString("\n")
 
 	// If it's a summary (background task), print the line to terminal
 	if m.IsSummary {
@@ -250,8 +268,29 @@ func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, star
 		modelStr = fmt.Sprintf(" [%s]", displayName)
 	}
 
-	_, _ = fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d Th: %d%s\n",
-		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, m.ThinkingTokens, ui.c(colorReset))
+	totalTurnLatency := m.Duration + m.ToolDuration
+	timingStr := fmt.Sprintf("%s%.2fs %s(ΣT: %.2fs)%s",
+		ui.c(colorReset), totalTurnLatency,
+		ui.c(colorGray), m.CumulativeToolDuration,
+		ui.c(colorGray))
+
+	if !startTime.IsZero() {
+		totalSessionDuration := ui.clock.Now().Sub(startTime).Seconds()
+		if turns > 0 {
+			timingStr = fmt.Sprintf("%s / %.2fs (%.2f)%s", timingStr, totalSessionDuration, totalSessionDuration/float64(turns), ui.c(colorGray))
+		} else {
+			timingStr = fmt.Sprintf("%s / %.2fs%s", timingStr, totalSessionDuration, ui.c(colorGray))
+		}
+	}
+
+	// Prepare cost string
+	costStr := ""
+	if m.Cost > 0 {
+		costStr = fmt.Sprintf(" %s($%.4f)%s", ui.c(colorGray), m.Cost, ui.c(colorGray))
+	}
+
+	_, _ = fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d Th: %d%s %s[%s]%s\n",
+		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, m.ThinkingTokens, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
 }
 
 func (r *stdUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
@@ -636,6 +675,36 @@ func (r *stdUIRenderer) printTokenLine(ui uiState, timestamp string, tokens int,
 		ui.c(colorGray), timestamp, prefix, ui.c(tokenColor), "", tokens, ui.c(colorGray), maxTokens, modeStr, ui.c(colorReset))
 }
 
+func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) string {
+	if status.SessionCost <= 0 {
+		return ""
+	}
+
+	hitRate := 0.0
+	if total := status.TotalM + status.TotalH; total > 0 {
+		hitRate = float64(status.TotalH) / float64(total) * 100
+	}
+
+	// Safe access to metrics; metrics could be nil if the turn stopped before inference
+	turnCost := 0.0
+	if status.Metrics != nil {
+		turnCost = status.Metrics.Cost
+	}
+
+	// Format: (TurnCost TaskCost SessionCost DailyCost M: ... H: ... O: ...)
+	return fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
+		ui.c(colorGray),
+		turnCost, status.TaskCost,
+		ui.c(colorGreen), status.SessionCost,
+		ui.c(colorGray), status.DailyCost,
+		ui.c(colorGray),
+		status.TotalM,
+		status.TotalH,
+		hitRate,
+		status.TotalO,
+		ui.c(colorGray))
+}
+
 func (r *stdUIRenderer) renderTurnHeader(ui uiState, status events.TurnStatus) {
 	stderr := ui.stderr
 	timestamp := status.Timestamp.Format("15:04:05")
@@ -674,5 +743,6 @@ func (r *stdUIRenderer) renderPostCallStatus(ui uiState, status events.TurnStatu
 
 func (r *stdUIRenderer) renderFinalSummary(ui uiState, status events.TurnStatus) {
 	stderr := ui.stderr
-	_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady\n", ui.c(colorGray), ui.c(colorReset))
+	costStr := r.formatFinalCost(status, ui)
+	_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
 }
