@@ -37,8 +37,8 @@ type AppDependencies struct {
 	ChatService  agent.ChatService
 }
 
-// app represents the tell-me-go application.
-type app struct {
+// App represents the tell-me-go application.
+type App struct {
 	Version      string
 	Stdin        io.Reader
 	Stdout       io.Writer
@@ -54,7 +54,7 @@ type app struct {
 }
 
 // New creates a new App instance with explicit dependency injection.
-func New(deps AppDependencies, getenv func(string) string) (*app, error) {
+func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 	if deps.Bootstrapper == nil {
 		return nil, fmt.Errorf("%w: Bootstrapper", ErrMissingDependency)
 	}
@@ -84,7 +84,7 @@ func New(deps AppDependencies, getenv func(string) string) (*app, error) {
 		stderr = os.Stderr
 	}
 
-	return &app{
+	return &App{
 		Version:      deps.Version,
 		Stdin:        stdin,
 		Stdout:       stdout,
@@ -101,7 +101,7 @@ func New(deps AppDependencies, getenv func(string) string) (*app, error) {
 }
 
 // Run executes the application logic.
-func (a *app) Run(ctx stdctx.Context, args []string) error {
+func (a *App) Run(ctx stdctx.Context, args []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

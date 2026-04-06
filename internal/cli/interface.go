@@ -16,7 +16,7 @@ import (
 // Bootstrapper defines the infrastructure interface for resolving dependencies.
 // This matches the methods provided by the DI container.
 type Bootstrapper interface {
-	ports.SessionFactory
+	agent.SessionLifecycleManager
 	ports.HistoryManagerProvider
 	ports.SuggestionProvider
 	GetAgentFactory() ports.ChatterFactory

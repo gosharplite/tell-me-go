@@ -104,7 +104,7 @@ func run() int {
 	return 0
 }
 
-func buildApp(appVersion string) (commandRunner, func(), error) {
+func buildApp(appVersion string) (*cli.App, func(), error) {
 	ctx := context.Background()
 	shutdown := initTracer(ctx)
 	cleanup := func() {
@@ -159,8 +159,4 @@ func buildApp(appVersion string) (commandRunner, func(), error) {
 	}
 
 	return app, cleanup, nil
-}
-
-type commandRunner interface {
-	Run(context.Context, []string) error
 }

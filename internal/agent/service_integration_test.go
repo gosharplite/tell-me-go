@@ -19,12 +19,12 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		setup   func(sf *mockSessionFactory)
+		setup   func(sf *mockSessionLifecycleManager)
 		wantErr string
 	}{
 		{
 			name: "Build Session Dependencies Failure",
-			setup: func(sf *mockSessionFactory) {
+			setup: func(sf *mockSessionLifecycleManager) {
 				sf.On("BuildSessionDependencies", context.Background(), &config.Config{}, "config.yaml", false, nil).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 			},
 			wantErr: "build error",
@@ -34,7 +34,7 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSM := &mockServiceSecurityManager{}
-			mockSF := &mockSessionFactory{}
+			mockSF := &mockSessionLifecycleManager{}
 			if tt.setup != nil {
 				tt.setup(mockSF)
 			}

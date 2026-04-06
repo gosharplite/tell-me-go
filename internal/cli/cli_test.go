@@ -10,9 +10,9 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 func TestApp_Run_Version(t *testing.T) {
@@ -173,7 +173,7 @@ func (m *cliMockLoader) Load(path string) (*config.Config, error) {
 
 type simpleMockBootstrapper struct{}
 
-func (m *simpleMockBootstrapper) BuildSessionDependencies(stdctx.Context, *config.Config, string, bool, security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+func (m *simpleMockBootstrapper) BuildSessionDependencies(stdctx.Context, *config.Config, string, bool, agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
 	return nil, nil, func(stdctx.Context) error { return nil }, nil
 }
 func (m *simpleMockBootstrapper) FinalizeSession(stdctx.Context, ports.HistoryManager, ports.SessionDependencies, *config.Config) error {
