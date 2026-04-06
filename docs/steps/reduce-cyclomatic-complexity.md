@@ -82,7 +82,7 @@ tell-me-go -new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 ```
 
 **Notes:**
-- The `&> /dev/null` discards stdout and stderr to keep the terminal clean. If you need to review what happened, check the automatically generated `output/<role>/turns.log`.
+- The `&> /dev/null` discards stdout and stderr to keep the terminal clean. If you need to review what happened or debug a failure, run `tell-me-go -t -c ${ROLE_CONFIG}` (e.g. `${ARCHITECT_CONFIG}`) to output the session's execution log.
 - Use `-new` when you first chat with a role. For a continuous conversation, omit `-new`.
 
 To retrieve the last responses from a role:

@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
@@ -46,14 +47,15 @@ type chatCommand struct {
 }
 
 type cliOptions struct {
-	configPath  string
-	newSession  bool
-	showVersion bool
-	lastN       int
-	backN       int
-	rawOutput   bool
-	tuiPrompt   bool
-	retry       bool
+	configPath   string
+	newSession   bool
+	showVersion  bool
+	showTurnsLog bool
+	lastN        int
+	backN        int
+	rawOutput    bool
+	tuiPrompt    bool
+	retry        bool
 }
 
 // newChatCommand creates a new Chat Command with default factories.
@@ -81,6 +83,34 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 			return nil
 		}
 		return err
+	}
+
+	if opts.showTurnsLog {
+		cfg, err := c.Loader.Load(opts.configPath)
+		if err != nil {
+			return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
+		}
+
+		deps, _, cleanup, err := c.Bootstrapper.BuildSessionDependencies(ctx, cfg, opts.configPath, false, nil)
+		if cleanup != nil {
+			defer func() { _ = cleanup(stdctx.Background()) }()
+		}
+		if err != nil {
+			return err
+		}
+
+		paths := deps.GetPaths()
+		if paths == nil || paths.TurnsLogPath == "" {
+			return errors.New("turns log path not available")
+		}
+
+		content, err := os.ReadFile(paths.TurnsLogPath)
+		if err != nil {
+			return fmt.Errorf("failed to read turns log at %s: %w", paths.TurnsLogPath, err)
+		}
+
+		fmt.Fprint(c.Stdout, string(content))
+		return nil
 	}
 
 	var prompt string
@@ -285,6 +315,7 @@ func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.Flag
 	fs.StringVar(&opts.configPath, "c", "configs/assistant.yaml", "Path to the configuration file")
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
 	fs.BoolVar(&opts.showVersion, "v", false, "Show version information")
+	fs.BoolVar(&opts.showTurnsLog, "t", false, "Print the contents of the current session's turns.log and exit")
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
 	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
 	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")

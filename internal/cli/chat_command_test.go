@@ -6,11 +6,13 @@ package cli
 import (
 	stdctx "context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -46,7 +48,15 @@ type mockBootstrapper struct {
 
 func (m *mockBootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
-	return args.Get(0).(ports.SessionDependencies), args.Get(1).(ports.HistoryManager), args.Get(2).(func(stdctx.Context) error), args.Error(3)
+	var deps ports.SessionDependencies
+	if args.Get(0) != nil {
+		deps = args.Get(0).(ports.SessionDependencies)
+	}
+	var hManager ports.HistoryManager
+	if args.Get(1) != nil {
+		hManager = args.Get(1).(ports.HistoryManager)
+	}
+	return deps, hManager, args.Get(2).(func(stdctx.Context) error), args.Error(3)
 }
 
 func (m *mockBootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
@@ -416,5 +426,65 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 
 	if mService.lastParams.Prompt != "fallback test" {
 		t.Errorf("expected prompt 'fallback test', got %q", mService.lastParams.Prompt)
+	}
+}
+
+type mockSessionDeps struct {
+	mock.Mock
+	ports.SessionDependencies
+}
+
+func (m *mockSessionDeps) GetPaths() *persistence.Paths {
+	args := m.Called()
+	return args.Get(0).(*persistence.Paths)
+}
+
+func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	logPath := tmpDir + "/turns.log"
+	expectedContent := "turn 1: hello\nturn 2: world"
+	err := os.WriteFile(logPath, []byte(expectedContent), 0644)
+	if err != nil {
+		t.Fatalf("failed to create test log file: %v", err)
+	}
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mService := &mockChatService{}
+	mb, ml := setupMocks()
+
+	mDeps := &mockSessionDeps{}
+	mDeps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: logPath})
+
+	mb.On("BuildSessionDependencies", mock.Anything, mock.Anything, mock.Anything, false, mock.Anything).
+		Return(mDeps, (ports.HistoryManager)(nil), func(stdctx.Context) error { return nil }, nil)
+
+	cmd := &chatCommand{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	ctx := stdctx.Background()
+	args := []string{"chat", "-t"}
+
+	err = cmd.Execute(ctx, args)
+	if err != nil {
+		t.Errorf("Execute failed: %v", err)
+	}
+
+	if stdout.String() != expectedContent {
+		t.Errorf("expected stdout %q, got %q", expectedContent, stdout.String())
+	}
+
+	if mService.chatCalled {
+		t.Error("expected chat service NOT to be called")
 	}
 }
