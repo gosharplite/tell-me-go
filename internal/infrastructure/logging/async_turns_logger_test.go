@@ -89,9 +89,59 @@ func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
 
-	// Fixed non-deterministic assertion: messages may be dropped if buffer fills up
-	assert.GreaterOrEqual(t, len(lines), 50, "Should have written at least 50% of the messages without dropping")
-	assert.LessOrEqual(t, len(lines), numGoroutines*msgsPerGoroutine, "Should not exceed max expected lines")
+	// Fixed non-deterministic assertion: sending exactly 100 messages into a channel with a buffer size of 100
+	// should never result in dropped messages, regardless of how slow the worker is.
+	assert.Len(t, lines, numGoroutines*msgsPerGoroutine, "Exactly 100 messages should be processed without dropping")
+}
+
+type errorSyncFile struct {
+	infra_persistence.File
+}
+
+func (f *errorSyncFile) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
+func (f *errorSyncFile) Sync() error {
+	return errors.New("sync failed")
+}
+
+func (f *errorSyncFile) Close() error {
+	return nil
+}
+
+type errorSyncFS struct {
+	infra_persistence.FileSystem
+}
+
+func (fs *errorSyncFS) OpenFile(_ string, _ int, _ os.FileMode) (infra_persistence.File, error) {
+	return &errorSyncFile{}, nil
+}
+
+func TestAsyncTurnsLogger_SyncError(t *testing.T) {
+	fs := &errorSyncFS{}
+	handler := &slogHandler{}
+	logger := slog.New(handler)
+
+	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
+	require.NoError(t, err)
+
+	tl.LogSystemMessage("test message", "info", time.Now())
+
+	err = tl.Close()
+	require.NoError(t, err)
+
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+
+	found := false
+	for _, r := range handler.records {
+		if r.Level == slog.LevelWarn && strings.Contains(r.Message, "failed to sync turns log") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should have logged sync error warning")
 }
 
 func TestAsyncTurnsLogger_Close_Twice(t *testing.T) {

@@ -824,3 +824,77 @@ func TestGetChatService(t *testing.T) {
 	svc := b.GetChatService()
 	assert.NotNil(t, svc)
 }
+
+type mockFileWithErrors struct {
+	infra_persistence.File
+	closeErr error
+}
+
+func (m *mockFileWithErrors) Close() error { return m.closeErr }
+func (m *mockFileWithErrors) Sync() error  { return nil }
+func (m *mockFileWithErrors) Write(p []byte) (int, error) { return len(p), nil }
+
+type mockFSWithErrors struct {
+	infra_persistence.FileSystem
+	file infra_persistence.File
+}
+
+func (m *mockFSWithErrors) OpenFile(name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
+	return m.file, nil
+}
+func (m *mockFSWithErrors) MkdirAll(path string, perm os.FileMode) error { return nil }
+func (m *mockFSWithErrors) Stat(name string) (os.FileInfo, error) {
+	return nil, os.ErrNotExist
+}
+
+func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// 1. Setup mocks
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
+	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
+
+	busErr := errors.New("bus shutdown failed")
+	mockSP := new(mockSessionProvider)
+	mockKV := new(mockKVStore)
+	mockKV.On("Get", mock.Anything, mock.Anything).Return("", nil).Maybe()
+	mockSP.On("GetSettings").Return(mockKV).Maybe()
+	mockSP.On("GetInfo").Return(ports.SessionInfo{}).Maybe()
+	mockSP.On("SetInfo", mock.Anything).Return().Maybe()
+	mockSP.On("Close").Return(busErr)
+
+	logErr := errors.New("log flush failed")
+	file := &mockFileWithErrors{closeErr: logErr}
+	fs := &mockFSWithErrors{file: file}
+
+	bootstrapper := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, fs, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	bootstrapper.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+		return mockSP, nil
+	}
+
+	cfg := &config.Config{
+		Mode: "assistant",
+	}
+
+	// 2. Build dependencies
+	_, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+
+	// 3. Execute cleanup and verify error chaining
+	err = cleanup(ctx)
+	require.Error(t, err)
+
+	// Verify both errors are present in the joined error
+	assert.ErrorIs(t, err, busErr)
+	assert.ErrorIs(t, err, logErr)
+	assert.Contains(t, err.Error(), "bus shutdown failed")
+	assert.Contains(t, err.Error(), "log flush failed")
+}
