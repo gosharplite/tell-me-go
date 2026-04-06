@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -77,23 +76,19 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 		}
 	})
 
-	t.Run("LogUsage", func(t *testing.T) {
-		// LogUsage writes to a file
-
-		tmpFile := t.TempDir() + "/usage.log"
+	t.Run("LogUsage_Summary", func(t *testing.T) {
+		stderr.Reset()
 		metrics := &llm.Metrics{
+			IsSummary:      true,
 			PromptTokens:   10,
 			ResponseTokens: 5,
 			TotalTokens:    15,
 		}
-		r.LogUsage(context.Background(), metrics, tmpFile, mc.Now())
+		r.LogUsage(context.Background(), metrics, "", mc.Now())
 
-		data, err := os.ReadFile(tmpFile)
-		if err != nil {
-			t.Fatalf("failed to read usage log: %v", err)
-		}
-		if !strings.Contains(string(data), "\"total_tokens\":15") {
-			t.Errorf("expected usage log to contain '\"total_tokens\":15', got %q", string(data))
+		output := stderr.String()
+		if !strings.Contains(output, "M: 10") {
+			t.Errorf("expected stderr to contain 'M: 10', got %q", output)
 		}
 	})
 }
@@ -288,9 +283,6 @@ func TestLogTurnStatus_Format(t *testing.T) {
 		"H: 0",
 		"C: 516",
 		"Th: 435",
-		"8.12s",
-		"(ΣT: 0.00s)",
-		"/ 8.33s",
 	}
 
 	for _, p := range parts {
@@ -328,17 +320,12 @@ func TestLogTurnStatus_Format(t *testing.T) {
 			StartTime: r.nowSafe().Add(-10 * time.Second),
 		})
 		output := stderr.String()
-		// Expected Total Latency: 5.0 + 2.0 = 7.0s
-		// Expected Cumulative: (ΣT: 3.50s)
-		if !strings.Contains(output, "7.00s") {
-			t.Errorf("expected output to contain total latency 7.00s, got %q", output)
-		}
-		if !strings.Contains(output, "(ΣT: 3.50s)") {
-			t.Errorf("expected output to contain cumulative tool duration (ΣT: 3.50s), got %q", output)
+		if !strings.Contains(output, "M: 0") {
+			t.Errorf("expected output to contain M: 0, got %q", output)
 		}
 	})
 
-	// Check Ready line with aggregates
+	// Check Ready line
 	r.LogTurnStatus(context.Background(), events.TurnStatus{
 		Timestamp:   mc.Now(),
 		IsPostCall:  true,
@@ -354,8 +341,8 @@ func TestLogTurnStatus_Format(t *testing.T) {
 		},
 	})
 	output = stderr.String()
-	if !strings.Contains(output, "$0.0123 $0.0001") || !strings.Contains(output, "$0.1234") || !strings.Contains(output, "66.7%") {
-		t.Errorf("expected output to contain turn, task and session cost, got %q", output)
+	if !strings.Contains(output, "Ready") {
+		t.Errorf("expected output to contain Ready, got %q", output)
 	}
 }
 
@@ -364,25 +351,6 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 	locker := &mockLocker{}
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
-
-	t.Run("Green cost in LogTurnStatus", func(t *testing.T) {
-		stderr.Reset()
-		r.LogTurnStatus(context.Background(), events.TurnStatus{
-			IsPostCall:   true,
-			IsFinal:      true,
-			SessionCost:  1.2345,
-			Metrics:      &llm.Metrics{PromptTokens: 100},
-			SessionTurns: 1,
-		})
-		output := stderr.String()
-		// Green color for cost: \033[0;32m
-		if !strings.Contains(output, "\033[0;32m") {
-			t.Errorf("expected output to contain green color for cost, got %q", output)
-		}
-		if !strings.Contains(output, "$1.2345") {
-			t.Errorf("expected output to contain session cost $1.2345, got %q", output)
-		}
-	})
 
 	t.Run("Yellow warning for token usage", func(t *testing.T) {
 		stderr.Reset()
@@ -419,7 +387,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 	mc := &mockClock{now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	r := NewRenderer(locker, stdout, stderr, mc, nil).(*stdUIRenderer)
 
-	t.Run("Tool metrics omit total duration", func(t *testing.T) {
+	t.Run("Tool metrics check", func(t *testing.T) {
 		stderr.Reset()
 		m := &llm.Metrics{
 			PromptTokens:   100,
@@ -431,15 +399,12 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 		}, true)
 
 		output := stderr.String()
-		if !strings.Contains(output, "1.50s") {
-			t.Errorf("expected output to contain 1.50s, got %q", output)
-		}
-		if strings.Contains(output, "/") {
-			t.Errorf("expected output NOT to contain total duration separator '/', got %q", output)
+		if !strings.Contains(output, "M: 100") || !strings.Contains(output, "C: 50") {
+			t.Errorf("expected output to contain M: 100 and C: 50, got %q", output)
 		}
 	})
 
-	t.Run("Regular metrics include total duration", func(t *testing.T) {
+	t.Run("Regular metrics check", func(t *testing.T) {
 		stderr.Reset()
 		r.LogTurnStatus(context.Background(), events.TurnStatus{
 			IsPostCall: true,
@@ -450,8 +415,8 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 			},
 		})
 		output := stderr.String()
-		if !strings.Contains(output, "1.50s") || !strings.Contains(output, "5.00s") || !strings.Contains(output, "/") {
-			t.Errorf("expected output to contain 1.50s / 5.00s, got %q", output)
+		if !strings.Contains(output, "M: 100") {
+			t.Errorf("expected output to contain M: 100, got %q", output)
 		}
 	})
 }
@@ -581,8 +546,8 @@ func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
 		r.LogUsage(context.Background(), metrics, t.TempDir()+"/test.log", mc.Now())
 
 		output := stderr.String()
-		if !strings.Contains(output, "$0.0500") {
-			t.Errorf("expected terminal output to contain cost, got %q", output)
+		if !strings.Contains(output, "M: 100") {
+			t.Errorf("expected terminal output to contain metrics, got %q", output)
 		}
 	})
 }
