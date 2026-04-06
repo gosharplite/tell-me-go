@@ -1755,10 +1755,10 @@ func TestUIBridge_HandleEvent_ContextCancelled(t *testing.T) {
 func TestFormatSystemMessageForLog(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name     string
-		msg      string
-		level    string
-		want     string
+		name  string
+		msg   string
+		level string
+		want  string
 	}{
 		{"info", "hello", "info", "[12:00:00] [Info] hello"},
 		{"error", "fail", "error", "[12:00:00] [Error] fail"},

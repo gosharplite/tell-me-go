@@ -472,7 +472,7 @@ type memFile struct {
 	*strings.Reader
 }
 
-func (m *memFile) Write(p []byte) (int, error) { return 0, io.EOF }
+func (m *memFile) Write(p []byte) (int, error)  { return 0, io.EOF }
 func (m *memFile) Sync() error                  { return nil }
 func (m *memFile) Chmod(mode os.FileMode) error { return nil }
 func (m *memFile) Name() string                 { return "memfile" }
