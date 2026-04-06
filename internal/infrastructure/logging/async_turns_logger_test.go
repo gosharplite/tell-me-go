@@ -29,11 +29,11 @@ type mockClock struct {
 }
 
 func (m *mockClock) Now() time.Time                         { return m.now }
-func (m *mockClock) Since(t time.Time) time.Duration         { return m.now.Sub(t) }
-func (m *mockClock) Sleep(d time.Duration)                 {}
+func (m *mockClock) Since(t time.Time) time.Duration        { return m.now.Sub(t) }
+func (m *mockClock) Sleep(d time.Duration)                  {}
 func (m *mockClock) After(d time.Duration) <-chan time.Time { return nil }
 func (m *mockClock) NewTicker(d time.Duration) clock.Ticker { return nil }
-func (m *mockClock) Jitter(base float64) float64             { return base }
+func (m *mockClock) Jitter(base float64) float64            { return base }
 
 func TestAsyncTurnsLogger_Log(t *testing.T) {
 	fs := &infra_persistence.OSFileSystem{}
