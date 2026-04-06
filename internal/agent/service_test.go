@@ -46,6 +46,7 @@ func (s *stubUIRenderer) LogToolResult(ctx context.Context, name string, result 
 }
 func (s *stubUIRenderer) SetUseColor(use bool)       {}
 func (s *stubUIRenderer) SetForceSpinner(force bool) {}
+func (s *stubUIRenderer) SetTurnsLogWriter(w io.Writer) {}
 
 // stubHistoryRenderer is a stub implementation of ports.HistoryRenderer for testing.
 type stubHistoryRenderer struct{}

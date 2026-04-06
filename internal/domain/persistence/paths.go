@@ -11,4 +11,5 @@ type Paths struct {
 	LogPath            string
 	TracePath          string
 	CommandsLogPath    string
+	TurnsLogPath       string
 }

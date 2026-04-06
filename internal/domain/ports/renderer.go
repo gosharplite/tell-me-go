@@ -51,6 +51,7 @@ type UIRenderer interface {
 	UsageLogger
 	ToolLogger
 	RendererConfigurator
+	SetTurnsLogWriter(w io.Writer)
 }
 
 // HistoryRenderer defines the interface for rendering chat history.

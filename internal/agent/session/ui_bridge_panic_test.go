@@ -56,6 +56,7 @@ func (m *panicMockRenderer) LogSystemMessage(ctx context.Context, msg string, le
 }
 func (m *panicMockRenderer) SetUseColor(use bool)       {}
 func (m *panicMockRenderer) SetForceSpinner(force bool) {}
+func (m *panicMockRenderer) SetTurnsLogWriter(w io.Writer) {}
 
 func TestUIBridge_PanicResilience(t *testing.T) {
 	t.Parallel()

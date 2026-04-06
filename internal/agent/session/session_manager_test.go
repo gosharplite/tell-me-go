@@ -119,6 +119,10 @@ func (m *mockUIRenderer) SetForceSpinner(force bool) {
 	m.Called(force)
 }
 
+func (m *mockUIRenderer) SetTurnsLogWriter(w io.Writer) {
+	m.Called(w)
+}
+
 type mockHistoryRenderer struct {
 	mock.Mock
 }
@@ -733,6 +737,11 @@ func (m *behaviorMockUIRenderer) SetUseColor(use bool) {
 func (m *behaviorMockUIRenderer) SetForceSpinner(force bool) {
 	m.tracker.record("UIRenderer.SetForceSpinner")
 	m.Called(force)
+}
+
+func (m *behaviorMockUIRenderer) SetTurnsLogWriter(w io.Writer) {
+	m.tracker.record("UIRenderer.SetTurnsLogWriter")
+	m.Called(w)
 }
 
 type behaviorMockCapturer struct {

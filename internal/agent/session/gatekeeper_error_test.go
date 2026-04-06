@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"io"
 	"testing"
 	"time"
 
@@ -178,6 +179,8 @@ func (m *mockFailingUIRenderer) LogToolCall(ctx context.Context, calls []*llm.Fu
 func (m *mockFailingUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
 }
 func (m *mockFailingUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
+}
+func (m *mockFailingUIRenderer) SetTurnsLogWriter(w io.Writer) {
 }
 
 func TestSessionManager_ConfigError(t *testing.T) {

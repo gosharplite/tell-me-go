@@ -48,6 +48,7 @@ func TestRotateSession(t *testing.T) {
 		paths.LogPath,
 		paths.TracePath,
 		paths.CommandsLogPath,
+		paths.TurnsLogPath,
 	}
 	for _, f := range files {
 		if err := os.WriteFile(f, []byte("test data"), 0644); err != nil {

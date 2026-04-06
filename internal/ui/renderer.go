@@ -42,6 +42,7 @@ type stdUIRenderer struct {
 	lastSampleTime  time.Time
 	lastCPUPercent  float64
 	lastMemPercent  float64
+	turnsLogWriter  io.Writer
 }
 
 type defaultMetricsProvider struct{}
@@ -128,6 +129,12 @@ func (r *stdUIRenderer) SetClock(clk clock.Clock) {
 	r.clock = clk
 }
 
+func (r *stdUIRenderer) SetTurnsLogWriter(w io.Writer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.turnsLogWriter = w
+}
+
 func (r *stdUIRenderer) getTimestamp() string {
 	return r.getUIState().getTimestamp()
 }
@@ -167,10 +174,11 @@ func (r *stdUIRenderer) renderMarkdownWithUILocked(ui uiState, text string) {
 }
 
 type uiState struct {
-	stdout   io.Writer
-	stderr   io.Writer
-	useColor bool
-	clock    clock.Clock
+	stdout         io.Writer
+	stderr         io.Writer
+	turnsLogWriter io.Writer
+	useColor       bool
+	clock          clock.Clock
 }
 
 func (s uiState) c(color string) string {
@@ -196,10 +204,11 @@ func (r *stdUIRenderer) getUIState() uiState {
 		stderr = io.Discard
 	}
 	return uiState{
-		stdout:   stdout,
-		stderr:   stderr,
-		useColor: r.useColor,
-		clock:    r.clock,
+		stdout:         stdout,
+		stderr:         stderr,
+		turnsLogWriter: r.turnsLogWriter,
+		useColor:       r.useColor,
+		clock:          r.clock,
 	}
 }
 
@@ -274,23 +283,33 @@ func (r *stdUIRenderer) renderMetricsLineLocked(ui uiState, m *llm.Metrics, star
 		ui.c(colorGray), m.CumulativeToolDuration,
 		ui.c(colorGray))
 
+	timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
+
 	if !startTime.IsZero() {
 		totalSessionDuration := ui.clock.Now().Sub(startTime).Seconds()
 		if turns > 0 {
 			timingStr = fmt.Sprintf("%s / %.2fs (%.2f)%s", timingStr, totalSessionDuration, totalSessionDuration/float64(turns), ui.c(colorGray))
+			timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(turns))
 		} else {
 			timingStr = fmt.Sprintf("%s / %.2fs%s", timingStr, totalSessionDuration, ui.c(colorGray))
+			timingRaw = fmt.Sprintf("%s / %.2fs", timingRaw, totalSessionDuration)
 		}
 	}
 
 	// Prepare cost string
 	costStr := ""
+	costRaw := ""
 	if m.Cost > 0 {
 		costStr = fmt.Sprintf(" %s($%.4f)%s", ui.c(colorGray), m.Cost, ui.c(colorGray))
+		costRaw = fmt.Sprintf(" ($%.4f)", m.Cost)
 	}
 
 	_, _ = fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d Th: %d%s %s[%s]%s\n",
 		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, m.ThinkingTokens, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
+
+	if ui.turnsLogWriter != nil {
+		_, _ = fmt.Fprintf(ui.turnsLogWriter, "[%s]%s M: %d H: %d C: %d Th: %d %s [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, costRaw, timingRaw)
+	}
 }
 
 func (r *stdUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
@@ -673,11 +692,15 @@ func (r *stdUIRenderer) printTokenLine(ui uiState, timestamp string, tokens int,
 
 	_, _ = fmt.Fprintf(stderr, "%s[%s] Payload: %s%s%s%d%s/%d tokens%s%s\n",
 		ui.c(colorGray), timestamp, prefix, ui.c(tokenColor), "", tokens, ui.c(colorGray), maxTokens, modeStr, ui.c(colorReset))
+
+	if ui.turnsLogWriter != nil {
+		_, _ = fmt.Fprintf(ui.turnsLogWriter, "[%s] Payload: %s%d/%d tokens%s\n", timestamp, prefix, tokens, maxTokens, modeStr)
+	}
 }
 
-func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) string {
+func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) (string, string) {
 	if status.SessionCost <= 0 {
-		return ""
+		return "", ""
 	}
 
 	hitRate := 0.0
@@ -692,7 +715,7 @@ func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) st
 	}
 
 	// Format: (TurnCost TaskCost SessionCost DailyCost M: ... H: ... O: ...)
-	return fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
+	colored := fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
 		ui.c(colorGray),
 		turnCost, status.TaskCost,
 		ui.c(colorGreen), status.SessionCost,
@@ -703,6 +726,17 @@ func (r *stdUIRenderer) formatFinalCost(status events.TurnStatus, ui uiState) st
 		hitRate,
 		status.TotalO,
 		ui.c(colorGray))
+
+	raw := fmt.Sprintf(" ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)",
+		turnCost, status.TaskCost,
+		status.SessionCost,
+		status.DailyCost,
+		status.TotalM,
+		status.TotalH,
+		hitRate,
+		status.TotalO)
+
+	return colored, raw
 }
 
 func (r *stdUIRenderer) renderTurnHeader(ui uiState, status events.TurnStatus) {
@@ -715,10 +749,22 @@ func (r *stdUIRenderer) renderTurnHeader(ui uiState, status events.TurnStatus) {
 
 	_, _ = fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", ui.c(colorGray), ui.c(colorReset))
 
+	if ui.turnsLogWriter != nil {
+		_, _ = fmt.Fprintln(ui.turnsLogWriter, "────────────────────────────────────────────────────────────────────────────────")
+	}
+
 	if status.MaxHistoryTurns > 0 {
 		_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d/%d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, status.MaxHistoryTurns, modeStr, ui.c(colorGray))
+		if ui.turnsLogWriter != nil {
+			headerRaw := fmt.Sprintf("╭─⠿ Turn %d/%d%s", status.SessionTurns+1, status.MaxHistoryTurns, modeStr)
+			_, _ = fmt.Fprintln(ui.turnsLogWriter, headerRaw)
+		}
 	} else {
 		_, _ = fmt.Fprintf(stderr, "%s╭─⠿ %sTurn %d%s%s\n", ui.c(colorGray), ui.c(colorReset), status.SessionTurns+1, modeStr, ui.c(colorGray))
+		if ui.turnsLogWriter != nil {
+			headerRaw := fmt.Sprintf("╭─⠿ Turn %d%s", status.SessionTurns+1, modeStr)
+			_, _ = fmt.Fprintln(ui.turnsLogWriter, headerRaw)
+		}
 	}
 
 	r.printTokenLine(ui, timestamp, status.Tokens, status.MaxHistoryTokens, false, status.Mode)
@@ -743,6 +789,10 @@ func (r *stdUIRenderer) renderPostCallStatus(ui uiState, status events.TurnStatu
 
 func (r *stdUIRenderer) renderFinalSummary(ui uiState, status events.TurnStatus) {
 	stderr := ui.stderr
-	costStr := r.formatFinalCost(status, ui)
+	costStr, costRaw := r.formatFinalCost(status, ui)
 	_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
+
+	if ui.turnsLogWriter != nil {
+		_, _ = fmt.Fprintf(ui.turnsLogWriter, "╰─⠿ Ready%s\n", costRaw)
+	}
 }

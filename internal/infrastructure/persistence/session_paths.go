@@ -31,6 +31,7 @@ func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.P
 		LogPath:            filepath.Join(modeDir, "tokens.log"),
 		TracePath:          filepath.Join(modeDir, "tokens.trace.jsonl"),
 		CommandsLogPath:    filepath.Join(modeDir, "commands.log"),
+		TurnsLogPath:       filepath.Join(modeDir, "turns.log"),
 	}, nil
 }
 
@@ -46,6 +47,7 @@ func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentio
 		paths.LogPath,
 		paths.TracePath,
 		paths.CommandsLogPath,
+		paths.TurnsLogPath,
 	}
 	backupDir := filepath.Join(outputDir, "backups", timestamp)
 

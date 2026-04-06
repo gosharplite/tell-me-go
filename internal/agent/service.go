@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -77,6 +78,22 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 	deps, hManager, cleanup, err := s.LifecycleManager.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer)
 	if err != nil {
 		return err
+	}
+
+	if paths := deps.GetPaths(); paths != nil && paths.TurnsLogPath != "" {
+		if f, err := os.OpenFile(paths.TurnsLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			s.UIRenderer.SetTurnsLogWriter(f)
+
+			// Wrap the cleanup to prevent file descriptor leaks
+			origCleanup := cleanup
+			cleanup = func(c context.Context) error {
+				_ = f.Close()
+				if origCleanup != nil {
+					return origCleanup(c)
+				}
+				return nil
+			}
+		}
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
