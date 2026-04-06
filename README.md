@@ -79,6 +79,12 @@ Retry the last user message (automatically rolls back the last attempt):
 tell-me-go --retry
 ```
 
+**Session Logs:**
+Print the full execution trace (turns log) for the current session and exit. This is useful for inspecting the detailed background process or debugging:
+```bash
+tell-me-go -t
+```
+
 **Raw Output Mode:**
 Skip Markdown rendering (useful for piping to other scripts):
 ```bash
