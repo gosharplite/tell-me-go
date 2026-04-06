@@ -83,6 +83,7 @@ tell-me-go -new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 
 **Notes:**
 - **CRITICAL:** When using the `execute_command` tool to run `tell-me-go`, you MUST set the `timeout` parameter to `1800` (1800 seconds / 30 minutes) to ensure the sub-agent has sufficient time to complete its task. If the `timeout` parameter is not explicitly set, `execute_command` will default to a 300-second (5-minute) hard limit, which is typically not enough for complex AI sub-tasks and will result in premature cancellation.
+- **Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. Save prompts in a file then use input redirection (`<`) to tell-me-go. This can avoid parsing problems of using echo prompts directly to tell-me-go. Check /tmp/prompt.txt before sending it to tell-me-go.
 - The `&> /dev/null` discards stdout and stderr to keep the terminal clean. If you need to review what happened or debug a failure, run `tell-me-go -t -c ${ROLE_CONFIG}` (e.g. `${ARCHITECT_CONFIG}`) to output the session's execution log.
 - Use `-new` when you first chat with a role. For a continuous conversation, omit `-new`.
 
@@ -94,8 +95,6 @@ tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 ```
 
 Adjust the number `-l 3` as needed.
-
-**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. Save prompts in a file then use input redirection (`<`) to tell-me-go. This can avoid parsing problems of using echo prompts directly to tell-me-go. Check /tmp/prompt.txt before sending it to tell-me-go.
 
 ## Process (Step‑by‑Step)
 
