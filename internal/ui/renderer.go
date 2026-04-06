@@ -663,6 +663,10 @@ func (r *stdUIRenderer) LogSystemMessage(ctx context.Context, msg string, level 
 
 	_, _ = fmt.Fprintf(stderr, "\r%s%s[%s] [%s] %s%s\n", ui.c(termClearLine),
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
+
+	if ui.turnsLogWriter != nil {
+		_, _ = fmt.Fprintf(ui.turnsLogWriter, "[%s] [%s] %s\n", ui.getTimestamp(), prefix, msg)
+	}
 }
 
 func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string, showMetrics bool) {

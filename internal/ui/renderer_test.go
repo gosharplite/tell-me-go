@@ -795,4 +795,14 @@ func TestStdUIRenderer_TurnsLogWriter(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("LogSystemMessage in TurnsLog", func(t *testing.T) {
+		turnsLog.Reset()
+		r.LogSystemMessage(context.Background(), "test error", "error")
+
+		output := turnsLog.String()
+		if !strings.Contains(output, "[12:00:00] [Error] test error") {
+			t.Errorf("expected turns log to contain '[12:00:00] [Error] test error', got %q", output)
+		}
+	})
 }
