@@ -650,7 +650,7 @@ func (b *uiBridge) handleTurnStatus(ctx context.Context, ev events.TurnStatusEve
 	b.transition(stateIdle)
 	b.renderer.LogTurnStatus(ctx, ev.Status)
 	if b.turnsLogger != nil {
-		b.turnsLogger.LogString(formatTurnStatusForLog(ev.Status))
+		b.turnsLogger.LogString(formatTurnStatusForLog(ev.Status, b.clock.Now()))
 	}
 }
 
@@ -844,7 +844,7 @@ func formatSystemMessageForLog(msg string, level string, timestamp time.Time) st
 	return fmt.Sprintf("[%s] [%s] %s", timestamp.Format("15:04:05"), prefix, msg)
 }
 
-func formatTurnStatusForLog(status events.TurnStatus) string {
+func formatTurnStatusForLog(status events.TurnStatus, now time.Time) string {
 	var sb strings.Builder
 	timestamp := status.Timestamp.Format("15:04:05")
 
@@ -892,7 +892,7 @@ func formatTurnStatusForLog(status events.TurnStatus) string {
 		totalTurnLatency := m.Duration + m.ToolDuration
 		timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
 		if !status.StartTime.IsZero() {
-			totalSessionDuration := time.Since(status.StartTime).Seconds()
+			totalSessionDuration := now.Sub(status.StartTime).Seconds()
 			if status.CurrentTurns+1 > 0 {
 				timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(status.CurrentTurns+1))
 			} else {

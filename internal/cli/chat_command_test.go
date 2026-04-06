@@ -487,11 +487,9 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 
 	// We need to know what path InitializePaths will return.
 	mode := "assistant"
-	homeDir, _ := os.UserHomeDir()
+	homeDir := "/Users/johndoe"
 	expectedLogPath := filepath.Join(homeDir, "output", mode, "turns.log")
-	modeDir := filepath.Dir(expectedLogPath)
 
-	mFS.On("MkdirAll", modeDir, os.FileMode(0755)).Return(nil)
 	mFS.On("Open", expectedLogPath).Return(mFile, nil)
 
 	var stdout, stderr strings.Builder
@@ -511,6 +509,7 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 		Bootstrapper: mb,
 		Loader:       ml,
 		FileSystem:   mFS,
+		HomeDir:      homeDir,
 	}
 
 	ctx := stdctx.Background()
@@ -545,7 +544,6 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 			name: "File Open Failure",
 			setupMock: func(mFS *mockFileSystem, ml *mockLoader) {
 				ml.On("Load", mock.Anything).Return(&config.Config{Mode: "assistant"}, nil)
-				mFS.On("MkdirAll", mock.Anything, mock.Anything).Return(nil)
 				mFS.On("Open", mock.Anything).Return(nil, os.ErrNotExist)
 			},
 			expectedErr: "failed to open turns log",

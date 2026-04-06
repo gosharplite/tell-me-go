@@ -43,7 +43,7 @@ type App struct {
 	Stdin        io.Reader
 	Stdout       io.Writer
 	Stderr       io.Writer
-	homeDir      string
+	HomeDir      string
 	sm           domain_security.Manager
 	bootstrapper Bootstrapper
 	configLoader domain_config.ConfigLoader
@@ -91,7 +91,7 @@ func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 		Stdin:        stdin,
 		Stdout:       stdout,
 		Stderr:       stderr,
-		homeDir:      deps.HomeDir,
+		HomeDir:      deps.HomeDir,
 		sm:           deps.SM,
 		bootstrapper: deps.Bootstrapper,
 		configLoader: deps.ConfigLoader,
@@ -137,7 +137,7 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		Stdin:        a.Stdin,
 		Stdout:       a.Stdout,
 		Stderr:       a.Stderr,
-		HomeDir:      a.homeDir,
+		HomeDir:      a.HomeDir,
 		SM:           a.sm,
 		ChatService:  a.chatService,
 		Bootstrapper: a.bootstrapper,

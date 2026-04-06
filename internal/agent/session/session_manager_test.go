@@ -181,8 +181,7 @@ func TestSessionManager_Run_Success(t *testing.T) {
 
 	// Verify TurnsLogger interaction during Run
 	// (uiBridge forwards events to it)
-	mTurnsLogger.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-	mTurnsLogger.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	mTurnsLogger.On("LogString", mock.Anything).Return().Maybe()
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
@@ -1904,7 +1903,7 @@ func TestFormatTurnStatusForLog(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatTurnStatusForLog(tt.status)
+			got := formatTurnStatusForLog(tt.status, now)
 			for _, want := range tt.contains {
 				assert.Contains(t, got, want)
 			}

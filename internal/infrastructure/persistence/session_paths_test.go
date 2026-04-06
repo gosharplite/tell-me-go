@@ -136,3 +136,50 @@ func TestCleanupOldBackups_NoDir(t *testing.T) {
 		t.Errorf("CleanupOldBackups with nonexistent dir should not error: %v", err)
 	}
 }
+
+func TestResolvePaths(t *testing.T) {
+	t.Parallel()
+	homeDir := "/home/user"
+
+	tests := []struct {
+		name     string
+		mode     string
+		expected string
+	}{
+		{"standard mode", "assistant", filepath.Join(homeDir, "output", "assistant")},
+		{"path traversal attempt", "../../../etc/passwd", filepath.Join(homeDir, "output", "passwd")},
+		{"nested path traversal", "subdir/../../hidden", filepath.Join(homeDir, "output", "hidden")},
+		{"empty mode", "", filepath.Join(homeDir, "output", ".")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			paths := ResolvePaths(homeDir, tt.mode)
+			if paths.ModeDir != tt.expected {
+				t.Errorf("expected ModeDir %s, got %s", tt.expected, paths.ModeDir)
+			}
+			// Verify turns.log is also correctly nested
+			expectedLog := filepath.Join(tt.expected, "turns.log")
+			if paths.TurnsLogPath != expectedLog {
+				t.Errorf("expected TurnsLogPath %s, got %s", expectedLog, paths.TurnsLogPath)
+			}
+		})
+	}
+}
+
+func TestEnsureDirectories(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	mode := "test-ensure"
+	paths := ResolvePaths(tmp, mode)
+
+	fs := &OSFileSystem{}
+	err := EnsureDirectories(fs, paths)
+	if err != nil {
+		t.Fatalf("EnsureDirectories failed: %v", err)
+	}
+
+	if _, err := os.Stat(paths.ModeDir); os.IsNotExist(err) {
+		t.Errorf("ModeDir %s was not created", paths.ModeDir)
+	}
+}

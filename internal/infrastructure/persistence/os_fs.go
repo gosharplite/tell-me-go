@@ -78,9 +78,9 @@ func (f *OSFileSystem) Open(name string) (File, error) {
 	return os.Open(name)
 }
 
-// domainFS wraps OSFileSystem to implement persistence.FileSystem (domain interface).
+// domainFS wraps FileSystem to implement persistence.FileSystem (domain interface).
 type domainFS struct {
-	fs *OSFileSystem
+	fs FileSystem
 }
 
 func (f *domainFS) checkDone(ctx context.Context) error {
@@ -168,4 +168,9 @@ func (f *domainFS) Walk(ctx context.Context, root string, fn persistence.WalkFun
 // NewOSFileSystem returns a new instance of the OS-based filesystem implementation.
 func NewOSFileSystem() persistence.FileSystem {
 	return &domainFS{fs: &OSFileSystem{}}
+}
+
+// NewDomainFS wraps a local FileSystem to implement the domain persistence.FileSystem interface.
+func NewDomainFS(fs FileSystem) persistence.FileSystem {
+	return &domainFS{fs: fs}
 }

@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -35,7 +34,6 @@ func init() {
 // chatCommand implements the main chat command.
 type chatCommand struct {
 	Version      string
-	HomeDir      string
 	Stdin        io.Reader
 	Stdout       io.Writer
 	Stderr       io.Writer
@@ -44,6 +42,7 @@ type chatCommand struct {
 	Bootstrapper Bootstrapper
 	Loader       domain_config.ConfigLoader
 	FileSystem   infra_persistence.FileSystem
+	HomeDir      string
 	MockPrompt   string
 	MockAnswer   string
 }
@@ -64,7 +63,6 @@ type cliOptions struct {
 func newChatCommand(ctx *context) *chatCommand {
 	return &chatCommand{
 		Version:      ctx.Version,
-		HomeDir:      ctx.HomeDir,
 		Stdin:        ctx.Stdin,
 		Stdout:       ctx.Stdout,
 		Stderr:       ctx.Stderr,
@@ -73,6 +71,7 @@ func newChatCommand(ctx *context) *chatCommand {
 		Bootstrapper: ctx.Bootstrapper,
 		Loader:       ctx.Loader,
 		FileSystem:   ctx.FileSystem,
+		HomeDir:      ctx.HomeDir,
 		MockPrompt:   ctx.MockPrompt,
 		MockAnswer:   ctx.MockAnswer,
 	}
@@ -94,15 +93,9 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 			return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 		}
 
-		// Resolve home directory (adjust if your CLI context provides this natively)
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to determine home directory: %w", err)
-		}
-
-		// Initialize lightweight paths directly without booting the agent
-		paths, err := infra_persistence.InitializePaths(c.FileSystem, homeDir, cfg.Mode)
-		if err != nil || paths.TurnsLogPath == "" {
+		// Resolve paths directly using the injected HomeDir
+		paths := infra_persistence.ResolvePaths(c.HomeDir, cfg.Mode)
+		if paths.TurnsLogPath == "" {
 			return errors.New("turns log path not available")
 		}
 

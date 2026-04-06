@@ -133,7 +133,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	slog.SetDefault(logger)
 
 	// 4. Build DI Container
-	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, stdout, stderr, logger, nil)
+	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, stdout, stderr, logger, nil, nil)
 
 	// 5. Instantiate ChatService
 	chatService := agent.NewChatService(

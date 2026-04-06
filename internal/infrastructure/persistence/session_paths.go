@@ -19,11 +19,17 @@ type paths = persistence.Paths
 
 // InitializePaths creates the necessary directories and returns the Paths for the session.
 func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
-	modeDir := filepath.Join(homeDir, "output", mode)
-	if err := fs.MkdirAll(modeDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create session directory [%s]: %w", modeDir, err)
+	paths := ResolvePaths(homeDir, mode)
+	if err := EnsureDirectories(fs, paths); err != nil {
+		return nil, err
 	}
+	return paths, nil
+}
 
+// ResolvePaths determines the session paths based on the home directory and mode.
+func ResolvePaths(homeDir string, mode string) *persistence.Paths {
+	safeMode := filepath.Base(filepath.Clean(mode))
+	modeDir := filepath.Join(homeDir, "output", safeMode)
 	return &persistence.Paths{
 		ModeDir:            modeDir,
 		HistoryPath:        filepath.Join(modeDir, "history.jsonl"),
@@ -32,7 +38,15 @@ func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.P
 		TracePath:          filepath.Join(modeDir, "tokens.trace.jsonl"),
 		CommandsLogPath:    filepath.Join(modeDir, "commands.log"),
 		TurnsLogPath:       filepath.Join(modeDir, "turns.log"),
-	}, nil
+	}
+}
+
+// EnsureDirectories creates the necessary directories for the session.
+func EnsureDirectories(fs FileSystem, paths *persistence.Paths) error {
+	if err := fs.MkdirAll(paths.ModeDir, 0755); err != nil {
+		return fmt.Errorf("failed to create session directory [%s]: %w", paths.ModeDir, err)
+	}
+	return nil
 }
 
 // RotateSession archives existing session files and cleans up old backups.
