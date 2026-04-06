@@ -231,12 +231,26 @@ func (m *mockServiceCapturer) Close(ctx context.Context) error {
 	return args.Error(0)
 }
 
+type mockTurnsLogger struct {
+	mock.Mock
+}
+
+func (m *mockTurnsLogger) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
+	m.Called(ctx, status)
+}
+func (m *mockTurnsLogger) LogSystemMessage(ctx context.Context, msg string, level string) {
+	m.Called(ctx, msg, level)
+}
+func (m *mockTurnsLogger) Close() error {
+	return m.Called().Error(0)
+}
+
 func TestProcessMessage(t *testing.T) {
 	errBuild := errors.New("build error")
 
 	tests := []struct {
 		name        string
-		setupMock   func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error
+		setupMock   func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error
 		opts        ChatOptions
 		cfg         *config.Config
 		wantErr     bool
@@ -253,7 +267,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -269,13 +283,14 @@ func TestProcessMessage(t *testing.T) {
 				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(nil)
 
 				deps.On("GetEventBus").Return(bus)
-				deps.On("GetPaths").Return(&persistence.Paths{})
+				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
 				deps.On("GetLogger").Return(slog.Default())
-				deps.On("GetTurnsLogger").Return(nil).Maybe()
+				deps.On("GetTurnsLogger").Return(tl)
 				deps.On("GetSessionProvider").Return(nil)
 
+				tl.On("Close").Return(nil)
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
 				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -297,7 +312,7 @@ func TestProcessMessage(t *testing.T) {
 			name: "BuildSessionDepsError",
 			opts: ChatOptions{ConfigPath: "config.yaml"},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 				return nil
@@ -317,6 +332,7 @@ func TestProcessMessage(t *testing.T) {
 			deps := &mockServiceSessionDependencies{}
 			bus := &mockServiceEventBus{}
 			agent := &mockServiceAgent{}
+			tl := &mockTurnsLogger{}
 
 			chatterFactory := ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
 				return agent, nil
@@ -329,7 +345,7 @@ func TestProcessMessage(t *testing.T) {
 
 			var verify func(context.Context) error
 			if tt.setupMock != nil {
-				verify = tt.setupMock(sf, sm, capturer, deps, bus, agent)
+				verify = tt.setupMock(sf, sm, capturer, deps, bus, agent, tl)
 			}
 
 			err := service.ProcessMessage(ctx, tt.cfg, tt.opts, capturer)
@@ -354,6 +370,7 @@ func TestProcessMessage(t *testing.T) {
 			if !tt.wantErr {
 				bus.AssertExpectations(t)
 				agent.AssertExpectations(t)
+				tl.AssertExpectations(t)
 			}
 		})
 	}

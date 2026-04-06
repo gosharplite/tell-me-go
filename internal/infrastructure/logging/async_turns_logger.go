@@ -49,13 +49,6 @@ func (l *asyncTurnsLogger) processLogs() {
 }
 
 func (l *asyncTurnsLogger) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
-	l.mu.Lock()
-	if l.closed {
-		l.mu.Unlock()
-		return
-	}
-	l.mu.Unlock()
-
 	var sb strings.Builder
 	timestamp := status.Timestamp.Format("15:04:05")
 
@@ -103,7 +96,7 @@ func (l *asyncTurnsLogger) LogTurnStatus(ctx context.Context, status events.Turn
 		totalTurnLatency := m.Duration + m.ToolDuration
 		timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
 		if !status.StartTime.IsZero() {
-			totalSessionDuration := time.Since(status.StartTime).Seconds() // Using time.Since here as a fallback
+			totalSessionDuration := time.Since(status.StartTime).Seconds()
 			if status.CurrentTurns+1 > 0 {
 				timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(status.CurrentTurns+1))
 			} else {
@@ -144,22 +137,21 @@ func (l *asyncTurnsLogger) LogTurnStatus(ctx context.Context, status events.Turn
 
 	msg := sb.String()
 	if msg != "" {
+		l.mu.Lock()
+		if l.closed {
+			l.mu.Unlock()
+			return
+		}
 		select {
 		case l.ch <- msg:
 		default:
 			// Buffer full, drop message to prevent blocking
 		}
+		l.mu.Unlock()
 	}
 }
 
 func (l *asyncTurnsLogger) LogSystemMessage(ctx context.Context, msg string, level string) {
-	l.mu.Lock()
-	if l.closed {
-		l.mu.Unlock()
-		return
-	}
-	l.mu.Unlock()
-
 	prefix := "System"
 	switch level {
 	case "error":
@@ -173,11 +165,17 @@ func (l *asyncTurnsLogger) LogSystemMessage(ctx context.Context, msg string, lev
 	timestamp := time.Now().Format("15:04:05")
 	logMsg := fmt.Sprintf("[%s] [%s] %s\n", timestamp, prefix, msg)
 
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return
+	}
 	select {
 	case l.ch <- logMsg:
 	default:
 		// Buffer full, drop
 	}
+	l.mu.Unlock()
 }
 
 func (l *asyncTurnsLogger) Close() error {
@@ -187,9 +185,9 @@ func (l *asyncTurnsLogger) Close() error {
 		return nil
 	}
 	l.closed = true
+	close(l.ch)
 	l.mu.Unlock()
 
-	close(l.ch)
 	l.wg.Wait()
 	return l.file.Close()
 }

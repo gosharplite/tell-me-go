@@ -162,13 +162,14 @@ func TestSessionManager_Run_Success(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
+	mTurnsLogger := new(mockTurnsLogger)
 	orch := newSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), nil, new(mockSessionProvider))
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), mTurnsLogger, new(mockSessionProvider))
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -178,11 +179,17 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
+	// Verify TurnsLogger interaction during Run
+	// (uiBridge forwards events to it)
+	mTurnsLogger.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+	mTurnsLogger.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
 
 	mChatter.AssertExpectations(t)
 	mCapturer.AssertExpectations(t)
+	mTurnsLogger.AssertExpectations(t)
 }
 
 func TestUIBridge_HandleEvent(t *testing.T) {
