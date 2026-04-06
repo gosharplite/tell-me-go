@@ -84,7 +84,7 @@ tell-me-go -new -r -c ${ARCHITECT_CONFIG} < /tmp/prompt.txt &> /dev/null
 ```
 
 **Notes:**
-- The `&> /dev/null` discards stdout and stderr. If you need to debug, redirect to a log file instead (e.g., `> /tmp/architect-review.log 2>&1`).
+- The `&> /dev/null` discards stdout and stderr to keep the terminal clean. If you need to review what happened, check the automatically generated `output/<role>/turns.log`.
 - Use `-new` when you first chat with a role. For a continuous conversation, omit `-new`.
 
 To retrieve the last responses from a role:
