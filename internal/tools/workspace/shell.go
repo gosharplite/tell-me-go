@@ -64,17 +64,29 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 
 	t.auditExecution(params.Command, params.Reason, params.OutputFile, params.Append)
 
+	execCtx := ctx
+	if params.Timeout > 0 {
+		var cancel context.CancelFunc
+		execCtx, cancel = context.WithTimeout(ctx, time.Duration(params.Timeout)*time.Second)
+		defer cancel()
+	}
+
 	stopHB := t.startHeartbeat(hb)
 	defer stopHB()
 
-	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
-		return t.executor.RunCommand(ctx, parts, executionConfig{
+	res, err := t.runWithFeedback(execCtx, "Executing", func() (executionResult, error) {
+		return t.executor.RunCommand(execCtx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   &warnWriter{sm: t.sm},
 			MaxCapture: t.maxOutput,
 		})
 	})
+
+	if execCtx.Err() == context.DeadlineExceeded {
+		timeoutErr := fmt.Errorf("execution timed out after %ds: %w", params.Timeout, context.DeadlineExceeded)
+		return tools.ToolResult{Error: timeoutErr, Text: timeoutErr.Error()}, nil
+	}
 
 	if err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
@@ -127,18 +139,30 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
+	execCtx := ctx
+	if params.Timeout > 0 {
+		var cancel context.CancelFunc
+		execCtx, cancel = context.WithTimeout(ctx, time.Duration(params.Timeout)*time.Second)
+		defer cancel()
+	}
+
 	stopHB := t.startHeartbeat(hb)
 	defer stopHB()
 
-	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
+	res, err := t.runWithFeedback(execCtx, "Executing Pipeline", func() (executionResult, error) {
 		feedback := &warnWriter{sm: t.sm}
-		return t.executor.RunPipeline(ctx, pipedParts, executionConfig{
+		return t.executor.RunPipeline(execCtx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   feedback,
 			MaxCapture: t.maxOutput,
 		})
 	})
+
+	if execCtx.Err() == context.DeadlineExceeded {
+		timeoutErr := fmt.Errorf("pipeline execution timed out after %ds: %w", params.Timeout, context.DeadlineExceeded)
+		return tools.ToolResult{Error: timeoutErr, Text: timeoutErr.Error()}, nil
+	}
 
 	if err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil

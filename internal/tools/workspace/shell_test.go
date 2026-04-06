@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -538,4 +539,96 @@ func TestShellTool_TimeoutParameter(t *testing.T) {
 			t.Fatalf("PipeCommands failed: %v", err)
 		}
 	})
+}
+
+func TestShellTool_ExecutionTimeout(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		command       string
+		commands      []string
+		timeoutSecs   int
+		expectTimeout bool
+		isPipe        bool
+	}{
+		{
+			name:          "Timeout Enforcement (Single Command)",
+			command:       "sleep 5",
+			timeoutSecs:   1,
+			expectTimeout: true,
+			isPipe:        false,
+		},
+		{
+			name:          "Successful Execution within Timeout (Single Command)",
+			command:       "sleep 1",
+			timeoutSecs:   3,
+			expectTimeout: false,
+			isPipe:        false,
+		},
+		{
+			name:          "Timeout Enforcement (Pipe)",
+			commands:      []string{"sleep 5", "cat"},
+			timeoutSecs:   1,
+			expectTimeout: true,
+			isPipe:        true,
+		},
+		{
+			name:          "Successful Execution within Timeout (Pipe)",
+			commands:      []string{"sleep 1", "cat"},
+			timeoutSecs:   3,
+			expectTimeout: false,
+			isPipe:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sm := security.NewSecurityManager(nil)
+			sm.SetBypassActive(true)
+			tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+			ctx := context.Background()
+
+			args := map[string]interface{}{
+				"reason":  "testing execution timeout",
+				"timeout": tt.timeoutSecs,
+			}
+			if tt.isPipe {
+				args["commands"] = tt.commands
+			} else {
+				args["command"] = tt.command
+			}
+
+			start := time.Now()
+			var res tools.ToolResult
+			if tt.isPipe {
+				res, _ = tool.PipeCommands(ctx, args, nil)
+			} else {
+				res, _ = tool.ExecuteCommand(ctx, args, nil)
+			}
+			elapsed := time.Since(start)
+
+			if tt.expectTimeout {
+				if res.Error == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !errors.Is(res.Error, context.DeadlineExceeded) {
+					t.Errorf("expected error to wrap context.DeadlineExceeded, got %v", res.Error)
+				}
+
+				// Allow generous upper bound for CI
+				maxAllowed := time.Duration(tt.timeoutSecs)*time.Second + 3*time.Second
+				if elapsed > maxAllowed {
+					t.Errorf("process was not terminated fast enough: elapsed %v, max %v", elapsed, maxAllowed)
+				}
+			} else {
+				if res.Error != nil {
+					t.Fatalf("expected success, got error: %v", res.Error)
+				}
+			}
+		})
+	}
 }
