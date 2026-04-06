@@ -4,14 +4,11 @@
 package logging
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -48,122 +45,14 @@ func (l *asyncTurnsLogger) processLogs() {
 	}
 }
 
-func (l *asyncTurnsLogger) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
-	var sb strings.Builder
-	timestamp := status.Timestamp.Format("15:04:05")
-
-	if !status.IsPostCall && !status.IsFinal {
-		// Header
-		sb.WriteString("────────────────────────────────────────────────────────────────────────────────\n")
-		modeStr := ""
-		if status.Mode != "" {
-			modeStr = fmt.Sprintf(" - %s", status.Mode)
-		}
-		if status.MaxHistoryTurns > 0 {
-			sb.WriteString(fmt.Sprintf("╭─⠿ Turn %d/%d%s\n", status.SessionTurns+1, status.MaxHistoryTurns, modeStr))
-		} else {
-			sb.WriteString(fmt.Sprintf("╭─⠿ Turn %d%s\n", status.SessionTurns+1, modeStr))
-		}
-
-		// Token line
-		prefix := "~"
-		sb.WriteString(fmt.Sprintf("[%s] Payload: %s%d/%d tokens%s\n", timestamp, prefix, status.Tokens, status.MaxHistoryTokens, modeStr))
+func (l *asyncTurnsLogger) LogString(msg string) {
+	if msg == "" {
+		return
 	}
-
-	if status.IsPostCall && status.Metrics != nil {
-		m := status.Metrics
-		// Token line (actual)
-		modeStr := ""
-		if status.Mode != "" {
-			modeStr = fmt.Sprintf(" - %s", status.Mode)
-		}
-		sb.WriteString(fmt.Sprintf("[%s] Payload: %d/%d tokens%s\n", timestamp, m.PromptTokens, status.MaxHistoryTokens, modeStr))
-
-		// Metrics line
-		miss := m.PromptTokens - m.CachedTokens
-		modelStr := ""
-		displayName := m.Provider
-		if displayName == "" {
-			displayName = m.Model
-		}
-		if m.TrafficType == "ON_DEMAND_PRIORITY" {
-			displayName = fmt.Sprintf("%s-priority", displayName)
-		}
-		if displayName != "" {
-			modelStr = fmt.Sprintf(" [%s]", displayName)
-		}
-
-		totalTurnLatency := m.Duration + m.ToolDuration
-		timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
-		if !status.StartTime.IsZero() {
-			totalSessionDuration := time.Since(status.StartTime).Seconds()
-			if status.CurrentTurns+1 > 0 {
-				timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(status.CurrentTurns+1))
-			} else {
-				timingRaw = fmt.Sprintf("%s / %.2fs", timingRaw, totalSessionDuration)
-			}
-		}
-
-		costRaw := ""
-		if m.Cost > 0 {
-			costRaw = fmt.Sprintf(" ($%.4f)", m.Cost)
-		}
-
-		sb.WriteString(fmt.Sprintf("[%s]%s M: %d H: %d C: %d Th: %d %s [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, costRaw, timingRaw))
+	// Ensure string ends with newline
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
 	}
-
-	if status.IsFinal {
-		hitRate := 0.0
-		if total := status.TotalM + status.TotalH; total > 0 {
-			hitRate = float64(status.TotalH) / float64(total) * 100
-		}
-
-		turnCost := 0.0
-		if status.Metrics != nil {
-			turnCost = status.Metrics.Cost
-		}
-
-		costRaw := fmt.Sprintf(" ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)",
-			turnCost, status.TaskCost,
-			status.SessionCost,
-			status.DailyCost,
-			status.TotalM,
-			status.TotalH,
-			hitRate,
-			status.TotalO)
-
-		sb.WriteString(fmt.Sprintf("╰─⠿ Ready%s\n", costRaw))
-	}
-
-	msg := sb.String()
-	if msg != "" {
-		l.mu.Lock()
-		if l.closed {
-			l.mu.Unlock()
-			return
-		}
-		select {
-		case l.ch <- msg:
-		default:
-			// Buffer full, drop message to prevent blocking
-		}
-		l.mu.Unlock()
-	}
-}
-
-func (l *asyncTurnsLogger) LogSystemMessage(ctx context.Context, msg string, level string) {
-	prefix := "System"
-	switch level {
-	case "error":
-		prefix = "Error"
-	case "warn":
-		prefix = "Warning"
-	case "info":
-		prefix = "Info"
-	}
-
-	timestamp := time.Now().Format("15:04:05")
-	logMsg := fmt.Sprintf("[%s] [%s] %s\n", timestamp, prefix, msg)
 
 	l.mu.Lock()
 	if l.closed {
@@ -171,9 +60,9 @@ func (l *asyncTurnsLogger) LogSystemMessage(ctx context.Context, msg string, lev
 		return
 	}
 	select {
-	case l.ch <- logMsg:
+	case l.ch <- msg:
 	default:
-		// Buffer full, drop
+		// Buffer full, drop message
 	}
 	l.mu.Unlock()
 }

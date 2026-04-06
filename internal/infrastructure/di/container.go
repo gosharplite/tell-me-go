@@ -159,6 +159,16 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	if paths.TurnsLogPath != "" {
 		if tl, err := logging.NewAsyncTurnsLogger(paths.TurnsLogPath); err == nil {
 			turnsLogger = tl
+
+			// Chain the logger cleanup to the existing cleanup function
+			origCleanup := cleanup
+			cleanup = func(c stdctx.Context) error {
+				_ = tl.Close()
+				if origCleanup != nil {
+					return origCleanup(c)
+				}
+				return nil
+			}
 		} else {
 			b.Logger.Warn("failed to initialize turns logger", "error", err)
 		}

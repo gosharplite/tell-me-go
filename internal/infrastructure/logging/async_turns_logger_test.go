@@ -4,7 +4,6 @@
 package logging
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,121 +12,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAsyncTurnsLogger_Formatting(t *testing.T) {
+func TestAsyncTurnsLogger_LogString(t *testing.T) {
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "turns.log")
 
 	logger, err := NewAsyncTurnsLogger(logFile)
 	require.NoError(t, err)
 
-	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	ctx := context.Background()
-
-	tests := []struct {
-		name     string
-		logFn    func()
-		contains []string
-	}{
-		{
-			name: "Turn Header - Minimal",
-			logFn: func() {
-				logger.LogTurnStatus(ctx, events.TurnStatus{
-					Timestamp:        now,
-					SessionTurns:     0,
-					Tokens:           100,
-					MaxHistoryTokens: 1000,
-				})
-			},
-			contains: []string{
-				"────────────────────────────────────────────────────────────────────────────────",
-				"╭─⠿ Turn 1",
-				"[12:00:00] Payload: ~100/1000 tokens",
-			},
-		},
-		{
-			name: "Turn Header - With Mode",
-			logFn: func() {
-				logger.LogTurnStatus(ctx, events.TurnStatus{
-					Timestamp:        now,
-					SessionTurns:     1,
-					MaxHistoryTurns:  10,
-					Tokens:           200,
-					MaxHistoryTokens: 2000,
-					Mode:             "coder",
-				})
-			},
-			contains: []string{
-				"╭─⠿ Turn 2/10 - coder",
-				"[12:00:00] Payload: ~200/2000 tokens - coder",
-			},
-		},
-		{
-			name: "Post-Call Metrics",
-			logFn: func() {
-				logger.LogTurnStatus(ctx, events.TurnStatus{
-					Timestamp:        now,
-					IsPostCall:       true,
-					MaxHistoryTokens: 5000,
-					Metrics: &llm.Metrics{
-						PromptTokens:   1200,
-						CachedTokens:   800,
-						ResponseTokens: 300,
-						ThinkingTokens: 100,
-						Duration:       5.5,
-						ToolDuration:   2.5,
-						Cost:           0.005,
-						Model:          "gpt-4",
-					},
-				})
-			},
-			contains: []string{
-				"[12:00:00] Payload: 1200/5000 tokens",
-				"[12:00:00] [gpt-4] M: 400 H: 800 C: 300 Th: 100  ($0.0050) [8.00s (ΣT: 0.00s)]",
-			},
-		},
-		{
-			name: "Final Ready Summary",
-			logFn: func() {
-				logger.LogTurnStatus(ctx, events.TurnStatus{
-					Timestamp:   now,
-					IsFinal:     true,
-					SessionCost: 1.2345,
-					TaskCost:    0.0123,
-					DailyCost:   5.6789,
-					TotalM:      1000,
-					TotalH:      2000,
-					TotalO:      500,
-					Metrics: &llm.Metrics{
-						Cost: 0.005,
-					},
-				})
-			},
-			contains: []string{
-				"╰─⠿ Ready ($0.0050 $0.0123 $1.2345 $5.6789 M: 1000 H: 2000 66.7% O: 500)",
-			},
-		},
-		{
-			name: "System Message",
-			logFn: func() {
-				logger.LogSystemMessage(ctx, "Operation failed", "error")
-			},
-			contains: []string{
-				"[Error] Operation failed",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.logFn()
-		})
-	}
+	logger.LogString("hello")
+	logger.LogString("world\n")
 
 	err = logger.Close()
 	require.NoError(t, err)
@@ -136,11 +33,7 @@ func TestAsyncTurnsLogger_Formatting(t *testing.T) {
 	require.NoError(t, err)
 	logStr := string(content)
 
-	for _, tt := range tests {
-		for _, c := range tt.contains {
-			assert.Contains(t, logStr, c, "Log missing expected content for test: %s", tt.name)
-		}
-	}
+	assert.Equal(t, "hello\nworld\n", logStr)
 }
 
 func TestAsyncTurnsLogger_New_Error(t *testing.T) {
@@ -167,7 +60,7 @@ func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for j := 0; j < msgsPerGoroutine; j++ {
-				logger.LogSystemMessage(context.Background(), fmt.Sprintf("Goroutine %d msg %d", id, j), "info")
+				logger.LogString(fmt.Sprintf("Goroutine %d msg %d", id, j))
 			}
 		}(i)
 	}
@@ -205,7 +98,7 @@ func TestAsyncTurnsLogger_CloseStress(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				logger.LogSystemMessage(context.Background(), "spam", "info")
+				logger.LogString("spam")
 			}
 		}
 	}()
@@ -223,8 +116,7 @@ func TestAsyncTurnsLogger_CloseStress(t *testing.T) {
 
 	// Verify that logging after close doesn't panic
 	assert.NotPanics(t, func() {
-		logger.LogSystemMessage(context.Background(), "after close", "info")
-		logger.LogTurnStatus(context.Background(), events.TurnStatus{})
+		logger.LogString("after close")
 	})
 }
 

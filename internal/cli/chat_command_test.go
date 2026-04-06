@@ -6,7 +6,9 @@ package cli
 import (
 	stdctx "context"
 	"errors"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,7 +18,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockChatService struct {
@@ -163,6 +168,7 @@ func TestChatCommand_Execute(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
+		FileSystem:   &infra_persistence.OSFileSystem{},
 		MockPrompt:   "hello",
 	}
 
@@ -200,6 +206,7 @@ func TestChatCommand_Execute_LastN(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
+		FileSystem:   &infra_persistence.OSFileSystem{},
 	}
 
 	ctx := stdctx.Background()
@@ -236,6 +243,7 @@ func TestChatCommand_Execute_BackN(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
+		FileSystem:   &infra_persistence.OSFileSystem{},
 	}
 
 	ctx := stdctx.Background()
@@ -272,6 +280,7 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
+		FileSystem:   &infra_persistence.OSFileSystem{},
 	}
 
 	ctx := stdctx.Background()
@@ -316,6 +325,7 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
+		FileSystem:   &infra_persistence.OSFileSystem{},
 	}
 
 	ctx := stdctx.Background()
@@ -360,6 +370,7 @@ func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
+		FileSystem:   &infra_persistence.OSFileSystem{},
 		HomeDir:      t.TempDir(),
 	}
 
@@ -406,6 +417,7 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
+		FileSystem:   &infra_persistence.OSFileSystem{},
 		HomeDir:      t.TempDir(),
 	}
 
@@ -439,27 +451,55 @@ func (m *mockSessionDeps) GetPaths() *persistence.Paths {
 	return args.Get(0).(*persistence.Paths)
 }
 
+type mockFileSystem struct {
+	infra_persistence.FileSystem
+	mock.Mock
+}
+
+func (m *mockFileSystem) Open(name string) (infra_persistence.File, error) {
+	args := m.Called(name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(infra_persistence.File), args.Error(1)
+}
+
+func (m *mockFileSystem) MkdirAll(path string, perm os.FileMode) error {
+	return m.Called(path, perm).Error(0)
+}
+
+type memFile struct {
+	*strings.Reader
+}
+
+func (m *memFile) Write(p []byte) (int, error) { return 0, io.EOF }
+func (m *memFile) Sync() error                  { return nil }
+func (m *memFile) Chmod(mode os.FileMode) error { return nil }
+func (m *memFile) Name() string                 { return "memfile" }
+func (m *memFile) Close() error                 { return nil }
+
 func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := t.TempDir()
-	logPath := tmpDir + "/turns.log"
 	expectedContent := "turn 1: hello\nturn 2: world"
-	err := os.WriteFile(logPath, []byte(expectedContent), 0644)
-	if err != nil {
-		t.Fatalf("failed to create test log file: %v", err)
-	}
+	mFS := new(mockFileSystem)
+	mFile := &memFile{Reader: strings.NewReader(expectedContent)}
+
+	// We need to know what path InitializePaths will return.
+	mode := "assistant"
+	homeDir, _ := os.UserHomeDir()
+	expectedLogPath := filepath.Join(homeDir, "output", mode, "turns.log")
+	modeDir := filepath.Dir(expectedLogPath)
+
+	mFS.On("MkdirAll", modeDir, os.FileMode(0755)).Return(nil)
+	mFS.On("Open", expectedLogPath).Return(mFile, nil)
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
 	mService := &mockChatService{}
 	mb, ml := setupMocks()
-
-	mDeps := &mockSessionDeps{}
-	mDeps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: logPath})
-
-	mb.On("BuildSessionDependencies", mock.Anything, mock.Anything, mock.Anything, false, mock.Anything).
-		Return(mDeps, (ports.HistoryManager)(nil), func(stdctx.Context) error { return nil }, nil)
+	ml.ExpectedCalls = nil
+	ml.On("Load", mock.Anything).Return(&config.Config{Mode: mode}, nil)
 
 	cmd := &chatCommand{
 		Version:      "1.0.0",
@@ -470,21 +510,18 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 		ChatService:  mService,
 		Bootstrapper: mb,
 		Loader:       ml,
+		FileSystem:   mFS,
 	}
 
 	ctx := stdctx.Background()
 	args := []string{"chat", "-t"}
 
-	err = cmd.Execute(ctx, args)
-	if err != nil {
-		t.Errorf("Execute failed: %v", err)
-	}
+	err := cmd.Execute(ctx, args)
+	require.NoError(t, err, "Execute should not fail")
 
-	if stdout.String() != expectedContent {
-		t.Errorf("expected stdout %q, got %q", expectedContent, stdout.String())
-	}
+	// Replace the manual if-block with testify/assert
+	assert.Equal(t, expectedContent, stdout.String(), "The streamed log content should match the mocked file content")
 
-	if mService.chatCalled {
-		t.Error("expected chat service NOT to be called")
-	}
+	assert.False(t, mService.chatCalled, "expected chat service NOT to be called")
+	mFS.AssertExpectations(t)
 }

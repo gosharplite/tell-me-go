@@ -235,11 +235,8 @@ type mockTurnsLogger struct {
 	mock.Mock
 }
 
-func (m *mockTurnsLogger) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
-	m.Called(ctx, status)
-}
-func (m *mockTurnsLogger) LogSystemMessage(ctx context.Context, msg string, level string) {
-	m.Called(ctx, msg, level)
+func (m *mockTurnsLogger) LogString(msg string) {
+	m.Called(msg)
 }
 func (m *mockTurnsLogger) Close() error {
 	return m.Called().Error(0)
@@ -276,7 +273,10 @@ func TestProcessMessage(t *testing.T) {
 					SelectedProvider: "test",
 				}
 				cleanupCalled := false
-				cleanup := func(context.Context) error { cleanupCalled = true; return nil }
+				cleanup := func(context.Context) error {
+					cleanupCalled = true
+					return tl.Close()
+				}
 
 				mockHM := &mockHistoryManagerForRetry{}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)

@@ -254,6 +254,7 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 		withBridgeLogFile(logPath),
 		withBridgeLogger(logger),
 		withBridgeTurnsLogger(turnsLogger),
+		withBridgeClock(o.Clock),
 	)
 	bridge.Start(ctx)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
@@ -302,6 +303,11 @@ func withBridgeTurnsLogger(l ports.TurnsLogger) bridgeOption {
 	return func(b *uiBridge) { b.turnsLogger = l }
 }
 
+// withBridgeClock sets the clock for deterministic timestamps.
+func withBridgeClock(c clock.Clock) bridgeOption {
+	return func(b *uiBridge) { b.clock = c }
+}
+
 // withBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
 func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
 	return func(b *uiBridge) { b.cleanupTimeout = d }
@@ -329,6 +335,7 @@ type uiBridge struct {
 	renderer           ports.UIRenderer
 	logger             *slog.Logger
 	turnsLogger        ports.TurnsLogger
+	clock              clock.Clock
 	showThoughts       bool
 	showTools          bool
 	rawOutput          bool
@@ -455,6 +462,7 @@ func newUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
 		loopCancel:     loopCancel,
 		renderer:       renderer,
 		logger:         slog.Default(),
+		clock:          clock.RealClock{},
 		eventCh:        make(chan events.Event, 100),
 		cleanupTimeout: 5 * time.Second,
 	}
@@ -596,6 +604,8 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 
 func (b *uiBridge) handleSystemMessage(ctx context.Context, e events.Event) {
 	var msg, lvl string
+	timestamp := b.clock.Now() // Default fallback
+
 	switch ev := e.(type) {
 	case events.SystemMessageEvent:
 		msg, lvl = ev.Message, ev.Level
@@ -607,7 +617,7 @@ func (b *uiBridge) handleSystemMessage(ctx context.Context, e events.Event) {
 	b.stopActiveSpinner()
 	b.renderer.LogSystemMessage(ctx, msg, lvl)
 	if b.turnsLogger != nil {
-		b.turnsLogger.LogSystemMessage(ctx, msg, lvl)
+		b.turnsLogger.LogString(formatSystemMessageForLog(msg, lvl, timestamp))
 	}
 	b.resumeActiveSpinner(ctx)
 }
@@ -640,7 +650,7 @@ func (b *uiBridge) handleTurnStatus(ctx context.Context, ev events.TurnStatusEve
 	b.transition(stateIdle)
 	b.renderer.LogTurnStatus(ctx, ev.Status)
 	if b.turnsLogger != nil {
-		b.turnsLogger.LogTurnStatus(ctx, ev.Status)
+		b.turnsLogger.LogString(formatTurnStatusForLog(ev.Status))
 	}
 }
 
@@ -818,4 +828,105 @@ func getSpinnerInfo(e events.Event) (spinnerInfo, bool) {
 	default:
 		return spinnerInfo{}, false
 	}
+}
+
+func formatSystemMessageForLog(msg string, level string, timestamp time.Time) string {
+	prefix := "System"
+	switch level {
+	case "error":
+		prefix = "Error"
+	case "warn":
+		prefix = "Warning"
+	case "info":
+		prefix = "Info"
+	}
+
+	return fmt.Sprintf("[%s] [%s] %s", timestamp.Format("15:04:05"), prefix, msg)
+}
+
+func formatTurnStatusForLog(status events.TurnStatus) string {
+	var sb strings.Builder
+	timestamp := status.Timestamp.Format("15:04:05")
+
+	if !status.IsPostCall && !status.IsFinal {
+		// Header
+		sb.WriteString("────────────────────────────────────────────────────────────────────────────────\n")
+		modeStr := ""
+		if status.Mode != "" {
+			modeStr = fmt.Sprintf(" - %s", status.Mode)
+		}
+		if status.MaxHistoryTurns > 0 {
+			fmt.Fprintf(&sb, "╭─⠿ Turn %d/%d%s\n", status.SessionTurns+1, status.MaxHistoryTurns, modeStr)
+		} else {
+			fmt.Fprintf(&sb, "╭─⠿ Turn %d%s\n", status.SessionTurns+1, modeStr)
+		}
+
+		// Token line
+		prefix := "~"
+		fmt.Fprintf(&sb, "[%s] Payload: %s%d/%d tokens%s\n", timestamp, prefix, status.Tokens, status.MaxHistoryTokens, modeStr)
+	}
+
+	if status.IsPostCall && status.Metrics != nil {
+		m := status.Metrics
+		// Token line (actual)
+		modeStr := ""
+		if status.Mode != "" {
+			modeStr = fmt.Sprintf(" - %s", status.Mode)
+		}
+		fmt.Fprintf(&sb, "[%s] Payload: %d/%d tokens%s\n", timestamp, m.PromptTokens, status.MaxHistoryTokens, modeStr)
+
+		// Metrics line
+		miss := m.PromptTokens - m.CachedTokens
+		modelStr := ""
+		displayName := m.Provider
+		if displayName == "" {
+			displayName = m.Model
+		}
+		if m.TrafficType == "ON_DEMAND_PRIORITY" {
+			displayName = fmt.Sprintf("%s-priority", displayName)
+		}
+		if displayName != "" {
+			modelStr = fmt.Sprintf(" [%s]", displayName)
+		}
+
+		totalTurnLatency := m.Duration + m.ToolDuration
+		timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
+		if !status.StartTime.IsZero() {
+			totalSessionDuration := time.Since(status.StartTime).Seconds()
+			if status.CurrentTurns+1 > 0 {
+				timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(status.CurrentTurns+1))
+			} else {
+				timingRaw = fmt.Sprintf("%s / %.2fs", timingRaw, totalSessionDuration)
+			}
+		}
+
+		if m.Cost > 0 {
+			fmt.Fprintf(&sb, "[%s]%s M: %d H: %d C: %d Th: %d ($%.4f) [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, m.Cost, timingRaw)
+		} else {
+			fmt.Fprintf(&sb, "[%s]%s M: %d H: %d C: %d Th: %d [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, timingRaw)
+		}
+	}
+
+	if status.IsFinal {
+		hitRate := 0.0
+		if total := status.TotalM + status.TotalH; total > 0 {
+			hitRate = float64(status.TotalH) / float64(total) * 100
+		}
+
+		turnCost := 0.0
+		if status.Metrics != nil {
+			turnCost = status.Metrics.Cost
+		}
+
+		fmt.Fprintf(&sb, "╰─⠿ Ready ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)\n",
+			turnCost, status.TaskCost,
+			status.SessionCost,
+			status.DailyCost,
+			status.TotalM,
+			status.TotalH,
+			hitRate,
+			status.TotalO)
+	}
+
+	return sb.String()
 }

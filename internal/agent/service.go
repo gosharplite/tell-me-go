@@ -79,19 +79,6 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 		return err
 	}
 
-	if paths := deps.GetPaths(); paths != nil && paths.TurnsLogPath != "" {
-		if logger := deps.GetTurnsLogger(); logger != nil {
-			// Ensure logger is closed when the session ends
-			origCleanup := cleanup
-			cleanup = func(c context.Context) error {
-				_ = logger.Close()
-				if origCleanup != nil {
-					return origCleanup(c)
-				}
-				return nil
-			}
-		}
-	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
 		defer cancel()

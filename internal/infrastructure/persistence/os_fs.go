@@ -32,6 +32,7 @@ type FileSystem interface {
 	ReadDir(name string) ([]os.DirEntry, error)
 	ReadFile(name string) ([]byte, error)
 	OpenFile(name string, flag int, perm os.FileMode) (File, error)
+	Open(name string) (File, error)
 }
 
 // OSFileSystem implements the local FileSystem interface using the os package.
@@ -71,6 +72,10 @@ func (f *OSFileSystem) ReadFile(name string) ([]byte, error) {
 
 func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	return os.OpenFile(name, flag, perm)
+}
+
+func (f *OSFileSystem) Open(name string) (File, error) {
+	return os.Open(name)
 }
 
 // domainFS wraps OSFileSystem to implement persistence.FileSystem (domain interface).

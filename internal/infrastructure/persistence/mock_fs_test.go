@@ -101,6 +101,7 @@ type mockFileSystem struct {
 	ReadDirFunc    func(name string) ([]os.DirEntry, error)
 	ReadFileFunc   func(name string) ([]byte, error)
 	OpenFileFunc   func(name string, flag int, perm os.FileMode) (File, error)
+	OpenFunc       func(name string) (File, error)
 }
 
 func newMockFS() *mockFileSystem {
@@ -235,6 +236,13 @@ func (m *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File
 		name: name,
 		data: data,
 	}, nil
+}
+
+func (m *mockFileSystem) Open(name string) (File, error) {
+	if m.OpenFunc != nil {
+		return m.OpenFunc(name)
+	}
+	return m.OpenFile(name, os.O_RDONLY, 0)
 }
 
 // Ensure mockFile and mockFileSystem implement the interfaces
