@@ -113,23 +113,51 @@ func (h *slogHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *slogHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
 func (h *slogHandler) WithGroup(_ string) slog.Handler      { return h }
 
+type blockingFile struct {
+	infra_persistence.File
+	block chan struct{}
+}
+
+func (f *blockingFile) Write(p []byte) (n int, err error) {
+	<-f.block
+	return len(p), nil
+}
+
+func (f *blockingFile) Close() error {
+	return nil
+}
+
+type blockingFS struct {
+	infra_persistence.FileSystem
+	file *blockingFile
+}
+
+func (fs *blockingFS) OpenFile(name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
+	return fs.file, nil
+}
+
 func TestAsyncTurnsLogger_BufferFull(t *testing.T) {
-	fs := &infra_persistence.OSFileSystem{}
-	tmpDir := t.TempDir()
-	logFile := filepath.Join(tmpDir, "buffer_full.log")
+	block := make(chan struct{})
+	file := &blockingFile{block: block}
+	fs := &blockingFS{file: file}
 
 	handler := &slogHandler{}
 	logger := slog.New(handler)
 
 	// Inject a logger with the custom handler
-	tl, err := NewAsyncTurnsLogger(fs, logFile, logger)
+	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
 	require.NoError(t, err)
 
-	// Send > 100 messages quickly.
-	// Since the worker is asynchronous, this should fill the channel buffer.
-	for i := 0; i < 200; i++ {
+	// Send 102 messages.
+	// 1st message will block in the worker's Write call.
+	// Next 100 messages will fill the channel buffer (capacity 100).
+	// 102nd message will trigger the "buffer full" warning because the channel is full.
+	for i := 0; i < 102; i++ {
 		tl.LogString(fmt.Sprintf("msg %d", i))
 	}
+
+	// Unblock the worker so it can finish
+	close(block)
 
 	err = tl.Close()
 	assert.NoError(t, err)
