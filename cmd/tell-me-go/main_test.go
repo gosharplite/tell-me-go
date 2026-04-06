@@ -5,8 +5,10 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -154,7 +156,7 @@ func TestGetVersion(t *testing.T) {
 }
 
 func TestBuildApp_Smoke(t *testing.T) {
-	app, cleanup, err := buildApp("test-version")
+	app, cleanup, err := buildApp("test-version", strings.NewReader(""), io.Discard, io.Discard)
 	if err != nil {
 		t.Fatalf("buildApp failed: %v", err)
 	}

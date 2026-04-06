@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"runtime/debug"
@@ -90,12 +91,17 @@ func main() {
 
 func run() int {
 	appVersion := getVersion()
-	app, cleanup, err := buildApp(appVersion)
+	app, cleanup, err := buildApp(appVersion, os.Stdin, os.Stdout, os.Stderr)
+
+	// Ensure cleanup runs if it was returned, regardless of error status
+	if cleanup != nil {
+		defer cleanup()
+	}
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
 		return 1
 	}
-	defer cleanup()
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -104,14 +110,14 @@ func run() int {
 	return 0
 }
 
-func buildApp(appVersion string) (*cli.App, func(), error) {
+func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cli.App, func(), error) {
 	ctx := context.Background()
 	shutdown := initTracer(ctx)
 	cleanup := func() {
 		sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := shutdown(sCtx); err != nil {
-			fmt.Fprintf(os.Stderr, "Error shutting down tracer: %v\n", err)
+			fmt.Fprintf(stderr, "Error shutting down tracer: %v\n", err)
 		}
 	}
 
@@ -123,15 +129,15 @@ func buildApp(appVersion string) (*cli.App, func(), error) {
 
 	// 3. Setup Logger
 	isDebug := os.Getenv("TELL_ME_DEBUG") == "1"
-	logger := logging.NewLogger(os.Stderr, isDebug)
+	logger := logging.NewLogger(stderr, isDebug)
 	slog.SetDefault(logger)
 
 	// 4. Build DI Container
-	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, os.Stdout, os.Stderr, logger, nil)
+	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, stdout, stderr, logger, nil)
 
 	// 5. Instantiate ChatService
 	chatService := agent.NewChatService(
-		homeDir, appVersion, os.Stdout, os.Stderr, sm,
+		homeDir, appVersion, stdout, stderr, sm,
 		bootstrapper,
 		bootstrapper.GetAgentFactory(),
 		bootstrapper.GetUIRenderer(),
@@ -143,9 +149,9 @@ func buildApp(appVersion string) (*cli.App, func(), error) {
 	configLoader := &config.YAMLConfigLoader{}
 	app, err := cli.New(cli.AppDependencies{
 		Version:      appVersion,
-		Stdin:        os.Stdin,
-		Stdout:       os.Stdout,
-		Stderr:       os.Stderr,
+		Stdin:        stdin,
+		Stdout:       stdout,
+		Stderr:       stderr,
 		HomeDir:      homeDir,
 		SM:           sm,
 		Logger:       logger,
