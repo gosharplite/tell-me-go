@@ -80,7 +80,7 @@ To request action from a role, use `tell‑me‑go`. The basic pattern is:
 
 ```bash
 # Request action from Architect (output discarded; see note below)
-echo "your prompt" | \
+cat prompt.txt | \
 tell-me-go -new -r -c ${ARCHITECT_CONFIG} &> /dev/null
 ```
 
@@ -97,7 +97,7 @@ tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 
 Adjust the number `-l 3` as needed.
 
-**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. For large or complex prompts, it is better to use `cat` than `echo` to pipe the prompt to tell-me-go.
+**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. Save prompts in a file then cat the file to tell-me-go. This can avoid parsing problems of using echo prompts directly to tell-me-go. Check prompt.txt before sending it to tell-me-go.
 
 ## Process (Step‑by‑Step)
 
@@ -119,12 +119,12 @@ Repeat steps 1-8 for each iteration until the overall task goal meets the projec
 
 ```bash
 # 1. Identify an opportunity
-echo "Reduce dead_code_graph alerts." \
-  | tell-me-go -new -r -c ${ARCHITECT_CONFIG} &> /dev/null
+echo "Reduce dead_code_graph alerts." > prompt.txt
+cat prompt.txt | tell-me-go -new -r -c ${ARCHITECT_CONFIG} &> /dev/null
 
 # 2. Get detailed instructions
-echo "Provide step‑by‑step instructions to reduce dead_code_graph." \
-  | tell-me-go -r -c ${ARCHITECT_CONFIG} &> /dev/null
+echo "Provide step‑by‑step instructions to reduce dead_code_graph." > prompt.txt
+cat prompt.txt | tell-me-go -r -c ${ARCHITECT_CONFIG} &> /dev/null
 
 # 3. Retrieve the Architect’s instructions
 tell-me-go -l 1 -r -c ${ARCHITECT_CONFIG} > /tmp/instructions.txt

@@ -83,7 +83,7 @@ To request action from a role, use `tell‑me‑go`. The basic pattern is:
 
 ```bash
 # Request action from Architect (output discarded)
-echo "your prompt" | \
+cat prompt.txt | \
 tell-me-go -new -r -c ${ARCHITECT_CONFIG} &> /dev/null
 ```
 
@@ -101,7 +101,7 @@ tell-me-go -l 3 -r -c ${ARCHITECT_CONFIG}
 
 Adjust the number `-l 3` as needed.
 
-**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. For large or complex prompts, it is better to use `cat` than `echo` to pipe the prompt to tell-me-go.
+**Important:** Assistant must verify the prompt content is non‑empty and appropriate for the target role before forwarding it. Save prompts in a file then cat the file to tell-me-go. This can avoid parsing problems of using echo prompts directly to tell-me-go. Check prompt.txt before sending it to tell-me-go.
 
 ## Process (Step‑by‑Step)
 
