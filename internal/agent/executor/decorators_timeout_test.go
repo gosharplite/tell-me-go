@@ -43,10 +43,10 @@ func TestSafetyDecorator_DynamicTimeout(t *testing.T) {
 			expectedErrSubstr: "timed out after 1s",
 		},
 		{
-			name:              "Capped at 2 hours",
-			requestedTimeout:  10000, // > 7200
-			nextDelay:         100 * time.Millisecond,
-			defaultTimeout:    500 * time.Millisecond,
+			name:             "Capped at 2 hours",
+			requestedTimeout: 10000, // > 7200
+			nextDelay:        100 * time.Millisecond,
+			defaultTimeout:   500 * time.Millisecond,
 		},
 		{
 			name:             "Floating point timeout",
@@ -61,7 +61,7 @@ func TestSafetyDecorator_DynamicTimeout(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			next := &mockExecutor{Result: tools.ToolResult{Text: "ok"}, Delay: tt.nextDelay, BlockCh: make(chan struct{})}
-			
+
 			if tt.nextDelay > 0 && tt.expectedErrSubstr == "" {
 				timer := time.AfterFunc(tt.nextDelay, func() {
 					close(next.BlockCh)
@@ -77,7 +77,7 @@ func TestSafetyDecorator_DynamicTimeout(t *testing.T) {
 				zombie,
 				tt.defaultTimeout,
 				tt.defaultTimeout,
-				10 * time.Millisecond, // zombieTimeout (short for testing)
+				10*time.Millisecond, // zombieTimeout (short for testing)
 			)
 
 			args := map[string]interface{}{}
