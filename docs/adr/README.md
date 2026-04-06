@@ -21,6 +21,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-013** | Asynchronous Event-Driven Orchestration | 2026-04 | Accepted | [2026-04-asynchronous-event-driven-orchestration.md](2026-04-asynchronous-event-driven-orchestration.md) |
 | **ADR-014** | Event-Driven Orchestration and Circuit Breaker Pipeline | 2026-04 | Accepted | [2026-04-event-driven-orchestration.md](2026-04-event-driven-orchestration.md) |
 | **ADR-015** | Cross‑Platform Timing Guarantees and HTTP‑Streaming Duration Measurement | 2026-04 | Accepted | [2026-04-cross-platform-timing-guarantees.md](2026-04-cross-platform-timing-guarantees.md) |
+| **ADR-016** | Migrate Persistent State to Pure Go SQLite | 2026-02 | Proposed | [2026-02-pure-go-sqlite-migration.md](2026-02-pure-go-sqlite-migration.md) |
 
 ## How to Create a New ADR
 

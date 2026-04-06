@@ -1,4 +1,4 @@
-# ADR: Migrate Persistent State to Pure Go SQLite
+# ADR-016: Migrate Persistent State to Pure Go SQLite
 
 ## Status
 Proposed
