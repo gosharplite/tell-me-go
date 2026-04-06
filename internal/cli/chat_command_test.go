@@ -525,3 +525,51 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 	assert.False(t, mService.chatCalled, "expected chat service NOT to be called")
 	mFS.AssertExpectations(t)
 }
+
+func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		setupMock   func(mFS *mockFileSystem, ml *mockLoader)
+		expectedErr string
+	}{
+		{
+			name: "Config Load Failure",
+			setupMock: func(mFS *mockFileSystem, ml *mockLoader) {
+				ml.On("Load", mock.Anything).Return(nil, errors.New("bad config"))
+			},
+			expectedErr: "error loading config",
+		},
+		{
+			name: "File Open Failure",
+			setupMock: func(mFS *mockFileSystem, ml *mockLoader) {
+				ml.On("Load", mock.Anything).Return(&config.Config{Mode: "assistant"}, nil)
+				mFS.On("MkdirAll", mock.Anything, mock.Anything).Return(nil)
+				mFS.On("Open", mock.Anything).Return(nil, os.ErrNotExist)
+			},
+			expectedErr: "failed to open turns log",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mFS := new(mockFileSystem)
+			ml := new(mockLoader)
+			tt.setupMock(mFS, ml)
+
+			cmd := &chatCommand{
+				Loader:     ml,
+				FileSystem: mFS,
+				Stdout:     new(strings.Builder),
+			}
+
+			err := cmd.Execute(stdctx.Background(), []string{"chat", "-t"})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.expectedErr)
+
+			mFS.AssertExpectations(t)
+			ml.AssertExpectations(t)
+		})
+	}
+}

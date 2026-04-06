@@ -778,3 +778,39 @@ func TestGetSuggestionService(t *testing.T) {
 	assert.NotEmpty(t, suggestions)
 	assert.Contains(t, suggestions, "test prompt")
 }
+
+func TestBootstrapper_Cleanup_ClosesTurnsLogger(t *testing.T) {
+	ctx := context.Background()
+	// 1. Setup minimal dependencies for the bootstrapper
+	tmpDir := t.TempDir()
+	
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
+	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
+
+	bootstrapper := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+	
+	cfg := &config.Config{
+		Mode: "assistant",
+	}
+
+	// 2. Execute BuildSessionDependencies
+	deps, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, cfg, "dummy-path.yaml", true, nil)
+	
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	require.NotNil(t, deps.GetTurnsLogger())
+
+	// 3. Execute the returned cleanup chain
+	err = cleanup(ctx)
+	assert.NoError(t, err, "Cleanup chain should execute without errors")
+
+	// 4. Verify idempotency and closure
+	// Calling Close() again on the SyncTurnsLogger should return nil immediately if it was already closed.
+	err = deps.GetTurnsLogger().Close()
+	assert.NoError(t, err, "Subsequent Close() calls should be a no-op")
+}
