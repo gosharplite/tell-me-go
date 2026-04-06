@@ -46,7 +46,6 @@ func (s *stubUIRenderer) LogToolResult(ctx context.Context, name string, result 
 }
 func (s *stubUIRenderer) SetUseColor(use bool)       {}
 func (s *stubUIRenderer) SetForceSpinner(force bool) {}
-func (s *stubUIRenderer) SetTurnsLogWriter(w io.Writer) {}
 
 // stubHistoryRenderer is a stub implementation of ports.HistoryRenderer for testing.
 type stubHistoryRenderer struct{}
@@ -140,6 +139,13 @@ func (m *mockServiceSessionDependencies) GetEventBus() events.EventBus {
 }
 func (m *mockServiceSessionDependencies) GetLogger() *slog.Logger {
 	return m.Called().Get(0).(*slog.Logger)
+}
+func (m *mockServiceSessionDependencies) GetTurnsLogger() ports.TurnsLogger {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.TurnsLogger)
 }
 func (m *mockServiceSessionDependencies) GetPaths() *persistence.Paths {
 	return m.Called().Get(0).(*persistence.Paths)
@@ -267,6 +273,7 @@ func TestProcessMessage(t *testing.T) {
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
 				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetTurnsLogger").Return(nil).Maybe()
 				deps.On("GetSessionProvider").Return(nil)
 
 				bus.On("Shutdown", mock.Anything).Return(nil)

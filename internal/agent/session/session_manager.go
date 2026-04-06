@@ -85,6 +85,7 @@ type sessionDependencies struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	EventBus         events.EventBus
 	Logger           *slog.Logger
+	TurnsLogger      ports.TurnsLogger
 	SessionProvider  ports.SessionProvider
 }
 
@@ -98,6 +99,9 @@ func (d *sessionDependencies) GetSecurityManager() domain_security.Manager {
 }
 func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
 func (d *sessionDependencies) GetLogger() *slog.Logger      { return d.Logger }
+func (d *sessionDependencies) GetTurnsLogger() ports.TurnsLogger {
+	return d.TurnsLogger
+}
 func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
 func (d *sessionDependencies) GetSessionProvider() ports.SessionProvider {
 	return d.SessionProvider
@@ -111,7 +115,7 @@ func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 }
 
 // newSessionDependencies creates a new sessionDependencies with all required components.
-func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger *slog.Logger, sessionProvider ports.SessionProvider) ports.SessionDependencies {
+func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger *slog.Logger, turnsLogger ports.TurnsLogger, sessionProvider ports.SessionProvider) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -124,6 +128,7 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 		PricingOverrides: overrides,
 		EventBus:         bus,
 		Logger:           logger,
+		TurnsLogger:      turnsLogger,
 		SessionProvider:  sessionProvider,
 	}
 }
@@ -230,14 +235,15 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 	paths := sd.GetPaths()
 	pData := sd.GetPricingData()
 	logger := sd.GetLogger()
-	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
+	turnsLogger := sd.GetTurnsLogger()
+	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, turnsLogger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return bridge, err
 	}
 	return bridge, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) *uiBridge {
+func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, turnsLogger ports.TurnsLogger, capturer ports.Capturer) *uiBridge {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(o.UIRenderer,
@@ -247,6 +253,7 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 		withBridgeColor(useColor),
 		withBridgeLogFile(logPath),
 		withBridgeLogger(logger),
+		withBridgeTurnsLogger(turnsLogger),
 	)
 	bridge.Start(ctx)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
@@ -290,6 +297,11 @@ func withBridgeLogger(l *slog.Logger) bridgeOption {
 	return func(b *uiBridge) { b.logger = l }
 }
 
+// withBridgeTurnsLogger sets the specialized turns logger.
+func withBridgeTurnsLogger(l ports.TurnsLogger) bridgeOption {
+	return func(b *uiBridge) { b.turnsLogger = l }
+}
+
 // withBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
 func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
 	return func(b *uiBridge) { b.cleanupTimeout = d }
@@ -316,6 +328,7 @@ type uiBridge struct {
 	cancel             context.CancelFunc
 	renderer           ports.UIRenderer
 	logger             *slog.Logger
+	turnsLogger        ports.TurnsLogger
 	showThoughts       bool
 	showTools          bool
 	rawOutput          bool
@@ -593,6 +606,9 @@ func (b *uiBridge) handleSystemMessage(ctx context.Context, e events.Event) {
 	}
 	b.stopActiveSpinner()
 	b.renderer.LogSystemMessage(ctx, msg, lvl)
+	if b.turnsLogger != nil {
+		b.turnsLogger.LogSystemMessage(ctx, msg, lvl)
+	}
 	b.resumeActiveSpinner(ctx)
 }
 
@@ -623,6 +639,9 @@ func (b *uiBridge) handleTurnStatus(ctx context.Context, ev events.TurnStatusEve
 	b.activePhase = nil // Clear phase on new turn/header
 	b.transition(stateIdle)
 	b.renderer.LogTurnStatus(ctx, ev.Status)
+	if b.turnsLogger != nil {
+		b.turnsLogger.LogTurnStatus(ctx, ev.Status)
+	}
 }
 
 func (b *uiBridge) handleResponse(ctx context.Context, ev events.ResponseEvent) {

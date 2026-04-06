@@ -29,6 +29,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -154,7 +155,16 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger, sessionProvider)
+	var turnsLogger ports.TurnsLogger
+	if paths.TurnsLogPath != "" {
+		if tl, err := logging.NewAsyncTurnsLogger(paths.TurnsLogPath); err == nil {
+			turnsLogger = tl
+		} else {
+			b.Logger.Warn("failed to initialize turns logger", "error", err)
+		}
+	}
+
+	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger, turnsLogger, sessionProvider)
 
 	return deps, hManager, cleanup, nil
 }
@@ -250,6 +260,7 @@ func (b *Bootstrapper) buildAgentOrchestrator(
 	bus events.EventBus,
 	cfg *config.Config,
 	logger *slog.Logger,
+	turnsLogger ports.TurnsLogger,
 	sessionProvider ports.SessionProvider,
 ) ports.SessionDependencies {
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
@@ -268,6 +279,7 @@ func (b *Bootstrapper) buildAgentOrchestrator(
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
 		logger:           logger,
+		turnsLogger:      turnsLogger,
 		sessionProvider:  sessionProvider,
 	}
 }
@@ -284,6 +296,7 @@ type sessionDeps struct {
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
 	logger           *slog.Logger
+	turnsLogger      ports.TurnsLogger
 	sessionProvider  ports.SessionProvider
 }
 
@@ -293,6 +306,7 @@ func (d *sessionDeps) GetRegistry() tools.Registry             { return d.reg }
 func (d *sessionDeps) GetSecurityManager() security.Manager    { return d.sm }
 func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
 func (d *sessionDeps) GetLogger() *slog.Logger                 { return d.logger }
+func (d *sessionDeps) GetTurnsLogger() ports.TurnsLogger       { return d.turnsLogger }
 func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
 func (d *sessionDeps) GetSessionProvider() ports.SessionProvider {
 	return d.sessionProvider
