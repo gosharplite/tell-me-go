@@ -23,3 +23,8 @@ type TurnsLogger interface {
 	LogString(msg string)
 	Close() error
 }
+
+type NoOpTurnsLogger struct{}
+
+func (l *NoOpTurnsLogger) LogString(msg string) {}
+func (l *NoOpTurnsLogger) Close() error         { return nil }

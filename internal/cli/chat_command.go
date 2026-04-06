@@ -89,7 +89,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 		}
-		
+
 		return c.Bootstrapper.StreamTurnsLog(ctx, cfg, c.Stdout)
 	}
 

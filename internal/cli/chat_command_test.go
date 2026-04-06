@@ -442,7 +442,7 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 	sm := &mockSM{}
 	mService := &mockChatService{}
 	mb, ml := setupMocks()
-	
+
 	// Setup Mocks
 	ml.ExpectedCalls = nil
 	cfg := &config.Config{Mode: "assistant"}

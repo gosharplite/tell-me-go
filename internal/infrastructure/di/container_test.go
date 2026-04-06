@@ -819,12 +819,12 @@ type minimalFile struct {
 	io.Reader
 }
 
-func (f *minimalFile) Close() error                                 { return nil }
-func (f *minimalFile) Sync() error                                  { return nil }
-func (f *minimalFile) Name() string                                 { return "dummy" }
-func (f *minimalFile) Seek(offset int64, whence int) (int64, error) { return 0, nil }
-func (f *minimalFile) Write(p []byte) (int, error)                  { return 0, nil }
-func (f *minimalFile) ReadDir(n int) ([]os.DirEntry, error)         { return nil, nil }
+func (f *minimalFile) Close() error                                  { return nil }
+func (f *minimalFile) Sync() error                                   { return nil }
+func (f *minimalFile) Name() string                                  { return "dummy" }
+func (f *minimalFile) Seek(offset int64, whence int) (int64, error)  { return 0, nil }
+func (f *minimalFile) Write(p []byte) (int, error)                   { return 0, nil }
+func (f *minimalFile) ReadDir(n int) ([]os.DirEntry, error)          { return nil, nil }
 func (f *minimalFile) ReadAt(p []byte, off int64) (n int, err error) { return 0, nil }
 func (f *minimalFile) Chmod(mode os.FileMode) error                  { return nil }
 
