@@ -18,6 +18,20 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
+// AppDependencies encapsulates all dependencies for the CLI application.
+type AppDependencies struct {
+	Version      string
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	HomeDir      string
+	SM           domain_security.Manager
+	Logger       *slog.Logger
+	Bootstrapper Bootstrapper
+	ConfigLoader domain_config.ConfigLoader
+	ChatService  agent.ChatService
+}
+
 // app represents the tell-me-go application.
 type app struct {
 	Version      string
@@ -29,32 +43,37 @@ type app struct {
 	logger       *slog.Logger
 	bootstrapper Bootstrapper
 	configLoader domain_config.ConfigLoader
+	chatService  agent.ChatService
 	mockPrompt   string
 	mockAnswer   string
 }
 
 // New creates a new App instance with explicit dependency injection.
-func New(version string, stdin io.Reader, stdout, stderr io.Writer, b Bootstrapper, sm domain_security.Manager, homeDir string, logger *slog.Logger, configLoader domain_config.ConfigLoader) *app {
+func New(deps AppDependencies) *app {
+	stdin := deps.Stdin
 	if stdin == nil {
 		stdin = os.Stdin
 	}
+	stdout := deps.Stdout
 	if stdout == nil {
 		stdout = os.Stdout
 	}
+	stderr := deps.Stderr
 	if stderr == nil {
 		stderr = os.Stderr
 	}
 
 	return &app{
-		Version:      version,
+		Version:      deps.Version,
 		Stdin:        stdin,
 		Stdout:       stdout,
 		Stderr:       stderr,
-		homeDir:      homeDir,
-		sm:           sm,
-		logger:       logger,
-		bootstrapper: b,
-		configLoader: configLoader,
+		homeDir:      deps.HomeDir,
+		sm:           deps.SM,
+		logger:       deps.Logger,
+		bootstrapper: deps.Bootstrapper,
+		configLoader: deps.ConfigLoader,
+		chatService:  deps.ChatService,
 		mockPrompt:   os.Getenv("TELL_ME_MOCK_PROMPT"),
 		mockAnswer:   os.Getenv("TELL_ME_MOCK_ANSWER"),
 	}
@@ -94,15 +113,6 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 		return errors.New("application bootstrapper is not initialized")
 	}
 
-	chatService := agent.NewChatService(
-		a.homeDir, a.Version, a.Stdout, a.Stderr, a.sm,
-		a.bootstrapper,
-		a.bootstrapper.GetAgentFactory(),
-		a.bootstrapper.GetUIRenderer(),
-		a.bootstrapper.GetHistoryRenderer(),
-		a.bootstrapper.GetHistoryBrowser(),
-	)
-
 	cmdCtx := &context{
 		Version:      a.Version,
 		Stdin:        a.Stdin,
@@ -110,7 +120,7 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 		Stderr:       a.Stderr,
 		HomeDir:      a.homeDir,
 		SM:           a.sm,
-		ChatService:  chatService,
+		ChatService:  a.chatService,
 		Bootstrapper: a.bootstrapper,
 		Loader:       a.configLoader,
 		MockPrompt:   a.mockPrompt,

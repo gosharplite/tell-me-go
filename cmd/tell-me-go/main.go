@@ -18,6 +18,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/cli"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
@@ -114,9 +115,30 @@ func run() int {
 	// 4. Build DI Container
 	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, os.Stdout, os.Stderr, logger, nil)
 
-	// 5. Initialize CLI with pre-wired dependencies
+	// 5. Instantiate ChatService
+	chatService := agent.NewChatService(
+		homeDir, appVersion, os.Stdout, os.Stderr, sm,
+		bootstrapper,
+		bootstrapper.GetAgentFactory(),
+		bootstrapper.GetUIRenderer(),
+		bootstrapper.GetHistoryRenderer(),
+		bootstrapper.GetHistoryBrowser(),
+	)
+
+	// 6. Initialize CLI with pre-wired dependencies
 	configLoader := &config.YAMLConfigLoader{}
-	app := cli.New(appVersion, os.Stdin, os.Stdout, os.Stderr, bootstrapper, sm, homeDir, logger, configLoader)
+	app := cli.New(cli.AppDependencies{
+		Version:      appVersion,
+		Stdin:        os.Stdin,
+		Stdout:       os.Stdout,
+		Stderr:       os.Stderr,
+		HomeDir:      homeDir,
+		SM:           sm,
+		Logger:       logger,
+		Bootstrapper: bootstrapper,
+		ConfigLoader: configLoader,
+		ChatService:  chatService,
+	})
 
 	if err := app.Run(ctx, os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
