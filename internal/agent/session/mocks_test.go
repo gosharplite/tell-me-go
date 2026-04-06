@@ -340,3 +340,15 @@ func (m *mockSessionProvider) Close() error {
 	args := m.Called()
 	return args.Error(0)
 }
+
+type mockTurnsLogger struct {
+	mock.Mock
+}
+
+func (m *mockTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {
+	m.Called(ctx, e)
+}
+
+func (m *mockTurnsLogger) Close() error {
+	return m.Called().Error(0)
+}

@@ -124,7 +124,7 @@ func TestBuildSessionDependencies(t *testing.T) {
 
 	client := new(mockLLMClient)
 
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
 	})
 
@@ -154,7 +154,7 @@ func TestGetAgentFactory(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
+	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
 
 	factory := Bootstrapper.GetAgentFactory()
 	assert.NotNil(t, factory)
@@ -265,7 +265,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 					return new(mockLLMClient), nil
 				}
 			}
-			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, nil, cf)
+			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, cf)
 			newSession := strings.Contains(tt.name, "TriggerNewSession")
 			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
 			assert.Error(t, err)
@@ -301,7 +301,7 @@ func TestSucceedsWithWarningOnTriggerNewSession_RecordCostError(t *testing.T) {
 	sm.On("IsPathSafe", mock.Anything).Return("", simulatedErr)
 
 	var stderr bytes.Buffer
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
 	})
 
@@ -341,7 +341,7 @@ func TestFinalizeSession(t *testing.T) {
 	}
 
 	client := new(mockLLMClient)
-	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
 	})
 
@@ -394,7 +394,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
+	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
 
 	factory := Bootstrapper.GetAgentFactory()
 	assert.NotNil(t, factory)
@@ -485,7 +485,7 @@ func TestBuildSessionDependencies_NewSession(t *testing.T) {
 
 	client := new(mockLLMClient)
 
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return client, nil
 	})
 
@@ -663,7 +663,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 			sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 
 			var stderr bytes.Buffer
-			b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+			b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, &stderr, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 				return new(mockLLMClient), nil
 			})
 
@@ -715,7 +715,7 @@ func TestCrossSessionPersistence(t *testing.T) {
 	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	// 3. Build Dependencies
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 		return new(mockLLMClient), nil
 	})
 	cfg := &config.Config{Mode: mode, Model: "test-model"}
@@ -767,7 +767,7 @@ func TestGetSuggestionService(t *testing.T) {
 	sm := new(mockConfigurableSecurityManager)
 	setupDefaultSMExpectations(sm)
 
-	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil)
+	Bootstrapper := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
 
 	svc, err := Bootstrapper.GetSuggestionService(ctx, []string{"test prompt"})
 	assert.NoError(t, err)
@@ -777,4 +777,124 @@ func TestGetSuggestionService(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, suggestions)
 	assert.Contains(t, suggestions, "test prompt")
+}
+
+func TestBootstrapper_Cleanup_ClosesTurnsLogger(t *testing.T) {
+	ctx := context.Background()
+	// 1. Setup minimal dependencies for the bootstrapper
+	tmpDir := t.TempDir()
+
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
+	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
+
+	bootstrapper := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	cfg := &config.Config{
+		Mode: "assistant",
+	}
+
+	// 2. Execute BuildSessionDependencies
+	deps, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, cfg, "dummy-path.yaml", true, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	require.NotNil(t, deps.GetTurnsLogger())
+
+	// 3. Execute the returned cleanup chain
+	err = cleanup(ctx)
+	assert.NoError(t, err, "Cleanup chain should execute without errors")
+
+	// 4. Verify idempotency and closure
+	// Calling Close() again on the AsyncTurnsLogger should return nil immediately if it was already closed.
+	err = deps.GetTurnsLogger().Close()
+	assert.NoError(t, err, "Subsequent Close() calls should be a no-op")
+}
+
+func TestGetChatService(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	svc := b.GetChatService()
+	assert.NotNil(t, svc)
+}
+
+type mockFileWithErrors struct {
+	infra_persistence.File
+	closeErr error
+}
+
+func (m *mockFileWithErrors) Close() error                { return m.closeErr }
+func (m *mockFileWithErrors) Sync() error                 { return nil }
+func (m *mockFileWithErrors) Write(p []byte) (int, error) { return len(p), nil }
+
+type mockFSWithErrors struct {
+	infra_persistence.FileSystem
+	file infra_persistence.File
+}
+
+func (m *mockFSWithErrors) OpenFile(name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
+	return m.file, nil
+}
+func (m *mockFSWithErrors) MkdirAll(path string, perm os.FileMode) error { return nil }
+func (m *mockFSWithErrors) Stat(name string) (os.FileInfo, error) {
+	return nil, os.ErrNotExist
+}
+
+func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// 1. Setup mocks
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+	sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+	sm.On("SetBypassActive", mock.Anything).Return().Maybe()
+	sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
+
+	busErr := errors.New("bus shutdown failed")
+	mockSP := new(mockSessionProvider)
+	mockKV := new(mockKVStore)
+	mockKV.On("Get", mock.Anything, mock.Anything).Return("", nil).Maybe()
+	mockSP.On("GetSettings").Return(mockKV).Maybe()
+	mockSP.On("GetInfo").Return(ports.SessionInfo{}).Maybe()
+	mockSP.On("SetInfo", mock.Anything).Return().Maybe()
+	mockSP.On("Close").Return(busErr)
+
+	logErr := errors.New("log flush failed")
+	file := &mockFileWithErrors{closeErr: logErr}
+	fs := &mockFSWithErrors{file: file}
+
+	bootstrapper := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, fs, func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
+		return new(mockLLMClient), nil
+	})
+
+	bootstrapper.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
+		return mockSP, nil
+	}
+
+	cfg := &config.Config{
+		Mode: "assistant",
+	}
+
+	// 2. Build dependencies
+	_, _, cleanup, err := bootstrapper.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+
+	// 3. Execute cleanup and verify error chaining
+	err = cleanup(ctx)
+	require.Error(t, err)
+
+	// Verify both errors are present in the joined error
+	assert.ErrorIs(t, err, busErr)
+	assert.ErrorIs(t, err, logErr)
+	assert.Contains(t, err.Error(), "bus shutdown failed")
+	assert.Contains(t, err.Error(), "log flush failed")
 }

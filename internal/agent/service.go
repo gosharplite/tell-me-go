@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -21,6 +23,11 @@ import (
 type SessionLifecycleManager interface {
 	BuildSessionDependencies(ctx context.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error)
 	FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) error
+}
+
+// LogFileOpener defines the minimal interface required to open session log files.
+type LogFileOpener interface {
+	Open(ctx context.Context, name string) (persistence.File, error)
 }
 
 type chatService struct {
@@ -35,6 +42,7 @@ type chatService struct {
 	UIRenderer       ports.UIRenderer
 	HistoryRenderer  ports.HistoryRenderer
 	HistoryBrowser   ports.HistoryBrowser
+	LogOpener        LogFileOpener
 }
 
 // NewChatService creates a new concrete implementation of ChatService with explicit dependency injection.
@@ -47,6 +55,7 @@ func NewChatService(
 	uiRenderer ports.UIRenderer,
 	historyRenderer ports.HistoryRenderer,
 	historyBrowser ports.HistoryBrowser,
+	logOpener LogFileOpener,
 ) ChatService {
 	return &chatService{
 		HomeDir:          homeDir,
@@ -59,6 +68,7 @@ func NewChatService(
 		UIRenderer:       uiRenderer,
 		HistoryRenderer:  historyRenderer,
 		HistoryBrowser:   historyBrowser,
+		LogOpener:        logOpener,
 	}
 }
 
@@ -78,6 +88,7 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 	if err != nil {
 		return err
 	}
+
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
 		defer cancel()
@@ -142,4 +153,47 @@ func (s *chatService) GetToolNames(ctx context.Context, reg tools.Registry) ([]s
 		names = append(names, d.Name)
 	}
 	return names, nil
+}
+
+// StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
+func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Config, out io.Writer) (err error) {
+	paths := persistence.ResolvePaths(s.HomeDir, cfg.Mode)
+	if paths.TurnsLogPath == "" {
+		return errors.New("turns log path not available")
+	}
+
+	file, err := s.LogOpener.Open(ctx, paths.TurnsLogPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			_, _ = fmt.Fprintln(out, "No turns log found for this session yet.")
+			return nil
+		}
+		return fmt.Errorf("failed to open turns log at %s: %w", paths.TurnsLogPath, err)
+	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close turns log: %w", cerr)
+		}
+	}()
+
+	buf := make([]byte, 32*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		n, rErr := file.Read(buf)
+		if n > 0 {
+			if _, wErr := out.Write(buf[:n]); wErr != nil {
+				return fmt.Errorf("failed to output turns log: %w", wErr)
+			}
+		}
+		if rErr != nil {
+			if errors.Is(rErr, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("failed to read turns log: %w", rErr)
+		}
+	}
 }

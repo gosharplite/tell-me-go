@@ -19,7 +19,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/cli"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
@@ -133,17 +132,10 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	slog.SetDefault(logger)
 
 	// 4. Build DI Container
-	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, stdout, stderr, logger, nil)
+	bootstrapper := di.NewBootstrapper(homeDir, sm, appVersion, stdout, stderr, logger, nil, nil)
 
 	// 5. Instantiate ChatService
-	chatService := agent.NewChatService(
-		homeDir, appVersion, stdout, stderr, sm,
-		bootstrapper,
-		bootstrapper.GetAgentFactory(),
-		bootstrapper.GetUIRenderer(),
-		bootstrapper.GetHistoryRenderer(),
-		bootstrapper.GetHistoryBrowser(),
-	)
+	chatService := bootstrapper.GetChatService()
 
 	// 6. Initialize CLI with pre-wired dependencies
 	configLoader := &config.YAMLConfigLoader{}

@@ -4,11 +4,14 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"io"
 	"log/slog"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,6 +143,13 @@ func (m *mockServiceSessionDependencies) GetEventBus() events.EventBus {
 func (m *mockServiceSessionDependencies) GetLogger() *slog.Logger {
 	return m.Called().Get(0).(*slog.Logger)
 }
+func (m *mockServiceSessionDependencies) GetTurnsLogger() ports.TurnsLogger {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.TurnsLogger)
+}
 func (m *mockServiceSessionDependencies) GetPaths() *persistence.Paths {
 	return m.Called().Get(0).(*persistence.Paths)
 }
@@ -224,12 +234,24 @@ func (m *mockServiceCapturer) Close(ctx context.Context) error {
 	return args.Error(0)
 }
 
+type mockTurnsLogger struct {
+	mock.Mock
+}
+
+func (m *mockTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {
+	m.Called(ctx, e)
+}
+
+func (m *mockTurnsLogger) Close() error {
+	return m.Called().Error(0)
+}
+
 func TestProcessMessage(t *testing.T) {
 	errBuild := errors.New("build error")
 
 	tests := []struct {
 		name        string
-		setupMock   func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error
+		setupMock   func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error
 		opts        ChatOptions
 		cfg         *config.Config
 		wantErr     bool
@@ -246,7 +268,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -255,19 +277,24 @@ func TestProcessMessage(t *testing.T) {
 					SelectedProvider: "test",
 				}
 				cleanupCalled := false
-				cleanup := func(context.Context) error { cleanupCalled = true; return nil }
+				cleanup := func(context.Context) error {
+					cleanupCalled = true
+					return tl.Close()
+				}
 
 				mockHM := &mockHistoryManagerForRetry{}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
 				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(nil)
 
 				deps.On("GetEventBus").Return(bus)
-				deps.On("GetPaths").Return(&persistence.Paths{})
+				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
 				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetTurnsLogger").Return(tl)
 				deps.On("GetSessionProvider").Return(nil)
 
+				tl.On("Close").Return(nil)
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
 				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -289,7 +316,7 @@ func TestProcessMessage(t *testing.T) {
 			name: "BuildSessionDepsError",
 			opts: ChatOptions{ConfigPath: "config.yaml"},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent) func(context.Context) error {
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 				return nil
@@ -309,6 +336,7 @@ func TestProcessMessage(t *testing.T) {
 			deps := &mockServiceSessionDependencies{}
 			bus := &mockServiceEventBus{}
 			agent := &mockServiceAgent{}
+			tl := &mockTurnsLogger{}
 
 			chatterFactory := ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
 				return agent, nil
@@ -316,12 +344,12 @@ func TestProcessMessage(t *testing.T) {
 
 			service := NewChatService(
 				"home", "v1", io.Discard, io.Discard, sm,
-				sf, chatterFactory, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{},
+				sf, chatterFactory, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{}, nil,
 			)
 
 			var verify func(context.Context) error
 			if tt.setupMock != nil {
-				verify = tt.setupMock(sf, sm, capturer, deps, bus, agent)
+				verify = tt.setupMock(sf, sm, capturer, deps, bus, agent, tl)
 			}
 
 			err := service.ProcessMessage(ctx, tt.cfg, tt.opts, capturer)
@@ -346,6 +374,7 @@ func TestProcessMessage(t *testing.T) {
 			if !tt.wantErr {
 				bus.AssertExpectations(t)
 				agent.AssertExpectations(t)
+				tl.AssertExpectations(t)
 			}
 		})
 	}
@@ -359,7 +388,7 @@ func TestGetLastUserMessage(t *testing.T) {
 
 	service := NewChatService(
 		"home", "v1", io.Discard, io.Discard, sm,
-		nil, nil, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{},
+		nil, nil, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{}, nil,
 	)
 
 	msg, turns, err := service.GetLastUserMessage(ctx, mockHM)
@@ -404,3 +433,109 @@ func (m *mockHistoryManagerForRetry) RollbackTurns(ctx context.Context, turns in
 }
 
 func (m *mockHistoryManagerForRetry) GetFilePath() string { return "" }
+
+type mockFileSystemStream struct {
+	persistence.FileSystem
+	mock.Mock
+}
+
+func (m *mockFileSystemStream) Open(ctx context.Context, name string) (persistence.File, error) {
+	args := m.Called(ctx, name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(persistence.File), args.Error(1)
+}
+
+type minimalFile struct {
+	io.Reader
+}
+
+func (f *minimalFile) Close() error                                  { return nil }
+func (f *minimalFile) ReadAt(p []byte, off int64) (n int, err error) { return 0, nil }
+func (f *minimalFile) ReadDir(n int) ([]os.DirEntry, error)          { return nil, nil }
+func (f *minimalFile) Seek(offset int64, whence int) (int64, error)  { return 0, nil }
+func (f *minimalFile) Write(p []byte) (int, error)                   { return 0, nil }
+
+type errorReader struct{}
+
+func (r *errorReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("read error")
+}
+
+func TestStreamTurnsLog(t *testing.T) {
+	ctx := context.Background()
+	homeDir := "/home/user"
+
+	tests := []struct {
+		name        string
+		mode        string
+		setupMock   func(mFS *mockFileSystemStream)
+		expectedOut string
+		wantErr     bool
+	}{
+		{
+			name: "Success",
+			mode: "assistant",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{Reader: strings.NewReader("turn 1: hello")}, nil)
+			},
+			expectedOut: "turn 1: hello",
+			wantErr:     false,
+		},
+		{
+			name: "LogFileMissing",
+			mode: "developer",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "developer").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrNotExist)
+			},
+			expectedOut: "No turns log found for this session yet.\n",
+			wantErr:     false,
+		},
+		{
+			name: "PermissionDenied",
+			mode: "assistant",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrPermission)
+			},
+			wantErr: true,
+		},
+		{
+			name: "ReadError",
+			mode: "assistant",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{Reader: &errorReader{}}, nil)
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mFS := new(mockFileSystemStream)
+			if tt.setupMock != nil {
+				tt.setupMock(mFS)
+			}
+
+			service := NewChatService(
+				homeDir, "v1", io.Discard, io.Discard, nil,
+				nil, nil, nil, nil, nil, mFS,
+			)
+
+			var out bytes.Buffer
+			err := service.StreamTurnsLog(ctx, &config.Config{Mode: tt.mode}, &out)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedOut, out.String())
+			}
+			mFS.AssertExpectations(t)
+		})
+	}
+}

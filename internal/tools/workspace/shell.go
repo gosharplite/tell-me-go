@@ -36,6 +36,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		Reason     string `json:"reason"`
 		OutputFile string `json:"output_file"`
 		Append     bool   `json:"append"`
+		Timeout    int    `json:"timeout"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
@@ -88,6 +89,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		Reason     string   `json:"reason"`
 		OutputFile string   `json:"output_file"`
 		Append     bool     `json:"append"`
+		Timeout    int      `json:"timeout"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil

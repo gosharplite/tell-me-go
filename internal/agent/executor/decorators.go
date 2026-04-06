@@ -70,6 +70,27 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 		activeTimeout = d.longRunningTimeout
 	}
 
+	// NEW: Allow the payload to dynamically override the timeout
+	if tVal, ok := call.Args["timeout"]; ok {
+		var reqSeconds float64
+		switch v := tVal.(type) {
+		case float64:
+			reqSeconds = v
+		case int:
+			reqSeconds = float64(v)
+		case int64:
+			reqSeconds = float64(v)
+		}
+
+		if reqSeconds > 0 {
+			// Protect the system: Cap the dynamic timeout at 2 hours (7200 seconds)
+			if reqSeconds > 7200 {
+				reqSeconds = 7200
+			}
+			activeTimeout = time.Duration(reqSeconds * float64(time.Second))
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(parentCtx, activeTimeout)
 	defer cancel()
 

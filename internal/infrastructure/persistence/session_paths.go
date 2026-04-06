@@ -14,24 +14,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
-// paths is an alias for persistence.Paths
-type paths = persistence.Paths
-
-// InitializePaths creates the necessary directories and returns the Paths for the session.
-func InitializePaths(fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
-	modeDir := filepath.Join(homeDir, "output", mode)
-	if err := fs.MkdirAll(modeDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create session directory [%s]: %w", modeDir, err)
+// initializePaths creates the necessary directories and returns the Paths for the session.
+func initializePaths(fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
+	paths := persistence.ResolvePaths(homeDir, mode)
+	if err := EnsureDirectories(fs, paths); err != nil {
+		return nil, err
 	}
+	return paths, nil
+}
 
-	return &persistence.Paths{
-		ModeDir:            modeDir,
-		HistoryPath:        filepath.Join(modeDir, "history.jsonl"),
-		HistoryArchivePath: filepath.Join(modeDir, "history.archive.jsonl"),
-		LogPath:            filepath.Join(modeDir, "tokens.log"),
-		TracePath:          filepath.Join(modeDir, "tokens.trace.jsonl"),
-		CommandsLogPath:    filepath.Join(modeDir, "commands.log"),
-	}, nil
+// EnsureDirectories creates the necessary directories for the session.
+func EnsureDirectories(fs FileSystem, paths *persistence.Paths) error {
+	if err := fs.MkdirAll(paths.ModeDir, 0755); err != nil {
+		return fmt.Errorf("failed to create session directory [%s]: %w", paths.ModeDir, err)
+	}
+	return nil
 }
 
 // RotateSession archives existing session files and cleans up old backups.
@@ -46,6 +43,7 @@ func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentio
 		paths.LogPath,
 		paths.TracePath,
 		paths.CommandsLogPath,
+		paths.TurnsLogPath,
 	}
 	backupDir := filepath.Join(outputDir, "backups", timestamp)
 

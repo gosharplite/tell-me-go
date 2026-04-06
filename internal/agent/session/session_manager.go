@@ -85,6 +85,7 @@ type sessionDependencies struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	EventBus         events.EventBus
 	Logger           *slog.Logger
+	TurnsLogger      ports.TurnsLogger
 	SessionProvider  ports.SessionProvider
 }
 
@@ -98,6 +99,9 @@ func (d *sessionDependencies) GetSecurityManager() domain_security.Manager {
 }
 func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
 func (d *sessionDependencies) GetLogger() *slog.Logger      { return d.Logger }
+func (d *sessionDependencies) GetTurnsLogger() ports.TurnsLogger {
+	return d.TurnsLogger
+}
 func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
 func (d *sessionDependencies) GetSessionProvider() ports.SessionProvider {
 	return d.SessionProvider
@@ -111,7 +115,7 @@ func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 }
 
 // newSessionDependencies creates a new sessionDependencies with all required components.
-func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger *slog.Logger, sessionProvider ports.SessionProvider) ports.SessionDependencies {
+func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger *slog.Logger, turnsLogger ports.TurnsLogger, sessionProvider ports.SessionProvider) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -124,6 +128,7 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 		PricingOverrides: overrides,
 		EventBus:         bus,
 		Logger:           logger,
+		TurnsLogger:      turnsLogger,
 		SessionProvider:  sessionProvider,
 	}
 }
@@ -230,6 +235,14 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 	paths := sd.GetPaths()
 	pData := sd.GetPricingData()
 	logger := sd.GetLogger()
+	turnsLogger := sd.GetTurnsLogger()
+
+	if turnsLogger != nil {
+		chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
+			turnsLogger.HandleEvent(ctx, e)
+		})
+	}
+
 	bridge := o.setupUIRendering(ctx, chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, logger, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return bridge, err
@@ -247,6 +260,7 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 		withBridgeColor(useColor),
 		withBridgeLogFile(logPath),
 		withBridgeLogger(logger),
+		withBridgeClock(o.Clock),
 	)
 	bridge.Start(ctx)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
@@ -290,6 +304,11 @@ func withBridgeLogger(l *slog.Logger) bridgeOption {
 	return func(b *uiBridge) { b.logger = l }
 }
 
+// withBridgeClock sets the clock for deterministic timestamps.
+func withBridgeClock(c clock.Clock) bridgeOption {
+	return func(b *uiBridge) { b.clock = c }
+}
+
 // withBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
 func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
 	return func(b *uiBridge) { b.cleanupTimeout = d }
@@ -316,6 +335,7 @@ type uiBridge struct {
 	cancel             context.CancelFunc
 	renderer           ports.UIRenderer
 	logger             *slog.Logger
+	clock              clock.Clock
 	showThoughts       bool
 	showTools          bool
 	rawOutput          bool
@@ -442,6 +462,7 @@ func newUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
 		loopCancel:     loopCancel,
 		renderer:       renderer,
 		logger:         slog.Default(),
+		clock:          clock.RealClock{},
 		eventCh:        make(chan events.Event, 100),
 		cleanupTimeout: 5 * time.Second,
 	}
@@ -583,6 +604,7 @@ func (b *uiBridge) processEvent(ctx context.Context, e events.Event) {
 
 func (b *uiBridge) handleSystemMessage(ctx context.Context, e events.Event) {
 	var msg, lvl string
+
 	switch ev := e.(type) {
 	case events.SystemMessageEvent:
 		msg, lvl = ev.Message, ev.Level

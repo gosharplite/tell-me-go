@@ -162,13 +162,14 @@ func TestSessionManager_Run_Success(t *testing.T) {
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
+	mTurnsLogger := new(mockTurnsLogger)
 	orch := newSessionManager("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer, clock.RealClock{}, rand.Reader)
 
 	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider))
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), mTurnsLogger, new(mockSessionProvider))
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -178,11 +179,16 @@ func TestSessionManager_Run_Success(t *testing.T) {
 	mChatter.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
 	mChatter.On("Shutdown", mock.Anything).Return(nil)
 
+	// Verify TurnsLogger interaction during Run
+	// (SessionManager now subscribes it directly)
+	mTurnsLogger.On("HandleEvent", mock.Anything, mock.Anything).Return().Maybe()
+
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
 
 	mChatter.AssertExpectations(t)
 	mCapturer.AssertExpectations(t)
+	mTurnsLogger.AssertExpectations(t)
 }
 
 func TestUIBridge_HandleEvent(t *testing.T) {
@@ -499,7 +505,7 @@ func TestSessionManager_Run_Error(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider))
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -543,7 +549,7 @@ func TestSessionManager_Run_NoPrompt_WithLastN(t *testing.T) {
 		Prompt:          "",
 		LastN:           5,
 		Config:          &config.Config{},
-		Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider)),
+		Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider)),
 		Capturer:        mCapturer,
 	}
 
@@ -578,7 +584,7 @@ func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, 10, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
 
-	deps := newSessionDependencies(paths, nil, nil, nil, nil, nil, nil, pData, nil, nil, slog.Default(), new(mockSessionProvider))
+	deps := newSessionDependencies(paths, nil, nil, nil, nil, nil, nil, pData, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
 
 	bridge, err := orch.(*sessionManager).applyConfiguration(context.Background(), mChatter, sCfg, deps, mCapturer)
 	require.Error(t, err)
@@ -792,7 +798,7 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 			Mode:             "mode",
 			SelectedProvider: "provider",
 		},
-		Deps:     newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider)),
+		Deps:     newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider)),
 		Capturer: mCapturer,
 	}
 
@@ -830,6 +836,7 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 		"Capturer.IsTTY",             // Initial check in Run
 		"HistoryRenderer.Render",     // Rendering history because LastN > 0
 		"AgentFactory",               // Creating the agent
+		"Chatter.Subscribe",          // Connect TurnsLogger events
 		"Capturer.IsTTY",             // Check in setupUIRendering
 		"UIRenderer.SetUseColor",     // Config UI
 		"Chatter.Subscribe",          // Connect UI events
@@ -977,7 +984,7 @@ func TestRun_Routing(t *testing.T) {
 			AgentFactory:    factory(mChatter),
 			HistoryRenderer: mHistoryRenderer,
 			UIRenderer:      mUIRenderer,
-			Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider)),
+			Deps:            newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider)),
 			Capturer:        mCapturer,
 			Config: &config.Config{
 				Model: "model",
@@ -1334,7 +1341,7 @@ func TestSessionManager_Run_ErrorPropagation(t *testing.T) {
 				Model: "model",
 				Mode:  "mode",
 			})
-			deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider))
+			deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
 
 			mCapturer.On("IsTTY", io.Discard).Return(true)
 			mUIRenderer.On("SetUseColor", true).Return()
@@ -1553,7 +1560,7 @@ func TestSessionManager_SessionID_Fallback(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider))
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -1604,7 +1611,7 @@ func TestSessionManager_SessionID_DeterministicEntropy(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider))
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -1664,7 +1671,7 @@ func TestSessionManager_SessionID_ShortRead_Fallback(t *testing.T) {
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider))
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()

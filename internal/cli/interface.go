@@ -23,6 +23,7 @@ type Bootstrapper interface {
 	GetUIRenderer() ports.UIRenderer
 	GetHistoryRenderer() ports.HistoryRenderer
 	GetHistoryBrowser() ports.HistoryBrowser
+	GetChatService() agent.ChatService
 }
 
 // context provides shared dependencies for commands.

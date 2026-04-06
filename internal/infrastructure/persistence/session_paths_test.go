@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestInitializePaths(t *testing.T) {
@@ -15,9 +17,9 @@ func TestInitializePaths(t *testing.T) {
 	tmp := t.TempDir()
 	mode := "test-mode"
 
-	paths, err := InitializePaths(&OSFileSystem{}, tmp, mode)
+	paths, err := initializePaths(&OSFileSystem{}, tmp, mode)
 	if err != nil {
-		t.Fatalf("InitializePaths failed: %v", err)
+		t.Fatalf("initializePaths failed: %v", err)
 	}
 
 	expectedDir := filepath.Join(tmp, "output", mode)
@@ -36,7 +38,7 @@ func TestRotateSession(t *testing.T) {
 	homeDir := tmp
 	mode := "test-mode"
 
-	paths, err := InitializePaths(&OSFileSystem{}, homeDir, mode)
+	paths, err := initializePaths(&OSFileSystem{}, homeDir, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +50,7 @@ func TestRotateSession(t *testing.T) {
 		paths.LogPath,
 		paths.TracePath,
 		paths.CommandsLogPath,
+		paths.TurnsLogPath,
 	}
 	for _, f := range files {
 		if err := os.WriteFile(f, []byte("test data"), 0644); err != nil {
@@ -83,7 +86,7 @@ func TestCleanupOldBackups(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	mode := "test-mode"
-	paths, err := InitializePaths(&OSFileSystem{}, tmp, mode)
+	paths, err := initializePaths(&OSFileSystem{}, tmp, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +123,7 @@ func TestCleanupOldBackups(t *testing.T) {
 
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
 	t.Parallel()
-	err := cleanupOldBackups(&OSFileSystem{}, paths{}, 0)
+	err := cleanupOldBackups(&OSFileSystem{}, persistence.Paths{}, 0)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with 0 retention should not error: %v", err)
 	}
@@ -129,9 +132,56 @@ func TestCleanupOldBackups_NoRetention(t *testing.T) {
 func TestCleanupOldBackups_NoDir(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	paths := paths{ModeDir: filepath.Join(tmp, "nonexistent")}
+	paths := persistence.Paths{ModeDir: filepath.Join(tmp, "nonexistent")}
 	err := cleanupOldBackups(&OSFileSystem{}, paths, 30)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with nonexistent dir should not error: %v", err)
+	}
+}
+
+func TestResolvePaths(t *testing.T) {
+	t.Parallel()
+	homeDir := "/home/user"
+
+	tests := []struct {
+		name     string
+		mode     string
+		expected string
+	}{
+		{"standard mode", "assistant", filepath.Join(homeDir, "output", "assistant")},
+		{"path traversal attempt", "../../../etc/passwd", filepath.Join(homeDir, "output", "passwd")},
+		{"nested path traversal", "subdir/../../hidden", filepath.Join(homeDir, "output", "hidden")},
+		{"empty mode", "", filepath.Join(homeDir, "output", "default")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			paths := persistence.ResolvePaths(homeDir, tt.mode)
+			if paths.ModeDir != tt.expected {
+				t.Errorf("expected ModeDir %s, got %s", tt.expected, paths.ModeDir)
+			}
+			// Verify turns.log is also correctly nested
+			expectedLog := filepath.Join(tt.expected, "turns.log")
+			if paths.TurnsLogPath != expectedLog {
+				t.Errorf("expected TurnsLogPath %s, got %s", expectedLog, paths.TurnsLogPath)
+			}
+		})
+	}
+}
+
+func TestEnsureDirectories(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	mode := "test-ensure"
+	paths := persistence.ResolvePaths(tmp, mode)
+
+	fs := &OSFileSystem{}
+	err := EnsureDirectories(fs, paths)
+	if err != nil {
+		t.Fatalf("EnsureDirectories failed: %v", err)
+	}
+
+	if _, err := os.Stat(paths.ModeDir); os.IsNotExist(err) {
+		t.Errorf("ModeDir %s was not created", paths.ModeDir)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	domain_tools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
+	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -51,7 +52,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 
 	mClient := &mockClient{}
 	// We use the real bootstrapper but wrap it to return our mock chatter
-	b := di.NewBootstrapper(tmpDir, sm, "1.0.0", &stdout, &stderr, nil, func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus, logger ports.Logger) (domain_llm.ExtendedClient, error) {
+	b := di.NewBootstrapper(tmpDir, sm, "1.0.0", &stdout, &stderr, nil, nil, func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus, logger ports.Logger) (domain_llm.ExtendedClient, error) {
 		return mClient, nil
 	})
 
@@ -71,6 +72,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		container.GetUIRenderer(),
 		container.GetHistoryRenderer(),
 		container.GetHistoryBrowser(),
+		infra_persistence.NewOSFileSystem(),
 	)
 
 	cmd := &chatCommand{

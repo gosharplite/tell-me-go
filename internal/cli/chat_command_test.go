@@ -6,6 +6,7 @@ package cli
 import (
 	stdctx "context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -14,10 +15,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockChatService struct {
+	mock.Mock
 	chatCalled bool
 	lastParams agent.ChatOptions
 }
@@ -40,13 +44,26 @@ func (m *mockChatService) GetToolNames(ctx stdctx.Context, reg tools.Registry) (
 	return []string{"test_tool"}, nil
 }
 
+func (m *mockChatService) StreamTurnsLog(ctx stdctx.Context, cfg *config.Config, out io.Writer) error {
+	args := m.Called(ctx, cfg, out)
+	return args.Error(0)
+}
+
 type mockBootstrapper struct {
 	mock.Mock
 }
 
 func (m *mockBootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
-	return args.Get(0).(ports.SessionDependencies), args.Get(1).(ports.HistoryManager), args.Get(2).(func(stdctx.Context) error), args.Error(3)
+	var deps ports.SessionDependencies
+	if args.Get(0) != nil {
+		deps = args.Get(0).(ports.SessionDependencies)
+	}
+	var hManager ports.HistoryManager
+	if args.Get(1) != nil {
+		hManager = args.Get(1).(ports.HistoryManager)
+	}
+	return deps, hManager, args.Get(2).(func(stdctx.Context) error), args.Error(3)
 }
 
 func (m *mockBootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
@@ -91,6 +108,10 @@ func (m *mockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer {
 
 func (m *mockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
 	return m.Called().Get(0).(ports.HistoryBrowser)
+}
+
+func (m *mockBootstrapper) GetChatService() agent.ChatService {
+	return m.Called().Get(0).(agent.ChatService)
 }
 
 type mockLoader struct {
@@ -416,5 +437,87 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 
 	if mService.lastParams.Prompt != "fallback test" {
 		t.Errorf("expected prompt 'fallback test', got %q", mService.lastParams.Prompt)
+	}
+}
+
+func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mService := &mockChatService{}
+	mb, ml := setupMocks()
+
+	// Setup Mocks
+	ml.ExpectedCalls = nil
+	cfg := &config.Config{Mode: "assistant"}
+	ml.On("Load", mock.Anything).Return(cfg, nil)
+	mService.On("StreamTurnsLog", mock.Anything, cfg, &stdout).Return(nil).Run(func(args mock.Arguments) {
+		out := args.Get(2).(io.Writer)
+		_, _ = out.Write([]byte("turn 1: hello\nturn 2: world"))
+	})
+
+	cmd := &chatCommand{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	err := cmd.Execute(stdctx.Background(), []string{"chat", "-t"})
+	require.NoError(t, err, "Execute should not fail")
+	assert.Equal(t, "turn 1: hello\nturn 2: world", stdout.String())
+	assert.False(t, mService.chatCalled, "expected chat service NOT to be called")
+}
+
+func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		setupMock   func(ms *mockChatService, ml *mockLoader)
+		expectedErr string
+	}{
+		{
+			name: "Config Load Failure",
+			setupMock: func(ms *mockChatService, ml *mockLoader) {
+				ml.On("Load", mock.Anything).Return(nil, errors.New("bad config"))
+			},
+			expectedErr: "error loading config",
+		},
+		{
+			name: "StreamTurnsLog Failure",
+			setupMock: func(ms *mockChatService, ml *mockLoader) {
+				cfg := &config.Config{Mode: "assistant"}
+				ml.On("Load", mock.Anything).Return(cfg, nil)
+				ms.On("StreamTurnsLog", mock.Anything, cfg, mock.Anything).Return(errors.New("stream error"))
+			},
+			expectedErr: "stream error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := &mockChatService{}
+			ml := &mockLoader{}
+			tt.setupMock(ms, ml)
+
+			cmd := &chatCommand{
+				Loader:      ml,
+				ChatService: ms,
+				Stdout:      new(strings.Builder),
+			}
+
+			err := cmd.Execute(stdctx.Background(), []string{"chat", "-t"})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.expectedErr)
+
+			ms.AssertExpectations(t)
+			ml.AssertExpectations(t)
+		})
 	}
 }

@@ -104,6 +104,7 @@ type InfrastructureDependencyProvider interface {
 	GetSecurityManager() security.Manager
 	GetEventBus() events.EventBus
 	GetLogger() *slog.Logger
+	GetTurnsLogger() TurnsLogger
 	GetSessionProvider() SessionProvider
 }
 

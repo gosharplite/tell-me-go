@@ -14,11 +14,13 @@ import (
 
 // File defines the interface for file operations to allow mocking.
 type File interface {
-	io.ReadWriteSeeker
-	io.Closer
-	Sync() error
-	Chmod(mode os.FileMode) error
+	io.ReadWriteCloser
+	io.Seeker
 	Name() string
+	Sync() error
+	ReadDir(n int) ([]os.DirEntry, error)
+	ReadAt(p []byte, off int64) (n int, err error)
+	Chmod(mode os.FileMode) error
 }
 
 // FileSystem defines the interface for filesystem operations to allow mocking.
@@ -32,6 +34,7 @@ type FileSystem interface {
 	ReadDir(name string) ([]os.DirEntry, error)
 	ReadFile(name string) ([]byte, error)
 	OpenFile(name string, flag int, perm os.FileMode) (File, error)
+	Open(name string) (File, error)
 }
 
 // OSFileSystem implements the local FileSystem interface using the os package.
@@ -73,9 +76,13 @@ func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, 
 	return os.OpenFile(name, flag, perm)
 }
 
-// domainFS wraps OSFileSystem to implement persistence.FileSystem (domain interface).
+func (f *OSFileSystem) Open(name string) (File, error) {
+	return os.Open(name)
+}
+
+// domainFS wraps FileSystem to implement persistence.FileSystem (domain interface).
 type domainFS struct {
-	fs *OSFileSystem
+	fs FileSystem
 }
 
 func (f *domainFS) checkDone(ctx context.Context) error {
@@ -127,14 +134,22 @@ func (f *domainFS) Open(ctx context.Context, name string) (persistence.File, err
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	return os.Open(name)
+	file, err := f.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
 }
 
 func (f *domainFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	return os.OpenFile(name, flag, perm)
+	file, err := f.fs.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
 }
 
 func (f *domainFS) Remove(ctx context.Context, name string) error {
@@ -163,4 +178,9 @@ func (f *domainFS) Walk(ctx context.Context, root string, fn persistence.WalkFun
 // NewOSFileSystem returns a new instance of the OS-based filesystem implementation.
 func NewOSFileSystem() persistence.FileSystem {
 	return &domainFS{fs: &OSFileSystem{}}
+}
+
+// NewDomainFS wraps a local FileSystem to implement the domain persistence.FileSystem interface.
+func NewDomainFS(fs FileSystem) persistence.FileSystem {
+	return &domainFS{fs: fs}
 }

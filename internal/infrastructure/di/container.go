@@ -29,6 +29,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -57,6 +58,7 @@ type Bootstrapper struct {
 	Stdout           io.Writer
 	Stderr           io.Writer
 	Logger           *slog.Logger
+	FileSystem       infra_persistence.FileSystem
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
@@ -65,12 +67,15 @@ type Bootstrapper struct {
 }
 
 // NewBootstrapper creates a new Bootstrapper instance.
-func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, logger *slog.Logger, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) *Bootstrapper {
+func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version string, stdout, stderr io.Writer, logger *slog.Logger, fs infra_persistence.FileSystem, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)) *Bootstrapper {
 	if clientFactory == nil {
 		clientFactory = infra_llm.NewClient
 	}
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if fs == nil {
+		fs = &infra_persistence.OSFileSystem{}
 	}
 	return &Bootstrapper{
 		HomeDir:          homeDir,
@@ -79,6 +84,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 		Stdout:           stdout,
 		Stderr:           stderr,
 		Logger:           logger,
+		FileSystem:       fs,
 		ClientFactory:    clientFactory,
 		RegisterAllTools: infra_tools.RegisterAll,
 		RegisterMetrics:  telemetry.RegisterMetrics,
@@ -89,8 +95,8 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
 func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
-	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
-	if err != nil {
+	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
+	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -147,20 +153,40 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		Client:           client,
 		AssetsDir:        filepath.Join(b.HomeDir, "assets/generated"),
 		EventBus:         bus,
-		FileSystem:       infra_persistence.NewOSFileSystem(),
+		FileSystem:       infra_persistence.NewDomainFS(b.FileSystem),
 	})
 	if err != nil {
 		_ = cleanup(ctx)
 		return nil, nil, nil, err
 	}
 
-	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger, sessionProvider)
+	var turnsLogger ports.TurnsLogger
+	if paths.TurnsLogPath != "" {
+		if tl, err := logging.NewAsyncTurnsLogger(b.FileSystem, paths.TurnsLogPath, b.Logger); err == nil {
+			turnsLogger = tl
+
+			// Chain the logger cleanup to the existing cleanup function (LIFO)
+			origCleanup := cleanup
+			cleanup = func(c stdctx.Context) error {
+				var err error
+				if origCleanup != nil {
+					err = origCleanup(c) // Shut down event producers first
+				}
+				// Use errors.Join to avoid swallowing cleanup errors
+				return errors.Join(err, tl.Close())
+			}
+		} else {
+			b.Logger.Warn("failed to initialize turns logger", "error", err)
+		}
+	}
+
+	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger, turnsLogger, sessionProvider)
 
 	return deps, hManager, cleanup, nil
 }
 
 func (b *Bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistence.Paths) (*history.Manager, error) {
-	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
+	hManager := history.NewManager(infra_persistence.NewDomainFS(b.FileSystem), paths.HistoryPath, paths.HistoryArchivePath)
 	if err := hManager.Load(ctx); err != nil {
 		if !errors.Is(err, ports.ErrHistoryNotFound) {
 			return nil, fmt.Errorf("error loading history: %w", err)
@@ -250,6 +276,7 @@ func (b *Bootstrapper) buildAgentOrchestrator(
 	bus events.EventBus,
 	cfg *config.Config,
 	logger *slog.Logger,
+	turnsLogger ports.TurnsLogger,
 	sessionProvider ports.SessionProvider,
 ) ports.SessionDependencies {
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
@@ -268,6 +295,7 @@ func (b *Bootstrapper) buildAgentOrchestrator(
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
 		logger:           logger,
+		turnsLogger:      turnsLogger,
 		sessionProvider:  sessionProvider,
 	}
 }
@@ -284,6 +312,7 @@ type sessionDeps struct {
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
 	logger           *slog.Logger
+	turnsLogger      ports.TurnsLogger
 	sessionProvider  ports.SessionProvider
 }
 
@@ -293,6 +322,7 @@ func (d *sessionDeps) GetRegistry() tools.Registry             { return d.reg }
 func (d *sessionDeps) GetSecurityManager() security.Manager    { return d.sm }
 func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
 func (d *sessionDeps) GetLogger() *slog.Logger                 { return d.logger }
+func (d *sessionDeps) GetTurnsLogger() ports.TurnsLogger       { return d.turnsLogger }
 func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
 func (d *sessionDeps) GetSessionProvider() ports.SessionProvider {
 	return d.sessionProvider
@@ -359,15 +389,15 @@ func (b *Bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.P
 			retentionDays = parsed
 		}
 	}
-	if err := b.RotateSession(&infra_persistence.OSFileSystem{}, b.Stdout, *paths, retentionDays); err != nil {
+	if err := b.RotateSession(b.FileSystem, b.Stdout, *paths, retentionDays); err != nil {
 		return fmt.Errorf("session rotation failed: %w", err)
 	}
 	return nil
 }
 
 func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
-	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
-	if err != nil {
+	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
+	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
 		return nil, fmt.Errorf("failed to initialize session paths: %w", err)
 	}
 
@@ -381,12 +411,12 @@ func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config)
 
 // GetUnifiedHistoryProvider assembles the read-model for the history browser.
 func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
-	paths, err := infra_persistence.InitializePaths(&infra_persistence.OSFileSystem{}, b.HomeDir, cfg.Mode)
-	if err != nil {
+	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
+	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
 		return nil, fmt.Errorf("failed to initialize session paths: %w", err)
 	}
 
-	archiveReader := history.NewJSONLArchiveReader(infra_persistence.NewOSFileSystem(), paths.HistoryArchivePath)
+	archiveReader := history.NewJSONLArchiveReader(infra_persistence.NewDomainFS(b.FileSystem), paths.HistoryArchivePath)
 
 	return history.NewUnifiedProvider(archiveReader, hManager), nil
 }
@@ -399,7 +429,7 @@ func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []
 		tracker = history.NewNoOpTracker()
 	}
 
-	return suggestions.NewMultiSourceSuggestionService(ctx, infra_persistence.NewOSFileSystem(), tracker, recentHistory, b.Stderr)
+	return suggestions.NewMultiSourceSuggestionService(ctx, infra_persistence.NewDomainFS(b.FileSystem), tracker, recentHistory, b.Stderr)
 }
 
 // getSystemMetricsProvider returns the system metrics provider based on the platform.
@@ -449,4 +479,21 @@ func (b *Bootstrapper) GetHistoryBrowser() ports.HistoryBrowser {
 		stderr: b.Stderr,
 		logger: b.Logger,
 	}
+}
+
+// GetChatService returns a chat service instance.
+func (b *Bootstrapper) GetChatService() agent.ChatService {
+	return agent.NewChatService(
+		b.HomeDir,
+		b.Version,
+		b.Stdout,
+		b.Stderr,
+		b.SM,
+		b,
+		b.GetAgentFactory(),
+		b.GetUIRenderer(),
+		b.GetHistoryRenderer(),
+		b.GetHistoryBrowser(),
+		infra_persistence.NewDomainFS(b.FileSystem),
+	)
 }

@@ -154,7 +154,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		Mode:             "mode",
 		SelectedProvider: "provider",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), new(mockSessionProvider))
+	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	assert.NoError(t, err)

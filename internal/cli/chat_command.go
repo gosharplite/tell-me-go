@@ -33,7 +33,6 @@ func init() {
 // chatCommand implements the main chat command.
 type chatCommand struct {
 	Version      string
-	HomeDir      string
 	Stdin        io.Reader
 	Stdout       io.Writer
 	Stderr       io.Writer
@@ -41,26 +40,27 @@ type chatCommand struct {
 	ChatService  agent.ChatService
 	Bootstrapper Bootstrapper
 	Loader       domain_config.ConfigLoader
+	HomeDir      string
 	MockPrompt   string
 	MockAnswer   string
 }
 
 type cliOptions struct {
-	configPath  string
-	newSession  bool
-	showVersion bool
-	lastN       int
-	backN       int
-	rawOutput   bool
-	tuiPrompt   bool
-	retry       bool
+	configPath   string
+	newSession   bool
+	showVersion  bool
+	showTurnsLog bool
+	lastN        int
+	backN        int
+	rawOutput    bool
+	tuiPrompt    bool
+	retry        bool
 }
 
 // newChatCommand creates a new Chat Command with default factories.
 func newChatCommand(ctx *context) *chatCommand {
 	return &chatCommand{
 		Version:      ctx.Version,
-		HomeDir:      ctx.HomeDir,
 		Stdin:        ctx.Stdin,
 		Stdout:       ctx.Stdout,
 		Stderr:       ctx.Stderr,
@@ -68,6 +68,7 @@ func newChatCommand(ctx *context) *chatCommand {
 		ChatService:  ctx.ChatService,
 		Bootstrapper: ctx.Bootstrapper,
 		Loader:       ctx.Loader,
+		HomeDir:      ctx.HomeDir,
 		MockPrompt:   ctx.MockPrompt,
 		MockAnswer:   ctx.MockAnswer,
 	}
@@ -81,6 +82,15 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 			return nil
 		}
 		return err
+	}
+
+	if opts.showTurnsLog {
+		cfg, err := c.Loader.Load(opts.configPath)
+		if err != nil {
+			return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
+		}
+
+		return c.ChatService.StreamTurnsLog(ctx, cfg, c.Stdout)
 	}
 
 	var prompt string
@@ -285,6 +295,7 @@ func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.Flag
 	fs.StringVar(&opts.configPath, "c", "configs/assistant.yaml", "Path to the configuration file")
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
 	fs.BoolVar(&opts.showVersion, "v", false, "Show version information")
+	fs.BoolVar(&opts.showTurnsLog, "t", false, "Print the contents of the current session's turns.log and exit")
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
 	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
 	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
