@@ -152,3 +152,17 @@ func TestGetVersion(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildApp_Smoke(t *testing.T) {
+	app, cleanup, err := buildApp("test-version")
+	if err != nil {
+		t.Fatalf("buildApp failed: %v", err)
+	}
+	if app == nil {
+		t.Fatal("buildApp returned nil app")
+	}
+	if cleanup == nil {
+		t.Fatal("buildApp returned nil cleanup function")
+	}
+	defer cleanup()
+}

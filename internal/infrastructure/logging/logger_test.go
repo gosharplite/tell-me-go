@@ -9,6 +9,8 @@ import (
 )
 
 func TestNewLogger(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		isDebug     bool
@@ -27,7 +29,10 @@ func TestNewLogger(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			var buf bytes.Buffer
 			logger := NewLogger(&buf, tt.isDebug)
 
