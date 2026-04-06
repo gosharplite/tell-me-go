@@ -7,6 +7,7 @@ import (
 	"bytes"
 	stdctx "context"
 	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -18,16 +19,22 @@ func TestApp_Run_Version(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	version := "1.2.3"
-	app := New(AppDependencies{
+	app, err := New(AppDependencies{
 		Version:      version,
 		Stdout:       stdout,
 		Stderr:       stderr,
+		SM:           &mockSM{},
+		Logger:       slog.Default(),
 		Bootstrapper: &simpleMockBootstrapper{},
-		HomeDir:      ".",
 		ConfigLoader: &cliMockLoader{},
-	})
+		ChatService:  &mockChatService{},
+		HomeDir:      ".",
+	}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 
-	err := app.Run(stdctx.Background(), []string{"--version"})
+	err = app.Run(stdctx.Background(), []string{"--version"})
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -42,17 +49,23 @@ func TestApp_Run_Version(t *testing.T) {
 func TestApp_Run_UnknownCommand(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	app := New(AppDependencies{
+	app, err := New(AppDependencies{
 		Version:      "1.0.0",
 		Stdout:       stdout,
 		Stderr:       stderr,
+		SM:           &mockSM{},
+		Logger:       slog.Default(),
 		Bootstrapper: &simpleMockBootstrapper{},
-		HomeDir:      ".",
 		ConfigLoader: &cliMockLoader{},
-	})
+		ChatService:  &mockChatService{},
+		HomeDir:      ".",
+	}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 
 	// "chat" is not registered in this test yet, so it should fail.
-	err := app.Run(stdctx.Background(), []string{})
+	err = app.Run(stdctx.Background(), []string{})
 	if err == nil {
 		t.Fatal("expected error for unregistered 'chat' command, got nil")
 	}
@@ -74,18 +87,24 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 	})
 
 	stderr := &bytes.Buffer{}
-	app := New(AppDependencies{
+	app, err := New(AppDependencies{
 		Version:      "1.0.0",
 		Stderr:       stderr,
+		SM:           &mockSM{},
+		Logger:       slog.Default(),
 		Bootstrapper: &simpleMockBootstrapper{},
-		HomeDir:      ".",
 		ConfigLoader: &cliMockLoader{},
-	})
+		ChatService:  &mockChatService{},
+		HomeDir:      ".",
+	}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
 
 	ctx, cancel := stdctx.WithCancel(stdctx.Background())
 	cancel() // Cancel it immediately
 
-	err := app.Run(ctx, []string{})
+	err = app.Run(ctx, []string{})
 	if err != nil {
 		t.Errorf("expected nil error on context cancellation, got %v", err)
 	}
@@ -110,13 +129,20 @@ func TestApp_Run_CommandError(t *testing.T) {
 		return &mockCommand{err: customErr}
 	})
 
-	app := New(AppDependencies{
+	app, err := New(AppDependencies{
 		Version:      "1.0.0",
+		SM:           &mockSM{},
+		Logger:       slog.Default(),
 		Bootstrapper: &simpleMockBootstrapper{},
-		HomeDir:      ".",
 		ConfigLoader: &cliMockLoader{},
-	})
-	err := app.Run(stdctx.Background(), []string{})
+		ChatService:  &mockChatService{},
+		HomeDir:      ".",
+	}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	err = app.Run(stdctx.Background(), []string{})
 	if !errors.Is(err, customErr) {
 		t.Errorf("expected %v, got %v", customErr, err)
 	}
@@ -124,19 +150,18 @@ func TestApp_Run_CommandError(t *testing.T) {
 
 func TestApp_Run_NilBootstrapper(t *testing.T) {
 	// Pass nil for the bootstrapper
-	app := New(AppDependencies{
+	_, err := New(AppDependencies{
 		Version:      "1.0.0",
 		Bootstrapper: nil,
-		HomeDir:      ".",
+		SM:           &mockSM{},
+		Logger:       slog.Default(),
 		ConfigLoader: &cliMockLoader{},
-	})
+		ChatService:  &mockChatService{},
+		HomeDir:      ".",
+	}, func(string) string { return "" })
 
-	// Execute a command that would normally trigger the bootstrapper
-	err := app.Run(stdctx.Background(), []string{"chat"})
-
-	expectedErr := "application bootstrapper is not initialized"
-	if err == nil || err.Error() != expectedErr {
-		t.Errorf("expected error %q, got %v", expectedErr, err)
+	if !errors.Is(err, ErrMissingDependency) {
+		t.Errorf("expected error %v, got %v", ErrMissingDependency, err)
 	}
 }
 
@@ -149,7 +174,7 @@ func (m *cliMockLoader) Load(path string) (*config.Config, error) {
 type simpleMockBootstrapper struct{}
 
 func (m *simpleMockBootstrapper) BuildSessionDependencies(stdctx.Context, *config.Config, string, bool, security.UserInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
-	return nil, nil, nil, nil
+	return nil, nil, func(stdctx.Context) error { return nil }, nil
 }
 func (m *simpleMockBootstrapper) FinalizeSession(stdctx.Context, ports.HistoryManager, ports.SessionDependencies, *config.Config) error {
 	return nil

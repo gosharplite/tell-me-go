@@ -89,20 +89,34 @@ func main() {
 }
 
 func run() int {
+	appVersion := getVersion()
+	app, cleanup, err := buildApp(appVersion)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
+		return 1
+	}
+	defer cleanup()
+
+	if err := app.Run(context.Background(), os.Args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func buildApp(appVersion string) (commandRunner, func(), error) {
 	ctx := context.Background()
 	shutdown := initTracer(ctx)
-	defer func() {
+	cleanup := func() {
 		sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := shutdown(sCtx); err != nil {
 			fmt.Fprintf(os.Stderr, "Error shutting down tracer: %v\n", err)
 		}
-	}()
-
-	appVersion := getVersion()
+	}
 
 	// 1. Resolve basic environment
-	homeDir := env.ResolveHomeDir(os.UserHomeDir)
+	homeDir := env.ResolveHomeDir(os.Getenv, os.UserHomeDir)
 
 	// 2. Initialize Core Infrastructure
 	sm := security.NewSecurityManager(nil)
@@ -127,7 +141,7 @@ func run() int {
 
 	// 6. Initialize CLI with pre-wired dependencies
 	configLoader := &config.YAMLConfigLoader{}
-	app := cli.New(cli.AppDependencies{
+	app, err := cli.New(cli.AppDependencies{
 		Version:      appVersion,
 		Stdin:        os.Stdin,
 		Stdout:       os.Stdout,
@@ -138,11 +152,15 @@ func run() int {
 		Bootstrapper: bootstrapper,
 		ConfigLoader: configLoader,
 		ChatService:  chatService,
-	})
+	}, os.Getenv)
 
-	if err := app.Run(ctx, os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
+	if err != nil {
+		return nil, cleanup, err
 	}
-	return 0
+
+	return app, cleanup, nil
+}
+
+type commandRunner interface {
+	Run(context.Context, []string) error
 }

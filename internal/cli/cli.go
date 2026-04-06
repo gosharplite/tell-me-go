@@ -18,6 +18,11 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
+var (
+	// ErrMissingDependency is returned when a required dependency is not provided to New().
+	ErrMissingDependency = errors.New("missing required dependency")
+)
+
 // AppDependencies encapsulates all dependencies for the CLI application.
 type AppDependencies struct {
 	Version      string
@@ -49,7 +54,23 @@ type app struct {
 }
 
 // New creates a new App instance with explicit dependency injection.
-func New(deps AppDependencies) *app {
+func New(deps AppDependencies, getenv func(string) string) (*app, error) {
+	if deps.Bootstrapper == nil {
+		return nil, fmt.Errorf("%w: Bootstrapper", ErrMissingDependency)
+	}
+	if deps.SM == nil {
+		return nil, fmt.Errorf("%w: SM", ErrMissingDependency)
+	}
+	if deps.ConfigLoader == nil {
+		return nil, fmt.Errorf("%w: ConfigLoader", ErrMissingDependency)
+	}
+	if deps.ChatService == nil {
+		return nil, fmt.Errorf("%w: ChatService", ErrMissingDependency)
+	}
+	if deps.Logger == nil {
+		return nil, fmt.Errorf("%w: Logger", ErrMissingDependency)
+	}
+
 	stdin := deps.Stdin
 	if stdin == nil {
 		stdin = os.Stdin
@@ -74,9 +95,9 @@ func New(deps AppDependencies) *app {
 		bootstrapper: deps.Bootstrapper,
 		configLoader: deps.ConfigLoader,
 		chatService:  deps.ChatService,
-		mockPrompt:   os.Getenv("TELL_ME_MOCK_PROMPT"),
-		mockAnswer:   os.Getenv("TELL_ME_MOCK_ANSWER"),
-	}
+		mockPrompt:   getenv("TELL_ME_MOCK_PROMPT"),
+		mockAnswer:   getenv("TELL_ME_MOCK_ANSWER"),
+	}, nil
 }
 
 // Run executes the application logic.
@@ -107,10 +128,6 @@ func (a *app) Run(ctx stdctx.Context, args []string) error {
 	factory, err := get(cmdName)
 	if err != nil {
 		return err
-	}
-
-	if a.bootstrapper == nil {
-		return errors.New("application bootstrapper is not initialized")
 	}
 
 	cmdCtx := &context{
