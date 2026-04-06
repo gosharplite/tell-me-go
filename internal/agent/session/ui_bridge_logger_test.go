@@ -5,7 +5,6 @@ package session
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -62,11 +61,3 @@ func TestUIBridge_TurnsLogger(t *testing.T) {
 	})
 }
 
-func containsAll(s string, substrs ...string) bool {
-	for _, sub := range substrs {
-		if !strings.Contains(s, sub) {
-			return false
-		}
-	}
-	return true
-}
