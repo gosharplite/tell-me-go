@@ -156,6 +156,9 @@ func TestGetVersion(t *testing.T) {
 }
 
 func TestBuildApp_Smoke(t *testing.T) {
+	// Isolate environment to prevent host machine pollution
+	t.Setenv("TELL_ME_HOME", t.TempDir())
+
 	app, cleanup, err := buildApp("test-version", strings.NewReader(""), io.Discard, io.Discard)
 	if err != nil {
 		t.Fatalf("buildApp failed: %v", err)

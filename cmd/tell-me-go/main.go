@@ -154,7 +154,6 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 		Stderr:       stderr,
 		HomeDir:      homeDir,
 		SM:           sm,
-		Logger:       logger,
 		Bootstrapper: bootstrapper,
 		ConfigLoader: configLoader,
 		ChatService:  chatService,

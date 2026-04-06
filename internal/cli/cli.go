@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -31,7 +30,6 @@ type AppDependencies struct {
 	Stderr       io.Writer
 	HomeDir      string
 	SM           domain_security.Manager
-	Logger       *slog.Logger
 	Bootstrapper Bootstrapper
 	ConfigLoader domain_config.ConfigLoader
 	ChatService  agent.ChatService
@@ -45,7 +43,6 @@ type App struct {
 	Stderr       io.Writer
 	homeDir      string
 	sm           domain_security.Manager
-	logger       *slog.Logger
 	bootstrapper Bootstrapper
 	configLoader domain_config.ConfigLoader
 	chatService  agent.ChatService
@@ -66,9 +63,6 @@ func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 	}
 	if deps.ChatService == nil {
 		return nil, fmt.Errorf("%w: ChatService", ErrMissingDependency)
-	}
-	if deps.Logger == nil {
-		return nil, fmt.Errorf("%w: Logger", ErrMissingDependency)
 	}
 
 	stdin := deps.Stdin
@@ -91,7 +85,6 @@ func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 		Stderr:       stderr,
 		homeDir:      deps.HomeDir,
 		sm:           deps.SM,
-		logger:       deps.Logger,
 		bootstrapper: deps.Bootstrapper,
 		configLoader: deps.ConfigLoader,
 		chatService:  deps.ChatService,

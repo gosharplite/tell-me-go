@@ -7,7 +7,6 @@ import (
 	"bytes"
 	stdctx "context"
 	"errors"
-	"log/slog"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -19,17 +18,12 @@ func TestApp_Run_Version(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	version := "1.2.3"
-	app, err := New(AppDependencies{
-		Version:      version,
-		Stdout:       stdout,
-		Stderr:       stderr,
-		SM:           &mockSM{},
-		Logger:       slog.Default(),
-		Bootstrapper: &simpleMockBootstrapper{},
-		ConfigLoader: &cliMockLoader{},
-		ChatService:  &mockChatService{},
-		HomeDir:      ".",
-	}, func(string) string { return "" })
+
+	deps := defaultTestDeps()
+	deps.Version = version
+	deps.Stdout = stdout
+	deps.Stderr = stderr
+	app, err := New(deps, func(string) string { return "" })
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -49,17 +43,11 @@ func TestApp_Run_Version(t *testing.T) {
 func TestApp_Run_UnknownCommand(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	app, err := New(AppDependencies{
-		Version:      "1.0.0",
-		Stdout:       stdout,
-		Stderr:       stderr,
-		SM:           &mockSM{},
-		Logger:       slog.Default(),
-		Bootstrapper: &simpleMockBootstrapper{},
-		ConfigLoader: &cliMockLoader{},
-		ChatService:  &mockChatService{},
-		HomeDir:      ".",
-	}, func(string) string { return "" })
+
+	deps := defaultTestDeps()
+	deps.Stdout = stdout
+	deps.Stderr = stderr
+	app, err := New(deps, func(string) string { return "" })
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -87,16 +75,10 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 	})
 
 	stderr := &bytes.Buffer{}
-	app, err := New(AppDependencies{
-		Version:      "1.0.0",
-		Stderr:       stderr,
-		SM:           &mockSM{},
-		Logger:       slog.Default(),
-		Bootstrapper: &simpleMockBootstrapper{},
-		ConfigLoader: &cliMockLoader{},
-		ChatService:  &mockChatService{},
-		HomeDir:      ".",
-	}, func(string) string { return "" })
+
+	deps := defaultTestDeps()
+	deps.Stderr = stderr
+	app, err := New(deps, func(string) string { return "" })
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -129,15 +111,8 @@ func TestApp_Run_CommandError(t *testing.T) {
 		return &mockCommand{err: customErr}
 	})
 
-	app, err := New(AppDependencies{
-		Version:      "1.0.0",
-		SM:           &mockSM{},
-		Logger:       slog.Default(),
-		Bootstrapper: &simpleMockBootstrapper{},
-		ConfigLoader: &cliMockLoader{},
-		ChatService:  &mockChatService{},
-		HomeDir:      ".",
-	}, func(string) string { return "" })
+	deps := defaultTestDeps()
+	app, err := New(deps, func(string) string { return "" })
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -148,20 +123,51 @@ func TestApp_Run_CommandError(t *testing.T) {
 	}
 }
 
-func TestApp_Run_NilBootstrapper(t *testing.T) {
-	// Pass nil for the bootstrapper
-	_, err := New(AppDependencies{
+func TestNew_MissingDependencies(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(deps *AppDependencies)
+	}{
+		{
+			name:  "Missing Bootstrapper",
+			setup: func(deps *AppDependencies) { deps.Bootstrapper = nil },
+		},
+		{
+			name:  "Missing SM",
+			setup: func(deps *AppDependencies) { deps.SM = nil },
+		},
+		{
+			name:  "Missing ConfigLoader",
+			setup: func(deps *AppDependencies) { deps.ConfigLoader = nil },
+		},
+		{
+			name:  "Missing ChatService",
+			setup: func(deps *AppDependencies) { deps.ChatService = nil },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deps := defaultTestDeps()
+			tt.setup(&deps)
+
+			_, err := New(deps, func(string) string { return "" })
+
+			if !errors.Is(err, ErrMissingDependency) {
+				t.Errorf("expected error %v for %s, got %v", ErrMissingDependency, tt.name, err)
+			}
+		})
+	}
+}
+
+func defaultTestDeps() AppDependencies {
+	return AppDependencies{
 		Version:      "1.0.0",
-		Bootstrapper: nil,
+		HomeDir:      ".",
 		SM:           &mockSM{},
-		Logger:       slog.Default(),
+		Bootstrapper: &simpleMockBootstrapper{},
 		ConfigLoader: &cliMockLoader{},
 		ChatService:  &mockChatService{},
-		HomeDir:      ".",
-	}, func(string) string { return "" })
-
-	if !errors.Is(err, ErrMissingDependency) {
-		t.Errorf("expected error %v, got %v", ErrMissingDependency, err)
 	}
 }
 
