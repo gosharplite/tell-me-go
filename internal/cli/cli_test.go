@@ -153,8 +153,8 @@ func TestNew_MissingDependencies(t *testing.T) {
 
 			_, err := New(deps, func(string) string { return "" })
 
-			if !errors.Is(err, ErrMissingDependency) {
-				t.Errorf("expected error %v for %s, got %v", ErrMissingDependency, tt.name, err)
+			if !errors.Is(err, errMissingDependency) {
+				t.Errorf("expected error %v for %s, got %v", errMissingDependency, tt.name, err)
 			}
 		})
 	}

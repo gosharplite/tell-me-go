@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	// ErrMissingDependency is returned when a required dependency is not provided to New().
-	ErrMissingDependency = errors.New("missing required dependency")
+	// errMissingDependency is returned when a required dependency is not provided to New().
+	errMissingDependency = errors.New("missing required dependency")
 )
 
 // AppDependencies encapsulates all dependencies for the CLI application.
@@ -53,16 +53,16 @@ type App struct {
 // New creates a new App instance with explicit dependency injection.
 func New(deps AppDependencies, getenv func(string) string) (*App, error) {
 	if deps.Bootstrapper == nil {
-		return nil, fmt.Errorf("%w: Bootstrapper", ErrMissingDependency)
+		return nil, fmt.Errorf("%w: Bootstrapper", errMissingDependency)
 	}
 	if deps.SM == nil {
-		return nil, fmt.Errorf("%w: SM", ErrMissingDependency)
+		return nil, fmt.Errorf("%w: SM", errMissingDependency)
 	}
 	if deps.ConfigLoader == nil {
-		return nil, fmt.Errorf("%w: ConfigLoader", ErrMissingDependency)
+		return nil, fmt.Errorf("%w: ConfigLoader", errMissingDependency)
 	}
 	if deps.ChatService == nil {
-		return nil, fmt.Errorf("%w: ChatService", ErrMissingDependency)
+		return nil, fmt.Errorf("%w: ChatService", errMissingDependency)
 	}
 
 	stdin := deps.Stdin
