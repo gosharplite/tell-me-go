@@ -508,3 +508,34 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 		}
 	})
 }
+
+func TestShellTool_TimeoutParameter(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	ctx := context.Background()
+
+	t.Run("ExecuteCommand with timeout", func(t *testing.T) {
+		args := map[string]interface{}{
+			"command": "echo hello",
+			"reason":  "testing timeout parameter",
+			"timeout": 123,
+		}
+		_, err := tool.ExecuteCommand(ctx, args, nil)
+		if err != nil {
+			t.Fatalf("ExecuteCommand failed: %v", err)
+		}
+	})
+
+	t.Run("PipeCommands with timeout", func(t *testing.T) {
+		args := map[string]interface{}{
+			"commands": []interface{}{"echo hello", "grep hello"},
+			"reason":   "testing timeout parameter",
+			"timeout":  456,
+		}
+		_, err := tool.PipeCommands(ctx, args, nil)
+		if err != nil {
+			t.Fatalf("PipeCommands failed: %v", err)
+		}
+	})
+}

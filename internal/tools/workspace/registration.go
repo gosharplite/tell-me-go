@@ -267,6 +267,10 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 					Type:        "STRING",
 					Description: "The shell command to execute (e.g., 'ls -la', 'go test ./...').",
 				},
+				"timeout": {
+					Type:        "INTEGER",
+					Description: "Optional: Execution timeout in seconds. Default is 300.",
+				},
 				"reason": {
 					Type:        "STRING",
 					Description: "A short explanation of why this command needs to be executed.",
@@ -299,6 +303,10 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 						Type: "STRING",
 					},
 					Description: "The sequence of commands to pipe (e.g., ['ls -la', 'grep .go']).",
+				},
+				"timeout": {
+					Type:        "INTEGER",
+					Description: "Optional: Execution timeout in seconds. Default is 300.",
 				},
 				"reason": {
 					Type:        "STRING",
