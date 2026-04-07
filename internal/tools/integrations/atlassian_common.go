@@ -15,8 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-const defaultAtlassianBaseURL = "https://02007.atlassian.net"
-
 type atlassianProvider struct {
 	baseURL   string
 	email     string
@@ -24,17 +22,18 @@ type atlassianProvider struct {
 	baseDelay time.Duration
 }
 
-func newAtlassianProvider() *atlassianProvider {
+func newAtlassianProvider() (*atlassianProvider, error) {
 	baseURL := os.Getenv("ATLASSIAN_BASE_URL")
 	if baseURL == "" {
-		baseURL = defaultAtlassianBaseURL
+		return nil, fmt.Errorf("missing required environment variable: ATLASSIAN_BASE_URL")
 	}
+
 	return &atlassianProvider{
 		baseURL:   baseURL,
 		email:     os.Getenv("ATLASSIAN_EMAIL"),
 		token:     os.Getenv("ATLASSIAN_TOKEN"),
 		baseDelay: 1 * time.Second,
-	}
+	}, nil
 }
 
 func (p *atlassianProvider) getAuthHeader() (string, error) {

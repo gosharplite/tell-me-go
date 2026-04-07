@@ -53,15 +53,19 @@ type confluenceManager struct {
 }
 
 // newconfluenceManager creates a new instance of confluenceManager.
-func newconfluenceManager(sm confluenceSecurity, client tools.HTTPClient) *confluenceManager {
+func newconfluenceManager(sm confluenceSecurity, client tools.HTTPClient) (*confluenceManager, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	provider, err := newAtlassianProvider()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Atlassian provider: %w", err)
 	}
 	return &confluenceManager{
 		sm:       sm,
 		client:   client,
-		provider: newAtlassianProvider(),
-	}
+		provider: provider,
+	}, nil
 }
 
 func (m *confluenceManager) resolveSpaceID(ctx context.Context, spaceKey string) (string, error) {

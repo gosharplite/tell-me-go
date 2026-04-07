@@ -25,15 +25,19 @@ type jiraManager struct {
 }
 
 // newjiraManager creates a new instance of jiraManager.
-func newjiraManager(sm security.PathValidator, client tools.HTTPClient) *jiraManager {
+func newjiraManager(sm security.PathValidator, client tools.HTTPClient) (*jiraManager, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	provider, err := newAtlassianProvider()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Atlassian provider: %w", err)
 	}
 	return &jiraManager{
 		sm:       sm,
 		client:   client,
-		provider: newAtlassianProvider(),
-	}
+		provider: provider,
+	}, nil
 }
 
 func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

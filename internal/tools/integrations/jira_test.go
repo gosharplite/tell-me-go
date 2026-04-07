@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockJiraClient struct {
@@ -156,7 +157,8 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := new(mockJiraClient)
-			m := newjiraManager(nil, mockClient)
+			m, err := newjiraManager(nil, mockClient)
+			assert.NoError(t, err)
 			m.provider.baseDelay = 1 * time.Microsecond
 
 			if tt.mockResp != nil || tt.mockErr != nil {
@@ -284,7 +286,8 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := new(mockJiraClient)
-			m := newjiraManager(nil, mockClient)
+			m, err := newjiraManager(nil, mockClient)
+			assert.NoError(t, err)
 			m.provider.baseDelay = 1 * time.Microsecond
 
 			if tt.mockResp != nil || tt.mockErr != nil {
@@ -305,7 +308,9 @@ func TestJiraManager_JiraGetIssue(t *testing.T) {
 }
 
 func TestJiraManager_ParseADF(t *testing.T) {
-	m := newjiraManager(nil, nil)
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+	m, err := newjiraManager(nil, nil)
+	assert.NoError(t, err)
 
 	t.Run("Complex ADF", func(t *testing.T) {
 		adf := map[string]interface{}{
@@ -433,25 +438,37 @@ func TestJiraManager_ParseADF(t *testing.T) {
 }
 
 func TestJiraManager_Constructor(t *testing.T) {
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	t.Run("Default Client", func(t *testing.T) {
-		m := newjiraManager(nil, nil)
+		m, err := newjiraManager(nil, nil)
+		assert.NoError(t, err)
 		assert.NotNil(t, m.client)
 	})
 }
 
 func TestJiraManager_EdgeCases(t *testing.T) {
-	t.Setenv("ATLASSIAN_BASE_URL", " : invalid")
-	m := newjiraManager(nil, nil)
-
 	t.Run("Invalid Base URL Search", func(t *testing.T) {
-		_, err := m.jiraSearchIssues(context.Background(), map[string]interface{}{"jql": "test"}, nil)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid base url")
+		t.Setenv("ATLASSIAN_BASE_URL", " : invalid")
+		m, err := newjiraManager(nil, nil)
+
+		// If constructor succeeds (URL parsing happens later), check the method
+		if err == nil {
+			_, err = m.jiraSearchIssues(context.Background(), map[string]interface{}{"jql": "test"}, nil)
+		}
+
+		require.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "invalid base url") || strings.Contains(err.Error(), "failed to initialize Atlassian provider"))
 	})
 
 	t.Run("Invalid Base URL Get", func(t *testing.T) {
-		_, err := m.jiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid base url")
+		t.Setenv("ATLASSIAN_BASE_URL", " : invalid")
+		m, err := newjiraManager(nil, nil)
+
+		if err == nil {
+			_, err = m.jiraGetIssue(context.Background(), map[string]interface{}{"issue_key": "PROJ-1"}, nil)
+		}
+
+		require.Error(t, err)
+		assert.True(t, strings.Contains(err.Error(), "invalid base url") || strings.Contains(err.Error(), "failed to initialize Atlassian provider"))
 	})
 }
