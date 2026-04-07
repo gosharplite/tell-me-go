@@ -214,7 +214,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 
 	report, err := m.runner.RunTestsWithCoverage(ctx, path, false, "")
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("Coverage test failed: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("coverage test failed: %w", err)
 	}
 
 	if report.NoGoFiles {
@@ -302,7 +302,7 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 
 	outStr, err := m.runner.RunBenchmarks(ctx, path, bench)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("Benchmark failed or found issues: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("benchmark failed or found issues: %w", err)
 	}
 
 	if strings.Contains(outStr, "No Go files found in target path to benchmark") {
