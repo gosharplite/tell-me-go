@@ -800,7 +800,7 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 	}
 
 	// Log token throughput for diagnostics
-	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0.1 {
 		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
 		c.logger.Debug("token_throughput",
 			"platform", runtime.GOOS,
@@ -811,15 +811,6 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 			"tokens_per_sec", tokensPerSec,
 			"cached_tokens", metrics.CachedTokens,
 		)
-
-		// Warn if throughput is implausible (already caught by turn_engine validation)
-		if tokensPerSec > 100 {
-			c.logger.Warn("implausible_throughput_detected",
-				"platform", runtime.GOOS,
-				"tokens_per_sec", tokensPerSec,
-				"likely_cause", "platform_network_stack_variance",
-			)
-		}
 	}
 
 	return metrics
@@ -941,7 +932,7 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 	}
 
 	// Log token throughput for diagnostics
-	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0.1 {
 		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
 		c.logger.Debug("token_throughput",
 			"platform", runtime.GOOS,
@@ -952,15 +943,6 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 			"tokens_per_sec", tokensPerSec,
 			"cached_tokens", metrics.CachedTokens,
 		)
-
-		// Warn if throughput is implausible (already caught by turn_engine validation)
-		if tokensPerSec > 100 {
-			c.logger.Warn("implausible_throughput_detected",
-				"platform", runtime.GOOS,
-				"tokens_per_sec", tokensPerSec,
-				"likely_cause", "platform_network_stack_variance",
-			)
-		}
 	}
 
 	return content, metrics, nil

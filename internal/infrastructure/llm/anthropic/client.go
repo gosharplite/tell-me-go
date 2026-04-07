@@ -448,7 +448,7 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 	}
 
 	// Log token throughput for diagnostics
-	if metrics.ResponseTokens > 0 && metrics.Duration > 0 {
+	if metrics.ResponseTokens > 0 && metrics.Duration > 0.1 {
 		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
 		c.logger.Debug("token_throughput",
 			"platform", runtime.GOOS,
@@ -460,15 +460,6 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 			"cached_tokens", metrics.CachedTokens,
 			"thinking_tokens", metrics.ThinkingTokens,
 		)
-
-		// Warn if throughput is implausible (already caught by turn_engine validation)
-		if tokensPerSec > 100 {
-			c.logger.Warn("implausible_throughput_detected",
-				"platform", runtime.GOOS,
-				"tokens_per_sec", tokensPerSec,
-				"likely_cause", "platform_network_stack_variance",
-			)
-		}
 	}
 
 	return content, metrics, nil
