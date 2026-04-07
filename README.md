@@ -36,7 +36,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
 
 ## 📋 Prerequisites
 *   **Go**: 1.26.1 or higher.
-*   **Development Tools** (optional): For building from source, running tests, and contributing, install `golangci-lint`, `staticcheck`, `govulncheck`, and `goimports`. See the Development section below.
+*   **Development Tools** (optional): For building from source, running tests, and contributing, install `golangci-lint`, `staticcheck`, `govulncheck`, `goimports`, and `gh` (GitHub CLI). See the Development section below.
 
 ## 🛠️ Installation
 ```bash
@@ -194,6 +194,15 @@ go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 go install honnef.co/go/tools/cmd/staticcheck@latest
 go install golang.org/x/vuln/cmd/govulncheck@latest
 go install golang.org/x/tools/cmd/goimports@latest
+```
+
+It is also recommended to install the **GitHub CLI (`gh`)** to allow the agent to manage issues, review PRs, and automate GitHub operations natively from the terminal:
+```bash
+# macOS
+brew install gh
+
+# Ubuntu / Debian
+sudo apt install gh
 ```
 
 Then run the standard Go workflow:
