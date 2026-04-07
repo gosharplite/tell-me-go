@@ -25,15 +25,15 @@ func (m *mockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 func TestRunTestsWithCoverage(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name        string
-		testOut     string
-		testErr     error
-		sumOut      string
-		sumErr      error
-		wantSum     string
-		wantPct     string
-		wantNoGo    bool
-		wantErr     bool
+		name     string
+		testOut  string
+		testErr  error
+		sumOut   string
+		sumErr   error
+		wantSum  string
+		wantPct  string
+		wantNoGo bool
+		wantErr  bool
 	}{
 		{
 			name:    "success",
@@ -43,10 +43,10 @@ func TestRunTestsWithCoverage(t *testing.T) {
 			wantSum: "total: (statements) 85.0%",
 		},
 		{
-			name:    "no go files",
-			testOut: "?   \tgithub.com/pkg\t[no test files]\n. no Go files",
-			testErr: errors.New("exit status 1"),
-			wantPct: "0.0%",
+			name:     "no go files",
+			testOut:  "?   \tgithub.com/pkg\t[no test files]\n. no Go files",
+			testErr:  errors.New("exit status 1"),
+			wantPct:  "0.0%",
 			wantNoGo: true,
 		},
 		{

@@ -1427,4 +1427,3 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 		t.Errorf("expected sequence %v, got %v", expected, capturedEvents)
 	}
 }
-

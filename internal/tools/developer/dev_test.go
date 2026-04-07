@@ -201,7 +201,7 @@ func TestGetCoverage(t *testing.T) {
 		{
 			name:       "Failure due to test errors",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "Coverage test failed",
+			wantSubstr: "coverage test failed",
 			wantErr:    true,
 		},
 		{
@@ -409,7 +409,7 @@ func TestRunBenchmark_Error(t *testing.T) {
 			name:       "General failure",
 			executeOut: "error output",
 			executeErr: errors.New("benchmark failed"),
-			wantSubstr: "Benchmark failed or found issues:",
+			wantSubstr: "benchmark failed or found issues:",
 			wantErr:    true,
 		},
 		{
