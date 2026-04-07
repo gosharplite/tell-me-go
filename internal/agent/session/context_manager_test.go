@@ -424,7 +424,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 func TestContextManager_WithLogger(t *testing.T) {
 	ctx := context.Background()
 	var buf syncWriter
-	// Set level to DEBUG to capture the "failed to emit summarization event" log.
+	// Set level to DEBUG to capture the "skipping summarization event" log.
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	strategy := NewContextStrategy(&mockTokenCounter{})
@@ -439,11 +439,8 @@ func TestContextManager_WithLogger(t *testing.T) {
 		},
 	}
 
-	// Use a bus that is shut down to trigger a log in emitSummarizationEvent.
-	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-	_ = bus.Shutdown(ctx)
-
-	cm := NewContextManager(strategy, history, bus, nil, WithLogger(testLogger))
+	// Use a nil bus to trigger a DEBUG log in emitSummarizationEvent.
+	cm := NewContextManager(strategy, history, nil, nil, WithLogger(testLogger))
 	cm.Summarizer = &mockSummarizer{
 		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 			return "summary", nil, nil
@@ -451,10 +448,10 @@ func TestContextManager_WithLogger(t *testing.T) {
 	}
 
 	// Trigger a condition that causes a log entry.
-	// SummarizeRange calls emitSummarizationEvent, which logs a ERROR message if the event bus is closed.
+	// SummarizeRange calls emitSummarizationEvent, which logs a DEBUG message if the event bus is nil.
 	_, _, _ = cm.SummarizeRange(ctx, 1, "")
 
 	output := buf.String()
-	assert.Contains(t, output, `"level":"ERROR"`)
-	assert.Contains(t, output, "event_publish_failed")
+	assert.Contains(t, output, `"level":"DEBUG"`)
+	assert.Contains(t, output, "skipping summarization event")
 }
