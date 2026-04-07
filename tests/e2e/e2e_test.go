@@ -816,3 +816,110 @@ func createTextResponse(provider string, text string) string {
 	}
 	return ""
 }
+
+func TestShowTurnsLog(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
+	homeDir := t.TempDir()
+	env := []string{"TELL_ME_HOME=" + homeDir}
+
+	// Create expected log directory and file
+	logDir := filepath.Join(homeDir, "output", "assistant")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		t.Fatalf("Failed to create log directory: %v", err)
+	}
+
+	expectedContent := "Turn 1: Test Log Content"
+	if err := os.WriteFile(filepath.Join(logDir, "turns.log"), []byte(expectedContent), 0644); err != nil {
+		t.Fatalf("Failed to write turns.log: %v", err)
+	}
+
+	// Run command with -t
+	stdout, stderr, err := runCommandWithEnv(env, "", "-t")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nStderr: %s", err, stderr)
+	}
+
+	// Assertions
+	got := stripANSI(stdout)
+	if got != expectedContent {
+		t.Errorf("Expected output %q, got %q", expectedContent, got)
+	}
+}
+
+func TestShowTurnsLog_Missing(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
+	homeDir := t.TempDir()
+	env := []string{"TELL_ME_HOME=" + homeDir}
+
+	// Run command with -t on an empty home dir
+	stdout, stderr, err := runCommandWithEnv(env, "", "-t")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nStderr: %s", err, stderr)
+	}
+
+	// Verify the friendly message
+	out := stripANSI(stdout)
+	expected := "No turns log found for this session yet."
+	if !strings.Contains(out, expected) {
+		t.Errorf("Expected output to contain %q, got %q", expected, out)
+	}
+}
+
+func TestShowTurnsLog_CustomConfig(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
+	homeDir := t.TempDir()
+	env := []string{"TELL_ME_HOME=" + homeDir}
+
+	// 1. Create custom config with a different mode
+	configPath := filepath.Join(t.TempDir(), "dev.yaml")
+	configContent := "MODE: \"developer\""
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write custom config: %v", err)
+	}
+
+	// 2. Create two different logs for different modes
+	assistantLogDir := filepath.Join(homeDir, "output", "assistant")
+	developerLogDir := filepath.Join(homeDir, "output", "developer")
+	if err := os.MkdirAll(assistantLogDir, 0755); err != nil {
+		t.Fatalf("Failed to create assistant log directory: %v", err)
+	}
+	if err := os.MkdirAll(developerLogDir, 0755); err != nil {
+		t.Fatalf("Failed to create developer log directory: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(assistantLogDir, "turns.log"), []byte("Assistant Mode Log"), 0644); err != nil {
+		t.Fatalf("Failed to write assistant turns.log: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(developerLogDir, "turns.log"), []byte("Developer Mode Log"), 0644); err != nil {
+		t.Fatalf("Failed to write developer turns.log: %v", err)
+	}
+
+	// 3. Run with custom config specifying the developer mode
+	// Note: runCommandWithEnv prepends a default -c, so our -c should override it.
+	stdout, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "-t")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nStderr: %s", err, stderr)
+	}
+
+	// 4. Verify correctly resolved path and content
+	out := stripANSI(stdout)
+	if out != "Developer Mode Log" {
+		t.Errorf("Expected 'Developer Mode Log', got %q. Stderr: %s", out, stderr)
+	}
+
+	if strings.Contains(out, "Assistant Mode Log") {
+		t.Errorf("Output should not contain assistant log content")
+	}
+}
