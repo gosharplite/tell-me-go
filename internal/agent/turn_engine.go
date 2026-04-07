@@ -36,12 +36,6 @@ const (
 	phaseComplete   turnPhase = "Complete"
 )
 
-// Maximum plausible token generation speed in tokens per second.
-// Used to detect measurement bugs (e.g., HTTP streaming timing errors).
-// Modern high-performance LLM inference engines (Groq, Cerebras, etc.) can exceed 100 TPS.
-// Set to 5000 TPS as a true hardware sanity check.
-const maxPlausibleTokensPerSecond = 5000
-
 // processResult describes the outcome of a phase execution.
 type processResult struct {
 	NextPhase turnPhase
@@ -574,37 +568,10 @@ func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (respConten
 	return respContent, metrics, err
 }
 
-// validateMetrics logs a warning if the reported token throughput is physically implausible.
-// This catches measurement bugs (e.g., HTTP streaming where duration only captures TTFB).
-func (p *inferenceStep) validateMetrics(metrics *llm.Metrics, turn *turn) {
-	if metrics == nil || metrics.Duration <= 0 || metrics.ResponseTokens <= 0 {
-		return // Nothing to validate
-	}
-
-	tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
-	if tokensPerSec <= maxPlausibleTokensPerSecond {
-		return // Plausible throughput
-	}
-
-	// Implausible throughput → log a structured warning
-	turn.getLogger().Warn("implausible_token_throughput",
-		slog.String("provider", turn.ProviderName),
-		slog.String("model", turn.Model),
-		slog.Float64("reported_duration", metrics.Duration),
-		slog.Int64("response_tokens", int64(metrics.ResponseTokens)),
-		slog.Float64("tokens_per_sec", tokensPerSec),
-		slog.Int64("cached_tokens", int64(metrics.CachedTokens)),
-		slog.String("likely_cause", "HTTP streaming timing bug or platform clock variance"),
-		slog.String("action", "Verify duration measurement in LLM client"))
-}
-
 func (p *inferenceStep) updateState(turn *turn, content *llm.Content, metrics *llm.Metrics) {
 	turn.State.Response = content
 	turn.State.Metrics = metrics
 	if metrics != nil {
-		// Validate before using the metrics
-		p.validateMetrics(metrics, turn)
-
 		metrics.Model = turn.Model
 		metrics.Provider = turn.ProviderName
 		turn.State.Tokens = int(metrics.PromptTokens)
