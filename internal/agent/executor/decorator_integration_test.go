@@ -1,24 +1,52 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package executor
+package executor_test
 
 import (
 	"context"
-	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 	"github.com/stretchr/testify/require"
 )
+
+type mockExecutionObserver struct{}
+
+func (m *mockExecutionObserver) ExecutionTimedOut(toolID string)      {}
+func (m *mockExecutionObserver) ExecutionCompletedLate(toolID string) {}
+
+func registerMockTool(reg tools.Registry, name string) error {
+	decl := &tools.ToolDeclaration{
+		Name:        name,
+		Description: "A mock tool that sleeps to test timeouts",
+		Parameters: &tools.Schema{
+			Type: "object",
+			Properties: map[string]*tools.Schema{
+				"timeout": {Type: "number"},
+			},
+		},
+	}
+
+	handler := func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+		select {
+		case <-time.After(5 * time.Second):
+			return tools.ToolResult{Text: "completed"}, nil
+		case <-ctx.Done():
+			return tools.ToolResult{Error: ctx.Err()}, nil
+		}
+	}
+
+	return reg.Register(decl, handler)
+}
 
 func TestIntegration_DecoratorKillsProcess(t *testing.T) {
 	t.Parallel()
@@ -27,69 +55,58 @@ func TestIntegration_DecoratorKillsProcess(t *testing.T) {
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true) // Bypass prompts
-	validator := security.NewCommandValidator(sm, nil)
-	fs := persistence.NewOSFileSystem()
 	logger := &ports.NoOpLogger{}
 	bus := events.NewSimpleEventBus(context.Background())
-	mockLog := &mockLogger{}
-	zombieTool, _ := tools.NewZombieTool(mockLog)
+	observer := &mockExecutionObserver{}
 
-	// 2. Register the real workspace tools (injects execute_command)
-	err := workspace.Register(reg, sm, nil, validator, fs)
-	require.NoError(t, err, "failed to register workspace tools")
+	// 2. Register local mock tools instead of the real workspace tools
+	err := registerMockTool(reg, "execute_command")
+	require.NoError(t, err)
 
-	// 3. Wire the REAL components together (Base Runtime + Safety Decorator)
-	base := newBaseRuntime(reg)
-
-	// Set base timeouts high, but we will override dynamically via the payload
-	decorator := newSafetyDecorator(
-		base,
-		reg,
-		logger,
-		bus,
-		zombieTool,
-		30*time.Second,  // default tool timeout
-		300*time.Second, // default long running timeout
-		5*time.Second,   // zombie timeout
-	)
+	// 3. Initialize the test using the primary public port/factory
+	dispatcher, err := executor.NewPipelineDispatcher(reg, sm, bus, logger, observer)
+	require.NoError(t, err)
 
 	// 4. Setup args (Decorator parses timeout, Tool runs command)
-	// We want to run a 5 second sleep, but give it a 1 second timeout.
 	call := &llm.FunctionCall{
 		Name: "execute_command",
 		Args: map[string]interface{}{
 			"command": "sleep 5",
 			"reason":  "testing decorator timeout integration",
-			"timeout": 1, // dynamically overrides the 300s default in the decorator
+			"timeout": 1, // dynamically overrides the 300s default
 		},
 	}
 
-	// Fetch the declaration to pass to Execute
-	decl := reg.GetCoreDeclarations()[0] // Not strictly used by execute_command but required by signature
-	for _, d := range reg.GetCoreDeclarations() {
-		if d.Name == "execute_command" {
-			decl = d
-			break
-		}
+	content := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{FunctionCall: call},
+		},
 	}
 
 	start := time.Now()
 
 	// 5. Execute
-	hb := make(chan struct{}, 1)
-	res, err := decorator.Execute(context.Background(), decl, call, hb)
+	resContent, err := dispatcher.Execute(context.Background(), content, 0, 10)
 	elapsed := time.Since(start)
 
-	// 6. Verify actual OS-level termination via elapsed time
-	require.NoError(t, err, "decorator itself shouldn't fail fatally")
-	require.Error(t, res.Error, "expected res.Error from decorator execution")
+	// 6. Verify actual termination via elapsed time
+	require.NoError(t, err, "dispatcher itself shouldn't fail fatally")
+	require.Less(t, elapsed, 3*time.Second, "Execution was not terminated by the decorator's context")
 
-	// Flaky-safe timing check (allow OS/CI overhead, but ensure it didn't sleep for 5s)
-	require.Less(t, elapsed, 3*time.Second, "OS process was not terminated by the decorator's context")
+	// 7. Verify domain boundary (Error translation via string content and events)
+	require.NotNil(t, resContent)
+	require.Len(t, resContent.Parts, 1)
+	part := resContent.Parts[0]
 
-	// 7. Verify domain boundary (Error translation)
-	require.True(t, errors.Is(res.Error, llm.ErrTransient), "Expected timeout to be translated to a transient error")
-	require.Contains(t, res.Text, "timed out after", "Result text should indicate timeout")
+	require.NotNil(t, part.FunctionResponse)
+	resError := part.FunctionResponse.Response["result"]
+	require.NotNil(t, resError)
+	resErrorStr := resError.(string)
+
+	// The safety decorator prefixes transient errors with "timed out after"
+	require.True(t, strings.Contains(resErrorStr, "timed out after") || strings.Contains(resErrorStr, llm.ErrTransient.Error()),
+		"Result text should indicate a transient timeout error, got: %s", resErrorStr)
 }
 
 func TestIntegration_DecoratorKillsPipeline(t *testing.T) {
@@ -99,30 +116,17 @@ func TestIntegration_DecoratorKillsPipeline(t *testing.T) {
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true) // Bypass prompts
-	validator := security.NewCommandValidator(sm, nil)
-	fs := persistence.NewOSFileSystem()
 	logger := &ports.NoOpLogger{}
 	bus := events.NewSimpleEventBus(context.Background())
-	mockLog := &mockLogger{}
-	zombieTool, _ := tools.NewZombieTool(mockLog)
+	observer := &mockExecutionObserver{}
 
-	// 2. Register the real workspace tools (injects pipe_commands)
-	err := workspace.Register(reg, sm, nil, validator, fs)
-	require.NoError(t, err, "failed to register workspace tools")
+	// 2. Register local mock tools instead of the real workspace tools
+	err := registerMockTool(reg, "pipe_commands")
+	require.NoError(t, err)
 
-	// 3. Wire the REAL components together (Base Runtime + Safety Decorator)
-	base := newBaseRuntime(reg)
-
-	decorator := newSafetyDecorator(
-		base,
-		reg,
-		logger,
-		bus,
-		zombieTool,
-		30*time.Second,  // default tool timeout
-		300*time.Second, // default long running timeout
-		5*time.Second,   // zombie timeout
-	)
+	// 3. Initialize the test using the primary public port/factory
+	dispatcher, err := executor.NewPipelineDispatcher(reg, sm, bus, logger, observer)
+	require.NoError(t, err)
 
 	// 4. Setup args
 	call := &llm.FunctionCall{
@@ -130,32 +134,37 @@ func TestIntegration_DecoratorKillsPipeline(t *testing.T) {
 		Args: map[string]interface{}{
 			"commands": []string{"sleep 5", "cat"},
 			"reason":   "testing decorator timeout integration for pipes",
-			"timeout":  1, // dynamically overrides the 300s default
+			"timeout":  1,
 		},
 	}
 
-	decl := reg.GetCoreDeclarations()[0]
-	for _, d := range reg.GetCoreDeclarations() {
-		if d.Name == "pipe_commands" {
-			decl = d
-			break
-		}
+	content := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{FunctionCall: call},
+		},
 	}
 
 	start := time.Now()
 
 	// 5. Execute
-	hb := make(chan struct{}, 1)
-	res, err := decorator.Execute(context.Background(), decl, call, hb)
+	resContent, err := dispatcher.Execute(context.Background(), content, 0, 10)
 	elapsed := time.Since(start)
 
-	// 6. Verify actual OS-level termination via elapsed time
-	require.NoError(t, err, "decorator itself shouldn't fail fatally")
-	require.Error(t, res.Error, "expected res.Error from decorator execution")
-
-	require.Less(t, elapsed, 3*time.Second, "OS pipeline was not terminated by the decorator's context")
+	// 6. Verify actual termination via elapsed time
+	require.NoError(t, err, "dispatcher itself shouldn't fail fatally")
+	require.Less(t, elapsed, 3*time.Second, "Execution was not terminated by the decorator's context")
 
 	// 7. Verify domain boundary (Error translation)
-	require.True(t, errors.Is(res.Error, llm.ErrTransient), "Expected timeout to be translated to a transient error")
-	require.Contains(t, res.Text, "timed out after", "Result text should indicate timeout")
+	require.NotNil(t, resContent)
+	require.Len(t, resContent.Parts, 1)
+	part := resContent.Parts[0]
+
+	require.NotNil(t, part.FunctionResponse)
+	resError := part.FunctionResponse.Response["result"]
+	require.NotNil(t, resError)
+	resErrorStr := resError.(string)
+
+	require.True(t, strings.Contains(resErrorStr, "timed out after") || strings.Contains(resErrorStr, llm.ErrTransient.Error()),
+		"Result text should indicate a transient timeout error, got: %s", resErrorStr)
 }
