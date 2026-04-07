@@ -79,3 +79,8 @@ func (s *SafetyService) IsSafeGoSubcommand(sub string) bool {
 func (s *SafetyService) IsSafeGhSubcommand(sub string) bool {
 	return s.policy.SafeGhSubcommands[sub]
 }
+
+// IsSafeAzSubcommand checks if an az subcommand is safe for auto-approval.
+func (s *SafetyService) IsSafeAzSubcommand(sub string) bool {
+	return s.policy.SafeAzSubcommands[sub]
+}
