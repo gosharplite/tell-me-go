@@ -9,11 +9,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
 // Register adds all development workflow and release tools to the registry.
 func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem) error {
-	dev := newDevManager(sm, validator)
+	runner := toolchain.NewGoRunner(exec)
+	dev := newDevManager(sm, validator, runner)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_tests",

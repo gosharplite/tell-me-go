@@ -353,7 +353,7 @@ func (m *healthManager) runCoverageTest(ctx context.Context, packagePath, tempPa
 	}()
 	defer close(done)
 
-	_, err := m.Exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, packagePath)
+	_, err := m.Runner.RunTestsWithCoverage(ctx, packagePath, true, tempPath)
 	return err
 }
 

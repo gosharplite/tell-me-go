@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -15,13 +14,15 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 	"golang.org/x/sync/errgroup"
 )
 
 type healthManager struct {
-	SP   security.PolicyEvaluator
-	Exec tools.CommandExecutor
-	Ana  *analysisManager
+	SP     security.PolicyEvaluator
+	Exec   tools.CommandExecutor
+	Runner toolchain.GoRunner
+	Ana    *analysisManager
 }
 
 type healthResult struct {
@@ -155,28 +156,11 @@ func (m *healthManager) formatHealthTable(results map[string]healthResult, alert
 }
 
 func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDetails, cStatus, cDetails string) {
-	f, err := os.CreateTemp("", "health-*.out")
-	if err != nil {
-		return "ERROR", "Failed to create temp file", "N/A", err.Error()
-	}
-	tempPath := f.Name()
-	_ = f.Close()
-	defer func() { _ = os.Remove(tempPath) }()
-
-	out, err := m.Exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, "./...")
-	outStr := string(out)
+	report, err := m.Runner.RunTestsWithCoverage(ctx, "./...", true, "")
 
 	if err == nil {
 		tStatus = "PASS"
-		// Count packages
-		lines := strings.Split(strings.TrimSpace(outStr), "\n")
-		passed := 0
-		for _, line := range lines {
-			if strings.HasPrefix(line, "ok") {
-				passed++
-			}
-		}
-		tDetails = fmt.Sprintf("%d packages passed", passed)
+		tDetails = fmt.Sprintf("%d packages passed", report.PassedCount)
 	} else {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			tStatus = "TIMEOUT"
@@ -190,22 +174,20 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 		}
 	}
 
-	// Coverage parsing
-	sumOut, err := m.Exec.CombinedOutput(ctx, "go", "tool", "cover", "-func="+tempPath)
-	if err != nil {
+	if report.CoveragePct != "" {
+		if report.CoveragePct == "N/A" {
+			cStatus = "N/A"
+			cDetails = "Could not parse coverage"
+		} else if report.NoGoFiles {
+			cStatus = "N/A"
+			cDetails = "No Go files found in target path"
+		} else {
+			cStatus = report.CoveragePct
+			cDetails = "Target: > 80%"
+		}
+	} else {
 		cStatus = "ERROR"
 		cDetails = "Failed to generate coverage summary"
-		return
-	}
-
-	re := regexp.MustCompile(`total:\s+\(statements\)\s+(\d+\.\d+)%`)
-	matches := re.FindStringSubmatch(string(sumOut))
-	if len(matches) > 1 {
-		cStatus = matches[1] + "%"
-		cDetails = "Target: > 80%"
-	} else {
-		cStatus = "N/A"
-		cDetails = "Could not parse coverage"
 	}
 
 	return

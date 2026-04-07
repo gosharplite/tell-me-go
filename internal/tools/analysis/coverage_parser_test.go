@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
 func TestUncoveredBlock_Classify(t *testing.T) {
@@ -413,7 +415,7 @@ func TestGetDetailedCoverageReport(t *testing.T) {
 			return nil, os.ErrNotExist
 		},
 	}
-	hea := &healthManager{Exec: mock}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
 	_, err := hea.getDetailedCoverageReport(ctx, "./non-existent", nil)
 	if err == nil {
@@ -429,7 +431,7 @@ func TestGetDetailedCoverageJSON(t *testing.T) {
 			return nil, os.ErrNotExist
 		},
 	}
-	hea := &healthManager{Exec: mock}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
 	_, err := hea.getDetailedCoverageJSON(ctx, "./non-existent", "High", nil)
 	if err == nil {
@@ -595,7 +597,7 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
-	hea := &healthManager{Exec: mock}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
 	// Mock os.ReadFile by overriding the internal helper if we had one,
 	// but getDetailedCoverage uses os.ReadFile directly.
@@ -655,7 +657,7 @@ func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
-	hea := &healthManager{Exec: mock}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
 	_, err := hea.getDetailedCoverage(ctx, ".", nil)
 	if err == nil || !strings.Contains(err.Error(), "coverage profile is empty") {
@@ -704,7 +706,7 @@ func TestGetDetailedCoverageReport_Success(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
-	hea := &healthManager{Exec: mock}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 	if err := os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("failed to write mock go file: %v", err)
 	}
@@ -738,7 +740,7 @@ func TestGetDetailedCoverageJSON_Success(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
-	hea := &healthManager{Exec: mock}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 	if err := os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatalf("failed to write mock go file: %v", err)
 	}
@@ -893,7 +895,7 @@ func TestGetModuleName_WithTrailingSlash(t *testing.T) {
 func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
 	ctx := context.Background()
 	mock := &mockExecutor{}
-	hea := &healthManager{Exec: mock}
+	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
 
 	// Set TMPDIR to a non-existent directory to force os.CreateTemp to fail
 	oldTmp := os.Getenv("TMPDIR")
