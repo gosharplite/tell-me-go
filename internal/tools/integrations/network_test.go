@@ -215,6 +215,7 @@ func TestNewNetworkTool(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	r := registry.New()
 	sm := security.NewSecurityManager(nil)
 	if err := RegisterAll(r, sm, nil, ""); err != nil {

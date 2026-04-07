@@ -144,7 +144,9 @@ func TestADOManager_ErrorPaths(t *testing.T) {
 }
 
 func TestAtlassianProvider_ErrorPaths(t *testing.T) {
-	p := newAtlassianProvider()
+	t.Setenv("ATLASSIAN_BASE_URL", "https://jira.com")
+	p, err := newAtlassianProvider()
+	require.NoError(t, err)
 	p.email = "test@example.com"
 	p.token = "test-token"
 
@@ -256,6 +258,7 @@ func TestConfluenceManager_ErrorPaths(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 			t.Setenv("ATLASSIAN_TOKEN", "test-token")
+			t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
 			rt := &mockRoundTripper{}
 			if tt.setupMock != nil {
@@ -263,9 +266,10 @@ func TestConfluenceManager_ErrorPaths(t *testing.T) {
 			}
 			client := &http.Client{Transport: rt}
 
-			m := newconfluenceManager(sm, client)
+			m, err := newconfluenceManager(sm, client)
+			require.NoError(t, err)
 
-			err := tt.call(context.Background(), m)
+			err = tt.call(context.Background(), m)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErrMsg)
@@ -322,6 +326,7 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 			t.Setenv("ATLASSIAN_TOKEN", "test-token")
+			t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
 			rt := &mockRoundTripper{}
 			if tt.setupMock != nil {
@@ -329,9 +334,10 @@ func TestJiraManager_ErrorPaths(t *testing.T) {
 			}
 			client := &http.Client{Transport: rt}
 
-			m := newjiraManager(sm, client)
+			m, err := newjiraManager(sm, client)
+			require.NoError(t, err)
 
-			err := tt.call(context.Background(), m)
+			err = tt.call(context.Background(), m)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErrMsg)
@@ -658,7 +664,9 @@ func TestADOManager_PrErrorPaths(t *testing.T) {
 }
 
 func TestAtlassianProvider_WaitTime(t *testing.T) {
-	p := newAtlassianProvider()
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+	p, err := newAtlassianProvider()
+	require.NoError(t, err)
 	p.baseDelay = 0 // Test baseDelay == 0 case
 
 	t.Run("Default baseDelay", func(t *testing.T) {

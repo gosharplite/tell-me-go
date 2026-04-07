@@ -55,9 +55,10 @@ func TestAzureDevOps_IOError(t *testing.T) {
 func TestJira_IOError(t *testing.T) {
 	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://jira.com")
 	mockClient := new(mockHttpClient)
-	m := newjiraManager(nil, mockClient)
-	m.provider.baseURL = "https://jira.com"
+	m, err := newjiraManager(nil, mockClient)
+	assert.NoError(t, err)
 
 	mockClient.On("Do", mock.Anything).Return(&http.Response{
 		StatusCode: http.StatusInternalServerError,
@@ -68,7 +69,7 @@ func TestJira_IOError(t *testing.T) {
 	ctx := context.Background()
 
 	// Test jiraSearchIssues
-	_, err := m.jiraSearchIssues(ctx, map[string]interface{}{"jql": "project=PROJ"}, nil)
+	_, err = m.jiraSearchIssues(ctx, map[string]interface{}{"jql": "project=PROJ"}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read response body")
 
@@ -81,9 +82,10 @@ func TestJira_IOError(t *testing.T) {
 func TestConfluence_IOError(t *testing.T) {
 	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://confluence.com")
 	mockClient := new(mockHttpClient)
-	m := newconfluenceManager(nil, mockClient)
-	m.provider.baseURL = "https://confluence.com"
+	m, err := newconfluenceManager(nil, mockClient)
+	assert.NoError(t, err)
 
 	mockClient.On("Do", mock.Anything).Return(&http.Response{
 		StatusCode: http.StatusInternalServerError,
@@ -94,7 +96,7 @@ func TestConfluence_IOError(t *testing.T) {
 	ctx := context.Background()
 
 	// Test fetchSearchPage
-	_, err := m.fetchSearchPage(ctx, "https://confluence.com/api")
+	_, err = m.fetchSearchPage(ctx, "https://confluence.com/api")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read response body")
 }

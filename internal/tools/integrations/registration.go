@@ -177,7 +177,11 @@ func registerTeams(r tools.Registry, sm domain_security.Manager, client tools.HT
 }
 
 func registerConfluence(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
-	m := newconfluenceManager(sm, client)
+	m, err := newconfluenceManager(sm, client)
+	if err != nil {
+		// Skip registration gracefully if configuration is missing.
+		return nil
+	}
 
 	if err := r.RegisterToToolkit("confluence", &tools.ToolDeclaration{
 		Name:        "confluence_search",
@@ -253,7 +257,11 @@ func registerConfluence(r tools.Registry, sm domain_security.Manager, client too
 }
 
 func registerJira(r tools.Registry, sm domain_security.Manager, client tools.HTTPClient) error {
-	m := newjiraManager(sm, client)
+	m, err := newjiraManager(sm, client)
+	if err != nil {
+		// Skip registration gracefully if configuration is missing.
+		return nil
+	}
 
 	if err := r.RegisterToToolkit("jira", &tools.ToolDeclaration{
 		Name:        "jira_search_issues",
