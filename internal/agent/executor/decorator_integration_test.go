@@ -56,7 +56,9 @@ func TestIntegration_DecoratorKillsProcess(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true) // Bypass prompts
 	logger := &ports.NoOpLogger{}
-	bus := events.NewSimpleEventBus(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	bus := events.NewSimpleEventBus(ctx)
 	observer := &mockExecutionObserver{}
 
 	// 2. Register local mock tools instead of the real workspace tools
@@ -117,7 +119,9 @@ func TestIntegration_DecoratorKillsPipeline(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true) // Bypass prompts
 	logger := &ports.NoOpLogger{}
-	bus := events.NewSimpleEventBus(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	bus := events.NewSimpleEventBus(ctx)
 	observer := &mockExecutionObserver{}
 
 	// 2. Register local mock tools instead of the real workspace tools

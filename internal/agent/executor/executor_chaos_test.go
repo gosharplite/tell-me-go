@@ -115,7 +115,7 @@ func TestDispatcher_ChaosScenarios(t *testing.T) {
 
 			o := &Dispatcher{
 				pipeline: mock,
-				events:   events.NewSimpleEventBus(context.Background()),
+				events:   events.NewSimpleEventBus(ctx),
 				logger:   &ports.NoOpLogger{},
 			}
 			o.state.Store(&dispatcherState{
