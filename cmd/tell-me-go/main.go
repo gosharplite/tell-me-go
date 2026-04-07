@@ -61,7 +61,7 @@ func initTracer(ctx context.Context) func(context.Context) error {
 		),
 	)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to create OTel resource: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to create OTel resource: %v\n", err)
 		otel.SetTracerProvider(noop.NewTracerProvider())
 		return func(context.Context) error { return nil }
 	}
@@ -70,7 +70,7 @@ func initTracer(ctx context.Context) func(context.Context) error {
 		otlptracehttp.WithEndpointURL(endpoint),
 	)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to create OTel exporter: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to create OTel exporter: %v\n", err)
 		otel.SetTracerProvider(noop.NewTracerProvider())
 		return func(context.Context) error { return nil }
 	}
@@ -98,12 +98,12 @@ func run() int {
 	}
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
 		return 1
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
 	return 0
@@ -116,7 +116,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 		sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := shutdown(sCtx); err != nil {
-			fmt.Fprintf(stderr, "Error shutting down tracer: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Error shutting down tracer: %v\n", err)
 		}
 	}
 
