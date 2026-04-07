@@ -82,7 +82,7 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - [x] **Pinning Pressure Warning (Minor)**: Display a UI warning if the user pins too many active messages, preventing safe auto-summarization.
     - [x] **Live Reload (Minor)**: Optional EventBus subscription to gracefully refresh the TUI if `history.jsonl` is modified in another terminal window.
 - **Reference:** [ADR-008: Bubble Tea Interactive History Browser](./docs/adr/2026-02-bubble-tea-history-browser.md)
-## Phase 9: Interactive TUI Prompt Mode (Approved)
+## Phase 9: Interactive TUI Prompt Mode (Completed)
 - **Goal:** Provide a professional-grade interactive prompt experience with auto-completion and real-time session observability, while strictly preserving the current multi-line input as the default.
 - **Architectural Constraints (Strictly Enforced):**
     - **[ARCHITECTURAL BLOCKER] Synchronous Autocomplete I/O:** All suggestions MUST be fetched asynchronously via `tea.Cmd` to prevent UI thread blocking.

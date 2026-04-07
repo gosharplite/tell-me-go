@@ -14,14 +14,14 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-006** | History Log Compaction and Bounded Contexts | 2026-01 | Implemented | [2026-01-history-log-compaction.md](2026-01-history-log-compaction.md) |
 | **ADR-007** | Extract Agent Configuration via Functional Options | 2026-02 | Accepted | [2026-02-agent-options-extraction.md](2026-02-agent-options-extraction.md) |
 | **ADR-008** | Bubble Tea Interactive History Browser | 2026-02 | Implemented | [2026-02-bubble-tea-history-browser.md](2026-02-bubble-tea-history-browser.md) |
-| **ADR-009** | TUI Interactive Prompt Mode with Auto-completion | 2026-02 | Proposed | [2026-02-tui-prompt-mode.md](2026-02-tui-prompt-mode.md) |
+| **ADR-009** | TUI Interactive Prompt Mode with Auto-completion | 2026-02 | Implemented | [2026-02-tui-prompt-mode.md](2026-02-tui-prompt-mode.md) |
 | **ADR-010** | Accept Dual-Write for Telemetry and UI Events | 2026-04 | Accepted | [2026-04-accept-dual-write-for-telemetry-events.md](2026-04-accept-dual-write-for-telemetry-events.md) |
 | **ADR-011** | Refactor UI Bridge to Actor Model for Thread-Safe Asynchronous Rendering | 2026-04 | Accepted | [2026-04-uibridge-actor-model.md](2026-04-uibridge-actor-model.md) |
 | **ADR-012** | Dynamic Tool Discovery via Capability Toolkits | 2026-04 | Accepted | [2026-04-dynamic-tool-discovery.md](2026-04-dynamic-tool-discovery.md) |
 | **ADR-013** | Asynchronous Event-Driven Orchestration | 2026-04 | Accepted | [2026-04-asynchronous-event-driven-orchestration.md](2026-04-asynchronous-event-driven-orchestration.md) |
 | **ADR-014** | Event-Driven Orchestration and Circuit Breaker Pipeline | 2026-04 | Accepted | [2026-04-event-driven-orchestration.md](2026-04-event-driven-orchestration.md) |
 | **ADR-015** | Cross‑Platform Timing Guarantees and HTTP‑Streaming Duration Measurement | 2026-04 | Accepted | [2026-04-cross-platform-timing-guarantees.md](2026-04-cross-platform-timing-guarantees.md) |
-| **ADR-016** | Migrate Persistent State to Pure Go SQLite | 2026-02 | Proposed | [2026-02-pure-go-sqlite-migration.md](2026-02-pure-go-sqlite-migration.md) |
+| **ADR-016** | Migrate Persistent State to Pure Go SQLite | 2026-02 | Implemented | [2026-02-pure-go-sqlite-migration.md](2026-02-pure-go-sqlite-migration.md) |
 
 ## How to Create a New ADR
 

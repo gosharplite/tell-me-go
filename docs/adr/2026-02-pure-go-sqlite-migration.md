@@ -1,7 +1,7 @@
 # ADR-016: Migrate Persistent State to Pure Go SQLite
 
 ## Status
-Proposed
+Implemented (2026-03-26)
 
 ## Context
 Currently, TellMeGo manages persistent state (Tasks, Configuration, and History) using flat JSON/JSONL files (`ListStore`, `KVStore`). 
@@ -23,6 +23,10 @@ We will migrate the underlying persistence layer for structured state (Tasks, Co
     *   `config` table: `key TEXT PRIMARY KEY, value TEXT`.
     *   `scratchpad` table: `id INTEGER PRIMARY KEY, content TEXT` (singleton row).
 4.  **Interface Preservation:** The existing Hexagonal interfaces (`KVStore`, `ListStore`) in the domain layer will remain unchanged. We will implement new SQLite-backed adapters in the `infrastructure/persistence` layer.
+5.  **Legacy Deprecation:** 
+    *   The legacy flat-file repositories (`internal/infrastructure/persistence/list_store.go` and `internal/infrastructure/persistence/kv_store.go`) are hereby **formally deprecated**.
+    *   These implementations will be removed in a future major version once auto-migration stability is confirmed across all target platforms.
+    *   All new features MUST target the SQLite-backed implementations.
 
 ## Consequences
 
@@ -33,4 +37,4 @@ We will migrate the underlying persistence layer for structured state (Tasks, Co
 
 ### Negative
 *   **Binary Size:** `modernc.org/sqlite` is a transpiled C-to-Go library, which will slightly increase the compiled binary size (by ~4-5 MB).
-*   **Migration Path:** We must implement an auto-migration script on startup to seamlessly transfer existing users' flat JSON files into the new SQLite database before deprecating the flat file implementation.
+*   **Migration Path:** We must implement an auto-migration script on startup to seamlessly transfer existing users' flat JSON files into the new SQLite database before deprecating the flat file implementation. (Note: Implementation complete as of 2026-03-26).
