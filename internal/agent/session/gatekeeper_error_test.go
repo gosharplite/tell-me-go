@@ -3,12 +3,11 @@ package session
 import (
 	"context"
 	"errors"
-	"flag"
 	"testing"
-	"time"
 
 	"crypto/rand"
 	"log/slog"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -19,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
@@ -152,7 +152,7 @@ func (m *mockFailingChatter) GetName() string                                   
 type mockFailingCapturer struct{}
 
 func (m *mockFailingCapturer) IsTTY(any) bool { return false }
-func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, ...ports.CaptureOption) (string, error) {
+func (m *mockFailingCapturer) CapturePrompt(context.Context, *pflag.FlagSet, ...ports.CaptureOption) (string, error) {
 	return "", nil
 }
 func (m *mockFailingCapturer) Close(context.Context) error { return nil }

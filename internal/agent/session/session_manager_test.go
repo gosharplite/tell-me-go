@@ -6,7 +6,6 @@ package session
 import (
 	"context"
 	"crypto/rand"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -136,7 +136,7 @@ func (m *mockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *pflag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
 }
@@ -752,7 +752,7 @@ func (m *behaviorMockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *pflag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	m.tracker.record("Capturer.CapturePrompt")
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)

@@ -6,7 +6,6 @@ package cli
 import (
 	stdctx "context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"strconv"
@@ -19,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
+	"github.com/spf13/pflag"
 )
 
 // errExitZero signals that the command should exit with code 0 immediately.
@@ -111,6 +111,11 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 	}
 
+	// Apply CLI overrides to config (Option B)
+	if opts.tuiPrompt {
+		cfg.UseTUIPrompt = true
+	}
+
 	capturer, cleanup := c.buildCapturer(ctx, cfg, opts)
 	defer func() {
 		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
@@ -137,7 +142,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}, capturer)
 }
 
-func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet, error) {
+func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *pflag.FlagSet, error) {
 	opts, fs, err := c.parseConfiguration(args)
 	if err != nil {
 		return nil, nil, err
@@ -149,6 +154,12 @@ func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet,
 
 	// Configuration Merge
 	cfg, _ := c.Loader.Load(opts.configPath)
+
+	// Apply CLI overrides to config (Option B)
+	if opts.tuiPrompt && cfg != nil {
+		cfg.UseTUIPrompt = true
+	}
+
 	// Only auto-enable TUI from config if no other actions are requested
 	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
 		opts.tuiPrompt = true
@@ -227,7 +238,7 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	return capturer, func(stdctx.Context) error { return nil }
 }
 
-func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer agent.CapturerInteractor) (string, error) {
+func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *pflag.FlagSet, opts *cliOptions, capturer agent.CapturerInteractor) (string, error) {
 	captureOpts := c.prepareCaptureOptions(opts)
 	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
 	if err != nil {
@@ -282,24 +293,25 @@ func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []ports.CaptureOpt
 	return captureOpts
 }
 
-func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.FlagSet, error) {
+func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *pflag.FlagSet, error) {
 	args = c.sanitizeArgs(args)
 	var flagArgs []string
 	if len(args) > 0 {
 		flagArgs = args[1:]
 	}
 
-	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
+	fs := pflag.NewFlagSet("tell-me-go", pflag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	opts := &cliOptions{}
-	fs.StringVar(&opts.configPath, "c", "configs/assistant.yaml", "Path to the configuration file")
+
+	fs.StringVarP(&opts.configPath, "config", "c", "configs/assistant.yaml", "Path to the configuration file")
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
-	fs.BoolVar(&opts.showVersion, "v", false, "Show version information")
-	fs.BoolVar(&opts.showTurnsLog, "t", false, "Print the contents of the current session's turns.log and exit")
-	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
-	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
-	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
-	fs.BoolVar(&opts.tuiPrompt, "i", false, "Enable interactive TUI prompt with suggestions")
+	fs.BoolVarP(&opts.showVersion, "version", "v", false, "Show version information")
+	fs.BoolVarP(&opts.showTurnsLog, "turns", "t", false, "Print the contents of the current session's turns.log and exit")
+	fs.IntVarP(&opts.lastN, "last", "l", 0, "Show the last N messages from history")
+	fs.IntVarP(&opts.backN, "back", "b", 0, "Go back / delete the last N turns from history")
+	fs.BoolVarP(&opts.rawOutput, "raw", "r", false, "Show raw output (without markdown rendering)")
+	fs.BoolVarP(&opts.tuiPrompt, "interactive", "i", false, "Enable interactive TUI prompt with suggestions")
 	fs.BoolVar(&opts.tuiPrompt, "tui", false, "Enable interactive TUI prompt with suggestions")
 	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
 

@@ -87,7 +87,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	}
 
 	ctx := stdctx.Background()
-	args := []string{"chat", "-c", cfgPath, "-new", "hello"}
+	args := []string{"chat", "-c", cfgPath, "--new", "hello"}
 
 	if err := cmd.Execute(ctx, args); err != nil {
 		t.Fatalf("Execute failed: %v\nStderr: %s", err, stderr.String())

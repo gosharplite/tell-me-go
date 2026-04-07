@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"io"
 	"log/slog"
 	"os"
@@ -23,6 +22,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -210,7 +210,7 @@ func (m *mockServiceCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *mockServiceCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (m *mockServiceCapturer) CapturePrompt(ctx context.Context, fs *pflag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	args := m.Called(ctx, fs, opts)
 	return args.String(0), args.Error(1)
 }

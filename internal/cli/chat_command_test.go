@@ -286,7 +286,7 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 	}
 
 	ctx := stdctx.Background()
-	args := []string{"chat", "-retry"}
+	args := []string{"chat", "--retry"}
 
 	err := cmd.Execute(ctx, args)
 	if err != nil {
@@ -330,7 +330,7 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	}
 
 	ctx := stdctx.Background()
-	args := []string{"chat", "-retry"}
+	args := []string{"chat", "--retry"}
 
 	err := cmd.Execute(ctx, args)
 	if err != nil {
