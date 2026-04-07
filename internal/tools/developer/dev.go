@@ -206,7 +206,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	defer func() { _ = os.Remove(tempName) }()
 
 	// Now format the command with the actual temp file path
-	command := fmt.Sprintf("go test -coverprofile=%s -- %s", tempName, path)
+	command := fmt.Sprintf("go test -coverprofile=%s %s", tempName, path)
 	approved, err := m.authorizeAction(ctx, "Test Coverage", command, "Getting test coverage summary (redirected to temporary file)")
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -219,8 +219,12 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 
 	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
-	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, "--", path)
+	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, path)
 	if err != nil {
+		outStr := string(out)
+		if strings.Contains(outStr, "no Go files") || strings.Contains(outStr, "[no test files]") || strings.Contains(outStr, "no packages to test") {
+			return tools.ToolResult{Text: "0.0% coverage (No Go files found in target path to test)"}, nil
+		}
 		res := formatExecutionResult("Coverage test", out, err, 50, "")
 		if res.Error != nil {
 			return tools.ToolResult{}, res.Error
@@ -297,8 +301,8 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
 	}
 
-	fullCmd := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ -- %s", bench, path)
-	argsList := []string{"test", "-bench=" + bench, "-benchmem", "-run=^$", "--", path}
+	fullCmd := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ %s", bench, path)
+	argsList := []string{"test", "-bench=" + bench, "-benchmem", "-run=^$", path}
 
 	out, err := m.executeWithHeartbeat(
 		ctx,
@@ -312,6 +316,13 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 
 	if errors.Is(err, tools.ErrUserDeclined) {
 		return tools.ToolResult{Text: "Action denied by user."}, err
+	}
+
+	if err != nil {
+		outStr := string(out)
+		if strings.Contains(outStr, "no Go files") || strings.Contains(outStr, "[no test files]") || strings.Contains(outStr, "no packages to test") {
+			return tools.ToolResult{Text: "No Go files found in target path to benchmark"}, nil
+		}
 	}
 
 	res := formatExecutionResult("Benchmark", out, err, 100, "Benchmark completed.")

@@ -209,6 +209,13 @@ func TestGetCoverage(t *testing.T) {
 			wantErr:    true,
 		},
 		{
+			name:       "Failure due to no Go files",
+			executeOut: "?   \tgithub.com/example/pkg\t[no test files]\n# github.com/example/pkg\n. no Go files",
+			executeErr: errors.New("exit status 1"),
+			wantSubstr: "0.0% coverage (No Go files found in target path to test)",
+			wantErr:    false,
+		},
+		{
 			name:       "Temp file failure",
 			tempErr:    errors.New("failed to create temp file"),
 			wantSubstr: "failed to create temp coverage file",
@@ -402,17 +409,45 @@ func TestGoTidy_Errors(t *testing.T) {
 
 func TestRunBenchmark_Error(t *testing.T) {
 	t.Parallel()
-	m, executor, _ := setupDevManager(t)
-	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return []byte("error output"), errors.New("benchmark failed")
+	tests := []struct {
+		name       string
+		executeOut string
+		executeErr error
+		wantSubstr string
+		wantErr    bool
+	}{
+		{
+			name:       "General failure",
+			executeOut: "error output",
+			executeErr: errors.New("benchmark failed"),
+			wantSubstr: "Benchmark failed or found issues:",
+			wantErr:    false,
+		},
+		{
+			name:       "No Go files",
+			executeOut: "?   \tgithub.com/example/pkg\t[no test files]\n# github.com/example/pkg\n. no Go files",
+			executeErr: errors.New("exit status 1"),
+			wantSubstr: "No Go files found in target path to benchmark",
+			wantErr:    false,
+		},
 	}
 
-	res, err := m.runBenchmark(context.Background(), nil, nil)
-	if err != nil {
-		t.Errorf("expected no error, got %v", err)
-	}
-	if !strings.Contains(res.Text, "Benchmark failed or found issues:") {
-		t.Errorf("expected error in text, got %q", res.Text)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, executor, _ := setupDevManager(t)
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte(tt.executeOut), tt.executeErr
+			}
+
+			res, err := m.runBenchmark(context.Background(), nil, nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("expected wantErr=%v, got err=%v", tt.wantErr, err)
+			}
+			if !strings.Contains(res.Text, tt.wantSubstr) {
+				t.Errorf("expected %q in text, got %q", tt.wantSubstr, res.Text)
+			}
+		})
 	}
 }
 
