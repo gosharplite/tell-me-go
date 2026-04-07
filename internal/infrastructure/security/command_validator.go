@@ -74,6 +74,8 @@ func (v *commandValidator) validateSubcommandSpecifics(parts []string) (bool, st
 		return v.isSafeGit(parts)
 	case "go":
 		return v.isSafeGo(parts)
+	case "gh":
+		return v.isSafeGh(parts)
 	}
 	return true, ""
 }
@@ -189,6 +191,18 @@ func (v *commandValidator) isSafeGo(parts []string) (bool, string) {
 		return false, err.Error()
 	}
 
+	return true, ""
+}
+
+func (v *commandValidator) isSafeGh(parts []string) (bool, string) {
+	sub := extractSubcommand(parts)
+	if sub == "" {
+		return false, "missing gh subcommand"
+	}
+
+	if !v.safety.IsSafeGhSubcommand(sub) {
+		return false, fmt.Sprintf("gh subcommand '%s' is not in the safe whitelist", sub)
+	}
 	return true, ""
 }
 

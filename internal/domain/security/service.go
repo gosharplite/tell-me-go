@@ -74,3 +74,8 @@ func (s *SafetyService) IsSafeGitSubcommand(sub string) bool {
 func (s *SafetyService) IsSafeGoSubcommand(sub string) bool {
 	return s.policy.SafeGoSubcommands[sub]
 }
+
+// IsSafeGhSubcommand checks if a gh subcommand is safe for auto-approval.
+func (s *SafetyService) IsSafeGhSubcommand(sub string) bool {
+	return s.policy.SafeGhSubcommands[sub]
+}

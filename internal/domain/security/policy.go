@@ -11,6 +11,7 @@ type Policy struct {
 	RestrictedPaths        []string
 	SafeGitSubcommands     map[string]bool
 	SafeGoSubcommands      map[string]bool
+	SafeGhSubcommands      map[string]bool
 }
 
 // DefaultPolicy returns the default security policy.
@@ -21,6 +22,7 @@ func DefaultPolicy() *Policy {
 			// Shell commands
 			"go":            true,
 			"git":           true,
+			"gh":            true,
 			"ls":            true,
 			"grep":          true,
 			"cat":           true,
@@ -174,7 +176,7 @@ func DefaultPolicy() *Policy {
 		AutoApprovableCommands: map[string]bool{
 			"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
 			"head": true, "tail": true, "wc": true, "stat": true, "date": true,
-			"whoami": true, "diff": true, "git": true, "go": true,
+			"whoami": true, "diff": true, "git": true, "go": true, "gh": true,
 			"golangci-lint": true, "staticcheck": true, "govulncheck": true,
 			"confluence_search": true, "confluence_read": true,
 			"ado_list_branch_policies": true, "ado_get_build_timeline": true,
@@ -193,6 +195,9 @@ func DefaultPolicy() *Policy {
 		SafeGoSubcommands: map[string]bool{
 			"list": true, "help": true, "version": true, "env": true,
 			"vet": true, "test": true, "tool": true,
+		},
+		SafeGhSubcommands: map[string]bool{
+			"auth": true, "issue": true, "pr": true, "repo": true, "run": true, "search": true,
 		},
 	}
 }
