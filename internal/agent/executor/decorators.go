@@ -65,6 +65,49 @@ func newSafetyDecorator(next ToolExecutor, registry tools.Registry, logger ports
 
 func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, heartbeat chan<- struct{}) (result tools.ToolResult, err error) {
 	opts := d.registry.GetOptions(call.Name)
+	activeTimeout := d.resolveTimeout(call, opts)
+
+	ctx, cancel := context.WithTimeout(parentCtx, activeTimeout)
+	defer cancel()
+
+	outCh := make(chan tools.ToolOutput, 1)
+	hbCh := make(chan struct{}, 1)
+
+	// Liveness check monitoring
+	monitorCtx, monitorCancel := context.WithCancel(ctx)
+	defer monitorCancel()
+
+	go d.monitorLiveness(monitorCtx, call.Name, opts, hbCh, heartbeat, cancel)
+
+	go d.executeToolSafe(ctx, tool, call, hbCh, outCh)
+
+	select {
+	case <-ctx.Done():
+		return d.handleTimeout(parentCtx, ctx.Err(), call.Name, activeTimeout, outCh), nil
+
+	case out := <-outCh:
+		return out.Result, out.Err
+	}
+}
+
+func (d *safetyDecorator) executeToolSafe(ctx context.Context, tool *tools.ToolDeclaration, call *llm.FunctionCall, hbCh chan<- struct{}, outCh chan<- tools.ToolOutput) {
+	// CRITICAL: This recover block protects the isolated tool execution thread.
+	// It catches panics originating inside the actual tool implementation (e.g., nil pointer dereferences
+	// in a third-party SDK) and safely converts them into tool execution errors.
+	// Do NOT remove this, as the Dispatcher's main recover block cannot catch panics in this detached goroutine.
+	defer func() {
+		if r := recover(); r != nil {
+			outCh <- tools.ToolOutput{
+				Result: d.handlePanic(ctx, r, call.Name),
+			}
+		}
+		close(hbCh) // Signal monitor that tool finished
+	}()
+	res, execErr := d.next.Execute(ctx, tool, call, hbCh)
+	outCh <- tools.ToolOutput{Result: res, Err: execErr}
+}
+
+func (d *safetyDecorator) resolveTimeout(call *llm.FunctionCall, opts tools.ToolOptions) time.Duration {
 	activeTimeout := d.toolTimeout
 	if opts.LongRunning {
 		activeTimeout = d.longRunningTimeout
@@ -90,58 +133,25 @@ func (d *safetyDecorator) Execute(parentCtx context.Context, tool *tools.ToolDec
 			activeTimeout = time.Duration(reqSeconds * float64(time.Second))
 		}
 	}
+	return activeTimeout
+}
 
-	ctx, cancel := context.WithTimeout(parentCtx, activeTimeout)
-	defer cancel()
+func (d *safetyDecorator) handleTimeout(parentCtx context.Context, errCtx error, toolName string, activeTimeout time.Duration, outCh chan tools.ToolOutput) tools.ToolResult {
+	msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
+	errorWrapMsg := "tool execution failed"
+	switch errCtx {
+	case context.Canceled:
+		msg = "Execution was interrupted or cancelled by the user."
+	case context.DeadlineExceeded:
+		msg = fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout)
+		errorWrapMsg = "tool execution timed out"
+	}
 
-	outCh := make(chan tools.ToolOutput, 1)
-	hbCh := make(chan struct{}, 1)
+	go d.zombie.Monitor(context.WithoutCancel(parentCtx), toolName, time.Now(), outCh, d.zombieTimeout)
 
-	// Liveness check monitoring
-	monitorCtx, monitorCancel := context.WithCancel(ctx)
-	defer monitorCancel()
-
-	go d.monitorLiveness(monitorCtx, call.Name, opts, hbCh, heartbeat, cancel)
-
-	go func() {
-		// CRITICAL: This recover block protects the isolated tool execution thread.
-		// It catches panics originating inside the actual tool implementation (e.g., nil pointer dereferences
-		// in a third-party SDK) and safely converts them into tool execution errors.
-		// Do NOT remove this, as the Dispatcher's main recover block cannot catch panics in this detached goroutine.
-		defer func() {
-			if r := recover(); r != nil {
-				outCh <- tools.ToolOutput{
-					Result: d.handlePanic(ctx, r, call.Name),
-				}
-			}
-			close(hbCh) // Signal monitor that tool finished
-		}()
-		res, execErr := d.next.Execute(ctx, tool, call, hbCh)
-		outCh <- tools.ToolOutput{Result: res, Err: execErr}
-	}()
-
-	select {
-	case <-ctx.Done():
-		errCtx := ctx.Err()
-		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
-		errorWrapMsg := "tool execution failed"
-		switch errCtx {
-		case context.Canceled:
-			msg = "Execution was interrupted or cancelled by the user."
-		case context.DeadlineExceeded:
-			msg = fmt.Sprintf("Error: Tool execution timed out after %v", activeTimeout)
-			errorWrapMsg = "tool execution timed out"
-		}
-
-		go d.zombie.Monitor(context.WithoutCancel(parentCtx), call.Name, time.Now(), outCh, d.zombieTimeout)
-
-		return tools.ToolResult{
-			Text:  msg,
-			Error: fmt.Errorf("%w: %s: %w", llm.ErrTransient, errorWrapMsg, errCtx),
-		}, nil
-
-	case out := <-outCh:
-		return out.Result, out.Err
+	return tools.ToolResult{
+		Text:  msg,
+		Error: fmt.Errorf("%w: %s: %w", llm.ErrTransient, errorWrapMsg, errCtx),
 	}
 }
 
