@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
 type mockDeadCodeAnalyzer struct {
@@ -26,6 +27,30 @@ func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path str
 
 func (m *mockDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
+}
+
+type mockGoRunner struct {
+	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
+}
+
+func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+	if m.runTestsWithCoverageFunc != nil {
+		return m.runTestsWithCoverageFunc(ctx, path, short, profilePath)
+	}
+	return toolchain.CoverageReport{
+		PassedCount:   2,
+		CoveragePct:   "82.5%",
+		TestOutput:    "ok package1\nok package2",
+		SummaryOutput: "total: (statements) 82.5%",
+	}, nil
+}
+
+func (m *mockGoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
+	if m.runBenchmarksFunc != nil {
+		return m.runBenchmarksFunc(ctx, path, benchRegex)
+	}
+	return "", nil
 }
 
 type mockHealthExecutor struct{}
@@ -53,8 +78,9 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
+	mockRunner := &mockGoRunner{}
 	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, infrapersistence.NewOSFileSystem())
-	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec}
+	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
 
 	ctx := context.Background()
 	res, err := hea.GetCodeHealth(ctx, nil, nil)
@@ -85,8 +111,9 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
+	mockRunner := &mockGoRunner{}
 	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, infrapersistence.NewOSFileSystem())
-	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec}
+	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec, Runner: mockRunner}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -262,7 +289,16 @@ func (m *coverageMockExecutor) CombinedOutput(ctx context.Context, name string, 
 func TestHealthManager_GetDetailedCoverage(t *testing.T) {
 	t.Parallel()
 	mockExec := &coverageMockExecutor{t: t}
-	hea := &healthManager{Exec: mockExec}
+	mockRunner := &mockGoRunner{
+		runTestsWithCoverageFunc: func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+			content := "mode: set\ngithub.com/gosharplite/tell-me-go/internal/domain/events/events.go:1.1,2.1 1 0\n"
+			if err := os.WriteFile(profilePath, []byte(content), 0644); err != nil {
+				t.Errorf("failed to write mock coverage file: %v", err)
+			}
+			return toolchain.CoverageReport{}, nil
+		},
+	}
+	hea := &healthManager{Exec: mockExec, Runner: mockRunner}
 
 	ctx := context.Background()
 	args := map[string]interface{}{"path": "./internal/domain/events/..."}

@@ -13,6 +13,7 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,6 +56,25 @@ func (mv *mockValidator) IsSafe(command string) (bool, string) {
 	return mv.CommandValidator.IsSafe(command)
 }
 
+type mockGoRunner struct {
+	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
+}
+
+func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+	if m.runTestsWithCoverageFunc != nil {
+		return m.runTestsWithCoverageFunc(ctx, path, short, profilePath)
+	}
+	return toolchain.CoverageReport{}, nil
+}
+
+func (m *mockGoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
+	if m.runBenchmarksFunc != nil {
+		return m.runBenchmarksFunc(ctx, path, benchRegex)
+	}
+	return "", nil
+}
+
 func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
 	t.Helper()
 	interactor := &security.MockInteractor{}
@@ -62,10 +82,12 @@ func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.Sec
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(".")
 	executor := &mockDevExecutor{}
+	runner := &mockGoRunner{}
 	m := &devManager{
 		sm:             sm,
 		validator:      security.NewCommandValidator(sm, interactor),
 		executor:       executor,
+		runner:         runner,
 		createTempFile: os.CreateTemp,
 	}
 	return m, executor, sm
@@ -139,27 +161,19 @@ func TestCheckVulnerabilities(t *testing.T) {
 	}
 }
 
-func setupCoverageMock(t *testing.T, m *devManager, executor *mockDevExecutor, executeOut string, executeErr error, summaryOut string, summaryErr error, tempErr error) {
-	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		if name == "go" && len(args) > 1 {
-			if args[0] == "test" {
-				return []byte(executeOut), executeErr
-			}
-			if args[1] == "cover" {
-				return []byte(summaryOut), summaryErr
-			}
-		}
-		return nil, nil
-	}
-	m.createTempFile = func(dir, pattern string) (*os.File, error) {
+func setupCoverageMock(t *testing.T, m *devManager, executeErr error, summaryOut string, tempErr error, noGoFiles bool) {
+	runner := m.runner.(*mockGoRunner)
+	runner.runTestsWithCoverageFunc = func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
 		if tempErr != nil {
-			return nil, tempErr
+			return toolchain.CoverageReport{}, tempErr
 		}
-		f, err := os.CreateTemp(dir, pattern)
-		if err == nil {
-			t.Cleanup(func() { _ = os.Remove(f.Name()) })
+		if executeErr != nil {
+			return toolchain.CoverageReport{}, executeErr
 		}
-		return f, err
+		if noGoFiles {
+			return toolchain.CoverageReport{NoGoFiles: true}, nil
+		}
+		return toolchain.CoverageReport{SummaryOutput: summaryOut}, nil
 	}
 }
 
@@ -167,60 +181,42 @@ func TestGetCoverage(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
-		executeOut string
 		executeErr error
 		summaryOut string
-		summaryErr error
 		tempErr    error
+		noGoFiles  bool
 		wantSubstr string
 		wantErr    bool
 	}{
 		{
 			name:       "Success with 100% coverage",
-			executeOut: "ok  	github.com/gosharplite/tell-me-go	0.100s	coverage: 100.0% of statements",
 			summaryOut: "total:			(statements)		100.0%",
 			wantSubstr: "100.0%",
 		},
 		{
 			name:       "Success with partial coverage",
-			executeOut: "ok  	github.com/gosharplite/tell-me-go	0.100s	coverage: 85.0% of statements",
 			summaryOut: "github.com/gosharplite/tell-me-go/internal/tools/go:35:	Register		100.0%\ntotal:			(statements)		85.0%",
 			wantSubstr: "85.0%",
 		},
 		{
 			name:       "Failure due to test errors",
-			executeOut: "FAIL",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "Coverage test failed or found issues",
-			wantErr:    false,
-		},
-		{
-			name:       "Failure due to missing package",
-			executeOut: "can't load package",
-			executeErr: errors.New("exit status 1"),
-			wantSubstr: "Coverage test failed or found issues",
-			wantErr:    false,
-		},
-		{
-			name:       "Summary failure",
-			executeOut: "ok",
-			summaryErr: errors.New("failed to run go tool cover"),
-			wantSubstr: "Coverage summary execution failed",
+			wantSubstr: "coverage test failed",
 			wantErr:    true,
 		},
 		{
-			name:       "Temp file failure",
-			tempErr:    errors.New("failed to create temp file"),
-			wantSubstr: "failed to create temp coverage file",
-			wantErr:    true,
+			name:       "Failure due to no Go files",
+			noGoFiles:  true,
+			wantSubstr: "0.0% coverage (No Go files found in target path to test)",
+			wantErr:    false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, executor, _ := setupDevManager(t)
-			setupCoverageMock(t, m, executor, tt.executeOut, tt.executeErr, tt.summaryOut, tt.summaryErr, tt.tempErr)
+			m, _, _ := setupDevManager(t)
+			setupCoverageMock(t, m, tt.executeErr, tt.summaryOut, tt.tempErr, tt.noGoFiles)
 
 			res, err := m.getCoverage(context.Background(), nil, nil)
 			actualErr := err
@@ -254,9 +250,9 @@ func TestGoTidy(t *testing.T) {
 
 func TestRunBenchmark(t *testing.T) {
 	t.Parallel()
-	m, executor, _ := setupDevManager(t)
-	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return []byte("BenchmarkResult"), nil
+	m, _, _ := setupDevManager(t)
+	m.runner.(*mockGoRunner).runBenchmarksFunc = func(ctx context.Context, path string, benchRegex string) (string, error) {
+		return "BenchmarkResult", nil
 	}
 
 	res, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "./...", "bench": "BenchmarkFoo"}, nil)
@@ -402,17 +398,51 @@ func TestGoTidy_Errors(t *testing.T) {
 
 func TestRunBenchmark_Error(t *testing.T) {
 	t.Parallel()
-	m, executor, _ := setupDevManager(t)
-	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return []byte("error output"), errors.New("benchmark failed")
+	tests := []struct {
+		name       string
+		executeOut string
+		executeErr error
+		wantSubstr string
+		wantErr    bool
+	}{
+		{
+			name:       "General failure",
+			executeOut: "error output",
+			executeErr: errors.New("benchmark failed"),
+			wantSubstr: "benchmark failed or found issues:",
+			wantErr:    true,
+		},
+		{
+			name:       "No Go files",
+			executeOut: "No Go files found in target path to benchmark",
+			executeErr: nil,
+			wantSubstr: "No Go files found in target path to benchmark",
+			wantErr:    false,
+		},
 	}
 
-	res, err := m.runBenchmark(context.Background(), nil, nil)
-	if err != nil {
-		t.Errorf("expected no error, got %v", err)
-	}
-	if !strings.Contains(res.Text, "Benchmark failed or found issues:") {
-		t.Errorf("expected error in text, got %q", res.Text)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, _, _ := setupDevManager(t)
+			m.runner.(*mockGoRunner).runBenchmarksFunc = func(ctx context.Context, path string, benchRegex string) (string, error) {
+				return tt.executeOut, tt.executeErr
+			}
+
+			res, err := m.runBenchmark(context.Background(), nil, nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("expected wantErr=%v, got err=%v", tt.wantErr, err)
+			}
+			if tt.wantErr {
+				if !strings.Contains(err.Error(), tt.wantSubstr) {
+					t.Errorf("expected %q in error, got %q", tt.wantSubstr, err.Error())
+				}
+			} else {
+				if !strings.Contains(res.Text, tt.wantSubstr) {
+					t.Errorf("expected %q in text, got %q", tt.wantSubstr, res.Text)
+				}
+			}
+		})
 	}
 }
 
@@ -498,7 +528,8 @@ func TestNewDevManager(t *testing.T) {
 	interactor := &security.MockInteractor{}
 	sm := security.NewSecurityManager(interactor)
 	validator := security.NewCommandValidator(sm, interactor)
-	m := newDevManager(sm, validator)
+	runner := &mockGoRunner{}
+	m := newDevManager(sm, validator, runner)
 	assert.NotNil(t, m)
 	assert.NotNil(t, m.executor)
 }
@@ -740,7 +771,7 @@ func TestSecurityRemediation(t *testing.T) {
 func TestDevManager_Options(t *testing.T) {
 	t.Parallel()
 	customInterval := 42 * time.Second
-	m := newDevManager(nil, nil, withHeartbeatInterval(customInterval))
+	m := newDevManager(nil, nil, nil, withHeartbeatInterval(customInterval))
 
 	if m.heartbeatInterval != customInterval {
 		t.Errorf("expected interval %v, got %v", customInterval, m.heartbeatInterval)

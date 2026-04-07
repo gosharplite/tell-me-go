@@ -10,6 +10,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
 // Analyzer interfaces for segregation and testing
@@ -83,7 +84,12 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 		Events:   bus,
 	}
 
-	m.Health = &healthManager{SP: sp, Ana: m, Exec: executor}
+	m.Health = &healthManager{
+		SP:     sp,
+		Ana:    m,
+		Exec:   executor,
+		Runner: toolchain.NewGoRunner(executor),
+	}
 
 	return m
 }

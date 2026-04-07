@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
 type devOption func(*devManager)
@@ -30,6 +31,7 @@ type devManager struct {
 	sm                devSecurity
 	validator         domain_security.CommandValidator
 	executor          executor
+	runner            toolchain.GoRunner
 	createTempFile    func(dir, pattern string) (*os.File, error)
 	heartbeatInterval time.Duration
 }
@@ -196,18 +198,9 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
 	}
 
-	// Create temp file FIRST
-	f, err := m.createTempFile("", "coverage-*.out")
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create temp coverage file: %w", err)
-	}
-	tempName := f.Name()
-	_ = f.Close()
-	defer func() { _ = os.Remove(tempName) }()
-
-	// Now format the command with the actual temp file path
-	command := fmt.Sprintf("go test -coverprofile=%s -- %s", tempName, path)
-	approved, err := m.authorizeAction(ctx, "Test Coverage", command, "Getting test coverage summary (redirected to temporary file)")
+	// Prompt user for authorization
+	command := fmt.Sprintf("Run coverage on %s", path)
+	approved, err := m.authorizeAction(ctx, "Test Coverage", command, "Getting test coverage summary")
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -219,20 +212,17 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 
 	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
-	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, "--", path)
+	report, err := m.runner.RunTestsWithCoverage(ctx, path, false, "")
 	if err != nil {
-		res := formatExecutionResult("Coverage test", out, err, 50, "")
-		if res.Error != nil {
-			return tools.ToolResult{}, res.Error
-		}
-		return res, nil
+		return tools.ToolResult{}, fmt.Errorf("coverage test failed: %w", err)
 	}
 
-	// Get summary
-	summaryOut, err := m.executor.Execute(ctx, "go", "tool", "cover", "-func="+tempName)
-	res := formatExecutionResult("Coverage summary", summaryOut, err, 100, "")
-	if res.Error != nil {
-		return tools.ToolResult{}, res.Error
+	if report.NoGoFiles {
+		return tools.ToolResult{Text: "0.0% coverage (No Go files found in target path to test)"}, nil
+	}
+
+	res := tools.ToolResult{
+		Text: stringsutil.TruncateOutput(report.SummaryOutput, 100),
 	}
 	return res, nil
 }
@@ -297,24 +287,29 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
 	}
 
-	fullCmd := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ -- %s", bench, path)
-	argsList := []string{"test", "-bench=" + bench, "-benchmem", "-run=^$", "--", path}
-
-	out, err := m.executeWithHeartbeat(
-		ctx,
-		"run_benchmark",
-		fullCmd,
-		"Running project benchmarks",
-		"go",
-		argsList,
-		hb,
-	)
-
-	if errors.Is(err, tools.ErrUserDeclined) {
-		return tools.ToolResult{Text: "Action denied by user."}, err
+	fullCmd := fmt.Sprintf("Run benchmarks matching %s in %s", bench, path)
+	approved, err := m.authorizeAction(ctx, "run_benchmark", fullCmd, "Running project benchmarks")
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
-	res := formatExecutionResult("Benchmark", out, err, 100, "Benchmark completed.")
+	m.logToolAction("Running run_benchmark: %s", fullCmd)
+
+	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
+
+	outStr, err := m.runner.RunBenchmarks(ctx, path, bench)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("benchmark failed or found issues: %w", err)
+	}
+
+	if strings.Contains(outStr, "No Go files found in target path to benchmark") {
+		return tools.ToolResult{Text: outStr}, nil
+	}
+
+	res := formatExecutionResult("Benchmark", []byte(outStr), nil, 100, "Benchmark completed.")
 	if res.Error != nil {
 		return tools.ToolResult{}, res.Error
 	}
@@ -416,11 +411,12 @@ func (m *devManager) executeWithHeartbeat(
 	return m.executor.Execute(ctx, command, args...)
 }
 
-func newDevManager(sm devSecurity, validator domain_security.CommandValidator, opts ...devOption) *devManager {
+func newDevManager(sm devSecurity, validator domain_security.CommandValidator, runner toolchain.GoRunner, opts ...devOption) *devManager {
 	m := &devManager{
 		sm:                sm,
 		validator:         validator,
 		executor:          &realExecutor{},
+		runner:            runner,
 		createTempFile:    os.CreateTemp,
 		heartbeatInterval: 2 * time.Second, // Default
 	}
