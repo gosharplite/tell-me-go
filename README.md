@@ -177,7 +177,7 @@ alias bb='b -b'
 # 4. Show last 10 messages
 alias bl='b -l 10'
 # 5. Start fresh session
-alias b-new='b -new'
+alias b-new='b --new'
 # 6. Maintenance: Update and install
 alias b-install='(cd $TELL_ME_HOME && git pull && go install ./cmd/tell-me-go)'
 ```
