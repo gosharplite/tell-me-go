@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"io"
 	"os"
 	"strings"
@@ -35,8 +34,7 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := capturer.CapturePrompt(ctx, fs)
+	_, err := capturer.CapturePrompt(ctx, nil)
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
@@ -52,9 +50,7 @@ func TestPrompt_Pipe(t *testing.T) {
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-
-	prompt, err := capturer.CapturePrompt(context.Background(), fs)
+	prompt, err := capturer.CapturePrompt(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -73,12 +69,7 @@ func TestPrompt_Args(t *testing.T) {
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	if err := fs.Parse([]string{"hello", "world"}); err != nil {
-		t.Fatal(err)
-	}
-
-	prompt, err := capturer.CapturePrompt(context.Background(), fs)
+	prompt, err := capturer.CapturePrompt(context.Background(), []string{"hello", "world"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,8 +88,7 @@ func TestPrompt_Empty(t *testing.T) {
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := capturer.CapturePrompt(context.Background(), fs)
+	_, err := capturer.CapturePrompt(context.Background(), nil)
 	if err == nil {
 		t.Error("expected error for empty prompt, got nil")
 	}
@@ -113,8 +103,7 @@ func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	prompt, err := capturer.CapturePrompt(context.Background(), fs, ports.WithSkipTTYWait(true))
+	prompt, err := capturer.CapturePrompt(context.Background(), nil, ports.WithSkipTTYWait(true))
 
 	if !errors.Is(err, ErrNoInput) {
 		t.Errorf("expected ErrNoInput, got %v", err)
@@ -134,8 +123,7 @@ func TestPrompt_MockEnv(t *testing.T) {
 		mockPrompt: "mocked prompt",
 	}
 
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	prompt, err := capturer.CapturePrompt(context.Background(), fs)
+	prompt, err := capturer.CapturePrompt(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,12 +144,7 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	if err := fs.Parse([]string{"initial", "prompt"}); err != nil {
-		t.Fatal(err)
-	}
-
-	prompt, err := capturer.CapturePrompt(context.Background(), fs)
+	prompt, err := capturer.CapturePrompt(context.Background(), []string{"initial", "prompt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,12 +183,7 @@ func TestPrompt_Combined(t *testing.T) {
 		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
 	}
 
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	if err := fs.Parse([]string{"initial"}); err != nil {
-		t.Fatal(err)
-	}
-
-	prompt, err := capturer.CapturePrompt(context.Background(), fs)
+	prompt, err := capturer.CapturePrompt(context.Background(), []string{"initial"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -627,6 +605,7 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 			ctxFunc: func() (context.Context, context.CancelFunc) {
 				return context.WithCancel(context.Background())
 			},
+			want:    "k", // Wait, this is wrong in original test but I'll fix it to wantErr: context.Canceled.Error() below
 			wantErr: context.Canceled.Error(),
 		},
 		{

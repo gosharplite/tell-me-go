@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -76,13 +75,14 @@ func (c *capturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
-func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (c *capturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	options := &ports.CaptureOptions{}
 	for _, opt := range opts {
 		opt(options)
 	}
 
-	prompt := strings.Join(fs.Args(), " ")
+	prompt := strings.Join(args, " ")
+
 	if c.mockPrompt != "" {
 		prompt = c.mockPrompt
 	}

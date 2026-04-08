@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/go-viper/mapstructure/v2"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"gopkg.in/yaml.v3"
+	"github.com/spf13/viper"
 )
 
 // YAMLConfigLoader implements domain_config.ConfigLoader.
@@ -23,20 +25,46 @@ func (l *YAMLConfigLoader) Load(path string) (*domain_config.Config, error) {
 
 // load reads and parses the configuration file.
 func load(path string) (*domain_config.Config, error) {
+	v := viper.New()
+
+	// 1. Read the file manually to preserve ${VAR} expansion
 	data, err := os.ReadFile(path)
-	if err != nil {
+	if err == nil {
+		expanded := os.ExpandEnv(string(data))
+		v.SetConfigType("yaml")
+		if err := v.ReadConfig(strings.NewReader(expanded)); err != nil {
+			return nil, fmt.Errorf("viper failed to read config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		// Fail on real errors (like permissions), but allow missing file (12-Factor App)
 		return nil, err
 	}
 
-	var cfg domain_config.Config
-	setDefaults(&cfg)
+	// 2. Set Environment Overrides (Standardized to TELL_ME_)
+	v.SetEnvPrefix("TELL_ME")
+	// Replace dots and dashes so TELL_ME_PROVIDERS_GOOGLE_API_KEY maps to Providers.Google.APIKey
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	v.AutomaticEnv()
 
-	expanded := os.ExpandEnv(string(data))
-	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal expanded yaml: %w", err)
+	// 3. Bind Legacy GOSHARP_* variables for backward compatibility
+	_ = v.BindEnv("MODE", "GOSHARP_MODE", "TELL_ME_MODE")
+	_ = v.BindEnv("PERSON", "GOSHARP_PERSON", "TELL_ME_PERSON")
+	_ = v.BindEnv("AIMODEL", "GOSHARP_AIMODEL", "TELL_ME_AIMODEL")
+	_ = v.BindEnv("AIURL", "GOSHARP_AIURL", "TELL_ME_AIURL")
+
+	// 4. Initialize Domain Struct and Defaults
+	var cfg domain_config.Config
+	setDefaults(&cfg) // Populate struct defaults first so Viper only overwrites what it finds
+
+	// 5. Unmarshal using `yaml` tags to avoid modifying domain structs
+	err = v.Unmarshal(&cfg, func(c *mapstructure.DecoderConfig) {
+		c.TagName = "yaml" // CRITICAL: Tell Viper to read the yaml tags
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal viper config: %w", err)
 	}
 
-	applyEnvironmentOverrides(&cfg)
+	// 6. Execute legacy fallback synchronization
 	syncLegacyFields(&cfg)
 
 	return &cfg, nil
@@ -51,21 +79,6 @@ func setDefaults(cfg *domain_config.Config) {
 	cfg.HTTPTimeoutSeconds = domain_config.DefaultHTTPTimeoutSeconds
 	cfg.ShowThoughts = true
 	cfg.ShowTools = true
-}
-
-func applyEnvironmentOverrides(cfg *domain_config.Config) {
-	if val := os.Getenv("GOSHARP_MODE"); val != "" {
-		cfg.Mode = val
-	}
-	if val := os.Getenv("GOSHARP_PERSON"); val != "" {
-		cfg.Person = val
-	}
-	if val := os.Getenv("GOSHARP_AIMODEL"); val != "" {
-		cfg.Model = val
-	}
-	if val := os.Getenv("GOSHARP_AIURL"); val != "" {
-		cfg.URL = val
-	}
 }
 
 func syncLegacyFields(cfg *domain_config.Config) {

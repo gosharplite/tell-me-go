@@ -6,7 +6,6 @@ package session
 import (
 	"context"
 	"crypto/rand"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -136,9 +135,9 @@ func (m *mockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
-	args := m.Called(ctx, fs, opts)
-	return args.String(0), args.Error(1)
+func (m *mockCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
+	callArgs := m.Called(ctx, args, opts)
+	return callArgs.String(0), callArgs.Error(1)
 }
 
 func (m *mockCapturer) Close(ctx context.Context) error {
@@ -752,10 +751,10 @@ func (m *behaviorMockCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	m.tracker.record("Capturer.CapturePrompt")
-	args := m.Called(ctx, fs, opts)
-	return args.String(0), args.Error(1)
+	callArgs := m.Called(ctx, args, opts)
+	return callArgs.String(0), callArgs.Error(1)
 }
 
 func (m *behaviorMockCapturer) Close(ctx context.Context) error {

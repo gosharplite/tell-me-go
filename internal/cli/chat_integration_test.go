@@ -21,6 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/spf13/cobra"
 )
 
 type integrationMockChatter struct {
@@ -75,7 +76,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		infra_persistence.NewOSFileSystem(),
 	)
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader("hello"),
 		Stdout:       &stdout,
@@ -85,11 +86,15 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		Bootstrapper: container,
 		Loader:       loader,
 	}
+	cmd := newChatCommand(cmdCtx)
+	root := &cobra.Command{}
+	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	root.AddCommand(cmd)
 
 	ctx := stdctx.Background()
-	args := []string{"chat", "-c", cfgPath, "-new", "hello"}
+	root.SetArgs([]string{"chat", "-c", cfgPath, "--new", "hello"})
 
-	if err := cmd.Execute(ctx, args); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
 		t.Fatalf("Execute failed: %v\nStderr: %s", err, stderr.String())
 	}
 

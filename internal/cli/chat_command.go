@@ -6,10 +6,8 @@ package cli
 import (
 	stdctx "context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -19,16 +17,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
-
-// errExitZero signals that the command should exit with code 0 immediately.
-var errExitZero = errors.New("exit zero")
-
-func init() {
-	register("chat", func(ctx *context) command {
-		return newChatCommand(ctx)
-	})
-}
 
 // chatCommand implements the main chat command.
 type chatCommand struct {
@@ -48,7 +39,6 @@ type chatCommand struct {
 type cliOptions struct {
 	configPath   string
 	newSession   bool
-	showVersion  bool
 	showTurnsLog bool
 	lastN        int
 	backN        int
@@ -57,9 +47,9 @@ type cliOptions struct {
 	retry        bool
 }
 
-// newChatCommand creates a new Chat Command with default factories.
-func newChatCommand(ctx *context) *chatCommand {
-	return &chatCommand{
+// newChatCommand creates a new Chat Command as a Cobra command.
+func newChatCommand(ctx *context) *cobra.Command {
+	c := &chatCommand{
 		Version:      ctx.Version,
 		Stdin:        ctx.Stdin,
 		Stdout:       ctx.Stdout,
@@ -72,18 +62,39 @@ func newChatCommand(ctx *context) *chatCommand {
 		MockPrompt:   ctx.MockPrompt,
 		MockAnswer:   ctx.MockAnswer,
 	}
-}
 
-// Execute runs the chat command logic.
-func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
-	opts, fs, err := c.resolveOptions(args)
-	if err != nil {
-		if errors.Is(err, errExitZero) {
-			return nil
-		}
-		return err
+	opts := &cliOptions{}
+
+	cmd := &cobra.Command{
+		Use:   "chat [prompt]",
+		Short: "Start a chat session (Default)",
+		Long:  `The chat command initiates a session with the AI assistant. You can provide a prompt directly as an argument or enter an interactive session.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			configPath, _ := cmd.Flags().GetString("config")
+			opts.configPath = configPath
+			return c.execute(cmd.Context(), cmd.Flags(), opts, args)
+		},
 	}
 
+	c.addFlags(cmd.Flags(), opts)
+
+	return cmd
+}
+
+func (c *chatCommand) addFlags(fs *pflag.FlagSet, opts *cliOptions) {
+	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
+	fs.BoolVarP(&opts.showTurnsLog, "turns", "t", false, "Print the contents of the current session's turns.log and exit")
+	fs.IntVarP(&opts.lastN, "last", "l", 0, "Show the last N messages from history")
+	fs.IntVarP(&opts.backN, "back", "b", 0, "Go back / delete the last N turns from history")
+	fs.BoolVarP(&opts.rawOutput, "raw", "r", false, "Show raw output (without markdown rendering)")
+	fs.BoolVarP(&opts.tuiPrompt, "interactive", "i", false, "Enable interactive TUI prompt with suggestions")
+	fs.BoolVar(&opts.tuiPrompt, "tui", false, "Enable interactive TUI prompt with suggestions")
+	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
+}
+
+// execute runs the chat command logic.
+func (c *chatCommand) execute(ctx stdctx.Context, fs *pflag.FlagSet, opts *cliOptions, args []string) error {
+	// 1. Determine if we are just showing logs
 	if opts.showTurnsLog {
 		cfg, err := c.Loader.Load(opts.configPath)
 		if err != nil {
@@ -93,7 +104,9 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return c.ChatService.StreamTurnsLog(ctx, cfg, c.Stdout)
 	}
 
+	// 2. Handle Retry Flow
 	var prompt string
+	var err error
 	if opts.retry {
 		var abort bool
 		prompt, opts.backN, abort, err = c.handleRetryFlow(ctx, opts)
@@ -105,12 +118,22 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		}
 	}
 
-	// 3. Invoking a Use Case / Service interface
+	// 3. Load config and apply TUI override
 	cfg, err := c.Loader.Load(opts.configPath)
 	if err != nil {
 		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 	}
 
+	if opts.tuiPrompt {
+		cfg.UseTUIPrompt = true
+	}
+
+	// Only auto-enable TUI from config if no other actions are requested
+	if cfg != nil && cfg.UseTUIPrompt && len(args) == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
+		opts.tuiPrompt = true
+	}
+
+	// 4. Setup Capturer
 	capturer, cleanup := c.buildCapturer(ctx, cfg, opts)
 	defer func() {
 		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
@@ -118,14 +141,19 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		_ = cleanup(shutdownCtx)
 	}()
 
+	// 5. Capture Prompt (if not retry)
 	if !opts.retry {
-		prompt, err = c.capturePrompt(ctx, fs, opts, capturer)
+		captureOpts := c.prepareCaptureOptions(opts)
+		prompt, err = capturer.CapturePrompt(ctx, args, captureOpts...)
 		if err != nil {
-			return err
+			if !errors.Is(err, ui.ErrNoInput) {
+				return err
+			}
+			// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
 		}
 	}
 
-	// Delegate all business logic and orchestration to the ChatService
+	// 6. Delegate business logic to ChatService
 	return c.ChatService.ProcessMessage(ctx, cfg, agent.ChatOptions{
 		ConfigPath:   opts.configPath,
 		NewSession:   opts.newSession,
@@ -135,26 +163,6 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		UseTUIPrompt: opts.tuiPrompt,
 		Prompt:       prompt,
 	}, capturer)
-}
-
-func (c *chatCommand) resolveOptions(args []string) (*cliOptions, *flag.FlagSet, error) {
-	opts, fs, err := c.parseConfiguration(args)
-	if err != nil {
-		return nil, nil, err
-	}
-	if opts.showVersion {
-		_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
-		return nil, nil, errExitZero
-	}
-
-	// Configuration Merge
-	cfg, _ := c.Loader.Load(opts.configPath)
-	// Only auto-enable TUI from config if no other actions are requested
-	if cfg != nil && cfg.UseTUIPrompt && fs.NArg() == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
-		opts.tuiPrompt = true
-	}
-
-	return opts, fs, nil
 }
 
 func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) (agent.CapturerInteractor, func(stdctx.Context) error) {
@@ -227,17 +235,18 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	return capturer, func(stdctx.Context) error { return nil }
 }
 
-func (c *chatCommand) capturePrompt(ctx stdctx.Context, fs *flag.FlagSet, opts *cliOptions, capturer agent.CapturerInteractor) (string, error) {
-	captureOpts := c.prepareCaptureOptions(opts)
-	prompt, err := capturer.CapturePrompt(ctx, fs, captureOpts...)
-	if err != nil {
-		if !errors.Is(err, ui.ErrNoInput) {
-			return "", err
-		}
-		// Continue with empty prompt if we were told to skip TTY wait (e.g. -l or -b was used)
-		return "", nil
+func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []ports.CaptureOption {
+	var captureOpts []ports.CaptureOption
+	if opts.lastN > 0 || opts.backN > 0 {
+		captureOpts = append(captureOpts, ports.WithSkipTTYWait(true))
 	}
-	return prompt, nil
+	if opts.rawOutput {
+		captureOpts = append(captureOpts, ports.WithRaw(true))
+	}
+	if opts.tuiPrompt {
+		captureOpts = append(captureOpts, ports.WithTUIPrompt(true))
+	}
+	return captureOpts
 }
 
 func (c *chatCommand) handleRetryFlow(ctx stdctx.Context, opts *cliOptions) (prompt string, backN int, abort bool, err error) {
@@ -266,70 +275,4 @@ func (c *chatCommand) handleRetryFlow(ctx stdctx.Context, opts *cliOptions) (pro
 		return "", 0, true, nil // User aborted
 	}
 	return lastMsg, turns, false, nil
-}
-
-func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []ports.CaptureOption {
-	var captureOpts []ports.CaptureOption
-	if opts.lastN > 0 || opts.backN > 0 {
-		captureOpts = append(captureOpts, ports.WithSkipTTYWait(true))
-	}
-	if opts.rawOutput {
-		captureOpts = append(captureOpts, ports.WithRaw(true))
-	}
-	if opts.tuiPrompt {
-		captureOpts = append(captureOpts, ports.WithTUIPrompt(true))
-	}
-	return captureOpts
-}
-
-func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *flag.FlagSet, error) {
-	args = c.sanitizeArgs(args)
-	var flagArgs []string
-	if len(args) > 0 {
-		flagArgs = args[1:]
-	}
-
-	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
-	fs.SetOutput(c.Stderr)
-	opts := &cliOptions{}
-	fs.StringVar(&opts.configPath, "c", "configs/assistant.yaml", "Path to the configuration file")
-	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
-	fs.BoolVar(&opts.showVersion, "v", false, "Show version information")
-	fs.BoolVar(&opts.showTurnsLog, "t", false, "Print the contents of the current session's turns.log and exit")
-	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")
-	fs.IntVar(&opts.backN, "b", 0, "Go back / delete the last N turns from history")
-	fs.BoolVar(&opts.rawOutput, "r", false, "Show raw output (without markdown rendering)")
-	fs.BoolVar(&opts.tuiPrompt, "i", false, "Enable interactive TUI prompt with suggestions")
-	fs.BoolVar(&opts.tuiPrompt, "tui", false, "Enable interactive TUI prompt with suggestions")
-	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
-
-	if err := fs.Parse(flagArgs); err != nil {
-		return nil, nil, err
-	}
-	return opts, fs, nil
-}
-
-func (c *chatCommand) sanitizeArgs(args []string) []string {
-	if len(args) < 2 {
-		return args
-	}
-	processed := args[1:]
-	for i, arg := range processed {
-		if arg == "-l" || arg == "-b" {
-			isNextNum := false
-			if i+1 < len(processed) {
-				if _, err := strconv.Atoi(processed[i+1]); err == nil {
-					isNextNum = true
-				}
-			}
-			if !isNextNum {
-				newArgs := make([]string, 0, len(args)+1)
-				newArgs = append(newArgs, args[:i+2]...)
-				newArgs = append(newArgs, "1")
-				newArgs = append(newArgs, args[i+2:]...)
-				return newArgs
-			}
-		}
-	}
-	return args
 }

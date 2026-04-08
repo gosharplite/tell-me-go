@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"io"
 	"log/slog"
 	"os"
@@ -210,9 +209,9 @@ func (m *mockServiceCapturer) IsTTY(v any) bool {
 	return args.Bool(0)
 }
 
-func (m *mockServiceCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
-	args := m.Called(ctx, fs, opts)
-	return args.String(0), args.Error(1)
+func (m *mockServiceCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
+	callArgs := m.Called(ctx, args, opts)
+	return callArgs.String(0), callArgs.Error(1)
 }
 
 func (m *mockServiceCapturer) Confirm(ctx context.Context, message string) (bool, error) {

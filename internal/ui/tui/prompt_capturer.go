@@ -5,7 +5,6 @@ package tui
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -64,7 +63,7 @@ func (c *promptCapturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the prompt, using the TUI if requested.
-func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (c *promptCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	options := &ports.CaptureOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -75,8 +74,8 @@ func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, op
 	// 2. Not a TTY
 	// 3. Positional arguments are provided (e.g. tell-me-go "hello")
 	// 4. History command is provided (SkipTTYWait is true)
-	if !options.UseTUIPrompt || !c.IsTTY(os.Stdin) || (fs != nil && fs.NArg() > 0) || options.SkipTTYWait {
-		return c.base.CapturePrompt(ctx, fs, opts...)
+	if !options.UseTUIPrompt || !c.IsTTY(os.Stdin) || len(args) > 0 || options.SkipTTYWait {
+		return c.base.CapturePrompt(ctx, args, opts...)
 	}
 
 	// Initialize TUI Model

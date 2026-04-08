@@ -10,11 +10,15 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -105,24 +109,6 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		}()
 	}
 
-	// Determine which command to run
-	cmdName := "chat"
-	for _, arg := range args {
-		if arg == "browse" {
-			cmdName = "browse"
-			break
-		}
-		if arg == "-v" || arg == "--version" {
-			cmdName = "version"
-			break
-		}
-	}
-
-	factory, err := get(cmdName)
-	if err != nil {
-		return err
-	}
-
 	cmdCtx := &context{
 		Version:      a.Version,
 		Stdin:        a.Stdin,
@@ -137,9 +123,63 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		MockAnswer:   a.mockAnswer,
 	}
 
-	cmd := factory(cmdCtx)
+	chatCmd := newChatCommand(cmdCtx)
+	browseCmd := newBrowseCommand(cmdCtx)
+	envCmd := newEnvCommand(cmdCtx)
+	versionCmd := newVersionCommand(cmdCtx)
 
-	if err := cmd.Execute(ctx, args); err != nil {
+	rootCmd := &cobra.Command{
+		Use:   "tell-me-go [prompt]",
+		Short: "AI-powered CLI assistant",
+		Long:  `tell-me-go is a CLI tool that lets you interact with LLMs directly from your terminal.`,
+		// The root command behaves like 'chat' if no subcommand matches
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE:          chatCmd.RunE,
+		Version:       a.Version,
+		Args:          cobra.ArbitraryArgs,
+	}
+
+	rootCmd.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+
+	rootCmd.SetOut(a.Stdout)
+	rootCmd.SetErr(a.Stderr)
+
+	// Share chat flags with the root command
+	chatCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		rootCmd.Flags().AddFlag(f)
+	})
+
+	rootCmd.AddCommand(chatCmd, browseCmd, envCmd, versionCmd)
+
+	// Since App.Run receives os.Args, we sanitize them first
+	args = sanitizeArgs(args)
+
+	// Since App.Run receives os.Args, we skip the first element (binary name)
+	actualArgs := []string{}
+	if len(args) > 1 {
+		actualArgs = args[1:]
+		if len(actualArgs) > 0 {
+			// Force initialization of default commands (help, completion) so they are in rootCmd.Commands()
+			rootCmd.InitDefaultHelpCmd()
+			rootCmd.InitDefaultCompletionCmd()
+
+			isSubcommand := false
+			for _, sub := range rootCmd.Commands() {
+				if sub.Name() == actualArgs[0] || sub.HasAlias(actualArgs[0]) {
+					isSubcommand = true
+					break
+				}
+			}
+			// If not a subcommand and not a flag, default to 'chat'
+			if !isSubcommand && !strings.HasPrefix(actualArgs[0], "-") {
+				actualArgs = append([]string{"chat"}, actualArgs...)
+			}
+		}
+	}
+	rootCmd.SetArgs(actualArgs)
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		if errors.Is(err, stdctx.Canceled) {
 			_, _ = fmt.Fprintln(a.Stderr)
 			return nil
@@ -147,4 +187,31 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		return err
 	}
 	return nil
+}
+
+func sanitizeArgs(args []string) []string {
+	if len(args) < 2 {
+		return args
+	}
+	processed := args[1:]
+	for i, arg := range processed {
+		// If we encounter a short or long flag that typically takes an integer
+		if arg == "-l" || arg == "--last" || arg == "-b" || arg == "--back" {
+			isNextNum := false
+			if i+1 < len(processed) {
+				if _, err := strconv.Atoi(processed[i+1]); err == nil {
+					isNextNum = true
+				}
+			}
+			// If the next argument is NOT a number, inject "1" as the value
+			if !isNextNum {
+				newArgs := make([]string, 0, len(args)+1)
+				newArgs = append(newArgs, args[:i+2]...)
+				newArgs = append(newArgs, "1")
+				newArgs = append(newArgs, args[i+2:]...)
+				return newArgs
+			}
+		}
+	}
+	return args
 }

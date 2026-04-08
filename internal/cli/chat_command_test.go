@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -29,7 +30,8 @@ type mockChatService struct {
 func (m *mockChatService) ProcessMessage(ctx stdctx.Context, cfg *config.Config, opts agent.ChatOptions, capturer agent.CapturerInteractor) error {
 	m.chatCalled = true
 	m.lastParams = opts
-	return nil
+	args := m.Called(ctx, cfg, opts, capturer)
+	return args.Error(0)
 }
 
 func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, hManager ports.HistoryManager) (string, int, error) {
@@ -148,13 +150,15 @@ func (m *mockSM) TerminalLock()                                           {}
 func (m *mockSM) TerminalUnlock()                                         {}
 func (m *mockSM) Close() error                                            { return nil }
 
-func setupMocks() (*mockBootstrapper, *mockLoader) {
+func setupMocks() (*mockBootstrapper, *mockLoader, *mockChatService) {
 	mb := &mockBootstrapper{}
 	ml := &mockLoader{}
+	ms := &mockChatService{}
 	ml.On("Load", mock.Anything).Return(&config.Config{}, nil).Maybe()
 	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(&mockSuggestionService{}, nil).Maybe()
-	return mb, ml
+	ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	return mb, ml, ms
 }
 
 func TestChatCommand_Execute(t *testing.T) {
@@ -162,10 +166,9 @@ func TestChatCommand_Execute(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
@@ -177,10 +180,7 @@ func TestChatCommand_Execute(t *testing.T) {
 		MockPrompt:   "hello",
 	}
 
-	ctx := stdctx.Background()
-	args := []string{"chat", "hello"}
-
-	err := cmd.Execute(ctx, args)
+	err := executeChatCommand(cmdCtx, []string{"hello"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -199,10 +199,9 @@ func TestChatCommand_Execute_LastN(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
@@ -213,10 +212,7 @@ func TestChatCommand_Execute_LastN(t *testing.T) {
 		Loader:       ml,
 	}
 
-	ctx := stdctx.Background()
-	args := []string{"chat", "-l", "5"}
-
-	err := cmd.Execute(ctx, args)
+	err := executeChatCommand(cmdCtx, []string{"-l=5", "hello"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -235,10 +231,9 @@ func TestChatCommand_Execute_BackN(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
@@ -249,10 +244,7 @@ func TestChatCommand_Execute_BackN(t *testing.T) {
 		Loader:       ml,
 	}
 
-	ctx := stdctx.Background()
-	args := []string{"chat", "-b", "2"}
-
-	err := cmd.Execute(ctx, args)
+	err := executeChatCommand(cmdCtx, []string{"-b=2", "hello"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -271,10 +263,9 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader("y\n"),
 		Stdout:       &stdout,
@@ -285,10 +276,7 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 		Loader:       ml,
 	}
 
-	ctx := stdctx.Background()
-	args := []string{"chat", "-retry"}
-
-	err := cmd.Execute(ctx, args)
+	err := executeChatCommand(cmdCtx, []string{"--retry"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -315,10 +303,9 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader("n\n"),
 		Stdout:       &stdout,
@@ -329,10 +316,7 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 		Loader:       ml,
 	}
 
-	ctx := stdctx.Background()
-	args := []string{"chat", "-retry"}
-
-	err := cmd.Execute(ctx, args)
+	err := executeChatCommand(cmdCtx, []string{"--retry"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -359,10 +343,9 @@ func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 		setInteractorCb: func() { setInteractorCalled = true },
 	}
 
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader("hello\n"),
 		Stdout:       &stdout,
@@ -374,9 +357,7 @@ func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 		HomeDir:      t.TempDir(),
 	}
 
-	ctx := stdctx.Background()
-	// Pass --tui flag
-	err := cmd.Execute(ctx, []string{"chat", "--tui"})
+	err := executeChatCommand(cmdCtx, []string{"--tui"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -402,13 +383,12 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 	mb.ExpectedCalls = nil
 	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(nil, errors.New("initialization failed")).Maybe()
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader("fallback test\n"),
 		Stdout:       &stdout,
@@ -420,9 +400,7 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 		HomeDir:      t.TempDir(),
 	}
 
-	ctx := stdctx.Background()
-	// Pass --tui flag to trigger suggestion service initialization
-	err := cmd.Execute(ctx, []string{"chat", "--tui"})
+	err := executeChatCommand(cmdCtx, []string{"--tui"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -445,8 +423,7 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 
 	// Setup Mocks
 	ml.ExpectedCalls = nil
@@ -457,7 +434,7 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 		_, _ = out.Write([]byte("turn 1: hello\nturn 2: world"))
 	})
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
@@ -468,7 +445,7 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 		Loader:       ml,
 	}
 
-	err := cmd.Execute(stdctx.Background(), []string{"chat", "-t"})
+	err := executeChatCommand(cmdCtx, []string{"-t"})
 	require.NoError(t, err, "Execute should not fail")
 	assert.Equal(t, "turn 1: hello\nturn 2: world", stdout.String())
 	assert.False(t, mService.chatCalled, "expected chat service NOT to be called")
@@ -506,13 +483,13 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 			ml := &mockLoader{}
 			tt.setupMock(ms, ml)
 
-			cmd := &chatCommand{
+			cmdCtx := &context{
 				Loader:      ml,
 				ChatService: ms,
 				Stdout:      new(strings.Builder),
 			}
 
-			err := cmd.Execute(stdctx.Background(), []string{"chat", "-t"})
+			err := executeChatCommand(cmdCtx, []string{"-t"})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 
@@ -520,4 +497,51 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 			ml.AssertExpectations(t)
 		})
 	}
+}
+
+func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"-l"})
+	if err != nil {
+		t.Errorf("Execute failed: %v", err)
+	}
+
+	if !mService.chatCalled {
+		t.Error("expected chat service to be called")
+	}
+
+	if mService.lastParams.LastN != 1 {
+		t.Errorf("expected LastN 1 (default), got %d", mService.lastParams.LastN)
+	}
+}
+
+func executeChatCommand(cmdCtx *context, args []string) error {
+	root := &cobra.Command{}
+	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	chatCmd := newChatCommand(cmdCtx)
+	root.AddCommand(chatCmd)
+
+	// We must mimic the logic in App.Run by sanitizing args
+	fullArgs := append([]string{"tell-me-go", "chat"}, args...)
+	sanitized := sanitizeArgs(fullArgs)
+	// skip the binary name for SetArgs
+	root.SetArgs(sanitized[1:])
+
+	return root.ExecuteContext(stdctx.Background())
 }

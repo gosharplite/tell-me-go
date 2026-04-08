@@ -3,12 +3,11 @@ package session
 import (
 	"context"
 	"errors"
-	"flag"
 	"testing"
-	"time"
 
 	"crypto/rand"
 	"log/slog"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -152,7 +151,7 @@ func (m *mockFailingChatter) GetName() string                                   
 type mockFailingCapturer struct{}
 
 func (m *mockFailingCapturer) IsTTY(any) bool { return false }
-func (m *mockFailingCapturer) CapturePrompt(context.Context, *flag.FlagSet, ...ports.CaptureOption) (string, error) {
+func (m *mockFailingCapturer) CapturePrompt(context.Context, []string, ...ports.CaptureOption) (string, error) {
 	return "", nil
 }
 func (m *mockFailingCapturer) Close(context.Context) error { return nil }

@@ -5,7 +5,6 @@ package ports
 
 import (
 	"context"
-	"flag"
 )
 
 // CaptureOptions configures the behavior of the Capturer.
@@ -42,7 +41,7 @@ func WithTUIPrompt(tui bool) CaptureOption {
 // Capturer defines the interface for UI interactions that the orchestrator needs.
 type Capturer interface {
 	IsTTY(v any) bool
-	CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...CaptureOption) (string, error)
+	CapturePrompt(ctx context.Context, args []string, opts ...CaptureOption) (string, error)
 	// Close performs any necessary cleanup, such as flushing suggestion buffers.
 	Close(ctx context.Context) error
 }
