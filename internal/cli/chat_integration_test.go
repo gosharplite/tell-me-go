@@ -86,7 +86,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		Bootstrapper: container,
 		Loader:       loader,
 	}
-	cmd := newChatCommand(cmdCtx)
+	cmd := newChatCommand(cmdCtx, nil)
 	root := &cobra.Command{}
 	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
 	root.AddCommand(cmd)

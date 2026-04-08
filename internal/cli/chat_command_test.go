@@ -16,6 +16,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -534,14 +535,18 @@ func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
 func executeChatCommand(cmdCtx *context, args []string) error {
 	root := &cobra.Command{}
 	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
-	chatCmd := newChatCommand(cmdCtx)
+	chatCmd := newChatCommand(cmdCtx, nil)
 	root.AddCommand(chatCmd)
 
-	// We must mimic the logic in App.Run by sanitizing args
-	fullArgs := append([]string{"tell-me-go", "chat"}, args...)
-	sanitized := sanitizeArgs(fullArgs)
-	// skip the binary name for SetArgs
-	root.SetArgs(sanitized[1:])
+	// Since we removed manual routing, we can just use the natural Cobra behavior.
+	// For these tests, we'll mimic the Root command's RunE behavior by setting it up.
+	root.RunE = chatCmd.RunE
+	root.Args = cobra.ArbitraryArgs
+	chatCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		root.Flags().AddFlag(f)
+	})
+
+	root.SetArgs(args)
 
 	return root.ExecuteContext(stdctx.Background())
 }

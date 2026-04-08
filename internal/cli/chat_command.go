@@ -47,8 +47,21 @@ type cliOptions struct {
 	retry        bool
 }
 
+func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
+	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
+	fs.BoolVarP(&opts.showTurnsLog, "turns", "t", false, "Print the contents of the current session's turns.log and exit")
+	fs.IntVarP(&opts.lastN, "last", "l", 0, "Show the last N messages from history")
+	fs.Lookup("last").NoOptDefVal = "1"
+	fs.IntVarP(&opts.backN, "back", "b", 0, "Go back / delete the last N turns from history")
+	fs.Lookup("back").NoOptDefVal = "1"
+	fs.BoolVarP(&opts.rawOutput, "raw", "r", false, "Show raw output (without markdown rendering)")
+	fs.BoolVarP(&opts.tuiPrompt, "interactive", "i", false, "Enable interactive TUI prompt with suggestions")
+	fs.BoolVar(&opts.tuiPrompt, "tui", false, "Enable interactive TUI prompt with suggestions")
+	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
+}
+
 // newChatCommand creates a new Chat Command as a Cobra command.
-func newChatCommand(ctx *context) *cobra.Command {
+func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 	c := &chatCommand{
 		Version:      ctx.Version,
 		Stdin:        ctx.Stdin,
@@ -63,7 +76,9 @@ func newChatCommand(ctx *context) *cobra.Command {
 		MockAnswer:   ctx.MockAnswer,
 	}
 
-	opts := &cliOptions{}
+	if opts == nil {
+		opts = &cliOptions{}
+	}
 
 	cmd := &cobra.Command{
 		Use:   "chat [prompt]",
@@ -72,28 +87,17 @@ func newChatCommand(ctx *context) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configPath, _ := cmd.Flags().GetString("config")
 			opts.configPath = configPath
-			return c.execute(cmd.Context(), cmd.Flags(), opts, args)
+			return c.executeChat(cmd.Context(), opts, args)
 		},
 	}
 
-	c.addFlags(cmd.Flags(), opts)
+	addChatFlags(cmd.Flags(), opts)
 
 	return cmd
 }
 
-func (c *chatCommand) addFlags(fs *pflag.FlagSet, opts *cliOptions) {
-	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
-	fs.BoolVarP(&opts.showTurnsLog, "turns", "t", false, "Print the contents of the current session's turns.log and exit")
-	fs.IntVarP(&opts.lastN, "last", "l", 0, "Show the last N messages from history")
-	fs.IntVarP(&opts.backN, "back", "b", 0, "Go back / delete the last N turns from history")
-	fs.BoolVarP(&opts.rawOutput, "raw", "r", false, "Show raw output (without markdown rendering)")
-	fs.BoolVarP(&opts.tuiPrompt, "interactive", "i", false, "Enable interactive TUI prompt with suggestions")
-	fs.BoolVar(&opts.tuiPrompt, "tui", false, "Enable interactive TUI prompt with suggestions")
-	fs.BoolVar(&opts.retry, "retry", false, "Retry the last user message")
-}
-
-// execute runs the chat command logic.
-func (c *chatCommand) execute(ctx stdctx.Context, fs *pflag.FlagSet, opts *cliOptions, args []string) error {
+// executeChat runs the chat command logic.
+func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []string) error {
 	// 1. Determine if we are just showing logs
 	if opts.showTurnsLog {
 		cfg, err := c.Loader.Load(opts.configPath)
