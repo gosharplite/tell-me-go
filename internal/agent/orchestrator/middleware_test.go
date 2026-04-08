@@ -78,25 +78,6 @@ func TestWithMetrics(t *testing.T) {
 	}
 }
 
-func setupLoopDetectorTest() (TurnMiddleware, *mockProcessor, *Turn) {
-	mw := WithLoopDetector()
-	next := &mockProcessor{}
-	turn := &Turn{
-		State: &TurnState{
-			Phase:         PhaseInference,
-			ToolCallCount: make(map[string]int),
-		},
-	}
-	return mw, next, turn
-}
-
-func fillBuffer(t *testing.T, mw TurnMiddleware, next *mockProcessor, turn *Turn, count int) {
-	t.Helper()
-	for i := 0; i < count; i++ {
-		_, _ = mw(next).Process(context.Background(), turn)
-	}
-}
-
 func TestWithLoopDetector_Rotation(t *testing.T) {
 	t.Parallel()
 	// This test depends on logic in middleware.go which uses domain_config.DefaultMaxLoopRepetitions

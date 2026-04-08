@@ -220,7 +220,7 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	if sm, ok := c.SM.(interface {
 		SetInteractor(domain_security.UserInteractor)
 	}); ok {
-		sm.SetInteractor(capturerInterface.(domain_security.UserInteractor))
+		sm.SetInteractor(capturerInterface)
 	}
 	return capturer, func(stdctx.Context) error { return nil }
 }

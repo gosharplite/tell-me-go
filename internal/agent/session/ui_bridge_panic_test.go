@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -70,9 +71,14 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := newUIBridge(mock, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
 	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
 	go func() {
-		_ = bridge.Listen(ctx)
-		close(done)
+		defer close(done)
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
 	}()
 	defer func() {
 		bridge.CloseInput()
@@ -103,7 +109,6 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 
 	// Create a custom slog handler to capture the panic log.
 	// We use LevelDebug to ensure the stack trace log is captured.
@@ -118,9 +123,14 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 
 	bridge := newUIBridge(mockRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
 	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
 	go func() {
-		_ = bridge.Listen(ctx)
-		close(done)
+		defer close(done)
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
 	}()
 	defer func() {
 		bridge.CloseInput()
@@ -160,9 +170,14 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
 	done := make(chan struct{})
+	testCtx, testCancel := context.WithCancel(context.Background())
+	t.Cleanup(testCancel)
+	errChan := make(chan error, 1)
 	go func() {
-		_ = bridge.Listen(ctx)
-		close(done)
+		defer close(done)
+		if err := bridge.Listen(testCtx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
 	}()
 	defer func() {
 		bridge.CloseInput()
@@ -198,7 +213,6 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 func TestUIBridge_PoisonPill(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 
 	logBuffer := inframock.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -210,7 +224,15 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	}).Once()
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
-	go bridge.Listen(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
 	bridge.WaitStarted()
 	bridge.WaitStarted()
 
@@ -233,12 +255,19 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 
 func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 	mRenderer := new(mockUIRenderer)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
-	go bridge.Listen(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
 	bridge.WaitStarted()
 
 	// Close the input to simulate a shutdown sequence.
