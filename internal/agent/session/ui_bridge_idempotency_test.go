@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -26,7 +27,16 @@ func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 		withBridgeLogger(slog.Default()),
 		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 
 	const numCalls = 100
 	var wg sync.WaitGroup

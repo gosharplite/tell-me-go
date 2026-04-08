@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -193,7 +194,6 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	uiRenderer.SetForceSpinner(true)
 
 	// Create bridge with a long-lived context
-	sessionCtx := context.Background()
 	bridge := newUIBridge(uiRenderer,
 		withBridgeThoughts(true),
 		withBridgeTools(true),
@@ -202,7 +202,16 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 		withBridgeLogFile("log.txt"),
 		withBridgeLogger(slog.Default()),
 	)
-	bridge.Start(sessionCtx)
+	sessionCtx, sessionCancel := context.WithCancel(context.Background())
+	t.Cleanup(sessionCancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(sessionCtx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()

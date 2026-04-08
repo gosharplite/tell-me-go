@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -123,7 +122,7 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		MockAnswer:   a.mockAnswer,
 	}
 
-	chatCmd := newChatCommand(cmdCtx)
+	chatCmd := newChatCommand(cmdCtx, nil)
 	browseCmd := newBrowseCommand(cmdCtx)
 	envCmd := newEnvCommand(cmdCtx)
 	versionCmd := newVersionCommand(cmdCtx)
@@ -145,7 +144,10 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 	rootCmd.SetOut(a.Stdout)
 	rootCmd.SetErr(a.Stderr)
 
-	// Share chat flags with the root command
+	// Since rootCmd and chatCmd share the same RunE logic (which uses chatCmd's internal opts),
+	// we just need to make sure both commands have the same flags defined.
+	// Re-binding the same flags to the same opts object is handled inside newChatCommand.
+	// For the root command, we can just share the flags.
 	chatCmd.Flags().VisitAll(func(f *pflag.Flag) {
 		rootCmd.Flags().AddFlag(f)
 	})
@@ -156,28 +158,9 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 	args = sanitizeArgs(args)
 
 	// Since App.Run receives os.Args, we skip the first element (binary name)
-	actualArgs := []string{}
 	if len(args) > 1 {
-		actualArgs = args[1:]
-		if len(actualArgs) > 0 {
-			// Force initialization of default commands (help, completion) so they are in rootCmd.Commands()
-			rootCmd.InitDefaultHelpCmd()
-			rootCmd.InitDefaultCompletionCmd()
-
-			isSubcommand := false
-			for _, sub := range rootCmd.Commands() {
-				if sub.Name() == actualArgs[0] || sub.HasAlias(actualArgs[0]) {
-					isSubcommand = true
-					break
-				}
-			}
-			// If not a subcommand and not a flag, default to 'chat'
-			if !isSubcommand && !strings.HasPrefix(actualArgs[0], "-") {
-				actualArgs = append([]string{"chat"}, actualArgs...)
-			}
-		}
+		rootCmd.SetArgs(args[1:])
 	}
-	rootCmd.SetArgs(actualArgs)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		if errors.Is(err, stdctx.Canceled) {
@@ -189,29 +172,33 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 	return nil
 }
 
+// sanitizeArgs preprocessing allows integer flags like -l and -b to behave like boolean flags
+// defaulting to 1 when no argument is explicitly provided, preventing positional arguments
+// (like the prompt string) from being mistakenly parsed as their values.
 func sanitizeArgs(args []string) []string {
 	if len(args) < 2 {
 		return args
 	}
-	processed := args[1:]
-	for i, arg := range processed {
-		// If we encounter a short or long flag that typically takes an integer
+
+	result := make([]string, 0, len(args))
+	result = append(result, args[0])
+
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		result = append(result, arg)
+
 		if arg == "-l" || arg == "--last" || arg == "-b" || arg == "--back" {
 			isNextNum := false
-			if i+1 < len(processed) {
-				if _, err := strconv.Atoi(processed[i+1]); err == nil {
+			if i+1 < len(args) {
+				// ParseInt is robust enough to know if the next string is a base-10 number
+				if _, err := strconv.Atoi(args[i+1]); err == nil {
 					isNextNum = true
 				}
 			}
-			// If the next argument is NOT a number, inject "1" as the value
 			if !isNextNum {
-				newArgs := make([]string, 0, len(args)+1)
-				newArgs = append(newArgs, args[:i+2]...)
-				newArgs = append(newArgs, "1")
-				newArgs = append(newArgs, args[i+2:]...)
-				return newArgs
+				result = append(result, "1")
 			}
 		}
 	}
-	return args
+	return result
 }

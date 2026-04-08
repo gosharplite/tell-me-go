@@ -16,6 +16,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -24,18 +25,19 @@ import (
 type mockChatService struct {
 	mock.Mock
 	chatCalled bool
-	lastParams agent.ChatOptions
+	lastParams agent.ChatCommand
 }
 
-func (m *mockChatService) ProcessMessage(ctx stdctx.Context, cfg *config.Config, opts agent.ChatOptions, capturer agent.CapturerInteractor) error {
+func (m *mockChatService) ProcessMessage(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
 	m.chatCalled = true
-	m.lastParams = opts
-	args := m.Called(ctx, cfg, opts, capturer)
+	m.lastParams = cmd
+	args := m.Called(ctx, cfg, cmd, capturer)
 	return args.Error(0)
 }
 
 func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, hManager ports.HistoryManager) (string, int, error) {
-	return "retry test", 1, nil
+	args := m.Called(ctx, hManager)
+	return args.String(0), args.Int(1), args.Error(2)
 }
 
 func (m *mockChatService) BrowseHistory(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
@@ -133,13 +135,15 @@ func (m *mockLoader) Watch(ctx stdctx.Context, path string) (<-chan *config.Conf
 	return args.Get(0).(<-chan *config.Config), args.Error(1)
 }
 
-type mockSuggestionService struct{}
+type mockSuggestionService struct {
+	closeErr error
+}
 
 func (m *mockSuggestionService) GetSuggestions(ctx stdctx.Context, prefix string) ([]string, error) {
 	return nil, nil
 }
 func (m *mockSuggestionService) RecordPrompt(ctx stdctx.Context, prompt string) error { return nil }
-func (m *mockSuggestionService) Close(ctx stdctx.Context) error                       { return nil }
+func (m *mockSuggestionService) Close(ctx stdctx.Context) error                       { return m.closeErr }
 
 type mockSM struct {
 	domain_security.Manager
@@ -158,6 +162,7 @@ func setupMocks() (*mockBootstrapper, *mockLoader, *mockChatService) {
 	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(&mockSuggestionService{}, nil).Maybe()
 	ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	ms.On("GetLastUserMessage", mock.Anything, mock.Anything).Return("retry test", 1, nil).Maybe()
 	return mb, ml, ms
 }
 
@@ -267,7 +272,7 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 
 	cmdCtx := &context{
 		Version:      "1.0.0",
-		Stdin:        strings.NewReader("y\n"),
+		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
 		Stderr:       &stderr,
 		SM:           sm,
@@ -285,16 +290,8 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 		t.Error("expected chat service to be called")
 	}
 
-	if mService.lastParams.Prompt != "retry test" {
-		t.Errorf("expected prompt 'retry test', got %q", mService.lastParams.Prompt)
-	}
-
-	if mService.lastParams.BackN != 1 {
-		t.Errorf("expected BackN 1, got %d", mService.lastParams.BackN)
-	}
-
-	if !strings.Contains(stdout.String(), "Are you sure you want to retry") {
-		t.Errorf("expected stdout to contain retry message, got %q", stdout.String())
+	if !mService.lastParams.Retry {
+		t.Error("expected Retry to be true")
 	}
 }
 
@@ -305,9 +302,16 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	sm := &mockSM{}
 	mb, ml, mService := setupMocks()
 
+	// Since retry logic is now in ChatService, we can test it by making the mock return an error or just checking if it was called with Retry: true.
+	// For CLI tests, we just want to ensure that --retry flag is correctly parsed into agent.ChatCommand.
+	mService.ExpectedCalls = nil
+	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.MatchedBy(func(cmd agent.ChatCommand) bool {
+		return cmd.Retry
+	}), mock.Anything).Return(nil)
+
 	cmdCtx := &context{
 		Version:      "1.0.0",
-		Stdin:        strings.NewReader("n\n"),
+		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
 		Stderr:       &stderr,
 		SM:           sm,
@@ -321,12 +325,12 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 		t.Errorf("Execute failed: %v", err)
 	}
 
-	if mService.chatCalled {
-		t.Error("expected chat service NOT to be called")
+	if !mService.chatCalled {
+		t.Error("expected chat service to be called")
 	}
 
-	if !strings.Contains(stdout.String(), "Are you sure you want to retry") {
-		t.Errorf("expected stdout to contain retry message, got %q", stdout.String())
+	if !mService.lastParams.Retry {
+		t.Error("expected Retry to be true")
 	}
 }
 
@@ -499,7 +503,7 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 	}
 }
 
-func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
+func TestChatCommand_Execute_LastN_Positional(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr strings.Builder
@@ -517,7 +521,7 @@ func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
 		Loader:       ml,
 	}
 
-	err := executeChatCommand(cmdCtx, []string{"-l"})
+	err := executeChatCommand(cmdCtx, []string{"-l", "5", "hello"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -526,22 +530,92 @@ func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
 		t.Error("expected chat service to be called")
 	}
 
-	if mService.lastParams.LastN != 1 {
-		t.Errorf("expected LastN 1 (default), got %d", mService.lastParams.LastN)
+	if mService.lastParams.LastN != 5 {
+		t.Errorf("expected LastN 5, got %d", mService.lastParams.LastN)
 	}
 }
 
 func executeChatCommand(cmdCtx *context, args []string) error {
 	root := &cobra.Command{}
 	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
-	chatCmd := newChatCommand(cmdCtx)
+	chatCmd := newChatCommand(cmdCtx, nil)
 	root.AddCommand(chatCmd)
 
-	// We must mimic the logic in App.Run by sanitizing args
-	fullArgs := append([]string{"tell-me-go", "chat"}, args...)
-	sanitized := sanitizeArgs(fullArgs)
-	// skip the binary name for SetArgs
+	// Since we removed manual routing, we can just use the natural Cobra behavior.
+	// For these tests, we'll mimic the Root command's RunE behavior by setting it up.
+	root.RunE = chatCmd.RunE
+	root.Args = cobra.ArbitraryArgs
+	chatCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		root.Flags().AddFlag(f)
+	})
+
+	// Use sanitizeArgs similarly to App.Run
+	sanitized := sanitizeArgs(append([]string{"dummy"}, args...))
 	root.SetArgs(sanitized[1:])
 
 	return root.ExecuteContext(stdctx.Background())
+}
+func TestChatCommand_Execute_Errors(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          []string
+		setupMocks    func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService)
+		expectedError string
+	}{
+		{
+			name: "Config Load Failure",
+			args: []string{"hello"},
+			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", mock.Anything).Return(nil, errors.New("config not found"))
+			},
+			expectedError: "error loading config",
+		},
+		{
+			name: "TUI Capturer Cast Failure",
+			args: []string{"--tui"},
+			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				// BaseCapturer is NOT returned here since we don't inject TUI specific mocks.
+				ml.On("Load", mock.Anything).Return(&config.Config{UseTUIPrompt: true}, nil)
+				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil)
+				mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(&mockSuggestionService{}, nil)
+			},
+			expectedError: "", // Test should fall back and not panic
+		},
+		{
+			name: "Suggestion Service Error",
+			args: []string{"--tui"},
+			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", mock.Anything).Return(&config.Config{UseTUIPrompt: true}, nil)
+				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil)
+				mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(nil, errors.New("suggestion failure"))
+			},
+			expectedError: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ml := &mockLoader{}
+			mb := &mockBootstrapper{}
+			sm := &mockSM{}
+			ms := &mockChatService{}
+			ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+			tt.setupMocks(ml, mb, ms)
+
+			var stdout, stderr strings.Builder
+			cmdCtx := &context{
+				Version:      "1.0.0",
+				Stdin:        strings.NewReader(""),
+				Stdout:       &stdout,
+				Stderr:       &stderr,
+				SM:           sm,
+				ChatService:  ms,
+				Bootstrapper: mb,
+				Loader:       ml,
+			}
+
+			err := executeChatCommand(cmdCtx, tt.args)
+			require.ErrorContains(t, err, tt.expectedError)
+		})
+	}
 }

@@ -205,7 +205,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
 			},
-			wantErr: "error loading history",
+			wantErr: "failed to load history from",
 		},
 		{
 			name: "FailsOnBadClientFactory",
@@ -228,7 +228,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(simulatedErr)
 				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 			},
-			wantErr:   "error registering policy tools",
+			wantErr:   "failed to register policy tools",
 			targetErr: simulatedErr,
 		},
 		{
@@ -463,7 +463,10 @@ func (m *mockSessionDeps) GetTracker() pricing.CostTracker {
 func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
 func (m *mockSessionDeps) GetClient() llm.LLMClient                             { return m.client }
 func (m *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
-func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return m.sessionProvider }
+func (m *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger {
+	return &ports.NoOpTurnsLogger{}
+}
+func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider { return m.sessionProvider }
 
 type mockTracker struct {
 	pricing.CostTracker
@@ -615,7 +618,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			wantErr: "error registering tools: simulated error",
+			wantErr: "failed to register core tools: simulated error",
 		},
 		{
 			name: "TelemetryRegistrationFails",
@@ -624,7 +627,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			wantErr: "error registering metrics tools: simulated error",
+			wantErr: "failed to register metrics tools: simulated error",
 		},
 		{
 			name: "SessionRotationFails",
@@ -634,7 +637,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				}
 				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 			},
-			wantErr: "session initialization failed during rotation: session rotation failed: simulated error",
+			wantErr: "session initialization failed during rotation for",
 		},
 		{
 			name: "SessionProviderCloseFails",
@@ -747,12 +750,12 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	Bootstrapper := &Bootstrapper{
+	factory := &DefaultSessionFactory{
 		SM:     sm,
 		Logger: logger,
 	}
 
-	Bootstrapper.applySessionSecuritySettings(ctx, mockSP)
+	factory.applySessionSecuritySettings(ctx, mockSP)
 
 	logOutput := logBuf.String()
 	assert.Contains(t, logOutput, "failed to unmarshal authorized_safe_paths")

@@ -181,6 +181,7 @@ func (m *mockServiceEventBus) Subscribe(sub func(context.Context, events.Event))
 }
 func (m *mockServiceEventBus) Shutdown(ctx context.Context) error { return m.Called(ctx).Error(0) }
 func (m *mockServiceEventBus) Flush(ctx context.Context) error    { return m.Called(ctx).Error(0) }
+func (m *mockServiceEventBus) Listen(ctx context.Context) error   { <-ctx.Done(); return ctx.Err() }
 
 // mockServiceAgent is a mock of Chatter.
 type mockServiceAgent struct {
@@ -241,6 +242,10 @@ func (m *mockTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {
 	m.Called(ctx, e)
 }
 
+func (m *mockTurnsLogger) Listen(ctx context.Context) error {
+	return m.Called(ctx).Error(0)
+}
+
 func (m *mockTurnsLogger) Close() error {
 	return m.Called().Error(0)
 }
@@ -251,7 +256,7 @@ func TestProcessMessage(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMock   func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error
-		opts        ChatOptions
+		cmd         ChatCommand
 		cfg         *config.Config
 		wantErr     bool
 		errMsg      string
@@ -259,7 +264,7 @@ func TestProcessMessage(t *testing.T) {
 	}{
 		{
 			name: "Success",
-			opts: ChatOptions{ConfigPath: "config.yaml", Prompt: "hello"},
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{
@@ -313,7 +318,7 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "BuildSessionDepsError",
-			opts: ChatOptions{ConfigPath: "config.yaml"},
+			cmd:  ChatCommand{ConfigPath: "config.yaml"},
 			cfg:  &config.Config{Mode: "assistant"},
 			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
@@ -323,6 +328,94 @@ func TestProcessMessage(t *testing.T) {
 			wantErr:     true,
 			errMsg:      "build error",
 			expectedErr: errBuild,
+		},
+		{
+			name: "RetrySuccess",
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cfg: &config.Config{
+				Mode: "assistant",
+				Providers: map[string]config.LLMProvider{
+					"test": {Model: "test-model"},
+				},
+				SelectedProvider: "test",
+			},
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{
+					Mode: "assistant",
+					Providers: map[string]config.LLMProvider{
+						"test": {Model: "test-model"},
+					},
+					SelectedProvider: "test",
+				}
+				cleanupCalled := false
+				cleanup := func(context.Context) error {
+					cleanupCalled = true
+					return tl.Close()
+				}
+
+				mockHM := &mockHistoryManagerForRetry{msg: "retry this", turns: 2}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
+				deps.On("GetHistoryManager").Return(mockHM)
+				deps.On("GetPricingData").Return(pricing.PricingData{})
+				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetTurnsLogger").Return(tl)
+				deps.On("GetSessionProvider").Return(nil)
+
+				tl.On("Close").Return(nil)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+				agent.On("Subscribe", mock.Anything).Return()
+				agent.On("Chat", mock.Anything, mock.Anything, "retry this").Return(nil)
+				agent.On("Shutdown", mock.Anything).Return(nil)
+
+				cap.On("Confirm", mock.Anything, mock.MatchedBy(func(s string) bool {
+					return strings.Contains(s, "retry this")
+				})).Return(true, nil)
+				cap.On("IsTTY", mock.Anything).Return(true)
+				cap.On("Close", mock.Anything).Return(nil)
+
+				return func(context.Context) error {
+					assert.True(t, cleanupCalled)
+					return nil
+				}
+			},
+		},
+		{
+			name: "RetryAborted",
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cfg: &config.Config{
+				Mode: "assistant",
+				Providers: map[string]config.LLMProvider{
+					"test": {Model: "test-model"},
+				},
+				SelectedProvider: "test",
+			},
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{
+					Mode: "assistant",
+					Providers: map[string]config.LLMProvider{
+						"test": {Model: "test-model"},
+					},
+					SelectedProvider: "test",
+				}
+				cleanup := func(context.Context) error { return nil }
+
+				mockHM := &mockHistoryManagerForRetry{msg: "retry this", turns: 2}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+
+				deps.On("GetEventBus").Return(bus)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				cap.On("Confirm", mock.Anything, mock.Anything).Return(false, nil)
+
+				return nil
+			},
 		},
 	}
 
@@ -351,7 +444,7 @@ func TestProcessMessage(t *testing.T) {
 				verify = tt.setupMock(sf, sm, capturer, deps, bus, agent, tl)
 			}
 
-			err := service.ProcessMessage(ctx, tt.cfg, tt.opts, capturer)
+			err := service.ProcessMessage(ctx, tt.cfg, tt.cmd, capturer)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -371,9 +464,11 @@ func TestProcessMessage(t *testing.T) {
 
 			sf.AssertExpectations(t)
 			if !tt.wantErr {
+				if tt.name != "RetryAborted" {
+					agent.AssertExpectations(t)
+					tl.AssertExpectations(t)
+				}
 				bus.AssertExpectations(t)
-				agent.AssertExpectations(t)
-				tl.AssertExpectations(t)
 			}
 		})
 	}

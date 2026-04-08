@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -271,7 +272,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 
 	tracker := &mockEngineCostTracker{} // Returns 0.05 per call
 
-	e := newTurnEngine(gw, executor, cm, reg, bus, strategy, withEngineCostTracker(tracker))
+	e := orchestrator.NewEngine(gw, executor, cm, reg, bus, strategy, orchestrator.WithEngineCostTracker(tracker))
 	strategy.SetLimits(10000, 10, 10)
 
 	var wg sync.WaitGroup

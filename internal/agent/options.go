@@ -27,6 +27,7 @@ type agentConfig struct {
 	tracker          domain_pricing.CostTracker
 	initCtx          context.Context
 	logger           *slog.Logger
+	turnsLogger      ports.TurnsLogger
 }
 
 // Option defines a functional option for configuring an Agent.
@@ -101,5 +102,12 @@ func WithLogger(l *slog.Logger) Option {
 func WithSkillSelector(s skills.SkillSelector) Option {
 	return func(c *agentConfig) {
 		c.skillSelector = s
+	}
+}
+
+// WithTurnsLogger sets the turns logger for the agent.
+func WithTurnsLogger(tl ports.TurnsLogger) Option {
+	return func(c *agentConfig) {
+		c.turnsLogger = tl
 	}
 }

@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -20,7 +21,16 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 
 	var activeSpinners int32
 
@@ -66,11 +76,20 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 
 func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	testCtx := context.Background()
 
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -84,8 +103,8 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, true, false).Return().Once()
 
 	// 3. Queue the events sequentially
-	_ = bridge.handleEvent(ctx, events.ToolExecutionStartedEvent{})
-	_ = bridge.handleEvent(ctx, events.ResponseEvent{Content: &llm.Content{}})
+	_ = bridge.handleEvent(testCtx, events.ToolExecutionStartedEvent{})
+	_ = bridge.handleEvent(testCtx, events.ResponseEvent{Content: &llm.Content{}})
 
 	// 4. Flush the queue using the robust syncBridge helper
 	syncBridge(t, bridge, mRenderer)

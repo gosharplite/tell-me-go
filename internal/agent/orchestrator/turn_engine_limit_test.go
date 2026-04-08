@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -80,7 +80,7 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 2, MaxHistoryTurns: 10})
 
 	reg := &limitMockRegistry{}
-	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
+	engine := NewEngine(gw, exec, cm, reg, bus, counter)
 
 	ctx := context.Background()
 
@@ -184,10 +184,10 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			inframock.CleanupBus(t, bus)
-			turn := &turn{
+			turn := &Turn{
 				CtxManager:   cm,
 				TokenCounter: counter,
-				State: &turnState{
+				State: &TurnState{
 					Tokens:       tt.existingTokens,
 					ToolResponse: toolResponse,
 				},

@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"go.uber.org/goleak"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestMain(m *testing.M) {
@@ -195,11 +196,20 @@ func TestSimpleEventBus_ContextCancellation(t *testing.T) {
 
 func TestSimpleEventBus_Race(t *testing.T) {
 	nullLogger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(nullLogger), events.WithAsync(true))
 	inframock.CleanupBus(t, bus)
 
 	var wg sync.WaitGroup
+
+	// Coordinated background listener
+	// We don't add this to wg because we want it to run until we cancel the context
+	// after all other tasks are done.
+	go func() {
+		_ = bus.Listen(ctx)
+	}()
 
 	// Publisher loop
 	wg.Add(1)
@@ -220,6 +230,7 @@ func TestSimpleEventBus_Race(t *testing.T) {
 	}()
 
 	wg.Wait()
+	cancel() // Explicitly stop Listen
 }
 
 func TestSimpleEventBus_Deadlock(t *testing.T) {
@@ -290,11 +301,18 @@ func TestSafePublish_Success(t *testing.T) {
 
 func TestEventBus_RoutingErrorIsolation(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	g, ctx := errgroup.WithContext(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(testLogger), events.WithAsync(true))
 	inframock.CleanupBus(t, bus)
+
+	g.Go(func() error {
+		return bus.Listen(ctx)
+	})
 
 	errGlobal := errors.New("global error")
 	errSpecific := errors.New("specific error")
@@ -327,11 +345,15 @@ func TestEventBus_RoutingErrorIsolation(t *testing.T) {
 	_ = bus.Flush(ctx)
 
 	mu.Lock()
-	defer mu.Unlock()
-
 	if !globalCalled || !specific1Called || !specific2Called {
+		mu.Unlock()
 		t.Error("not all subscribers were called")
+	} else {
+		mu.Unlock()
 	}
+
+	cancel() // Stop Listen
+	_ = g.Wait()
 
 	output := buf.String()
 	if !strings.Contains(output, "global error") || !strings.Contains(output, "specific error") {
@@ -368,14 +390,27 @@ func TestEventTypes(t *testing.T) {
 
 func TestSafePublish_NoGoroutineLeak(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	g, ctx := errgroup.WithContext(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
 	inframock.CleanupBus(t, bus)
+
+	g.Go(func() error {
+		return bus.Listen(ctx)
+	})
 
 	sub := &respectfulSubscriber{}
 	bus.SubscribeSubscriber("leak_test", sub)
 
 	_ = bus.Publish(ctx, testEvent{typeName: "leak_test"})
+
+	// Trigger shutdown and verify clean exit via goleak (in TestMain)
+	cancel()
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		t.Errorf("Listen failed: %v", err)
+	}
 }
 
 type respectfulSubscriber struct{}
@@ -391,13 +426,20 @@ func (s *respectfulSubscriber) Handle(ctx context.Context, e events.Event) error
 
 func TestSafePublish_UncooperativeSubscriber(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	g, ctx := errgroup.WithContext(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	bus := events.NewSimpleEventBus(ctx,
 		events.WithAsync(true),
 		events.WithQueueSize(200),
 		events.WithMaxConcurrentSubscribers(2),
 	)
 	inframock.CleanupBus(t, bus)
+
+	g.Go(func() error {
+		return bus.Listen(ctx)
+	})
 
 	block := make(chan struct{})
 	sub := &uncooperativeSubscriber{block: block}
@@ -408,6 +450,8 @@ func TestSafePublish_UncooperativeSubscriber(t *testing.T) {
 	}
 
 	close(block)
+	cancel()
+	_ = g.Wait()
 }
 
 type uncooperativeSubscriber struct {
@@ -457,7 +501,8 @@ func TestErrBusClosed_Explicit(t *testing.T) {
 
 func TestEventBus_SlowSubscriber(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	buf := inframock.NewSafeBuffer()
@@ -470,6 +515,10 @@ func TestEventBus_SlowSubscriber(t *testing.T) {
 		events.WithQueueSize(1),
 	)
 	inframock.CleanupBus(t, bus)
+
+	g.Go(func() error {
+		return bus.Listen(ctx)
+	})
 
 	block := make(chan struct{})
 	startedProcessing := make(chan struct{}, 1)
@@ -509,6 +558,9 @@ func TestEventBus_SlowSubscriber(t *testing.T) {
 
 	// Unblock E1
 	close(block)
+
+	cancel()
+	_ = g.Wait()
 }
 
 func TestEventBus_DefensiveErrors(t *testing.T) {

@@ -46,8 +46,8 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 			// 3. Attempt ProcessMessage
 			cfg := &config.Config{}
-			opts := ChatOptions{ConfigPath: "config.yaml"}
-			err := service.ProcessMessage(context.Background(), cfg, opts, nil)
+			cmd := ChatCommand{ConfigPath: "config.yaml"}
+			err := service.ProcessMessage(context.Background(), cfg, cmd, nil)
 
 			// 4. Assert exact failure
 			require.Error(t, err, "expected initialization to fail")

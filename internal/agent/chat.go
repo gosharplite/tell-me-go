@@ -20,14 +20,15 @@ type CapturerInteractor interface {
 	domain_security.UserInteractor
 }
 
-// ChatOptions defines the configuration for a chat session.
-type ChatOptions struct {
+// ChatCommand defines the intent and configuration for a chat session.
+type ChatCommand struct {
 	ConfigPath   string
 	NewSession   bool
 	LastN        int
 	BackN        int
 	RawOutput    bool
 	UseTUIPrompt bool
+	Retry        bool
 	Prompt       string
 }
 
@@ -35,7 +36,7 @@ type ChatOptions struct {
 type ChatService interface {
 	// ProcessMessage handles the entire business flow of a chat turn, including
 	// dependency management, history loading, and session finalization.
-	ProcessMessage(ctx context.Context, cfg *config.Config, opts ChatOptions, capturer CapturerInteractor) error
+	ProcessMessage(ctx context.Context, cfg *config.Config, cmd ChatCommand, capturer CapturerInteractor) error
 
 	// GetLastUserMessage retrieves the last user message and the number of turns
 	// to rollback to reach that point in history.

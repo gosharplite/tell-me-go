@@ -230,9 +230,19 @@ func TestSanitizeArgs(t *testing.T) {
 			expected: []string{"tell-me-go", "-l", "1"},
 		},
 		{
-			name:     "mixed flags - only first is sanitized per current implementation",
+			name:     "mixed flags - both are sanitized",
 			args:     []string{"tell-me-go", "-l", "-b"},
-			expected: []string{"tell-me-go", "-l", "1", "-b"},
+			expected: []string{"tell-me-go", "-l", "1", "-b", "1"},
+		},
+		{
+			name:     "last flag combined with another flag without space",
+			args:     []string{"tell-me-go", "-l", "-r"},
+			expected: []string{"tell-me-go", "-l", "1", "-r"},
+		},
+		{
+			name:     "last flag equal sign",
+			args:     []string{"tell-me-go", "-l=5", "-r"},
+			expected: []string{"tell-me-go", "-l=5", "-r"},
 		},
 	}
 

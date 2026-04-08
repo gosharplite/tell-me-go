@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -138,6 +139,11 @@ func (m *mockCapturer) IsTTY(v any) bool {
 func (m *mockCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	callArgs := m.Called(ctx, args, opts)
 	return callArgs.String(0), callArgs.Error(1)
+}
+
+func (m *mockCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+	args := m.Called(ctx, message)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *mockCapturer) Close(ctx context.Context) error {
@@ -436,7 +442,16 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				withBridgeLogFile("log.txt"),
 				withBridgeLogger(slog.Default()),
 			)
-			bridge.Start(context.Background())
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			errChan := make(chan error, 1)
+			go func() {
+				if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+					errChan <- err
+				}
+				close(errChan)
+			}()
+			bridge.WaitStarted()
 			defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 			// Set up expectations BEFORE preSetup
 			done := tt.setup(mRenderer)
@@ -466,7 +481,16 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	t.Run("Returns existing context", func(t *testing.T) {
@@ -589,6 +613,7 @@ func TestSessionManager_ApplyConfiguration_Error(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
 	require.NotNil(t, bridge)
+	bridge.wg.Done() // Manually satisfy constructor wg.Add(1) since Listen wasn't called
 	bridge.CloseInput()
 	bridge.Cleanup()
 }
@@ -757,6 +782,12 @@ func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, args []string,
 	return callArgs.String(0), callArgs.Error(1)
 }
 
+func (m *behaviorMockCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+	m.tracker.record("Capturer.Confirm")
+	args := m.Called(ctx, message)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *behaviorMockCapturer) Close(ctx context.Context) error {
 	m.tracker.record("Capturer.Close")
 	args := m.Called(ctx)
@@ -843,8 +874,8 @@ func TestSessionManager_Run_BehaviorSequence(t *testing.T) {
 		"Chatter.SetTieredThreshold", // Apply cost threshold
 		"Chatter.Chat",               // Start conversation
 		"UIRenderer.StartSpinnerWithStatus",
-		"Chatter.Shutdown",       // Stop Producers first
-		"UIRenderer.StopSpinner", // Stop Consumer second (deterministic)
+		"UIRenderer.StopSpinner", // [REFACTOR] Stop Consumer first because it finishes when Chat returns
+		"Chatter.Shutdown",       // Stop Producers last
 	}
 
 	assert.Equal(t, expectedSequence, tracker.sequence, "SessionManager must follow exact coordination sequence")
@@ -1079,7 +1110,16 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// Setup mocks with Maybe() to handle concurrent calls safely
@@ -1092,7 +1132,6 @@ func TestUIBridge_Concurrency(t *testing.T) {
 	mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 	mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	ctx := context.Background()
 	var wg sync.WaitGroup
 	const iterations = 1000
 	start := make(chan struct{})
@@ -1154,14 +1193,21 @@ func TestUIBridge_LogicalRace(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// StartSpinnerWithStatus should NOT be called because ResponseEvent is already rendering
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
-
-	ctx := context.Background()
 
 	// 1. Mark as rendering via ResponseEvent
 	_ = bridge.handleEvent(ctx, events.ResponseEvent{
@@ -1192,7 +1238,16 @@ func TestUIBridge_AbortedTurn_SpinnerCleanup(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	spinnerStopped := make(chan struct{})
@@ -1215,7 +1270,16 @@ func TestUIBridge_Retry_Spinner(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	// First attempt
@@ -1264,7 +1328,16 @@ func TestUIBridge_CleanupOnUnexpectedExit(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 
 	spinnerStarted := make(chan struct{})
 	spinnerStopped := make(chan struct{})
@@ -1395,7 +1468,16 @@ func TestUIBridge_SpinnerTransitions(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 
 	// 1. Summarization starts
 	stopSummarizationCalled := make(chan struct{})
@@ -1452,7 +1534,16 @@ func TestUIBridge_SpinnerConcurrency(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 
 	var activeSpinners int32
 
@@ -1696,7 +1787,16 @@ func TestUIBridge_NilLoggerFallback(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	// Instantiate without WithLogger
 	bridge := newUIBridge(mRenderer)
-	bridge.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
 	defer func() { bridge.CloseInput(); bridge.Cleanup() }()
 
 	assert.NotNil(t, bridge.logger, "Logger should fall back to slog.Default() if nil")
@@ -1707,13 +1807,21 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Cleanup(cancel)
 
 	// Initialize bridge with a very small timeout via functional option
 	bridge := newUIBridge(mRenderer,
 		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
-	bridgeCtx := bridge.Start(ctx)
+	errChan := make(chan error, 1)
+	go func() {
+		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+	bridge.WaitStarted()
+	bridgeCtx := bridge.GetLoopContext() // Use the internal loop context for verification
 
 	// Force a waitgroup hang to simulate a deadlocked renderer or long-running loop
 	bridge.wg.Add(1)
@@ -1743,6 +1851,11 @@ func TestUIBridge_HandleEvent_ContextCancelled(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer)
 	// We don't start the bridge's background loop to specifically test load shedding logic
+	defer func() {
+		bridge.wg.Done()
+		bridge.CloseInput()
+		bridge.Cleanup()
+	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
