@@ -747,12 +747,12 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	Bootstrapper := &Bootstrapper{
+	factory := &DefaultSessionFactory{
 		SM:     sm,
 		Logger: logger,
 	}
 
-	Bootstrapper.applySessionSecuritySettings(ctx, mockSP)
+	factory.applySessionSecuritySettings(ctx, mockSP)
 
 	logOutput := logBuf.String()
 	assert.Contains(t, logOutput, "failed to unmarshal authorized_safe_paths")
