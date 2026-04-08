@@ -140,6 +140,11 @@ func (m *mockCapturer) CapturePrompt(ctx context.Context, args []string, opts ..
 	return callArgs.String(0), callArgs.Error(1)
 }
 
+func (m *mockCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+	args := m.Called(ctx, message)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *mockCapturer) Close(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)
@@ -755,6 +760,12 @@ func (m *behaviorMockCapturer) CapturePrompt(ctx context.Context, args []string,
 	m.tracker.record("Capturer.CapturePrompt")
 	callArgs := m.Called(ctx, args, opts)
 	return callArgs.String(0), callArgs.Error(1)
+}
+
+func (m *behaviorMockCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+	m.tracker.record("Capturer.Confirm")
+	args := m.Called(ctx, message)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *behaviorMockCapturer) Close(ctx context.Context) error {

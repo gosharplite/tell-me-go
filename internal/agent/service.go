@@ -82,9 +82,9 @@ func (s *chatService) GetLastUserMessage(ctx context.Context, hManager ports.His
 }
 
 // ProcessMessage implements ChatService.
-func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, opts ChatOptions, capturer CapturerInteractor) error {
+func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Config, cmd ChatCommand, capturer CapturerInteractor) error {
 	// 1. Build session dependencies
-	deps, hManager, cleanup, err := s.LifecycleManager.BuildSessionDependencies(ctx, cfg, opts.ConfigPath, opts.NewSession, capturer)
+	deps, hManager, cleanup, err := s.LifecycleManager.BuildSessionDependencies(ctx, cfg, cmd.ConfigPath, cmd.NewSession, capturer)
 	if err != nil {
 		return err
 	}
@@ -108,7 +108,29 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 		}
 	}()
 
-	// 2. Delegate to agent orchestration
+	// 2. Handle Retry Orchestration
+	if cmd.Retry {
+		lastMsg, turns, err := s.GetLastUserMessage(ctx, hManager)
+		if err != nil {
+			return fmt.Errorf("failed to get last user message for retry: %w", err)
+		}
+		if lastMsg == "" {
+			return errors.New("no previous user message found to retry")
+		}
+
+		confirmMsg := fmt.Sprintf("Are you sure you want to retry the following message?\n\n%s\n\nRetry? [y/N]: ", lastMsg)
+		confirmed, err := capturer.Confirm(ctx, confirmMsg)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return nil // User aborted
+		}
+		cmd.Prompt = lastMsg
+		cmd.BackN = turns
+	}
+
+	// 3. Delegate to agent orchestration
 	err = session.Run(ctx, session.RunParams{
 		HomeDir:         s.HomeDir,
 		Version:         s.Version,
@@ -118,18 +140,18 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 		AgentFactory:    s.ChatterFactory,
 		HistoryRenderer: s.HistoryRenderer,
 		UIRenderer:      s.UIRenderer,
-		ConfigPath:      opts.ConfigPath,
-		NewSession:      opts.NewSession,
-		LastN:           opts.LastN,
-		BackN:           opts.BackN,
-		RawOutput:       opts.RawOutput,
-		Prompt:          opts.Prompt,
+		ConfigPath:      cmd.ConfigPath,
+		NewSession:      cmd.NewSession,
+		LastN:           cmd.LastN,
+		BackN:           cmd.BackN,
+		RawOutput:       cmd.RawOutput,
+		Prompt:          cmd.Prompt,
 		Config:          cfg,
 		Deps:            deps,
 		Capturer:        capturer,
 	})
 
-	// 3. Finalize session state
+	// 4. Finalize session state
 	if finalizeErr := s.LifecycleManager.FinalizeSession(ctx, hManager, deps, cfg); finalizeErr != nil {
 		if err != nil {
 			return fmt.Errorf("session processing failed: %w; additionally, finalize session failed: %w", err, finalizeErr)

@@ -25,13 +25,13 @@ import (
 type mockChatService struct {
 	mock.Mock
 	chatCalled bool
-	lastParams agent.ChatOptions
+	lastParams agent.ChatCommand
 }
 
-func (m *mockChatService) ProcessMessage(ctx stdctx.Context, cfg *config.Config, opts agent.ChatOptions, capturer agent.CapturerInteractor) error {
+func (m *mockChatService) ProcessMessage(ctx stdctx.Context, cfg *config.Config, cmd agent.ChatCommand, capturer agent.CapturerInteractor) error {
 	m.chatCalled = true
-	m.lastParams = opts
-	args := m.Called(ctx, cfg, opts, capturer)
+	m.lastParams = cmd
+	args := m.Called(ctx, cfg, cmd, capturer)
 	return args.Error(0)
 }
 
@@ -268,7 +268,7 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 
 	cmdCtx := &context{
 		Version:      "1.0.0",
-		Stdin:        strings.NewReader("y\n"),
+		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
 		Stderr:       &stderr,
 		SM:           sm,
@@ -286,16 +286,8 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 		t.Error("expected chat service to be called")
 	}
 
-	if mService.lastParams.Prompt != "retry test" {
-		t.Errorf("expected prompt 'retry test', got %q", mService.lastParams.Prompt)
-	}
-
-	if mService.lastParams.BackN != 1 {
-		t.Errorf("expected BackN 1, got %d", mService.lastParams.BackN)
-	}
-
-	if !strings.Contains(stdout.String(), "Are you sure you want to retry") {
-		t.Errorf("expected stdout to contain retry message, got %q", stdout.String())
+	if !mService.lastParams.Retry {
+		t.Error("expected Retry to be true")
 	}
 }
 
@@ -306,9 +298,16 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	sm := &mockSM{}
 	mb, ml, mService := setupMocks()
 
+	// Since retry logic is now in ChatService, we can test it by making the mock return an error or just checking if it was called with Retry: true.
+	// For CLI tests, we just want to ensure that --retry flag is correctly parsed into agent.ChatCommand.
+	mService.ExpectedCalls = nil
+	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.MatchedBy(func(cmd agent.ChatCommand) bool {
+		return cmd.Retry
+	}), mock.Anything).Return(nil)
+
 	cmdCtx := &context{
 		Version:      "1.0.0",
-		Stdin:        strings.NewReader("n\n"),
+		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
 		Stderr:       &stderr,
 		SM:           sm,
@@ -322,12 +321,12 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 		t.Errorf("Execute failed: %v", err)
 	}
 
-	if mService.chatCalled {
-		t.Error("expected chat service NOT to be called")
+	if !mService.chatCalled {
+		t.Error("expected chat service to be called")
 	}
 
-	if !strings.Contains(stdout.String(), "Are you sure you want to retry") {
-		t.Errorf("expected stdout to contain retry message, got %q", stdout.String())
+	if !mService.lastParams.Retry {
+		t.Error("expected Retry to be true")
 	}
 }
 

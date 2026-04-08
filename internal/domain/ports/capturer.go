@@ -42,6 +42,8 @@ func WithTUIPrompt(tui bool) CaptureOption {
 type Capturer interface {
 	IsTTY(v any) bool
 	CapturePrompt(ctx context.Context, args []string, opts ...CaptureOption) (string, error)
+	// Confirm asks the user for a yes/no confirmation.
+	Confirm(ctx context.Context, message string) (bool, error)
 	// Close performs any necessary cleanup, such as flushing suggestion buffers.
 	Close(ctx context.Context) error
 }
