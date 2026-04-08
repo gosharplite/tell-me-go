@@ -5,14 +5,10 @@ package di
 
 import (
 	stdctx "context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"path/filepath"
-	"strconv"
-	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -25,14 +21,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/logging"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
@@ -52,6 +44,9 @@ type ConfigurableSecurityManager interface {
 
 // Bootstrapper handles the instantiation and wiring of system components.
 type Bootstrapper struct {
+	sessionFactory   SessionFactory
+	toolchainFactory ToolchainFactory
+	telemetryFactory TelemetryFactory
 	HomeDir          string
 	SM               ConfigurableSecurityManager
 	Version          string
@@ -77,7 +72,7 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 	if fs == nil {
 		fs = &infra_persistence.OSFileSystem{}
 	}
-	return &Bootstrapper{
+	b := &Bootstrapper{
 		HomeDir:          homeDir,
 		SM:               sm,
 		Version:          version,
@@ -91,38 +86,32 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 		RotateSession:    infra_persistence.RotateSession,
 		NewSessionState:  infra_persistence.NewSessionState,
 	}
+
+	b.sessionFactory = NewSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
+		func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
+			return b.RotateSession(fs, stdout, paths, retentionDays)
+		},
+		func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error) {
+			return b.NewSessionState(ctx, modeDir)
+		})
+	b.toolchainFactory = NewToolchainFactory(homeDir, fs, sm,
+		func(params infra_tools.ToolRegistrationParams) error {
+			return b.RegisterAllTools(params)
+		},
+		func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
+			return b.RegisterMetrics(r, sm, logFile, traceFile, model, mode, pricingOverrides, kvStore)
+		})
+	b.telemetryFactory = NewTelemetryFactory(homeDir, fs, sm, logger)
+	return b
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
 func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
-	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
-	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
-		return nil, nil, nil, err
-	}
-
 	pricingOverrides := b.getPricingOverrides(cfg)
-	if err := b.setupSecurity(paths, configPath); err != nil {
-		return nil, nil, nil, err
-	}
-
-	sessionProvider, cleanup, err := b.buildSessionProvider(ctx, paths, cfg)
+	sessionProvider, paths, cleanup, err := b.sessionFactory.BuildSession(ctx, cfg, configPath, newSession, pricingOverrides)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-
-	b.applySessionSecuritySettings(ctx, sessionProvider)
-
-	if newSession {
-		// Hard dependency: session rotation must complete before we continue.
-		// Errors here MUST halt execution to prevent state corruption.
-		if err := b.handleNewSession(ctx, paths, cfg, pricingOverrides, sessionProvider.GetSettings()); err != nil {
-			_ = cleanup(ctx)
-			return nil, nil, nil, fmt.Errorf("session initialization failed during rotation: %w", err)
-		}
-	}
-
-	// Initialize commands log after session rotation to avoid file locks on Windows.
-	b.SM.SetCommandsLogFile(paths.CommandsLogPath)
 
 	hManager, err := b.buildHistoryManager(ctx, paths)
 	if err != nil {
@@ -132,7 +121,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithAsync(false))
 
-	pricingData := telemetry.GetPricing(ctx, b.SM, filepath.Join(b.HomeDir, "output"))
+	pricingData, tracker, turnsLogger, cleanup := b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, cleanup)
 
 	client, err := b.ClientFactory(cfg, pricingData, bus, telemetry.NewSlogLogger(b.Logger))
 	if err != nil {
@@ -140,47 +129,24 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
 
-	reg, err := b.buildToolRegistry(infra_tools.ToolRegistrationParams{
-		SecurityManager:  b.SM,
-		CommandExecutor:  &exec.RealExecutor{},
-		CommandValidator: internal_security.NewCommandValidator(b.SM, capturer),
+	reg, err := b.toolchainFactory.BuildRegistry(ToolchainParams{
+		Paths:            paths,
 		SessionProvider:  sessionProvider,
-		LogFile:          paths.LogPath,
-		TraceFile:        paths.TracePath,
+		Client:           client,
+		Bus:              bus,
 		Model:            cfg.Model,
 		Mode:             cfg.Mode,
 		PricingOverrides: pricingOverrides,
-		Client:           client,
-		AssetsDir:        filepath.Join(b.HomeDir, "assets/generated"),
-		EventBus:         bus,
-		FileSystem:       infra_persistence.NewDomainFS(b.FileSystem),
+		Capturer:         capturer,
 	})
 	if err != nil {
 		_ = cleanup(ctx)
 		return nil, nil, nil, err
 	}
 
-	var turnsLogger ports.TurnsLogger
-	if paths.TurnsLogPath != "" {
-		if tl, err := logging.NewAsyncTurnsLogger(b.FileSystem, paths.TurnsLogPath, b.Logger); err == nil {
-			turnsLogger = tl
-
-			// Chain the logger cleanup to the existing cleanup function (LIFO)
-			origCleanup := cleanup
-			cleanup = func(c stdctx.Context) error {
-				var err error
-				if origCleanup != nil {
-					err = origCleanup(c) // Shut down event producers first
-				}
-				// Use errors.Join to avoid swallowing cleanup errors
-				return errors.Join(err, tl.Close())
-			}
-		} else {
-			b.Logger.Warn("failed to initialize turns logger", "error", err)
-		}
-	}
-
 	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger, turnsLogger, sessionProvider)
+	// Overwrite the newly created tracker from telemetry factory onto the Orchestrator deps for now
+	deps.(*sessionDeps).tracker = tracker
 
 	return deps, hManager, cleanup, nil
 }
@@ -193,76 +159,6 @@ func (b *Bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistenc
 		}
 	}
 	return hManager, nil
-}
-
-func (b *Bootstrapper) buildToolRegistry(params infra_tools.ToolRegistrationParams) (tools.Registry, error) {
-	reg := registry.New()
-	params.Registry = reg
-
-	if err := b.RegisterAllTools(params); err != nil {
-		return nil, fmt.Errorf("error registering tools: %w", err)
-	}
-
-	// Infrastructure-specific tool registration
-	if err := b.RegisterMetrics(reg, b.SM, params.LogFile, params.TraceFile, params.Model, params.Mode, params.PricingOverrides, params.SessionProvider.GetSettings()); err != nil {
-		return nil, fmt.Errorf("error registering metrics tools: %w", err)
-	}
-	if err := b.SM.RegisterPolicyTools(reg, params.SessionProvider.GetSettings()); err != nil {
-		return nil, fmt.Errorf("error registering policy tools: %w", err)
-	}
-	return reg, nil
-}
-
-func (b *Bootstrapper) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(stdctx.Context) error, error) {
-	var sessionProvider ports.SessionProvider
-	state, err := b.NewSessionState(ctx, paths.ModeDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize session state: %w", err)
-	}
-
-	sessionProvider = state
-	info := state.GetInfo()
-	info.Model = cfg.Model
-	info.Provider = cfg.SelectedProvider
-	state.SetInfo(info)
-
-	cleanup := func(stdctx.Context) error {
-		if sessionProvider != nil {
-			if err := sessionProvider.Close(); err != nil {
-				_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to close session provider: %v\n", err)
-				return err
-			}
-		}
-		return nil
-	}
-	return sessionProvider, cleanup, nil
-}
-
-func (b *Bootstrapper) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider) {
-	if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
-		b.SM.SetBypassActive(true)
-	}
-
-	// Load authorized paths from settings
-	loadPathsFromSettings(ctx, sessionProvider.GetSettings(), "authorized_safe_paths", b.SM.RegisterSafePath, b.Logger)
-	loadPathsFromSettings(ctx, sessionProvider.GetSettings(), "authorized_read_paths", b.SM.RegisterReadOnlyPath, b.Logger)
-}
-
-func loadPathsFromSettings(ctx stdctx.Context, kv ports.KVStore, key string, register func(string), logger *slog.Logger) {
-	val, err := kv.Get(ctx, key)
-	if err != nil || val == "" {
-		return
-	}
-
-	var paths []string
-	if err := json.Unmarshal([]byte(val), &paths); err != nil {
-		logger.Error("failed to unmarshal "+key, "error", err, "value", val)
-		return
-	}
-
-	for _, p := range paths {
-		register(p)
-	}
 }
 
 func (b *Bootstrapper) buildAgentOrchestrator(
@@ -279,10 +175,6 @@ func (b *Bootstrapper) buildAgentOrchestrator(
 	turnsLogger ports.TurnsLogger,
 	sessionProvider ports.SessionProvider,
 ) ports.SessionDependencies {
-	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
-	tracker := telemetry.NewSessionCostTracker(b.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
-	tracker.Warmup()
-
 	return &sessionDeps{
 		paths:            paths,
 		hManager:         hManager,
@@ -290,7 +182,6 @@ func (b *Bootstrapper) buildAgentOrchestrator(
 		gw:               gw,
 		reg:              reg,
 		sm:               b.SM,
-		tracker:          tracker,
 		pricingData:      pricingData,
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
@@ -365,34 +256,6 @@ func (b *Bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 		}
 	}
 	return pricingOverrides
-}
-
-// setupSecurity configures the security manager with necessary paths.
-func (b *Bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) error {
-	b.SM.RegisterSafePath(filepath.Join(b.HomeDir, "output"))
-	b.SM.RegisterReadOnlyPath(configPath)
-	return nil
-}
-
-// handleNewSession manages session rotation and cost recording for new sessions.
-func (b *Bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
-	timestamp := time.Now().Format("20060102_150405")
-	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
-	if err := telemetry.RecordSessionCost(ctx, b.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
-		_, _ = fmt.Fprintf(b.Stderr, "Warning: Failed to record session cost for backup (log may be missing/corrupt): %v\n", err)
-	}
-
-	// Critical path: always attempt to rotate the session
-	retentionDays := 30
-	if val, err := kvStore.Get(ctx, "backup_retention_days"); err == nil && val != "" {
-		if parsed, err := strconv.Atoi(val); err == nil {
-			retentionDays = parsed
-		}
-	}
-	if err := b.RotateSession(b.FileSystem, b.Stdout, *paths, retentionDays); err != nil {
-		return fmt.Errorf("session rotation failed: %w", err)
-	}
-	return nil
 }
 
 func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
