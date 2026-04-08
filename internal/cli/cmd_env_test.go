@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -83,7 +83,7 @@ func TestEnvCommand_Execute(t *testing.T) {
 				Stdout: stdout,
 				Loader: loader,
 			}
-			
+
 			root := &cobra.Command{}
 			root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
 			cmd := newEnvCommand(cmdCtx)

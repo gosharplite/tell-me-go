@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/spf13/cobra"
 )
 
 func TestChatCommand_Execute_ConfigMerge(t *testing.T) {

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -22,6 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/spf13/cobra"
 )
 
 type integrationMockChatter struct {
