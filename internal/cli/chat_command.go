@@ -302,6 +302,18 @@ func (c *chatCommand) parseConfiguration(args []string) (*cliOptions, *pflag.Fla
 
 	fs := pflag.NewFlagSet("tell-me-go", pflag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
+
+	// OVERRIDE USAGE TO SHOW AVAILABLE COMMANDS
+	fs.Usage = func() {
+		fmt.Fprintf(c.Stderr, "Usage: tell-me-go [command] [flags]\n\n")
+		fmt.Fprintf(c.Stderr, "Available Commands:\n")
+		fmt.Fprintf(c.Stderr, "  chat        Start a chat session (Default)\n")
+		fmt.Fprintf(c.Stderr, "  browse      Browse and restore archived sessions\n")
+		fmt.Fprintf(c.Stderr, "  env         Print the fully resolved configuration\n\n")
+		fmt.Fprintf(c.Stderr, "Flags (for chat):\n")
+		fs.PrintDefaults()
+	}
+
 	opts := &cliOptions{}
 
 	fs.StringVarP(&opts.configPath, "config", "c", "configs/assistant.yaml", "Path to the configuration file")
