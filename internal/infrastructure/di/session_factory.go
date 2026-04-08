@@ -50,7 +50,7 @@ func (f *DefaultSessionFactory) buildSessionProvider(ctx stdctx.Context, paths *
 	var sessionProvider ports.SessionProvider
 	state, err := f.NewSessionState(ctx, paths.ModeDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize session state: %w", err)
+		return nil, nil, fmt.Errorf("%w: failed to initialize session state in %s: %w", ErrInfraInit, paths.ModeDir, err)
 	}
 
 	sessionProvider = state
@@ -127,16 +127,16 @@ func (f *DefaultSessionFactory) handleNewSession(ctx stdctx.Context, paths *pers
 func (f *DefaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, pricingOverrides map[string]pricing.ModelPricing) (ports.SessionProvider, *persistence.Paths, func(stdctx.Context) error, error) {
 	paths := persistence.ResolvePaths(f.HomeDir, cfg.Mode)
 	if err := infra_persistence.EnsureDirectories(f.FileSystem, paths); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("%w: failed to ensure directories for %s: %w", ErrInfraInit, cfg.Mode, err)
 	}
 
 	if err := f.setupSecurity(paths, configPath); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("%w: security setup failed for paths %s, %s: %w", ErrInfraInit, paths.ModeDir, configPath, err)
 	}
 
 	sessionProvider, cleanup, err := f.buildSessionProvider(ctx, paths, cfg)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, err // buildSessionProvider already wraps it
 	}
 
 	f.applySessionSecuritySettings(ctx, sessionProvider)
@@ -144,7 +144,7 @@ func (f *DefaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Con
 	if newSession {
 		if err := f.handleNewSession(ctx, paths, cfg, pricingOverrides, sessionProvider.GetSettings()); err != nil {
 			_ = cleanup(ctx)
-			return nil, nil, nil, fmt.Errorf("session initialization failed during rotation: %w", err)
+			return nil, nil, nil, fmt.Errorf("%w: session initialization failed during rotation for %s: %w", ErrInfraInit, paths.ModeDir, err)
 		}
 	}
 

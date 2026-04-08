@@ -27,6 +27,9 @@ type DefaultTelemetryFactory struct {
 }
 
 func NewTelemetryFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, logger *slog.Logger) TelemetryFactory {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &DefaultTelemetryFactory{
 		HomeDir:    homeDir,
 		FileSystem: fs,
@@ -42,7 +45,7 @@ func (f *DefaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 	tracker := telemetry.NewSessionCostTracker(f.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
 
-	var turnsLogger ports.TurnsLogger
+	var turnsLogger ports.TurnsLogger = &ports.NoOpTurnsLogger{}
 	if paths.TurnsLogPath != "" {
 		if tl, err := logging.NewAsyncTurnsLogger(f.FileSystem, paths.TurnsLogPath, f.Logger); err == nil {
 			turnsLogger = tl
@@ -56,7 +59,7 @@ func (f *DefaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 				return errors.Join(err, tl.Close())
 			}
 		} else {
-			f.Logger.Warn("failed to initialize turns logger", "error", err)
+			f.Logger.Warn("failed to initialize turns logger, falling back to no-op", "error", err, "path", paths.TurnsLogPath)
 		}
 	}
 

@@ -73,15 +73,15 @@ func (f *DefaultToolchainFactory) BuildRegistry(params ToolchainParams) (tools.R
 	}
 
 	if err := f.RegisterAllTools(regParams); err != nil {
-		return nil, fmt.Errorf("error registering tools: %w", err)
+		return nil, fmt.Errorf("%w: failed to register core tools: %w", ErrInfraInit, err)
 	}
 
 	if err := f.RegisterMetrics(reg, f.SM, regParams.LogFile, regParams.TraceFile, regParams.Model, regParams.Mode, regParams.PricingOverrides, regParams.SessionProvider.GetSettings()); err != nil {
-		return nil, fmt.Errorf("error registering metrics tools: %w", err)
+		return nil, fmt.Errorf("%w: failed to register metrics tools: %w", ErrInfraInit, err)
 	}
 
 	if err := f.SM.RegisterPolicyTools(reg, regParams.SessionProvider.GetSettings()); err != nil {
-		return nil, fmt.Errorf("error registering policy tools: %w", err)
+		return nil, fmt.Errorf("%w: failed to register policy tools: %w", ErrInfraInit, err)
 	}
 
 	return reg, nil

@@ -205,7 +205,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
 			},
-			wantErr: "error loading history",
+			wantErr: "failed to load history from",
 		},
 		{
 			name: "FailsOnBadClientFactory",
@@ -228,7 +228,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(simulatedErr)
 				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 			},
-			wantErr:   "error registering policy tools",
+			wantErr:   "failed to register policy tools",
 			targetErr: simulatedErr,
 		},
 		{
@@ -618,7 +618,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			wantErr: "error registering tools: simulated error",
+			wantErr: "failed to register core tools: simulated error",
 		},
 		{
 			name: "TelemetryRegistrationFails",
@@ -627,7 +627,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			wantErr: "error registering metrics tools: simulated error",
+			wantErr: "failed to register metrics tools: simulated error",
 		},
 		{
 			name: "SessionRotationFails",
@@ -637,7 +637,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				}
 				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
 			},
-			wantErr: "session initialization failed during rotation: session rotation failed: simulated error",
+			wantErr: "session initialization failed during rotation for",
 		},
 		{
 			name: "SessionProviderCloseFails",
