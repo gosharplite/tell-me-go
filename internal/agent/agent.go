@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -35,7 +36,7 @@ type runtimeConfig struct {
 type agent struct {
 	mu            sync.RWMutex
 	gateway       domain_llm.LLMGateway
-	engine        *turnEngine
+	engine        *orchestrator.Engine
 	ctxManager    *session.ContextManager
 	configWatcher session.ConfigWatcher
 	strategy      *session.ContextStrategy
@@ -103,10 +104,10 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	a.engine = newTurnEngine(client, exec, ctxManager, registry, bus, strategy,
-		withEngineConfig(sm, a.config.ProviderName, a.config.Model, a.config.Mode, a.config.PricingOverrides),
-		withEngineCostTracker(a.tracker),
-		withEngineLogger(a.logger),
+	a.engine = orchestrator.NewEngine(client, exec, ctxManager, registry, bus, strategy,
+		orchestrator.WithEngineConfig(sm, a.config.ProviderName, a.config.Model, a.config.Mode, a.config.PricingOverrides),
+		orchestrator.WithEngineCostTracker(a.tracker),
+		orchestrator.WithEngineLogger(a.logger),
 	)
 
 	if cfg.registerInternal {
@@ -158,7 +159,12 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	}
 
 	if a.engine != nil {
-		a.engine.Reconfigure(cfg, tracker)
+		a.engine.Reconfigure(orchestrator.RuntimeConfig{
+			ProviderName:     cfg.ProviderName,
+			Model:            cfg.Model,
+			Mode:             cfg.Mode,
+			PricingOverrides: cfg.PricingOverrides,
+		}, tracker)
 	}
 	if a.ctxManager != nil {
 		a.ctxManager.Reconfigure(cfg.Limits)

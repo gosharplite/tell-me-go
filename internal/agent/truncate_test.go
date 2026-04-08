@@ -5,6 +5,8 @@ package agent
 
 import (
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 )
 
 func TestTruncateSafe(t *testing.T) {
@@ -62,7 +64,7 @@ func TestTruncateSafe(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := truncateSafe([]byte(tt.input), tt.maxRunes)
+			got := orchestrator.TruncateSafe([]byte(tt.input), tt.maxRunes)
 			if got != tt.want {
 				t.Errorf("truncateSafe() = %q, want %q", got, tt.want)
 			}
@@ -74,6 +76,6 @@ func BenchmarkTruncateSafe(b *testing.B) {
 	input := []byte("This is a relatively long string that we want to truncate to see if it allocates much memory.")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		truncateSafe(input, 10)
+		orchestrator.TruncateSafe(input, 10)
 	}
 }

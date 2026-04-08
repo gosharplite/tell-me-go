@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -292,7 +293,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !isFatal(err) {
+	if !orchestrator.IsFatal(err) {
 		t.Errorf("expected fatal error for context exhaustion, got %v", err)
 	}
 }
@@ -605,7 +606,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	tracker2 := &mockCostTracker{}
 	a.(*agent).tracker = tracker2
 	if a.(*agent).engine != nil {
-		a.(*agent).engine.ApplyOptions(withEngineCostTracker(tracker2))
+		a.(*agent).engine.ApplyOptions(orchestrator.WithEngineCostTracker(tracker2))
 	}
 
 	if a.(*agent).tracker != tracker2 {

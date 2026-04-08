@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -17,11 +17,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
-// mockExecutor implements toolExecutor for testing.
+// mockExecutor implements ToolExecutor for testing.
 type mockExecutor struct {
 	ExecuteFunc func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
@@ -180,9 +181,9 @@ type mockHook struct {
 	transCalled  int
 }
 
-func (h *mockHook) BeforeTurn(turn *turn)                              { h.beforeCalled++ }
-func (h *mockHook) AfterTurn(turn *turn, err error)                    { h.afterCalled++ }
-func (h *mockHook) OnPhaseTransition(from, to turnPhase, s *turnState) { h.transCalled++ }
+func (h *mockHook) BeforeTurn(turn *Turn)                              { h.beforeCalled++ }
+func (h *mockHook) AfterTurn(turn *Turn, err error)                    { h.afterCalled++ }
+func (h *mockHook) OnPhaseTransition(from, to TurnPhase, s *TurnState) { h.transCalled++ }
 
 type mockRetryPolicy struct {
 	shouldRetryCalled bool
@@ -331,29 +332,29 @@ func (c *costCapturer) assertTurnCosts(t *testing.T, expected []float64) {
 	}
 }
 
-func createProcessorForPhase(phase turnPhase) turnProcessor {
+func createProcessorForPhase(phase TurnPhase) TurnProcessor {
 	switch phase {
-	case phaseGuard:
+	case PhaseGuard:
 		return &guardStep{}
-	case phaseRefining:
+	case PhaseRefining:
 		return &contextRefiner{}
-	case phaseInference:
+	case PhaseInference:
 		return &inferenceStep{}
-	case phaseExecuting:
+	case PhaseExecuting:
 		return &executionStep{}
-	case phasePersisting:
+	case PhasePersisting:
 		return &persistenceStep{}
-	case phaseRecovering:
+	case PhaseRecovering:
 		return &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3}}
 	}
 	return nil
 }
 
-func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
+func setupTransitionTurn(hasTools bool, phase TurnPhase) *Turn {
 	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-			if hasTools && phase == phaseInference {
+			if hasTools && phase == PhaseInference {
 				content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
 			}
 			return content, &llm.Metrics{}, nil
@@ -361,11 +362,11 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 	}
 	reg := &mockToolRegistry{}
 	counter := &mockTokenCounter{}
-	turn := &turn{
-		State: &turnState{
+	turn := &Turn{
+		State: &TurnState{
 			HasToolCalls: hasTools,
 			RetryCount:   0,
-			LastError:    &agentError{Category: llm.ErrTransient, Message: "err"},
+			LastError:    &AgentError{Category: llm.ErrTransient, Message: "err"},
 			Metadata: &session.Metadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
@@ -375,7 +376,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 			Strategy: session.NewContextStrategy(session.NewHeuristicTokenCounter(reg)),
 		},
 		Gateway: mockGw,
-		executor: &mockExecutor{
+		Executor: &mockExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
 			},
@@ -384,7 +385,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 		TokenCounter: counter,
 		Clock:        &clock.RealClock{},
 	}
-	if phase == phaseRefining || phase == phaseGuard {
+	if phase == PhaseRefining || phase == PhaseGuard {
 		turn.CtxManager.Pipeline = session.NewContextPipeline()
 	}
 	return turn
@@ -400,3 +401,118 @@ func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 }
 
 func (m *mockHistoryManager) GetFilePath() string { return "" }
+
+type mockTokenCounter struct {
+	tokens int
+}
+
+func (m *mockTokenCounter) Count(contents []*llm.Content) int {
+	return m.tokens
+}
+
+func (m *mockTokenCounter) CountTokens(text string) int {
+	return m.tokens
+}
+
+type mockGateway struct {
+	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	sendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+}
+
+func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	if m.GenerateFunc != nil {
+		return m.GenerateFunc(ctx, input, tools, resolver)
+	}
+	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+}
+
+func (m *mockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	if m.sendChatFn != nil {
+		return m.sendChatFn(ctx, history, tools, resolver)
+	}
+	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+}
+
+func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return [][]byte{}, nil
+}
+
+func (m *mockGateway) RefreshAuth() error { return nil }
+
+type mockToolRegistry struct {
+	Declarations []*tools.ToolDeclaration
+}
+
+func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
+	return m.Declarations
+}
+
+func (m *mockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
+	return m.RegisterToToolkit("core", declaration, implementation)
+}
+
+func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterToToolkitWithOptions("core", def, handler, opts)
+}
+
+func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+
+func (m *mockToolRegistry) IsSerial(name string) bool {
+	return false
+}
+
+func (m *mockToolRegistry) IsLongRunning(name string) bool {
+	return false
+}
+
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{Serial: m.IsSerial(name), LongRunning: m.IsLongRunning(name)}
+}
+
+func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.RegisterToToolkitWithOptions(toolkit, def, handler, tools.ToolOptions{})
+}
+
+func (m *mockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	m.Declarations = append(m.Declarations, def)
+	return nil
+}
+
+func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+
+func (m *mockToolRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}
+
+type mockEventBusFail struct {
+	publishErr error
+}
+
+func (m *mockEventBusFail) Publish(ctx context.Context, e events.Event) error {
+	return m.publishErr
+}
+func (m *mockEventBusFail) Subscribe(f func(context.Context, events.Event)) {}
+func (m *mockEventBusFail) Shutdown(ctx context.Context) error { return nil }
+func (m *mockEventBusFail) Flush(ctx context.Context) error    { return nil }
+
+type mockSecurityManager struct {
+	domain_security.Manager
+	AllowAll bool
+}
+
+func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
+func (m *mockSecurityManager) TerminalLock()                          {}
+func (m *mockSecurityManager) TerminalUnlock()                        {}
+func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
+	return m.AllowAll
+}
+
+func (m *mockSecurityManager) Close() error { return nil }
