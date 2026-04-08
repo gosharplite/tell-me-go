@@ -503,7 +503,7 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 	}
 }
 
-func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
+func TestChatCommand_Execute_LastN_Positional(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr strings.Builder
@@ -521,7 +521,7 @@ func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
 		Loader:       ml,
 	}
 
-	err := executeChatCommand(cmdCtx, []string{"-l"})
+	err := executeChatCommand(cmdCtx, []string{"-l", "5", "hello"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -530,8 +530,8 @@ func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
 		t.Error("expected chat service to be called")
 	}
 
-	if mService.lastParams.LastN != 1 {
-		t.Errorf("expected LastN 1 (default), got %d", mService.lastParams.LastN)
+	if mService.lastParams.LastN != 5 {
+		t.Errorf("expected LastN 5, got %d", mService.lastParams.LastN)
 	}
 }
 

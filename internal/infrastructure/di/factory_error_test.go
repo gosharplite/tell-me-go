@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -46,6 +47,13 @@ func (m *mockFailingFS) Stat(name string) (os.FileInfo, error) {
 		return nil, m.statErr
 	}
 	return nil, os.ErrNotExist
+}
+
+func (m *mockFailingFS) CreateTemp(dir, pattern string) (infra_persistence.File, error) {
+	if m.openErr != nil {
+		return nil, m.openErr
+	}
+	return nil, errors.New("not implemented")
 }
 
 func (m *mockFailingFS) ReadFile(name string) ([]byte, error) {
@@ -281,7 +289,7 @@ func TestGetSuggestionService_Fallback(t *testing.T) {
 	assert.NoError(t, err)
 
 	sm := new(mockConfigurableSecurityManager)
-	fs := infra_persistence.NewOSFileSystem()
+	fs := &infra_persistence.OSFileSystem{}
 	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, fs, nil)
 
 	svc, err := b.GetSuggestionService(ctx, []string{"test"})

@@ -50,9 +50,7 @@ func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
 	fs.BoolVarP(&opts.showTurnsLog, "turns", "t", false, "Print the contents of the current session's turns.log and exit")
 	fs.IntVarP(&opts.lastN, "last", "l", 0, "Show the last N messages from history")
-	fs.Lookup("last").NoOptDefVal = "1"
 	fs.IntVarP(&opts.backN, "back", "b", 0, "Go back / delete the last N turns from history")
-	fs.Lookup("back").NoOptDefVal = "1"
 	fs.BoolVarP(&opts.rawOutput, "raw", "r", false, "Show raw output (without markdown rendering)")
 	fs.BoolVarP(&opts.tuiPrompt, "interactive", "i", false, "Enable interactive TUI prompt with suggestions")
 	fs.BoolVar(&opts.tuiPrompt, "tui", false, "Enable interactive TUI prompt with suggestions")
