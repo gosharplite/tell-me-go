@@ -144,9 +144,21 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, err
 	}
 
-	deps := b.buildAgentOrchestrator(paths, hManager, client, client, reg, pricingData, pricingOverrides, bus, cfg, b.Logger, turnsLogger, sessionProvider)
-	// Overwrite the newly created tracker from telemetry factory onto the Orchestrator deps for now
-	deps.(*sessionDeps).tracker = tracker
+	deps := &sessionDeps{
+		paths:            paths,
+		hManager:         hManager,
+		client:           client,
+		gw:               client,
+		reg:              reg,
+		sm:               b.SM,
+		tracker:          tracker,
+		pricingData:      pricingData,
+		pricingOverrides: pricingOverrides,
+		bus:              bus,
+		logger:           b.Logger,
+		turnsLogger:      turnsLogger,
+		sessionProvider:  sessionProvider,
+	}
 
 	return deps, hManager, cleanup, nil
 }
@@ -159,36 +171,6 @@ func (b *Bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistenc
 		}
 	}
 	return hManager, nil
-}
-
-func (b *Bootstrapper) buildAgentOrchestrator(
-	paths *persistence.Paths,
-	hManager ports.HistoryManager,
-	client llm.LLMClient,
-	gw llm.LLMGateway,
-	reg tools.Registry,
-	pricingData pricing.PricingData,
-	pricingOverrides map[string]pricing.ModelPricing,
-	bus events.EventBus,
-	cfg *config.Config,
-	logger *slog.Logger,
-	turnsLogger ports.TurnsLogger,
-	sessionProvider ports.SessionProvider,
-) ports.SessionDependencies {
-	return &sessionDeps{
-		paths:            paths,
-		hManager:         hManager,
-		client:           client,
-		gw:               gw,
-		reg:              reg,
-		sm:               b.SM,
-		pricingData:      pricingData,
-		pricingOverrides: pricingOverrides,
-		bus:              bus,
-		logger:           logger,
-		turnsLogger:      turnsLogger,
-		sessionProvider:  sessionProvider,
-	}
 }
 
 type sessionDeps struct {
