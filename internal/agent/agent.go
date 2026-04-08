@@ -8,9 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
+	"sync/atomic"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -33,9 +34,8 @@ type runtimeConfig struct {
 
 // agent represents the chat orchestration logic (Stateless Service).
 type agent struct {
-	mu            sync.RWMutex
 	gateway       domain_llm.LLMGateway
-	engine        *turnEngine
+	engine        *orchestrator.Engine
 	ctxManager    *session.ContextManager
 	configWatcher session.ConfigWatcher
 	strategy      *session.ContextStrategy
@@ -44,7 +44,7 @@ type agent struct {
 	tracker       domain_pricing.CostTracker
 	logger        *slog.Logger
 
-	config runtimeConfig
+	config atomic.Pointer[runtimeConfig]
 }
 
 // NewAgent creates a new agent with required dependencies.
@@ -74,18 +74,19 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		events:        bus,
 		tracker:       cfg.tracker,
 		logger:        cfg.logger,
-		config: runtimeConfig{
-			ProviderName:     providerName,
-			Model:            cfg.model,
-			Mode:             cfg.mode,
-			PricingOverrides: cfg.pricingOverrides,
-			Limits: events.Limits{
-				MaxHistoryTokens: domain_config.DefaultMaxHistoryTokens,
-				MaxToolTurns:     domain_config.DefaultMaxToolTurns,
-				MaxHistoryTurns:  domain_config.DefaultMaxHistoryTurns,
-			},
-		},
 	}
+
+	a.config.Store(&runtimeConfig{
+		ProviderName:     providerName,
+		Model:            cfg.model,
+		Mode:             cfg.mode,
+		PricingOverrides: cfg.pricingOverrides,
+		Limits: events.Limits{
+			MaxHistoryTokens: domain_config.DefaultMaxHistoryTokens,
+			MaxToolTurns:     domain_config.DefaultMaxToolTurns,
+			MaxHistoryTurns:  domain_config.DefaultMaxHistoryTurns,
+		},
+	})
 
 	factory := &session.PipelineFactory{
 		Registry:      registry,
@@ -103,10 +104,11 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	a.engine = newTurnEngine(client, exec, ctxManager, registry, bus, strategy,
-		withEngineConfig(sm, a.config.ProviderName, a.config.Model, a.config.Mode, a.config.PricingOverrides),
-		withEngineCostTracker(a.tracker),
-		withEngineLogger(a.logger),
+	initialCfg := a.config.Load()
+	a.engine = orchestrator.NewEngine(client, exec, ctxManager, registry, bus, strategy,
+		orchestrator.WithEngineConfig(sm, initialCfg.ProviderName, initialCfg.Model, initialCfg.Mode, initialCfg.PricingOverrides),
+		orchestrator.WithEngineCostTracker(a.tracker),
+		orchestrator.WithEngineLogger(a.logger),
 	)
 
 	if cfg.registerInternal {
@@ -131,24 +133,26 @@ func (a *agent) applyConfig(ctx context.Context) error {
 		return err
 	}
 
-	a.mu.Lock()
-	a.configWatcher.Refresh(a.config.Model)
+	oldCfg := a.config.Load()
+	a.configWatcher.Refresh(oldCfg.Model)
 
 	tokens, toolTurns, histTurns, threshold := a.configWatcher.GetLimits()
-	a.config.Limits.MaxHistoryTokens = tokens
-	a.config.Limits.MaxToolTurns = toolTurns
-	a.config.Limits.MaxHistoryTurns = histTurns
-	a.config.Limits.TieredThreshold = threshold
+
+	newCfg := *oldCfg // shallow copy
+	newCfg.Limits.MaxHistoryTokens = tokens
+	newCfg.Limits.MaxToolTurns = toolTurns
+	newCfg.Limits.MaxHistoryTurns = histTurns
+	newCfg.Limits.TieredThreshold = threshold
 
 	if a.strategy != nil {
 		a.configWatcher.SyncToStrategy(a.strategy)
 	}
 
-	cfg := a.config
-	tracker := a.tracker
-	a.mu.Unlock()
+	a.config.Store(&newCfg)
 
-	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: cfg.Limits}); err != nil {
+	tracker := a.tracker
+
+	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: newCfg.Limits}); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			a.getLogger().Error("event_publish_failed",
 				slog.String("event_type", "ConfigUpdated"),
@@ -158,10 +162,15 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	}
 
 	if a.engine != nil {
-		a.engine.Reconfigure(cfg, tracker)
+		a.engine.Reconfigure(orchestrator.RuntimeConfig{
+			ProviderName:     newCfg.ProviderName,
+			Model:            newCfg.Model,
+			Mode:             newCfg.Mode,
+			PricingOverrides: newCfg.PricingOverrides,
+		}, tracker)
 	}
 	if a.ctxManager != nil {
-		a.ctxManager.Reconfigure(cfg.Limits)
+		a.ctxManager.Reconfigure(newCfg.Limits)
 	}
 	return nil
 }
@@ -214,9 +223,6 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 
 // Shutdown gracefully stops the agent and its components.
 func (a *agent) Shutdown(ctx context.Context) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if a.events != nil {
 		if err := a.events.Flush(ctx); err != nil {
 			a.getLogger().Debug("event bus flush incomplete during shutdown", slog.Any("error", err))

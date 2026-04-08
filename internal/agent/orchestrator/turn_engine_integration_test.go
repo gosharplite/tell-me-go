@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -26,7 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// integrationMockExecutor defines a mock for tool execution.
+// integrationMockExecutor defines a mock for ToolExecutor interaction.
 type integrationMockExecutor struct {
 	mock.Mock
 }
@@ -113,7 +113,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		gw := &integrationMockLLMGateway{}
 		exec := &integrationMockExecutor{}
 		reg := &mockToolRegistry{}
-		engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
+		engine := NewEngine(gw, exec, cm, reg, bus, counter)
 
 		ctx := context.Background()
 
@@ -154,7 +154,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		refiner := &contextRefiner{}
 		// Clear trigger so refiner uses heuristic for the real (mutated) history
 		counter.trigger = nil
-		_, err = refiner.process(ctx, turn1)
+		_, err = refiner.Process(ctx, turn1)
 		assert.NoError(t, err)
 
 		// Total tokens should be history (user prompt + model call + mutated error)
@@ -186,7 +186,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		gw := &integrationMockLLMGateway{}
 		exec := &integrationMockExecutor{}
 		reg := &mockToolRegistry{}
-		engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
+		engine := NewEngine(gw, exec, cm, reg, bus, counter)
 
 		ctx := context.Background()
 
@@ -199,7 +199,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		turn0 := engine.createTurn(0, time.Now())
 		turn0.State.ToolCallCount = make(map[string]int)
 		refiner := &contextRefiner{}
-		_, err := refiner.process(ctx, turn0)
+		_, err := refiner.Process(ctx, turn0)
 		assert.NoError(t, err)
 		assert.Equal(t, 8500, turn0.State.Tokens)
 
@@ -300,7 +300,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	exec, err := executor.NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
 
-	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
+	engine := NewEngine(gw, exec, cm, reg, bus, counter)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -350,7 +350,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	hist, _ := h.GetWindow(context.Background(), 0, -1)
 
 	// Should have: user prompt, model tool calls, synthesized tool response
-	// The emergencySave should have triggered because the error was fatal (wrapped in agentError with llm.ErrTerminal)
+	// The emergencySave should have triggered because the error was fatal (wrapped in AgentError with llm.ErrTerminal)
 	assert.Equal(t, 3, len(hist))
 
 	// Check model response (the tool calls)
@@ -359,7 +359,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	assert.NotNil(t, hist[1].Parts[0].FunctionCall)
 	assert.NotNil(t, hist[1].Parts[1].FunctionCall)
 
-	// Check tool response
+	// Check Tool response
 	toolResp := hist[2]
 	assert.Equal(t, "user", toolResp.Role)
 	assert.Equal(t, 2, len(toolResp.Parts)) // Two function responses

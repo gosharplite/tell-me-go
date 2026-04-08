@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package orchestrator
 
 import (
 	"context"
@@ -94,36 +94,36 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 
 	t.Run("Transient error triggers retry state (Refining)", func(t *testing.T) {
 		t.Parallel()
-		turn := &turn{
-			State: &turnState{
+		turn := &Turn{
+			State: &TurnState{
 				LastError:  llm.ErrTransient,
 				RetryCount: 0,
 			},
 			Clock: &mockClock{},
 		}
-		res, err := step.process(context.Background(), turn)
+		res, err := step.Process(context.Background(), turn)
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
-		if res.NextPhase != phaseRefining {
-			t.Errorf("Expected NextPhase %s, got %s", phaseRefining, res.NextPhase)
+		if res.NextPhase != PhaseRefining {
+			t.Errorf("Expected NextPhase %s, got %s", PhaseRefining, res.NextPhase)
 		}
 	})
 
 	t.Run("Terminal error breaks loop immediately (Complete)", func(t *testing.T) {
 		t.Parallel()
-		turn := &turn{
-			State: &turnState{
+		turn := &Turn{
+			State: &TurnState{
 				LastError: llm.ErrTerminal,
 			},
 			Clock: &mockClock{},
 		}
-		res, err := step.process(context.Background(), turn)
+		res, err := step.Process(context.Background(), turn)
 		if !errors.Is(err, llm.ErrTerminal) {
 			t.Errorf("Expected ErrTerminal, got %v", err)
 		}
-		if res.NextPhase != phaseComplete {
-			t.Errorf("Expected NextPhase %s, got %s", phaseComplete, res.NextPhase)
+		if res.NextPhase != PhaseComplete {
+			t.Errorf("Expected NextPhase %s, got %s", PhaseComplete, res.NextPhase)
 		}
 	})
 }
@@ -139,9 +139,9 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	}
 
 	step := &inferenceStep{}
-	turn := &turn{
+	turn := &Turn{
 		Gateway:  gw,
-		State:    &turnState{},
+		State:    &TurnState{},
 		Clock:    &mockClock{},
 		Registry: &mockToolRegistry{},
 		CtxManager: &session.ContextManager{
@@ -155,7 +155,7 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = step.process(ctx, turn)
+		_, _ = step.Process(ctx, turn)
 	}()
 
 	select {
