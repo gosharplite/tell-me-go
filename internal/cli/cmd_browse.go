@@ -32,7 +32,6 @@ func newBrowseCommand(ctx *context) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
 	return cmd
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -86,11 +87,14 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		Loader:       loader,
 	}
 	cmd := newChatCommand(cmdCtx)
+	root := &cobra.Command{}
+	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	root.AddCommand(cmd)
 
 	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"-c", cfgPath, "--new", "hello"})
+	root.SetArgs([]string{"chat", "-c", cfgPath, "--new", "hello"})
 
-	if err := cmd.ExecuteContext(ctx); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
 		t.Fatalf("Execute failed: %v\nStderr: %s", err, stderr.String())
 	}
 

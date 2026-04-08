@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -178,12 +179,8 @@ func TestChatCommand_Execute(t *testing.T) {
 		Loader:       ml,
 		MockPrompt:   "hello",
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"hello"})
-
-	err := cmd.ExecuteContext(ctx)
+	err := executeChatCommand(cmdCtx, []string{"hello"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -214,12 +211,8 @@ func TestChatCommand_Execute_LastN(t *testing.T) {
 		Bootstrapper: mb,
 		Loader:       ml,
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"-l=5", "hello"})
-
-	err := cmd.ExecuteContext(ctx)
+	err := executeChatCommand(cmdCtx, []string{"-l=5", "hello"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -250,12 +243,8 @@ func TestChatCommand_Execute_BackN(t *testing.T) {
 		Bootstrapper: mb,
 		Loader:       ml,
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"-b=2", "hello"})
-
-	err := cmd.ExecuteContext(ctx)
+	err := executeChatCommand(cmdCtx, []string{"-b=2", "hello"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -286,12 +275,8 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 		Bootstrapper: mb,
 		Loader:       ml,
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"--retry"})
-
-	err := cmd.ExecuteContext(ctx)
+	err := executeChatCommand(cmdCtx, []string{"--retry"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -330,12 +315,8 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 		Bootstrapper: mb,
 		Loader:       ml,
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"--retry"})
-
-	err := cmd.ExecuteContext(ctx)
+	err := executeChatCommand(cmdCtx, []string{"--retry"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -375,11 +356,8 @@ func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 		Loader:       ml,
 		HomeDir:      t.TempDir(),
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"--tui"})
-	err := cmd.ExecuteContext(ctx)
+	err := executeChatCommand(cmdCtx, []string{"--tui"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -421,11 +399,8 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 		Loader:       ml,
 		HomeDir:      t.TempDir(),
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"--tui"})
-	err := cmd.ExecuteContext(ctx)
+	err := executeChatCommand(cmdCtx, []string{"--tui"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -469,10 +444,8 @@ func TestChatCommand_Execute_ShowTurnsLog(t *testing.T) {
 		Bootstrapper: mb,
 		Loader:       ml,
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	cmd.SetArgs([]string{"-t"})
-	err := cmd.ExecuteContext(stdctx.Background())
+	err := executeChatCommand(cmdCtx, []string{"-t"})
 	require.NoError(t, err, "Execute should not fail")
 	assert.Equal(t, "turn 1: hello\nturn 2: world", stdout.String())
 	assert.False(t, mService.chatCalled, "expected chat service NOT to be called")
@@ -515,10 +488,8 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 				ChatService: ms,
 				Stdout:      new(strings.Builder),
 			}
-			cmd := newChatCommand(cmdCtx)
 
-			cmd.SetArgs([]string{"-t"})
-			err := cmd.ExecuteContext(stdctx.Background())
+			err := executeChatCommand(cmdCtx, []string{"-t"})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 
@@ -545,12 +516,8 @@ func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
 		Bootstrapper: mb,
 		Loader:       ml,
 	}
-	cmd := newChatCommand(cmdCtx)
 
-	ctx := stdctx.Background()
-	cmd.SetArgs([]string{"-l"})
-
-	err := cmd.ExecuteContext(ctx)
+	err := executeChatCommand(cmdCtx, []string{"-l"})
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -562,4 +529,13 @@ func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
 	if mService.lastParams.LastN != 1 {
 		t.Errorf("expected LastN 1 (default), got %d", mService.lastParams.LastN)
 	}
+}
+
+func executeChatCommand(cmdCtx *context, args []string) error {
+	root := &cobra.Command{}
+	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	chatCmd := newChatCommand(cmdCtx)
+	root.AddCommand(chatCmd)
+	root.SetArgs(append([]string{"chat"}, args...))
+	return root.ExecuteContext(stdctx.Background())
 }

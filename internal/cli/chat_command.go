@@ -73,6 +73,8 @@ func newChatCommand(ctx *context) *cobra.Command {
 		Short: "Start a chat session (Default)",
 		Long:  `The chat command initiates a session with the AI assistant. You can provide a prompt directly as an argument or enter an interactive session.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			configPath, _ := cmd.Flags().GetString("config")
+			opts.configPath = configPath
 			return c.execute(cmd.Context(), cmd.Flags(), opts, args)
 		},
 	}
@@ -83,7 +85,6 @@ func newChatCommand(ctx *context) *cobra.Command {
 }
 
 func (c *chatCommand) addFlags(fs *pflag.FlagSet, opts *cliOptions) {
-	fs.StringVarP(&opts.configPath, "config", "c", "configs/assistant.yaml", "Path to the configuration file")
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
 	fs.BoolVarP(&opts.showTurnsLog, "turns", "t", false, "Print the contents of the current session's turns.log and exit")
 	fs.IntVarP(&opts.lastN, "last", "l", 0, "Show the last N messages from history")

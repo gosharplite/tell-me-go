@@ -139,6 +139,8 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		Args:          cobra.ArbitraryArgs,
 	}
 
+	rootCmd.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+
 	rootCmd.SetOut(a.Stdout)
 	rootCmd.SetErr(a.Stderr)
 

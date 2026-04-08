@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
@@ -49,13 +50,16 @@ AIMODEL: "test-model"
 		MockPrompt:   "hello",
 	}
 	cmd := newChatCommand(cmdCtx)
+	root := &cobra.Command{}
+	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	root.AddCommand(cmd)
 
 	ctx := stdctx.Background()
 	// No -i or -tui flag, but config has it enabled.
 	// We run WITHOUT positional arguments to allow TUI auto-enable from config.
-	cmd.SetArgs([]string{"-c", configPath})
+	root.SetArgs([]string{"chat", "-c", configPath})
 
-	err = cmd.ExecuteContext(ctx)
+	err = root.ExecuteContext(ctx)
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -120,14 +124,13 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 				MockPrompt:   "hello",
 			}
 			cmd := newChatCommand(cmdCtx)
+			root := &cobra.Command{}
+			root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+			root.AddCommand(cmd)
 
 			ctx := stdctx.Background()
-			if len(tt.args) > 1 {
-				cmd.SetArgs(tt.args[1:])
-			} else {
-				cmd.SetArgs([]string{})
-			}
-			err := cmd.ExecuteContext(ctx)
+			root.SetArgs(tt.args)
+			err := root.ExecuteContext(ctx)
 			if err != nil {
 				t.Errorf("Execute failed: %v", err)
 			}
