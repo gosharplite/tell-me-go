@@ -1159,25 +1159,25 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 // --- Options for tests ---
 
 func withEngineMiddleware(m ...TurnMiddleware) EngineOption {
-	return func(e *Engine) {
+	return func(e *Engine, cfg *EngineConfig) {
 		e.middleware = append(e.middleware, m...)
 	}
 }
 
 func withEngineProcessor(phase TurnPhase, p TurnProcessor) EngineOption {
-	return func(e *Engine) {
+	return func(e *Engine, cfg *EngineConfig) {
 		e.processors[phase] = p
 	}
 }
 
 func WithEngineHook(h TurnHook) EngineOption {
-	return func(e *Engine) {
+	return func(e *Engine, cfg *EngineConfig) {
 		e.hooks = append(e.hooks, h)
 	}
 }
 
 func WithEngineRetryPolicy(p retryPolicy) EngineOption {
-	return func(e *Engine) {
+	return func(e *Engine, cfg *EngineConfig) {
 		e.retryPolicy = p
 	}
 }

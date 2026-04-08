@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -29,6 +29,17 @@ type RuntimeConfig struct {
 	Model            string
 	Mode             string
 	PricingOverrides map[string]domain_pricing.ModelPricing
+}
+
+// EngineConfig defines the lock-free runtime state for the Engine.
+type EngineConfig struct {
+	ProviderName     string
+	Model            string
+	Mode             string
+	PricingOverrides map[string]domain_pricing.ModelPricing
+	CostTracker      domain_pricing.CostTracker
+	SM               domain_security.Manager
+	Logger           *slog.Logger
 }
 
 // TurnPhase represents the current stage of a single agent turn.
@@ -178,73 +189,83 @@ type Turn struct {
 
 // Engine manages the "Think -> Act -> Observe" cycle using a state machine.
 type Engine struct {
-	mu               sync.RWMutex
-	ctxManager       *session.ContextManager
-	gateway          llm.LLMGateway
-	executor         ToolExecutor
-	registry         tools.Registry
-	tokenCounter     llm.TokenCounter
-	events           events.EventBus
-	processors       map[TurnPhase]TurnProcessor
-	middleware       []TurnMiddleware
-	hooks            []TurnHook
-	retryPolicy      retryPolicy
-	clock            clock.Clock
-	sm               domain_security.Manager
-	providerName     string
-	model            string
-	mode             string
-	pricingOverrides map[string]domain_pricing.ModelPricing
-	costTracker      domain_pricing.CostTracker
-	logger           *slog.Logger
+	config       atomic.Pointer[EngineConfig]
+	ctxManager   *session.ContextManager
+	gateway      llm.LLMGateway
+	executor     ToolExecutor
+	registry     tools.Registry
+	tokenCounter llm.TokenCounter
+	events       events.EventBus
+	processors   map[TurnPhase]TurnProcessor
+	middleware   []TurnMiddleware
+	hooks        []TurnHook
+	retryPolicy  retryPolicy
+	clock        clock.Clock
 }
+
+// EngineOption allows configuring the Engine.
+type EngineOption func(*Engine, *EngineConfig)
 
 // WithEngineClock sets a custom clock implementation.
 func WithEngineClock(c clock.Clock) EngineOption {
-	return func(e *Engine) {
+	return func(e *Engine, cfg *EngineConfig) {
 		e.clock = c
 	}
 }
 
-// EngineOption allows configuring the Engine.
-type EngineOption func(*Engine)
-
 // WithEngineCostTracker sets the cost tracker for the engine.
 func WithEngineCostTracker(tracker domain_pricing.CostTracker) EngineOption {
-	return func(e *Engine) {
-		e.costTracker = tracker
+	return func(e *Engine, cfg *EngineConfig) {
+		cfg.CostTracker = tracker
 	}
 }
 
 // WithEngineConfig sets the security and usage configuration for the engine.
 func WithEngineConfig(sm domain_security.Manager, providerName, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) EngineOption {
-	return func(e *Engine) {
-		e.sm = sm
-		e.providerName = providerName
-		e.model = model
-		e.mode = mode
-		e.pricingOverrides = pricingOverrides
+	return func(e *Engine, cfg *EngineConfig) {
+		cfg.SM = sm
+		cfg.ProviderName = providerName
+		cfg.Model = model
+		cfg.Mode = mode
+		cfg.PricingOverrides = pricingOverrides
+	}
+}
+
+// WithEngineLogger sets the logger for the engine.
+func WithEngineLogger(l *slog.Logger) EngineOption {
+	return func(e *Engine, cfg *EngineConfig) {
+		cfg.Logger = l
 	}
 }
 
 // ApplyOptions applies new options to the engine.
 func (e *Engine) ApplyOptions(opts ...EngineOption) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	for _, opt := range opts {
-		opt(e)
+	for {
+		oldCfg := e.config.Load()
+		newCfg := *oldCfg // shallow copy
+		for _, opt := range opts {
+			opt(e, &newCfg)
+		}
+		if e.config.CompareAndSwap(oldCfg, &newCfg) {
+			break
+		}
 	}
 }
 
 // Reconfigure propagates configuration changes to the engine.
 func (e *Engine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.CostTracker) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.providerName = cfg.ProviderName
-	e.model = cfg.Model
-	e.mode = cfg.Mode
-	e.pricingOverrides = cfg.PricingOverrides
-	e.costTracker = tracker
+	for {
+		oldCfg := e.config.Load()
+		newCfg := *oldCfg
+		newCfg.ProviderName = cfg.ProviderName
+		newCfg.Model = cfg.Model
+		newCfg.Mode = cfg.Mode
+		newCfg.PricingOverrides = cfg.PricingOverrides
+		newCfg.CostTracker = tracker
+		if e.config.CompareAndSwap(oldCfg, &newCfg) {
+			break
+		}
+	}
 }
 
 // NewEngine creates a new Engine with a default pipeline.
@@ -261,6 +282,8 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, r
 		clock:        clock.RealClock{},
 	}
 
+	cfg := &EngineConfig{}
+
 	// Register default processors
 	e.processors[PhaseGuard] = &guardStep{}
 	e.processors[PhaseRefining] = &contextRefiner{}
@@ -270,8 +293,10 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, r
 	e.processors[PhaseRecovering] = &recoveryStep{Policy: e.retryPolicy}
 
 	for _, opt := range opts {
-		opt(e)
+		opt(e, cfg)
 	}
+
+	e.config.Store(cfg)
 
 	// Ensure recoveryStep uses the (potentially overridden) policy
 	if rs, ok := e.processors[PhaseRecovering].(*recoveryStep); ok {
@@ -332,14 +357,8 @@ func (e *Engine) prepareNextTurn(turn *Turn) {
 }
 
 func (e *Engine) createTurn(index int, startTime time.Time) *Turn {
-	e.mu.RLock()
-	tracker := e.costTracker
-	providerName := e.providerName
-	model := e.model
-	mode := e.mode
+	cfg := e.config.Load()
 	counter := e.tokenCounter
-	logger := e.getLogger()
-	e.mu.RUnlock()
 
 	turn := &Turn{
 		Index:        index,
@@ -352,11 +371,11 @@ func (e *Engine) createTurn(index int, startTime time.Time) *Turn {
 		TokenCounter: counter,
 		Events:       e.events,
 		Clock:        e.clock,
-		CostTracker:  tracker,
-		ProviderName: providerName,
-		Model:        model,
-		Mode:         mode,
-		Logger:       logger,
+		CostTracker:  cfg.CostTracker,
+		ProviderName: cfg.ProviderName,
+		Model:        cfg.Model,
+		Mode:         cfg.Mode,
+		Logger:       e.getLogger(),
 	}
 	turn.MaxToolTurns = e.ctxManager.GetLimits().MaxToolTurns
 	return turn
@@ -817,8 +836,9 @@ func (p *executionStep) handleOversizedPayload(ctx context.Context, turn *Turn, 
 }
 
 func (e *Engine) getLogger() *slog.Logger {
-	if e.logger != nil {
-		return e.logger
+	cfg := e.config.Load()
+	if cfg != nil && cfg.Logger != nil {
+		return cfg.Logger
 	}
 	return slog.Default()
 }
@@ -828,11 +848,4 @@ func (t *Turn) getLogger() *slog.Logger {
 		return t.Logger
 	}
 	return slog.Default()
-}
-
-// WithEngineLogger sets the logger for the engine.
-func WithEngineLogger(l *slog.Logger) EngineOption {
-	return func(e *Engine) {
-		e.logger = l
-	}
 }

@@ -519,14 +519,15 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	if a.(*agent).config.Model != "test-model" {
-		t.Errorf("expected model test-model, got %s", a.(*agent).config.Model)
+	cfg := a.(*agent).config.Load()
+	if cfg.Model != "test-model" {
+		t.Errorf("expected model test-model, got %s", cfg.Model)
 	}
-	if a.(*agent).config.Mode != "chat" {
-		t.Errorf("expected mode chat, got %s", a.(*agent).config.Mode)
+	if cfg.Mode != "chat" {
+		t.Errorf("expected mode chat, got %s", cfg.Mode)
 	}
-	if p, ok := a.(*agent).config.PricingOverrides["test-model"]; !ok || p.Miss != 1.0 {
-		t.Errorf("pricing overrides not correctly set: %+v", a.(*agent).config.PricingOverrides)
+	if p, ok := cfg.PricingOverrides["test-model"]; !ok || p.Miss != 1.0 {
+		t.Errorf("pricing overrides not correctly set: %+v", cfg.PricingOverrides)
 	}
 }
 
@@ -773,6 +774,7 @@ func TestAgent_ApplyConfig_Publish_Error(t *testing.T) {
 		events:        mockBus,
 		configWatcher: session.NewNoOpConfigWatcher(1000, 5, 10),
 	}
+	a.config.Store(&runtimeConfig{})
 
 	err := a.applyConfig(context.Background())
 
