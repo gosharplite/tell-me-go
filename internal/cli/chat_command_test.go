@@ -549,7 +549,9 @@ func executeChatCommand(cmdCtx *context, args []string) error {
 		root.Flags().AddFlag(f)
 	})
 
-	root.SetArgs(args)
+	// Use sanitizeArgs similarly to App.Run
+	sanitized := sanitizeArgs(append([]string{"dummy"}, args...))
+	root.SetArgs(sanitized[1:])
 
 	return root.ExecuteContext(stdctx.Background())
 }

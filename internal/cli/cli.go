@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -153,6 +154,9 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 
 	rootCmd.AddCommand(chatCmd, browseCmd, envCmd, versionCmd)
 
+	// Since App.Run receives os.Args, we sanitize them first
+	args = sanitizeArgs(args)
+
 	// Since App.Run receives os.Args, we skip the first element (binary name)
 	if len(args) > 1 {
 		rootCmd.SetArgs(args[1:])
@@ -166,4 +170,35 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		return err
 	}
 	return nil
+}
+
+// sanitizeArgs preprocessing allows integer flags like -l and -b to behave like boolean flags 
+// defaulting to 1 when no argument is explicitly provided, preventing positional arguments 
+// (like the prompt string) from being mistakenly parsed as their values.
+func sanitizeArgs(args []string) []string {
+	if len(args) < 2 {
+		return args
+	}
+
+	result := make([]string, 0, len(args))
+	result = append(result, args[0])
+
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		result = append(result, arg)
+
+		if arg == "-l" || arg == "--last" || arg == "-b" || arg == "--back" {
+			isNextNum := false
+			if i+1 < len(args) {
+				// ParseInt is robust enough to know if the next string is a base-10 number
+				if _, err := strconv.Atoi(args[i+1]); err == nil {
+					isNextNum = true
+				}
+			}
+			if !isNextNum {
+				result = append(result, "1")
+			}
+		}
+	}
+	return result
 }

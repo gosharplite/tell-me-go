@@ -193,3 +193,72 @@ func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer { re
 func (m *simpleMockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser   { return nil }
 func (m *simpleMockBootstrapper) GetChatService() agent.ChatService         { return nil }
 
+
+func TestSanitizeArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		expected []string
+	}{
+		{
+			name:     "no flags",
+			args:     []string{"tell-me-go", "chat", "hello"},
+			expected: []string{"tell-me-go", "chat", "hello"},
+		},
+		{
+			name:     "short last flag with value",
+			args:     []string{"tell-me-go", "-l", "10", "hello"},
+			expected: []string{"tell-me-go", "-l", "10", "hello"},
+		},
+		{
+			name:     "short last flag without value",
+			args:     []string{"tell-me-go", "-l", "hello"},
+			expected: []string{"tell-me-go", "-l", "1", "hello"},
+		},
+		{
+			name:     "long last flag without value",
+			args:     []string{"tell-me-go", "--last", "hello"},
+			expected: []string{"tell-me-go", "--last", "1", "hello"},
+		},
+		{
+			name:     "short back flag without value",
+			args:     []string{"tell-me-go", "-b", "hello"},
+			expected: []string{"tell-me-go", "-b", "1", "hello"},
+		},
+		{
+			name:     "bare last flag",
+			args:     []string{"tell-me-go", "-l"},
+			expected: []string{"tell-me-go", "-l", "1"},
+		},
+		{
+			name:     "mixed flags - both are sanitized",
+			args:     []string{"tell-me-go", "-l", "-b"},
+			expected: []string{"tell-me-go", "-l", "1", "-b", "1"},
+		},
+		{
+			name:     "last flag combined with another flag without space",
+			args:     []string{"tell-me-go", "-l", "-r"},
+			expected: []string{"tell-me-go", "-l", "1", "-r"},
+		},
+		{
+			name:     "last flag equal sign",
+			args:     []string{"tell-me-go", "-l=5", "-r"},
+			expected: []string{"tell-me-go", "-l=5", "-r"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeArgs(tt.args)
+			if len(got) != len(tt.expected) {
+				t.Errorf("expected len %d, got %d. Got: %v", len(tt.expected), len(got), got)
+				return
+			}
+			for i := range got {
+				if got[i] != tt.expected[i] {
+					t.Errorf("at index %d: expected %q, got %q", i, tt.expected[i], got[i])
+				}
+			}
+		})
+	}
+}
