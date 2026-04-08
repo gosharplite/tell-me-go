@@ -21,6 +21,7 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	go bridge.Listen(context.Background())
+	bridge.WaitStarted()
 
 	var activeSpinners int32
 
@@ -71,6 +72,7 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	go bridge.Listen(ctx)
+	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()

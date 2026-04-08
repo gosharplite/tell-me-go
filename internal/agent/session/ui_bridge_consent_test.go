@@ -34,6 +34,7 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	go bridge.Listen(context.Background())
+	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -59,6 +60,7 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	go bridge.Listen(context.Background())
+	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -112,6 +114,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	go bridge.Listen(ctx)
+	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -186,6 +189,7 @@ func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 	// Start the bridge to initialize everything
 	ctx, cancel := context.WithCancel(context.Background())
 	go bridge.Listen(ctx)
+	bridge.WaitStarted()
 	bridge.WaitStarted()
 
 	// Simulate the consumer dying unexpectedly (e.g., panic or external cancellation)

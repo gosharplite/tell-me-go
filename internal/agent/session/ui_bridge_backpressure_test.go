@@ -40,6 +40,7 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
 	go bridge.Listen(context.Background())
+	bridge.WaitStarted()
 	defer func() {
 		close(block)
 		bridge.CloseInput()
@@ -104,6 +105,7 @@ func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
 	go bridge.Listen(context.Background())
+	bridge.WaitStarted()
 	bridge.WaitStarted()
 
 	// 4. Send the blocking event, then send events that MUST be drained
@@ -224,6 +226,7 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 
 			bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 			go bridge.Listen(context.Background())
+	bridge.WaitStarted()
 			defer func() {
 				select {
 				case <-block:
@@ -292,6 +295,7 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
 	go bridge.Listen(context.Background())
+	bridge.WaitStarted()
 	defer func() {
 		select {
 		case <-block:
@@ -340,6 +344,7 @@ func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
 	bridge := newUIBridge(mRenderer)
 	bridgeCtx := context.Background()
 	go bridge.Listen(bridgeCtx)
+	bridge.WaitStarted()
 
 	// 1. Block the loop
 	_ = bridge.handleEvent(bridgeCtx, events.TurnStatusEvent{})
@@ -386,6 +391,7 @@ func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 
 	bridge := newUIBridge(mRenderer)
 	go bridge.Listen(ctx)
+	bridge.WaitStarted()
 	bridge.WaitStarted()
 
 	// Shutdown the bridge

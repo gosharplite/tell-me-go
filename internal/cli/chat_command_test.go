@@ -36,7 +36,8 @@ func (m *mockChatService) ProcessMessage(ctx stdctx.Context, cfg *config.Config,
 }
 
 func (m *mockChatService) GetLastUserMessage(ctx stdctx.Context, hManager ports.HistoryManager) (string, int, error) {
-	return "retry test", 1, nil
+	args := m.Called(ctx, hManager)
+	return args.String(0), args.Int(1), args.Error(2)
 }
 
 func (m *mockChatService) BrowseHistory(ctx stdctx.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
@@ -134,13 +135,15 @@ func (m *mockLoader) Watch(ctx stdctx.Context, path string) (<-chan *config.Conf
 	return args.Get(0).(<-chan *config.Config), args.Error(1)
 }
 
-type mockSuggestionService struct{}
+type mockSuggestionService struct{
+	closeErr error
+}
 
 func (m *mockSuggestionService) GetSuggestions(ctx stdctx.Context, prefix string) ([]string, error) {
 	return nil, nil
 }
 func (m *mockSuggestionService) RecordPrompt(ctx stdctx.Context, prompt string) error { return nil }
-func (m *mockSuggestionService) Close(ctx stdctx.Context) error                       { return nil }
+func (m *mockSuggestionService) Close(ctx stdctx.Context) error                       { return m.closeErr }
 
 type mockSM struct {
 	domain_security.Manager
@@ -159,6 +162,7 @@ func setupMocks() (*mockBootstrapper, *mockLoader, *mockChatService) {
 	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(&mockSuggestionService{}, nil).Maybe()
 	ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	ms.On("GetLastUserMessage", mock.Anything, mock.Anything).Return("retry test", 1, nil).Maybe()
 	return mb, ml, ms
 }
 
@@ -548,4 +552,68 @@ func executeChatCommand(cmdCtx *context, args []string) error {
 	root.SetArgs(args)
 
 	return root.ExecuteContext(stdctx.Background())
+}
+func TestChatCommand_Execute_Errors(t *testing.T) {
+	tests := []struct {
+		name          string
+		args          []string
+		setupMocks    func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService)
+		expectedError string
+	}{
+		{
+			name: "Config Load Failure",
+			args: []string{"hello"},
+			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", mock.Anything).Return(nil, errors.New("config not found"))
+			},
+			expectedError: "error loading config",
+		},
+		{
+			name: "TUI Capturer Cast Failure",
+			args: []string{"--tui"},
+			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				// BaseCapturer is NOT returned here since we don't inject TUI specific mocks.
+				ml.On("Load", mock.Anything).Return(&config.Config{UseTUIPrompt: true}, nil)
+				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil)
+				mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(&mockSuggestionService{}, nil)
+			},
+			expectedError: "", // Test should fall back and not panic
+		},
+		{
+			name: "Suggestion Service Error",
+			args: []string{"--tui"},
+			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+				ml.On("Load", mock.Anything).Return(&config.Config{UseTUIPrompt: true}, nil)
+				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil)
+				mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(nil, errors.New("suggestion failure"))
+			},
+			expectedError: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ml := &mockLoader{}
+			mb := &mockBootstrapper{}
+			sm := &mockSM{}
+			ms := &mockChatService{}
+			ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+			tt.setupMocks(ml, mb, ms)
+			
+			var stdout, stderr strings.Builder
+			cmdCtx := &context{
+				Version:      "1.0.0",
+				Stdin:        strings.NewReader(""),
+				Stdout:       &stdout,
+				Stderr:       &stderr,
+				SM:           sm,
+				ChatService:  ms,
+				Bootstrapper: mb,
+				Loader:       ml,
+			}
+			
+			err := executeChatCommand(cmdCtx, tt.args)
+			require.ErrorContains(t, err, tt.expectedError)
+		})
+	}
 }

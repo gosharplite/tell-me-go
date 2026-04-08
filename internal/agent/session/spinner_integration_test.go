@@ -203,6 +203,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 		withBridgeLogger(slog.Default()),
 	)
 	go bridge.Listen(sessionCtx)
+	bridge.WaitStarted()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()

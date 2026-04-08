@@ -27,6 +27,7 @@ type mockFailingFS struct {
 	infra_persistence.FileSystem
 	mkdirErr error
 	openErr  error
+	statErr  error
 }
 
 func (m *mockFailingFS) MkdirAll(path string, perm os.FileMode) error {
@@ -41,7 +42,17 @@ func (m *mockFailingFS) OpenFile(name string, flag int, perm os.FileMode) (infra
 }
 
 func (m *mockFailingFS) Stat(name string) (os.FileInfo, error) {
+	if m.statErr != nil {
+		return nil, m.statErr
+	}
 	return nil, os.ErrNotExist
+}
+
+func (m *mockFailingFS) ReadFile(name string) ([]byte, error) {
+	if m.openErr != nil {
+		return nil, m.openErr
+	}
+	return nil, errors.New("not implemented")
 }
 
 func TestGetHistoryManager_FailurePaths(t *testing.T) {
@@ -58,6 +69,14 @@ func TestGetHistoryManager_FailurePaths(t *testing.T) {
 			name: "DirectoryCreationFailure",
 			fs: &mockFailingFS{
 				mkdirErr: simulatedErr,
+			},
+			wantErr: ErrInfraInit,
+		},
+		{
+			name: "BuildHistoryManagerFailure",
+			fs: &mockFailingFS{
+				openErr: simulatedErr, // simulate error during history manager build
+				statErr: simulatedErr, // force load to fail instead of just 'not found'
 			},
 			wantErr: ErrInfraInit,
 		},
@@ -250,4 +269,22 @@ func TestGetUnifiedHistoryProvider_FailurePaths(t *testing.T) {
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrInfraInit)
 	assert.Nil(t, provider)
+}
+func TestGetSuggestionService_Fallback(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	
+	// Create an invalid directory structure to force NewGlobalPromptTracker to fail.
+	// NewGlobalPromptTracker tries to create a file in homeDir/.tellmego/prompts.jsonl
+	// If .tellmego is a file, it will fail.
+	err := os.WriteFile(filepath.Join(tempDir, ".tellmego"), []byte(""), 0644)
+	assert.NoError(t, err)
+
+	sm := new(mockConfigurableSecurityManager)
+	fs := infra_persistence.NewOSFileSystem()
+	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, fs, nil)
+
+	svc, err := b.GetSuggestionService(ctx, []string{"test"})
+	assert.NoError(t, err)
+	assert.NotNil(t, svc)
 }

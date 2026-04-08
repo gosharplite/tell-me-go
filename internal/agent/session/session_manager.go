@@ -169,6 +169,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 	}
 
 	bridge, err := o.applyConfiguration(ctx, chatAgent, sc, sd, ic)
+	listenStarted := false
 	// Single defer to guarantee deterministic teardown order:
 	// Stop Producers first, then Consumers.
 	defer func() {
@@ -181,6 +182,9 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 
 		// 2. Clean up Consumer (UI) second
 		if bridge != nil {
+			if !listenStarted {
+				bridge.wg.Done()
+			}
 			bridge.CloseInput()
 			bridge.Cleanup()
 		}
@@ -214,6 +218,7 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 
 	// Background UI Loop
 	if bridge != nil {
+		listenStarted = true
 		g.Go(func() error {
 			return bridge.Listen(gCtx)
 		})
@@ -492,6 +497,7 @@ func newUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
 	if b.logger == nil {
 		b.logger = slog.Default()
 	}
+	b.wg.Add(1)
 	return b
 }
 
@@ -509,7 +515,6 @@ func (b *uiBridge) Listen(ctx context.Context) (err error) {
 		}
 	}()
 	defer b.wg.Done()
-	b.wg.Add(1)
 
 	b.startOnce.Do(func() {
 		close(b.started)

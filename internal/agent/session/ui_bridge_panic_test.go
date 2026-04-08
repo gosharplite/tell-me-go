@@ -212,6 +212,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
 	go bridge.Listen(ctx)
 	bridge.WaitStarted()
+	bridge.WaitStarted()
 
 	// Send two events
 	_ = bridge.handleEvent(ctx, events.TurnStatusEvent{})
@@ -238,6 +239,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
 	go bridge.Listen(ctx)
+	bridge.WaitStarted()
 
 	// Close the input to simulate a shutdown sequence.
 	bridge.CloseInput()
