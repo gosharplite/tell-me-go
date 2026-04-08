@@ -78,12 +78,19 @@ func TestEnvCommand_Execute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			loader := &MockLoader{Config: tt.config, Err: tt.loaderErr}
-			cmd := &envCommand{
+			cmdCtx := &context{
 				Stdout: stdout,
 				Loader: loader,
 			}
+			cmd := newEnvCommand(cmdCtx)
 
-			err := cmd.Execute(stdctx.Background(), tt.args)
+			if len(tt.args) > 1 {
+				cmd.SetArgs(tt.args[1:])
+			} else {
+				cmd.SetArgs([]string{})
+			}
+
+			err := cmd.ExecuteContext(stdctx.Background())
 
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Execute() error = %v, wantErr %v", err, tt.wantErr)

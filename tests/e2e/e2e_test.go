@@ -130,7 +130,7 @@ func TestSessionArchiving(t *testing.T) {
 
 	// 3. Run with -new flag (and a dummy prompt to trigger the logic)
 	// We expect it to fail on API call but archive the files first
-	_, _, _ = runCommandWithEnv(env, "", "-new", "hello")
+	_, _, _ = runCommandWithEnv(env, "", "--new", "hello")
 
 	// 4. Verify archive exists
 	backupsDir := filepath.Join(outputDir, "backups")
@@ -174,7 +174,7 @@ func TestBypassArchiving(t *testing.T) {
 	}
 
 	// 3. Run with -new flag
-	_, _, _ = runCommandWithEnv(env, "", "-new", "hello")
+	_, _, _ = runCommandWithEnv(env, "", "--new", "hello")
 
 	// 4. Verify bypass file STILL exists in output (not archived)
 	if _, err := os.Stat(bypassFile); os.IsNotExist(err) {
@@ -252,7 +252,7 @@ func TestEnvironmentPersistence(t *testing.T) {
 
 	t.Run("ExecuteNewSession", func(t *testing.T) {
 		var err error
-		stdout, stderr, err = runCommandWithEnv(env, "", "-c", configPath, "-new", "hello persistence")
+		stdout, stderr, err = runCommandWithEnv(env, "", "-c", configPath, "--new", "hello persistence")
 		if err != nil {
 			t.Fatalf("unexpected command failure: %v\nStderr: %s", err, stderr)
 		}

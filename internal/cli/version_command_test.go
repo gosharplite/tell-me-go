@@ -32,12 +32,13 @@ func TestVersionCommand_Execute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var out bytes.Buffer
-			cmd := &versionCommand{
+			cmdCtx := &context{
 				Version: tt.version,
 				Stdout:  &out,
 			}
+			cmd := newVersionCommand(cmdCtx)
 
-			err := cmd.Execute(stdctx.Background(), nil)
+			err := cmd.ExecuteContext(stdctx.Background())
 			if err != nil {
 				t.Fatalf("Execute() unexpected error: %v", err)
 			}
@@ -46,31 +47,5 @@ func TestVersionCommand_Execute(t *testing.T) {
 				t.Errorf("Execute() got = %q, want %q", out.String(), tt.expected)
 			}
 		})
-	}
-}
-
-func TestVersionCommandFactory(t *testing.T) {
-	t.Parallel()
-	factory, err := get("version")
-	if err != nil {
-		t.Fatalf("get(\"version\") error = %v", err)
-	}
-
-	ctx := &context{
-		Version: "1.2.3-test",
-		Stdout:  &bytes.Buffer{},
-	}
-
-	cmd := factory(ctx)
-	vCmd, ok := cmd.(*versionCommand)
-	if !ok {
-		t.Fatalf("factory did not return *versionCommand, got %T", cmd)
-	}
-
-	if vCmd.Version != ctx.Version {
-		t.Errorf("expected version %s, got %s", ctx.Version, vCmd.Version)
-	}
-	if vCmd.Stdout != ctx.Stdout {
-		t.Errorf("expected stdout %p, got %p", ctx.Stdout, vCmd.Stdout)
 	}
 }

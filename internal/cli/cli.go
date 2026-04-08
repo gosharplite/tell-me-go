@@ -10,11 +10,14 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -105,28 +108,6 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		}()
 	}
 
-	// Determine which command to run
-	cmdName := "chat"
-	for _, arg := range args {
-		if arg == "browse" {
-			cmdName = "browse"
-			break
-		}
-		if arg == "env" {
-			cmdName = "env"
-			break
-		}
-		if arg == "-v" || arg == "--version" {
-			cmdName = "version"
-			break
-		}
-	}
-
-	factory, err := get(cmdName)
-	if err != nil {
-		return err
-	}
-
 	cmdCtx := &context{
 		Version:      a.Version,
 		Stdin:        a.Stdin,
@@ -141,9 +122,54 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		MockAnswer:   a.mockAnswer,
 	}
 
-	cmd := factory(cmdCtx)
+	chatCmd := newChatCommand(cmdCtx)
+	browseCmd := newBrowseCommand(cmdCtx)
+	envCmd := newEnvCommand(cmdCtx)
+	versionCmd := newVersionCommand(cmdCtx)
 
-	if err := cmd.Execute(ctx, args); err != nil {
+	rootCmd := &cobra.Command{
+		Use:   "tell-me-go [prompt]",
+		Short: "AI-powered CLI assistant",
+		Long:  `tell-me-go is a CLI tool that lets you interact with LLMs directly from your terminal.`,
+		// The root command behaves like 'chat' if no subcommand matches
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE:          chatCmd.RunE,
+		Version:       a.Version,
+		Args:          cobra.ArbitraryArgs,
+	}
+
+	rootCmd.SetOut(a.Stdout)
+	rootCmd.SetErr(a.Stderr)
+
+	// Share chat flags with the root command
+	chatCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		rootCmd.Flags().AddFlag(f)
+	})
+
+	rootCmd.AddCommand(chatCmd, browseCmd, envCmd, versionCmd)
+
+	// Since App.Run receives os.Args, we skip the first element (binary name)
+	actualArgs := []string{}
+	if len(args) > 1 {
+		actualArgs = args[1:]
+		if len(actualArgs) > 0 {
+			isSubcommand := false
+			for _, sub := range rootCmd.Commands() {
+				if sub.Name() == actualArgs[0] || sub.HasAlias(actualArgs[0]) {
+					isSubcommand = true
+					break
+				}
+			}
+			// If not a subcommand and not a flag, default to 'chat'
+			if !isSubcommand && !strings.HasPrefix(actualArgs[0], "-") {
+				actualArgs = append([]string{"chat"}, actualArgs...)
+			}
+		}
+	}
+	rootCmd.SetArgs(actualArgs)
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		if errors.Is(err, stdctx.Canceled) {
 			_, _ = fmt.Fprintln(a.Stderr)
 			return nil

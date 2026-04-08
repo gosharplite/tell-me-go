@@ -149,7 +149,7 @@ func runAppWithNewSession(t *testing.T, binaryPath, configPath string) {
 	}
 	t.Cleanup(func() { _ = os.Unsetenv("TELL_ME_MOCK_URL") })
 
-	cmd := exec.Command(binaryPath, "-c", configPath, "-new", "New session start")
+	cmd := exec.Command(binaryPath, "-c", configPath, "--new", "New session start")
 	// Expected to fail after archiving due to mock server not existing, but we only care about the archiving logic here.
 	_ = cmd.Run()
 }
