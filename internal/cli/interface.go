@@ -4,7 +4,6 @@
 package cli
 
 import (
-	stdctx "context"
 	"io"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -40,11 +39,3 @@ type context struct {
 	MockPrompt   string
 	MockAnswer   string
 }
-
-// command represents a CLI command that can be executed.
-type command interface {
-	Execute(ctx stdctx.Context, args []string) error
-}
-
-// factory is a function that creates a command.
-type factory func(ctx *context) command

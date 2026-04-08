@@ -75,7 +75,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		infra_persistence.NewOSFileSystem(),
 	)
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader("hello"),
 		Stdout:       &stdout,
@@ -85,11 +85,12 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		Bootstrapper: container,
 		Loader:       loader,
 	}
+	cmd := newChatCommand(cmdCtx)
 
 	ctx := stdctx.Background()
-	args := []string{"chat", "-c", cfgPath, "--new", "hello"}
+	cmd.SetArgs([]string{"-c", cfgPath, "--new", "hello"})
 
-	if err := cmd.Execute(ctx, args); err != nil {
+	if err := cmd.ExecuteContext(ctx); err != nil {
 		t.Fatalf("Execute failed: %v\nStderr: %s", err, stderr.String())
 	}
 

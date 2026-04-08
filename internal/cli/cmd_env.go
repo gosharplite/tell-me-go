@@ -9,37 +9,36 @@ import (
 	"io"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
-
-func init() {
-	register("env", func(ctx *context) command {
-		return newEnvCommand(ctx)
-	})
-}
 
 type envCommand struct {
 	Stdout io.Writer
 	Loader domain_config.ConfigLoader
 }
 
-func newEnvCommand(ctx *context) *envCommand {
-	return &envCommand{
+func newEnvCommand(ctx *context) *cobra.Command {
+	c := &envCommand{
 		Stdout: ctx.Stdout,
 		Loader: ctx.Loader,
 	}
-}
 
-func (c *envCommand) Execute(ctx stdctx.Context, args []string) error {
-	// Load default config path (or parse args for -c if you want to be robust)
-	configPath := "configs/assistant.yaml"
-	for i := 0; i < len(args)-1; i++ {
-		if args[i] == "-c" || args[i] == "--config" {
-			configPath = args[i+1]
-			break
-		}
+	cmd := &cobra.Command{
+		Use:   "env",
+		Short: "Print the fully resolved configuration",
+		Long:  `The env command loads the configuration, masks sensitive fields like API keys, and prints the resulting YAML to standard output.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			configPath, _ := cmd.Flags().GetString("config")
+			return c.execute(cmd.Context(), configPath)
+		},
 	}
 
+	cmd.Flags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	return cmd
+}
+
+func (c *envCommand) execute(ctx stdctx.Context, configPath string) error {
 	cfg, err := c.Loader.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)

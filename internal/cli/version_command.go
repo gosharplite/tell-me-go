@@ -4,9 +4,10 @@
 package cli
 
 import (
-	stdctx "context"
 	"fmt"
 	"io"
+
+	"github.com/spf13/cobra"
 )
 
 // versionCommand implements the version command.
@@ -15,17 +16,22 @@ type versionCommand struct {
 	Stdout  io.Writer
 }
 
-func init() {
-	register("version", func(ctx *context) command {
-		return &versionCommand{
-			Version: ctx.Version,
-			Stdout:  ctx.Stdout,
-		}
-	})
+func newVersionCommand(ctx *context) *cobra.Command {
+	c := &versionCommand{
+		Version: ctx.Version,
+		Stdout:  ctx.Stdout,
+	}
+
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Show version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			c.execute()
+		},
+	}
 }
 
-// Execute prints the version information.
-func (c *versionCommand) Execute(ctx stdctx.Context, args []string) error {
-	_, err := fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
-	return err
+// execute prints the version information.
+func (c *versionCommand) execute() {
+	_, _ = fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
 }

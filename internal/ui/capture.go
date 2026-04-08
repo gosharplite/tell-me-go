@@ -16,7 +16,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
-	"github.com/spf13/pflag"
 	"golang.org/x/term"
 )
 
@@ -76,16 +75,13 @@ func (c *capturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
-func (c *capturer) CapturePrompt(ctx context.Context, fs *pflag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (c *capturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	options := &ports.CaptureOptions{}
 	for _, opt := range opts {
 		opt(options)
 	}
 
-	prompt := ""
-	if fs != nil {
-		prompt = strings.Join(fs.Args(), " ")
-	}
+	prompt := strings.Join(args, " ")
 
 	if c.mockPrompt != "" {
 		prompt = c.mockPrompt

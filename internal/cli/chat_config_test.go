@@ -32,13 +32,12 @@ AIMODEL: "test-model"
 
 	var stdout, stderr strings.Builder
 	sm := &mockSM{}
-	mService := &mockChatService{}
-	mb, ml := setupMocks()
+	mb, ml, mService := setupMocks()
 	// Override setupMocks to return our actual config from loader mock
 	ml.ExpectedCalls = nil
 	ml.On("Load", configPath).Return(&config.Config{UseTUIPrompt: true}, nil)
 
-	cmd := &chatCommand{
+	cmdCtx := &context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader(""),
 		Stdout:       &stdout,
@@ -49,13 +48,14 @@ AIMODEL: "test-model"
 		Loader:       ml,
 		MockPrompt:   "hello",
 	}
+	cmd := newChatCommand(cmdCtx)
 
 	ctx := stdctx.Background()
 	// No -i or -tui flag, but config has it enabled.
 	// We run WITHOUT positional arguments to allow TUI auto-enable from config.
-	args := []string{"chat", "-c", configPath}
+	cmd.SetArgs([]string{"-c", configPath})
 
-	err = cmd.Execute(ctx, args)
+	err = cmd.ExecuteContext(ctx)
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -103,13 +103,12 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr strings.Builder
 			sm := &mockSM{}
-			mService := &mockChatService{}
-			mb, ml := setupMocks()
+			mb, ml, mService := setupMocks()
 			ml.ExpectedCalls = nil
 			// Mock default config load
 			ml.On("Load", "configs/assistant.yaml").Return(&config.Config{UseTUIPrompt: false}, nil).Maybe()
 
-			cmd := &chatCommand{
+			cmdCtx := &context{
 				Version:      "1.0.0",
 				Stdin:        strings.NewReader(""),
 				Stdout:       &stdout,
@@ -120,9 +119,15 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 				Loader:       ml,
 				MockPrompt:   "hello",
 			}
+			cmd := newChatCommand(cmdCtx)
 
 			ctx := stdctx.Background()
-			err := cmd.Execute(ctx, tt.args)
+			if len(tt.args) > 1 {
+				cmd.SetArgs(tt.args[1:])
+			} else {
+				cmd.SetArgs([]string{})
+			}
+			err := cmd.ExecuteContext(ctx)
 			if err != nil {
 				t.Errorf("Execute failed: %v", err)
 			}

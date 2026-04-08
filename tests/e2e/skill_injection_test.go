@@ -128,7 +128,7 @@ Use idiomatic Go.`, skillName, skillContentSnippet)
 	}
 
 	// We use -new to ensure a clean start and a prompt that matches the skill description/name
-	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "-new", "Write a Go function using patterns")
+	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "--new", "Write a Go function using patterns")
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}

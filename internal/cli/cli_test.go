@@ -7,11 +7,13 @@ import (
 	"bytes"
 	stdctx "context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestApp_Run_Version(t *testing.T) {
@@ -28,7 +30,7 @@ func TestApp_Run_Version(t *testing.T) {
 		t.Fatalf("New failed: %v", err)
 	}
 
-	err = app.Run(stdctx.Background(), []string{"--version"})
+	err = app.Run(stdctx.Background(), []string{"tell-me-go", "--version"})
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -40,7 +42,7 @@ func TestApp_Run_Version(t *testing.T) {
 	}
 }
 
-func TestApp_Run_UnknownCommand(t *testing.T) {
+func TestApp_Run_UnknownFlag(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
@@ -52,32 +54,23 @@ func TestApp_Run_UnknownCommand(t *testing.T) {
 		t.Fatalf("New failed: %v", err)
 	}
 
-	// "chat" is not registered in this test yet, so it should fail.
-	err = app.Run(stdctx.Background(), []string{})
+	// unknown flag should fail.
+	err = app.Run(stdctx.Background(), []string{"tell-me-go", "--unknown-flag"})
 	if err == nil {
-		t.Fatal("expected error for unregistered 'chat' command, got nil")
+		t.Fatal("expected error for unknown flag, got nil")
 	}
 }
 
-type mockCommand struct {
-	err error
-}
-
-func (m *mockCommand) Execute(ctx stdctx.Context, args []string) error {
-	return m.err
-}
-
 func TestApp_Run_ContextCanceled(t *testing.T) {
-	// Register a mock command for "chat" to test error handling
-
-	register("chat", func(ctx *context) command {
-		return &mockCommand{err: stdctx.Canceled}
-	})
-
 	stderr := &bytes.Buffer{}
+
+	mService := &mockChatService{}
+	// Mock ChatService to return context.Canceled
+	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(stdctx.Canceled).Maybe()
 
 	deps := defaultTestDeps()
 	deps.Stderr = stderr
+	deps.ChatService = mService
 	app, err := New(deps, func(string) string { return "" })
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
@@ -86,7 +79,8 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 	ctx, cancel := stdctx.WithCancel(stdctx.Background())
 	cancel() // Cancel it immediately
 
-	err = app.Run(ctx, []string{})
+	// Provide a prompt to avoid "empty prompt" error from capturer
+	err = app.Run(ctx, []string{"tell-me-go", "test prompt"})
 	if err != nil {
 		t.Errorf("expected nil error on context cancellation, got %v", err)
 	}
@@ -98,26 +92,20 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 }
 
 func TestApp_Run_CommandError(t *testing.T) {
-	// Register a mock command for a custom error
-
 	customErr := errors.New("custom error")
-	register("error-cmd", func(ctx *context) command {
-		return &mockCommand{err: customErr}
-	})
-
-	// Since App.Run doesn't allow choosing a command name except via hardcoded logic,
-	// we'll temporarily hijack "chat" again (it's already registered by previous test).
-	register("chat", func(ctx *context) command {
-		return &mockCommand{err: customErr}
-	})
+	mService := &mockChatService{}
+	// Mock ChatService to return custom error
+	mService.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(customErr).Maybe()
 
 	deps := defaultTestDeps()
+	deps.ChatService = mService
 	app, err := New(deps, func(string) string { return "" })
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
 
-	err = app.Run(stdctx.Background(), []string{})
+	// Provide a prompt to avoid "empty prompt" error from capturer
+	err = app.Run(stdctx.Background(), []string{"tell-me-go", "test prompt"})
 	if !errors.Is(err, customErr) {
 		t.Errorf("expected %v, got %v", customErr, err)
 	}
@@ -168,13 +156,16 @@ func defaultTestDeps() AppDependencies {
 		Bootstrapper: &simpleMockBootstrapper{},
 		ConfigLoader: &cliMockLoader{},
 		ChatService:  &mockChatService{},
+		Stdin:        strings.NewReader(""),
+		Stdout:       new(bytes.Buffer),
+		Stderr:       new(bytes.Buffer),
 	}
 }
 
 type cliMockLoader struct{}
 
 func (m *cliMockLoader) Load(path string) (*config.Config, error) {
-	return nil, errors.New("not implemented")
+	return &config.Config{}, nil
 }
 
 type simpleMockBootstrapper struct{}

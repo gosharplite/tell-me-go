@@ -11,7 +11,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/spf13/pflag"
 )
 
 type mockBaseCapturer struct {
@@ -19,7 +18,7 @@ type mockBaseCapturer struct {
 }
 
 func (m *mockBaseCapturer) IsTTY(v any) bool { return false }
-func (m *mockBaseCapturer) CapturePrompt(ctx context.Context, fs *pflag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (m *mockBaseCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	return "base prompt", nil
 }
 func (m *mockBaseCapturer) Confirm(ctx context.Context, message string) (bool, error) {
@@ -53,8 +52,7 @@ func TestPromptCapturer_CapturePrompt_Fallback(t *testing.T) {
 	svc := &mockSuggestionService{}
 	capturer := NewPromptCapturer(base, svc)
 
-	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	prompt, err := capturer.CapturePrompt(context.Background(), fs) // No UseTUIPrompt option
+	prompt, err := capturer.CapturePrompt(context.Background(), nil) // No UseTUIPrompt option
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -79,8 +77,7 @@ func TestPromptCapturer_CapturePrompt_Fallback_Conditions(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("fallback when SkipTTYWait is true", func(t *testing.T) {
-		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-		prompt, err := capturer.CapturePrompt(ctx, fs, ports.WithTUIPrompt(true), ports.WithSkipTTYWait(true))
+		prompt, err := capturer.CapturePrompt(ctx, nil, ports.WithTUIPrompt(true), ports.WithSkipTTYWait(true))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -90,9 +87,7 @@ func TestPromptCapturer_CapturePrompt_Fallback_Conditions(t *testing.T) {
 	})
 
 	t.Run("fallback when positional arguments are present", func(t *testing.T) {
-		fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-		_ = fs.Parse([]string{"hello"}) // Set one positional argument
-		prompt, err := capturer.CapturePrompt(ctx, fs, ports.WithTUIPrompt(true))
+		prompt, err := capturer.CapturePrompt(ctx, []string{"hello"}, ports.WithTUIPrompt(true))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -156,8 +151,7 @@ func TestPromptCapturer_CapturePrompt_TUI(t *testing.T) {
 				),
 			)
 
-			fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-			got, err := capturer.CapturePrompt(context.Background(), fs, ports.WithTUIPrompt(true))
+			got, err := capturer.CapturePrompt(context.Background(), nil, ports.WithTUIPrompt(true))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
