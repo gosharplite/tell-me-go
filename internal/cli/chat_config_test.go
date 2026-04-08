@@ -49,7 +49,7 @@ AIMODEL: "test-model"
 		Loader:       ml,
 		MockPrompt:   "hello",
 	}
-	cmd := newChatCommand(cmdCtx)
+	cmd := newChatCommand(cmdCtx, nil)
 	root := &cobra.Command{}
 	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
 	root.AddCommand(cmd)
@@ -123,7 +123,7 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 				Loader:       ml,
 				MockPrompt:   "hello",
 			}
-			cmd := newChatCommand(cmdCtx)
+			cmd := newChatCommand(cmdCtx, nil)
 			root := &cobra.Command{}
 			root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
 			root.AddCommand(cmd)
