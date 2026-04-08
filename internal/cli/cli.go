@@ -160,6 +160,10 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 	if len(args) > 1 {
 		actualArgs = args[1:]
 		if len(actualArgs) > 0 {
+			// Force initialization of default commands (help, completion) so they are in rootCmd.Commands()
+			rootCmd.InitDefaultHelpCmd()
+			rootCmd.InitDefaultCompletionCmd()
+
 			isSubcommand := false
 			for _, sub := range rootCmd.Commands() {
 				if sub.Name() == actualArgs[0] || sub.HasAlias(actualArgs[0]) {
