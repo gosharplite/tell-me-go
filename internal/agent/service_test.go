@@ -181,6 +181,7 @@ func (m *mockServiceEventBus) Subscribe(sub func(context.Context, events.Event))
 }
 func (m *mockServiceEventBus) Shutdown(ctx context.Context) error { return m.Called(ctx).Error(0) }
 func (m *mockServiceEventBus) Flush(ctx context.Context) error    { return m.Called(ctx).Error(0) }
+func (m *mockServiceEventBus) Listen(ctx context.Context) error   { <-ctx.Done(); return ctx.Err() }
 
 // mockServiceAgent is a mock of Chatter.
 type mockServiceAgent struct {
@@ -239,6 +240,10 @@ type mockTurnsLogger struct {
 
 func (m *mockTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {
 	m.Called(ctx, e)
+}
+
+func (m *mockTurnsLogger) Listen(ctx context.Context) error {
+	return m.Called(ctx).Error(0)
 }
 
 func (m *mockTurnsLogger) Close() error {

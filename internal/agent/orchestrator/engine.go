@@ -11,9 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
@@ -196,6 +198,7 @@ type Engine struct {
 	registry     tools.Registry
 	tokenCounter llm.TokenCounter
 	events       events.EventBus
+	turnsLogger  ports.TurnsLogger // Optional turns logger for coordinated telemetry
 	processors   map[TurnPhase]TurnProcessor
 	middleware   []TurnMiddleware
 	hooks        []TurnHook
@@ -848,4 +851,34 @@ func (t *Turn) getLogger() *slog.Logger {
 		return t.Logger
 	}
 	return slog.Default()
+}
+
+// StartTelemetry coordinates the lifecycle of background listeners and telemetry workers.
+// Implementation follows the coordinated concurrency pattern using errgroup.
+func (e *Engine) StartTelemetry(ctx context.Context) error {
+	g, ctx := errgroup.WithContext(ctx)
+
+	if e.events != nil {
+		g.Go(func() error {
+			// Listen blocks until ctx.Done(), then returns
+			return e.events.Listen(ctx)
+		})
+	}
+
+	if e.turnsLogger != nil {
+		g.Go(func() error {
+			// Listen blocks until ctx.Done(), then returns
+			return e.turnsLogger.Listen(ctx)
+		})
+	}
+
+	// Wait for the background worker to shut down cleanly when ctx is canceled
+	return g.Wait()
+}
+
+// WithEngineTurnsLogger sets the turns logger for the engine.
+func WithEngineTurnsLogger(tl ports.TurnsLogger) EngineOption {
+	return func(e *Engine, cfg *EngineConfig) {
+		e.turnsLogger = tl
+	}
 }

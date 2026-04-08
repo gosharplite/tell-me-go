@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -46,6 +47,9 @@ type EventBus interface {
 	Subscribe(sub func(context.Context, Event))
 	Shutdown(ctx context.Context) error
 	Flush(ctx context.Context) error
+	// Listen starts the event bus's internal workers and blocks until the context is canceled.
+	// [ARCHITECTURAL REFACTOR] This replaces the previous fire-and-forget goroutine pattern.
+	Listen(ctx context.Context) error
 }
 
 type subscriberWrapper struct {
@@ -233,47 +237,31 @@ func (b *SimpleEventBus) newWrapper(sub Subscriber) *subscriberWrapper {
 	}
 	if b.asyncDispatch {
 		w.ch = make(chan Event, b.queueSize)
-		b.workerWG.Add(1)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					if b.log != nil {
-						b.log.Error("panic in event bus subscriber loop", "error", r, "stack", string(debug.Stack()))
-					}
-					// Important: Ensure workerWG.Done() is called even if subscriberLoop panics early.
-					// Since b.subscriberLoop has a defer b.workerWG.Done(), if the panic occurs *inside* subscriberLoop,
-					// the defer inside subscriberLoop will handle the Done().
-					// If we put it here, we shouldn't call it again unless we know it panicked *before* the defer in subscriberLoop was registered.
-					// Since we call b.subscriberLoop(w) directly, its defer is guaranteed to run if it panics inside.
-				}
-			}()
-			b.subscriberLoop(w)
-		}()
 	}
 	return w
 }
 
-func (b *SimpleEventBus) subscriberLoop(w *subscriberWrapper) {
+func (b *SimpleEventBus) subscriberLoop(ctx context.Context, w *subscriberWrapper) error {
 	defer b.workerWG.Done()
 	for {
 		select {
-		case <-b.ctx.Done():
+		case <-ctx.Done():
 			// Drain the queue to decrement pending for unhandled events.
 			for {
 				select {
 				case <-w.ch:
 					b.decPending()
 				default:
-					return
+					return nil
 				}
 			}
 		case event, ok := <-w.ch:
 			if !ok {
-				return
+				return nil
 			}
 
 			// Hard timeout prevents a subscriber from hanging forever
-			timeoutCtx, cancel := context.WithTimeout(b.ctx, 30*time.Second)
+			timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			if err := b.notifySubscriber(timeoutCtx, w.sub, event); err != nil {
 				b.getLogger().ErrorContext(timeoutCtx, "subscriber failed",
 					slog.String("event_type", event.Type()),
@@ -611,3 +599,48 @@ func (e ConsentStartedEvent) Type() string { return "ConsentStartedEvent" }
 type ConsentFinishedEvent struct{}
 
 func (e ConsentFinishedEvent) Type() string { return "ConsentFinishedEvent" }
+
+// Listen starts all per-subscriber background worker loops and blocks until the context is canceled.
+// Implementation follows the coordinated concurrency pattern using errgroup.
+func (b *SimpleEventBus) Listen(ctx context.Context) error {
+	if b == nil {
+		return ErrBusNotInitialized
+	}
+
+	b.mu.RLock()
+	async := b.asyncDispatch
+	b.mu.RUnlock()
+
+	if !async {
+		<-ctx.Done()
+		return nil
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	// Collect all current subscribers to start their workers
+	b.mu.Lock()
+	var wrappers []*subscriberWrapper
+	for _, ws := range b.subscribers {
+		wrappers = append(wrappers, ws...)
+	}
+	wrappers = append(wrappers, b.globalSubscribers...)
+	b.mu.Unlock()
+
+	for _, w := range wrappers {
+		w := w
+		b.workerWG.Add(1)
+		g.Go(func() error {
+			defer func() {
+				if r := recover(); r != nil {
+					b.getLogger().Error("panic in event bus subscriber loop",
+						slog.Any("error", r),
+						slog.String("stack", string(debug.Stack())))
+				}
+			}()
+			return b.subscriberLoop(ctx, w)
+		})
+	}
+
+	return g.Wait()
+}

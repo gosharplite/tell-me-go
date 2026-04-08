@@ -69,7 +69,11 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := newUIBridge(mock, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
-	bridgeCtx := bridge.Start(ctx)
+	done := make(chan struct{})
+	go func() {
+		_ = bridge.Listen(ctx)
+		close(done)
+	}()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -90,7 +94,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 	// In the new implementation, a panic triggers a shutdown.
 	// So we expect the bridge to be done.
 	select {
-	case <-bridgeCtx.Done():
+	case <-done:
 		// Success
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for bridge to shutdown after panic")
@@ -113,7 +117,11 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	}).Return(func() {})
 
 	bridge := newUIBridge(mockRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
-	bridgeCtx := bridge.Start(ctx)
+	done := make(chan struct{})
+	go func() {
+		_ = bridge.Listen(ctx)
+		close(done)
+	}()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -124,7 +132,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 
 	// Wait for shutdown and check logs
 	select {
-	case <-bridgeCtx.Done():
+	case <-done:
 		// Expected shutdown
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for bridge to shutdown after panic")
@@ -151,7 +159,11 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
-	bridgeCtx := bridge.Start(ctx)
+	done := make(chan struct{})
+	go func() {
+		_ = bridge.Listen(ctx)
+		close(done)
+	}()
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -175,7 +187,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	// 4. Assert that the uiBridge survives and cancels successfully.
 	select {
-	case <-bridgeCtx.Done():
+	case <-done:
 		// Success: Bridge cancelled gracefully despite double-panic
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for bridge to shutdown after double-panic")
@@ -198,7 +210,8 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	}).Once()
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
-	bridge.Start(ctx)
+	go bridge.Listen(ctx)
+	bridge.WaitStarted()
 
 	// Send two events
 	_ = bridge.handleEvent(ctx, events.TurnStatusEvent{})
@@ -224,7 +237,7 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
-	bridge.Start(ctx)
+	go bridge.Listen(ctx)
 
 	// Close the input to simulate a shutdown sequence.
 	bridge.CloseInput()

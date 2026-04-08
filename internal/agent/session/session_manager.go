@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -197,11 +198,28 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		sessionID = fmt.Sprintf("session-%s", hex.EncodeToString(b))
 	}
 	sess := ports.NewSession(sessionID, sd.GetHistoryManager())
-	if err := chatAgent.Chat(ctx, sess, sc.GetPrompt()); err != nil {
-		return fmt.Errorf("error: %w", err)
+
+	// [REFACTOR] Use errgroup to coordinate agent execution and UI rendering background tasks.
+	// This ensures that all UI events are processed before the session terminates.
+	gCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	g, gCtx := errgroup.WithContext(gCtx)
+
+	// Main Agent Loop
+	g.Go(func() error {
+		defer cancel()
+		return chatAgent.Chat(gCtx, sess, sc.GetPrompt())
+	})
+
+	// Background UI Loop
+	if bridge != nil {
+		g.Go(func() error {
+			return bridge.Listen(gCtx)
+		})
 	}
 
-	return nil
+	return g.Wait()
 }
 
 // Rollback deletes the specified number of turns from history.
@@ -262,7 +280,6 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 		withBridgeLogger(logger),
 		withBridgeClock(o.Clock),
 	)
-	bridge.Start(ctx)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
 		if err := bridge.handleEvent(ctx, e); err != nil {
 			logger.Warn("Failed to handle bridge event", "error", err, "event", fmt.Sprintf("%T", e))
@@ -351,6 +368,8 @@ type uiBridge struct {
 	wg                 sync.WaitGroup
 	cleanupTimeout     time.Duration
 	isClosed           atomic.Bool
+	started            chan struct{}
+	startOnce          sync.Once
 }
 
 func (b *uiBridge) transition(next uiState) {
@@ -465,6 +484,7 @@ func newUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
 		clock:          clock.RealClock{},
 		eventCh:        make(chan events.Event, 100),
 		cleanupTimeout: 5 * time.Second,
+		started:        make(chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(b)
@@ -475,37 +495,36 @@ func newUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
 	return b
 }
 
-func (b *uiBridge) Start(ctx context.Context) context.Context {
+func (b *uiBridge) Listen(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	b.cancel = cancel
-	b.wg.Add(1)
-	go b.loop(ctx)
-	return ctx
-}
+	defer cancel()
 
-func (b *uiBridge) loop(ctx context.Context) {
 	defer b.loopCancel()
 	defer func() {
 		if r := recover(); r != nil {
 			b.logger.Error("panic in uiBridge loop", "error", r, "stack", string(debug.Stack()))
 			b.stopActiveSpinner()
-			if b.cancel != nil {
-				b.cancel()
-			}
+			err = fmt.Errorf("uiBridge panicked: %v", r)
 		}
 	}()
 	defer b.wg.Done()
+	b.wg.Add(1)
+
+	b.startOnce.Do(func() {
+		close(b.started)
+	})
+
 	for {
 		select {
 		case <-ctx.Done():
-			// Forced abort (only happens if UI is deadlocked and Cleanup times out)
+			// Forced abort
 			b.stopActiveSpinner()
-			return
+			return nil
 		case e, ok := <-b.eventCh:
 			if !ok {
-				// Channel closed by producer (via Cleanup), natural drain complete
 				b.stopActiveSpinner()
-				return
+				return nil
 			}
 			b.processRecoverable(ctx, e)
 		}
@@ -518,10 +537,7 @@ func (b *uiBridge) processRecoverable(ctx context.Context, e events.Event) {
 			b.logger.Error("uiBridge actor recovered from panic", "error", r)
 			b.logger.Debug("uiBridge recovery stack trace", "stack", string(debug.Stack()))
 			b.stopActiveSpinner()
-			// Trigger shutdown to avoid unpredictable state
-			if b.cancel != nil {
-				b.cancel()
-			}
+			panic(r) // Re-panic to stop the Listen loop
 		}
 	}()
 	b.processEvent(ctx, e)
@@ -821,4 +837,12 @@ func getSpinnerInfo(e events.Event) (spinnerInfo, bool) {
 	default:
 		return spinnerInfo{}, false
 	}
+}
+
+func (b *uiBridge) GetLoopContext() context.Context {
+	return b.loopCtx
+}
+
+func (b *uiBridge) WaitStarted() {
+	<-b.started
 }

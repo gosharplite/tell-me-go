@@ -46,21 +46,46 @@ func NewAsyncTurnsLogger(fs infra_persistence.FileSystem, filePath string, logge
 		clock:  clock.RealClock{}, // Initialize internal clock
 	}
 
-	tl.wg.Add(1)
-	go tl.worker()
+	// [REFACTOR] No longer starts fire-and-forget goroutine here.
+	// The worker loop is now managed via Listen(ctx).
 
 	return tl, nil
 }
 
-func (l *asyncTurnsLogger) worker() {
+// Listen starts the worker loop and blocks until the context is canceled.
+func (l *asyncTurnsLogger) Listen(ctx context.Context) error {
 	defer l.wg.Done()
-	for msg := range l.ch {
-		if _, err := l.file.Write([]byte(msg)); err != nil {
-			l.logger.Warn("failed to write to turns log", "error", err)
-		} else if len(l.ch) == 0 {
-			// Smart batching: only fsync when the channel buffer is fully drained
-			if err := l.file.Sync(); err != nil {
-				l.logger.Warn("failed to sync turns log", "error", err)
+	l.wg.Add(1) // Track worker existence for backward compatibility with Close()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Drain the channel one last time to avoid dropping telemetry
+			for {
+				select {
+				case msg := <-l.ch:
+					if _, err := l.file.Write([]byte(msg)); err != nil {
+						l.logger.Warn("failed to write to turns log on shutdown", "error", err)
+					}
+				default:
+					// Ensure everything is persisted before exiting
+					if err := l.file.Sync(); err != nil {
+						l.logger.Warn("failed to sync turns log on shutdown", "error", err)
+					}
+					return nil
+				}
+			}
+		case msg, ok := <-l.ch:
+			if !ok {
+				return nil
+			}
+			if _, err := l.file.Write([]byte(msg)); err != nil {
+				l.logger.Warn("failed to write to turns log", "error", err)
+			} else if len(l.ch) == 0 {
+				// Smart batching: only fsync when the channel buffer is fully drained
+				if err := l.file.Sync(); err != nil {
+					l.logger.Warn("failed to sync turns log", "error", err)
+				}
 			}
 		}
 	}

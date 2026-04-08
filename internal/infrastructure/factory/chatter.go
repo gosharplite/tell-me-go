@@ -40,6 +40,7 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 		agent.WithSessionCostTracker(deps.GetTracker()),
 		agent.WithPricing(cfg.Model, cfg.Mode, deps.GetPricingOverrides()),
 		agent.WithSessionProvider(deps.GetSessionProvider()),
+		agent.WithTurnsLogger(deps.GetTurnsLogger()),
 	}
 
 	// 3. Return the new Agent.

@@ -502,6 +502,7 @@ func (m *mockEventBusFail) Publish(ctx context.Context, e events.Event) error {
 func (m *mockEventBusFail) Subscribe(f func(context.Context, events.Event)) {}
 func (m *mockEventBusFail) Shutdown(ctx context.Context) error              { return nil }
 func (m *mockEventBusFail) Flush(ctx context.Context) error                 { return nil }
+func (m *mockEventBusFail) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
 
 type mockSecurityManager struct {
 	domain_security.Manager

@@ -91,6 +91,12 @@ func (b *TestEventBus) Flush(ctx context.Context) error {
 	return b.flushErr
 }
 
+// Listen blocks until the context is canceled.
+func (b *TestEventBus) Listen(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
 // GetEvents returns a copy of all recorded events.
 func (b *TestEventBus) getEvents() []events.Event {
 	b.mu.RLock()

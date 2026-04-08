@@ -104,6 +104,7 @@ func (m *mockExpEventBus) Publish(ctx context.Context, e events.Event) error {
 func (m *mockExpEventBus) Subscribe(sub func(context.Context, events.Event)) {}
 func (m *mockExpEventBus) Shutdown(ctx context.Context) error                { return nil }
 func (m *mockExpEventBus) Flush(ctx context.Context) error                   { return nil }
+func (m *mockExpEventBus) Listen(ctx context.Context) error                  { <-ctx.Done(); return ctx.Err() }
 
 func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 	bus := &mockExpEventBus{}

@@ -26,7 +26,7 @@ func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 		withBridgeLogger(slog.Default()),
 		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
-	bridge.Start(context.Background())
+	go bridge.Listen(context.Background())
 
 	const numCalls = 100
 	var wg sync.WaitGroup

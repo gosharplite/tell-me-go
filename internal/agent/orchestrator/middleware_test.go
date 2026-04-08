@@ -24,6 +24,7 @@ func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
 func (m *mockEventBus) Subscribe(f func(context.Context, events.Event)) {}
 func (m *mockEventBus) Shutdown(ctx context.Context) error              { return nil }
 func (m *mockEventBus) Flush(ctx context.Context) error                 { return nil }
+func (m *mockEventBus) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
 
 type mockProcessor struct {
 	called bool

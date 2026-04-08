@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"sync/atomic"
 
+	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -42,6 +43,7 @@ type agent struct {
 	executor      *executor.Dispatcher
 	events        events.EventBus
 	tracker       domain_pricing.CostTracker
+	turnsLogger   ports.TurnsLogger
 	logger        *slog.Logger
 
 	config atomic.Pointer[runtimeConfig]
@@ -73,6 +75,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		executor:      exec,
 		events:        bus,
 		tracker:       cfg.tracker,
+		turnsLogger:   cfg.turnsLogger,
 		logger:        cfg.logger,
 	}
 
@@ -109,6 +112,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		orchestrator.WithEngineConfig(sm, initialCfg.ProviderName, initialCfg.Model, initialCfg.Mode, initialCfg.PricingOverrides),
 		orchestrator.WithEngineCostTracker(a.tracker),
 		orchestrator.WithEngineLogger(a.logger),
+		orchestrator.WithEngineTurnsLogger(a.turnsLogger),
 	)
 
 	if cfg.registerInternal {
@@ -218,7 +222,27 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 		return err
 	}
 	a.emit(ctx, events.StatusUpdate{Message: "Starting chat...", Level: "info"})
-	return a.engine.Run(ctx, s.StartTime)
+
+	// [REFACTOR] Use errgroup to coordinate the engine run loop and background telemetry workers.
+	// We create a child context that is canceled when either the engine finishes or the background
+	// tasks fail. We also use a defer cancel() to ensure the background tasks are stopped if engine finishes.
+	gCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	g, gCtx := errgroup.WithContext(gCtx)
+
+	// Engine run loop (main orchestration)
+	g.Go(func() error {
+		defer cancel() // Stop other tasks if this one finishes
+		return a.engine.Run(gCtx, s.StartTime)
+	})
+
+	// Background telemetry loop (coordinated via Listen)
+	g.Go(func() error {
+		return a.engine.StartTelemetry(gCtx)
+	})
+
+	return g.Wait()
 }
 
 // Shutdown gracefully stops the agent and its components.

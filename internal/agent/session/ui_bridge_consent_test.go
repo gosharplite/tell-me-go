@@ -33,7 +33,7 @@ func TestUIBridge_ConsentSpinnerLeak(t *testing.T) {
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {}).Maybe()
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	go bridge.Listen(context.Background())
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -58,7 +58,7 @@ func TestUIBridge_SystemMessageDuringConsent(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(context.Background())
+	go bridge.Listen(context.Background())
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -111,7 +111,7 @@ func TestUIBridge_SpinnerConsentCollision(t *testing.T) {
 	ctx := context.Background()
 
 	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	bridge.Start(ctx)
+	go bridge.Listen(ctx)
 	defer func() {
 		bridge.CloseInput()
 		bridge.Cleanup()
@@ -184,14 +184,13 @@ func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 	bridge := newUIBridge(mRenderer)
 
 	// Start the bridge to initialize everything
-	ctx := context.Background()
-	bridge.Start(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
+	go bridge.Listen(ctx)
+	bridge.WaitStarted()
 
 	// Simulate the consumer dying unexpectedly (e.g., panic or external cancellation)
 	// Canceling the parent loop context forces the loop to exit and triggers defer bridge.loopCancel()
-	if bridge.cancel != nil {
-		bridge.cancel()
-	}
+	cancel()
 
 	// Wait for the consumer loop to exit to ensure it's truly dead and not reading
 	bridge.wg.Wait()

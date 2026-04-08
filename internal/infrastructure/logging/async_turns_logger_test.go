@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -43,19 +44,30 @@ func TestAsyncTurnsLogger_Log(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, logFile, slog.Default())
 	require.NoError(t, err)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return tl.Listen(ctx)
+	})
+
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	tl.(*asyncTurnsLogger).clock = &mockClock{now: now}
 
-	tl.HandleEvent(context.Background(), events.SystemMessageEvent{
+	tl.HandleEvent(ctx, events.SystemMessageEvent{
 		Message: "hello",
 		Level:   "info",
 	})
-	tl.HandleEvent(context.Background(), events.TurnStatusEvent{
+	tl.HandleEvent(ctx, events.TurnStatusEvent{
 		Status: events.TurnStatus{
 			Timestamp:    now,
 			SessionTurns: 0,
 		},
 	})
+
+	cancel() // Stop the background worker
+	err = g.Wait()
+	require.NoError(t, err)
 
 	err = tl.Close()
 	require.NoError(t, err)
@@ -81,6 +93,13 @@ func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, logFile, slog.Default())
 	require.NoError(t, err)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return tl.Listen(ctx)
+	})
+
 	const numGoroutines = 10
 	const msgsPerGoroutine = 10
 	var wg sync.WaitGroup
@@ -93,7 +112,7 @@ func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for j := 0; j < msgsPerGoroutine; j++ {
-				tl.HandleEvent(context.Background(), events.SystemMessageEvent{
+				tl.HandleEvent(ctx, events.SystemMessageEvent{
 					Message: fmt.Sprintf("Goroutine %d msg %d", id, j),
 					Level:   "info",
 				})
@@ -103,6 +122,9 @@ func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 
 	close(start) // release all goroutines at once
 	wg.Wait()
+
+	cancel()
+	_ = g.Wait()
 
 	err = tl.Close()
 	require.NoError(t, err)
@@ -148,10 +170,20 @@ func TestAsyncTurnsLogger_SyncError(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
 	require.NoError(t, err)
 
-	tl.HandleEvent(context.Background(), events.SystemMessageEvent{
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return tl.Listen(ctx)
+	})
+
+	tl.HandleEvent(ctx, events.SystemMessageEvent{
 		Message: "test message",
 		Level:   "info",
 	})
+
+	cancel()
+	_ = g.Wait()
 
 	err = tl.Close()
 	require.NoError(t, err)
@@ -238,12 +270,19 @@ func TestAsyncTurnsLogger_BufferFull(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
 	require.NoError(t, err)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return tl.Listen(ctx)
+	})
+
 	// Send 1002 messages.
 	// 1st message will block in the worker's Write call.
 	// Next 1000 messages will fill the channel buffer (capacity 1000).
 	// 1002nd message will trigger the "buffer full" warning because the channel is full.
 	for i := 0; i < 1002; i++ {
-		tl.HandleEvent(context.Background(), events.SystemMessageEvent{
+		tl.HandleEvent(ctx, events.SystemMessageEvent{
 			Message: fmt.Sprintf("msg %d", i),
 			Level:   "info",
 		})
@@ -251,6 +290,9 @@ func TestAsyncTurnsLogger_BufferFull(t *testing.T) {
 
 	// Unblock the worker so it can finish
 	close(block)
+
+	cancel()
+	_ = g.Wait()
 
 	err = tl.Close()
 	assert.NoError(t, err)
@@ -300,10 +342,20 @@ func TestAsyncTurnsLogger_WriteError(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
 	require.NoError(t, err)
 
-	tl.HandleEvent(context.Background(), events.SystemMessageEvent{
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return tl.Listen(ctx)
+	})
+
+	tl.HandleEvent(ctx, events.SystemMessageEvent{
 		Message: "test message",
 		Level:   "info",
 	})
+
+	cancel()
+	_ = g.Wait()
 
 	err = tl.Close()
 	require.NoError(t, err)
@@ -355,10 +407,20 @@ func TestAsyncTurnsLogger_CallsSync(t *testing.T) {
 	tl, err := NewAsyncTurnsLogger(fs, "dummy", slog.Default())
 	require.NoError(t, err)
 
-	tl.HandleEvent(context.Background(), events.SystemMessageEvent{
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return tl.Listen(ctx)
+	})
+
+	tl.HandleEvent(ctx, events.SystemMessageEvent{
 		Message: "test message",
 		Level:   "info",
 	})
+
+	cancel()
+	_ = g.Wait()
 
 	err = tl.Close()
 	require.NoError(t, err)

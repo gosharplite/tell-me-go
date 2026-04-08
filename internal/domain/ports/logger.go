@@ -27,10 +27,14 @@ func (l *NoOpLogger) Debug(msg string, args ...any) {}
 
 type TurnsLogger interface {
 	HandleEvent(ctx context.Context, e events.Event)
+	// Listen starts the turns logger's background workers and blocks until the context is canceled.
+	// [ARCHITECTURAL REFACTOR] This replaces the previous fire-and-forget goroutine pattern.
+	Listen(ctx context.Context) error
 	Close() error
 }
 
 type NoOpTurnsLogger struct{}
 
 func (l *NoOpTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {}
+func (l *NoOpTurnsLogger) Listen(ctx context.Context) error                 { <-ctx.Done(); return ctx.Err() }
 func (l *NoOpTurnsLogger) Close() error                                    { return nil }
