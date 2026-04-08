@@ -45,9 +45,16 @@ AIURL: "http://test.url"
 	})
 
 	t.Run("NonExistentFile", func(t *testing.T) {
-		_, err := load("non-existent.yaml")
-		if err == nil {
-			t.Error("expected error for non-existent file, got nil")
+		cfg, err := load("non-existent.yaml")
+		if err != nil {
+			t.Errorf("expected no error for non-existent file, got %v", err)
+		}
+		if cfg == nil {
+			t.Fatal("expected config to be initialized even without file")
+		}
+		// Verify defaults are set
+		if cfg.MaxToolTurns != 200 {
+			t.Errorf("expected default MaxToolTurns 200, got %d", cfg.MaxToolTurns)
 		}
 	})
 
@@ -276,4 +283,34 @@ func assertSessionState(t *testing.T, got *domain_config.SessionConfig, err erro
 	checkIntPtr(t, "history tokens", tt.wantHistoryTokens, got.MaxHistoryTokens)
 	checkIntPtr(t, "tool turns", tt.wantToolTurns, got.MaxToolTurns)
 	checkIntPtr(t, "history turns", tt.wantHistoryTurns, got.MaxHistoryTurns)
+}
+
+func TestLoad_TELL_ME_EnvOverrides(t *testing.T) {
+	t.Setenv("TELL_ME_MODE", "tell-me-mode")
+	t.Setenv("TELL_ME_PROVIDERS_GOOGLE_MODEL", "tell-me-model")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_tellme.yaml")
+
+	yamlContent := `
+MODE: "yaml-mode"
+PROVIDERS:
+  google:
+    MODEL: "yaml-model"
+`
+	_ = os.WriteFile(configPath, []byte(yamlContent), 0644)
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() failed: %v", err)
+	}
+
+	if cfg.Mode != "tell-me-mode" {
+		t.Errorf("expected Mode 'tell-me-mode', got '%s'", cfg.Mode)
+	}
+	// Note: Viper automatic mapping to nested map keys from environment variables
+	// can be tricky. Let's see if this works.
+	if cfg.Providers["google"].Model != "tell-me-model" {
+		t.Errorf("expected Provider Google Model 'tell-me-model', got '%s'", cfg.Providers["google"].Model)
+	}
 }

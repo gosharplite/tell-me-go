@@ -286,7 +286,7 @@ func TestChatCommand_Execute_Retry(t *testing.T) {
 	}
 
 	ctx := stdctx.Background()
-	args := []string{"chat", "-retry"}
+	args := []string{"chat", "--retry"}
 
 	err := cmd.Execute(ctx, args)
 	if err != nil {
@@ -330,7 +330,7 @@ func TestChatCommand_Execute_Retry_Aborted(t *testing.T) {
 	}
 
 	ctx := stdctx.Background()
-	args := []string{"chat", "-retry"}
+	args := []string{"chat", "--retry"}
 
 	err := cmd.Execute(ctx, args)
 	if err != nil {
@@ -519,5 +519,42 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 			ms.AssertExpectations(t)
 			ml.AssertExpectations(t)
 		})
+	}
+}
+
+func TestChatCommand_Execute_LastN_NoValue(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mService := &mockChatService{}
+	mb, ml := setupMocks()
+
+	cmd := &chatCommand{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	ctx := stdctx.Background()
+	// -l without number should be sanitized to -l 1
+	args := []string{"chat", "-l"}
+
+	err := cmd.Execute(ctx, args)
+	if err != nil {
+		t.Errorf("Execute failed: %v", err)
+	}
+
+	if !mService.chatCalled {
+		t.Error("expected chat service to be called")
+	}
+
+	if mService.lastParams.LastN != 1 {
+		t.Errorf("expected LastN 1 (default), got %d", mService.lastParams.LastN)
 	}
 }

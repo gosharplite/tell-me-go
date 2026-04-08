@@ -112,6 +112,10 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 			cmdName = "browse"
 			break
 		}
+		if arg == "env" {
+			cmdName = "env"
+			break
+		}
 		if arg == "-v" || arg == "--version" {
 			cmdName = "version"
 			break

@@ -5,7 +5,6 @@ package tui
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/ui/tui/prompt"
+	"github.com/spf13/pflag"
 )
 
 var _ ports.Capturer = (*promptCapturer)(nil)
@@ -64,7 +64,7 @@ func (c *promptCapturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the prompt, using the TUI if requested.
-func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, opts ...ports.CaptureOption) (string, error) {
+func (c *promptCapturer) CapturePrompt(ctx context.Context, fs *pflag.FlagSet, opts ...ports.CaptureOption) (string, error) {
 	options := &ports.CaptureOptions{}
 	for _, opt := range opts {
 		opt(options)
