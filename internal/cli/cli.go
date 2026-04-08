@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -151,6 +152,9 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 
 	rootCmd.AddCommand(chatCmd, browseCmd, envCmd, versionCmd)
 
+	// Since App.Run receives os.Args, we sanitize them first
+	args = sanitizeArgs(args)
+
 	// Since App.Run receives os.Args, we skip the first element (binary name)
 	actualArgs := []string{}
 	if len(args) > 1 {
@@ -179,4 +183,31 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 		return err
 	}
 	return nil
+}
+
+func sanitizeArgs(args []string) []string {
+	if len(args) < 2 {
+		return args
+	}
+	processed := args[1:]
+	for i, arg := range processed {
+		// If we encounter a short or long flag that typically takes an integer
+		if arg == "-l" || arg == "--last" || arg == "-b" || arg == "--back" {
+			isNextNum := false
+			if i+1 < len(processed) {
+				if _, err := strconv.Atoi(processed[i+1]); err == nil {
+					isNextNum = true
+				}
+			}
+			// If the next argument is NOT a number, inject "1" as the value
+			if !isNextNum {
+				newArgs := make([]string, 0, len(args)+1)
+				newArgs = append(newArgs, args[:i+2]...)
+				newArgs = append(newArgs, "1")
+				newArgs = append(newArgs, args[i+2:]...)
+				return newArgs
+			}
+		}
+	}
+	return args
 }

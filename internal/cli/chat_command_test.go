@@ -536,6 +536,12 @@ func executeChatCommand(cmdCtx *context, args []string) error {
 	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
 	chatCmd := newChatCommand(cmdCtx)
 	root.AddCommand(chatCmd)
-	root.SetArgs(append([]string{"chat"}, args...))
+
+	// We must mimic the logic in App.Run by sanitizing args
+	fullArgs := append([]string{"tell-me-go", "chat"}, args...)
+	sanitized := sanitizeArgs(fullArgs)
+	// skip the binary name for SetArgs
+	root.SetArgs(sanitized[1:])
+
 	return root.ExecuteContext(stdctx.Background())
 }
