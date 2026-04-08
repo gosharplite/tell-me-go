@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"golang.org/x/sync/errgroup"
 )
 
 // Event represents a generic signal from the SessionManager.

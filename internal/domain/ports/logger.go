@@ -36,5 +36,5 @@ type TurnsLogger interface {
 type NoOpTurnsLogger struct{}
 
 func (l *NoOpTurnsLogger) HandleEvent(ctx context.Context, e events.Event) {}
-func (l *NoOpTurnsLogger) Listen(ctx context.Context) error                 { <-ctx.Done(); return ctx.Err() }
+func (l *NoOpTurnsLogger) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
 func (l *NoOpTurnsLogger) Close() error                                    { return nil }

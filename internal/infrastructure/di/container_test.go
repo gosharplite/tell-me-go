@@ -466,7 +466,7 @@ func (m *mockSessionDeps) GetLogger() *slog.Logger                              
 func (m *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger {
 	return &ports.NoOpTurnsLogger{}
 }
-func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return m.sessionProvider }
+func (m *mockSessionDeps) GetSessionProvider() ports.SessionProvider { return m.sessionProvider }
 
 type mockTracker struct {
 	pricing.CostTracker

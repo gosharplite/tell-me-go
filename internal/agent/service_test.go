@@ -264,7 +264,7 @@ func TestProcessMessage(t *testing.T) {
 	}{
 		{
 			name: "Success",
-			cmd: ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{
@@ -318,7 +318,7 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "BuildSessionDepsError",
-			cmd: ChatCommand{ConfigPath: "config.yaml"},
+			cmd:  ChatCommand{ConfigPath: "config.yaml"},
 			cfg:  &config.Config{Mode: "assistant"},
 			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
@@ -331,7 +331,7 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "RetrySuccess",
-			cmd: ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{
@@ -388,7 +388,7 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "RetryAborted",
-			cmd: ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{

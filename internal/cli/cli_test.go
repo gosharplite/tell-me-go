@@ -193,7 +193,6 @@ func (m *simpleMockBootstrapper) GetHistoryRenderer() ports.HistoryRenderer { re
 func (m *simpleMockBootstrapper) GetHistoryBrowser() ports.HistoryBrowser   { return nil }
 func (m *simpleMockBootstrapper) GetChatService() agent.ChatService         { return nil }
 
-
 func TestSanitizeArgs(t *testing.T) {
 	tests := []struct {
 		name     string

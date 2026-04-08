@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"go.uber.org/goleak"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestMain(m *testing.M) {

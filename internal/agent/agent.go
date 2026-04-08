@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"golang.org/x/sync/errgroup"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -22,6 +21,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	"golang.org/x/sync/errgroup"
 )
 
 // runtimeConfig consolidates all agent configuration parameters.

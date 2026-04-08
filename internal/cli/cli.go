@@ -172,8 +172,8 @@ func (a *App) Run(ctx stdctx.Context, args []string) error {
 	return nil
 }
 
-// sanitizeArgs preprocessing allows integer flags like -l and -b to behave like boolean flags 
-// defaulting to 1 when no argument is explicitly provided, preventing positional arguments 
+// sanitizeArgs preprocessing allows integer flags like -l and -b to behave like boolean flags
+// defaulting to 1 when no argument is explicitly provided, preventing positional arguments
 // (like the prompt string) from being mistakenly parsed as their values.
 func sanitizeArgs(args []string) []string {
 	if len(args) < 2 {

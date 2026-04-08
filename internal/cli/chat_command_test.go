@@ -135,7 +135,7 @@ func (m *mockLoader) Watch(ctx stdctx.Context, path string) (<-chan *config.Conf
 	return args.Get(0).(<-chan *config.Config), args.Error(1)
 }
 
-type mockSuggestionService struct{
+type mockSuggestionService struct {
 	closeErr error
 }
 
@@ -601,7 +601,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 			ms := &mockChatService{}
 			ms.On("ProcessMessage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 			tt.setupMocks(ml, mb, ms)
-			
+
 			var stdout, stderr strings.Builder
 			cmdCtx := &context{
 				Version:      "1.0.0",
@@ -613,7 +613,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 				Bootstrapper: mb,
 				Loader:       ml,
 			}
-			
+
 			err := executeChatCommand(cmdCtx, tt.args)
 			require.ErrorContains(t, err, tt.expectedError)
 		})

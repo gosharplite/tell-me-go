@@ -281,7 +281,7 @@ func TestGetUnifiedHistoryProvider_FailurePaths(t *testing.T) {
 func TestGetSuggestionService_Fallback(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()
-	
+
 	// Create an invalid directory structure to force NewGlobalPromptTracker to fail.
 	// NewGlobalPromptTracker tries to create a file in homeDir/.tellmego/prompts.jsonl
 	// If .tellmego is a file, it will fail.
