@@ -15,13 +15,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// MockLoader implements ConfigLoader for testing.
-type MockLoader struct {
+// mockLoader implements ConfigLoader for testing.
+type mockLoader struct {
 	Config domain_config.Config
 	Err    error
 }
 
-func (m *MockLoader) Load(path string) (*domain_config.Config, error) {
+func (m *mockLoader) Load(path string) (*domain_config.Config, error) {
 	if m.Err != nil {
 		return nil, m.Err
 	}
@@ -78,7 +78,7 @@ func TestEnvCommand_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout := &bytes.Buffer{}
-			loader := &MockLoader{Config: tt.config, Err: tt.loaderErr}
+			loader := &mockLoader{Config: tt.config, Err: tt.loaderErr}
 			cmdCtx := &context{
 				Stdout: stdout,
 				Loader: loader,
