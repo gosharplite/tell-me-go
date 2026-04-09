@@ -252,15 +252,18 @@ func (m *mockTurnsLogger) Close() error {
 
 func TestProcessMessage(t *testing.T) {
 	errBuild := errors.New("build error")
+	errChat := errors.New("chat error")
+	errFinalize := errors.New("finalize error")
 
 	tests := []struct {
-		name        string
-		setupMock   func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error
-		cmd         ChatCommand
-		cfg         *config.Config
-		wantErr     bool
-		errMsg      string
-		expectedErr error
+		name             string
+		setupMock        func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error
+		cmd              ChatCommand
+		cfg              *config.Config
+		wantErr          bool
+		errMsg           string
+		expectedErr      error
+		extraExpectedErr error
 	}{
 		{
 			name: "Success",
@@ -487,7 +490,7 @@ func TestProcessMessage(t *testing.T) {
 				cleanup := func(context.Context) error { return nil }
 				mockHM := &mockHistoryManagerForRetry{}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
-				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(errors.New("finalize error"))
+				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(errFinalize)
 
 				deps.On("GetEventBus").Return(bus)
 				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
@@ -509,8 +512,9 @@ func TestProcessMessage(t *testing.T) {
 
 				return nil
 			},
-			wantErr: true,
-			errMsg:  "finalize session failed: finalize error",
+			wantErr:     true,
+			errMsg:      "",
+			expectedErr: errFinalize,
 		},
 		{
 			name: "DoubleError",
@@ -533,7 +537,7 @@ func TestProcessMessage(t *testing.T) {
 				cleanup := func(context.Context) error { return nil }
 				mockHM := &mockHistoryManagerForRetry{}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
-				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(errors.New("finalize error"))
+				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(errFinalize)
 
 				deps.On("GetEventBus").Return(bus)
 				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
@@ -548,15 +552,17 @@ func TestProcessMessage(t *testing.T) {
 				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
 				agent.On("Subscribe", mock.Anything).Return()
-				agent.On("Chat", mock.Anything, mock.Anything, "hello").Return(errors.New("chat error"))
+				agent.On("Chat", mock.Anything, mock.Anything, "hello").Return(errChat)
 				agent.On("Shutdown", mock.Anything).Return(nil)
 
 				cap.On("IsTTY", mock.Anything).Return(true)
 
 				return nil
 			},
-			wantErr: true,
-			errMsg:  "session processing failed: chat error; additionally, finalize session failed: finalize error",
+			wantErr:          true,
+			errMsg:           "",
+			expectedErr:      errChat,
+			extraExpectedErr: errFinalize,
 		},
 	}
 
@@ -594,6 +600,9 @@ func TestProcessMessage(t *testing.T) {
 				}
 				if tt.expectedErr != nil {
 					assert.ErrorIs(t, err, tt.expectedErr)
+				}
+				if tt.extraExpectedErr != nil {
+					assert.ErrorIs(t, err, tt.extraExpectedErr)
 				}
 			} else {
 				assert.NoError(t, err)

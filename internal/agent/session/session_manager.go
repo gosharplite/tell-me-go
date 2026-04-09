@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -147,7 +148,7 @@ func newSessionManager(homeDir, version string, loader config.ConfigLoader, sm d
 }
 
 // Run executes the session orchestration.
-func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic ports.Capturer) error {
+func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic ports.Capturer) (err error) {
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
@@ -171,8 +172,11 @@ func (o *sessionManager) Run(ctx context.Context, sc ports.SessionConfig, sd por
 		// 1. Stop Producers (Agent) first
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), ports.DefaultShutdownTimeout)
 		defer cancel()
-		if err := chatAgent.Shutdown(shutdownCtx); err != nil {
-			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)
+
+		if se := chatAgent.Shutdown(shutdownCtx); se != nil {
+			_, _ = fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", se)
+			// Aggregate with the named return error 'err'
+			err = errors.Join(err, fmt.Errorf("agent shutdown failed: %w", se))
 		}
 
 		// 2. Clean up Consumer (UI) second

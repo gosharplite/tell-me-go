@@ -169,14 +169,20 @@ func (s *chatService) ProcessMessage(ctx context.Context, cfg *domain_config.Con
 
 // finalizeSessionState handles the terminal session transitions and error aggregation.
 func (s *chatService) finalizeSessionState(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config, runErr error) error {
-	if finalizeErr := s.LifecycleManager.FinalizeSession(ctx, hManager, deps, cfg); finalizeErr != nil {
-		if runErr != nil {
-			return fmt.Errorf("session processing failed: %w; additionally, finalize session failed: %w", runErr, finalizeErr)
-		}
+	finalizeErr := s.LifecycleManager.FinalizeSession(ctx, hManager, deps, cfg)
+	if finalizeErr == nil {
+		return runErr
+	}
+
+	if runErr == nil {
 		return fmt.Errorf("finalize session failed: %w", finalizeErr)
 	}
 
-	return runErr
+	// Use errors.Join to allow errors.Is/As to work on both error chains
+	return errors.Join(
+		fmt.Errorf("session processing failed: %w", runErr),
+		fmt.Errorf("finalize session failed: %w", finalizeErr),
+	)
 }
 
 // BrowseHistory initializes the TUI history browser and runs the Bubble Tea loop.
