@@ -189,7 +189,7 @@ func TestGoRunner_DefaultTimeout(t *testing.T) {
 		combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			deadline, ok := ctx.Deadline()
 			if !ok {
-				t.Error("expected deadline to be set by GoRunner")
+				t.Error("expected deadline to be set by goRunner")
 				return nil, errors.New("no deadline")
 			}
 			
@@ -203,7 +203,7 @@ func TestGoRunner_DefaultTimeout(t *testing.T) {
 		},
 	}
 	
-	runner := NewGoRunner(mock, WithDefaultTimeout(100*time.Millisecond))
+	runner := NewGoRunner(mock, withDefaultTimeout(100*time.Millisecond))
 	
 	_, err := runner.RunTests(context.Background(), "./...")
 	if err != nil {
@@ -231,7 +231,7 @@ func TestGoRunner_RespectsExistingDeadline(t *testing.T) {
 	}
 	
 	// Set a very long default timeout that should be ignored
-	runner := NewGoRunner(mock, WithDefaultTimeout(1*time.Hour))
+	runner := NewGoRunner(mock, withDefaultTimeout(1*time.Hour))
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -277,11 +277,11 @@ func TestGoRunner_RunTests_RaceFlag(t *testing.T) {
 				},
 			}
 
-			var runner *GoRunner
+			var runner *goRunner
 			if tt.name == "default (race enabled)" {
 				runner = NewGoRunner(mock)
 			} else {
-				runner = NewGoRunner(mock, WithRace(tt.withRace))
+				runner = NewGoRunner(mock, withRace(tt.withRace))
 			}
 			
 			_, _ = runner.RunTests(context.Background(), "./...")
@@ -660,7 +660,7 @@ func TestRunTestsWithCoverage_CreateTempError(t *testing.T) {
 	failCreate := func(string, string) (*os.File, error) {
 		return nil, errors.New("disk full")
 	}
-	runner := NewGoRunner(mock, WithFilesystem(failCreate, os.Remove))
+	runner := NewGoRunner(mock, withFilesystem(failCreate, os.Remove))
 
 	_, err := runner.RunTestsWithCoverage(context.Background(), "./...", false, "")
 	if err == nil {
