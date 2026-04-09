@@ -22,7 +22,7 @@ func TestOutputFormattingFlags(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		// Use a unique string that includes markdown.
 		resp := createTextResponse("google", "Text with **bold** and _italics_")
-		fmt.Fprint(w, resp)
+		_, _ = fmt.Fprint(w, resp)
 	}))
 	defer server.Close()
 

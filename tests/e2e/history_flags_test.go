@@ -23,7 +23,7 @@ func TestHistoryNavigationFlags(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		resp := createTextResponse("google", "Response to your prompt")
-		fmt.Fprint(w, resp)
+		_, _ = fmt.Fprint(w, resp)
 	}))
 	defer server.Close()
 
