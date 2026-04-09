@@ -417,6 +417,147 @@ func TestProcessMessage(t *testing.T) {
 				return nil
 			},
 		},
+		{
+			name: "RetryNoHistory",
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cfg:  &config.Config{Mode: "assistant"},
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				mockHM := &mockHistoryManagerForRetry{msg: "", turns: 0}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				deps.On("GetEventBus").Return(bus)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+				return nil
+			},
+			wantErr: true,
+			errMsg:  "no previous user message found to retry",
+		},
+		{
+			name: "RetryHistoryError",
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cfg:  &config.Config{Mode: "assistant"},
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				mockHM := &mockHistoryManagerForRetry{err: errors.New("db error")}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				deps.On("GetEventBus").Return(bus)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+				return nil
+			},
+			wantErr: true,
+			errMsg:  "failed to get last user message for retry",
+		},
+		{
+			name: "RetryConfirmError",
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cfg:  &config.Config{Mode: "assistant"},
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				mockHM := &mockHistoryManagerForRetry{msg: "retry me", turns: 1}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				deps.On("GetEventBus").Return(bus)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+				cap.On("Confirm", mock.Anything, mock.Anything).Return(false, errors.New("UI error"))
+				return nil
+			},
+			wantErr: true,
+			errMsg:  "UI error",
+		},
+		{
+			name: "FinalizeErrorOnly",
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
+			cfg: &config.Config{
+				Mode: "assistant",
+				Providers: map[string]config.LLMProvider{
+					"test": {Model: "test-model"},
+				},
+				SelectedProvider: "test",
+			},
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{
+					Mode: "assistant",
+					Providers: map[string]config.LLMProvider{
+						"test": {Model: "test-model"},
+					},
+					SelectedProvider: "test",
+				}
+				cleanup := func(context.Context) error { return nil }
+				mockHM := &mockHistoryManagerForRetry{}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(errors.New("finalize error"))
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
+				deps.On("GetHistoryManager").Return(mockHM)
+				deps.On("GetPricingData").Return(pricing.PricingData{})
+				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetTurnsLogger").Return(tl)
+				deps.On("GetSessionProvider").Return(nil)
+
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+				agent.On("Subscribe", mock.Anything).Return()
+				agent.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+				agent.On("Shutdown", mock.Anything).Return(nil)
+
+				cap.On("IsTTY", mock.Anything).Return(true)
+
+				return nil
+			},
+			wantErr: true,
+			errMsg:  "finalize session failed: finalize error",
+		},
+		{
+			name: "DoubleError",
+			cmd:  ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
+			cfg: &config.Config{
+				Mode: "assistant",
+				Providers: map[string]config.LLMProvider{
+					"test": {Model: "test-model"},
+				},
+				SelectedProvider: "test",
+			},
+			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+				cfg := &config.Config{
+					Mode: "assistant",
+					Providers: map[string]config.LLMProvider{
+						"test": {Model: "test-model"},
+					},
+					SelectedProvider: "test",
+				}
+				cleanup := func(context.Context) error { return nil }
+				mockHM := &mockHistoryManagerForRetry{}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(deps, mockHM, cleanup, nil)
+				sf.On("FinalizeSession", mock.Anything, mock.Anything, deps, cfg).Return(errors.New("finalize error"))
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
+				deps.On("GetHistoryManager").Return(mockHM)
+				deps.On("GetPricingData").Return(pricing.PricingData{})
+				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetTurnsLogger").Return(tl)
+				deps.On("GetSessionProvider").Return(nil)
+
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+				agent.On("Subscribe", mock.Anything).Return()
+				agent.On("Chat", mock.Anything, mock.Anything, "hello").Return(errors.New("chat error"))
+				agent.On("Shutdown", mock.Anything).Return(nil)
+
+				cap.On("IsTTY", mock.Anything).Return(true)
+
+				return nil
+			},
+			wantErr: true,
+			errMsg:  "session processing failed: chat error; additionally, finalize session failed: finalize error",
+		},
 	}
 
 	for _, tt := range tests {
