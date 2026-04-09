@@ -123,3 +123,69 @@ func TestHistoryNavigationFlags(t *testing.T) {
 		}
 	})
 }
+
+func TestHistoryOnlyExit(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping slow E2E test in short mode")
+	}
+
+	// 1. Setup Mock Server that should NEVER be called for chat
+	chatCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chatCalled = true
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	// 2. Setup Environment
+	homeDir := t.TempDir()
+	configPath := createTempConfig(t, "google", server.URL)
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL,
+	}
+
+	// 3. Pre-populate history
+	_, _, _ = runCommandWithEnv(env, "", "-c="+configPath, "initial message")
+	chatCalled = false // Reset after setup
+
+	t.Run("ShowHistoryAndExit", func(t *testing.T) {
+		stdout, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "-l")
+		if err != nil {
+			t.Fatalf("CLI -l failed: %v\nStderr: %s", err, stderr)
+		}
+
+		if chatCalled {
+			t.Error("Expected chat engine NOT to be called when using -l without a prompt")
+		}
+
+		if strings.Contains(stderr, "Starting chat...") {
+			t.Error("Expected stderr NOT to contain 'Starting chat...'")
+		}
+
+		if !strings.Contains(stdout, "initial message") {
+			t.Error("Expected stdout to contain history")
+		}
+	})
+
+	t.Run("RollbackAndExit", func(t *testing.T) {
+		chatCalled = false
+		stdout, stderr, err := runCommandWithEnv(env, "", "-c="+configPath, "-b", "1")
+		if err != nil {
+			t.Fatalf("CLI -b 1 failed: %v\nStderr: %s", err, stderr)
+		}
+
+		if chatCalled {
+			t.Error("Expected chat engine NOT to be called when using -b without a prompt")
+		}
+
+		if strings.Contains(stderr, "Starting chat...") {
+			t.Error("Expected stderr NOT to contain 'Starting chat...'")
+		}
+
+		if !strings.Contains(stdout, "Rolled back 1 turns") {
+			t.Error("Expected stdout to contain rollback confirmation")
+		}
+	})
+}
