@@ -28,6 +28,7 @@ type CoverageReport struct {
 type GoRunner struct {
 	exec           tools.CommandExecutor
 	defaultTimeout time.Duration
+	raceEnabled    bool
 }
 
 // RunnerOption defines a functional option for GoRunner.
@@ -40,11 +41,19 @@ func WithDefaultTimeout(d time.Duration) RunnerOption {
 	}
 }
 
+// WithRace enables or disables the race detector for tests.
+func WithRace(enabled bool) RunnerOption {
+	return func(r *GoRunner) {
+		r.raceEnabled = enabled
+	}
+}
+
 // NewGoRunner creates a new instance of GoRunner with the provided options.
 func NewGoRunner(exec tools.CommandExecutor, opts ...RunnerOption) *GoRunner {
 	r := &GoRunner{
 		exec:           exec,
 		defaultTimeout: 5 * time.Minute,
+		raceEnabled:    true,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -164,7 +173,13 @@ func (r *GoRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
 	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
-	return r.combinedOutput(ctx, "go", "test", "-race", path)
+	args := []string{"test"}
+	if r.raceEnabled {
+		args = append(args, "-race")
+	}
+	args = append(args, path)
+
+	return r.combinedOutput(ctx, "go", args...)
 }
 
 // BuildCode builds the code at the given path and writes it to the output binary.

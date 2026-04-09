@@ -240,3 +240,62 @@ func TestGoRunner_RespectsExistingDeadline(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestGoRunner_RunTests_RaceFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		withRace bool
+		wantRace bool
+	}{
+		{
+			name:     "default (race enabled)",
+			withRace: true,
+			wantRace: true,
+		},
+		{
+			name:     "explicitly enabled",
+			withRace: true,
+			wantRace: true,
+		},
+		{
+			name:     "race disabled",
+			withRace: false,
+			wantRace: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var capturedArgs []string
+			mock := &mockExecutor{
+				combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+					capturedArgs = args
+					return nil, nil
+				},
+			}
+
+			var runner *GoRunner
+			if tt.name == "default (race enabled)" {
+				runner = NewGoRunner(mock)
+			} else {
+				runner = NewGoRunner(mock, WithRace(tt.withRace))
+			}
+			
+			_, _ = runner.RunTests(context.Background(), "./...")
+
+			hasRace := false
+			for _, arg := range capturedArgs {
+				if arg == "-race" {
+					hasRace = true
+					break
+				}
+			}
+
+			if hasRace != tt.wantRace {
+				t.Errorf("wantRace=%v, got %v in args: %v", tt.wantRace, hasRace, capturedArgs)
+			}
+		})
+	}
+}
