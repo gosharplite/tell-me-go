@@ -39,7 +39,7 @@ func TestWithStatusReporter(t *testing.T) {
 	t.Parallel()
 	bus := &mockEventBus{}
 	engine := &Engine{events: bus}
-	mw := engine.WithStatusReporter()
+	mw := engine.withStatusReporter()
 	next := &mockProcessor{}
 
 	strategy := session.NewContextStrategy(&mockTokenCounter{})
@@ -64,7 +64,7 @@ func TestWithMetrics(t *testing.T) {
 	t.Parallel()
 	bus := &mockEventBus{}
 	engine := &Engine{events: bus}
-	mw := engine.WithMetrics()
+	mw := engine.withMetrics()
 	next := &mockProcessor{}
 
 	turn := &Turn{

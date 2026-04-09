@@ -209,8 +209,8 @@ type Engine struct {
 // EngineOption allows configuring the Engine.
 type EngineOption func(*Engine, *EngineConfig)
 
-// WithEngineClock sets a custom clock implementation.
-func WithEngineClock(c clock.Clock) EngineOption {
+// withEngineClock sets a custom clock implementation.
+func withEngineClock(c clock.Clock) EngineOption {
 	return func(e *Engine, cfg *EngineConfig) {
 		e.clock = c
 	}
@@ -309,9 +309,9 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, r
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
 		e.middleware = append(e.middleware,
-			e.WithMetrics(),
-			e.WithStatusReporter(),
-			WithLoopDetector(),
+			e.withMetrics(),
+			e.withStatusReporter(),
+			withLoopDetector(),
 		)
 	}
 

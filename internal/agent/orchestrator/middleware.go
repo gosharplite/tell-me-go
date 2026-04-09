@@ -18,8 +18,8 @@ import (
 
 const LoopWarning = "SYSTEM WARNING: Infinite loop detected. You are repeating the exact same tool call or response. The previous action was aborted. Please analyze your previous steps and try a DIFFERENT tool or strategy."
 
-// WithStatusReporter returns a middleware that publishes turn status events.
-func (e *Engine) WithStatusReporter() TurnMiddleware {
+// withStatusReporter returns a middleware that publishes turn status events.
+func (e *Engine) withStatusReporter() TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 			// 1. Header: Trigger session boundary header at the absolute start of every LLM generation cycle.
@@ -100,8 +100,8 @@ func (e *Engine) publishTurnStatus(ctx context.Context, turn *Turn, isPostCall b
 	}
 }
 
-// WithMetrics returns a middleware that publishes usage metrics.
-func (e *Engine) WithMetrics() TurnMiddleware {
+// withMetrics returns a middleware that publishes usage metrics.
+func (e *Engine) withMetrics() TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 			phase := turn.State.Phase
@@ -135,8 +135,8 @@ func (e *Engine) WithMetrics() TurnMiddleware {
 	}
 }
 
-// WithLoopDetector returns a middleware that detects and breaks infinite tool loops.
-func WithLoopDetector() TurnMiddleware {
+// withLoopDetector returns a middleware that detects and breaks infinite tool loops.
+func withLoopDetector() TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 			res, err := next.Process(ctx, turn)
@@ -144,8 +144,8 @@ func WithLoopDetector() TurnMiddleware {
 				return res, err
 			}
 
-			if DetectLoop(turn.State) {
-				return HandleLoopBreak(ctx, turn)
+			if detectLoop(turn.State) {
+				return handleLoopBreak(ctx, turn)
 			}
 
 			return res, err
@@ -153,7 +153,7 @@ func WithLoopDetector() TurnMiddleware {
 	}
 }
 
-func DetectLoop(state *TurnState) bool {
+func detectLoop(state *TurnState) bool {
 	// 1. Multi-step loop detection (Text & Tool Calls)
 	rawJSON, _ := json.Marshal(state.Response)
 	h := sha256.Sum256(rawJSON)
@@ -184,7 +184,7 @@ func DetectLoop(state *TurnState) bool {
 	return false
 }
 
-func HandleLoopBreak(ctx context.Context, turn *Turn) (ProcessResult, error) {
+func handleLoopBreak(ctx context.Context, turn *Turn) (ProcessResult, error) {
 	// Publish warning event for UI visibility
 	_ = events.SafePublish(ctx, turn.Events, events.SystemMessageEvent{
 		Message: "Infinite loop detected! Injecting corrective feedback to break the cycle...",

@@ -131,9 +131,9 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	// TurnStatusEvent (PhaseInference Header)
 	// InferenceStartedEvent (PhaseInference Start)
 	// ResponseEvent (PhaseInference End)
-	// UsageMetricsEvent (PhaseInference End - WithMetrics)
-	// TurnStatusEvent (PhaseInference End - WithStatusReporter)
-	// TurnStatusEvent (PhasePersisting End - WithStatusReporter - Ready)
+	// UsageMetricsEvent (PhaseInference End - withMetrics)
+	// TurnStatusEvent (PhaseInference End - withStatusReporter)
+	// TurnStatusEvent (PhasePersisting End - withStatusReporter - Ready)
 	expected := []string{"TurnStarted", "TurnStatusEvent", "InferenceStartedEvent", "ResponseEvent", "UsageMetricsEvent", "TurnStatusEvent", "TurnStatusEvent"}
 	mu.Lock()
 	defer mu.Unlock()
@@ -301,7 +301,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	}
 
 	cm := newTestContextManager(strategy, hManager, bus)
-	e := NewEngine(mockGw, nil, cm, reg, bus, strategy, WithEngineClock(&mockClock{}))
+	e := NewEngine(mockGw, nil, cm, reg, bus, strategy, withEngineClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -360,7 +360,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	}
 	cm.SetPipeline(session.NewContextPipeline(mt))
 
-	e := NewEngine(mockGw, nil, cm, reg, bus, strategy, WithEngineClock(&mockClock{}))
+	e := NewEngine(mockGw, nil, cm, reg, bus, strategy, withEngineClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -473,7 +473,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, WithEngineClock(mockClock))
+	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, withEngineClock(mockClock))
 
 	err := e.Run(context.Background(), fixedTime)
 	if err != nil {
@@ -564,7 +564,7 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 	}
 
-	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, WithEngineClock(&mockClock{}))
+	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -592,7 +592,7 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 		return nil, nil, llm.ErrTransient
 	}
 
-	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, WithEngineClock(&mockClock{}))
+	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -608,7 +608,7 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 	}
 }
 
-func TestTurnEngine_withEngineProcessor(t *testing.T) {
+func TestTurnEngine_WithEngineProcessor(t *testing.T) {
 	t.Parallel()
 	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -654,7 +654,7 @@ func TestTurnEngine_Hooks(t *testing.T) {
 
 	hook := &mockHook{}
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, WithEngineHook(hook))
+	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineHook(hook))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
@@ -686,7 +686,7 @@ func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 
 	policy := &mockRetryPolicy{retry: false} // Don't actually retry to keep test fast
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, WithEngineRetryPolicy(policy))
+	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineRetryPolicy(policy))
 
 	_ = e.Run(context.Background(), time.Now())
 
@@ -724,7 +724,7 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	hook := &mockHook{}
 	e = NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, strategy,
 		withEngineProcessor(PhaseInference, stopProcessor),
-		WithEngineHook(hook),
+		withEngineHook(hook),
 	)
 
 	_ = e.Run(context.Background(), time.Now())
@@ -841,7 +841,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 		},
 	}
 
-	e := NewEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, WithEngineClock(&mockClock{}))
+	e := NewEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, nil), reg, nil, strategy, withEngineClock(&mockClock{}))
 	// Default MaxRetries is 3.
 	// If retries were global, turn 1 would fail because totalRetries would be 2 from turn 0,
 	// and turn 1's first failure would set it to 3, then second would hit limit.
@@ -1082,7 +1082,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 		}
 
 		// Use the engine's middleware directly
-		middleware := e.WithMetrics()
+		middleware := e.withMetrics()
 		finalProcessor := TurnProcessorFunc(func(ctx context.Context, t *Turn) (ProcessResult, error) {
 			return ProcessResult{}, nil
 		})
@@ -1170,13 +1170,13 @@ func withEngineProcessor(phase TurnPhase, p TurnProcessor) EngineOption {
 	}
 }
 
-func WithEngineHook(h TurnHook) EngineOption {
+func withEngineHook(h TurnHook) EngineOption {
 	return func(e *Engine, cfg *EngineConfig) {
 		e.hooks = append(e.hooks, h)
 	}
 }
 
-func WithEngineRetryPolicy(p retryPolicy) EngineOption {
+func withEngineRetryPolicy(p retryPolicy) EngineOption {
 	return func(e *Engine, cfg *EngineConfig) {
 		e.retryPolicy = p
 	}
@@ -1405,7 +1405,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, WithEngineClock(&mockClock{}))
+	e := NewEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, strategy, withEngineClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())

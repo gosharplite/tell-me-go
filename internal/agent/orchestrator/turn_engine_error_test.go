@@ -63,7 +63,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec ToolExecutor, tr
 
 	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
-	engine := NewEngine(gw, exec, cm, reg, bus, strategy, WithEngineRetryPolicy(policy), WithEngineHook(tracker), WithEngineClock(&mockClock{}))
+	engine := NewEngine(gw, exec, cm, reg, bus, strategy, withEngineRetryPolicy(policy), withEngineHook(tracker), withEngineClock(&mockClock{}))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
