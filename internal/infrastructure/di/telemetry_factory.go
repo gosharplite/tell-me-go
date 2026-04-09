@@ -26,7 +26,7 @@ type DefaultTelemetryFactory struct {
 	Logger     *slog.Logger
 }
 
-func NewTelemetryFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, logger *slog.Logger) TelemetryFactory {
+func newTelemetryFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, logger *slog.Logger) TelemetryFactory {
 	if logger == nil {
 		logger = slog.Default()
 	}

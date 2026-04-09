@@ -33,7 +33,7 @@ type DefaultSessionFactory struct {
 	NewSessionState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
-func NewSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error, newState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)) SessionFactory {
+func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error, newState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)) SessionFactory {
 	return &DefaultSessionFactory{
 		HomeDir:         homeDir,
 		FileSystem:      fs,

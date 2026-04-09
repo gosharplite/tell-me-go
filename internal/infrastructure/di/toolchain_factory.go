@@ -42,7 +42,7 @@ type DefaultToolchainFactory struct {
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
 }
 
-func NewToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error) ToolchainFactory {
+func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error) ToolchainFactory {
 	return &DefaultToolchainFactory{
 		HomeDir:          homeDir,
 		FileSystem:       fs,

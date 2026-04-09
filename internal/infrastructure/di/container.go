@@ -87,21 +87,21 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 		NewSessionState:  infra_persistence.NewSessionState,
 	}
 
-	b.sessionFactory = NewSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
+	b.sessionFactory = newSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
 		func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
 			return b.RotateSession(fs, stdout, paths, retentionDays)
 		},
 		func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error) {
 			return b.NewSessionState(ctx, modeDir)
 		})
-	b.toolchainFactory = NewToolchainFactory(homeDir, fs, sm,
+	b.toolchainFactory = newToolchainFactory(homeDir, fs, sm,
 		func(params infra_tools.ToolRegistrationParams) error {
 			return b.RegisterAllTools(params)
 		},
 		func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 			return b.RegisterMetrics(r, sm, logFile, traceFile, model, mode, pricingOverrides, kvStore)
 		})
-	b.telemetryFactory = NewTelemetryFactory(homeDir, fs, sm, logger)
+	b.telemetryFactory = newTelemetryFactory(homeDir, fs, sm, logger)
 	return b
 }
 

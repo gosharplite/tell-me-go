@@ -114,7 +114,7 @@ func TestBuildTelemetry_Fallback(t *testing.T) {
 	}
 
 	sm := new(mockConfigurableSecurityManager)
-	factory := NewTelemetryFactory(tempDir, fs, sm, nil)
+	factory := newTelemetryFactory(tempDir, fs, sm, nil)
 
 	paths := &persistence.Paths{
 		TurnsLogPath: "turns.log",
@@ -169,7 +169,7 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 			setupDefaultSMExpectations(sm)
 
 			// Initialize with a real but dummy filesystem to avoid nil panics in EnsureDirectories
-			factory := NewSessionFactory(tempDir, &infra_persistence.OSFileSystem{}, sm, io.Discard, io.Discard, nil, nil, nil).(*DefaultSessionFactory)
+			factory := newSessionFactory(tempDir, &infra_persistence.OSFileSystem{}, sm, io.Discard, io.Discard, nil, nil, nil).(*DefaultSessionFactory)
 			if tt.setup != nil {
 				tt.setup(factory)
 			}
@@ -236,7 +236,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 			}
 
-			factory := NewToolchainFactory(tempDir, nil, sm, nil, nil).(*DefaultToolchainFactory)
+			factory := newToolchainFactory(tempDir, nil, sm, nil, nil).(*DefaultToolchainFactory)
 			if tt.setup != nil {
 				tt.setup(factory)
 			}
