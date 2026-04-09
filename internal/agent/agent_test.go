@@ -293,7 +293,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !orchestrator.IsFatal(err) {
+	if !llm.IsTerminal(err) {
 		t.Errorf("expected fatal error for context exhaustion, got %v", err)
 	}
 }

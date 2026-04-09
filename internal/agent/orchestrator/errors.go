@@ -11,53 +11,53 @@ import (
 
 // Category definitions
 var (
-	// ErrLogic is strictly for agent loop/turn limits.
+	// errLogic is strictly for agent loop/turn limits.
 	// Note: tool-level human rejections are handled via domaintools.ErrUserDeclined sentinels,
-	// which are NOT categorized as ErrLogic.
-	ErrLogic = errors.New("logic violation") // Should stop, indicates bug or limit
+	// which are NOT categorized as errLogic.
+	errLogic = errors.New("logic violation") // Should stop, indicates bug or limit
 )
 
-// AgentError provides structured error context for the orchestration engine.
-type AgentError struct {
+// agentError provides structured error context for the orchestration engine.
+type agentError struct {
 	Category error
 	Message  string
 	Err      error
 }
 
-func (e *AgentError) Error() string {
+func (e *agentError) Error() string {
 	if e.Err != nil {
 		return e.Message + ": " + e.Err.Error()
 	}
 	return e.Message
 }
 
-func (e *AgentError) Unwrap() error {
+func (e *agentError) Unwrap() error {
 	return e.Err
 }
 
-func (e *AgentError) Is(target error) bool {
+func (e *agentError) Is(target error) bool {
 	return e.Category == target || errors.Is(e.Category, target)
 }
 
-// NewAgentError is a helper for creating categorized errors.
-func NewAgentError(category error, message string, err error) error {
-	return &AgentError{
+// newAgentError is a helper for creating categorized errors.
+func newAgentError(category error, message string, err error) error {
+	return &agentError{
 		Category: category,
 		Message:  message,
 		Err:      err,
 	}
 }
 
-// IsTransient checks if the error should trigger a retry.
-func IsTransient(err error) bool {
+// isTransient checks if the error should trigger a retry.
+func isTransient(err error) bool {
 	if err == nil {
 		return false
 	}
 	return llm.IsTransient(err)
 }
 
-// IsFatal checks if the error should halt the current turn and session.
-func IsFatal(err error) bool {
+// isFatal checks if the error should halt the current turn and session.
+func isFatal(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -66,5 +66,5 @@ func IsFatal(err error) bool {
 		return true
 	}
 	// Check agent-specific logic violations
-	return errors.Is(err, ErrLogic)
+	return errors.Is(err, errLogic)
 }

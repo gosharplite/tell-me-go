@@ -20,14 +20,14 @@ func TestIsTransient(t *testing.T) {
 		{"transient error", llm.ErrTransient, true},
 		{"rate limit error", llm.ErrRateLimit, true},
 		{"terminal error", llm.ErrTerminal, false},
-		{"wrapped transient", NewAgentError(llm.ErrTransient, "msg", llm.ErrTransient), true},
+		{"wrapped transient", newAgentError(llm.ErrTransient, "msg", llm.ErrTransient), true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := IsTransient(tt.err); got != tt.want {
-				t.Errorf("IsTransient() = %v, want %v", got, tt.want)
+			if got := isTransient(tt.err); got != tt.want {
+				t.Errorf("isTransient() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -43,16 +43,16 @@ func TestIsFatal(t *testing.T) {
 		{"nil error", nil, false},
 		{"terminal error", llm.ErrTerminal, true},
 		{"auth error", llm.ErrAuth, true},
-		{"logic violation", ErrLogic, true},
+		{"logic violation", errLogic, true},
 		{"transient error", llm.ErrTransient, false},
-		{"wrapped terminal", NewAgentError(llm.ErrTerminal, "msg", llm.ErrTerminal), true},
+		{"wrapped terminal", newAgentError(llm.ErrTerminal, "msg", llm.ErrTerminal), true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := IsFatal(tt.err); got != tt.want {
-				t.Errorf("IsFatal() = %v, want %v", got, tt.want)
+			if got := isFatal(tt.err); got != tt.want {
+				t.Errorf("isFatal() = %v, want %v", got, tt.want)
 			}
 		})
 	}

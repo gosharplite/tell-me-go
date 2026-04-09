@@ -25,16 +25,16 @@ func TestTurnEngine_EventPublishFailure(t *testing.T) {
 	strategy := session.NewContextStrategy(&mockTokenCounter{})
 	cm := session.NewContextManager(strategy, nil, badBus, nil)
 
-	turn := &Turn{
+	turn := &turn{
 		Events:     badBus,
 		Logger:     testLogger,
 		CtxManager: cm,
-		State:      &TurnState{LastError: errors.New("dummy error")},
+		State:      &turnState{LastError: errors.New("dummy error")},
 		Clock:      clock.RealClock{},
 	}
 
 	// Test Recovery Step (simulating a transient error so it attempts a retry)
-	transientErr := NewAgentError(llm.ErrTransient, "transient issue", nil)
+	transientErr := newAgentError(llm.ErrTransient, "transient issue", nil)
 	turn.State.LastError = transientErr
 	rs := &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Millisecond}}
 	_, _ = rs.Process(context.Background(), turn)

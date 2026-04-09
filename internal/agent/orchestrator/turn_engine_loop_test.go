@@ -74,7 +74,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	window, _ := h.GetWindow(ctx, 0, -1)
 	foundWarning := false
 	for _, msg := range window {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == LoopWarning {
+		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
 			foundWarning = true
 			break
 		}
@@ -136,7 +136,7 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	window, _ := h.GetWindow(ctx, 0, -1)
 	foundWarning := false
 	for _, msg := range window {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == LoopWarning {
+		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
 			foundWarning = true
 			break
 		}
