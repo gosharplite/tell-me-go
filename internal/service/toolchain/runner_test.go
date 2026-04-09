@@ -655,11 +655,12 @@ func TestRunTestsWithCoverage_Options(t *testing.T) {
 func TestRunTestsWithCoverage_CreateTempError(t *testing.T) {
 	t.Parallel()
 	mock := &mockExecutor{}
-	runner := NewGoRunner(mock)
-	// Inject a failing createTemp function
-	runner.createTemp = func(string, string) (*os.File, error) {
+
+	// [REFACTOR] Use the consistent Functional Option pattern
+	failCreate := func(string, string) (*os.File, error) {
 		return nil, errors.New("disk full")
 	}
+	runner := NewGoRunner(mock, WithFilesystem(failCreate, os.Remove))
 
 	_, err := runner.RunTestsWithCoverage(context.Background(), "./...", false, "")
 	if err == nil {

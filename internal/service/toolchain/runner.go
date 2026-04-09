@@ -30,10 +30,20 @@ type GoRunner struct {
 	defaultTimeout time.Duration
 	raceEnabled    bool
 	createTemp     func(string, string) (*os.File, error)
+	removeFile     func(string) error
 }
 
 // RunnerOption defines a functional option for GoRunner.
 type RunnerOption func(*GoRunner)
+
+// WithFilesystem allows injecting custom temporary file management, useful for
+// isolation tests or memory-only environments.
+func WithFilesystem(create func(string, string) (*os.File, error), remove func(string) error) RunnerOption {
+	return func(r *GoRunner) {
+		r.createTemp = create
+		r.removeFile = remove
+	}
+}
 
 // WithDefaultTimeout sets the default timeout for GoRunner commands if no deadline is set in the context.
 func WithDefaultTimeout(d time.Duration) RunnerOption {
@@ -56,6 +66,7 @@ func NewGoRunner(exec tools.CommandExecutor, opts ...RunnerOption) *GoRunner {
 		defaultTimeout: 5 * time.Minute,
 		raceEnabled:    true,
 		createTemp:     os.CreateTemp,
+		removeFile:     os.Remove,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -88,7 +99,7 @@ func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 		// Safe to ignore: immediate closure to prepare file for OS write by child process.
 		_ = f.Close()
 		// Safe to ignore: best-effort temporary file cleanup.
-		defer func() { _ = os.Remove(tempName) }()
+		defer func() { _ = r.removeFile(tempName) }()
 	}
 
 	args := []string{"test"}
