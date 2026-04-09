@@ -12,8 +12,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-const defaultToolTimeout = 30 * time.Second
-
 // ErrNoSupportedLinter is returned when neither golangci-lint nor staticcheck is found.
 var ErrNoSupportedLinter = errors.New("no supported linter found (golangci-lint or staticcheck)")
 
@@ -28,17 +26,43 @@ type CoverageReport struct {
 
 // GoRunner executes Go toolchain commands.
 type GoRunner struct {
-	exec tools.CommandExecutor
+	exec           tools.CommandExecutor
+	defaultTimeout time.Duration
 }
 
-// NewGoRunner creates a new instance of GoRunner.
-func NewGoRunner(exec tools.CommandExecutor) *GoRunner {
-	return &GoRunner{exec: exec}
+// RunnerOption defines a functional option for GoRunner.
+type RunnerOption func(*GoRunner)
+
+// WithDefaultTimeout sets the default timeout for GoRunner commands if no deadline is set in the context.
+func WithDefaultTimeout(d time.Duration) RunnerOption {
+	return func(r *GoRunner) {
+		r.defaultTimeout = d
+	}
+}
+
+// NewGoRunner creates a new instance of GoRunner with the provided options.
+func NewGoRunner(exec tools.CommandExecutor, opts ...RunnerOption) *GoRunner {
+	r := &GoRunner{
+		exec:           exec,
+		defaultTimeout: 5 * time.Minute,
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+// applyTimeout returns a child context with the default timeout if no deadline is already set.
+func (r *GoRunner) applyTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, r.defaultTimeout)
 }
 
 // RunTestsWithCoverage executes tests with coverage and returns a parsed report.
 func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	var report CoverageReport
@@ -103,7 +127,7 @@ func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 
 // RunBenchmarks runs standard Go benchmarks in the target path.
 func (r *GoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	args := []string{"test", "-bench=" + benchRegex, "-benchmem", "-run=^$", path}
@@ -121,7 +145,7 @@ func (r *GoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex st
 
 // RunLinter discovers and runs the first available linter (golangci-lint or staticcheck).
 func (r *GoRunner) RunLinter(ctx context.Context) (output string, toolUsed string, err error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	if _, err := r.lookPath("golangci-lint"); err == nil {
@@ -137,7 +161,7 @@ func (r *GoRunner) RunLinter(ctx context.Context) (output string, toolUsed strin
 
 // RunTests runs project tests using the standard Go test tool.
 func (r *GoRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	return r.combinedOutput(ctx, "go", "test", "-race", path)
@@ -145,7 +169,7 @@ func (r *GoRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
 
 // BuildCode builds the code at the given path and writes it to the output binary.
 func (r *GoRunner) BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	return r.combinedOutput(ctx, "go", "build", "-o", outputBinary, path)
@@ -162,7 +186,7 @@ func (r *GoRunner) CheckGovulncheck(ctx context.Context) error {
 
 // RunModTidy runs 'go mod tidy'.
 func (r *GoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	return r.combinedOutput(ctx, "go", "mod", "tidy")
@@ -170,7 +194,7 @@ func (r *GoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
 
 // FormatCode runs 'go fmt' on the specified path.
 func (r *GoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	return r.combinedOutput(ctx, "go", "fmt", path)
@@ -178,7 +202,7 @@ func (r *GoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) 
 
 // GetPackageList runs 'go list -json' on the specified path.
 func (r *GoRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	return r.combinedOutput(ctx, "go", "list", "-json", path)
@@ -186,7 +210,7 @@ func (r *GoRunner) GetPackageList(ctx context.Context, path string) ([]byte, err
 
 // GetGoDoc runs 'go doc' for the specified symbol.
 func (r *GoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	return r.combinedOutput(ctx, "go", "doc", symbol)
@@ -194,7 +218,7 @@ func (r *GoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) 
 
 // GetModulePath returns the Go module path.
 func (r *GoRunner) GetModulePath(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	out, err := r.output(ctx, "go", "list", "-m")
@@ -206,7 +230,7 @@ func (r *GoRunner) GetModulePath(ctx context.Context) (string, error) {
 
 // GetModuleDir returns the Go module directory.
 func (r *GoRunner) GetModuleDir(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	ctx, cancel := r.applyTimeout(ctx)
 	defer cancel()
 
 	out, err := r.output(ctx, "go", "list", "-m", "-f", "{{.Dir}}")

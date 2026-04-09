@@ -182,3 +182,61 @@ func TestGoRunner_Timeout(t *testing.T) {
 		t.Errorf("expected context.DeadlineExceeded, got %v", err)
 	}
 }
+
+func TestGoRunner_DefaultTimeout(t *testing.T) {
+	mock := &mockExecutor{
+		combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Error("expected deadline to be set by GoRunner")
+				return nil, errors.New("no deadline")
+			}
+			
+			// The deadline should be approximately now + defaultTimeout
+			expectedDeadline := time.Now().Add(100 * time.Millisecond)
+			if deadline.Before(expectedDeadline.Add(-50*time.Millisecond)) || deadline.After(expectedDeadline.Add(50*time.Millisecond)) {
+				t.Errorf("unexpected deadline: got %v, want approx %v", deadline, expectedDeadline)
+			}
+			
+			return nil, nil
+		},
+	}
+	
+	runner := NewGoRunner(mock, WithDefaultTimeout(100*time.Millisecond))
+	
+	_, err := runner.RunTests(context.Background(), "./...")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGoRunner_RespectsExistingDeadline(t *testing.T) {
+	mock := &mockExecutor{
+		combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Error("expected deadline to be set")
+				return nil, errors.New("no deadline")
+			}
+			
+			// The deadline should be the one we set in the test, not the default
+			expectedDeadline := time.Now().Add(1 * time.Second)
+			if deadline.After(expectedDeadline.Add(100*time.Millisecond)) {
+				t.Errorf("deadline was too far in the future: got %v, want approx %v", deadline, expectedDeadline)
+			}
+			
+			return nil, nil
+		},
+	}
+	
+	// Set a very long default timeout that should be ignored
+	runner := NewGoRunner(mock, WithDefaultTimeout(1*time.Hour))
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	
+	_, err := runner.RunTests(ctx, "./...")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
