@@ -7,9 +7,12 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
+
+const defaultToolTimeout = 30 * time.Second
 
 // ErrNoSupportedLinter is returned when neither golangci-lint nor staticcheck is found.
 var ErrNoSupportedLinter = errors.New("no supported linter found (golangci-lint or staticcheck)")
@@ -35,6 +38,9 @@ func NewGoRunner(exec tools.CommandExecutor) *GoRunner {
 
 // RunTestsWithCoverage executes tests with coverage and returns a parsed report.
 func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	var report CoverageReport
 
 	tempName := profilePath
@@ -97,6 +103,9 @@ func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 
 // RunBenchmarks runs standard Go benchmarks in the target path.
 func (r *GoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	args := []string{"test", "-bench=" + benchRegex, "-benchmem", "-run=^$", path}
 	out, err := r.combinedOutput(ctx, "go", args...)
 	outStr := string(out)
@@ -112,6 +121,9 @@ func (r *GoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex st
 
 // RunLinter discovers and runs the first available linter (golangci-lint or staticcheck).
 func (r *GoRunner) RunLinter(ctx context.Context) (output string, toolUsed string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	if _, err := r.lookPath("golangci-lint"); err == nil {
 		out, err := r.combinedOutput(ctx, "golangci-lint", "run")
 		return string(out), "golangci-lint", err
@@ -125,11 +137,17 @@ func (r *GoRunner) RunLinter(ctx context.Context) (output string, toolUsed strin
 
 // RunTests runs project tests using the standard Go test tool.
 func (r *GoRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	return r.combinedOutput(ctx, "go", "test", "-race", path)
 }
 
 // BuildCode builds the code at the given path and writes it to the output binary.
 func (r *GoRunner) BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	return r.combinedOutput(ctx, "go", "build", "-o", outputBinary, path)
 }
 
@@ -144,26 +162,41 @@ func (r *GoRunner) CheckGovulncheck(ctx context.Context) error {
 
 // RunModTidy runs 'go mod tidy'.
 func (r *GoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	return r.combinedOutput(ctx, "go", "mod", "tidy")
 }
 
 // FormatCode runs 'go fmt' on the specified path.
 func (r *GoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	return r.combinedOutput(ctx, "go", "fmt", path)
 }
 
 // GetPackageList runs 'go list -json' on the specified path.
 func (r *GoRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	return r.combinedOutput(ctx, "go", "list", "-json", path)
 }
 
 // GetGoDoc runs 'go doc' for the specified symbol.
 func (r *GoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	return r.combinedOutput(ctx, "go", "doc", symbol)
 }
 
 // GetModulePath returns the Go module path.
 func (r *GoRunner) GetModulePath(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	out, err := r.output(ctx, "go", "list", "-m")
 	if err != nil {
 		return "", err
@@ -173,6 +206,9 @@ func (r *GoRunner) GetModulePath(ctx context.Context) (string, error) {
 
 // GetModuleDir returns the Go module directory.
 func (r *GoRunner) GetModuleDir(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultToolTimeout)
+	defer cancel()
+
 	out, err := r.output(ctx, "go", "list", "-m", "-f", "{{.Dir}}")
 	if err != nil {
 		return "", err

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 type mockExecutor struct {
@@ -13,7 +14,10 @@ type mockExecutor struct {
 }
 
 func (m *mockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return m.combinedOutputFunc(ctx, name, args...)
+	if m.combinedOutputFunc != nil {
+		return m.combinedOutputFunc(ctx, name, args...)
+	}
+	return nil, nil
 }
 
 func (m *mockExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -151,5 +155,30 @@ func TestRunBenchmarks(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGoRunner_Timeout(t *testing.T) {
+	mock := &mockExecutor{
+		combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	runner := NewGoRunner(mock)
+
+	// Use a background context; the runner's internal 30s timeout will eventually fire, 
+	// but we don't want to wait 30s in a unit test.
+	// Instead, provide a context that is ALREADY cancelled or has a very short deadline
+	// to verify the runner handles context propagation correctly.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	_, err := runner.RunTests(ctx, "./...")
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected context.DeadlineExceeded, got %v", err)
 	}
 }
