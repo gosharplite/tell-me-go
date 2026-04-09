@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -171,7 +172,11 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 		return "", err
 	}
 
-	c.printFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
+	eofMsg := "[Reading multi-line input. Press Ctrl+D to send]"
+	if runtime.GOOS == "windows" {
+		eofMsg = "[Reading multi-line input. Press Ctrl+Z then Enter to send]"
+	}
+	c.printFeedback(c.Stdout, useColor, colorYellow, eofMsg)
 
 	type readResult struct {
 		data string

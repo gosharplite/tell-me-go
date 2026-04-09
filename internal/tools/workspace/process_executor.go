@@ -15,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
+
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/encoding"
 )
 
 // executionConfig defines parameters for command or pipeline execution.
@@ -119,8 +121,8 @@ func (e *processExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.R
 
 	wg.Add(2)
 	totalCaptured := 0
-	go e.captureStream(stdout, false, sb, &mu, &wg, truncated, wt, config, file, maxCapture, &totalCaptured)
-	go e.captureStream(stderr, true, sb, &mu, &wg, truncated, wt, config, file, maxCapture, &totalCaptured)
+	go e.captureStream(encoding.WrapReader(stdout), false, sb, &mu, &wg, truncated, wt, config, file, maxCapture, &totalCaptured)
+	go e.captureStream(encoding.WrapReader(stderr), true, sb, &mu, &wg, truncated, wt, config, file, maxCapture, &totalCaptured)
 	wg.Wait()
 
 	return truncated
@@ -311,11 +313,11 @@ func (p *pipeline) capture(config executionConfig, file *os.File) (string, strin
 	var wg sync.WaitGroup
 	for i, r := range p.stderrPipes {
 		wg.Add(1)
-		go p.captureStderrAsync(&wg, sp, i, r)
+		go p.captureStderrAsync(&wg, sp, i, encoding.WrapReader(r))
 	}
 
 	// Capture Stdout sequentially (main thread)
-	scanner := bufio.NewScanner(p.stdoutPipe)
+	scanner := bufio.NewScanner(encoding.WrapReader(p.stdoutPipe))
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, maxScannerCapacity)
 	for scanner.Scan() {

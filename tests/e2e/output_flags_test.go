@@ -62,7 +62,7 @@ func TestOutputFormattingFlags(t *testing.T) {
 		}
 
 		// Standard output should contain the model's response.
-		// We use a loose match because markdown renderers might normalize formatting 
+		// We use a loose match because markdown renderers might normalize formatting
 		// (e.g., _ to *) or add spacing/padding.
 		out := stripANSI(stdout)
 		if !strings.Contains(out, "Text with") || !strings.Contains(out, "bold") {

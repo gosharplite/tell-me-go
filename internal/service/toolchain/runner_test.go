@@ -168,7 +168,7 @@ func TestGoRunner_Timeout(t *testing.T) {
 	}
 	runner := NewGoRunner(mock)
 
-	// Use a background context; the runner's internal 30s timeout will eventually fire, 
+	// Use a background context; the runner's internal 30s timeout will eventually fire,
 	// but we don't want to wait 30s in a unit test.
 	// Instead, provide a context that is ALREADY cancelled or has a very short deadline
 	// to verify the runner handles context propagation correctly.
@@ -192,19 +192,19 @@ func TestGoRunner_DefaultTimeout(t *testing.T) {
 				t.Error("expected deadline to be set by goRunner")
 				return nil, errors.New("no deadline")
 			}
-			
+
 			// The deadline should be approximately now + defaultTimeout
 			expectedDeadline := time.Now().Add(100 * time.Millisecond)
 			if deadline.Before(expectedDeadline.Add(-50*time.Millisecond)) || deadline.After(expectedDeadline.Add(50*time.Millisecond)) {
 				t.Errorf("unexpected deadline: got %v, want approx %v", deadline, expectedDeadline)
 			}
-			
+
 			return nil, nil
 		},
 	}
-	
+
 	runner := NewGoRunner(mock, withDefaultTimeout(100*time.Millisecond))
-	
+
 	_, err := runner.RunTests(context.Background(), "./...")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -219,23 +219,23 @@ func TestGoRunner_RespectsExistingDeadline(t *testing.T) {
 				t.Error("expected deadline to be set")
 				return nil, errors.New("no deadline")
 			}
-			
+
 			// The deadline should be the one we set in the test, not the default
 			expectedDeadline := time.Now().Add(1 * time.Second)
-			if deadline.After(expectedDeadline.Add(100*time.Millisecond)) {
+			if deadline.After(expectedDeadline.Add(100 * time.Millisecond)) {
 				t.Errorf("deadline was too far in the future: got %v, want approx %v", deadline, expectedDeadline)
 			}
-			
+
 			return nil, nil
 		},
 	}
-	
+
 	// Set a very long default timeout that should be ignored
 	runner := NewGoRunner(mock, withDefaultTimeout(1*time.Hour))
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	
+
 	_, err := runner.RunTests(ctx, "./...")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -283,7 +283,7 @@ func TestGoRunner_RunTests_RaceFlag(t *testing.T) {
 			} else {
 				runner = NewGoRunner(mock, withRace(tt.withRace))
 			}
-			
+
 			_, _ = runner.RunTests(context.Background(), "./...")
 
 			hasRace := false
@@ -614,7 +614,7 @@ func TestRunTestsWithCoverage_Options(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		
+
 		foundShort := false
 		foundProfile := false
 		for _, arg := range capturedArgs {
@@ -639,8 +639,12 @@ func TestRunTestsWithCoverage_Options(t *testing.T) {
 	t.Run("unmatched regex", func(t *testing.T) {
 		mock := &mockExecutor{
 			combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if len(args) > 0 && args[0] == "test" { return []byte("ok"), nil }
-				if len(args) > 1 && args[0] == "tool" && args[1] == "cover" { return []byte("no match"), nil }
+				if len(args) > 0 && args[0] == "test" {
+					return []byte("ok"), nil
+				}
+				if len(args) > 1 && args[0] == "tool" && args[1] == "cover" {
+					return []byte("no match"), nil
+				}
 				return nil, nil
 			},
 		}
