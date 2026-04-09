@@ -56,7 +56,7 @@ func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 	}
 	args = append(args, "-coverprofile="+tempName, path)
 
-	out, testErr := r.exec.CombinedOutput(ctx, "go", args...)
+	out, testErr := r.combinedOutput(ctx, "go", args...)
 	outStr := string(out)
 	report.TestOutput = outStr
 
@@ -78,7 +78,7 @@ func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 	}
 
 	// Get summary
-	sumOut, summaryErr := r.exec.CombinedOutput(ctx, "go", "tool", "cover", "-func="+tempName)
+	sumOut, summaryErr := r.combinedOutput(ctx, "go", "tool", "cover", "-func="+tempName)
 	if summaryErr != nil {
 		return report, fmt.Errorf("coverage summary execution failed: %w", summaryErr)
 	}
@@ -98,7 +98,7 @@ func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 // RunBenchmarks runs standard Go benchmarks in the target path.
 func (r *GoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
 	args := []string{"test", "-bench=" + benchRegex, "-benchmem", "-run=^$", path}
-	out, err := r.exec.CombinedOutput(ctx, "go", args...)
+	out, err := r.combinedOutput(ctx, "go", args...)
 	outStr := string(out)
 
 	if err != nil {
@@ -112,23 +112,42 @@ func (r *GoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex st
 
 // RunLinter discovers and runs the first available linter (golangci-lint or staticcheck).
 func (r *GoRunner) RunLinter(ctx context.Context) (output string, toolUsed string, err error) {
-	if _, err := r.exec.LookPath("golangci-lint"); err == nil {
-		out, err := r.exec.CombinedOutput(ctx, "golangci-lint", "run")
+	if _, err := r.lookPath("golangci-lint"); err == nil {
+		out, err := r.combinedOutput(ctx, "golangci-lint", "run")
 		return string(out), "golangci-lint", err
 	}
-	if _, err := r.exec.LookPath("staticcheck"); err == nil {
-		out, err := r.exec.CombinedOutput(ctx, "staticcheck", "./...")
+	if _, err := r.lookPath("staticcheck"); err == nil {
+		out, err := r.combinedOutput(ctx, "staticcheck", "./...")
 		return string(out), "staticcheck", err
 	}
 	return "", "", ErrNoSupportedLinter
 }
 
-// CombinedOutput executes a command and returns its combined standard output and standard error.
-func (r *GoRunner) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+// RunTests runs project tests using the standard Go test tool.
+func (r *GoRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
+	return r.combinedOutput(ctx, "go", "test", "-race", path)
+}
+
+// BuildCode builds the code at the given path and writes it to the output binary.
+func (r *GoRunner) BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error) {
+	return r.combinedOutput(ctx, "go", "build", "-o", outputBinary, path)
+}
+
+// CheckGovulncheck checks if govulncheck is installed.
+func (r *GoRunner) CheckGovulncheck(ctx context.Context) error {
+	_, err := r.lookPath("govulncheck")
+	if err != nil {
+		return fmt.Errorf("'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest")
+	}
+	return nil
+}
+
+// combinedOutput executes a command and returns its combined standard output and standard error.
+func (r *GoRunner) combinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return r.exec.CombinedOutput(ctx, name, args...)
 }
 
-// LookPath proxies the LookPath call to the underlying executor.
-func (r *GoRunner) LookPath(file string) (string, error) {
+// lookPath proxies the LookPath call to the underlying executor.
+func (r *GoRunner) lookPath(file string) (string, error) {
 	return r.exec.LookPath(file)
 }

@@ -31,6 +31,7 @@ type goRunner interface {
 	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
 	RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error)
 	RunLinter(ctx context.Context) (string, string, error)
+	CheckGovulncheck(ctx context.Context) error
 }
 
 type devManager struct {
@@ -45,17 +46,12 @@ type devManager struct {
 // Executor defines the interface for command execution to allow mocking in tests.
 type executor interface {
 	Execute(ctx context.Context, name string, args ...string) ([]byte, error)
-	LookPath(file string) (string, error)
 }
 
 type realExecutor struct{}
 
 func (e *realExecutor) Execute(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
-}
-
-func (e *realExecutor) LookPath(file string) (string, error) {
-	return exec.LookPath(file)
 }
 
 func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -318,8 +314,8 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 }
 
 func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	if _, err := m.executor.LookPath("govulncheck"); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest")
+	if err := m.runner.CheckGovulncheck(ctx); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	command := "govulncheck"

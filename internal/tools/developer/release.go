@@ -25,7 +25,8 @@ import (
 type releaseGoRunner interface {
 	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
 	RunLinter(ctx context.Context) (string, string, error)
-	CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error)
+	RunTests(ctx context.Context, path string) ([]byte, error)
+	BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error)
 }
 
 type releaseManager struct {
@@ -241,7 +242,7 @@ func (c *buildChecker) Run(ctx context.Context) checkResult {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	out, err := c.runner.CombinedOutput(ctx, "go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go")
+	out, err := c.runner.BuildCode(ctx, filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go")
 	if err != nil {
 		return checkResult{OK: false, Message: fmt.Sprintf("Clean build failed: %v\nOutput: %s", err, string(out))}
 	}
@@ -255,7 +256,7 @@ type testRunner struct {
 
 func (c *testRunner) Name() string { return "Test Suite Verification" }
 func (c *testRunner) Run(ctx context.Context) checkResult {
-	out, err := c.runner.CombinedOutput(ctx, "go", "test", "-race", "./...")
+	out, err := c.runner.RunTests(ctx, "./...")
 	if err != nil {
 		return checkResult{OK: false, Message: fmt.Sprintf("Unit/Integration tests failed: %v\nOutput: %s", err, string(out))}
 	}

@@ -21,7 +21,8 @@ import (
 type mockReleaseRunner struct {
 	runLinterFunc            func(ctx context.Context) (string, string, error)
 	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
-	combinedOutputFunc       func(ctx context.Context, name string, args ...string) ([]byte, error)
+	runTestsFunc             func(ctx context.Context, path string) ([]byte, error)
+	buildCodeFunc            func(ctx context.Context, outputBinary, path string) ([]byte, error)
 }
 
 func (m *mockReleaseRunner) RunLinter(ctx context.Context) (string, string, error) {
@@ -38,9 +39,16 @@ func (m *mockReleaseRunner) RunTestsWithCoverage(ctx context.Context, path strin
 	return toolchain.CoverageReport{PassedCount: 1, CoveragePct: "100.0%"}, nil
 }
 
-func (m *mockReleaseRunner) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if m.combinedOutputFunc != nil {
-		return m.combinedOutputFunc(ctx, name, args...)
+func (m *mockReleaseRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
+	if m.runTestsFunc != nil {
+		return m.runTestsFunc(ctx, path)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockReleaseRunner) BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error) {
+	if m.buildCodeFunc != nil {
+		return m.buildCodeFunc(ctx, outputBinary, path)
 	}
 	return []byte("success"), nil
 }
@@ -119,11 +127,8 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			},
 			setupRunner: func() *mockReleaseRunner {
 				return &mockReleaseRunner{
-					combinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-						if name == "go" && args[0] == "build" {
-							return []byte("failed"), fmt.Errorf("exit status 1")
-						}
-						return []byte("success"), nil
+					buildCodeFunc: func(ctx context.Context, outputBinary, path string) ([]byte, error) {
+						return []byte("failed"), fmt.Errorf("exit status 1")
 					},
 				}
 			},

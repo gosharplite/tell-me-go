@@ -6,6 +6,7 @@ package developer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -26,8 +27,7 @@ var _ domain_security.TerminalController = (*security.SecurityManager)(nil)
 var _ domain_security.UserInteractor = (*security.MockInteractor)(nil)
 
 type mockDevExecutor struct {
-	executeFunc  func(ctx context.Context, name string, args ...string) ([]byte, error)
-	lookPathFunc func(file string) (string, error)
+	executeFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
 func (m *mockDevExecutor) Execute(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -35,13 +35,6 @@ func (m *mockDevExecutor) Execute(ctx context.Context, name string, args ...stri
 		return m.executeFunc(ctx, name, args...)
 	}
 	return []byte("success"), nil
-}
-
-func (m *mockDevExecutor) LookPath(file string) (string, error) {
-	if m.lookPathFunc != nil {
-		return m.lookPathFunc(file)
-	}
-	return "/usr/bin/" + file, nil
 }
 
 type mockValidator struct {
@@ -60,6 +53,7 @@ type mockGoRunner struct {
 	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
 	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
 	runLinterFunc            func(ctx context.Context) (string, string, error)
+	checkGovulncheckFunc     func(ctx context.Context) error
 }
 
 func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
@@ -81,6 +75,13 @@ func (m *mockGoRunner) RunLinter(ctx context.Context) (string, string, error) {
 		return m.runLinterFunc(ctx)
 	}
 	return "", "golangci-lint", nil
+}
+
+func (m *mockGoRunner) CheckGovulncheck(ctx context.Context) error {
+	if m.checkGovulncheckFunc != nil {
+		return m.checkGovulncheckFunc(ctx)
+	}
+	return nil
 }
 
 func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
@@ -119,7 +120,7 @@ func TestCheckVulnerabilities(t *testing.T) {
 		},
 		{
 			name:        "Tool missing",
-			lookPathErr: errors.New("not found"),
+			lookPathErr: fmt.Errorf("'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest"),
 			wantSubstr:  "'govulncheck' is not installed",
 			wantErr:     true,
 		},
@@ -142,8 +143,8 @@ func TestCheckVulnerabilities(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m, executor, _ := setupDevManager(t)
-			executor.lookPathFunc = func(file string) (string, error) {
-				return "/usr/bin/" + file, tt.lookPathErr
+			m.runner.(*mockGoRunner).checkGovulncheckFunc = func(ctx context.Context) error {
+				return tt.lookPathErr
 			}
 			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				return []byte(tt.executeOut), tt.executeErr
