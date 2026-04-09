@@ -26,3 +26,7 @@ func (m *MockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 	m.CommandArgs = args
 	return m.OutputBytes, m.Error
 }
+
+func (m *MockExecutor) LookPath(file string) (string, error) {
+	return "/usr/bin/" + file, nil
+}

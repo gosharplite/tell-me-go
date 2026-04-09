@@ -2,6 +2,7 @@ package toolchain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -19,23 +20,18 @@ type CoverageReport struct {
 	NoGoFiles     bool
 }
 
-// GoRunner defines the interface for executing Go toolchain commands.
-type GoRunner interface {
-	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error)
-	RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error)
-}
-
-type standardGoRunner struct {
+// GoRunner executes Go toolchain commands.
+type GoRunner struct {
 	exec tools.CommandExecutor
 }
 
 // NewGoRunner creates a new instance of GoRunner.
-func NewGoRunner(exec tools.CommandExecutor) GoRunner {
-	return &standardGoRunner{exec: exec}
+func NewGoRunner(exec tools.CommandExecutor) *GoRunner {
+	return &GoRunner{exec: exec}
 }
 
 // RunTestsWithCoverage executes tests with coverage and returns a parsed report.
-func (r *standardGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error) {
+func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error) {
 	var report CoverageReport
 
 	tempName := profilePath
@@ -45,7 +41,9 @@ func (r *standardGoRunner) RunTestsWithCoverage(ctx context.Context, path string
 			return report, fmt.Errorf("failed to create temp coverage file: %w", err)
 		}
 		tempName = f.Name()
+		// Safe to ignore: immediate closure to prepare file for OS write by child process.
 		_ = f.Close()
+		// Safe to ignore: best-effort temporary file cleanup.
 		defer func() { _ = os.Remove(tempName) }()
 	}
 
@@ -95,7 +93,7 @@ func (r *standardGoRunner) RunTestsWithCoverage(ctx context.Context, path string
 }
 
 // RunBenchmarks runs standard Go benchmarks in the target path.
-func (r *standardGoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
+func (r *GoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
 	args := []string{"test", "-bench=" + benchRegex, "-benchmem", "-run=^$", path}
 	out, err := r.exec.CombinedOutput(ctx, "go", args...)
 	outStr := string(out)
@@ -107,4 +105,27 @@ func (r *standardGoRunner) RunBenchmarks(ctx context.Context, path string, bench
 		return "", fmt.Errorf("benchmark failed: %w (output: %s)", err, outStr)
 	}
 	return outStr, nil
+}
+
+// RunLinter discovers and runs the first available linter (golangci-lint or staticcheck).
+func (r *GoRunner) RunLinter(ctx context.Context) (output string, toolUsed string, err error) {
+	if _, err := r.exec.LookPath("golangci-lint"); err == nil {
+		out, err := r.exec.CombinedOutput(ctx, "golangci-lint", "run")
+		return string(out), "golangci-lint", err
+	}
+	if _, err := r.exec.LookPath("staticcheck"); err == nil {
+		out, err := r.exec.CombinedOutput(ctx, "staticcheck", "./...")
+		return string(out), "staticcheck", err
+	}
+	return "", "", errors.New("no supported linter found (golangci-lint or staticcheck)")
+}
+
+// CombinedOutput executes a command and returns its combined standard output and standard error.
+func (r *GoRunner) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return r.exec.CombinedOutput(ctx, name, args...)
+}
+
+// LookPath proxies the LookPath call to the underlying executor.
+func (r *GoRunner) LookPath(file string) (string, error) {
+	return r.exec.LookPath(file)
 }

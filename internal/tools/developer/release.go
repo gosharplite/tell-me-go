@@ -19,12 +19,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
 type releaseManager struct {
-	sm       domain_security.PathValidator
-	fs       persistence.FileSystem
-	executor tools.CommandExecutor
+	sm     domain_security.PathValidator
+	fs     persistence.FileSystem
+	runner *toolchain.GoRunner
 }
 
 type readinessCheck interface {
@@ -41,9 +42,9 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	pipeline := []readinessCheck{
 		&secretScanner{sm: m.sm, fs: m.fs},
 		&dependencyChecker{fs: m.fs},
-		&linterChecker{executor: m.executor},
-		&buildChecker{executor: m.executor},
-		&testRunner{executor: m.executor},
+		&linterChecker{runner: m.runner},
+		&buildChecker{runner: m.runner},
+		&testRunner{runner: m.runner},
 	}
 
 	var report strings.Builder
@@ -223,7 +224,7 @@ func (c *dependencyChecker) Run(ctx context.Context) checkResult {
 
 // buildChecker implementation
 type buildChecker struct {
-	executor tools.CommandExecutor
+	runner *toolchain.GoRunner
 }
 
 func (c *buildChecker) Name() string { return "Clean Room Build Simulation" }
@@ -234,7 +235,7 @@ func (c *buildChecker) Run(ctx context.Context) checkResult {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	out, err := c.executor.CombinedOutput(ctx, "go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go")
+	out, err := c.runner.CombinedOutput(ctx, "go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go")
 	if err != nil {
 		return checkResult{OK: false, Message: fmt.Sprintf("Clean build failed: %v\nOutput: %s", err, string(out))}
 	}
@@ -243,12 +244,12 @@ func (c *buildChecker) Run(ctx context.Context) checkResult {
 
 // testRunner implementation
 type testRunner struct {
-	executor tools.CommandExecutor
+	runner *toolchain.GoRunner
 }
 
 func (c *testRunner) Name() string { return "Test Suite Verification" }
 func (c *testRunner) Run(ctx context.Context) checkResult {
-	out, err := c.executor.CombinedOutput(ctx, "go", "test", "-race", "./...")
+	out, err := c.runner.CombinedOutput(ctx, "go", "test", "-race", "./...")
 	if err != nil {
 		return checkResult{OK: false, Message: fmt.Sprintf("Unit/Integration tests failed: %v\nOutput: %s", err, string(out))}
 	}
@@ -257,32 +258,25 @@ func (c *testRunner) Run(ctx context.Context) checkResult {
 
 // linterChecker implementation
 type linterChecker struct {
-	executor tools.CommandExecutor
+	runner *toolchain.GoRunner
 }
 
 func (c *linterChecker) Name() string { return "Linter Verification" }
 
 func (c *linterChecker) Run(ctx context.Context) checkResult {
-	res := c.runGolangciLint(ctx)
-	if res.OK || res.Message != "executable file not found" {
-		return res
+	out, tool, err := c.runner.RunLinter(ctx)
+	if err != nil {
+		if strings.Contains(err.Error(), "no supported linter found") {
+			return checkResult{OK: false, Message: "No linter found (golangci-lint or staticcheck)."}
+		}
+		// If it's an exit status 1, it usually means issues found, but we should check output.
+		if strings.Contains(err.Error(), "exit status 1") {
+			return c.handleLinterResult([]byte(out), err, tool)
+		}
+		return checkResult{OK: false, Message: fmt.Sprintf("%s failed: %v\nOutput: %s", tool, err, out)}
 	}
 
-	res = c.runStaticcheck(ctx)
-	if res.Message == "executable file not found" {
-		return checkResult{OK: false, Message: "No linter found (golangci-lint or staticcheck)."}
-	}
-	return res
-}
-
-func (c *linterChecker) runGolangciLint(ctx context.Context) checkResult {
-	out, err := c.executor.CombinedOutput(ctx, "golangci-lint", "run")
-	return c.handleLinterResult(out, err, "golangci-lint")
-}
-
-func (c *linterChecker) runStaticcheck(ctx context.Context) checkResult {
-	out, err := c.executor.CombinedOutput(ctx, "staticcheck", "./...")
-	return c.handleLinterResult(out, err, "staticcheck")
+	return c.handleLinterResult([]byte(out), nil, tool)
 }
 
 func (c *linterChecker) handleLinterResult(out []byte, err error, name string) checkResult {
@@ -299,10 +293,6 @@ func (c *linterChecker) handleLinterResult(out []byte, err error, name string) c
 			return checkResult{OK: true, Message: fmt.Sprintf("All linting checks passed (%s).", name)}
 		}
 		return checkResult{OK: false, Message: fmt.Sprintf("%s found issues:\n%s", name, string(out))}
-	}
-
-	if strings.Contains(err.Error(), "executable file not found") {
-		return checkResult{OK: false, Message: "executable file not found"}
 	}
 
 	return checkResult{OK: false, Message: fmt.Sprintf("%s failed: %v\nOutput: %s", name, err, string(out))}

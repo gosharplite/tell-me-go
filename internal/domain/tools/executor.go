@@ -11,4 +11,5 @@ import (
 type CommandExecutor interface {
 	Output(ctx context.Context, name string, args ...string) ([]byte, error)
 	CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error)
+	LookPath(file string) (string, error)
 }

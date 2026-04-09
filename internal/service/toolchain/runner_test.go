@@ -9,6 +9,7 @@ import (
 
 type mockExecutor struct {
 	combinedOutputFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
+	lookPathFunc       func(file string) (string, error)
 }
 
 func (m *mockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -20,6 +21,13 @@ func (m *mockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 		return m.combinedOutputFunc(ctx, name, args...)
 	}
 	return nil, nil
+}
+
+func (m *mockExecutor) LookPath(file string) (string, error) {
+	if m.lookPathFunc != nil {
+		return m.lookPathFunc(file)
+	}
+	return "/usr/bin/" + file, nil
 }
 
 func TestRunTestsWithCoverage(t *testing.T) {

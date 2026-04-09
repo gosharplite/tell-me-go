@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -18,10 +17,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type goRunner interface {
+	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	RunLinter(ctx context.Context) (string, string, error)
+}
+
 type healthManager struct {
 	SP     security.PolicyEvaluator
 	Exec   tools.CommandExecutor
-	Runner toolchain.GoRunner
+	Runner goRunner
 	Ana    *analysisManager
 }
 
@@ -120,7 +124,15 @@ func (m *healthManager) runParallelChecks(ctx context.Context, hb chan<- struct{
 		return nil
 	})
 
-	_ = g.Wait()
+	if err := g.Wait(); err != nil {
+		// Fallback: Return a degraded state summary if context fails or a future check fatals
+		return healthSummary{
+			Results: map[string]healthResult{
+				"System Error": {Status: "FAIL", Details: fmt.Sprintf("Parallel checks interrupted: %v", err)},
+			},
+			Alerts: alerts, // Keep the existing alerts slice defined earlier in the function
+		}
+	}
 
 	return healthSummary{
 		Results: map[string]healthResult{
@@ -194,20 +206,15 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 }
 
 func (m *healthManager) runLint(ctx context.Context) (string, string) {
-	var tool string
-	var args []string
-	if _, err := exec.LookPath("golangci-lint"); err == nil {
-		tool = "golangci-lint"
-		args = []string{"run"}
-	} else if _, err := exec.LookPath("staticcheck"); err == nil {
-		tool = "staticcheck"
-		args = []string{"./..."}
-	} else {
-		return "SKIP", "No linter found"
+	outStr, tool, err := m.Runner.RunLinter(ctx)
+	if err != nil && !strings.Contains(err.Error(), "exit status") {
+		if strings.Contains(err.Error(), "no supported linter found") {
+			return "SKIP", "No linter found"
+		}
+		return "ERROR", err.Error()
 	}
 
-	out, _ := m.Exec.CombinedOutput(ctx, tool, args...)
-	outStr := strings.TrimSpace(string(out))
+	outStr = strings.TrimSpace(outStr)
 	if outStr == "" {
 		return "CLEAN", "All checks passed"
 	}
