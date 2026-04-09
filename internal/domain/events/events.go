@@ -291,7 +291,7 @@ func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, e
 			)
 
 			// 2. Format the error to be returned to the caller
-			err = fmt.Errorf("subscriber panicked: %v\n%s", r, stack)
+			err = fmt.Errorf("subscriber panicked: %v", r)
 		}
 	}()
 
