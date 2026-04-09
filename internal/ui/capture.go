@@ -171,7 +171,7 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 		return "", err
 	}
 
-	c.printFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
+	c.printFeedback(c.Stdout, useColor, colorYellow, multiLineEOFHint)
 
 	type readResult struct {
 		data string

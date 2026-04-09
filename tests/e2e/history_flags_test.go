@@ -113,7 +113,7 @@ func TestHistoryNavigationFlags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to read history file: %v", err)
 		}
-		
+
 		histStr := string(content)
 		if !strings.Contains(histStr, "Message 2") {
 			t.Errorf("Expected history to contain 'Message 2', got: %q", histStr)
