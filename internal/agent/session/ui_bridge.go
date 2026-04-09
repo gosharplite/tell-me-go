@@ -200,18 +200,14 @@ func (b *uiBridge) Cleanup() {
 		select {
 		case <-done:
 			// Clean exit: all workers finished draining within the timeout
-			if b.cancel != nil {
-				b.cancel()
-			}
 		case <-timer.C:
 			// Timeout reached: The renderer might be deadlocked or too slow.
 			b.logger.Warn("UI Bridge cleanup timed out, forcing context cancellation")
+		}
 
-			// Forcefully unblock the hanging renderer, which unblocks the loop,
-			// allowing the background wg.Wait() goroutine to eventually exit.
-			if b.cancel != nil {
-				b.cancel()
-			}
+		// Ensure the context is cancelled to unblock the Listen loop.
+		if b.cancel != nil {
+			b.cancel()
 		}
 	})
 }
