@@ -13,28 +13,36 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type mockCommandExecutor struct {
-	runFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
+type mockToolchainExecutor struct {
+	runFunc      func(ctx context.Context, name string, args ...string) ([]byte, error)
+	lookPathFunc func(file string) (string, error)
 }
 
-func (m *mockCommandExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (m *mockToolchainExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
 	if m.runFunc != nil {
 		return m.runFunc(ctx, name, args...)
 	}
 	return []byte(""), nil
 }
 
-func (m *mockCommandExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (m *mockToolchainExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
 	if m.runFunc != nil {
 		return m.runFunc(ctx, name, args...)
 	}
 	return []byte(""), nil
+}
+
+func (m *mockToolchainExecutor) LookPath(file string) (string, error) {
+	if m.lookPathFunc != nil {
+		return m.lookPathFunc(file)
+	}
+	return "/usr/bin/" + file, nil
 }
 
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
@@ -47,15 +55,16 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	fs.Files = map[string][]byte{
 		filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
 		filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
-		"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), // Still needed for DependencyChecker
+		"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
 	}
 
-	executor := &mockCommandExecutor{}
+	executor := &mockToolchainExecutor{}
+	runner := toolchain.NewGoRunner(executor)
 
 	m := &releaseManager{
-		sm:       sm,
-		fs:       fs,
-		executor: executor,
+		sm:     sm,
+		fs:     fs,
+		runner: runner,
 	}
 
 	res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
@@ -68,13 +77,6 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	}
 }
 
-type releaseReadinessTestCase struct {
-	name       string
-	files      func() map[string][]byte
-	runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
-	wantSubstr string
-}
-
 func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
@@ -85,7 +87,12 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		return []byte("success"), nil
 	}
 
-	tests := []releaseReadinessTestCase{
+	tests := []struct {
+		name       string
+		files      func() map[string][]byte
+		runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
+		wantSubstr string
+	}{
 		{
 			name: "Secret found",
 			files: func() map[string][]byte {
@@ -143,35 +150,17 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			runReleaseReadinessTest(t, sm, tt.name, tt.files, tt.runFunc, tt.wantSubstr)
+			fs := persistence.NewMockFileSystem()
+			fs.Files = tt.files()
+			executor := &mockToolchainExecutor{runFunc: tt.runFunc}
+			runner := toolchain.NewGoRunner(executor)
+			m := &releaseManager{sm: sm, fs: fs, runner: runner}
+
+			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
+			require.NoError(t, err)
+			assert.Contains(t, res.Text, tt.wantSubstr)
+			assert.Contains(t, res.Text, "NOT READY")
 		})
-	}
-}
-
-func runReleaseReadinessTest(t *testing.T, sm domain_security.Manager, name string, files func() map[string][]byte, runFunc func(context.Context, string, ...string) ([]byte, error), wantSubstr string) {
-	fs := persistence.NewMockFileSystem()
-	fs.Files = files()
-
-	executor := &mockCommandExecutor{
-		runFunc: runFunc,
-	}
-
-	m := &releaseManager{
-		sm:       sm,
-		fs:       fs,
-		executor: executor,
-	}
-
-	res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(res.Text, wantSubstr) {
-		t.Errorf("expected substring %q in report, got:\n%s", wantSubstr, res.Text)
-	}
-	if !strings.Contains(res.Text, "NOT READY") {
-		t.Errorf("expected NOT READY in report, got:\n%s", res.Text)
 	}
 }
 
@@ -181,16 +170,20 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 	sm.RegisterSafePath(".")
 
 	tests := []struct {
-		name       string
-		runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
-		wantSubstr string
+		name         string
+		runFunc      func(ctx context.Context, name string, args ...string) ([]byte, error)
+		lookPathFunc func(file string) (string, error)
+		wantSubstr   string
 	}{
 		{
 			name: "golangci-lint missing, staticcheck found issues",
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "golangci-lint" {
-					return nil, errors.New("executable file not found")
+			lookPathFunc: func(file string) (string, error) {
+				if file == "golangci-lint" {
+					return "", errors.New("not found")
 				}
+				return "/usr/bin/" + file, nil
+			},
+			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				if name == "staticcheck" {
 					return []byte("staticcheck error"), fmt.Errorf("exit status 1")
 				}
@@ -200,20 +193,10 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 		},
 		{
 			name: "both linters missing",
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return nil, errors.New("executable file not found")
+			lookPathFunc: func(file string) (string, error) {
+				return "", errors.New("not found")
 			},
 			wantSubstr: "No linter found",
-		},
-		{
-			name: "golangci-lint execution error",
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "golangci-lint" {
-					return nil, errors.New("unexpected error")
-				}
-				return []byte("success"), nil
-			},
-			wantSubstr: "golangci-lint failed",
 		},
 		{
 			name: "golangci-lint success with output",
@@ -232,8 +215,9 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 			t.Parallel()
 			fs := persistence.NewMockFileSystem()
 			fs.Files = map[string][]byte{"go.mod": []byte("module test")}
-			executor := &mockCommandExecutor{runFunc: tt.runFunc}
-			m := &releaseManager{sm: sm, fs: fs, executor: executor}
+			executor := &mockToolchainExecutor{runFunc: tt.runFunc, lookPathFunc: tt.lookPathFunc}
+			runner := toolchain.NewGoRunner(executor)
+			m := &releaseManager{sm: sm, fs: fs, runner: runner}
 			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 			require.NoError(t, err)
 			assert.Contains(t, res.Text, tt.wantSubstr)

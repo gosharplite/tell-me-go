@@ -93,9 +93,9 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 
 	// Release Management
 	rel := &releaseManager{
-		sm:       sm,
-		fs:       fs,
-		executor: exec,
+		sm:     sm,
+		fs:     fs,
+		runner: runner,
 	}
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_release_readiness",

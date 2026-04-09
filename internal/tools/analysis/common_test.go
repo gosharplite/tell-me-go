@@ -37,6 +37,7 @@ func (s *mockSecurityProvider) IsBypassActive() bool                       { ret
 type mockExecutor struct {
 	OutputFunc         func(ctx context.Context, name string, args ...string) ([]byte, error)
 	CombinedOutputFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
+	LookPathFunc       func(file string) (string, error)
 }
 
 func (m *mockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -51,6 +52,13 @@ func (m *mockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 		return m.CombinedOutputFunc(ctx, name, args...)
 	}
 	return nil, nil
+}
+
+func (m *mockExecutor) LookPath(file string) (string, error) {
+	if m.LookPathFunc != nil {
+		return m.LookPathFunc(file)
+	}
+	return "/usr/bin/" + file, nil
 }
 
 type mockIndexer struct {

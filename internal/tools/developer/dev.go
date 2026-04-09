@@ -27,11 +27,17 @@ func withHeartbeatInterval(d time.Duration) devOption {
 	}
 }
 
+type goRunner interface {
+	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error)
+	RunLinter(ctx context.Context) (string, string, error)
+}
+
 type devManager struct {
 	sm                devSecurity
 	validator         domain_security.CommandValidator
 	executor          executor
-	runner            toolchain.GoRunner
+	runner            goRunner
 	createTempFile    func(dir, pattern string) (*os.File, error)
 	heartbeatInterval time.Duration
 }
@@ -228,31 +234,26 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	// 1. Resolve strategy
-	command, argsList, err := m.resolveLinter()
+	// 1. Authorization
+	approved, err := m.authorizeAction(ctx, "Linter Execution", "go lint", "Running code analysis")
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-
-	// 2. Execute via standard pipeline
-	fullCmd := command + " " + strings.Join(argsList, " ")
-	out, err := m.executeWithHeartbeat(
-		ctx,
-		"Linter Execution",
-		fullCmd,
-		"Running code analysis",
-		command,
-		argsList,
-		hb,
-	)
-
-	// 3. Handle graceful user decline
-	if errors.Is(err, tools.ErrUserDeclined) {
-		return tools.ToolResult{Text: "Action denied by user."}, err
+	if !approved {
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
-	// 4. Format and return
-	res := formatExecutionResult("Linter", out, err, 100, "Linter passed successfully.")
+	// 2. Logging
+	m.logToolAction("Running linter execution: go lint")
+
+	// 3. Telemetry/Heartbeat
+	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
+
+	// 4. Execution via runner
+	out, tool, err := m.runner.RunLinter(ctx)
+
+	// 5. Format and return
+	res := formatExecutionResult("Linter ("+tool+")", []byte(out), err, 100, "Linter passed successfully.")
 	if res.Error != nil {
 		return tools.ToolResult{}, res.Error
 	}
@@ -352,17 +353,6 @@ func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
 }
 
-// resolveLinter determines the best available linter and its default arguments.
-func (m *devManager) resolveLinter() (command string, args []string, err error) {
-	if _, lookErr := m.executor.LookPath("golangci-lint"); lookErr == nil {
-		return "golangci-lint", []string{"run"}, nil
-	}
-	if _, lookErr := m.executor.LookPath("staticcheck"); lookErr == nil {
-		return "staticcheck", []string{"./..."}, nil
-	}
-	return "", nil, errors.New("no supported linter found (golangci-lint or staticcheck)")
-}
-
 func formatExecutionResult(displayName string, out []byte, execErr error, truncateLimit int, emptySuccessMsg string) tools.ToolResult {
 	if execErr != nil && len(out) == 0 {
 		return tools.ToolResult{Error: fmt.Errorf("%s execution failed: %w", displayName, execErr)}
@@ -411,7 +401,7 @@ func (m *devManager) executeWithHeartbeat(
 	return m.executor.Execute(ctx, command, args...)
 }
 
-func newDevManager(sm devSecurity, validator domain_security.CommandValidator, runner toolchain.GoRunner, opts ...devOption) *devManager {
+func newDevManager(sm devSecurity, validator domain_security.CommandValidator, runner *toolchain.GoRunner, opts ...devOption) *devManager {
 	m := &devManager{
 		sm:                sm,
 		validator:         validator,

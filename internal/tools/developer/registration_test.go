@@ -45,7 +45,7 @@ func TestRegister(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	validator := security.NewCommandValidator(sm, nil)
 	fs := persistence.NewMockFileSystem()
-	exec := &mockCommandExecutor{}
+	exec := &mockToolchainExecutor{}
 
 	if err := Register(registry, sm, exec, validator, fs); err != nil {
 		t.Fatalf("Register failed: %v", err)

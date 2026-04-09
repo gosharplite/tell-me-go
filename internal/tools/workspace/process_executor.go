@@ -557,3 +557,7 @@ func (e *processExecutor) CombinedOutput(ctx context.Context, name string, args 
 	}
 	return []byte(res.Output), nil
 }
+
+func (e *processExecutor) LookPath(file string) (string, error) {
+	return exec.LookPath(file)
+}

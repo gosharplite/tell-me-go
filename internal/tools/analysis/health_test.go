@@ -32,6 +32,7 @@ func (m *mockDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map
 type mockGoRunner struct {
 	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
 	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
+	runLinterFunc            func(ctx context.Context) (string, string, error)
 }
 
 func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
@@ -51,6 +52,13 @@ func (m *mockGoRunner) RunBenchmarks(ctx context.Context, path string, benchRege
 		return m.runBenchmarksFunc(ctx, path, benchRegex)
 	}
 	return "", nil
+}
+
+func (m *mockGoRunner) RunLinter(ctx context.Context) (string, string, error) {
+	if m.runLinterFunc != nil {
+		return m.runLinterFunc(ctx)
+	}
+	return "", "golangci-lint", nil
 }
 
 type mockHealthExecutor struct{}
@@ -313,4 +321,12 @@ func TestHealthManager_GetDetailedCoverage(t *testing.T) {
 	if !strings.Contains(res.Text, "events.go") {
 		t.Errorf("expected file name in report, got %q", res.Text)
 	}
+}
+
+func (m *mockHealthExecutor) LookPath(file string) (string, error) {
+	return "/usr/bin/" + file, nil
+}
+
+func (m *coverageMockExecutor) LookPath(file string) (string, error) {
+	return "/usr/bin/" + file, nil
 }

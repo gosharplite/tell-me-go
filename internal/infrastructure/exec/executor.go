@@ -18,3 +18,7 @@ func (e *RealExecutor) Output(ctx context.Context, name string, args ...string) 
 func (e *RealExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
+
+func (e *RealExecutor) LookPath(file string) (string, error) {
+	return exec.LookPath(file)
+}
