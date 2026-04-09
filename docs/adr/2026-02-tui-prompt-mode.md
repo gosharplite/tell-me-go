@@ -16,7 +16,7 @@ We will implement an **Interactive TUI Prompt Mode** using Bubble Tea as an **op
 
 ### 1. Opt-In Mechanisms
 To respect the "Keep-As-Is" requirement for the current Ctrl+D input mode:
-- **Flag-based**: Users can run `tell-me-go -i` or `tell-me-go --tui` to explicitly launch the TUI prompt.
+- **Flag-based**: Users can run `tell-me-go -i` or `tell-me-go --interactive` to explicitly launch the TUI prompt.
 - **Config-based**: A new `USE_TUI_PROMPT` setting in `assistant.yaml` can be used to make the TUI the default for interactive sessions. **This defaults to `false` to preserve the current multi-line behavior.** If this setting is `true`, then and only then will running `tell-me-go` without arguments use the TUI instead of the Ctrl+D mode.
 
 ### 1. The Prompt TUI Model

@@ -185,20 +185,22 @@ func sanitizeArgs(args []string) []string {
 
 	for i := 1; i < len(args); i++ {
 		arg := args[i]
-		result = append(result, arg)
 
+		// Check if the current argument is one of our optional-int flags
 		if arg == "-l" || arg == "--last" || arg == "-b" || arg == "--back" {
-			isNextNum := false
+			val := "1"
 			if i+1 < len(args) {
-				// ParseInt is robust enough to know if the next string is a base-10 number
 				if _, err := strconv.Atoi(args[i+1]); err == nil {
-					isNextNum = true
+					val = args[i+1]
+					i++ // consume the next arg as the flag value
 				}
 			}
-			if !isNextNum {
-				result = append(result, "1")
-			}
+			// Re-inject as a single joint argument to force pflag to consume it
+			result = append(result, fmt.Sprintf("%s=%s", arg, val))
+			continue
 		}
+
+		result = append(result, arg)
 	}
 	return result
 }

@@ -17,7 +17,7 @@ By default, `tell-me-go` uses the standard multi-line input to remain backward-c
 
 ### 1. Via Command Line Flag (Per Session)
 
-To use the TUI prompt for a single command, append the `-i` or `--tui` flag:
+To use the TUI prompt for a single command, append the `-i` or `--interactive` flag:
 
 ```bash
 tell-me-go -i

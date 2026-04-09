@@ -207,37 +207,37 @@ func TestSanitizeArgs(t *testing.T) {
 		{
 			name:     "short last flag with value",
 			args:     []string{"tell-me-go", "-l", "10", "hello"},
-			expected: []string{"tell-me-go", "-l", "10", "hello"},
+			expected: []string{"tell-me-go", "-l=10", "hello"},
 		},
 		{
 			name:     "short last flag without value",
 			args:     []string{"tell-me-go", "-l", "hello"},
-			expected: []string{"tell-me-go", "-l", "1", "hello"},
+			expected: []string{"tell-me-go", "-l=1", "hello"},
 		},
 		{
 			name:     "long last flag without value",
 			args:     []string{"tell-me-go", "--last", "hello"},
-			expected: []string{"tell-me-go", "--last", "1", "hello"},
+			expected: []string{"tell-me-go", "--last=1", "hello"},
 		},
 		{
 			name:     "short back flag without value",
 			args:     []string{"tell-me-go", "-b", "hello"},
-			expected: []string{"tell-me-go", "-b", "1", "hello"},
+			expected: []string{"tell-me-go", "-b=1", "hello"},
 		},
 		{
 			name:     "bare last flag",
 			args:     []string{"tell-me-go", "-l"},
-			expected: []string{"tell-me-go", "-l", "1"},
+			expected: []string{"tell-me-go", "-l=1"},
 		},
 		{
 			name:     "mixed flags - both are sanitized",
 			args:     []string{"tell-me-go", "-l", "-b"},
-			expected: []string{"tell-me-go", "-l", "1", "-b", "1"},
+			expected: []string{"tell-me-go", "-l=1", "-b=1"},
 		},
 		{
 			name:     "last flag combined with another flag without space",
 			args:     []string{"tell-me-go", "-l", "-r"},
-			expected: []string{"tell-me-go", "-l", "1", "-r"},
+			expected: []string{"tell-me-go", "-l=1", "-r"},
 		},
 		{
 			name:     "last flag equal sign",
