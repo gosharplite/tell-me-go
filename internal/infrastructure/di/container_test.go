@@ -750,7 +750,7 @@ func TestApplySessionSecuritySettings_LogErrors(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	factory := &DefaultSessionFactory{
+	factory := &defaultSessionFactory{
 		SM:     sm,
 		Logger: logger,
 	}

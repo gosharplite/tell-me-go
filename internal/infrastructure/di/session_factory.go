@@ -18,11 +18,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
-type SessionFactory interface {
+type sessionFactory interface {
 	BuildSession(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, pricingOverrides map[string]pricing.ModelPricing) (ports.SessionProvider, *persistence.Paths, func(stdctx.Context) error, error)
 }
 
-type DefaultSessionFactory struct {
+type defaultSessionFactory struct {
 	HomeDir         string
 	FileSystem      infra_persistence.FileSystem
 	SM              ConfigurableSecurityManager
@@ -33,8 +33,8 @@ type DefaultSessionFactory struct {
 	NewSessionState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
-func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error, newState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)) SessionFactory {
-	return &DefaultSessionFactory{
+func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error, newState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)) sessionFactory {
+	return &defaultSessionFactory{
 		HomeDir:         homeDir,
 		FileSystem:      fs,
 		SM:              sm,
@@ -46,11 +46,11 @@ func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm Confi
 	}
 }
 
-func (f *DefaultSessionFactory) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(stdctx.Context) error, error) {
+func (f *defaultSessionFactory) buildSessionProvider(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config) (ports.SessionProvider, func(stdctx.Context) error, error) {
 	var sessionProvider ports.SessionProvider
 	state, err := f.NewSessionState(ctx, paths.ModeDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: failed to initialize session state in %s: %w", ErrInfraInit, paths.ModeDir, err)
+		return nil, nil, fmt.Errorf("%w: failed to initialize session state in %s: %w", errInfraInit, paths.ModeDir, err)
 	}
 
 	sessionProvider = state
@@ -71,7 +71,7 @@ func (f *DefaultSessionFactory) buildSessionProvider(ctx stdctx.Context, paths *
 	return sessionProvider, cleanup, nil
 }
 
-func (f *DefaultSessionFactory) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider) {
+func (f *defaultSessionFactory) applySessionSecuritySettings(ctx stdctx.Context, sessionProvider ports.SessionProvider) {
 	if val, err := sessionProvider.GetSettings().Get(ctx, "bypass_confirmation"); err == nil && val == "true" {
 		f.SM.SetBypassActive(true)
 	}
@@ -98,13 +98,13 @@ func loadPathsFromSettings(ctx stdctx.Context, kv ports.KVStore, key string, reg
 	}
 }
 
-func (f *DefaultSessionFactory) setupSecurity(paths *persistence.Paths, configPath string) error {
+func (f *defaultSessionFactory) setupSecurity(paths *persistence.Paths, configPath string) error {
 	f.SM.RegisterSafePath(filepath.Join(f.HomeDir, "output"))
 	f.SM.RegisterReadOnlyPath(configPath)
 	return nil
 }
 
-func (f *DefaultSessionFactory) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
+func (f *defaultSessionFactory) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, f.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
@@ -124,14 +124,14 @@ func (f *DefaultSessionFactory) handleNewSession(ctx stdctx.Context, paths *pers
 	return nil
 }
 
-func (f *DefaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, pricingOverrides map[string]pricing.ModelPricing) (ports.SessionProvider, *persistence.Paths, func(stdctx.Context) error, error) {
+func (f *defaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, pricingOverrides map[string]pricing.ModelPricing) (ports.SessionProvider, *persistence.Paths, func(stdctx.Context) error, error) {
 	paths := persistence.ResolvePaths(f.HomeDir, cfg.Mode)
 	if err := infra_persistence.EnsureDirectories(f.FileSystem, paths); err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: failed to ensure directories for %s: %w", ErrInfraInit, cfg.Mode, err)
+		return nil, nil, nil, fmt.Errorf("%w: failed to ensure directories for %s: %w", errInfraInit, cfg.Mode, err)
 	}
 
 	if err := f.setupSecurity(paths, configPath); err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: security setup failed for paths %s, %s: %w", ErrInfraInit, paths.ModeDir, configPath, err)
+		return nil, nil, nil, fmt.Errorf("%w: security setup failed for paths %s, %s: %w", errInfraInit, paths.ModeDir, configPath, err)
 	}
 
 	sessionProvider, cleanup, err := f.buildSessionProvider(ctx, paths, cfg)
@@ -144,7 +144,7 @@ func (f *DefaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Con
 	if newSession {
 		if err := f.handleNewSession(ctx, paths, cfg, pricingOverrides, sessionProvider.GetSettings()); err != nil {
 			_ = cleanup(ctx)
-			return nil, nil, nil, fmt.Errorf("%w: session initialization failed during rotation for %s: %w", ErrInfraInit, paths.ModeDir, err)
+			return nil, nil, nil, fmt.Errorf("%w: session initialization failed during rotation for %s: %w", errInfraInit, paths.ModeDir, err)
 		}
 	}
 
