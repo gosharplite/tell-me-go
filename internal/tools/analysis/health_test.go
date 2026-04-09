@@ -221,7 +221,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			lint: "CLEAN",
 			comp: "GOOD",
 			dead: "CLEAN",
-			want: []string{"Fix failing tests immediately."},
+			want: []string{"Fix failing or timed-out tests immediately."},
 		},
 		{
 			name: "low coverage",

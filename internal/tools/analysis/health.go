@@ -120,15 +120,7 @@ func (m *healthManager) runParallelChecks(ctx context.Context, hb chan<- struct{
 		return nil
 	})
 
-	if err := g.Wait(); err != nil {
-		// Fallback: Return a degraded state summary if context fails or a future check fatals
-		return healthSummary{
-			Results: map[string]healthResult{
-				"System Error": {Status: "FAIL", Details: fmt.Sprintf("Parallel checks interrupted: %v", err)},
-			},
-			Alerts: alerts, // Keep the existing alerts slice defined earlier in the function
-		}
-	}
+	_ = g.Wait()
 
 	return healthSummary{
 		Results: map[string]healthResult{
@@ -283,8 +275,8 @@ func (m *healthManager) checkDeadCode(ctx context.Context, hb chan<- struct{}) (
 
 func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead string) string {
 	var recs []string
-	if test == "FAIL" {
-		recs = append(recs, "Fix failing tests immediately.")
+	if test == "FAIL" || test == "TIMEOUT" || test == "CANCELLED" || test == "ERROR" {
+		recs = append(recs, "Fix failing or timed-out tests immediately.")
 	}
 	if strings.HasSuffix(cov, "%") {
 		var val float64
@@ -293,14 +285,17 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead strin
 				recs = append(recs, fmt.Sprintf("Coverage (%.1f%%) is below the 80%% target.", val))
 			}
 		}
+	} else if cov == "ERROR" || cov == "TIMEOUT" {
+		recs = append(recs, "Address issues preventing coverage analysis.")
 	}
-	if strings.Contains(comp, "Alerts") {
+
+	if strings.Contains(comp, "Alerts") || comp == "ERROR" || comp == "TIMEOUT" {
 		recs = append(recs, "Refactor high-complexity functions.")
 	}
-	if strings.Contains(lint, "Issues") {
+	if strings.Contains(lint, "Issues") || lint == "ERROR" || lint == "TIMEOUT" {
 		recs = append(recs, "Address linting issues.")
 	}
-	if strings.Contains(dead, "Issues") {
+	if strings.Contains(dead, "Issues") || dead == "ERROR" || dead == "TIMEOUT" {
 		recs = append(recs, "Remove dead or effectively private code to improve encapsulation.")
 	}
 
