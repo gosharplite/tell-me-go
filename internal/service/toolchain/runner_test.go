@@ -3,6 +3,7 @@ package toolchain
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -649,4 +650,22 @@ func TestRunTestsWithCoverage_Options(t *testing.T) {
 			t.Errorf("expected N/A, got %s", report.CoveragePct)
 		}
 	})
+}
+
+func TestRunTestsWithCoverage_CreateTempError(t *testing.T) {
+	t.Parallel()
+	mock := &mockExecutor{}
+	runner := NewGoRunner(mock)
+	// Inject a failing createTemp function
+	runner.createTemp = func(string, string) (*os.File, error) {
+		return nil, errors.New("disk full")
+	}
+
+	_, err := runner.RunTestsWithCoverage(context.Background(), "./...", false, "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to create temp coverage file: disk full") {
+		t.Errorf("unexpected error message: %v", err)
+	}
 }

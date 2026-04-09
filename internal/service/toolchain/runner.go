@@ -29,6 +29,7 @@ type GoRunner struct {
 	exec           tools.CommandExecutor
 	defaultTimeout time.Duration
 	raceEnabled    bool
+	createTemp     func(string, string) (*os.File, error)
 }
 
 // RunnerOption defines a functional option for GoRunner.
@@ -54,6 +55,7 @@ func NewGoRunner(exec tools.CommandExecutor, opts ...RunnerOption) *GoRunner {
 		exec:           exec,
 		defaultTimeout: 5 * time.Minute,
 		raceEnabled:    true,
+		createTemp:     os.CreateTemp,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -78,7 +80,7 @@ func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 
 	tempName := profilePath
 	if tempName == "" {
-		f, err := os.CreateTemp("", "coverage-*.out")
+		f, err := r.createTemp("", "coverage-*.out")
 		if err != nil {
 			return report, fmt.Errorf("failed to create temp coverage file: %w", err)
 		}
