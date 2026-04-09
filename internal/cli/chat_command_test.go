@@ -118,11 +118,11 @@ func (m *mockBootstrapper) GetChatService() agent.ChatService {
 	return m.Called().Get(0).(agent.ChatService)
 }
 
-type mockLoader struct {
+type chatMockLoader struct {
 	mock.Mock
 }
 
-func (m *mockLoader) Load(path string) (*config.Config, error) {
+func (m *chatMockLoader) Load(path string) (*config.Config, error) {
 	args := m.Called(path)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -130,7 +130,7 @@ func (m *mockLoader) Load(path string) (*config.Config, error) {
 	return args.Get(0).(*config.Config), args.Error(1)
 }
 
-func (m *mockLoader) Watch(ctx stdctx.Context, path string) (<-chan *config.Config, error) {
+func (m *chatMockLoader) Watch(ctx stdctx.Context, path string) (<-chan *config.Config, error) {
 	args := m.Called(ctx, path)
 	return args.Get(0).(<-chan *config.Config), args.Error(1)
 }
@@ -154,9 +154,9 @@ func (m *mockSM) TerminalLock()                                           {}
 func (m *mockSM) TerminalUnlock()                                         {}
 func (m *mockSM) Close() error                                            { return nil }
 
-func setupMocks() (*mockBootstrapper, *mockLoader, *mockChatService) {
+func setupMocks() (*mockBootstrapper, *chatMockLoader, *mockChatService) {
 	mb := &mockBootstrapper{}
-	ml := &mockLoader{}
+	ml := &chatMockLoader{}
 	ms := &mockChatService{}
 	ml.On("Load", mock.Anything).Return(&config.Config{}, nil).Maybe()
 	mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
@@ -460,19 +460,19 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		setupMock   func(ms *mockChatService, ml *mockLoader)
+		setupMock   func(ms *mockChatService, ml *chatMockLoader)
 		expectedErr string
 	}{
 		{
 			name: "Config Load Failure",
-			setupMock: func(ms *mockChatService, ml *mockLoader) {
+			setupMock: func(ms *mockChatService, ml *chatMockLoader) {
 				ml.On("Load", mock.Anything).Return(nil, errors.New("bad config"))
 			},
 			expectedErr: "error loading config",
 		},
 		{
 			name: "StreamTurnsLog Failure",
-			setupMock: func(ms *mockChatService, ml *mockLoader) {
+			setupMock: func(ms *mockChatService, ml *chatMockLoader) {
 				cfg := &config.Config{Mode: "assistant"}
 				ml.On("Load", mock.Anything).Return(cfg, nil)
 				ms.On("StreamTurnsLog", mock.Anything, cfg, mock.Anything).Return(errors.New("stream error"))
@@ -484,7 +484,7 @@ func TestChatCommand_Execute_ShowTurnsLog_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ms := &mockChatService{}
-			ml := &mockLoader{}
+			ml := &chatMockLoader{}
 			tt.setupMock(ms, ml)
 
 			cmdCtx := &context{
@@ -559,13 +559,13 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 	tests := []struct {
 		name          string
 		args          []string
-		setupMocks    func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService)
+		setupMocks    func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService)
 		expectedError string
 	}{
 		{
 			name: "Config Load Failure",
 			args: []string{"hello"},
-			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
 				ml.On("Load", mock.Anything).Return(nil, errors.New("config not found"))
 			},
 			expectedError: "error loading config",
@@ -573,7 +573,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 		{
 			name: "TUI Capturer Cast Failure",
 			args: []string{"--tui"},
-			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
 				// BaseCapturer is NOT returned here since we don't inject TUI specific mocks.
 				ml.On("Load", mock.Anything).Return(&config.Config{UseTUIPrompt: true}, nil)
 				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil)
@@ -584,7 +584,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 		{
 			name: "Suggestion Service Error",
 			args: []string{"--tui"},
-			setupMocks: func(ml *mockLoader, mb *mockBootstrapper, ms *mockChatService) {
+			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
 				ml.On("Load", mock.Anything).Return(&config.Config{UseTUIPrompt: true}, nil)
 				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil)
 				mb.On("GetSuggestionService", mock.Anything, mock.Anything).Return(nil, errors.New("suggestion failure"))
@@ -595,7 +595,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ml := &mockLoader{}
+			ml := &chatMockLoader{}
 			mb := &mockBootstrapper{}
 			sm := &mockSM{}
 			ms := &mockChatService{}

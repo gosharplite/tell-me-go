@@ -19,11 +19,11 @@ import (
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-type ToolchainFactory interface {
-	BuildRegistry(params ToolchainParams) (tools.Registry, error)
+type toolchainFactory interface {
+	BuildRegistry(params toolchainParams) (tools.Registry, error)
 }
 
-type ToolchainParams struct {
+type toolchainParams struct {
 	Paths            *persistence.Paths
 	SessionProvider  ports.SessionProvider
 	Client           llm.ExtendedClient
@@ -34,7 +34,7 @@ type ToolchainParams struct {
 	Capturer         agent.CapturerInteractor
 }
 
-type DefaultToolchainFactory struct {
+type defaultToolchainFactory struct {
 	HomeDir          string
 	FileSystem       infra_persistence.FileSystem
 	SM               ConfigurableSecurityManager
@@ -42,8 +42,8 @@ type DefaultToolchainFactory struct {
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
 }
 
-func NewToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error) ToolchainFactory {
-	return &DefaultToolchainFactory{
+func newToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, registerAll func(params infra_tools.ToolRegistrationParams) error, registerMetrics func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error) toolchainFactory {
+	return &defaultToolchainFactory{
 		HomeDir:          homeDir,
 		FileSystem:       fs,
 		SM:               sm,
@@ -52,7 +52,7 @@ func NewToolchainFactory(homeDir string, fs infra_persistence.FileSystem, sm Con
 	}
 }
 
-func (f *DefaultToolchainFactory) BuildRegistry(params ToolchainParams) (tools.Registry, error) {
+func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.Registry, error) {
 	reg := registry.New()
 
 	regParams := infra_tools.ToolRegistrationParams{
@@ -73,15 +73,15 @@ func (f *DefaultToolchainFactory) BuildRegistry(params ToolchainParams) (tools.R
 	}
 
 	if err := f.RegisterAllTools(regParams); err != nil {
-		return nil, fmt.Errorf("%w: failed to register core tools: %w", ErrInfraInit, err)
+		return nil, fmt.Errorf("%w: failed to register core tools: %w", errInfraInit, err)
 	}
 
 	if err := f.RegisterMetrics(reg, f.SM, regParams.LogFile, regParams.TraceFile, regParams.Model, regParams.Mode, regParams.PricingOverrides, regParams.SessionProvider.GetSettings()); err != nil {
-		return nil, fmt.Errorf("%w: failed to register metrics tools: %w", ErrInfraInit, err)
+		return nil, fmt.Errorf("%w: failed to register metrics tools: %w", errInfraInit, err)
 	}
 
 	if err := f.SM.RegisterPolicyTools(reg, regParams.SessionProvider.GetSettings()); err != nil {
-		return nil, fmt.Errorf("%w: failed to register policy tools: %w", ErrInfraInit, err)
+		return nil, fmt.Errorf("%w: failed to register policy tools: %w", errInfraInit, err)
 	}
 
 	return reg, nil

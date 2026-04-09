@@ -7,26 +7,26 @@ import (
 	"context"
 )
 
-// MockExecutor implements tools.CommandExecutor for testing.
-type MockExecutor struct {
+// mockExecutor implements tools.CommandExecutor for testing.
+type mockExecutor struct {
 	OutputBytes []byte
 	Error       error
 	CommandName string
 	CommandArgs []string
 }
 
-func (m *MockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (m *mockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
 	m.CommandName = name
 	m.CommandArgs = args
 	return m.OutputBytes, m.Error
 }
 
-func (m *MockExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (m *mockExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
 	m.CommandName = name
 	m.CommandArgs = args
 	return m.OutputBytes, m.Error
 }
 
-func (m *MockExecutor) LookPath(file string) (string, error) {
+func (m *mockExecutor) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
 }

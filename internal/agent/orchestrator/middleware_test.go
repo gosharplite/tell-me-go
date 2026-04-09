@@ -30,22 +30,22 @@ type mockProcessor struct {
 	called bool
 }
 
-func (m *mockProcessor) Process(ctx context.Context, turn *Turn) (ProcessResult, error) {
+func (m *mockProcessor) Process(ctx context.Context, turn *turn) (processResult, error) {
 	m.called = true
-	return ProcessResult{}, nil
+	return processResult{}, nil
 }
 
 func TestWithStatusReporter(t *testing.T) {
 	t.Parallel()
 	bus := &mockEventBus{}
 	engine := &Engine{events: bus}
-	mw := engine.WithStatusReporter()
+	mw := engine.withStatusReporter()
 	next := &mockProcessor{}
 
 	strategy := session.NewContextStrategy(&mockTokenCounter{})
 	cm := newTestContextManager(strategy, &mockHistoryManager{}, bus)
-	turn := &Turn{
-		State:      &TurnState{Phase: PhaseInference},
+	turn := &turn{
+		State:      &turnState{Phase: phaseInference},
 		CtxManager: cm,
 		Clock:      &mockClock{},
 	}
@@ -64,11 +64,11 @@ func TestWithMetrics(t *testing.T) {
 	t.Parallel()
 	bus := &mockEventBus{}
 	engine := &Engine{events: bus}
-	mw := engine.WithMetrics()
+	mw := engine.withMetrics()
 	next := &mockProcessor{}
 
-	turn := &Turn{
-		State: &TurnState{Phase: PhaseInference, Metrics: &llm.Metrics{}},
+	turn := &turn{
+		State: &turnState{Phase: phaseInference, Metrics: &llm.Metrics{}},
 	}
 
 	_, _ = mw(next).Process(context.Background(), turn)

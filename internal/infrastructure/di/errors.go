@@ -6,9 +6,6 @@ package di
 import "errors"
 
 var (
-	// ErrInfraInit indicates a failure during infrastructure component initialization.
-	ErrInfraInit = errors.New("infrastructure initialization failed")
-
-	// ErrInfrastructureUnavailable indicates that a required infrastructure service is not reachable.
-	ErrInfrastructureUnavailable = errors.New("infrastructure unavailable")
+	// errInfraInit indicates a failure during infrastructure component initialization.
+	errInfraInit = errors.New("infrastructure initialization failed")
 )

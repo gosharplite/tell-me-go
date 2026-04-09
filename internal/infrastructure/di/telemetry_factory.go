@@ -15,22 +15,22 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
-type TelemetryFactory interface {
+type telemetryFactory interface {
 	BuildTelemetry(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, cleanup func(stdctx.Context) error) (pricing.PricingData, pricing.CostTracker, ports.TurnsLogger, func(stdctx.Context) error)
 }
 
-type DefaultTelemetryFactory struct {
+type defaultTelemetryFactory struct {
 	HomeDir    string
 	FileSystem infra_persistence.FileSystem
 	SM         ConfigurableSecurityManager
 	Logger     *slog.Logger
 }
 
-func NewTelemetryFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, logger *slog.Logger) TelemetryFactory {
+func newTelemetryFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, logger *slog.Logger) telemetryFactory {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &DefaultTelemetryFactory{
+	return &defaultTelemetryFactory{
 		HomeDir:    homeDir,
 		FileSystem: fs,
 		SM:         sm,
@@ -38,7 +38,7 @@ func NewTelemetryFactory(homeDir string, fs infra_persistence.FileSystem, sm Con
 	}
 }
 
-func (f *DefaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, cleanup func(stdctx.Context) error) (pricing.PricingData, pricing.CostTracker, ports.TurnsLogger, func(stdctx.Context) error) {
+func (f *defaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, cleanup func(stdctx.Context) error) (pricing.PricingData, pricing.CostTracker, ports.TurnsLogger, func(stdctx.Context) error) {
 	pricingData := telemetry.GetPricing(ctx, f.SM, filepath.Join(f.HomeDir, "output"))
 
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)

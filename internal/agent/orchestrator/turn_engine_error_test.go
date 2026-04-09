@@ -22,15 +22,15 @@ import (
 )
 
 type errorPhaseTracker struct {
-	phases    []TurnPhase
-	lastState *TurnState
+	phases    []turnPhase
+	lastState *turnState
 }
 
-func (t *errorPhaseTracker) BeforeTurn(turn *Turn) {}
-func (t *errorPhaseTracker) AfterTurn(turn *Turn, err error) {
+func (t *errorPhaseTracker) BeforeTurn(turn *turn) {}
+func (t *errorPhaseTracker) AfterTurn(turn *turn, err error) {
 	t.lastState = turn.State
 }
-func (t *errorPhaseTracker) OnPhaseTransition(from, to TurnPhase, state *TurnState) {
+func (t *errorPhaseTracker) OnPhaseTransition(from, to turnPhase, state *turnState) {
 	t.phases = append(t.phases, to)
 }
 
@@ -63,7 +63,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec ToolExecutor, tr
 
 	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
-	engine := NewEngine(gw, exec, cm, reg, bus, strategy, WithEngineRetryPolicy(policy), WithEngineHook(tracker), WithEngineClock(&mockClock{}))
+	engine := NewEngine(gw, exec, cm, reg, bus, strategy, withEngineRetryPolicy(policy), withEngineHook(tracker), withEngineClock(&mockClock{}))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -80,7 +80,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
-				return nil, nil, NewAgentError(llm.ErrTransient, "temporary failure", nil)
+				return nil, nil, newAgentError(llm.ErrTransient, "temporary failure", nil)
 			}
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 		},
@@ -104,7 +104,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	}
 
 	// Verification: Phase sequence should include: Guard -> Refining -> Inference -> Recovering -> Refining -> Inference
-	expectedPhases := []TurnPhase{PhaseRefining, PhaseInference, PhaseRecovering, PhaseRefining, PhaseInference, PhasePersisting, PhaseComplete}
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
 
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
@@ -126,7 +126,7 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
-				return nil, nil, NewAgentError(llm.ErrRateLimit, "resource exhausted", nil)
+				return nil, nil, newAgentError(llm.ErrRateLimit, "resource exhausted", nil)
 			}
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 		},
@@ -155,7 +155,7 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 	}
 
 	// Verification: Phase sequence should include: Refining -> Inference -> Recovering -> Refining -> Inference -> Persisting -> Complete
-	expectedPhases := []TurnPhase{PhaseRefining, PhaseInference, PhaseRecovering, PhaseRefining, PhaseInference, PhasePersisting, PhaseComplete}
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
 
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
@@ -176,7 +176,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	gw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			return nil, nil, NewAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
+			return nil, nil, newAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
 		},
 	}
 
@@ -211,7 +211,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	// 2. Refining -> Inference
 	// 3. Inference -> Recovering
 	// 4. Recovering -> Complete
-	expectedPhases := []TurnPhase{PhaseRefining, PhaseInference, PhaseRecovering, PhaseComplete}
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseComplete}
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
 	} else {
@@ -238,7 +238,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 
 	exec := &errorMockExecutor{
 		executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-			return nil, NewAgentError(ErrLogic, "tool not found", ErrLogic)
+			return nil, newAgentError(errLogic, "tool not found", errLogic)
 		},
 	}
 
@@ -250,12 +250,12 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 		t.Fatal("Expected error, got nil")
 	}
 
-	if !errors.Is(err, ErrLogic) {
-		t.Errorf("Expected ErrLogic, got: %v", err)
+	if !errors.Is(err, errLogic) {
+		t.Errorf("Expected errLogic, got: %v", err)
 	}
 
 	// Verification: The state machine should transition to Recovering, see it's a Logic error, and then move to Complete (failure).
-	expectedPhases := []TurnPhase{PhaseRefining, PhaseInference, PhaseExecuting, PhaseRecovering, PhaseComplete}
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseExecuting, phaseRecovering, phaseComplete}
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
 	} else {
@@ -275,7 +275,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	gw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			return nil, nil, NewAgentError(llm.ErrTransient, "always transient", nil)
+			return nil, nil, newAgentError(llm.ErrTransient, "always transient", nil)
 		},
 	}
 
@@ -316,8 +316,8 @@ func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, &errorPhaseTracker{})
 
-	turn := &Turn{
-		State: &TurnState{
+	turn := &turn{
+		State: &turnState{
 			Phase: "PhaseNonExistent",
 		},
 		Clock: &mockClock{},
@@ -330,8 +330,8 @@ func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 	if !strings.Contains(err.Error(), "no processor for phase") {
 		t.Errorf("Expected 'no processor for phase' in error message, got: %v", err)
 	}
-	if !errors.Is(err, ErrLogic) {
-		t.Errorf("Expected ErrLogic, got: %v", err)
+	if !errors.Is(err, errLogic) {
+		t.Errorf("Expected errLogic, got: %v", err)
 	}
 }
 
@@ -351,11 +351,11 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	}
 	reg := &mockToolRegistry{}
 
-	turn := &Turn{
+	turn := &turn{
 		Gateway:    gw,
 		Registry:   reg,
 		CtxManager: cm,
-		State: &TurnState{
+		State: &turnState{
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		},
 		Clock: &mockClock{},
@@ -368,8 +368,8 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	if !strings.Contains(err.Error(), "api returned nil content") {
 		t.Errorf("Expected 'api returned nil content' in error message, got: %v", err)
 	}
-	if !errors.Is(err, ErrLogic) {
-		t.Errorf("Expected ErrLogic, got: %v", err)
+	if !errors.Is(err, errLogic) {
+		t.Errorf("Expected errLogic, got: %v", err)
 	}
 }
 
@@ -386,11 +386,11 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 
 	step := &persistenceStep{}
 
-	turn := &Turn{
+	turn := &turn{
 		CtxManager: &session.ContextManager{
 			History: hm,
 		},
-		State: &TurnState{
+		State: &turnState{
 			Response:     &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}},
 			ToolResponse: &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Result"}}},
 		},
@@ -421,11 +421,11 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 
 	step := &persistenceStep{}
 
-	turn := &Turn{
+	turn := &turn{
 		CtxManager: &session.ContextManager{
 			History: hm,
 		},
-		State: &TurnState{
+		State: &turnState{
 			// Skip Response to isolate ToolResponse test
 			Response:     nil,
 			ToolResponse: &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Result"}}},
@@ -448,8 +448,8 @@ func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 	expectedErr := llm.ErrTransient // Is transient
 
 	ctx := context.Background()
-	turnObj := &Turn{
-		State: &TurnState{
+	turnObj := &turn{
+		State: &turnState{
 			HasToolCalls: true,
 			Response:     &llm.Content{},
 		},

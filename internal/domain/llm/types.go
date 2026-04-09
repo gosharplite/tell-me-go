@@ -94,8 +94,8 @@ var (
 	// ErrMaxTurnsReached is returned when the model reaches the turn limit.
 	ErrMaxTurnsReached = errors.New("maximum tool execution turns reached")
 
-	// ErrBudgetExceeded is returned when the session cost exceeds the configured budget.
-	ErrBudgetExceeded = errors.New("session budget exceeded")
+	// errBudgetExceeded is returned when the session cost exceeds the configured budget.
+	errBudgetExceeded = errors.New("session budget exceeded")
 )
 
 // addPart merges a new part into the content, appending or joining text parts as appropriate.

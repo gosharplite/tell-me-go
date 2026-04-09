@@ -78,7 +78,7 @@ func TestGetHistoryManager_FailurePaths(t *testing.T) {
 			fs: &mockFailingFS{
 				mkdirErr: simulatedErr,
 			},
-			wantErr: ErrInfraInit,
+			wantErr: errInfraInit,
 		},
 		{
 			name: "BuildHistoryManagerFailure",
@@ -86,7 +86,7 @@ func TestGetHistoryManager_FailurePaths(t *testing.T) {
 				openErr: simulatedErr, // simulate error during history manager build
 				statErr: simulatedErr, // force load to fail instead of just 'not found'
 			},
-			wantErr: ErrInfraInit,
+			wantErr: errInfraInit,
 		},
 	}
 
@@ -114,7 +114,7 @@ func TestBuildTelemetry_Fallback(t *testing.T) {
 	}
 
 	sm := new(mockConfigurableSecurityManager)
-	factory := NewTelemetryFactory(tempDir, fs, sm, nil)
+	factory := newTelemetryFactory(tempDir, fs, sm, nil)
 
 	paths := &persistence.Paths{
 		TurnsLogPath: "turns.log",
@@ -141,25 +141,25 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		setup   func(f *DefaultSessionFactory)
+		setup   func(f *defaultSessionFactory)
 		wantErr error
 	}{
 		{
 			name: "EnsureDirectoriesFailure",
-			setup: func(f *DefaultSessionFactory) {
+			setup: func(f *defaultSessionFactory) {
 				f.FileSystem = &mockFailingFS{mkdirErr: simulatedErr}
 			},
-			wantErr: ErrInfraInit,
+			wantErr: errInfraInit,
 		},
 		{
 			name: "SessionStateInitializationFailure",
-			setup: func(f *DefaultSessionFactory) {
+			setup: func(f *defaultSessionFactory) {
 				f.FileSystem = &infra_persistence.OSFileSystem{}
 				f.NewSessionState = func(ctx context.Context, modeDir string) (ports.SessionProvider, error) {
 					return nil, simulatedErr
 				}
 			},
-			wantErr: ErrInfraInit,
+			wantErr: errInfraInit,
 		},
 	}
 
@@ -169,7 +169,7 @@ func TestBuildSession_FailurePaths(t *testing.T) {
 			setupDefaultSMExpectations(sm)
 
 			// Initialize with a real but dummy filesystem to avoid nil panics in EnsureDirectories
-			factory := NewSessionFactory(tempDir, &infra_persistence.OSFileSystem{}, sm, io.Discard, io.Discard, nil, nil, nil).(*DefaultSessionFactory)
+			factory := newSessionFactory(tempDir, &infra_persistence.OSFileSystem{}, sm, io.Discard, io.Discard, nil, nil, nil).(*defaultSessionFactory)
 			if tt.setup != nil {
 				tt.setup(factory)
 			}
@@ -192,38 +192,38 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		setup   func(f *DefaultToolchainFactory)
+		setup   func(f *defaultToolchainFactory)
 		wantErr error
 	}{
 		{
 			name: "RegisterAllToolsFailure",
-			setup: func(f *DefaultToolchainFactory) {
+			setup: func(f *defaultToolchainFactory) {
 				f.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error {
 					return simulatedErr
 				}
 			},
-			wantErr: ErrInfraInit,
+			wantErr: errInfraInit,
 		},
 		{
 			name: "RegisterMetricsFailure",
-			setup: func(f *DefaultToolchainFactory) {
+			setup: func(f *defaultToolchainFactory) {
 				f.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error { return nil }
 				f.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 					return simulatedErr
 				}
 			},
-			wantErr: ErrInfraInit,
+			wantErr: errInfraInit,
 		},
 		{
 			name: "RegisterPolicyToolsFailure",
-			setup: func(f *DefaultToolchainFactory) {
+			setup: func(f *defaultToolchainFactory) {
 				f.RegisterAllTools = func(params infra_tools.ToolRegistrationParams) error { return nil }
 				f.RegisterMetrics = func(r tools.Registry, sm security.Manager, logFile, traceFile, model, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 					return nil
 				}
 				// Policy tools registration is done via SM
 			},
-			wantErr: ErrInfraInit,
+			wantErr: errInfraInit,
 		},
 	}
 
@@ -236,7 +236,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
 			}
 
-			factory := NewToolchainFactory(tempDir, nil, sm, nil, nil).(*DefaultToolchainFactory)
+			factory := newToolchainFactory(tempDir, nil, sm, nil, nil).(*defaultToolchainFactory)
 			if tt.setup != nil {
 				tt.setup(factory)
 			}
@@ -245,7 +245,7 @@ func TestBuildRegistry_FailurePaths(t *testing.T) {
 			mockKV := new(mockKVStore)
 			mockSP.On("GetSettings").Return(mockKV).Maybe()
 
-			params := ToolchainParams{
+			params := toolchainParams{
 				Paths:           &persistence.Paths{},
 				SessionProvider: mockSP,
 			}
@@ -275,7 +275,7 @@ func TestGetUnifiedHistoryProvider_FailurePaths(t *testing.T) {
 	provider, err := b.GetUnifiedHistoryProvider(ctx, cfg, hManager)
 
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrInfraInit)
+	assert.ErrorIs(t, err, errInfraInit)
 	assert.Nil(t, provider)
 }
 func TestGetSuggestionService_Fallback(t *testing.T) {

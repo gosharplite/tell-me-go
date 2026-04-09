@@ -184,10 +184,10 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			inframock.CleanupBus(t, bus)
-			turn := &Turn{
+			turn := &turn{
 				CtxManager:   cm,
 				TokenCounter: counter,
-				State: &TurnState{
+				State: &turnState{
 					Tokens:       tt.existingTokens,
 					ToolResponse: toolResponse,
 				},

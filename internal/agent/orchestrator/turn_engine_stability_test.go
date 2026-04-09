@@ -94,8 +94,8 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 
 	t.Run("Transient error triggers retry state (Refining)", func(t *testing.T) {
 		t.Parallel()
-		turn := &Turn{
-			State: &TurnState{
+		turn := &turn{
+			State: &turnState{
 				LastError:  llm.ErrTransient,
 				RetryCount: 0,
 			},
@@ -105,15 +105,15 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
-		if res.NextPhase != PhaseRefining {
-			t.Errorf("Expected NextPhase %s, got %s", PhaseRefining, res.NextPhase)
+		if res.NextPhase != phaseRefining {
+			t.Errorf("Expected NextPhase %s, got %s", phaseRefining, res.NextPhase)
 		}
 	})
 
 	t.Run("Terminal error breaks loop immediately (Complete)", func(t *testing.T) {
 		t.Parallel()
-		turn := &Turn{
-			State: &TurnState{
+		turn := &turn{
+			State: &turnState{
 				LastError: llm.ErrTerminal,
 			},
 			Clock: &mockClock{},
@@ -122,8 +122,8 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 		if !errors.Is(err, llm.ErrTerminal) {
 			t.Errorf("Expected ErrTerminal, got %v", err)
 		}
-		if res.NextPhase != PhaseComplete {
-			t.Errorf("Expected NextPhase %s, got %s", PhaseComplete, res.NextPhase)
+		if res.NextPhase != phaseComplete {
+			t.Errorf("Expected NextPhase %s, got %s", phaseComplete, res.NextPhase)
 		}
 	})
 }
@@ -139,9 +139,9 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	}
 
 	step := &inferenceStep{}
-	turn := &Turn{
+	turn := &turn{
 		Gateway:  gw,
-		State:    &TurnState{},
+		State:    &turnState{},
 		Clock:    &mockClock{},
 		Registry: &mockToolRegistry{},
 		CtxManager: &session.ContextManager{

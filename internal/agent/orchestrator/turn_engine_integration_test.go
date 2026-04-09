@@ -350,7 +350,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 	hist, _ := h.GetWindow(context.Background(), 0, -1)
 
 	// Should have: user prompt, model tool calls, synthesized tool response
-	// The emergencySave should have triggered because the error was fatal (wrapped in AgentError with llm.ErrTerminal)
+	// The emergencySave should have triggered because the error was fatal (wrapped in agentError with llm.ErrTerminal)
 	assert.Equal(t, 3, len(hist))
 
 	// Check model response (the tool calls)

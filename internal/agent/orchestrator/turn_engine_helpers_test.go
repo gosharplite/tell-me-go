@@ -181,9 +181,9 @@ type mockHook struct {
 	transCalled  int
 }
 
-func (h *mockHook) BeforeTurn(turn *Turn)                              { h.beforeCalled++ }
-func (h *mockHook) AfterTurn(turn *Turn, err error)                    { h.afterCalled++ }
-func (h *mockHook) OnPhaseTransition(from, to TurnPhase, s *TurnState) { h.transCalled++ }
+func (h *mockHook) BeforeTurn(turn *turn)                              { h.beforeCalled++ }
+func (h *mockHook) AfterTurn(turn *turn, err error)                    { h.afterCalled++ }
+func (h *mockHook) OnPhaseTransition(from, to turnPhase, s *turnState) { h.transCalled++ }
 
 type mockRetryPolicy struct {
 	shouldRetryCalled bool
@@ -332,29 +332,29 @@ func (c *costCapturer) assertTurnCosts(t *testing.T, expected []float64) {
 	}
 }
 
-func createProcessorForPhase(phase TurnPhase) TurnProcessor {
+func createProcessorForPhase(phase turnPhase) turnProcessor {
 	switch phase {
-	case PhaseGuard:
+	case phaseGuard:
 		return &guardStep{}
-	case PhaseRefining:
+	case phaseRefining:
 		return &contextRefiner{}
-	case PhaseInference:
+	case phaseInference:
 		return &inferenceStep{}
-	case PhaseExecuting:
+	case phaseExecuting:
 		return &executionStep{}
-	case PhasePersisting:
+	case phasePersisting:
 		return &persistenceStep{}
-	case PhaseRecovering:
+	case phaseRecovering:
 		return &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3}}
 	}
 	return nil
 }
 
-func setupTransitionTurn(hasTools bool, phase TurnPhase) *Turn {
+func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-			if hasTools && phase == PhaseInference {
+			if hasTools && phase == phaseInference {
 				content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
 			}
 			return content, &llm.Metrics{}, nil
@@ -362,11 +362,11 @@ func setupTransitionTurn(hasTools bool, phase TurnPhase) *Turn {
 	}
 	reg := &mockToolRegistry{}
 	counter := &mockTokenCounter{}
-	turn := &Turn{
-		State: &TurnState{
+	turn := &turn{
+		State: &turnState{
 			HasToolCalls: hasTools,
 			RetryCount:   0,
-			LastError:    &AgentError{Category: llm.ErrTransient, Message: "err"},
+			LastError:    &agentError{Category: llm.ErrTransient, Message: "err"},
 			Metadata: &session.Metadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
@@ -385,7 +385,7 @@ func setupTransitionTurn(hasTools bool, phase TurnPhase) *Turn {
 		TokenCounter: counter,
 		Clock:        &clock.RealClock{},
 	}
-	if phase == PhaseRefining || phase == PhaseGuard {
+	if phase == phaseRefining || phase == phaseGuard {
 		turn.CtxManager.Pipeline = session.NewContextPipeline()
 	}
 	return turn

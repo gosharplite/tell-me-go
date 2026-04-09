@@ -44,9 +44,9 @@ type ConfigurableSecurityManager interface {
 
 // Bootstrapper handles the instantiation and wiring of system components.
 type Bootstrapper struct {
-	sessionFactory   SessionFactory
-	toolchainFactory ToolchainFactory
-	telemetryFactory TelemetryFactory
+	sessionFactory   sessionFactory
+	toolchainFactory toolchainFactory
+	telemetryFactory telemetryFactory
 	HomeDir          string
 	SM               ConfigurableSecurityManager
 	Version          string
@@ -87,21 +87,21 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 		NewSessionState:  infra_persistence.NewSessionState,
 	}
 
-	b.sessionFactory = NewSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
+	b.sessionFactory = newSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
 		func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
 			return b.RotateSession(fs, stdout, paths, retentionDays)
 		},
 		func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error) {
 			return b.NewSessionState(ctx, modeDir)
 		})
-	b.toolchainFactory = NewToolchainFactory(homeDir, fs, sm,
+	b.toolchainFactory = newToolchainFactory(homeDir, fs, sm,
 		func(params infra_tools.ToolRegistrationParams) error {
 			return b.RegisterAllTools(params)
 		},
 		func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error {
 			return b.RegisterMetrics(r, sm, logFile, traceFile, model, mode, pricingOverrides, kvStore)
 		})
-	b.telemetryFactory = NewTelemetryFactory(homeDir, fs, sm, logger)
+	b.telemetryFactory = newTelemetryFactory(homeDir, fs, sm, logger)
 	return b
 }
 
@@ -129,7 +129,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
 
-	reg, err := b.toolchainFactory.BuildRegistry(ToolchainParams{
+	reg, err := b.toolchainFactory.BuildRegistry(toolchainParams{
 		Paths:            paths,
 		SessionProvider:  sessionProvider,
 		Client:           client,
@@ -167,7 +167,7 @@ func (b *Bootstrapper) buildHistoryManager(ctx stdctx.Context, paths *persistenc
 	hManager := history.NewManager(infra_persistence.NewDomainFS(b.FileSystem), paths.HistoryPath, paths.HistoryArchivePath)
 	if err := hManager.Load(ctx); err != nil {
 		if !errors.Is(err, ports.ErrHistoryNotFound) {
-			return nil, fmt.Errorf("%w: failed to load history from %s: %w", ErrInfraInit, paths.HistoryPath, err)
+			return nil, fmt.Errorf("%w: failed to load history from %s: %w", errInfraInit, paths.HistoryPath, err)
 		}
 	}
 	return hManager, nil
@@ -243,7 +243,7 @@ func (b *Bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
 	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
 	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
-		return nil, fmt.Errorf("%w: failed to ensure session directories for %s: %w", ErrInfraInit, cfg.Mode, err)
+		return nil, fmt.Errorf("%w: failed to ensure session directories for %s: %w", errInfraInit, cfg.Mode, err)
 	}
 
 	hManager, err := b.buildHistoryManager(ctx, paths)
@@ -258,7 +258,7 @@ func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config)
 func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
 	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
 	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
-		return nil, fmt.Errorf("%w: failed to ensure session directories for unified history: %w", ErrInfraInit, err)
+		return nil, fmt.Errorf("%w: failed to ensure session directories for unified history: %w", errInfraInit, err)
 	}
 
 	archiveReader := history.NewJSONLArchiveReader(infra_persistence.NewDomainFS(b.FileSystem), paths.HistoryArchivePath)

@@ -15,7 +15,7 @@ func TestTruncateOversizedResponse(t *testing.T) {
 	t.Run("Nil tool response", func(t *testing.T) {
 		t.Parallel()
 		assert.NotPanics(t, func() {
-			TruncateOversizedResponse(nil, 1000, "instruction")
+			truncateOversizedResponse(nil, 1000, "instruction")
 		})
 	})
 
@@ -42,7 +42,7 @@ func TestTruncateOversizedResponse(t *testing.T) {
 		}
 
 		instruction := "Try using a smaller range."
-		TruncateOversizedResponse(toolResponse, 5000, instruction)
+		truncateOversizedResponse(toolResponse, 5000, instruction)
 
 		// Part 0 truncated
 		assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "5000 tokens")

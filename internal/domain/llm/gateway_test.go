@@ -86,8 +86,8 @@ func TestIsTerminal(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "positive: ErrBudgetExceeded",
-			err:  ErrBudgetExceeded,
+			name: "positive: errBudgetExceeded",
+			err:  errBudgetExceeded,
 			want: true,
 		},
 		{
