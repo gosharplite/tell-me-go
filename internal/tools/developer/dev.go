@@ -401,7 +401,7 @@ func (m *devManager) executeWithHeartbeat(
 	return m.executor.Execute(ctx, command, args...)
 }
 
-func newDevManager(sm devSecurity, validator domain_security.CommandValidator, runner *toolchain.GoRunner, opts ...devOption) *devManager {
+func newDevManager(sm devSecurity, validator domain_security.CommandValidator, runner goRunner, opts ...devOption) *devManager {
 	m := &devManager{
 		sm:                sm,
 		validator:         validator,

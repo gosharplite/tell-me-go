@@ -22,10 +22,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
+type releaseGoRunner interface {
+	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	RunLinter(ctx context.Context) (string, string, error)
+	CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error)
+}
+
 type releaseManager struct {
 	sm     domain_security.PathValidator
 	fs     persistence.FileSystem
-	runner *toolchain.GoRunner
+	runner releaseGoRunner
 }
 
 type readinessCheck interface {
@@ -224,7 +230,7 @@ func (c *dependencyChecker) Run(ctx context.Context) checkResult {
 
 // buildChecker implementation
 type buildChecker struct {
-	runner *toolchain.GoRunner
+	runner releaseGoRunner
 }
 
 func (c *buildChecker) Name() string { return "Clean Room Build Simulation" }
@@ -244,7 +250,7 @@ func (c *buildChecker) Run(ctx context.Context) checkResult {
 
 // testRunner implementation
 type testRunner struct {
-	runner *toolchain.GoRunner
+	runner releaseGoRunner
 }
 
 func (c *testRunner) Name() string { return "Test Suite Verification" }
@@ -258,7 +264,7 @@ func (c *testRunner) Run(ctx context.Context) checkResult {
 
 // linterChecker implementation
 type linterChecker struct {
-	runner *toolchain.GoRunner
+	runner releaseGoRunner
 }
 
 func (c *linterChecker) Name() string { return "Linter Verification" }

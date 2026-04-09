@@ -535,8 +535,8 @@ func TestNewDevManager(t *testing.T) {
 	interactor := &security.MockInteractor{}
 	sm := security.NewSecurityManager(interactor)
 	validator := security.NewCommandValidator(sm, interactor)
-	// Pass nil or a real runner since it now expects *toolchain.GoRunner
-	m := newDevManager(sm, validator, nil)
+	runner := &mockGoRunner{}
+	m := newDevManager(sm, validator, runner)
 	assert.NotNil(t, m)
 	assert.NotNil(t, m.executor)
 }
