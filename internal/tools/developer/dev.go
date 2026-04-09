@@ -34,6 +34,7 @@ type goRunner interface {
 	CheckGovulncheck(ctx context.Context) error
 	RunModTidy(ctx context.Context) ([]byte, error)
 	FormatCode(ctx context.Context, path string) ([]byte, error)
+	RunTests(ctx context.Context, path string) ([]byte, error)
 }
 
 type devManager struct {
@@ -71,12 +72,13 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, 
 
 	output, err := m.executeWithHeartbeat(
 		ctx,
-		"Test Execution",
+		hb,
+		"run_tests",
 		params.Command,
 		"Executing project tests",
-		parts[0],
-		parts[1:],
-		hb,
+		func() ([]byte, error) {
+			return m.executor.Execute(ctx, parts[0], parts[1:]...)
+		},
 	)
 
 	if errors.Is(err, tools.ErrUserDeclined) {
@@ -148,28 +150,25 @@ func (m *devManager) authorizeAction(ctx context.Context, action, command, detai
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	command := "go mod tidy && go fmt ./..."
-	approved, err := m.authorizeAction(ctx, "Go Tidy", command, "Tidying project dependencies and formatting")
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
-
-	m.logToolAction("Running go mod tidy and go fmt")
-
-	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
-
-	if out, err := m.runner.RunModTidy(ctx); err != nil {
-		res := formatExecutionResult("Go mod tidy", out, err, 50, "")
-		if res.Error != nil {
-			return tools.ToolResult{}, res.Error
+	var out []byte
+	err := m.runWithHeartbeat(ctx, hb, "go_tidy", command, "Tidying project dependencies and formatting", func() error {
+		var err error
+		out, err = m.runner.RunModTidy(ctx)
+		if err != nil {
+			return err
 		}
-		return res, nil
+		out, err = m.runner.FormatCode(ctx, "./...")
+		return err
+	})
+
+	if errors.Is(err, tools.ErrUserDeclined) {
+		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
 
-	if out, err := m.runner.FormatCode(ctx, "./..."); err != nil {
-		res := formatExecutionResult("Go fmt", out, err, 50, "")
+	if err != nil {
+		// Because we combined them, we need to decide which displayName to use.
+		// For simplicity, we can use "Go mod tidy/fmt".
+		res := formatExecutionResult("Go mod tidy/fmt", out, err, 50, "")
 		if res.Error != nil {
 			return tools.ToolResult{}, res.Error
 		}
@@ -204,19 +203,17 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 
 	// Prompt user for authorization
 	command := fmt.Sprintf("Run coverage on %s", path)
-	approved, err := m.authorizeAction(ctx, "Test Coverage", command, "Getting test coverage summary")
-	if err != nil {
-		return tools.ToolResult{}, err
+	var report toolchain.CoverageReport
+	err := m.runWithHeartbeat(ctx, hb, "get_coverage", command, "Getting test coverage summary", func() error {
+		var err error
+		report, err = m.runner.RunTestsWithCoverage(ctx, path, false, "")
+		return err
+	})
+
+	if errors.Is(err, tools.ErrUserDeclined) {
+		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
 
-	m.logToolAction("Getting test coverage for %s", path)
-
-	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
-
-	report, err := m.runner.RunTestsWithCoverage(ctx, path, false, "")
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("coverage test failed: %w", err)
 	}
@@ -232,23 +229,17 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	// 1. Authorization
-	approved, err := m.authorizeAction(ctx, "Linter Execution", "go lint", "Running code analysis")
-	if err != nil {
-		return tools.ToolResult{}, err
+	var out string
+	var tool string
+	err := m.runWithHeartbeat(ctx, hb, "run_linter", "go lint", "Running code analysis", func() error {
+		var err error
+		out, tool, err = m.runner.RunLinter(ctx)
+		return err
+	})
+
+	if errors.Is(err, tools.ErrUserDeclined) {
+		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
-
-	// 2. Logging
-	m.logToolAction("Running linter execution: go lint")
-
-	// 3. Telemetry/Heartbeat
-	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
-
-	// 4. Execution via runner
-	out, tool, err := m.runner.RunLinter(ctx)
 
 	// 5. Format and return
 	res := formatExecutionResult("Linter ("+tool+")", []byte(out), err, 100, "Linter passed successfully.")
@@ -287,19 +278,17 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 	}
 
 	fullCmd := fmt.Sprintf("Run benchmarks matching %s in %s", bench, path)
-	approved, err := m.authorizeAction(ctx, "run_benchmark", fullCmd, "Running project benchmarks")
-	if err != nil {
-		return tools.ToolResult{}, err
+	var outStr string
+	err := m.runWithHeartbeat(ctx, hb, "run_benchmark", fullCmd, "Running project benchmarks", func() error {
+		var err error
+		outStr, err = m.runner.RunBenchmarks(ctx, path, bench)
+		return err
+	})
+
+	if errors.Is(err, tools.ErrUserDeclined) {
+		return tools.ToolResult{Text: "Action denied by user."}, err
 	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
 
-	m.logToolAction("Running run_benchmark: %s", fullCmd)
-
-	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
-
-	outStr, err := m.runner.RunBenchmarks(ctx, path, bench)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("benchmark failed or found issues: %w", err)
 	}
@@ -326,12 +315,13 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 
 	out, err := m.executeWithHeartbeat(
 		ctx,
-		"Vulnerability Check",
+		hb,
+		"check_vulnerabilities",
 		fullCmd,
 		"Checking for known vulnerabilities",
-		command,
-		argsList,
-		hb,
+		func() ([]byte, error) {
+			return m.executor.Execute(ctx, command, argsList...)
+		},
 	)
 
 	if errors.Is(err, tools.ErrUserDeclined) {
@@ -374,19 +364,19 @@ func formatExecutionResult(displayName string, out []byte, execErr error, trunca
 	return tools.ToolResult{Text: outStr}
 }
 
-func (m *devManager) executeWithHeartbeat(
+func (m *devManager) runWithHeartbeat(
 	ctx context.Context,
-	actionName, fullCmd, reason string,
-	command string, args []string,
 	hb chan<- struct{},
-) ([]byte, error) {
+	actionName, fullCmd, reason string,
+	fn func() error,
+) error {
 	// 1. Authorization
 	approved, err := m.authorizeAction(ctx, actionName, fullCmd, reason)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !approved {
-		return nil, tools.ErrUserDeclined
+		return tools.ErrUserDeclined
 	}
 
 	// 2. Logging
@@ -396,7 +386,22 @@ func (m *devManager) executeWithHeartbeat(
 	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
 	// 4. Execution
-	return m.executor.Execute(ctx, command, args...)
+	return fn()
+}
+
+func (m *devManager) executeWithHeartbeat(
+	ctx context.Context,
+	hb chan<- struct{},
+	actionName, fullCmd, reason string,
+	execute func() ([]byte, error),
+) ([]byte, error) {
+	var out []byte
+	err := m.runWithHeartbeat(ctx, hb, actionName, fullCmd, reason, func() error {
+		var err error
+		out, err = execute()
+		return err
+	})
+	return out, err
 }
 
 func newDevManager(sm devSecurity, validator domain_security.CommandValidator, runner goRunner, opts ...devOption) *devManager {

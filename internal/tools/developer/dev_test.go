@@ -56,6 +56,7 @@ type mockGoRunner struct {
 	checkGovulncheckFunc     func(ctx context.Context) error
 	runModTidyFunc           func(ctx context.Context) ([]byte, error)
 	formatCodeFunc           func(ctx context.Context, path string) ([]byte, error)
+	runTestsFunc             func(ctx context.Context, path string) ([]byte, error)
 }
 
 func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
@@ -96,6 +97,13 @@ func (m *mockGoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
 func (m *mockGoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
 	if m.formatCodeFunc != nil {
 		return m.formatCodeFunc(ctx, path)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockGoRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
+	if m.runTestsFunc != nil {
+		return m.runTestsFunc(ctx, path)
 	}
 	return []byte("success"), nil
 }
@@ -414,10 +422,7 @@ func TestGoTidy_Errors(t *testing.T) {
 			if err != nil {
 				t.Errorf("expected nil error for %s, got %v", tt.name, err)
 			}
-			displayName := "Go mod tidy"
-			if tt.cmdFail == "fmt" {
-				displayName = "Go fmt"
-			}
+			displayName := "Go mod tidy/fmt"
 			if !strings.Contains(res.Text, displayName+" failed or found issues:") {
 				t.Errorf("expected failure text in result, got %q", res.Text)
 			}
@@ -493,7 +498,7 @@ func TestRunTests(t *testing.T) {
 	interactor := sm.GetInteractor().(*security.MockInteractor)
 	found := false
 	for _, w := range interactor.Warns {
-		if strings.Contains(w, "[Tool Action] Running test execution") {
+		if strings.Contains(w, "[Tool Action] Running run_tests") {
 			found = true
 			break
 		}
@@ -689,7 +694,9 @@ func TestExecuteWithHeartbeat_Telemetry(t *testing.T) {
 	// Trigger execution in a goroutine
 	done := make(chan struct{})
 	go func() {
-		_, _ = m.executeWithHeartbeat(context.Background(), "test", "cmd", "reason", "echo", []string{"hi"}, hb)
+		_, _ = m.executeWithHeartbeat(context.Background(), hb, "test", "cmd", "reason", func() ([]byte, error) {
+			return m.executor.Execute(context.Background(), "echo", "hi")
+		})
 		close(done)
 	}()
 
