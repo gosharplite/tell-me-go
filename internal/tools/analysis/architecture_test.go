@@ -234,8 +234,8 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 		m := &architectureManager{
 			SP: &mockSecurityProviderDenyGo{},
 		}
-		executor := &mockExecutor{}
-		r := &realpackageProvider{m: m, Exec: executor}
+		runner := &mockAnalysisGoRunner{}
+		r := &realpackageProvider{m: m, Runner: runner}
 		_, err := r.LoadPackages(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "security policy") {
 			t.Errorf("expected security denial error, got %v", err)
@@ -247,9 +247,9 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 		m := &architectureManager{
 			SP: &mockSecurityProvider{},
 		}
-		executor := &mockExecutor{}
-		r := &realpackageProvider{m: m, Exec: executor}
-		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		runner := &mockAnalysisGoRunner{}
+		r := &realpackageProvider{m: m, Runner: runner}
+		runner.getPackageListFunc = func(ctx context.Context, path string) ([]byte, error) {
 			return nil, fmt.Errorf("exit status 1")
 		}
 		_, err := r.LoadPackages(context.Background())
@@ -263,9 +263,9 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 		m := &architectureManager{
 			SP: &mockSecurityProvider{},
 		}
-		executor := &mockExecutor{}
-		r := &realpackageProvider{m: m, Exec: executor}
-		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		runner := &mockAnalysisGoRunner{}
+		r := &realpackageProvider{m: m, Runner: runner}
+		runner.getPackageListFunc = func(ctx context.Context, path string) ([]byte, error) {
 			return []byte("invalid json"), nil
 		}
 		_, err := r.LoadPackages(context.Background())
@@ -280,9 +280,9 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 			SP:         &mockSecurityProvider{},
 			ModulePath: "github.com/org/repo",
 		}
-		executor := &mockExecutor{}
-		r := &realpackageProvider{m: m, Exec: executor}
-		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		runner := &mockAnalysisGoRunner{}
+		r := &realpackageProvider{m: m, Runner: runner}
+		runner.getPackageListFunc = func(ctx context.Context, path string) ([]byte, error) {
 			data := `{"ImportPath": "github.com/org/repo/internal/domain", "Imports": ["github.com/org/repo/internal/other"], "Module": {"Path": "github.com/org/repo"}}`
 			return []byte(data), nil
 		}

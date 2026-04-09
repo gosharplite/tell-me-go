@@ -32,6 +32,14 @@ func (m *mockDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map
 type mockGoRunner struct {
 	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
 	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
+	runLinterFunc            func(ctx context.Context) (string, string, error)
+	runModTidyFunc           func(ctx context.Context) ([]byte, error)
+	formatCodeFunc           func(ctx context.Context, path string) ([]byte, error)
+	getPackageListFunc       func(ctx context.Context, path string) ([]byte, error)
+	getGoDocFunc             func(ctx context.Context, symbol string) ([]byte, error)
+	checkGovulncheckFunc     func(ctx context.Context) error
+	getModulePathFunc        func(ctx context.Context) (string, error)
+	getModuleDirFunc         func(ctx context.Context) (string, error)
 }
 
 func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
@@ -51,6 +59,62 @@ func (m *mockGoRunner) RunBenchmarks(ctx context.Context, path string, benchRege
 		return m.runBenchmarksFunc(ctx, path, benchRegex)
 	}
 	return "", nil
+}
+
+func (m *mockGoRunner) RunLinter(ctx context.Context) (string, string, error) {
+	if m.runLinterFunc != nil {
+		return m.runLinterFunc(ctx)
+	}
+	return "", "golangci-lint", nil
+}
+
+func (m *mockGoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
+	if m.runModTidyFunc != nil {
+		return m.runModTidyFunc(ctx)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockGoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
+	if m.formatCodeFunc != nil {
+		return m.formatCodeFunc(ctx, path)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockGoRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
+	if m.getPackageListFunc != nil {
+		return m.getPackageListFunc(ctx, path)
+	}
+	return nil, nil
+}
+
+func (m *mockGoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
+	if m.getGoDocFunc != nil {
+		return m.getGoDocFunc(ctx, symbol)
+	}
+	return nil, nil
+}
+
+func (m *mockGoRunner) CheckGovulncheck(ctx context.Context) error {
+	if m.checkGovulncheckFunc != nil {
+		return m.checkGovulncheckFunc(ctx)
+	}
+	return nil
+}
+
+func (m *mockGoRunner) GetModulePath(ctx context.Context) (string, error) {
+	if m.getModulePathFunc != nil {
+		return m.getModulePathFunc(ctx)
+	}
+	return "github.com/gosharplite/tell-me-go", nil
+}
+
+func (m *mockGoRunner) GetModuleDir(ctx context.Context) (string, error) {
+	if m.getModuleDirFunc != nil {
+		return m.getModuleDirFunc(ctx)
+	}
+	return ".", nil
 }
 
 type mockHealthExecutor struct{}
@@ -157,7 +221,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			lint: "CLEAN",
 			comp: "GOOD",
 			dead: "CLEAN",
-			want: []string{"Fix failing tests immediately."},
+			want: []string{"Fix failing or timed-out tests immediately."},
 		},
 		{
 			name: "low coverage",
@@ -313,4 +377,12 @@ func TestHealthManager_GetDetailedCoverage(t *testing.T) {
 	if !strings.Contains(res.Text, "events.go") {
 		t.Errorf("expected file name in report, got %q", res.Text)
 	}
+}
+
+func (m *mockHealthExecutor) LookPath(file string) (string, error) {
+	return "/usr/bin/" + file, nil
+}
+
+func (m *coverageMockExecutor) LookPath(file string) (string, error) {
+	return "/usr/bin/" + file, nil
 }

@@ -2,13 +2,18 @@ package toolchain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
+
+// ErrNoSupportedLinter is returned when neither golangci-lint nor staticcheck is found.
+var ErrNoSupportedLinter = errors.New("no supported linter found (golangci-lint or staticcheck)")
 
 // CoverageReport encapsulates the result of running tests with coverage.
 type CoverageReport struct {
@@ -19,34 +24,82 @@ type CoverageReport struct {
 	NoGoFiles     bool
 }
 
-// GoRunner defines the interface for executing Go toolchain commands.
-type GoRunner interface {
-	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error)
-	RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error)
+// GoRunner executes Go toolchain commands.
+type GoRunner struct {
+	exec           tools.CommandExecutor
+	defaultTimeout time.Duration
+	raceEnabled    bool
+	createTemp     func(string, string) (*os.File, error)
+	removeFile     func(string) error
 }
 
-type standardGoRunner struct {
-	exec tools.CommandExecutor
+// RunnerOption defines a functional option for GoRunner.
+type RunnerOption func(*GoRunner)
+
+// WithFilesystem allows injecting custom temporary file management, useful for
+// isolation tests or memory-only environments.
+func WithFilesystem(create func(string, string) (*os.File, error), remove func(string) error) RunnerOption {
+	return func(r *GoRunner) {
+		r.createTemp = create
+		r.removeFile = remove
+	}
 }
 
-// NewGoRunner creates a new instance of GoRunner.
-func NewGoRunner(exec tools.CommandExecutor) GoRunner {
-	return &standardGoRunner{exec: exec}
+// WithDefaultTimeout sets the default timeout for GoRunner commands if no deadline is set in the context.
+func WithDefaultTimeout(d time.Duration) RunnerOption {
+	return func(r *GoRunner) {
+		r.defaultTimeout = d
+	}
+}
+
+// WithRace enables or disables the race detector for tests.
+func WithRace(enabled bool) RunnerOption {
+	return func(r *GoRunner) {
+		r.raceEnabled = enabled
+	}
+}
+
+// NewGoRunner creates a new instance of GoRunner with the provided options.
+func NewGoRunner(exec tools.CommandExecutor, opts ...RunnerOption) *GoRunner {
+	r := &GoRunner{
+		exec:           exec,
+		defaultTimeout: 5 * time.Minute,
+		raceEnabled:    true,
+		createTemp:     os.CreateTemp,
+		removeFile:     os.Remove,
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+// applyTimeout returns a child context with the default timeout if no deadline is already set.
+func (r *GoRunner) applyTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, r.defaultTimeout)
 }
 
 // RunTestsWithCoverage executes tests with coverage and returns a parsed report.
-func (r *standardGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error) {
+func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (CoverageReport, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
 	var report CoverageReport
 
 	tempName := profilePath
 	if tempName == "" {
-		f, err := os.CreateTemp("", "coverage-*.out")
+		f, err := r.createTemp("", "coverage-*.out")
 		if err != nil {
 			return report, fmt.Errorf("failed to create temp coverage file: %w", err)
 		}
 		tempName = f.Name()
+		// Safe to ignore: immediate closure to prepare file for OS write by child process.
 		_ = f.Close()
-		defer func() { _ = os.Remove(tempName) }()
+		// Safe to ignore: best-effort temporary file cleanup.
+		defer func() { _ = r.removeFile(tempName) }()
 	}
 
 	args := []string{"test"}
@@ -55,7 +108,7 @@ func (r *standardGoRunner) RunTestsWithCoverage(ctx context.Context, path string
 	}
 	args = append(args, "-coverprofile="+tempName, path)
 
-	out, testErr := r.exec.CombinedOutput(ctx, "go", args...)
+	out, testErr := r.combinedOutput(ctx, "go", args...)
 	outStr := string(out)
 	report.TestOutput = outStr
 
@@ -77,7 +130,7 @@ func (r *standardGoRunner) RunTestsWithCoverage(ctx context.Context, path string
 	}
 
 	// Get summary
-	sumOut, summaryErr := r.exec.CombinedOutput(ctx, "go", "tool", "cover", "-func="+tempName)
+	sumOut, summaryErr := r.combinedOutput(ctx, "go", "tool", "cover", "-func="+tempName)
 	if summaryErr != nil {
 		return report, fmt.Errorf("coverage summary execution failed: %w", summaryErr)
 	}
@@ -95,9 +148,12 @@ func (r *standardGoRunner) RunTestsWithCoverage(ctx context.Context, path string
 }
 
 // RunBenchmarks runs standard Go benchmarks in the target path.
-func (r *standardGoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
+func (r *GoRunner) RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
 	args := []string{"test", "-bench=" + benchRegex, "-benchmem", "-run=^$", path}
-	out, err := r.exec.CombinedOutput(ctx, "go", args...)
+	out, err := r.combinedOutput(ctx, "go", args...)
 	outStr := string(out)
 
 	if err != nil {
@@ -107,4 +163,122 @@ func (r *standardGoRunner) RunBenchmarks(ctx context.Context, path string, bench
 		return "", fmt.Errorf("benchmark failed: %w (output: %s)", err, outStr)
 	}
 	return outStr, nil
+}
+
+// RunLinter discovers and runs the first available linter (golangci-lint or staticcheck).
+func (r *GoRunner) RunLinter(ctx context.Context) (output string, toolUsed string, err error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	if _, err := r.lookPath("golangci-lint"); err == nil {
+		out, err := r.combinedOutput(ctx, "golangci-lint", "run")
+		return string(out), "golangci-lint", err
+	}
+	if _, err := r.lookPath("staticcheck"); err == nil {
+		out, err := r.combinedOutput(ctx, "staticcheck", "./...")
+		return string(out), "staticcheck", err
+	}
+	return "", "", ErrNoSupportedLinter
+}
+
+// RunTests runs project tests using the standard Go test tool.
+func (r *GoRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	args := []string{"test"}
+	if r.raceEnabled {
+		args = append(args, "-race")
+	}
+	args = append(args, path)
+
+	return r.combinedOutput(ctx, "go", args...)
+}
+
+// BuildCode builds the code at the given path and writes it to the output binary.
+func (r *GoRunner) BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	return r.combinedOutput(ctx, "go", "build", "-o", outputBinary, path)
+}
+
+// CheckGovulncheck checks if govulncheck is installed.
+func (r *GoRunner) CheckGovulncheck(ctx context.Context) error {
+	_, err := r.lookPath("govulncheck")
+	if err != nil {
+		return fmt.Errorf("'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest")
+	}
+	return nil
+}
+
+// RunModTidy runs 'go mod tidy'.
+func (r *GoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	return r.combinedOutput(ctx, "go", "mod", "tidy")
+}
+
+// FormatCode runs 'go fmt' on the specified path.
+func (r *GoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	return r.combinedOutput(ctx, "go", "fmt", path)
+}
+
+// GetPackageList runs 'go list -json' on the specified path.
+func (r *GoRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	return r.combinedOutput(ctx, "go", "list", "-json", path)
+}
+
+// GetGoDoc runs 'go doc' for the specified symbol.
+func (r *GoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	return r.combinedOutput(ctx, "go", "doc", symbol)
+}
+
+// GetModulePath returns the Go module path.
+func (r *GoRunner) GetModulePath(ctx context.Context) (string, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	out, err := r.output(ctx, "go", "list", "-m")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// GetModuleDir returns the Go module directory.
+func (r *GoRunner) GetModuleDir(ctx context.Context) (string, error) {
+	ctx, cancel := r.applyTimeout(ctx)
+	defer cancel()
+
+	out, err := r.output(ctx, "go", "list", "-m", "-f", "{{.Dir}}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// combinedOutput executes a command and returns its combined standard output and standard error.
+func (r *GoRunner) combinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return r.exec.CombinedOutput(ctx, name, args...)
+}
+
+// output executes a command and returns its standard output.
+func (r *GoRunner) output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return r.exec.Output(ctx, name, args...)
+}
+
+// lookPath proxies the LookPath call to the underlying executor.
+func (r *GoRunner) lookPath(file string) (string, error) {
+	return r.exec.LookPath(file)
 }

@@ -30,6 +30,7 @@ require (
 	google.golang.org/grpc v1.79.2
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.46.1
+	pgregory.net/rapid v1.2.0
 )
 
 require (

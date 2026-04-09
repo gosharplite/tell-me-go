@@ -2,11 +2,11 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestInfoManager_RenderProjectSummary(t *testing.T) {
@@ -235,10 +235,15 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 }
 
 func TestInfoManager_GoDoc(t *testing.T) {
-	exec := &inframock.MockExecutor{
-		OutputBytes: []byte("GoDoc output"),
+	runner := &mockAnalysisGoRunner{
+		getGoDocFunc: func(ctx context.Context, symbol string) ([]byte, error) {
+			if symbol != "fmt.Println" {
+				return nil, fmt.Errorf("unexpected symbol: %s", symbol)
+			}
+			return []byte("GoDoc output"), nil
+		},
 	}
-	m := &infoManager{Exec: exec}
+	m := &infoManager{Runner: runner}
 	ctx := context.Background()
 
 	args := map[string]interface{}{
@@ -252,13 +257,5 @@ func TestInfoManager_GoDoc(t *testing.T) {
 
 	if res.Text != "GoDoc output" {
 		t.Errorf("expected 'GoDoc output', got %q", res.Text)
-	}
-
-	if exec.CommandName != "go" {
-		t.Errorf("expected command 'go', got %q", exec.CommandName)
-	}
-
-	if len(exec.CommandArgs) < 2 || exec.CommandArgs[0] != "doc" || exec.CommandArgs[1] != "fmt.Println" {
-		t.Errorf("unexpected command args: %v", exec.CommandArgs)
 	}
 }

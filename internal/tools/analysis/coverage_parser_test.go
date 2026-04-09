@@ -381,9 +381,9 @@ func TestParseSymbolLine(t *testing.T) {
 func TestParseCoverageProfile(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	mock := &mockExecutor{
-		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("github.com/user/repo"), nil
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/user/repo", nil
 		},
 	}
 
@@ -445,9 +445,9 @@ func TestGetModuleName(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
-		mock := &mockExecutor{
-			OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte("github.com/test/mod\n"), nil
+		mock := &mockAnalysisGoRunner{
+			getModulePathFunc: func(ctx context.Context) (string, error) {
+				return "github.com/test/mod", nil
 			},
 		}
 		mod := getModuleName(ctx, mock)
@@ -458,9 +458,9 @@ func TestGetModuleName(t *testing.T) {
 
 	t.Run("failure", func(t *testing.T) {
 		t.Parallel()
-		mock := &mockExecutor{
-			OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return nil, os.ErrNotExist
+		mock := &mockAnalysisGoRunner{
+			getModulePathFunc: func(ctx context.Context) (string, error) {
+				return "", os.ErrNotExist
 			},
 		}
 		mod := getModuleName(ctx, mock)
@@ -473,9 +473,9 @@ func TestGetModuleName(t *testing.T) {
 func TestParseDetailedCoverage(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	mock := &mockExecutor{
-		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("github.com/user/repo"), nil
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/user/repo", nil
 		},
 	}
 
@@ -541,9 +541,9 @@ func TestFormatDetailedCoverageJSON(t *testing.T) {
 func TestParseDetailedCoverage_FileReadError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	mock := &mockExecutor{
-		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("github.com/user/repo"), nil
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/user/repo", nil
 		},
 	}
 
@@ -597,7 +597,8 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 			return []byte("ok"), nil
 		},
 	}
-	hea := &healthManager{Exec: mock, Runner: toolchain.NewGoRunner(mock)}
+	runner := toolchain.NewGoRunner(mock)
+	hea := &healthManager{Exec: mock, Runner: runner}
 
 	// Mock os.ReadFile by overriding the internal helper if we had one,
 	// but getDetailedCoverage uses os.ReadFile directly.
@@ -668,9 +669,9 @@ func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
 func TestParseCoverageProfile_MalformedLine(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	mock := &mockExecutor{
-		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("github.com/user/repo"), nil
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/user/repo", nil
 		},
 	}
 
@@ -780,7 +781,11 @@ func TestExtractFromLines_EdgeCases(t *testing.T) {
 func TestParseCoverageProfile_Empty(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	mock := &mockExecutor{}
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/user/repo", nil
+		},
+	}
 	r := strings.NewReader("")
 	blocks, err := parseCoverageProfile(ctx, r, mock)
 	if err != nil {
@@ -811,7 +816,11 @@ func (e *errorReader) Read(p []byte) (n int, err error) {
 func TestParseCoverageProfile_ScannerError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	mock := &mockExecutor{}
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/user/repo", nil
+		},
+	}
 	r := &errorReader{}
 	_, err := parseCoverageProfile(ctx, r, mock)
 	if err == nil || !strings.Contains(err.Error(), "read error") {
@@ -868,7 +877,7 @@ func (d *delayedErrorReader) Read(p []byte) (n int, err error) {
 func TestParseDetailedCoverage_ProfileError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	mock := &mockExecutor{}
+	mock := &mockAnalysisGoRunner{}
 	// Valid first line, then error
 	r := &delayedErrorReader{content: "mode: set\n"}
 
@@ -881,9 +890,9 @@ func TestParseDetailedCoverage_ProfileError(t *testing.T) {
 func TestGetModuleName_WithTrailingSlash(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	mock := &mockExecutor{
-		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("github.com/test/mod/\n"), nil
+	mock := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return "github.com/test/mod/", nil
 		},
 	}
 	mod := getModuleName(ctx, mock)

@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/ioutils"
 )
 
 // SessionLifecycleManager defines the interface for building and finalizing sessions.
@@ -198,24 +199,9 @@ func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Con
 		}
 	}()
 
-	buf := make([]byte, 32*1024)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		n, rErr := file.Read(buf)
-		if n > 0 {
-			if _, wErr := out.Write(buf[:n]); wErr != nil {
-				return fmt.Errorf("failed to output turns log: %w", wErr)
-			}
-		}
-		if rErr != nil {
-			if errors.Is(rErr, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("failed to read turns log: %w", rErr)
-		}
+	ctxReader := ioutils.NewContextReader(ctx, file)
+	if _, err := io.Copy(out, ctxReader); err != nil {
+		return fmt.Errorf("failed to stream log: %w", err)
 	}
+	return nil
 }

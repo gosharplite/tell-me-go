@@ -8,18 +8,20 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
 func BenchmarkVerifyArchitecture_Baseline(b *testing.B) {
 	ctx := context.Background()
 	sm := &mockSecurityProvider{} // Allows "go" command by default in mockSecurityProvider
 	executor := &exec.RealExecutor{}
+	runner := toolchain.NewGoRunner(executor)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		m := &architectureManager{
-			SP:   sm,
-			Exec: executor,
+			SP:     sm,
+			Runner: runner,
 		}
 		_, err := m.VerifyArchitecture(ctx, nil, nil)
 		if err != nil {

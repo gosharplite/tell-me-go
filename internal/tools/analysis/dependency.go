@@ -20,16 +20,16 @@ import (
 )
 
 type defaultDependencyAnalyzer struct {
-	Exec      tools.CommandExecutor
+	Runner    AnalysisGoRunner
 	SP        domain_security.PolicyEvaluator
 	Events    events.EventBus
 	modPrefix string
 	modMu     sync.Mutex
 }
 
-func newDependencyAnalyzer(exec tools.CommandExecutor, sp domain_security.PolicyEvaluator, bus events.EventBus) *defaultDependencyAnalyzer {
+func newDependencyAnalyzer(runner AnalysisGoRunner, sp domain_security.PolicyEvaluator, bus events.EventBus) *defaultDependencyAnalyzer {
 	return &defaultDependencyAnalyzer{
-		Exec:   exec,
+		Runner: runner,
 		SP:     sp,
 		Events: bus,
 	}
@@ -58,11 +58,10 @@ func (a *defaultDependencyAnalyzer) buildGraph(ctx context.Context) (map[string]
 		return nil, err
 	}
 
-	out, err := a.Exec.Output(ctx, "go", "list", "-m", "-f", "{{.Dir}}")
+	modRoot, err := a.Runner.GetModuleDir(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting module root: %w", err)
 	}
-	modRoot := strings.TrimSpace(string(out))
 
 	pkgPaths, err := a.listInternalPackages(modRoot)
 	if err != nil {
@@ -207,11 +206,11 @@ func (a *defaultDependencyAnalyzer) resolveModulePrefix(ctx context.Context) (st
 		return a.modPrefix, nil
 	}
 
-	out, err := a.Exec.Output(ctx, "go", "list", "-m")
+	mod, err := a.Runner.GetModulePath(ctx)
 	if err != nil {
 		return "", fmt.Errorf("getting module name: %w", err)
 	}
-	a.modPrefix = strings.TrimSpace(string(out))
+	a.modPrefix = mod
 	return a.modPrefix, nil
 }
 

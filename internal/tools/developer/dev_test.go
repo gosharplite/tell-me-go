@@ -6,6 +6,7 @@ package developer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -26,8 +27,7 @@ var _ domain_security.TerminalController = (*security.SecurityManager)(nil)
 var _ domain_security.UserInteractor = (*security.MockInteractor)(nil)
 
 type mockDevExecutor struct {
-	executeFunc  func(ctx context.Context, name string, args ...string) ([]byte, error)
-	lookPathFunc func(file string) (string, error)
+	executeFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
 func (m *mockDevExecutor) Execute(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -35,13 +35,6 @@ func (m *mockDevExecutor) Execute(ctx context.Context, name string, args ...stri
 		return m.executeFunc(ctx, name, args...)
 	}
 	return []byte("success"), nil
-}
-
-func (m *mockDevExecutor) LookPath(file string) (string, error) {
-	if m.lookPathFunc != nil {
-		return m.lookPathFunc(file)
-	}
-	return "/usr/bin/" + file, nil
 }
 
 type mockValidator struct {
@@ -59,6 +52,11 @@ func (mv *mockValidator) IsSafe(command string) (bool, string) {
 type mockGoRunner struct {
 	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
 	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
+	runLinterFunc            func(ctx context.Context) (string, string, error)
+	checkGovulncheckFunc     func(ctx context.Context) error
+	runModTidyFunc           func(ctx context.Context) ([]byte, error)
+	formatCodeFunc           func(ctx context.Context, path string) ([]byte, error)
+	runTestsFunc             func(ctx context.Context, path string) ([]byte, error)
 }
 
 func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
@@ -73,6 +71,41 @@ func (m *mockGoRunner) RunBenchmarks(ctx context.Context, path string, benchRege
 		return m.runBenchmarksFunc(ctx, path, benchRegex)
 	}
 	return "", nil
+}
+
+func (m *mockGoRunner) RunLinter(ctx context.Context) (string, string, error) {
+	if m.runLinterFunc != nil {
+		return m.runLinterFunc(ctx)
+	}
+	return "", "golangci-lint", nil
+}
+
+func (m *mockGoRunner) CheckGovulncheck(ctx context.Context) error {
+	if m.checkGovulncheckFunc != nil {
+		return m.checkGovulncheckFunc(ctx)
+	}
+	return nil
+}
+
+func (m *mockGoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
+	if m.runModTidyFunc != nil {
+		return m.runModTidyFunc(ctx)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockGoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
+	if m.formatCodeFunc != nil {
+		return m.formatCodeFunc(ctx, path)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockGoRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
+	if m.runTestsFunc != nil {
+		return m.runTestsFunc(ctx, path)
+	}
+	return []byte("success"), nil
 }
 
 func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
@@ -111,7 +144,7 @@ func TestCheckVulnerabilities(t *testing.T) {
 		},
 		{
 			name:        "Tool missing",
-			lookPathErr: errors.New("not found"),
+			lookPathErr: fmt.Errorf("'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest"),
 			wantSubstr:  "'govulncheck' is not installed",
 			wantErr:     true,
 		},
@@ -134,8 +167,8 @@ func TestCheckVulnerabilities(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m, executor, _ := setupDevManager(t)
-			executor.lookPathFunc = func(file string) (string, error) {
-				return "/usr/bin/" + file, tt.lookPathErr
+			m.runner.(*mockGoRunner).checkGovulncheckFunc = func(ctx context.Context) error {
+				return tt.lookPathErr
 			}
 			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 				return []byte(tt.executeOut), tt.executeErr
@@ -290,7 +323,7 @@ func TestRunLinter(t *testing.T) {
 			lookPath:   "staticcheck",
 			executeOut: "problem at line 1",
 			executeErr: errors.New("exit status 1"),
-			wantSubstr: "Linter failed or found issues:",
+			wantSubstr: "Linter (staticcheck) failed or found issues:",
 			wantErr:    false,
 		},
 		{
@@ -311,7 +344,7 @@ func TestRunLinter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, executor, sm := setupDevManager(t)
+			m, _, sm := setupDevManager(t)
 			if tt.decline {
 				sm.SetBypassActive(false)
 				sm.GetInteractor().(*security.MockInteractor).Answer = "n"
@@ -319,21 +352,20 @@ func TestRunLinter(t *testing.T) {
 				m.validator = &mockValidator{
 					CommandValidator: m.validator,
 					isSafeFunc: func(command string) (bool, string) {
-						if strings.Contains(command, "golangci-lint") || strings.Contains(command, "staticcheck") {
+						if strings.Contains(command, "lint") {
 							return false, "forced prompt for test"
 						}
 						return true, ""
 					},
 				}
 			}
-			executor.lookPathFunc = func(file string) (string, error) {
-				if file == tt.lookPath {
-					return "/usr/bin/" + file, nil
+
+			// Inject mock behavior into runner
+			m.runner.(*mockGoRunner).runLinterFunc = func(ctx context.Context) (string, string, error) {
+				if tt.lookPath == "none" {
+					return "", "", errors.New("no supported linter found")
 				}
-				return "", errors.New("not found")
-			}
-			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte(tt.executeOut), tt.executeErr
+				return tt.executeOut, tt.lookPath, tt.executeErr
 			}
 
 			res, err := m.runLinter(context.Background(), nil, nil)
@@ -373,22 +405,24 @@ func TestGoTidy_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, executor, _ := setupDevManager(t)
-			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if args[0] == tt.cmdFail || (len(args) > 1 && args[1] == tt.cmdFail) {
+			m, _, _ := setupDevManager(t)
+			runner := m.runner.(*mockGoRunner)
+
+			if tt.cmdFail == "tidy" {
+				runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
 					return []byte("failed"), tt.executeErr
 				}
-				return []byte("ok"), nil
+			} else {
+				runner.formatCodeFunc = func(ctx context.Context, path string) ([]byte, error) {
+					return []byte("failed"), tt.executeErr
+				}
 			}
 
 			res, err := m.goTidy(context.Background(), nil, nil)
 			if err != nil {
 				t.Errorf("expected nil error for %s, got %v", tt.name, err)
 			}
-			displayName := "Go mod tidy"
-			if tt.cmdFail == "fmt" {
-				displayName = "Go fmt"
-			}
+			displayName := "Go mod tidy/fmt"
 			if !strings.Contains(res.Text, displayName+" failed or found issues:") {
 				t.Errorf("expected failure text in result, got %q", res.Text)
 			}
@@ -464,7 +498,7 @@ func TestRunTests(t *testing.T) {
 	interactor := sm.GetInteractor().(*security.MockInteractor)
 	found := false
 	for _, w := range interactor.Warns {
-		if strings.Contains(w, "[Tool Action] Running test execution") {
+		if strings.Contains(w, "[Tool Action] Running run_tests") {
 			found = true
 			break
 		}
@@ -561,69 +595,6 @@ func TestAuthorizeAction_Denied(t *testing.T) {
 	approved, err := m.authorizeAction(context.Background(), "test", "unauthorized_tool", "detail")
 	assert.NoError(t, err)
 	assert.False(t, approved)
-}
-
-func TestResolveLinter(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name        string
-		lookPathMap map[string]error
-		wantCmd     string
-		wantArgs    []string
-		wantErr     bool
-	}{
-		{
-			name: "golangci-lint available",
-			lookPathMap: map[string]error{
-				"golangci-lint": nil,
-			},
-			wantCmd:  "golangci-lint",
-			wantArgs: []string{"run"},
-		},
-		{
-			name: "staticcheck available (golangci-lint not)",
-			lookPathMap: map[string]error{
-				"golangci-lint": errors.New("not found"),
-				"staticcheck":   nil,
-			},
-			wantCmd:  "staticcheck",
-			wantArgs: []string{"./..."},
-		},
-		{
-			name: "no linter available",
-			lookPathMap: map[string]error{
-				"golangci-lint": errors.New("not found"),
-				"staticcheck":   errors.New("not found"),
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			m, executor, _ := setupDevManager(t)
-			executor.lookPathFunc = func(file string) (string, error) {
-				if err, ok := tt.lookPathMap[file]; ok {
-					if err == nil {
-						return "/usr/bin/" + file, nil
-					}
-					return "", err
-				}
-				return "", errors.New("not found")
-			}
-
-			cmd, args, err := m.resolveLinter()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("resolveLinter() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr {
-				assert.Equal(t, tt.wantCmd, cmd)
-				assert.Equal(t, tt.wantArgs, args)
-			}
-		})
-	}
 }
 
 func TestFormatExecutionResult(t *testing.T) {
@@ -723,7 +694,9 @@ func TestExecuteWithHeartbeat_Telemetry(t *testing.T) {
 	// Trigger execution in a goroutine
 	done := make(chan struct{})
 	go func() {
-		_, _ = m.executeWithHeartbeat(context.Background(), "test", "cmd", "reason", "echo", []string{"hi"}, hb)
+		_, _ = m.executeWithHeartbeat(context.Background(), hb, "test", "cmd", "reason", func() ([]byte, error) {
+			return m.executor.Execute(context.Background(), "echo", "hi")
+		})
 		close(done)
 	}()
 

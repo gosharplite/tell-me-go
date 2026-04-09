@@ -39,13 +39,39 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return nil
 }
 
+type mockToolchainExecutor struct {
+	runFunc      func(ctx context.Context, name string, args ...string) ([]byte, error)
+	lookPathFunc func(file string) (string, error)
+}
+
+func (m *mockToolchainExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if m.runFunc != nil {
+		return m.runFunc(ctx, name, args...)
+	}
+	return []byte(""), nil
+}
+
+func (m *mockToolchainExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if m.runFunc != nil {
+		return m.runFunc(ctx, name, args...)
+	}
+	return []byte(""), nil
+}
+
+func (m *mockToolchainExecutor) LookPath(file string) (string, error) {
+	if m.lookPathFunc != nil {
+		return m.lookPathFunc(file)
+	}
+	return "/usr/bin/" + file, nil
+}
+
 func TestRegister(t *testing.T) {
 	t.Parallel()
 	registry := &mockToolRegistry{}
 	sm := security.NewSecurityManager(nil)
 	validator := security.NewCommandValidator(sm, nil)
 	fs := persistence.NewMockFileSystem()
-	exec := &mockCommandExecutor{}
+	exec := &mockToolchainExecutor{}
 
 	if err := Register(registry, sm, exec, validator, fs); err != nil {
 		t.Fatalf("Register failed: %v", err)

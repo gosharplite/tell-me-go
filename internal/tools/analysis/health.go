@@ -21,7 +21,7 @@ import (
 type healthManager struct {
 	SP     security.PolicyEvaluator
 	Exec   tools.CommandExecutor
-	Runner toolchain.GoRunner
+	Runner AnalysisGoRunner
 	Ana    *analysisManager
 }
 
@@ -194,20 +194,16 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 }
 
 func (m *healthManager) runLint(ctx context.Context) (string, string) {
-	var tool string
-	var args []string
-	if _, err := exec.LookPath("golangci-lint"); err == nil {
-		tool = "golangci-lint"
-		args = []string{"run"}
-	} else if _, err := exec.LookPath("staticcheck"); err == nil {
-		tool = "staticcheck"
-		args = []string{"./..."}
-	} else {
-		return "SKIP", "No linter found"
+	outStr, tool, err := m.Runner.RunLinter(ctx)
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		if errors.Is(err, toolchain.ErrNoSupportedLinter) {
+			return "SKIP", "No linter found"
+		}
+		return "ERROR", err.Error()
 	}
 
-	out, _ := m.Exec.CombinedOutput(ctx, tool, args...)
-	outStr := strings.TrimSpace(string(out))
+	outStr = strings.TrimSpace(outStr)
 	if outStr == "" {
 		return "CLEAN", "All checks passed"
 	}
@@ -279,8 +275,8 @@ func (m *healthManager) checkDeadCode(ctx context.Context, hb chan<- struct{}) (
 
 func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead string) string {
 	var recs []string
-	if test == "FAIL" {
-		recs = append(recs, "Fix failing tests immediately.")
+	if test == "FAIL" || test == "TIMEOUT" || test == "CANCELLED" || test == "ERROR" {
+		recs = append(recs, "Fix failing or timed-out tests immediately.")
 	}
 	if strings.HasSuffix(cov, "%") {
 		var val float64
@@ -289,14 +285,17 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead strin
 				recs = append(recs, fmt.Sprintf("Coverage (%.1f%%) is below the 80%% target.", val))
 			}
 		}
+	} else if cov == "ERROR" || cov == "TIMEOUT" {
+		recs = append(recs, "Address issues preventing coverage analysis.")
 	}
-	if strings.Contains(comp, "Alerts") {
+
+	if strings.Contains(comp, "Alerts") || comp == "ERROR" || comp == "TIMEOUT" {
 		recs = append(recs, "Refactor high-complexity functions.")
 	}
-	if strings.Contains(lint, "Issues") {
+	if strings.Contains(lint, "Issues") || lint == "ERROR" || lint == "TIMEOUT" {
 		recs = append(recs, "Address linting issues.")
 	}
-	if strings.Contains(dead, "Issues") {
+	if strings.Contains(dead, "Issues") || dead == "ERROR" || dead == "TIMEOUT" {
 		recs = append(recs, "Remove dead or effectively private code to improve encapsulation.")
 	}
 

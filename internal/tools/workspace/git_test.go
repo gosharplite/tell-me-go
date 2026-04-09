@@ -324,3 +324,7 @@ func TestGitManagerInternal(t *testing.T) {
 		t.Errorf("expected output 'error detail', got %q", out)
 	}
 }
+
+func (m *mockGitExecutor) LookPath(file string) (string, error) {
+	return "/usr/bin/" + file, nil
+}

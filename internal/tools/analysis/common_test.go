@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -37,6 +38,7 @@ func (s *mockSecurityProvider) IsBypassActive() bool                       { ret
 type mockExecutor struct {
 	OutputFunc         func(ctx context.Context, name string, args ...string) ([]byte, error)
 	CombinedOutputFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
+	LookPathFunc       func(file string) (string, error)
 }
 
 func (m *mockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -51,6 +53,13 @@ func (m *mockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 		return m.CombinedOutputFunc(ctx, name, args...)
 	}
 	return nil, nil
+}
+
+func (m *mockExecutor) LookPath(file string) (string, error) {
+	if m.LookPathFunc != nil {
+		return m.LookPathFunc(file)
+	}
+	return "/usr/bin/" + file, nil
 }
 
 type mockIndexer struct {
@@ -92,3 +101,54 @@ func (s *mockSecurityProvider) ReadLine(ctx context.Context) (string, error) {
 }
 
 func (s *mockSecurityProvider) Close() error { return nil }
+
+type mockAnalysisGoRunner struct {
+	getPackageListFunc       func(ctx context.Context, path string) ([]byte, error)
+	getGoDocFunc             func(ctx context.Context, symbol string) ([]byte, error)
+	getModulePathFunc        func(ctx context.Context) (string, error)
+	getModuleDirFunc         func(ctx context.Context) (string, error)
+	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	runLinterFunc            func(ctx context.Context) (string, string, error)
+}
+
+func (m *mockAnalysisGoRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
+	if m.getPackageListFunc != nil {
+		return m.getPackageListFunc(ctx, path)
+	}
+	return nil, nil
+}
+
+func (m *mockAnalysisGoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
+	if m.getGoDocFunc != nil {
+		return m.getGoDocFunc(ctx, symbol)
+	}
+	return nil, nil
+}
+
+func (m *mockAnalysisGoRunner) GetModulePath(ctx context.Context) (string, error) {
+	if m.getModulePathFunc != nil {
+		return m.getModulePathFunc(ctx)
+	}
+	return "", nil
+}
+
+func (m *mockAnalysisGoRunner) GetModuleDir(ctx context.Context) (string, error) {
+	if m.getModuleDirFunc != nil {
+		return m.getModuleDirFunc(ctx)
+	}
+	return "", nil
+}
+
+func (m *mockAnalysisGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+	if m.runTestsWithCoverageFunc != nil {
+		return m.runTestsWithCoverageFunc(ctx, path, short, profilePath)
+	}
+	return toolchain.CoverageReport{}, nil
+}
+
+func (m *mockAnalysisGoRunner) RunLinter(ctx context.Context) (string, string, error) {
+	if m.runLinterFunc != nil {
+		return m.runLinterFunc(ctx)
+	}
+	return "", "", nil
+}

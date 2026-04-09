@@ -291,7 +291,7 @@ func (b *SimpleEventBus) notifySubscriber(ctx context.Context, sub Subscriber, e
 			)
 
 			// 2. Format the error to be returned to the caller
-			err = fmt.Errorf("subscriber panicked: %v\n%s", r, stack)
+			err = fmt.Errorf("subscriber panicked: %v", r)
 		}
 	}()
 
@@ -620,12 +620,16 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 
 	// Collect all current subscribers to start their workers
 	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return ErrBusClosed
+	}
+
 	var wrappers []*subscriberWrapper
 	for _, ws := range b.subscribers {
 		wrappers = append(wrappers, ws...)
 	}
 	wrappers = append(wrappers, b.globalSubscribers...)
-	b.mu.Unlock()
 
 	for _, w := range wrappers {
 		w := w
@@ -641,6 +645,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 			return b.subscriberLoop(ctx, w)
 		})
 	}
+	b.mu.Unlock()
 
 	return g.Wait()
 }

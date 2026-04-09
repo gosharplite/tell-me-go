@@ -28,7 +28,7 @@ type infoManager struct {
 	Cache  *astCache
 	FS     persistence.FileSystem
 	Events events.EventBus
-	Exec   tools.CommandExecutor
+	Runner AnalysisGoRunner
 }
 
 type projectStats struct {
@@ -200,7 +200,7 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}, hb
 		}
 	}()
 
-	out, err := m.Exec.CombinedOutput(ctx, "go", "doc", symbol)
+	out, err := m.Runner.GetGoDoc(ctx, symbol)
 	close(done)
 	if err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil

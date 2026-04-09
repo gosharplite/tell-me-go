@@ -5,7 +5,6 @@ package developer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,28 +12,45 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type mockCommandExecutor struct {
-	runFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
+type mockReleaseRunner struct {
+	runLinterFunc            func(ctx context.Context) (string, string, error)
+	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	runTestsFunc             func(ctx context.Context, path string) ([]byte, error)
+	buildCodeFunc            func(ctx context.Context, outputBinary, path string) ([]byte, error)
 }
 
-func (m *mockCommandExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if m.runFunc != nil {
-		return m.runFunc(ctx, name, args...)
+func (m *mockReleaseRunner) RunLinter(ctx context.Context) (string, string, error) {
+	if m.runLinterFunc != nil {
+		return m.runLinterFunc(ctx)
 	}
-	return []byte(""), nil
+	return "", "mock-linter", nil
 }
 
-func (m *mockCommandExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if m.runFunc != nil {
-		return m.runFunc(ctx, name, args...)
+func (m *mockReleaseRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
+	if m.runTestsWithCoverageFunc != nil {
+		return m.runTestsWithCoverageFunc(ctx, path, short, profilePath)
 	}
-	return []byte(""), nil
+	return toolchain.CoverageReport{PassedCount: 1, CoveragePct: "100.0%"}, nil
+}
+
+func (m *mockReleaseRunner) RunTests(ctx context.Context, path string) ([]byte, error) {
+	if m.runTestsFunc != nil {
+		return m.runTestsFunc(ctx, path)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockReleaseRunner) BuildCode(ctx context.Context, outputBinary, path string) ([]byte, error) {
+	if m.buildCodeFunc != nil {
+		return m.buildCodeFunc(ctx, outputBinary, path)
+	}
+	return []byte("success"), nil
 }
 
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
@@ -47,15 +63,15 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	fs.Files = map[string][]byte{
 		filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
 		filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
-		"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), // Still needed for DependencyChecker
+		"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
 	}
 
-	executor := &mockCommandExecutor{}
+	runner := &mockReleaseRunner{}
 
 	m := &releaseManager{
-		sm:       sm,
-		fs:       fs,
-		executor: executor,
+		sm:     sm,
+		fs:     fs,
+		runner: runner,
 	}
 
 	res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
@@ -68,24 +84,18 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	}
 }
 
-type releaseReadinessTestCase struct {
-	name       string
-	files      func() map[string][]byte
-	runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
-	wantSubstr string
-}
-
 func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
 	cwd, _ := os.Getwd()
 
-	successRunFunc := func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return []byte("success"), nil
-	}
-
-	tests := []releaseReadinessTestCase{
+	tests := []struct {
+		name        string
+		files       func() map[string][]byte
+		setupRunner func() *mockReleaseRunner
+		wantSubstr  string
+	}{
 		{
 			name: "Secret found",
 			files: func() map[string][]byte {
@@ -95,8 +105,8 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 					"go.mod":                        []byte("module test"),
 				}
 			},
-			runFunc:    successRunFunc,
-			wantSubstr: "Potential secret",
+			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
+			wantSubstr:  "Potential secret",
 		},
 		{
 			name: "Replace directive",
@@ -105,8 +115,8 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 					"go.mod": []byte("module test\nreplace foo => ../foo"),
 				}
 			},
-			runFunc:    successRunFunc,
-			wantSubstr: "contains 'replace' directives",
+			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
+			wantSubstr:  "contains 'replace' directives",
 		},
 		{
 			name: "Build failure",
@@ -115,11 +125,12 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 					"go.mod": []byte("module test"),
 				}
 			},
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "go" && args[0] == "build" {
-					return []byte("failed"), fmt.Errorf("exit status 1")
+			setupRunner: func() *mockReleaseRunner {
+				return &mockReleaseRunner{
+					buildCodeFunc: func(ctx context.Context, outputBinary, path string) ([]byte, error) {
+						return []byte("failed"), fmt.Errorf("exit status 1")
+					},
 				}
-				return []byte("success"), nil
 			},
 			wantSubstr: "Clean build failed",
 		},
@@ -130,11 +141,12 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 					"go.mod": []byte("module test"),
 				}
 			},
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "golangci-lint" {
-					return []byte("lint error: style"), fmt.Errorf("exit status 1")
+			setupRunner: func() *mockReleaseRunner {
+				return &mockReleaseRunner{
+					runLinterFunc: func(ctx context.Context) (string, string, error) {
+						return "lint error: style", "golangci-lint", fmt.Errorf("exit status 1")
+					},
 				}
-				return []byte("success"), nil
 			},
 			wantSubstr: "golangci-lint found issues",
 		},
@@ -143,35 +155,16 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			runReleaseReadinessTest(t, sm, tt.name, tt.files, tt.runFunc, tt.wantSubstr)
+			fs := persistence.NewMockFileSystem()
+			fs.Files = tt.files()
+			runner := tt.setupRunner()
+			m := &releaseManager{sm: sm, fs: fs, runner: runner}
+
+			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
+			require.NoError(t, err)
+			assert.Contains(t, res.Text, tt.wantSubstr)
+			assert.Contains(t, res.Text, "NOT READY")
 		})
-	}
-}
-
-func runReleaseReadinessTest(t *testing.T, sm domain_security.Manager, name string, files func() map[string][]byte, runFunc func(context.Context, string, ...string) ([]byte, error), wantSubstr string) {
-	fs := persistence.NewMockFileSystem()
-	fs.Files = files()
-
-	executor := &mockCommandExecutor{
-		runFunc: runFunc,
-	}
-
-	m := &releaseManager{
-		sm:       sm,
-		fs:       fs,
-		executor: executor,
-	}
-
-	res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(res.Text, wantSubstr) {
-		t.Errorf("expected substring %q in report, got:\n%s", wantSubstr, res.Text)
-	}
-	if !strings.Contains(res.Text, "NOT READY") {
-		t.Errorf("expected NOT READY in report, got:\n%s", res.Text)
 	}
 }
 
@@ -181,47 +174,40 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 	sm.RegisterSafePath(".")
 
 	tests := []struct {
-		name       string
-		runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
-		wantSubstr string
+		name        string
+		setupRunner func() *mockReleaseRunner
+		wantSubstr  string
 	}{
 		{
 			name: "golangci-lint missing, staticcheck found issues",
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "golangci-lint" {
-					return nil, errors.New("executable file not found")
+			setupRunner: func() *mockReleaseRunner {
+				return &mockReleaseRunner{
+					runLinterFunc: func(ctx context.Context) (string, string, error) {
+						return "staticcheck error", "staticcheck", fmt.Errorf("exit status 1")
+					},
 				}
-				if name == "staticcheck" {
-					return []byte("staticcheck error"), fmt.Errorf("exit status 1")
-				}
-				return []byte("success"), nil
 			},
 			wantSubstr: "staticcheck found issues",
 		},
 		{
 			name: "both linters missing",
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return nil, errors.New("executable file not found")
+			setupRunner: func() *mockReleaseRunner {
+				return &mockReleaseRunner{
+					runLinterFunc: func(ctx context.Context) (string, string, error) {
+						return "", "", toolchain.ErrNoSupportedLinter
+					},
+				}
 			},
 			wantSubstr: "No linter found",
 		},
 		{
-			name: "golangci-lint execution error",
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "golangci-lint" {
-					return nil, errors.New("unexpected error")
-				}
-				return []byte("success"), nil
-			},
-			wantSubstr: "golangci-lint failed",
-		},
-		{
 			name: "golangci-lint success with output",
-			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "golangci-lint" {
-					return []byte("some issues found but exit 0?"), nil
+			setupRunner: func() *mockReleaseRunner {
+				return &mockReleaseRunner{
+					runLinterFunc: func(ctx context.Context) (string, string, error) {
+						return "some issues found but exit 0?", "golangci-lint", nil
+					},
 				}
-				return []byte("success"), nil
 			},
 			wantSubstr: "golangci-lint found issues",
 		},
@@ -232,8 +218,8 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 			t.Parallel()
 			fs := persistence.NewMockFileSystem()
 			fs.Files = map[string][]byte{"go.mod": []byte("module test")}
-			executor := &mockCommandExecutor{runFunc: tt.runFunc}
-			m := &releaseManager{sm: sm, fs: fs, executor: executor}
+			runner := tt.setupRunner()
+			m := &releaseManager{sm: sm, fs: fs, runner: runner}
 			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 			require.NoError(t, err)
 			assert.Contains(t, res.Text, tt.wantSubstr)
