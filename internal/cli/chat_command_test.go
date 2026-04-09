@@ -361,7 +361,7 @@ func TestChatCommand_Execute_TUIPrompt_SetsInteractor(t *testing.T) {
 		HomeDir:      t.TempDir(),
 	}
 
-	err := executeChatCommand(cmdCtx, []string{"--tui"})
+	err := executeChatCommand(cmdCtx, []string{"--interactive"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -404,7 +404,7 @@ func TestChatCommand_Execute_SuggestionServiceError_Fallback(t *testing.T) {
 		HomeDir:      t.TempDir(),
 	}
 
-	err := executeChatCommand(cmdCtx, []string{"--tui"})
+	err := executeChatCommand(cmdCtx, []string{"--interactive"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -572,7 +572,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 		},
 		{
 			name: "TUI Capturer Cast Failure",
-			args: []string{"--tui"},
+			args: []string{"--interactive"},
 			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
 				// BaseCapturer is NOT returned here since we don't inject TUI specific mocks.
 				ml.On("Load", mock.Anything).Return(&config.Config{UseTUIPrompt: true}, nil)
@@ -583,7 +583,7 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 		},
 		{
 			name: "Suggestion Service Error",
-			args: []string{"--tui"},
+			args: []string{"--interactive"},
 			setupMocks: func(ml *chatMockLoader, mb *mockBootstrapper, ms *mockChatService) {
 				ml.On("Load", mock.Anything).Return(&config.Config{UseTUIPrompt: true}, nil)
 				mb.On("GetHistoryManager", mock.Anything, mock.Anything).Return(nil, nil)

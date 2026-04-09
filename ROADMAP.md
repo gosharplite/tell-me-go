@@ -95,7 +95,7 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
     - **[UI RISK] Multi-line Layout Paging:** The textarea must have fixed layout bounds with internal scrolling to prevent large pastes from breaking the TUI layout.
     - **[COMPATIBILITY] Cross-Platform Constraints:** Provide alternatives to `Ctrl+S` (e.g., `Alt+Enter` to avoid XOFF locks) and sanitize line-endings (`\r\n` to `\n`).
 - **Task:** Implement **Opt-In TUI Prompt Engine**:
-    - [x] Create `tell-me-go --tui` (or `-i`) flag for explicit activation.
+    - [x] Create `tell-me-go --interactive` (or `-i`) flag for explicit activation.
     - [x] Implement `USE_TUI_PROMPT` configuration (default: `false`).
     - [x] Architect the `MainTUIModel` using Bubble Tea with Component Composition.
     - [x] **Dashboard Integration**: Display previous turn metrics (Turn ID, Tokens, Cost, Timing) at the top of the TUI.

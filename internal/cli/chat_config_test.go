@@ -92,11 +92,6 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 			wantTUI: true,
 		},
 		{
-			name:    "long tui flag",
-			args:    []string{"chat", "--tui", "hello"},
-			wantTUI: true,
-		},
-		{
 			name:    "no flags (default false)",
 			args:    []string{"chat", "hello"},
 			wantTUI: false,
