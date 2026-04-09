@@ -7,6 +7,7 @@ package encoding
 
 import (
 	"io"
+	"log/slog"
 	"syscall"
 
 	"golang.org/x/text/encoding"
@@ -46,6 +47,7 @@ func wrapReaderPlatform(r io.Reader) io.Reader {
 		enc = charmap.Windows1252
 	default:
 		// Fallback to no decoding if unknown
+		slog.Debug("unknown windows console code page, falling back to raw reader", slog.Int("codepage", int(cp)))
 		return r
 	}
 
