@@ -18,15 +18,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type goRunner interface {
-	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
-	RunLinter(ctx context.Context) (string, string, error)
-}
-
 type healthManager struct {
 	SP     security.PolicyEvaluator
 	Exec   tools.CommandExecutor
-	Runner goRunner
+	Runner AnalysisGoRunner
 	Ana    *analysisManager
 }
 

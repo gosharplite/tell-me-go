@@ -38,6 +38,8 @@ type mockGoRunner struct {
 	getPackageListFunc       func(ctx context.Context, path string) ([]byte, error)
 	getGoDocFunc             func(ctx context.Context, symbol string) ([]byte, error)
 	checkGovulncheckFunc     func(ctx context.Context) error
+	getModulePathFunc        func(ctx context.Context) (string, error)
+	getModuleDirFunc         func(ctx context.Context) (string, error)
 }
 
 func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
@@ -99,6 +101,20 @@ func (m *mockGoRunner) CheckGovulncheck(ctx context.Context) error {
 		return m.checkGovulncheckFunc(ctx)
 	}
 	return nil
+}
+
+func (m *mockGoRunner) GetModulePath(ctx context.Context) (string, error) {
+	if m.getModulePathFunc != nil {
+		return m.getModulePathFunc(ctx)
+	}
+	return "github.com/gosharplite/tell-me-go", nil
+}
+
+func (m *mockGoRunner) GetModuleDir(ctx context.Context) (string, error) {
+	if m.getModuleDirFunc != nil {
+		return m.getModuleDirFunc(ctx)
+	}
+	return ".", nil
 }
 
 type mockHealthExecutor struct{}

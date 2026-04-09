@@ -27,19 +27,16 @@ func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(pkg3, "f3.go"), []byte("package pkg3\nimport \"example.com/mod/pkg2\""), 0644)
 	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/mod"), 0644)
 
-	mockExec := &mockExecutor{
-		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "-m" {
-				if len(args) > 2 && args[2] == "-f" {
-					return []byte(tmpDir), nil
-				}
-				return []byte(module), nil
-			}
-			return nil, nil
+	mockRunner := &mockAnalysisGoRunner{
+		getModulePathFunc: func(ctx context.Context) (string, error) {
+			return module, nil
+		},
+		getModuleDirFunc: func(ctx context.Context) (string, error) {
+			return tmpDir, nil
 		},
 	}
 
-	analyzer := newDependencyAnalyzer(mockExec, &mockSecurityProvider{}, nil)
+	analyzer := newDependencyAnalyzer(mockRunner, &mockSecurityProvider{}, nil)
 
 	// Set workdir to tmpDir so that go list -m works
 	// In a real scenario, the tool would run in the project root.

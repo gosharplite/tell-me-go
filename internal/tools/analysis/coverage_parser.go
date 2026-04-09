@@ -15,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // uncoveredBlock represents a block of code with zero coverage.
@@ -134,12 +132,11 @@ func extractFromLines(lines []string, start, end int) string {
 }
 
 // getModuleName returns the module name from the environment.
-func getModuleName(ctx context.Context, exec tools.CommandExecutor) string {
-	out, err := exec.Output(ctx, "go", "list", "-m")
+func getModuleName(ctx context.Context, runner AnalysisGoRunner) string {
+	mod, err := runner.GetModulePath(ctx)
 	if err != nil {
 		return ""
 	}
-	mod := strings.TrimSpace(string(out))
 	if mod != "" && !strings.HasSuffix(mod, "/") {
 		mod += "/"
 	}
@@ -259,10 +256,10 @@ func parseDataParts(parts []string, modulePrefix string) (*uncoveredBlock, error
 }
 
 // parseCoverageProfile parses a go coverage profile and returns blocks with zero coverage.
-func parseCoverageProfile(ctx context.Context, r io.Reader, exec tools.CommandExecutor) ([]uncoveredBlock, error) {
+func parseCoverageProfile(ctx context.Context, r io.Reader, runner AnalysisGoRunner) ([]uncoveredBlock, error) {
 	var blocks []uncoveredBlock
 	scanner := bufio.NewScanner(r)
-	modulePrefix := getModuleName(ctx, exec)
+	modulePrefix := getModuleName(ctx, runner)
 
 	if !scanner.Scan() {
 		return nil, scanner.Err()
@@ -282,8 +279,8 @@ func parseCoverageProfile(ctx context.Context, r io.Reader, exec tools.CommandEx
 }
 
 // parseDetailedCoverage parses a coverage profile from a reader and fetches code for each block.
-func parseDetailedCoverage(ctx context.Context, r io.Reader, exec tools.CommandExecutor, readFile func(string) ([]byte, error)) ([]uncoveredBlock, error) {
-	blocks, err := parseCoverageProfile(ctx, r, exec)
+func parseDetailedCoverage(ctx context.Context, r io.Reader, runner AnalysisGoRunner, readFile func(string) ([]byte, error)) ([]uncoveredBlock, error) {
+	blocks, err := parseCoverageProfile(ctx, r, runner)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +393,7 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, packagePath str
 		_ = cf.Close()
 	}()
 
-	return parseDetailedCoverage(ctx, cf, m.Exec, os.ReadFile)
+	return parseDetailedCoverage(ctx, cf, m.Runner, os.ReadFile)
 }
 
 // getDetailedCoverageReport generates a formatted report optimized for LLM consumption.

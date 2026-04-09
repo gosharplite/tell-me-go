@@ -48,6 +48,10 @@ type deadCodeAnalyzer interface {
 type AnalysisGoRunner interface {
 	GetPackageList(ctx context.Context, path string) ([]byte, error)
 	GetGoDoc(ctx context.Context, symbol string) ([]byte, error)
+	GetModulePath(ctx context.Context) (string, error)
+	GetModuleDir(ctx context.Context) (string, error)
+	RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
+	RunLinter(ctx context.Context) (string, string, error)
 }
 
 // analysisManager is the consolidated hub for all code analysis, refactoring, and development tools.
@@ -78,7 +82,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 	runner := toolchain.NewGoRunner(executor)
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
-		Dependency: newDependencyAnalyzer(executor, sp, bus),
+		Dependency: newDependencyAnalyzer(runner, sp, bus),
 		Sequence:   newSequenceAnalyzer(executor, sp, idx),
 		Change:     newChangeAnalyzer(cache, executor),
 		Types:      newTypeManager(idx, cache, sp),

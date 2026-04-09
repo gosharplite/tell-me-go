@@ -162,9 +162,32 @@ func (r *GoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) 
 	return r.combinedOutput(ctx, "go", "doc", symbol)
 }
 
+// GetModulePath returns the Go module path.
+func (r *GoRunner) GetModulePath(ctx context.Context) (string, error) {
+	out, err := r.output(ctx, "go", "list", "-m")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// GetModuleDir returns the Go module directory.
+func (r *GoRunner) GetModuleDir(ctx context.Context) (string, error) {
+	out, err := r.output(ctx, "go", "list", "-m", "-f", "{{.Dir}}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // combinedOutput executes a command and returns its combined standard output and standard error.
 func (r *GoRunner) combinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return r.exec.CombinedOutput(ctx, name, args...)
+}
+
+// output executes a command and returns its standard output.
+func (r *GoRunner) output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return r.exec.Output(ctx, name, args...)
 }
 
 // lookPath proxies the LookPath call to the underlying executor.
