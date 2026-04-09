@@ -54,6 +54,8 @@ type mockGoRunner struct {
 	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
 	runLinterFunc            func(ctx context.Context) (string, string, error)
 	checkGovulncheckFunc     func(ctx context.Context) error
+	runModTidyFunc           func(ctx context.Context) ([]byte, error)
+	formatCodeFunc           func(ctx context.Context, path string) ([]byte, error)
 }
 
 func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
@@ -82,6 +84,20 @@ func (m *mockGoRunner) CheckGovulncheck(ctx context.Context) error {
 		return m.checkGovulncheckFunc(ctx)
 	}
 	return nil
+}
+
+func (m *mockGoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
+	if m.runModTidyFunc != nil {
+		return m.runModTidyFunc(ctx)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockGoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
+	if m.formatCodeFunc != nil {
+		return m.formatCodeFunc(ctx, path)
+	}
+	return []byte("success"), nil
 }
 
 func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
@@ -381,12 +397,17 @@ func TestGoTidy_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, executor, _ := setupDevManager(t)
-			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if args[0] == tt.cmdFail || (len(args) > 1 && args[1] == tt.cmdFail) {
+			m, _, _ := setupDevManager(t)
+			runner := m.runner.(*mockGoRunner)
+
+			if tt.cmdFail == "tidy" {
+				runner.runModTidyFunc = func(ctx context.Context) ([]byte, error) {
 					return []byte("failed"), tt.executeErr
 				}
-				return []byte("ok"), nil
+			} else {
+				runner.formatCodeFunc = func(ctx context.Context, path string) ([]byte, error) {
+					return []byte("failed"), tt.executeErr
+				}
 			}
 
 			res, err := m.goTidy(context.Background(), nil, nil)

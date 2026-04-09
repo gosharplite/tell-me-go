@@ -34,7 +34,7 @@ type packageProvider interface {
 // architectureManager validates the project's architectural integrity.
 type architectureManager struct {
 	SP         domain_security.PolicyEvaluator
-	Exec       tools.CommandExecutor
+	Runner     AnalysisGoRunner
 	idx        symbolIndex
 	ModulePath string
 	once       sync.Once
@@ -43,8 +43,8 @@ type architectureManager struct {
 
 // realpackageProvider implements packageProvider using the 'go list' command.
 type realpackageProvider struct {
-	m    *architectureManager
-	Exec tools.CommandExecutor
+	m      *architectureManager
+	Runner AnalysisGoRunner
 }
 
 // indexedPackageProvider implements packageProvider using the pre-scanned index.
@@ -92,7 +92,7 @@ func (r *realpackageProvider) LoadPackages(ctx context.Context) (map[string][]st
 		return nil, fmt.Errorf("security policy: command 'go' is not allowed")
 	}
 
-	output, err := r.Exec.CombinedOutput(ctx, "go", "list", "-json", "./...")
+	output, err := r.Runner.GetPackageList(ctx, "./...")
 	if err != nil {
 		return nil, fmt.Errorf("go list command failed: %w", err)
 	}
@@ -167,7 +167,7 @@ func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[s
 		if m.idx != nil {
 			m.Loader = &indexedPackageProvider{m: m, idx: m.idx}
 		} else {
-			m.Loader = &realpackageProvider{m: m, Exec: m.Exec}
+			m.Loader = &realpackageProvider{m: m, Runner: m.Runner}
 		}
 	}
 

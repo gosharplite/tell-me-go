@@ -142,6 +142,26 @@ func (r *GoRunner) CheckGovulncheck(ctx context.Context) error {
 	return nil
 }
 
+// RunModTidy runs 'go mod tidy'.
+func (r *GoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
+	return r.combinedOutput(ctx, "go", "mod", "tidy")
+}
+
+// FormatCode runs 'go fmt' on the specified path.
+func (r *GoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
+	return r.combinedOutput(ctx, "go", "fmt", path)
+}
+
+// GetPackageList runs 'go list -json' on the specified path.
+func (r *GoRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
+	return r.combinedOutput(ctx, "go", "list", "-json", path)
+}
+
+// GetGoDoc runs 'go doc' for the specified symbol.
+func (r *GoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
+	return r.combinedOutput(ctx, "go", "doc", symbol)
+}
+
 // combinedOutput executes a command and returns its combined standard output and standard error.
 func (r *GoRunner) combinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return r.exec.CombinedOutput(ctx, name, args...)

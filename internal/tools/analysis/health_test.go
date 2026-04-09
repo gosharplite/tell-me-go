@@ -33,6 +33,11 @@ type mockGoRunner struct {
 	runTestsWithCoverageFunc func(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error)
 	runBenchmarksFunc        func(ctx context.Context, path string, benchRegex string) (string, error)
 	runLinterFunc            func(ctx context.Context) (string, string, error)
+	runModTidyFunc           func(ctx context.Context) ([]byte, error)
+	formatCodeFunc           func(ctx context.Context, path string) ([]byte, error)
+	getPackageListFunc       func(ctx context.Context, path string) ([]byte, error)
+	getGoDocFunc             func(ctx context.Context, symbol string) ([]byte, error)
+	checkGovulncheckFunc     func(ctx context.Context) error
 }
 
 func (m *mockGoRunner) RunTestsWithCoverage(ctx context.Context, path string, short bool, profilePath string) (toolchain.CoverageReport, error) {
@@ -59,6 +64,41 @@ func (m *mockGoRunner) RunLinter(ctx context.Context) (string, string, error) {
 		return m.runLinterFunc(ctx)
 	}
 	return "", "golangci-lint", nil
+}
+
+func (m *mockGoRunner) RunModTidy(ctx context.Context) ([]byte, error) {
+	if m.runModTidyFunc != nil {
+		return m.runModTidyFunc(ctx)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockGoRunner) FormatCode(ctx context.Context, path string) ([]byte, error) {
+	if m.formatCodeFunc != nil {
+		return m.formatCodeFunc(ctx, path)
+	}
+	return []byte("success"), nil
+}
+
+func (m *mockGoRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
+	if m.getPackageListFunc != nil {
+		return m.getPackageListFunc(ctx, path)
+	}
+	return nil, nil
+}
+
+func (m *mockGoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
+	if m.getGoDocFunc != nil {
+		return m.getGoDocFunc(ctx, symbol)
+	}
+	return nil, nil
+}
+
+func (m *mockGoRunner) CheckGovulncheck(ctx context.Context) error {
+	if m.checkGovulncheckFunc != nil {
+		return m.checkGovulncheckFunc(ctx)
+	}
+	return nil
 }
 
 type mockHealthExecutor struct{}

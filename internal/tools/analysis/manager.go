@@ -44,6 +44,12 @@ type deadCodeAnalyzer interface {
 	GatherOrphanReports(ctx context.Context, path string, hb chan<- struct{}) ([]orphanReport, error)
 }
 
+// AnalysisGoRunner defines the required Go toolchain methods for analysis.
+type AnalysisGoRunner interface {
+	GetPackageList(ctx context.Context, path string) ([]byte, error)
+	GetGoDoc(ctx context.Context, symbol string) ([]byte, error)
+}
+
 // analysisManager is the consolidated hub for all code analysis, refactoring, and development tools.
 type analysisManager struct {
 	Complexity complexityAnalyzer
@@ -69,6 +75,7 @@ type analysisManager struct {
 }
 
 func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) *analysisManager {
+	runner := toolchain.NewGoRunner(executor)
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
 		Dependency: newDependencyAnalyzer(executor, sp, bus),
@@ -78,9 +85,9 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 		DeadCode:   newDeadCodeAnalyzer(sp, idx),
 
 		Refactor: newRefactorManager(sp),
-		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Exec: executor},
+		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Runner: runner},
 		Search:   &searchManager{SP: sp, FS: fs},
-		Arch:     &architectureManager{SP: sp, Exec: executor, idx: idx},
+		Arch:     &architectureManager{SP: sp, Runner: runner, idx: idx},
 		Events:   bus,
 	}
 
@@ -88,7 +95,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.Man
 		SP:     sp,
 		Ana:    m,
 		Exec:   executor,
-		Runner: toolchain.NewGoRunner(executor),
+		Runner: runner,
 	}
 
 	return m

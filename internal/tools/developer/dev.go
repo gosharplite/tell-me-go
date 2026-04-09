@@ -32,6 +32,8 @@ type goRunner interface {
 	RunBenchmarks(ctx context.Context, path string, benchRegex string) (string, error)
 	RunLinter(ctx context.Context) (string, string, error)
 	CheckGovulncheck(ctx context.Context) error
+	RunModTidy(ctx context.Context) ([]byte, error)
+	FormatCode(ctx context.Context, path string) ([]byte, error)
 }
 
 type devManager struct {
@@ -158,7 +160,7 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}, hb
 
 	defer telemetry.StartHeartbeat(ctx, m.heartbeatInterval, hb)()
 
-	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
+	if out, err := m.runner.RunModTidy(ctx); err != nil {
 		res := formatExecutionResult("Go mod tidy", out, err, 50, "")
 		if res.Error != nil {
 			return tools.ToolResult{}, res.Error
@@ -166,7 +168,7 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}, hb
 		return res, nil
 	}
 
-	if out, err := m.executor.Execute(ctx, "go", "fmt", "./..."); err != nil {
+	if out, err := m.runner.FormatCode(ctx, "./..."); err != nil {
 		res := formatExecutionResult("Go fmt", out, err, 50, "")
 		if res.Error != nil {
 			return tools.ToolResult{}, res.Error

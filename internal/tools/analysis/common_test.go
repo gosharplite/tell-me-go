@@ -100,3 +100,22 @@ func (s *mockSecurityProvider) ReadLine(ctx context.Context) (string, error) {
 }
 
 func (s *mockSecurityProvider) Close() error { return nil }
+
+type mockAnalysisGoRunner struct {
+	getPackageListFunc func(ctx context.Context, path string) ([]byte, error)
+	getGoDocFunc       func(ctx context.Context, symbol string) ([]byte, error)
+}
+
+func (m *mockAnalysisGoRunner) GetPackageList(ctx context.Context, path string) ([]byte, error) {
+	if m.getPackageListFunc != nil {
+		return m.getPackageListFunc(ctx, path)
+	}
+	return nil, nil
+}
+
+func (m *mockAnalysisGoRunner) GetGoDoc(ctx context.Context, symbol string) ([]byte, error) {
+	if m.getGoDocFunc != nil {
+		return m.getGoDocFunc(ctx, symbol)
+	}
+	return nil, nil
+}
