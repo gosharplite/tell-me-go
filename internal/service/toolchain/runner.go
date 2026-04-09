@@ -11,6 +11,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// ErrNoSupportedLinter is returned when neither golangci-lint nor staticcheck is found.
+var ErrNoSupportedLinter = errors.New("no supported linter found (golangci-lint or staticcheck)")
+
 // CoverageReport encapsulates the result of running tests with coverage.
 type CoverageReport struct {
 	TestOutput    string
@@ -117,7 +120,7 @@ func (r *GoRunner) RunLinter(ctx context.Context) (output string, toolUsed strin
 		out, err := r.exec.CombinedOutput(ctx, "staticcheck", "./...")
 		return string(out), "staticcheck", err
 	}
-	return "", "", errors.New("no supported linter found (golangci-lint or staticcheck)")
+	return "", "", ErrNoSupportedLinter
 }
 
 // CombinedOutput executes a command and returns its combined standard output and standard error.

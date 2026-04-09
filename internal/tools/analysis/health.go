@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -207,8 +208,9 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 
 func (m *healthManager) runLint(ctx context.Context) (string, string) {
 	outStr, tool, err := m.Runner.RunLinter(ctx)
-	if err != nil && !strings.Contains(err.Error(), "exit status") {
-		if strings.Contains(err.Error(), "no supported linter found") {
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		if errors.Is(err, toolchain.ErrNoSupportedLinter) {
 			return "SKIP", "No linter found"
 		}
 		return "ERROR", err.Error()
