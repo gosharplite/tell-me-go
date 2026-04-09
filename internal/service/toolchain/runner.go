@@ -41,7 +41,9 @@ func (r *GoRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 			return report, fmt.Errorf("failed to create temp coverage file: %w", err)
 		}
 		tempName = f.Name()
+		// Safe to ignore: immediate closure to prepare file for OS write by child process.
 		_ = f.Close()
+		// Safe to ignore: best-effort temporary file cleanup.
 		defer func() { _ = os.Remove(tempName) }()
 	}
 

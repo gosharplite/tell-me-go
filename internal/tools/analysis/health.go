@@ -124,7 +124,15 @@ func (m *healthManager) runParallelChecks(ctx context.Context, hb chan<- struct{
 		return nil
 	})
 
-	_ = g.Wait()
+	if err := g.Wait(); err != nil {
+		// Fallback: Return a degraded state summary if context fails or a future check fatals
+		return healthSummary{
+			Results: map[string]healthResult{
+				"System Error": {Status: "FAIL", Details: fmt.Sprintf("Parallel checks interrupted: %v", err)},
+			},
+			Alerts: alerts, // Keep the existing alerts slice defined earlier in the function
+		}
+	}
 
 	return healthSummary{
 		Results: map[string]healthResult{
