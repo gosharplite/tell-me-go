@@ -150,10 +150,21 @@ func (c *promptCapturer) ReadSingleKey(ctx context.Context) (string, error) {
 	return c.base.ReadSingleKey(ctx)
 }
 
-// Close closes the underlying suggestion service if it exists.
+// Close closes the underlying suggestion service and the base capturer.
 func (c *promptCapturer) Close(ctx context.Context) error {
+	var errs []error
 	if c.svc != nil {
-		return c.svc.Close(ctx)
+		if err := c.svc.Close(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.base != nil {
+		if err := c.base.Close(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("close error: %v", errs)
 	}
 	return nil
 }

@@ -74,5 +74,7 @@ func (c *browseCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.C
 	}); ok {
 		sm.SetInteractor(capturer)
 	}
-	return capturer, func(stdctx.Context) error { return nil }
+	return capturer, func(ctx stdctx.Context) error {
+		return capturer.Close(ctx)
+	}
 }
