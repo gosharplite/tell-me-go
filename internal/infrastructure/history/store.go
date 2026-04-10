@@ -457,6 +457,8 @@ func (s *jsonlStore) Sync(ctx context.Context) error {
 		}
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	return f.Sync()
 }

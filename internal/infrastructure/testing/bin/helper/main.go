@@ -102,7 +102,7 @@ func main() {
 		for i := range data {
 			data[i] = 'e'
 		}
-		os.Stderr.Write(data)
+		_, _ = os.Stderr.Write(data)
 		fmt.Println("done")
 
 	case "multi-line":
@@ -116,8 +116,8 @@ func main() {
 			os.Exit(1)
 		}
 		for i := 1; i <= n; i++ {
-			fmt.Fprintf(os.Stdout, "STDOUT_LINE_%d\n", i)
-			fmt.Fprintf(os.Stderr, "STDERR_LINE_%d\n", i)
+			_, _ = fmt.Fprintf(os.Stdout, "STDOUT_LINE_%d\n", i)
+			_, _ = fmt.Fprintf(os.Stderr, "STDERR_LINE_%d\n", i)
 		}
 
 	case "printf":
@@ -141,13 +141,13 @@ func main() {
 		go func() {
 			defer wg.Done()
 			for i := 1; i <= n; i++ {
-				fmt.Fprintf(os.Stdout, "STDOUT line %d - some unicode: 世界😀\n", i)
+				_, _ = fmt.Fprintf(os.Stdout, "STDOUT line %d - some unicode: 世界😀\n", i)
 			}
 		}()
 		go func() {
 			defer wg.Done()
 			for i := 1; i <= n; i++ {
-				fmt.Fprintf(os.Stderr, "STDERR line %d - some unicode: 世😀界\n", i)
+				_, _ = fmt.Fprintf(os.Stderr, "STDERR line %d - some unicode: 世😀界\n", i)
 			}
 		}()
 		wg.Wait()

@@ -127,7 +127,9 @@ func contains(slice []string, val string) bool {
 func TestSecurityManager_Misc(t *testing.T) {
 	t.Parallel()
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
-	defer sm.Close()
+	defer func() {
+		_ = sm.Close()
+	}()
 
 	// getPolicy / setPolicy
 	p := sm.getPolicy()
@@ -152,7 +154,7 @@ func TestSecurityManager_Misc(t *testing.T) {
 	sm.LogAudit("TEST_ACTION", "ACTION", "test", "DETAIL", "detail")
 
 	// Ensure file is closed before reading if needed, but auditor does it automatically or we close it
-	sm.Close()
+	_ = sm.Close()
 
 	data, err := os.ReadFile(logFile)
 	if err != nil {
@@ -184,7 +186,9 @@ func TestSecurityManager_Confirm_Bypass(t *testing.T) {
 	// Default behavior (no bypass) - user says No
 	interactor := &MockInteractor{Answer: "n"}
 	sm := NewSecurityManager(interactor)
-	defer sm.Close()
+	defer func() {
+		_ = sm.Close()
+	}()
 	ok, err := sm.Confirm(context.Background(), "Should I?")
 	if err != nil || ok {
 		t.Errorf("Confirm(user=n, bypass=false) = %v, %v; want false, nil", ok, err)

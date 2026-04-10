@@ -26,7 +26,9 @@ invalid json line starting with i
 	if err != nil {
 		t.Fatalf("Failed to initialize session state: %v", err)
 	}
-	defer state.Close()
+	defer func() {
+		_ = state.Close()
+	}()
 
 	tasks := state.GetTasks().ListTasks("")
 

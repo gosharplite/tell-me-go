@@ -29,19 +29,19 @@ func TestMain(m *testing.M) {
 	// Relative path to helper source from internal/infrastructure/exec
 	cmd := exec.Command("go", "build", "-o", target, "../../infrastructure/testing/bin/helper/main.go")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		log.Fatalf("failed to build test helper: %v\n%s", err, string(out))
 	}
 
 	absPath, err := filepath.Abs(target)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		log.Fatalf("failed to get absolute path for helper: %v", err)
 	}
 
 	helperPath = absPath
 
 	code := m.Run()
-	os.RemoveAll(tmpDir)
+	_ = os.RemoveAll(tmpDir)
 	os.Exit(code)
 }

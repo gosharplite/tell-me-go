@@ -100,7 +100,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 
 	// Ensure SecurityManager is closed to release file handles (commands.log) on Windows
 	if sm != nil {
-		sm.Close()
+		_ = sm.Close()
 	}
 
 	t.Run("Archiving", func(t *testing.T) {

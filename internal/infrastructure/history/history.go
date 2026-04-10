@@ -240,10 +240,7 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	defer m.mu.Unlock()
 
 	originalLen := len(m.Contents)
-	hasSystem := false
-	if originalLen > 0 && m.Contents[0].Role == "system" {
-		hasSystem = true
-	}
+	hasSystem := originalLen > 0 && m.Contents[0].Role == "system"
 
 	actualRemoved, newLen := calculateRollbackBounds(originalLen, turns, hasSystem)
 
