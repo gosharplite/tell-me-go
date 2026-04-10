@@ -645,8 +645,8 @@ func TestTruncateToValidUTF8(t *testing.T) {
 		{"世界", 6, "世界"},     // exactly 6 bytes
 		{"😀", 2, ""},        // Emoji is 4 bytes
 		{"😀", 4, "😀"},       // Emoji is 4 bytes
-		{"\\xff\\xff", 1, ""}, // Invalid UTF-8
-		{"A\\xffB", 2, "A"},  // Invalid UTF-8 after 'A'
+		{string([]byte{0xff, 0xff}), 1, ""}, // Invalid UTF-8
+		{"A" + string([]byte{0xff}) + "B", 2, "A"},  // Invalid UTF-8 after 'A'
 	}
 	for _, tt := range tests {
 		got := truncateToValidUTF8(tt.input, tt.max)
@@ -795,8 +795,8 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 		expected string // partial match of the actual cleaned path
 	}{
 		{"trim whitespace", "  out.txt  ", "out.txt"},
-		{"null bytes", "out\\x00.txt", "out.txt"},
-		{"mixed", "  logs/test\\x00.log  ", "logs/test.log"},
+		{"null bytes", "out" + string([]byte{0}) + ".txt", "out.txt"},
+		{"mixed", "  logs/test" + string([]byte{0}) + ".log  ", "logs/test.log"},
 	}
 
 	for _, tt := range tests {
@@ -812,12 +812,15 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 				name := f.Name()
 				_ = f.Close()
 				t.Cleanup(func() { _ = os.Remove(name) })
-				if !strings.Contains(name, tt.expected) {
-					t.Errorf("expected path to contain %q, got %q", tt.expected, name)
+				
+				// CRITICAL: Handle OS-specific separators in the expected substring
+				expectedPath := filepath.FromSlash(tt.expected)
+				if !strings.Contains(name, expectedPath) {
+					t.Errorf("expected path to contain %q, got %q", expectedPath, name)
 				}
 				// Verify no spaces and no null bytes in the final base name
 				base := filepath.Base(name)
-				if strings.Contains(base, " ") || strings.Contains(base, "\\x00") {
+				if strings.Contains(base, " ") || strings.Contains(base, "\x00") {
 					t.Errorf("path %q still contains spaces or null bytes: %q", tt.path, base)
 				}
 			} else {

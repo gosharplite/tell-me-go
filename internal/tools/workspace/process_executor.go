@@ -452,26 +452,25 @@ func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, erro
 	if config.OutputFile == "" {
 		return nil, nil
 	}
-	path := strings.TrimSpace(config.OutputFile)
-	path = strings.ReplaceAll(path, "\x00", "")
+	
+	// CRITICAL: Strip null bytes BEFORE any other path processing to avoid Windows issues
+	path := strings.ReplaceAll(config.OutputFile, "\x00", "")
+	path = strings.TrimSpace(path)
+	
 	if path == "" {
 		return nil, nil
 	}
 	path = filepath.Clean(path)
 
 	// Robust security check: prevent escaping the current directory via relative paths.
-	// We allow absolute paths as the agent may need to write to specific system locations
-	// if authorized, but relative paths should stay within the project structure.
 	if !filepath.IsAbs(path) {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current directory: %w", err)
 		}
 
-		// Join CWD with the path and Clean it to resolve any ".."
 		absPath := filepath.Join(cwd, path)
 
-		// Ensure the resulting absolute path is still within the CWD
 		rel, err := filepath.Rel(cwd, absPath)
 		if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
 			return nil, fmt.Errorf("output file path cannot escape current directory: %q", config.OutputFile)
@@ -486,7 +485,6 @@ func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, erro
 		flags |= os.O_TRUNC
 	}
 
-	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}

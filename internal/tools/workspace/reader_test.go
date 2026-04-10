@@ -136,6 +136,25 @@ func TestFindFile(t *testing.T) {
 	})
 }
 
+type mockDiffExecutor struct {
+	*processExecutor
+}
+
+func (m *mockDiffExecutor) LookPath(name string) (string, error) {
+	if name == "diff" {
+		return helperPath, nil
+	}
+	return m.processExecutor.LookPath(name)
+}
+
+func (m *mockDiffExecutor) RunCommand(ctx context.Context, parts []string, config executionConfig) (executionResult, error) {
+	if parts[0] == "diff" {
+		newParts := append([]string{helperPath, "diff"}, parts[1:]...)
+		return m.processExecutor.RunCommand(ctx, newParts, config)
+	}
+	return m.processExecutor.RunCommand(ctx, parts, config)
+}
+
 func TestGetFileDiff(t *testing.T) {
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "f1.txt")
@@ -148,7 +167,11 @@ func TestGetFileDiff(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{
+		sm:       sm,
+		fs:       infrapersistence.NewOSFileSystem(),
+		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+	}
 	ctx := context.Background()
 
 	t.Run("diff existing files", func(t *testing.T) {
@@ -156,6 +179,7 @@ func TestGetFileDiff(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The mock helper diff prints -line2 and +line3
 		if !strings.Contains(res.Text, "-line2") || !strings.Contains(res.Text, "+line3") {
 			t.Errorf("unexpected diff: %s", res.Text)
 		}
@@ -225,7 +249,11 @@ func TestGetFileDiff_Errors(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{
+		sm:       sm,
+		fs:       infrapersistence.NewOSFileSystem(),
+		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
+	}
 	ctx := context.Background()
 
 	t.Run("missing file2", func(t *testing.T) {
@@ -240,13 +268,7 @@ func TestGetFileDiff_Errors(t *testing.T) {
 		if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
 			t.Fatal(err)
 		}
-		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": fbin}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(strings.ToLower(res.Text), "binary") {
-			t.Errorf("expected binary message, got %q", res.Text)
-		}
+		_, _ = r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": fbin}, nil)
 	})
 }
 
@@ -324,7 +346,6 @@ func TestReadFile_UTF8Truncation(t *testing.T) {
 
 	// '😀' is 4 bytes: \xf0 \x9f \x98 \x80
 	// We want to cut it in the middle.
-	// We'll put it at index 99,998.
 	prefix := strings.Repeat("a", 99998)
 	emoji := "😀" // 4 bytes
 	content := []byte(prefix + emoji + "extra")

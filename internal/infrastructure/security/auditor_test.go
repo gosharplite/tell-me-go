@@ -19,6 +19,9 @@ func TestAuditor_LogAudit(t *testing.T) {
 
 	a.LogAudit("TEST_ACTION", "Action", "Test", "Detail", "Something")
 
+	// Must close to flush and release lock on Windows
+	a.Close()
+
 	data, err := os.ReadFile(logFile)
 	if err != nil {
 		t.Fatalf("Failed to read log file: %v", err)

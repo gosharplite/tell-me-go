@@ -82,14 +82,8 @@ func executeStressCommand(executor *processExecutor, outputFile string) (executi
 		OutputFile: outputFile,
 	}
 
-	// Command that produces high-volume, interleaved output with multi-byte UTF-8
-	cmdStr := fmt.Sprintf(`
-(for i in $(seq 1 %d); do echo "STDOUT line $i - some unicode: 世界😀"; done) &
-(for i in $(seq 1 %d); do echo "STDERR line $i - some unicode: 世😀界" >&2; done) &
-wait
-`, stressLineCount, stressLineCount)
-
-	return executor.RunCommand(context.Background(), []string{"sh", "-c", cmdStr}, config)
+	// Use the portable helper to produce high-volume, interleaved output
+	return executor.RunCommand(context.Background(), []string{helperPath, "stress-output", fmt.Sprintf("%d", stressLineCount)}, config)
 }
 
 func verifyResultIntegrity(res executionResult) error {
@@ -164,18 +158,16 @@ func TestProcessExecutor_UTF8Boundary(t *testing.T) {
 	executor := newprocessExecutor()
 
 	// "世界" is 6 bytes (3+3)
-	// If we set MaxCapture to 4, it should only contain "世" (3 bytes)
 	config := executionConfig{
 		MaxCapture: 4,
 	}
 
-	res, err := executor.RunCommand(context.Background(), []string{"echo", "世界"}, config)
+	res, err := executor.RunCommand(context.Background(), []string{helperPath, "printf", "世界"}, config)
 	if err != nil {
 		t.Fatalf("RunCommand failed: %v", err)
 	}
 
-	// echo adds a newline, so the output is "世界\n" (7 bytes)
-	// "世" is 3 bytes. The next char is "界" (3 bytes).
+	// printf "世界" produces exactly 6 bytes.
 	// If MaxCapture is 4, it takes "世" (3 bytes), then it can't take the first byte of "界".
 	// So it should be "世".
 

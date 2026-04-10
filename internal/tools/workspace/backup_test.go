@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -87,7 +88,12 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
 				return func() {}
 			},
-			snapshotPath:  "/unauthorized-path-for-test/denied.txt",
+			snapshotPath: func() string {
+				if runtime.GOOS == "windows" {
+					return `C:\unauthorized-path-for-test\denied.txt`
+				}
+				return "/unauthorized-path-for-test/denied.txt"
+			}(),
 			snapshotOp:    "WRITE",
 			wantErrSubstr: "security violation",
 		},
@@ -116,11 +122,13 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 				if err := os.WriteFile(path, []byte("initial"), 0644); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Chmod(tempDir, 0555); err != nil {
+				
+				// On Windows, Chmod 0444 on the file is more reliable than Chmod 0555 on the dir
+				if err := os.Chmod(path, 0444); err != nil {
 					t.Fatal(err)
 				}
 				return func() {
-					_ = os.Chmod(tempDir, 0755)
+					_ = os.Chmod(path, 0644)
 				}
 			},
 			snapshotPath:  "readonly.txt",
