@@ -517,3 +517,7 @@ func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 }
 
 func (m *mockSecurityManager) Close() error { return nil }
+
+func (m *mockHistoryManager) Sync(ctx context.Context) error {
+	return nil
+}

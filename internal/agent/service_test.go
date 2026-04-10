@@ -784,3 +784,7 @@ func TestStreamTurnsLog(t *testing.T) {
 		})
 	}
 }
+
+func (m *mockHistoryManagerForRetry) Sync(ctx context.Context) error {
+	return nil
+}

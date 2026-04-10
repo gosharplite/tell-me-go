@@ -115,10 +115,10 @@ func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, 
 
 	for path, content := range files {
 		// Normalize path to use mock FS separators
-		fullPath := absTempDir + "/" + path
+		fullPath := strings.ReplaceAll(absTempDir+"/"+path, "\\", "/")
 		require.NoError(t, fs.WriteFile(ctx, fullPath, []byte(content), 0644))
 	}
-	return m, absTempDir
+	return m, strings.ReplaceAll(absTempDir, "\\", "/")
 }
 
 func TestSearchUsagesGlobally(t *testing.T) {
@@ -130,8 +130,9 @@ func TestSearchUsagesGlobally(t *testing.T) {
 
 	tempDir := "/mock/usages"
 	sm.RegisterSafePath(tempDir)
-	absTempDir, err := sm.IsPathSafe(tempDir)
+	absTempDirRaw, err := sm.IsPathSafe(tempDir)
 	require.NoError(t, err)
+	absTempDir := strings.ReplaceAll(absTempDirRaw, "\\", "/")
 
 	// Create some files in mock FS
 	if err := fs.WriteFile(ctx, absTempDir+"/a.go", []byte("package a\nfunc MyFunc() {}"), 0644); err != nil {

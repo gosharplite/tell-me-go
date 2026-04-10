@@ -426,7 +426,9 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	stopFunc := func() {
 		stopOnce.Do(func() {
 			close(done) // Triggers the goroutine to exit
-			<-waitDone  // Wait for the goroutine to finish clearing the indicator
+			// [SCALABILITY] Avoid waiting for the spinner goroutine to finish.
+			// This prevents deadlocks in uiBridge when the spinner is blocked on TerminalLock
+			// which might be held by the main loop waiting for user input.
 		})
 	}
 

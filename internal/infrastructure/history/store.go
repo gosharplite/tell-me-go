@@ -26,6 +26,7 @@ type store interface {
 	AppendParts(ctx context.Context, index int, parts []*llm.Part) error
 	UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error
 	Compact(ctx context.Context) error
+	Sync(ctx context.Context) error
 }
 
 // historyPatch represents an append-only patch to history.
@@ -445,4 +446,17 @@ func (s *jsonlStore) AppendParts(ctx context.Context, index int, parts []*llm.Pa
 
 	_, err = f.Write(line)
 	return err
+}
+
+// Sync ensures the history file is synchronized to disk.
+func (s *jsonlStore) Sync(ctx context.Context) error {
+	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_RDWR, 0644)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
 }

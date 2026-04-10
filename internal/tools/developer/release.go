@@ -202,11 +202,16 @@ func (s *secretScanner) scanContent(content []byte, path string, patterns []*reg
 }
 
 func (s *secretScanner) isIgnored(path string) bool {
-	p := filepath.ToSlash(path)
-	return strings.Contains(p, ".git") ||
-		strings.Contains(p, "vendor/") ||
-		strings.Contains(p, "node_modules") ||
-		strings.HasSuffix(p, "_test.go") ||
+	p := filepath.ToSlash(filepath.Clean(path))
+	// Check for common ignored directories in any part of the path
+	parts := strings.Split(p, "/")
+	for _, part := range parts {
+		if part == ".git" || part == "vendor" || part == "node_modules" {
+			return true
+		}
+	}
+
+	return strings.HasSuffix(p, "_test.go") ||
 		strings.HasSuffix(p, ".md") ||
 		strings.HasSuffix(p, ".json") ||
 		strings.HasSuffix(p, ".golden")

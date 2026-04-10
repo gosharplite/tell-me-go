@@ -358,3 +358,7 @@ func (m *mockTurnsLogger) Listen(ctx context.Context) error {
 func (m *mockTurnsLogger) Close() error {
 	return m.Called().Error(0)
 }
+
+func (m *mockHistoryManager) Sync(ctx context.Context) error {
+	return nil
+}

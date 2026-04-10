@@ -681,3 +681,7 @@ func TestManager_GetLastUserMessage(t *testing.T) {
 		})
 	}
 }
+
+func (s *mockStore) Sync(ctx context.Context) error { return nil }
+func (m *mockFailingStore) Sync(ctx context.Context) error { return nil }
+func (s *mockStoreErrorMetadata) Sync(ctx context.Context) error { return nil }

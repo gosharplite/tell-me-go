@@ -70,7 +70,7 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]ports.Task, err
 			// This handles cases where log lines or other non-JSON data may have leaked into the file.
 			// [DEBUG] Log corrupted lines to help identify the source of leakage on Windows.
 			if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "migration") {
-				fmt.Printf("DEBUG: corrupted task line in %s: %q\n", r.filePath, line)
+				fmt.Printf("DEBUG: corrupted task line in %s: %q (error: %v)\n", r.filePath, line, err)
 			}
 			continue
 		}

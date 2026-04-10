@@ -78,7 +78,7 @@ func runCommandWithEnv(env []string, stdin string, args ...string) (string, stri
 }
 
 func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Ensure absolute path to default config

@@ -94,7 +94,7 @@ func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string, perm os.F
 
 	// Retry loop for Windows "Access is denied" during rename, which can be transient (e.g. anti-virus).
 	var lastErr error
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		if err := fs.Rename(tmpPath, targetPath); err != nil {
 			// Implement fallback for EXDEV (cross-device link) errors
 			if isCrossDeviceError(err) {
@@ -102,18 +102,18 @@ func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string, perm os.F
 			}
 			lastErr = err
 			// If it's a transient error on Windows (like Access is denied), retry after a short delay.
-			if strings.Contains(err.Error(), "Access is denied") {
+			if strings.Contains(err.Error(), "Access is denied") || strings.Contains(err.Error(), "used by another process") {
 				if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "atomic") {
-					fmt.Printf("DEBUG: retrying rename due to Access is denied (attempt %d): %s\n", i+1, targetPath)
+					fmt.Printf("DEBUG: retrying rename due to lock (attempt %d): %s\n", i+1, targetPath)
 				}
-				time.Sleep(50 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				continue
 			}
 			return fmt.Errorf("failed to rename temp file: %w", err)
 		}
 		return nil
 	}
-	return fmt.Errorf("failed to rename temp file after 10 retries: %w", lastErr)
+	return fmt.Errorf("failed to rename temp file after 50 retries: %w", lastErr)
 }
 
 func isCrossDeviceError(err error) bool {

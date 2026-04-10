@@ -55,7 +55,8 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
-	absCwd, _ := sm.IsPathSafe(".")
+	absCwdRaw, _ := sm.IsPathSafe(".")
+	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
 
 	fs := persistence.NewMockFileSystem()
 	ctx := context.Background()
@@ -85,7 +86,8 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
-	absCwd, _ := sm.IsPathSafe(".")
+	absCwdRaw, _ := sm.IsPathSafe(".")
+	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
 	ctx := context.Background()
 
 	tests := []struct {
@@ -161,7 +163,8 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
-	absCwd, _ := sm.IsPathSafe(".")
+	absCwdRaw, _ := sm.IsPathSafe(".")
+	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
 	ctx := context.Background()
 
 	tests := []struct {

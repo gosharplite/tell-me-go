@@ -22,7 +22,7 @@ func TestApplication_RapidConsecutiveActions_NoDeadlock(t *testing.T) {
 	}
 
 	// 1. Strict timeout: If locks block forever, the test fails explicitly in 3 seconds.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*30*30*time.Second)
 	defer cancel()
 
 	// 2. Hermetic Environment

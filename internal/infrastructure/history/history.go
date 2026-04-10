@@ -79,9 +79,7 @@ func (m *Manager) Save(ctx context.Context) error {
 
 // Sync ensures all buffered data is persisted to the physical disk.
 func (m *Manager) Sync(ctx context.Context) error {
-	// For jsonlStore, Save already handles Sync and Close via AtomicWrite.
-	// This method provides a hook for future stores or explicit reconciliation.
-	return nil
+	return m.store.Sync(ctx)
 }
 
 // Archive appends content entries to the archive file.
