@@ -90,7 +90,7 @@ func TestDispatcher_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,7 +145,7 @@ func TestDispatcher_ContextCancellation(t *testing.T) {
 func TestDispatcher_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{
@@ -178,7 +178,7 @@ func TestDispatcher_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	// Setup trace context
@@ -348,7 +348,7 @@ func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, nil, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.pipeline.(*defaultToolPipeline).authorizer = auth
 
