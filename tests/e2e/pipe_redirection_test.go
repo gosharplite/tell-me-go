@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -17,12 +18,19 @@ func TestPipeCommandsTool(t *testing.T) {
 	t.Parallel()
 	// 1. Setup Mock Server
 
+	echoCmd := "echo"
+	grepCmd := "grep"
+	if runtime.GOOS == "windows" {
+		echoCmd = "cmd /c echo"
+		grepCmd = "findstr"
+	}
+
 	var turns int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				_, _ = fmt.Fprint(w, `{
+				_, _ = fmt.Fprint(w, fmt.Sprintf(`{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -30,14 +38,14 @@ func TestPipeCommandsTool(t *testing.T) {
 								"functionCall": {
 									"name": "pipe_commands",
 									"args": {
-										"commands": ["echo hello", "grep hello"],
+										"commands": [%q, %q],
 										"reason": "testing piping"
 									}
 								}
 							}]
 						}
 					}]
-				}`)
+				}`, echoCmd+" hello", grepCmd+" hello"))
 			} else {
 				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Piping finished."}]}}]}`)
 			}
@@ -48,6 +56,7 @@ func TestPipeCommandsTool(t *testing.T) {
 	defer server.Close()
 
 	homeDir := t.TempDir()
+	configPath := createTempConfig(t, "google", server.URL)
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
@@ -55,7 +64,7 @@ func TestPipeCommandsTool(t *testing.T) {
 	}
 
 	// 2. Run CLI
-	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "pipe some commands")
+	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "pipe some commands")
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}
@@ -74,12 +83,17 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 	t.Parallel()
 	// 1. Setup Mock Server
 
+	echoCmd := "echo"
+	if runtime.GOOS == "windows" {
+		echoCmd = "cmd /c echo"
+	}
+
 	var turns int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				_, _ = fmt.Fprint(w, `{
+				_, _ = fmt.Fprint(w, fmt.Sprintf(`{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -87,7 +101,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 								"functionCall": {
 									"name": "execute_command",
 									"args": {
-										"command": "echo redirection",
+										"command": %q,
 										"output_file": "out.txt",
 										"reason": "testing redirection"
 									}
@@ -95,7 +109,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 							}]
 						}
 					}]
-				}`)
+				}`, echoCmd+" redirection"))
 			} else {
 				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Redirection finished."}]}}]}`)
 			}
@@ -106,6 +120,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 	defer server.Close()
 
 	homeDir := t.TempDir()
+	configPath := createTempConfig(t, "google", server.URL)
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
@@ -113,7 +128,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 	}
 
 	// 2. Run CLI
-	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "redirect command")
+	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "redirect command")
 	if err != nil {
 		t.Fatalf("CLI failed: %v", err)
 	}
@@ -123,7 +138,9 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read output file: %v", err)
 	}
-	if strings.TrimSpace(string(content)) != "redirection" {
+	// Windows echo adds \r\n and sometimes a space.
+	got := strings.TrimSpace(string(content))
+	if got != "redirection" {
 		t.Errorf("Expected 'redirection' in out.txt, got %q", string(content))
 	}
 }
@@ -138,13 +155,21 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	echoCmd := "echo"
+	catCmd := "cat"
+	if runtime.GOOS == "windows" {
+		echoCmd = "cmd /c echo"
+		// 'findstr ^' is a common trick for cat-like behavior on Windows.
+		catCmd = "findstr ^"
+	}
+
 	// 1. Setup Mock Server
 	var turns int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				_, _ = fmt.Fprint(w, `{
+				_, _ = fmt.Fprint(w, fmt.Sprintf(`{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -152,7 +177,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 								"functionCall": {
 									"name": "pipe_commands",
 									"args": {
-										"commands": ["echo piped", "cat"],
+										"commands": [%q, %q],
 										"output_file": "piped_out.txt",
 										"append": true,
 										"reason": "testing piped redirection with append"
@@ -161,7 +186,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 							}]
 						}
 					}]
-				}`)
+				}`, echoCmd+" piped", catCmd))
 			} else {
 				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Piped redirection finished."}]}}]}`)
 			}
@@ -171,6 +196,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 	}))
 	defer server.Close()
 
+	configPath := createTempConfig(t, "google", server.URL)
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
@@ -178,7 +204,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 	}
 
 	// 2. Run CLI
-	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "pipe and redirect")
+	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "pipe and redirect")
 	if err != nil {
 		t.Fatalf("CLI failed: %v", err)
 	}
@@ -188,8 +214,17 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read output file: %v", err)
 	}
+	// Normalize line endings for comparison
+	got := strings.ReplaceAll(string(content), "\r\n", "\n")
+	// Trim trailing whitespace from each line to handle Windows echo behavior
+	lines := strings.Split(got, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	got = strings.Join(lines, "\n")
+
 	expected := "initial\npiped\n"
-	if string(content) != expected {
-		t.Errorf("Expected %q in piped_out.txt, got %q", expected, string(content))
+	if got != expected {
+		t.Errorf("Expected %q in piped_out.txt, got %q", expected, got)
 	}
 }

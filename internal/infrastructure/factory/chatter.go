@@ -6,6 +6,7 @@ package factory
 import (
 	stdctx "context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -23,8 +24,28 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	summarizer := infra_llm.NewSummarizer(deps.GetGateway(), deps.GetEventBus(), infra_llm.WithLogger(deps.GetLogger()))
 
 	// 1. Prepare specialized domain service dependencies.
+	// Initial attempt: derive from homeDir
 	homeDir := filepath.Dir(filepath.Dir(deps.GetPaths().ModeDir))
-	skillsDir := filepath.Join(homeDir, "docs/skills")
+	skillsDir := filepath.Join(homeDir, "docs", "skills")
+
+	// Workspace-aware fallback: if not in homeDir, check CWD
+	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
+		if cwd, err := os.Getwd(); err == nil {
+			cwdSkills := filepath.Join(cwd, "docs", "skills")
+			if _, err := os.Stat(cwdSkills); err == nil {
+				skillsDir = cwdSkills
+			}
+		}
+	}
+
+	// Normalize and authorize the directory for AI tools
+	skillsDir = filepath.Clean(skillsDir)
+	if sm, ok := deps.GetSecurityManager().(interface {
+		RegisterReadOnlyPath(path string)
+	}); ok {
+		sm.RegisterReadOnlyPath(skillsDir)
+	}
+
 	skillRepo, err := infra_skills.NewFileSkillRepository(skillsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize skill repository: %w", err)

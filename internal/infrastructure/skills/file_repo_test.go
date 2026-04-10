@@ -43,6 +43,20 @@ func TestNewFileSkillRepository(t *testing.T) {
 			},
 		},
 		{
+			name: "CRLF line endings",
+			files: map[string]string{
+				"crlf.md": "---\r\nname: CRLF Skill\r\ndescription: CRLF Desc\r\n---\r\nCRLF Content",
+			},
+			wantSkills: []domain.Skill{
+				{
+					Name:        "CRLF Skill",
+					Description: "CRLF Desc",
+					Content:     "CRLF Content",
+					TokenCount:  len("CRLF Content") / 4,
+				},
+			},
+		},
+		{
 			name:       "missing directory",
 			missingDir: true,
 			wantSkills: nil,

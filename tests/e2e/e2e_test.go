@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,9 @@ func TestMain(m *testing.M) {
 	}
 
 	binPath = filepath.Join(tempDir, "tell-me-go")
+	if runtime.GOOS == "windows" {
+		binPath += ".exe"
+	}
 
 	// Get absolute path to project root
 	wd, err := os.Getwd()
@@ -44,7 +48,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	projectRoot = filepath.Dir(filepath.Dir(wd))
-	mainPath := filepath.Join(projectRoot, "cmd/tell-me-go/main.go")
+	mainPath := filepath.Join(projectRoot, "cmd", "tell-me-go", "main.go")
 
 	fmt.Printf("Building binary: %s from %s\n", binPath, mainPath)
 	build := exec.Command("go", "build", "-o", binPath, mainPath)
@@ -78,7 +82,7 @@ func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...stri
 	defer cancel()
 
 	// Ensure absolute path to default config
-	configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs/assistant.yaml"))
+	configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs", "assistant.yaml"))
 
 	// Prepend config flag to ensure it's always set to a valid location
 	finalArgs := append([]string{configFlag}, args...)

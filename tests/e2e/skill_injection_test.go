@@ -18,7 +18,7 @@ import (
 func setupSkill(t *testing.T, homeDir, skillName, skillContent string) {
 	t.Helper()
 	// Skill injector in NewChatter uses: homeDir/docs/skills
-	skillsBaseDir := filepath.Join(homeDir, "docs/skills")
+	skillsBaseDir := filepath.Join(homeDir, "docs", "skills")
 	skillDir := filepath.Join(skillsBaseDir, skillName)
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatal(err)
