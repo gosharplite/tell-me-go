@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -35,22 +36,18 @@ func (r *eventStore) getSessionEvents(ctx context.Context, eventIDs []string) (e
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("querying session events: %w", err)
 	}
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
 			if err == nil {
-				err = closeErr
+				err = fmt.Errorf("closing event rows: %w", closeErr)
 			}
 		}
 	}()
 
 	events, err = parseSessionEvents(rows)
 	if err != nil {
-		return nil, err
-	}
-
-	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 
@@ -74,14 +71,21 @@ func parseSessionEvents(rows *sql.Rows) ([]event, error) {
 		var e event
 		var createdAtStr string
 		if err := rows.Scan(&e.ID, &e.Payload, &createdAtStr); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scanning event row: %w", err)
 		}
 
 		// Parse the string time returned by SQLite
-		if t, parseErr := time.Parse(time.RFC3339Nano, createdAtStr); parseErr == nil {
-			e.CreatedAt = t
+		var parseErr error
+		e.CreatedAt, parseErr = time.Parse(time.RFC3339Nano, createdAtStr)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parsing created_at for event %s: %w", e.ID, parseErr)
 		}
 		events = append(events, e)
 	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("event rows iteration: %w", err)
+	}
+
 	return events, nil
 }

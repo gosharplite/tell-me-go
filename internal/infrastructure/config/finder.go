@@ -45,7 +45,7 @@ func (f *DefaultConfigFinder) Find() (string, error) {
 				break
 			}
 			searchDir = parentDir
-			
+
 			paths := []string{
 				filepath.Join(searchDir, "configs", "assistant.yaml"),
 				filepath.Join(searchDir, ".tell-me-go.yaml"),
