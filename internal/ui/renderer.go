@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/glamour"
@@ -420,22 +421,27 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	}
 
 	// Draw the first frame synchronously to avoid 200ms delay.
-	r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics)
+	r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics, nil)
 
+	var stopped atomic.Bool
 	var stopOnce sync.Once
 	stopFunc := func() {
 		stopOnce.Do(func() {
-			close(done) // Triggers the goroutine to exit
-			// [SCALABILITY] Avoid waiting for the spinner goroutine to finish.
-			// This prevents deadlocks in uiBridge when the spinner is blocked on TerminalLock
-			// which might be held by the main loop waiting for user input.
+			stopped.Store(true)
+			close(done)
+			// Synchronously clear the indicator to prevent race conditions with subsequent UI output.
+			r.clearLoadingIndicator(ui, false)
 		})
 	}
 
 	go func() {
 		defer close(waitDone)
-		// Guaranteed cleanup on exit
-		defer r.clearLoadingIndicator(ui, false)
+		// Cleanup on context cancellation if stopFunc wasn't called
+		defer func() {
+			if stopped.CompareAndSwap(false, true) {
+				r.clearLoadingIndicator(ui, false)
+			}
+		}()
 
 		ticker := ui.clock.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
@@ -447,7 +453,9 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 			case <-done:
 				return
 			case <-ticker.C():
-				r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics)
+				if !stopped.Load() {
+					r.updateIndicatorFrame(ui, frames, &idx, startTime, status, showMetrics, &stopped)
+				}
 			}
 		}
 	}()
@@ -455,7 +463,7 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	return stopFunc
 }
 
-func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string, showMetrics bool) {
+func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime time.Time, status string, showMetrics bool, stopped *atomic.Bool) {
 	msg := status
 	if !startTime.IsZero() {
 		now := ui.clock.Now()
@@ -521,6 +529,10 @@ func (r *stdUIRenderer) drawLoadingIndicator(ui uiState, frame string, startTime
 
 	r.ioMu.Lock()
 	defer r.ioMu.Unlock()
+
+	if stopped != nil && stopped.Load() {
+		return
+	}
 
 	// Move to start of line, clear current line, then print the indicator.
 	_, _ = fmt.Fprintf(ui.stderr, "\r%s%s%s%s%s", ui.c(termClearLine), ui.c(colorGray), frame, msg, ui.c(colorReset))
@@ -648,8 +660,8 @@ func (r *stdUIRenderer) LogSystemMessage(ctx context.Context, msg string, level 
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colorReset))
 }
 
-func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string, showMetrics bool) {
-	r.drawLoadingIndicator(ui, frames[*idx], startTime, status, showMetrics)
+func (r *stdUIRenderer) updateIndicatorFrame(ui uiState, frames []string, idx *int, startTime time.Time, status string, showMetrics bool, stopped *atomic.Bool) {
+	r.drawLoadingIndicator(ui, frames[*idx], startTime, status, showMetrics, stopped)
 	*idx = (*idx + 1) % len(frames)
 }
 
