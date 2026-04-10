@@ -28,6 +28,12 @@ func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, 
 	if registry == nil {
 		return nil, errors.New("registry is required")
 	}
+	if bus == nil {
+		return nil, errors.New("EventBus is required")
+	}
+	if sm == nil {
+		return nil, errors.New("SecurityManager is required")
+	}
 	if observer == nil {
 		return nil, errors.New("ExecutionObserver is required")
 	}
@@ -35,10 +41,7 @@ func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, 
 		return nil, errors.New("logger is required")
 	}
 
-	zombie, err := tools.NewZombieTool(observer)
-	if err != nil {
-		return nil, err
-	}
+	zombie, _ := tools.NewZombieTool(observer)
 
 	var exec ToolExecutor = newBaseRuntime(registry)
 
@@ -56,10 +59,7 @@ func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, 
 		registry:   registry,
 	}
 
-	res, err := newDispatcher(cfg, basePipeline, bus, logger, observer, opts...)
-	if err != nil {
-		return nil, err
-	}
+	res, _ := newDispatcher(cfg, basePipeline, bus, logger, observer, opts...)
 
 	res.zombie = zombie
 

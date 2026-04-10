@@ -16,10 +16,22 @@ import (
 )
 
 // YAMLConfigLoader implements domain_config.ConfigLoader.
-type YAMLConfigLoader struct{}
+type YAMLConfigLoader struct {
+	Finder domain_config.ConfigFinder
+}
 
 // Load satisfies the domain_config.ConfigLoader interface.
 func (l *YAMLConfigLoader) Load(path string) (*domain_config.Config, error) {
+	if path == "" {
+		if l.Finder == nil {
+			return nil, fmt.Errorf("config finder not initialized")
+		}
+		var err error
+		path, err = l.Finder.Find()
+		if err != nil {
+			return nil, fmt.Errorf("failed to auto-discover config: %w", err)
+		}
+	}
 	return load(path)
 }
 

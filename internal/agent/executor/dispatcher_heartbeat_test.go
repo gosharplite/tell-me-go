@@ -57,7 +57,7 @@ func TestDispatcher_HeartbeatTimeout(t *testing.T) {
 	}
 
 	// Dispatcher with safety decorator
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{},
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)
@@ -104,7 +104,7 @@ func TestDispatcher_HeartbeatSuccess(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{},
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{},
 		withToolTimeout(1*time.Second),
 		WithLongRunningTimeout(2*time.Second),
 	)

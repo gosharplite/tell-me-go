@@ -29,7 +29,7 @@ func TestDispatcher_ConfigRace(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -83,7 +83,7 @@ func TestDispatcher_ContextCancellation_MidBatch(t *testing.T) {
 	})
 	require.NoError(t, regErr)
 
-	exec, err := NewPipelineDispatcher(reg, nil, nil, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

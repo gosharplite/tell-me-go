@@ -65,7 +65,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		},
 	}
 
-	loader := &config.YAMLConfigLoader{}
+	loader := &config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()}
 	chatService := agent.NewChatService(
 		tmpDir, "1.0.0", &stdout, &stderr, sm,
 		container,
@@ -88,7 +88,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	}
 	cmd := newChatCommand(cmdCtx, nil)
 	root := &cobra.Command{}
-	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	root.PersistentFlags().StringP("config", "c", "", "Path to the configuration file (default: auto-discover)")
 	root.AddCommand(cmd)
 
 	ctx := stdctx.Background()

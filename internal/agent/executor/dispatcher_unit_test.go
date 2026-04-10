@@ -37,7 +37,7 @@ func TestDispatcher_BatchingAndConcurrency(t *testing.T) {
 	observer := &mockLogger{}
 
 	// Create Dispatcher but replace runtime with mockExecutor
-	exec, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, logger, observer)
 	require.NoError(t, err)
 
 	releaseCh := make(chan struct{})
@@ -100,7 +100,7 @@ func TestDispatcher_SerialBatching(t *testing.T) {
 	observer := &mockLogger{}
 
 	// Create Dispatcher but replace runtime with mockExecutor
-	exec, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, logger, observer)
 	require.NoError(t, err)
 
 	releaseCh1 := make(chan struct{})
@@ -218,7 +218,7 @@ func TestDispatcher_ContextCanceledEarlyExit(t *testing.T) {
 	bus := &mockEventBus{}
 	observer := &mockLogger{}
 
-	dispatcher, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
+	dispatcher, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, logger, observer)
 	require.NoError(t, err)
 
 	var invokeCount atomic.Int32
@@ -266,7 +266,7 @@ func TestDispatcher_ContextCanceledMidFlight_Serial(t *testing.T) {
 	bus := &mockEventBus{}
 	observer := &mockLogger{}
 
-	dispatcher, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
+	dispatcher, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, logger, observer)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -316,7 +316,7 @@ func TestDispatcher_ContextCanceledMidFlight_Parallel(t *testing.T) {
 	bus := &mockEventBus{}
 	observer := &mockLogger{}
 
-	dispatcher, err := NewPipelineDispatcher(reg, nil, bus, logger, observer)
+	dispatcher, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, logger, observer)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

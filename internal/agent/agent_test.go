@@ -124,7 +124,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
 
-	a, err := NewAgent(client, bus, h, "test-provider", reg, sm, withLoader(&config.YAMLConfigLoader{}), withSessionLoader(&config.JSONSessionLoader{}))
+	a, err := NewAgent(client, bus, h, "test-provider", reg, sm, withLoader(&config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()}), withSessionLoader(&config.JSONSessionLoader{}))
 	require.NoError(t, err)
 
 	// Re-injecting path configuration for integration test

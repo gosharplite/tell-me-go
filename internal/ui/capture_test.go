@@ -4,7 +4,6 @@
 package ui
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -20,17 +19,21 @@ import (
 func TestCapturePromptContextCancellation(t *testing.T) {
 	t.Parallel()
 	pr, pw := io.Pipe()
-	t.Cleanup(func() {
-		_ = pr.Close()
-		_ = pw.Close()
-	})
 
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  pr,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -43,12 +46,12 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 func TestPrompt_Pipe(t *testing.T) {
 	t.Parallel()
 	inputStr := "hello from pipe"
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  strings.NewReader(inputStr),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(inputStr), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 
 	prompt, err := capturer.CapturePrompt(context.Background(), nil)
 	if err != nil {
@@ -62,12 +65,12 @@ func TestPrompt_Pipe(t *testing.T) {
 
 func TestPrompt_Args(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 
 	prompt, err := capturer.CapturePrompt(context.Background(), []string{"hello", "world"})
 	if err != nil {
@@ -81,12 +84,12 @@ func TestPrompt_Args(t *testing.T) {
 
 func TestPrompt_Empty(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 
 	_, err := capturer.CapturePrompt(context.Background(), nil)
 	if err == nil {
@@ -96,12 +99,12 @@ func TestPrompt_Empty(t *testing.T) {
 
 func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 
 	prompt, err := capturer.CapturePrompt(context.Background(), nil, ports.WithSkipTTYWait(true))
 
@@ -115,13 +118,12 @@ func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 
 func TestPrompt_MockEnv(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:      strings.NewReader(""),
-		Stdout:     io.Discard,
-		Stderr:     io.Discard,
-		Clock:      &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-		mockPrompt: "mocked prompt",
-	}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "mocked prompt", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 
 	prompt, err := capturer.CapturePrompt(context.Background(), nil)
 	if err != nil {
@@ -137,12 +139,12 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 	t.Parallel()
 	// Empty stdin (simulated pipe)
 
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 
 	prompt, err := capturer.CapturePrompt(context.Background(), []string{"initial", "prompt"})
 	if err != nil {
@@ -158,13 +160,12 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 func TestPrintFeedback_NoSM(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  strings.NewReader(""),
-		Stdout: &buf,
-		Stderr: io.Discard,
-		SM:     nil, // No security manager
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(""), &buf, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 
 	// Should not panic and should print the message
 	capturer.printFeedback(&buf, false, "", "test message")
@@ -176,12 +177,12 @@ func TestPrintFeedback_NoSM(t *testing.T) {
 func TestPrompt_Combined(t *testing.T) {
 	t.Parallel()
 	inputStr := "pipe input"
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:  strings.NewReader(inputStr),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(inputStr), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 
 	prompt, err := capturer.CapturePrompt(context.Background(), []string{"initial"})
 	if err != nil {
@@ -196,7 +197,12 @@ func TestPrompt_Combined(t *testing.T) {
 
 func TestIsTTY_False(t *testing.T) {
 	t.Parallel()
-	capturer := &capturer{disableEscapeSequences: true}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
 	if capturer.IsTTY("not a file") {
 		t.Error("expected IsTTY to be false for string")
 	}
@@ -243,7 +249,14 @@ func TestCaptureFromTTY_TableDriven(t *testing.T) {
 			name: "Context Cancellation",
 			setup: func(t *testing.T) (io.Reader, io.Closer) {
 				pr, pw, _ := os.Pipe()
-				t.Cleanup(func() { _ = pr.Close(); _ = pw.Close() })
+				t.Cleanup(func() {
+					if err := pr.Close(); err != nil {
+						t.Logf("failed to close pipe reader: %v", err)
+					}
+					if err := pw.Close(); err != nil {
+						t.Logf("failed to close pipe writer: %v", err)
+					}
+				})
 				return pr, nil
 			},
 			ctxFunc: func() (context.Context, context.CancelFunc) {
@@ -279,21 +292,30 @@ func TestCaptureFromTTY_TableDriven(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			stdin, closer := tt.setup(t)
-			if closer != nil {
-				defer func() { _ = closer.Close() }()
-			}
-			if f, ok := stdin.(*os.File); ok {
-				defer func() { _ = f.Close() }()
-			}
 
 			ctx, cancel := tt.ctxFunc()
 			defer cancel()
 
-			c := &capturer{
-				Stdin:  stdin,
-				Stdout: io.Discard,
-				Stderr: io.Discard,
-				Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
+			c := NewCapturer(stdin, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", false).(*capturer)
+			t.Cleanup(func() {
+				if err := c.Close(context.Background()); err != nil {
+					t.Logf("failed to close capturer: %v", err)
+				}
+			})
+
+			if closer != nil {
+				t.Cleanup(func() {
+					if err := closer.Close(); err != nil {
+						t.Logf("failed to close: %v", err)
+					}
+				})
+			}
+			if f, ok := stdin.(*os.File); ok {
+				t.Cleanup(func() {
+					if err := f.Close(); err != nil {
+						t.Logf("failed to close file: %v", err)
+					}
+				})
 			}
 
 			got, err := c.captureFromTTY(ctx, false)
@@ -323,11 +345,13 @@ func TestWarn_SemanticStyling(t *testing.T) {
 	var stderr bytes.Buffer
 	isTTY := true
 	mc := &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}
-	capturer := &capturer{disableEscapeSequences: true,
-		Stderr:        &stderr,
-		isTTYOverride: &isTTY,
-		Clock:         mc,
-	}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, &stderr, nil, mc, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	capturer.isTTYOverride = &isTTY
 
 	tests := []struct {
 		name     string
@@ -366,13 +390,13 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer
 	isTTY := true
-	capturer := &capturer{disableEscapeSequences: true,
-		Stdin:         strings.NewReader(""),
-		Stderr:        &stderr,
-		isTTYOverride: &isTTY,
-		mockAnswer:    "y",
-		Clock:         &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, &stderr, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "y", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	capturer.isTTYOverride = &isTTY
 
 	tests := []struct {
 		name     string
@@ -414,11 +438,13 @@ func TestPrompt_SemanticStyling(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer
 	isTTY := true
-	capturer := &capturer{disableEscapeSequences: true,
-		Stderr:        &stderr,
-		isTTYOverride: &isTTY,
-		Clock:         &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-	}
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, &stderr, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := capturer.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	capturer.isTTYOverride = &isTTY
 
 	capturer.Prompt("Answer > ")
 	expected := colorYellow + "Answer > " + colorReset
@@ -435,18 +461,21 @@ func TestCapturer_Confirm_ContextCancelled(t *testing.T) {
 
 	// 2. Setup capturer with dummy streams (io.Discard or similar)
 	pr, pw := io.Pipe()
-	t.Cleanup(func() {
-		_ = pr.Close()
-		_ = pw.Close()
-	})
 
-	c := &capturer{disableEscapeSequences: true,
-		Stdin:  pr,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-		reader: bufio.NewReader(pr),
-	}
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+	})
 
 	// 3. Execute the blocking call
 	result, err := c.Confirm(ctx, "Proceed?")
@@ -468,18 +497,21 @@ func TestCapturer_ReadLine_ContextCancelled(t *testing.T) {
 
 	// 2. Setup capturer with dummy streams (io.Discard or similar)
 	pr, pw := io.Pipe()
-	t.Cleanup(func() {
-		_ = pr.Close()
-		_ = pw.Close()
-	})
 
-	c := &capturer{disableEscapeSequences: true,
-		Stdin:  pr,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Clock:  &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)},
-		reader: bufio.NewReader(pr),
-	}
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+	})
 
 	// 3. Execute the blocking call
 	result, err := c.ReadLine(ctx)
@@ -498,13 +530,22 @@ func TestCapturer_ReadLine_ContextCancellation_Concurrency(t *testing.T) {
 
 	// 1. Create a pipe that blocks forever because nothing will write to it
 	pr, pw := io.Pipe()
-	t.Cleanup(func() {
-		_ = pr.Close()
-		_ = pw.Close()
-	})
 
 	// 2. Setup capturer with the blocking reader using the constructor
-	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true)
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+	})
 
 	// 3. Create a context that cancels quickly
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -629,22 +670,32 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			stdin, closer := tt.setup(t)
-			if closer != nil {
-				defer func() { _ = closer.Close() }()
-			}
 
 			ctx, cancel := tt.ctxFunc()
 			defer cancel()
 
-			c := &capturer{
-				Stdin:                  stdin,
-				Stdout:                 io.Discard,
-				Stderr:                 io.Discard,
-				mockAnswer:             tt.mockAnswer,
-				isTTYOverride:          tt.isTTYOverride,
-				disableEscapeSequences: tt.disableEscapeSequences,
-				reader:                 bufio.NewReader(stdin),
+			c := NewCapturer(stdin, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", tt.mockAnswer, tt.disableEscapeSequences).(*capturer)
+			t.Cleanup(func() {
+				if err := c.Close(context.Background()); err != nil {
+					t.Logf("failed to close capturer: %v", err)
+				}
+			})
+
+			if closer != nil {
+				t.Cleanup(func() {
+					if err := closer.Close(); err != nil {
+						t.Logf("failed to close: %v", err)
+					}
+				})
 			}
+			if f, ok := stdin.(*os.File); ok {
+				t.Cleanup(func() {
+					if err := f.Close(); err != nil {
+						t.Logf("failed to close file: %v", err)
+					}
+				})
+			}
+			c.isTTYOverride = tt.isTTYOverride
 
 			got, err := c.ReadSingleKey(ctx)
 			if tt.wantErr != "" {
@@ -668,3 +719,287 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+func TestCapturer_ReadLine_Success(t *testing.T) {
+	t.Parallel()
+	input := "line one\nline two\n"
+	c := NewCapturer(strings.NewReader(input), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+
+	line, err := c.ReadLine(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if line != "line one\n" {
+		t.Errorf("expected 'line one\\n', got %q", line)
+	}
+
+	line, err = c.ReadLine(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if line != "line two\n" {
+		t.Errorf("expected 'line two\\n', got %q", line)
+	}
+}
+
+func TestCapturer_ReadLine_EOF(t *testing.T) {
+	t.Parallel()
+	input := "incomplete"
+	c := NewCapturer(strings.NewReader(input), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+
+	line, err := c.ReadLine(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if line != "incomplete" {
+		t.Errorf("expected 'incomplete', got %q", line)
+	}
+
+	line, err = c.ReadLine(context.Background())
+	if !errors.Is(err, io.EOF) {
+		t.Errorf("expected io.EOF, got %v", err)
+	}
+	if line != "" {
+		t.Errorf("expected empty string, got %q", line)
+	}
+}
+
+func TestCapturer_RequestAfterClose(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(strings.NewReader("data"), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+
+	err := c.Close(context.Background())
+	if err != nil {
+		t.Fatalf("failed to close: %v", err)
+	}
+
+	_, err = c.ReadLine(context.Background())
+	if !errors.Is(err, ErrCapturerClosed) {
+		t.Errorf("ReadLine: expected ErrCapturerClosed, got %v", err)
+	}
+
+	_, err = c.Confirm(context.Background(), "Proceed?")
+	if !errors.Is(err, ErrCapturerClosed) {
+		t.Errorf("Confirm: expected ErrCapturerClosed, got %v", err)
+	}
+
+	isTTY := false
+	c.isTTYOverride = &isTTY
+	_, err = c.CapturePrompt(context.Background(), nil)
+	if !errors.Is(err, ErrCapturerClosed) {
+		t.Errorf("CapturePrompt: expected ErrCapturerClosed, got %v", err)
+	}
+}
+
+func TestCapturer_ReadLine_ContextCancelled_BlockingSend(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+	})
+
+	// Action 1: Start a ReadLine call that will block in the worker
+	// The worker will be busy reading from 'pr'.
+	go func() {
+		_, _ = c.ReadLine(context.Background())
+	}()
+
+	// Give the goroutine a moment to send the request and start reading
+	time.Sleep(50 * time.Millisecond)
+
+	// Action 2: Call ReadLine with a pre-cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := c.ReadLine(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestCapturer_Close_Idempotent(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(strings.NewReader("data"), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+
+	err := c.Close(context.Background())
+	if err != nil {
+		t.Fatalf("first close failed: %v", err)
+	}
+
+	err = c.Close(context.Background())
+	if err != nil {
+		t.Fatalf("second close failed: %v", err)
+	}
+}
+
+func TestCapturer_Close_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	// Using a pipe that is never closed by the worker because it's stuck reading.
+	pr, pw := io.Pipe()
+	t.Cleanup(func() {
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+	})
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+
+	// Action: Start a ReadLine call that will block in the worker
+	go func() {
+		_, _ = c.ReadLine(context.Background())
+	}()
+
+	// Give the goroutine a moment to send the request and start reading
+	time.Sleep(50 * time.Millisecond)
+
+	// Now try to close with a pre-cancelled context.
+	// Close will close requestChan, but the worker is stuck in ReadString and won't see the close until it finishes the read.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := c.Close(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestCapturer_ReadSingleKey_ContextCancelled_AfterSend(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.ReadSingleKey(ctx)
+		errCh <- err
+	}()
+
+	// Give it time to send the request
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for ReadSingleKey to return after cancellation")
+	}
+}
+
+func TestCapturer_ReadSingleKey_ContextCancelled_BlockingSend(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := pw.Close(); err != nil {
+			t.Logf("failed to close pipe writer: %v", err)
+		}
+		if err := pr.Close(); err != nil {
+			t.Logf("failed to close pipe reader: %v", err)
+		}
+	})
+
+	// Block the worker
+	go func() {
+		_, _ = c.ReadLine(context.Background())
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := c.ReadSingleKey(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestCapturer_ReadLine_IOError(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(&uiErrorReader{}, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+
+	_, err := c.ReadLine(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("expected read error, got %v", err)
+	}
+}
+
+func TestCapturer_ReadSingleKey_IOError(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(&uiErrorReader{}, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		if err := c.Close(context.Background()); err != nil {
+			t.Logf("failed to close capturer: %v", err)
+		}
+	})
+
+	_, err := c.ReadSingleKey(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("expected read error, got %v", err)
+	}
+}

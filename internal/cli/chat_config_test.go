@@ -51,7 +51,7 @@ AIMODEL: "test-model"
 	}
 	cmd := newChatCommand(cmdCtx, nil)
 	root := &cobra.Command{}
-	root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+	root.PersistentFlags().StringP("config", "c", "", "Path to the configuration file (default: auto-discover)")
 	root.AddCommand(cmd)
 
 	ctx := stdctx.Background()
@@ -105,7 +105,7 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 			mb, ml, mService := setupMocks()
 			ml.ExpectedCalls = nil
 			// Mock default config load
-			ml.On("Load", "configs/assistant.yaml").Return(&config.Config{UseTUIPrompt: false}, nil).Maybe()
+			ml.On("Load", "").Return(&config.Config{UseTUIPrompt: false}, nil).Maybe()
 
 			cmdCtx := &context{
 				Version:      "1.0.0",
@@ -120,7 +120,7 @@ func TestChatCommand_Execute_CLIOptOverride(t *testing.T) {
 			}
 			cmd := newChatCommand(cmdCtx, nil)
 			root := &cobra.Command{}
-			root.PersistentFlags().StringP("config", "c", "configs/assistant.yaml", "Path to the configuration file")
+			root.PersistentFlags().StringP("config", "c", "", "Path to the configuration file (default: auto-discover)")
 			root.AddCommand(cmd)
 
 			ctx := stdctx.Background()

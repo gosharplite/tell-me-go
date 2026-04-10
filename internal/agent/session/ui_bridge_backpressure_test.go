@@ -6,7 +6,6 @@ package session
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -20,57 +19,20 @@ import (
 
 func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 	t.Parallel()
-	var buf syncWriter
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	f := newUIBridgeFixture(t,
+		withBridgeThoughts(true),
+		withBridgeTools(true),
+		withBridgeRawOutput(false),
+		withBridgeColor(true),
+		withBridgeLogFile("log.txt"),
+	)
+	f.BlockLoop(t)
+	f.FillQueue(events.TurnStatusEvent{})
 
-	mRenderer := new(mockUIRenderer)
-	// Block the loop indefinitely to fill the channel
-	block := make(chan struct{})
-	inMock := make(chan struct{}, 1)
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		ctx := args.Get(0).(context.Context)
-		select {
-		case inMock <- struct{}{}:
-		default:
-		}
-		select {
-		case <-block:
-		case <-ctx.Done():
-		}
-	}).Return()
-
-	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
-	bridge.WaitStarted()
-	defer func() {
-		close(block)
-		bridge.CloseInput()
-		bridge.Cleanup()
-	}()
-
-	// The channel capacity is 100.
-	// 1 event is currently being processed (blocked on LogTurnStatus).
-	_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-	<-inMock // Wait for the loop to block
-
-	// 100 events will fill the channel.
-	for i := 0; i < 100; i++ {
-		_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-	}
-
-	// The 102nd event (transient visual event) should NOT block because of the non-blocking select with default case.
-	// It is natively synchronous and returns instantly if load shedding is working.
+	// The 102nd event (transient visual event) should NOT block
 	done := make(chan struct{})
 	go func() {
-		_ = bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
+		_ = f.bridge.handleEvent(context.Background(), events.InferenceStartedEvent{})
 		close(done)
 	}()
 
@@ -86,62 +48,34 @@ func TestUIBridge_LoadShedding_NonBlocking(t *testing.T) {
 		t.Fatal("UI Bridge queue full, but handleEvent blocked unexpectedly (load-shedding failed)")
 	}
 
-	// Verify that the debug message was logged
-	require.Contains(t, buf.String(), "UI Bridge queue full, shedding load/visual event")
+	require.Contains(t, f.logBuf.String(), "UI Bridge queue full, shedding load/visual event")
 }
 
 func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 	t.Parallel()
-	var buf syncWriter
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	f := newUIBridgeFixture(t)
+	f.BlockLoop(t)
 
-	mRenderer := new(mockUIRenderer)
-	// 1. Setup a block to freeze the actor loop
-	block := make(chan struct{})
+	// We expect all events to be processed during graceful drain
+	f.renderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
+	f.renderer.On("LogSystemMessage", mock.Anything, "processed", "warn").Return().Once()
 
-	// 2. Setup a mock that will block the loop when a specific event is processed
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		ctx := args.Get(0).(context.Context)
-		select {
-		case <-block:
-		case <-ctx.Done():
-		}
-	}).Return().Once()
+	// Send events that MUST be drained
+	_ = f.bridge.handleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
+	_ = f.bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "processed", Level: "warn"})
 
-	// 3. We expect all events to be processed during graceful drain
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Once()
-	mRenderer.On("LogSystemMessage", mock.Anything, "processed", "warn").Return().Once()
-
-	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(logger))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
-	bridge.WaitStarted()
-	bridge.WaitStarted()
-
-	// 4. Send the blocking event, then send events that MUST be drained
-	_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-	_ = bridge.handleEvent(context.Background(), events.ResponseEvent{Content: &llm.Content{}})
-	_ = bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "processed", Level: "warn"})
-
-	// 5. Trigger shutdown concurrently
+	// Trigger shutdown concurrently
 	cleanupDone := make(chan struct{})
 	go func() {
-		bridge.CloseInput()
-		bridge.Cleanup()
+		f.bridge.CloseInput()
+		f.bridge.Cleanup()
 		close(cleanupDone)
 	}()
 
-	// 6. Unblock the loop immediately. The pipeline is deterministic.
-	close(block)
+	// Unblock the loop immediately.
+	f.UnblockLoop()
 
-	// 7. Wait for the cleanup goroutine to finish using a channel (e.g., cleanupDone)
+	// Wait for the cleanup goroutine to finish
 	select {
 	case <-cleanupDone:
 		// Success - drained gracefully
@@ -149,8 +83,7 @@ func TestUIBridge_Shutdown_GracefulDrain(t *testing.T) {
 		t.Fatal("Cleanup did not finish even after unblocking; pipeline is deadlocked")
 	}
 
-	// 8. Assert expectations. All events should have been processed.
-	mRenderer.AssertExpectations(t)
+	f.renderer.AssertExpectations(t)
 }
 
 func TestUIBridge_QoSRouting(t *testing.T) {
@@ -208,70 +141,18 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 			if deadline, ok := t.Deadline(); ok {
 				timeout = time.Until(deadline) / 2
 			}
-			mRenderer := new(mockUIRenderer)
-			// Allow LogTurnStatus to be called many times as we drain the events during cleanup
-			mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-			// 1. Setup a block to freeze the actor loop
-			block := make(chan struct{})
-			inMock := make(chan struct{}, 1)
+			f := newUIBridgeFixture(t)
+			f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+			f.renderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			f.renderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			f.renderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			f.renderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			f.renderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-			// Override the first LogTurnStatus to block the loop
-			mRenderer.ExpectedCalls = nil // Clear previous Maybe() for precise control
-			mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-				ctx := args.Get(0).(context.Context)
-				select {
-				case inMock <- struct{}{}:
-				default:
-				}
-				select {
-				case <-block:
-				case <-ctx.Done():
-				}
-			}).Return().Once()
-			mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogToolCall", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogToolResult", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-			mRenderer.On("LogUsage", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			f.BlockLoop(t)
+			f.FillQueue(events.TurnStatusEvent{})
 
-			bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-			ctx, cancel := context.WithCancel(context.Background())
-			t.Cleanup(cancel)
-			errChan := make(chan error, 1)
-			go func() {
-				if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-					errChan <- err
-				}
-				close(errChan)
-			}()
-			bridge.WaitStarted()
-			defer func() {
-				select {
-				case <-block:
-				default:
-					close(block)
-				}
-				bridge.CloseInput()
-				bridge.Cleanup()
-			}()
-
-			// 2. Send the first event to block the loop
-			_ = bridge.handleEvent(context.Background(), events.TurnStatusEvent{})
-
-			// 3. Wait for the loop to reach the mock and block
-			<-inMock
-
-			// 4. Fill the channel (capacity 100)
-			fillBridgeQueue(bridge, events.TurnStatusEvent{})
-
-			// 5. Execute the test case
 			testCtx := context.Background()
 			if tt.isContextCancelled {
 				var cancel context.CancelFunc
@@ -279,11 +160,10 @@ func TestUIBridge_QoSRouting(t *testing.T) {
 				cancel()
 			}
 
-			// 6. Assert blocking behavior
 			if tt.expectBlocking {
-				assertBlockingBehavior(t, bridge, testCtx, tt.event, block, timeout, tt.name)
+				f.AssertEventBlocks(t, testCtx, tt.event, timeout, tt.name)
 			} else {
-				assertNonBlockingBehavior(t, bridge, testCtx, tt.event, timeout, tt.name)
+				f.AssertEventDoesNotBlock(t, testCtx, tt.event, timeout, tt.name)
 			}
 		})
 	}
@@ -296,120 +176,41 @@ func TestUIBridge_ContextCancellationMidFlight(t *testing.T) {
 		timeout = time.Until(deadline) / 2
 	}
 
-	mRenderer := new(mockUIRenderer)
-	// Block the loop on a critical event
-	block := make(chan struct{})
-	inMock := make(chan struct{}, 1)
+	f := newUIBridgeFixture(t)
+	f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
+	f.renderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+	f.renderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	mRenderer.On("LogSystemMessage", mock.Anything, "BLOCK", mock.Anything).Run(func(args mock.Arguments) {
-		ctx := args.Get(0).(context.Context)
-		select {
-		case inMock <- struct{}{}:
-		default:
-		}
-		select {
-		case <-block:
-		case <-ctx.Done():
-		}
-	}).Return().Once()
+	f.BlockLoop(t)
+	f.FillQueue(events.ResponseEvent{})
 
-	// Allow other messages during cleanup
-	mRenderer.On("LogSystemMessage", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
-	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-
-	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
-	bridge.WaitStarted()
-	defer func() {
-		select {
-		case <-block:
-		default:
-			close(block)
-		}
-		bridge.CloseInput()
-		bridge.Cleanup()
-	}()
-
-	// 1. Send critical event to block the loop
-	_ = bridge.handleEvent(context.Background(), events.SystemMessageEvent{Message: "BLOCK", Level: "info"})
-
-	select {
-	case <-inMock:
-		// Loop is now blocked in LogSystemMessage
-	case <-time.After(timeout):
-		t.Fatal("Bridge did not reach blocking mock")
-	}
-
-	// 2. Fill the channel (capacity 100)
-	// Use ResponseEvent to ensure they are not shed
-	fillBridgeQueue(bridge, events.ResponseEvent{})
-
-	// 3. Prepare an ALREADY cancelled context
 	testCtx, testCancel := context.WithCancel(context.Background())
-	testCancel() // Cancel immediately
+	testCancel()
 
-	// 4. Trigger call and assert it returns immediately without blocking
-	assertNonBlockingBehavior(t, bridge, testCtx, events.ResponseEvent{}, timeout, "TestUIBridge_ContextCancellationMidFlight")
+	f.AssertEventDoesNotBlock(t, testCtx, events.ResponseEvent{}, timeout, "TestUIBridge_ContextCancellationMidFlight")
 }
 
 func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(mockUIRenderer)
-	// Block the loop to fill the channel
-	block := make(chan struct{})
-	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		ctx := args.Get(0).(context.Context)
-		select {
-		case <-block:
-		case <-ctx.Done():
-		}
-	}).Return()
-
-	bridge := newUIBridge(mRenderer)
-	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
-	t.Cleanup(bridgeCancel)
-	errChan := make(chan error, 1)
-	go func() {
-		if err := bridge.Listen(bridgeCtx); err != nil && !errors.Is(err, context.Canceled) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
-	bridge.WaitStarted()
-
-	// 1. Block the loop
-	_ = bridge.handleEvent(bridgeCtx, events.TurnStatusEvent{})
-
-	// 2. Fill the channel (capacity 100)
-	for i := 0; i < 100; i++ {
-		_ = bridge.handleEvent(bridgeCtx, events.TurnStatusEvent{})
-	}
+	f := newUIBridgeFixture(t)
+	f.BlockLoop(t)
+	f.FillQueue(events.TurnStatusEvent{})
 
 	// 3. Start a goroutine that will block on sending a critical event
 	done := make(chan struct{})
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_ = bridge.handleEvent(bridgeCtx, events.TurnStarted{})
+		_ = f.bridge.handleEvent(f.ctx, events.TurnStarted{})
 		close(done)
 	}()
 
-	// Wait for goroutine to at least begin
 	<-started
 
 	// 4. Cancel the bridge context
-	bridge.cancel()
+	f.bridge.cancel()
 
-	// 5. Assert handleEvent unblocks via <-ctx.Done() (where ctx is bridgeCtx)
+	// 5. Assert handleEvent unblocks via <-ctx.Done()
 	select {
 	case <-done:
 		// Success
@@ -417,10 +218,7 @@ func TestUIBridge_HandleEvent_BridgeShutdownDuringWait(t *testing.T) {
 		t.Fatal("handleEvent did not unblock after bridge context cancellation")
 	}
 
-	// Cleanup
-	close(block)
-	bridge.CloseInput()
-	bridge.Cleanup()
+	f.UnblockLoop()
 }
 
 func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
@@ -437,7 +235,6 @@ func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 		close(errChan)
 	}()
 	bridge.WaitStarted()
-	bridge.WaitStarted()
 
 	// Shutdown the bridge
 	bridge.CloseInput()
@@ -447,56 +244,7 @@ func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 	assert.Error(t, bridge.GetLoopContext().Err())
 
 	// Attempt to send a critical event. It should hit the early return.
-	// We verify it doesn't block (since channel is empty, it wouldn't anyway, but it returns early).
 	assert.NotPanics(t, func() {
 		_ = bridge.handleEvent(ctx, events.TurnStarted{})
 	})
-}
-
-func assertBlockingBehavior(t *testing.T, bridge *uiBridge, ctx context.Context, event events.Event, block chan struct{}, timeout time.Duration, name string) {
-	t.Helper()
-	done := make(chan struct{})
-	started := make(chan struct{})
-	go func() {
-		close(started)
-		_ = bridge.handleEvent(ctx, event)
-		close(done)
-	}()
-
-	<-started
-
-	select {
-	case <-done:
-		t.Fatalf("%s: bridge.handleEvent should have blocked but returned early", name)
-	default:
-	}
-
-	close(block)
-
-	select {
-	case <-done:
-	case <-time.After(timeout):
-		t.Fatalf("%s: Deadlock! Event never processed after queue unblocked", name)
-	}
-}
-
-func assertNonBlockingBehavior(t *testing.T, bridge *uiBridge, ctx context.Context, event events.Event, timeout time.Duration, name string) {
-	t.Helper()
-	done := make(chan struct{})
-	go func() {
-		_ = bridge.handleEvent(ctx, event)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(timeout):
-		t.Fatalf("%s: Regression: Load-shedding failed, handleEvent blocked unexpectedly", name)
-	}
-}
-
-func fillBridgeQueue(bridge *uiBridge, event events.Event) {
-	for i := 0; i < 100; i++ {
-		_ = bridge.handleEvent(context.Background(), event)
-	}
 }

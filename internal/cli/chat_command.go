@@ -175,26 +175,30 @@ func (c *chatCommand) buildCapturer(ctx stdctx.Context, cfg *domain_config.Confi
 		capturerInterface := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM, clock.RealClock{}, c.MockPrompt, c.MockAnswer, false)
 		baseCapturer, ok := capturerInterface.(tui.BaseCapturer)
 		if !ok {
-			// Fallback: use a dummy cleanup or return an error if TUI requires BaseCapturer
-			ci, ok := capturerInterface.(agent.CapturerInteractor)
-			if !ok {
-				return nil, func(stdctx.Context) error { return nil }
+			// Fallback: use the base capturer directly if it's an interactor
+			if ci, ok := capturerInterface.(agent.CapturerInteractor); ok {
+				return ci, func(ctx stdctx.Context) error {
+					return ci.Close(ctx)
+				}
 			}
-			return ci, func(stdctx.Context) error { return nil }
+			return nil, func(stdctx.Context) error { return nil }
 		}
 
 		var capturer agent.CapturerInteractor
-		cleanup := func(stdctx.Context) error { return nil }
+		var cleanup func(stdctx.Context) error
 
 		if err != nil {
 			// Log warning and fall back to the base capturer (no suggestions)
 			_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to initialize suggestions: %v\n", err)
 			capturer = baseCapturer
+			cleanup = func(ctx stdctx.Context) error {
+				return capturer.Close(ctx)
+			}
 		} else {
 			capturer = tui.NewPromptCapturer(baseCapturer, svc)
 			cleanup = func(ctx stdctx.Context) error {
 				if err := capturer.Close(ctx); err != nil {
-					_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close suggestion service: %v\n", err)
+					_, _ = fmt.Fprintf(c.Stderr, "Warning: failed to close capturer: %v\n", err)
 					return err
 				}
 				return nil
@@ -223,7 +227,9 @@ func (c *chatCommand) setupCapturer() (agent.CapturerInteractor, func(stdctx.Con
 	}); ok {
 		sm.SetInteractor(capturerInterface)
 	}
-	return capturer, func(stdctx.Context) error { return nil }
+	return capturer, func(ctx stdctx.Context) error {
+		return capturer.Close(ctx)
+	}
 }
 
 func (c *chatCommand) prepareCaptureOptions(opts *cliOptions) []ports.CaptureOption {

@@ -65,6 +65,7 @@ func TestNewPipelineDispatcher(t *testing.T) {
 		observer tools.ExecutionObserver
 		opts     []executorOption
 		wantErr  bool
+		errStr   string
 	}{
 		{
 			name:     "valid setup",
@@ -83,6 +84,27 @@ func TestNewPipelineDispatcher(t *testing.T) {
 			logger:   &ports.NoOpLogger{},
 			observer: &mockLogger{},
 			wantErr:  true,
+			errStr:   "registry is required",
+		},
+		{
+			name:     "missing event bus",
+			registry: &mockToolRegistry{},
+			sm:       &mockSecurityManager{},
+			bus:      nil,
+			logger:   &ports.NoOpLogger{},
+			observer: &mockLogger{},
+			wantErr:  true,
+			errStr:   "EventBus is required",
+		},
+		{
+			name:     "missing security manager",
+			registry: &mockToolRegistry{},
+			sm:       nil,
+			bus:      &mockEventBus{},
+			logger:   &ports.NoOpLogger{},
+			observer: &mockLogger{},
+			wantErr:  true,
+			errStr:   "SecurityManager is required",
 		},
 		{
 			name:     "missing logger",
@@ -92,6 +114,7 @@ func TestNewPipelineDispatcher(t *testing.T) {
 			logger:   nil,
 			observer: &mockLogger{},
 			wantErr:  true,
+			errStr:   "logger is required",
 		},
 		{
 			name:     "missing observer",
@@ -101,6 +124,7 @@ func TestNewPipelineDispatcher(t *testing.T) {
 			logger:   &ports.NoOpLogger{},
 			observer: nil,
 			wantErr:  true,
+			errStr:   "ExecutionObserver is required",
 		},
 	}
 
@@ -110,6 +134,9 @@ func TestNewPipelineDispatcher(t *testing.T) {
 			orch, err := NewPipelineDispatcher(tt.registry, tt.sm, tt.bus, tt.logger, tt.observer, tt.opts...)
 			if tt.wantErr {
 				assert.Error(t, err)
+				if tt.errStr != "" {
+					assert.Contains(t, err.Error(), tt.errStr)
+				}
 				assert.Nil(t, orch)
 				return
 			}
