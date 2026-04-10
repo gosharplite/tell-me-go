@@ -8,6 +8,7 @@ package encoding
 import (
 	"io"
 	"log/slog"
+	"os"
 	"syscall"
 
 	"golang.org/x/text/encoding"
@@ -29,6 +30,12 @@ func getConsoleOutputCP() uint32 {
 }
 
 func wrapReaderPlatform(r io.Reader) io.Reader {
+	// Priority 1: Check environment for UTF-8 override
+	if isUTF8Env(os.Getenv) {
+		return r
+	}
+
+	// Priority 2: Fallback to system console code page
 	cp := getConsoleOutputCP()
 	var enc encoding.Encoding
 
