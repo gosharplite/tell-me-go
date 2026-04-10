@@ -560,7 +560,7 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 			ctx, cancel := tt.ctxFunc()
 			defer cancel()
 
-	c := NewCapturer(stdin, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", tt.mockAnswer, tt.disableEscapeSequences).(*capturer)
+			c := NewCapturer(stdin, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", tt.mockAnswer, tt.disableEscapeSequences).(*capturer)
 			c.isTTYOverride = tt.isTTYOverride
 
 			got, err := c.ReadSingleKey(ctx)
