@@ -30,7 +30,7 @@ func TestPipeCommandsTool(t *testing.T) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				_, _ = fmt.Fprint(w, fmt.Sprintf(`{
+				_, _ = fmt.Fprintf(w, `{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -45,7 +45,7 @@ func TestPipeCommandsTool(t *testing.T) {
 							}]
 						}
 					}]
-				}`, echoCmd+" hello", grepCmd+" hello"))
+				}`, echoCmd+" hello", grepCmd+" hello")
 			} else {
 				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Piping finished."}]}}]}`)
 			}
@@ -93,7 +93,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				_, _ = fmt.Fprint(w, fmt.Sprintf(`{
+				_, _ = fmt.Fprintf(w, `{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -109,7 +109,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 							}]
 						}
 					}]
-				}`, echoCmd+" redirection"))
+				}`, echoCmd+" redirection")
 			} else {
 				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Redirection finished."}]}}]}`)
 			}
@@ -169,7 +169,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 		if strings.Contains(r.URL.Path, "generateContent") {
 			w.Header().Set("Content-Type", "application/json")
 			if turns == 0 {
-				_, _ = fmt.Fprint(w, fmt.Sprintf(`{
+				_, _ = fmt.Fprintf(w, `{
 					"candidates": [{
 						"content": {
 							"role": "model",
@@ -186,7 +186,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 							}]
 						}
 					}]
-				}`, echoCmd+" piped", catCmd))
+				}`, echoCmd+" piped", catCmd)
 			} else {
 				_, _ = fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Piped redirection finished."}]}}]}`)
 			}
