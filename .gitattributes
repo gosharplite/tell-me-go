@@ -1,0 +1,19 @@
+# Default behavior: handle all files as text and normalize line endings
+* text=auto
+
+# Enforce LF for Go source, modules, and project configuration
+*.go   text eol=lf
+*.mod  text eol=lf
+*.sum  text eol=lf
+*.md   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+*.txt  text eol=lf
+*.golden text eol=lf
+
+# Keep binary files as-is
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.exe  binary
