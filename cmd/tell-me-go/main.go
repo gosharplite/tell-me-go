@@ -138,7 +138,9 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	chatService := bootstrapper.GetChatService()
 
 	// 6. Initialize CLI with pre-wired dependencies
-	configLoader := &config.YAMLConfigLoader{}
+	configLoader := &config.YAMLConfigLoader{
+		Finder: config.NewDefaultConfigFinder(),
+	}
 	app, err := cli.New(cli.AppDependencies{
 		Version:      appVersion,
 		Stdin:        stdin,

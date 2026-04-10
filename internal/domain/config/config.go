@@ -194,3 +194,8 @@ func DefaultPricing() pricing.PricingData {
 		},
 	}
 }
+
+// ConfigFinder defines the interface for locating the configuration file across different environments.
+type ConfigFinder interface {
+	Find() (string, error)
+}

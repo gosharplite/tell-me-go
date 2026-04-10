@@ -4,8 +4,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -313,4 +315,53 @@ PROVIDERS:
 	if cfg.Providers["google"].Model != "tell-me-model" {
 		t.Errorf("expected Provider Google Model 'tell-me-model', got '%s'", cfg.Providers["google"].Model)
 	}
+}
+
+type mockFinder struct {
+	path   string
+	err    error
+	called bool
+}
+
+func (f *mockFinder) Find() (string, error) {
+	f.called = true
+	return f.path, f.err
+}
+
+func TestYAMLConfigLoader_Load_AutoDiscovery(t *testing.T) {
+	t.Run("CallsFinderOnEmptyPath", func(t *testing.T) {
+		finder := &mockFinder{path: "discovered.yaml"}
+		loader := &YAMLConfigLoader{Finder: finder}
+
+		cfg, err := loader.Load("")
+		if err != nil {
+			t.Fatalf("Load(\"\") failed: %v", err)
+		}
+
+		if !finder.called {
+			t.Error("expected Finder.Find() to be called")
+		}
+		if cfg == nil {
+			t.Fatal("expected config to be initialized")
+		}
+	})
+
+	t.Run("FinderError", func(t *testing.T) {
+		expectedErr := fmt.Errorf("find failed")
+		finder := &mockFinder{err: expectedErr}
+		loader := &YAMLConfigLoader{Finder: finder}
+
+		_, err := loader.Load("")
+		if err == nil || !strings.Contains(err.Error(), "find failed") {
+			t.Errorf("expected error containing 'find failed', got %v", err)
+		}
+	})
+
+	t.Run("FinderNotInitialized", func(t *testing.T) {
+		loader := &YAMLConfigLoader{}
+		_, err := loader.Load("")
+		if err == nil || !strings.Contains(err.Error(), "config finder not initialized") {
+			t.Errorf("expected error 'config finder not initialized', got %v", err)
+		}
+	})
 }
