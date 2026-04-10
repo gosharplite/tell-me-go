@@ -94,7 +94,7 @@ func TestSecurityManager_Authorize(t *testing.T) {
 func TestSecurityManager_PathManagement(t *testing.T) {
 	t.Parallel()
 	sm := NewSecurityManager(nil)
-	
+
 	tmpDir := t.TempDir()
 	safePath := filepath.Join(tmpDir, "safe")
 	roPath := filepath.Join(tmpDir, "readonly")

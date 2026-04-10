@@ -452,11 +452,11 @@ func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, erro
 	if config.OutputFile == "" {
 		return nil, nil
 	}
-	
+
 	// CRITICAL: Strip null bytes BEFORE any other path processing to avoid Windows issues
 	path := strings.ReplaceAll(config.OutputFile, "\x00", "")
 	path = strings.TrimSpace(path)
-	
+
 	if path == "" {
 		return nil, nil
 	}

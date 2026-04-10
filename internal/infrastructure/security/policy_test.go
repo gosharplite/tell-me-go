@@ -119,7 +119,7 @@ func TestPolicyTool_ReadPathManagement(t *testing.T) {
 		_, _ = p.RegisterReadPath(ctx, map[string]interface{}{"path": path, "reason": "test"}, nil)
 
 		res, _ := p.ListReadPaths(ctx, nil, nil)
-		
+
 		// Use filepath.Abs to ensure we compare absolute paths consistently
 		absPath, _ := filepath.Abs(path)
 		if !strings.Contains(res.Text, absPath) && !strings.Contains(res.Text, path) {

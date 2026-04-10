@@ -122,7 +122,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 				if err := os.WriteFile(path, []byte("initial"), 0644); err != nil {
 					t.Fatal(err)
 				}
-				
+
 				// On Windows, Chmod 0444 on the file is more reliable than Chmod 0555 on the dir
 				if err := os.Chmod(path, 0444); err != nil {
 					t.Fatal(err)

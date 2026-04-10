@@ -32,7 +32,7 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 
 func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.FileSystem, exec tools.CommandExecutor) error {
 	bm := newBackupManager(sm, fs, 10)
-	
+
 	// Inject the executor into the reader if it matches the internal commandExecutor interface.
 	// Since processExecutor implements commandExecutor, this works in production.
 	var internalExec commandExecutor

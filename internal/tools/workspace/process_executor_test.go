@@ -582,7 +582,7 @@ func TestRunPipeline_SharedMaxCapture(t *testing.T) {
 
 	// Raw stdout is \"STDOUT_LINE_1\\n\" (14 bytes)
 	// Raw stderr is \"STDERR_LINE_1\\n\" (14 bytes)
-	
+
 	if strings.Contains(res.Output, "STDOUT_LINE_1") && strings.Contains(res.Output, "[stderr:0] STDERR_LINE_1") {
 		t.Errorf("Expected shared MaxCapture to limit total output, but both streams were fully captured")
 	}
@@ -640,13 +640,13 @@ func TestTruncateToValidUTF8(t *testing.T) {
 		{"hello", 3, "hel"},
 		{"hello", 5, "hello"},
 		{"hello", 10, "hello"},
-		{"世界", 3, "世"},      // \"世\" is 3 bytes, \"界\" starts at index 3
-		{"世界", 4, "世"},      // \"界\" is 3 bytes, cannot take only 1 byte of \"界\"
-		{"世界", 6, "世界"},     // exactly 6 bytes
-		{"😀", 2, ""},        // Emoji is 4 bytes
-		{"😀", 4, "😀"},       // Emoji is 4 bytes
-		{string([]byte{0xff, 0xff}), 1, ""}, // Invalid UTF-8
-		{"A" + string([]byte{0xff}) + "B", 2, "A"},  // Invalid UTF-8 after 'A'
+		{"世界", 3, "世"},                             // \"世\" is 3 bytes, \"界\" starts at index 3
+		{"世界", 4, "世"},                             // \"界\" is 3 bytes, cannot take only 1 byte of \"界\"
+		{"世界", 6, "世界"},                            // exactly 6 bytes
+		{"😀", 2, ""},                               // Emoji is 4 bytes
+		{"😀", 4, "😀"},                              // Emoji is 4 bytes
+		{string([]byte{0xff, 0xff}), 1, ""},        // Invalid UTF-8
+		{"A" + string([]byte{0xff}) + "B", 2, "A"}, // Invalid UTF-8 after 'A'
 	}
 	for _, tt := range tests {
 		got := truncateToValidUTF8(tt.input, tt.max)
@@ -812,7 +812,7 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 				name := f.Name()
 				_ = f.Close()
 				t.Cleanup(func() { _ = os.Remove(name) })
-				
+
 				// CRITICAL: Handle OS-specific separators in the expected substring
 				expectedPath := filepath.FromSlash(tt.expected)
 				if !strings.Contains(name, expectedPath) {

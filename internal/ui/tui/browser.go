@@ -793,13 +793,13 @@ func (m *rootBrowserModel) rollbackToSelected() tea.Cmd {
 
 	offset := m.getSystemOffset()
 	totalMsgs := lastActiveIdx + 1
-	
+
 	// If user selected the system message, rollback everything after it.
 	targetStartIdx := dto.OriginalIndex
 	if targetStartIdx >= offset {
 		targetStartIdx = ((dto.OriginalIndex - offset) & ^1) + offset
 	}
-	
+
 	turnsToRemove := (totalMsgs - targetStartIdx + 1) / 2
 
 	_, _, _, err := m.cmdService.RollbackTurns(context.Background(), turnsToRemove)
