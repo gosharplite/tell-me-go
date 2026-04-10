@@ -539,3 +539,53 @@ func TestShellTool_TimeoutParameter(t *testing.T) {
 		}
 	})
 }
+
+func TestShellTool_PrepareCommand_ShellSelection(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	validator := security.NewCommandValidator(sm, nil)
+	tool := newshellTool(sm, validator)
+
+	t.Run("PowerShell indicators", func(t *testing.T) {
+		tests := []struct {
+			cmd   string
+			parts []string
+			want  bool
+		}{
+			{"Get-ChildItem", []string{"Get-ChildItem"}, true},
+			{"Set-Location", []string{"Set-Location"}, true},
+			{"echo $env:PATH", []string{"echo", "$env:PATH"}, true},
+			{"ls | Select-String foo", []string{"ls", "|", "Select-String", "foo"}, true},
+			{"go test ./...", []string{"go", "test", "./..."}, false},
+			{"dir", []string{"dir"}, false},
+			{"git-lfs", []string{"git-lfs"}, true}, // Note: Verb-Noun heuristic might over-match, but it's safe for shell wrapping.
+		}
+
+		for _, tt := range tests {
+			got := tool.isPowerShellIndicator(tt.cmd, tt.parts)
+			if got != tt.want {
+				t.Errorf("isPowerShellIndicator(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("HasShellFeatures for Cmdlets", func(t *testing.T) {
+		tests := []struct {
+			cmd  string
+			want bool
+		}{
+			{"Get-ChildItem", true},
+			{"Set-Location", true},
+			{"go test", false},
+			{"ls -la", false},
+		}
+
+		for _, tt := range tests {
+			parts, _ := validator.Split(tt.cmd)
+			got := validator.HasShellFeatures(parts)
+			if got != tt.want {
+				t.Errorf("HasShellFeatures(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		}
+	})
+}

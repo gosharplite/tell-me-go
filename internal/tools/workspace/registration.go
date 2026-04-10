@@ -258,7 +258,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
-		Description:     "Executes a command. Shell features like operators (&&, ||, ;, |, >, <), wildcards (*, ?), and variable expansion ($) are supported and automatically handled via 'sh -c'. Security: Only whitelisted commands are auto-approved. For advanced multi-stage pipes, use the 'pipe_commands' tool.",
+		Description:     "Executes a command. Shell features like operators (&&, ||, ;, |, >, <), wildcards (*, ?), and variable expansion ($) are supported and automatically handled via 'sh -c'. Security: Only whitelisted commands are auto-approved. For advanced multi-stage pipes, use the 'pipe_commands' tool.\n\n[WINDOWS COMPATIBILITY]: This tool uses POSIX-style shell parsing (shlex). Backslashes in paths (e.g., 'C:\\Users') will be interpreted as escape characters and stripped. ALWAYS use forward slashes for Windows paths (e.g., 'C:/Users') to ensure integrity; they are natively supported by PowerShell and the Go toolchain.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
@@ -292,7 +292,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "pipe_commands",
-		Description:     "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.",
+		Description:     "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.\n\n[WINDOWS COMPATIBILITY]: This tool uses POSIX-style shell parsing (shlex). Backslashes in paths (e.g., 'C:\\Users') will be interpreted as escape characters and stripped. ALWAYS use forward slashes for Windows paths (e.g., 'C:/Users') to ensure integrity.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

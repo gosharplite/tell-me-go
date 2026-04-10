@@ -88,7 +88,39 @@ func (v *commandValidator) Split(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("shlex split error: %w", err)
 	}
+
+	// Path Integrity Check (Issue #44)
+	// Detect if backslashes in Windows paths were stripped by the POSIX-style parser.
+	if strings.Contains(cmd, "\\") {
+		partsCount := 0
+		for _, part := range parts {
+			partsCount += strings.Count(part, "\\")
+		}
+
+		if partsCount < strings.Count(cmd, "\\") {
+			if v.isLikelyWindowsPath(cmd) {
+				return nil, fmt.Errorf("possible path corruption detected: backslashes in Windows paths are stripped by the POSIX-style parser. Please use forward slashes (/) instead (e.g., 'C:/Users' or './path/to/file')")
+			}
+		}
+	}
+
 	return parts, nil
+}
+
+func (v *commandValidator) isLikelyWindowsPath(cmd string) bool {
+	if strings.Contains(cmd, ":\\") || strings.Contains(cmd, "\\\\") {
+		return true
+	}
+	for i := 0; i < len(cmd)-1; i++ {
+		if cmd[i] == '\\' {
+			next := cmd[i+1]
+			// Backslash followed by alphanumeric is a strong indicator of a Windows path component
+			if (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || (next >= '0' && next <= '9') {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ValidateStructure ensures the command does not contain standalone shell operators
@@ -315,8 +347,41 @@ func (v *commandValidator) HasShellFeatures(parts []string) bool {
 		if i == 0 && v.safety.HasForbiddenCharsInCommand(part) {
 			return true
 		}
+
+		// 5. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
+		if i == 0 && v.isPowerShellCmdlet(part) {
+			return true
+		}
 	}
 
+	return false
+}
+
+func (v *commandValidator) isPowerShellCmdlet(token string) bool {
+	dashIdx := strings.Index(token, "-")
+	if dashIdx <= 0 || dashIdx == len(token)-1 {
+		return false
+	}
+	verb := token[:dashIdx]
+	// Verbs are typically 2+ characters
+	if len(verb) < 2 {
+		return false
+	}
+	// Common PowerShell verbs: Get, Set, New, Remove, Update, Invoke, etc.
+	// We'll use a simple heuristic: if it's Verb-Noun and not a known binary like "git-lfs"
+	// (though git-lfs would usually be called as "git lfs").
+	// To be safe, we check if the verb starts with an uppercase letter or is a common verb.
+	firstChar := verb[0]
+	if firstChar >= 'A' && firstChar <= 'Z' {
+		return true
+	}
+	// Also allow lowercase common verbs for convenience
+	commonVerbs := []string{"get", "set", "new", "remove", "update", "invoke", "test", "write", "read", "copy", "move", "clear", "add"}
+	for _, v := range commonVerbs {
+		if strings.EqualFold(verb, v) {
+			return true
+		}
+	}
 	return false
 }
 

@@ -344,3 +344,34 @@ func TestCommandValidator_HasShellFeatures(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandValidator_PathCorruption(t *testing.T) {
+	t.Parallel()
+	v := NewCommandValidator(nil, nil)
+
+	tests := []struct {
+		name    string
+		cmd     string
+		wantErr bool
+	}{
+		{"Windows path in quotes", `ls "C:\Users"`, true},
+		{"Windows UNC path", `ls \\server\share`, true},
+		{"Windows relative path with backslash", `ls .\internal\security`, true},
+		{"Legitimate space escape", `ls file\ name`, false},
+		{"Legitimate quote escape", `echo \"hello\"`, false},
+		{"No backslashes", `ls /usr/bin`, false},
+		{"Double backslash (escaped)", `ls C:\\Users`, true}, // We still want to force forward slashes
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := v.Split(tt.cmd)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Split(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+			}
+			if tt.wantErr && err != nil && !strings.Contains(err.Error(), "possible path corruption detected") {
+				t.Errorf("Split(%q) error %v, want message containing 'possible path corruption detected'", tt.cmd, err)
+			}
+		})
+	}
+}

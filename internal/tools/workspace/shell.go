@@ -6,6 +6,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -262,13 +263,9 @@ func (t *shellTool) prepareCommand(command string) ([]string, error) {
 		return nil, fmt.Errorf("error parsing command: %w", err)
 	}
 
-	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation)
+	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation, cmdlets)
 	if t.validator.HasShellFeatures(parts) {
-		if runtime.GOOS == "windows" {
-			parts = []string{"cmd.exe", "/c", command}
-		} else {
-			parts = []string{"sh", "-c", command}
-		}
+		parts = t.wrapInShell(command, parts)
 	}
 
 	if err := t.validator.ValidateStructure(parts); err != nil {
@@ -276,6 +273,48 @@ func (t *shellTool) prepareCommand(command string) ([]string, error) {
 	}
 
 	return parts, nil
+}
+
+func (t *shellTool) wrapInShell(command string, parts []string) []string {
+	if runtime.GOOS != "windows" {
+		return []string{"sh", "-c", command}
+	}
+
+	// Windows-specific selection: Prefer PowerShell/pwsh for cmdlets or PS indicators.
+	if t.isPowerShellIndicator(command, parts) {
+		shell := "powershell"
+		// Prefer pwsh (Core) over powershell (Desktop) if available.
+		if p, err := exec.LookPath("pwsh"); err == nil && p != "" {
+			shell = "pwsh"
+		}
+		return []string{shell, "-Command", command}
+	}
+
+	return []string{"cmd.exe", "/c", command}
+}
+
+func (t *shellTool) isPowerShellIndicator(command string, parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+
+	// 1. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
+	first := parts[0]
+	dashIdx := strings.Index(first, "-")
+	if dashIdx > 0 && dashIdx < len(first)-1 {
+		return true
+	}
+
+	// 2. Check for other PowerShell-specific indicators
+	lower := strings.ToLower(command)
+	psIndicators := []string{"$env:", "$(", "select-string", "where-object", "foreach-object"}
+	for _, ind := range psIndicators {
+		if strings.Contains(lower, ind) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (t *shellTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
