@@ -5,7 +5,6 @@ package workspace
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
