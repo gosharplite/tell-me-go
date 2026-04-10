@@ -20,6 +20,7 @@ func (e *uiErrorReader) Read(p []byte) (n int, err error) {
 
 func TestCaptureFromPipe_IOError(t *testing.T) {
 	capturer := NewCapturer(&uiErrorReader{}, io.Discard, io.Discard, nil, nil, "", "", false).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	_, err := capturer.captureFromPipe(context.Background(), "")
 	assert.Error(t, err)
@@ -28,6 +29,7 @@ func TestCaptureFromPipe_IOError(t *testing.T) {
 
 func TestCaptureFromTTY_IOError(t *testing.T) {
 	capturer := NewCapturer(&uiErrorReader{}, io.Discard, io.Discard, nil, nil, "", "", false).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	_, err := capturer.captureFromTTY(context.Background(), false)
 	assert.Error(t, err)

@@ -19,12 +19,13 @@ import (
 func TestCapturePromptContextCancellation(t *testing.T) {
 	t.Parallel()
 	pr, pw := io.Pipe()
+
+	capturer := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 	t.Cleanup(func() {
 		_ = pr.Close()
 		_ = pw.Close()
 	})
-
-	capturer := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -38,6 +39,7 @@ func TestPrompt_Pipe(t *testing.T) {
 	t.Parallel()
 	inputStr := "hello from pipe"
 	capturer := NewCapturer(strings.NewReader(inputStr), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	prompt, err := capturer.CapturePrompt(context.Background(), nil)
 	if err != nil {
@@ -52,6 +54,7 @@ func TestPrompt_Pipe(t *testing.T) {
 func TestPrompt_Args(t *testing.T) {
 	t.Parallel()
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	prompt, err := capturer.CapturePrompt(context.Background(), []string{"hello", "world"})
 	if err != nil {
@@ -66,6 +69,7 @@ func TestPrompt_Args(t *testing.T) {
 func TestPrompt_Empty(t *testing.T) {
 	t.Parallel()
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	_, err := capturer.CapturePrompt(context.Background(), nil)
 	if err == nil {
@@ -76,6 +80,7 @@ func TestPrompt_Empty(t *testing.T) {
 func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 	t.Parallel()
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	prompt, err := capturer.CapturePrompt(context.Background(), nil, ports.WithSkipTTYWait(true))
 
@@ -90,6 +95,7 @@ func TestPrompt_SkipTTYWaitEmpty(t *testing.T) {
 func TestPrompt_MockEnv(t *testing.T) {
 	t.Parallel()
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "mocked prompt", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	prompt, err := capturer.CapturePrompt(context.Background(), nil)
 	if err != nil {
@@ -106,6 +112,7 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 	// Empty stdin (simulated pipe)
 
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	prompt, err := capturer.CapturePrompt(context.Background(), []string{"initial", "prompt"})
 	if err != nil {
@@ -122,6 +129,7 @@ func TestPrintFeedback_NoSM(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	capturer := NewCapturer(strings.NewReader(""), &buf, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	// Should not panic and should print the message
 	capturer.printFeedback(&buf, false, "", "test message")
@@ -134,6 +142,7 @@ func TestPrompt_Combined(t *testing.T) {
 	t.Parallel()
 	inputStr := "pipe input"
 	capturer := NewCapturer(strings.NewReader(inputStr), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 
 	prompt, err := capturer.CapturePrompt(context.Background(), []string{"initial"})
 	if err != nil {
@@ -149,6 +158,7 @@ func TestPrompt_Combined(t *testing.T) {
 func TestIsTTY_False(t *testing.T) {
 	t.Parallel()
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 	if capturer.IsTTY("not a file") {
 		t.Error("expected IsTTY to be false for string")
 	}
@@ -242,6 +252,7 @@ func TestCaptureFromTTY_TableDriven(t *testing.T) {
 			defer cancel()
 
 			c := NewCapturer(stdin, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", false).(*capturer)
+			t.Cleanup(func() { _ = c.Close(context.Background()) })
 
 			got, err := c.captureFromTTY(ctx, false)
 			if tt.wantErr != nil {
@@ -271,6 +282,7 @@ func TestWarn_SemanticStyling(t *testing.T) {
 	isTTY := true
 	mc := &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, &stderr, nil, mc, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 	capturer.isTTYOverride = &isTTY
 
 	tests := []struct {
@@ -311,6 +323,7 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 	var stderr bytes.Buffer
 	isTTY := true
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, &stderr, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "y", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 	capturer.isTTYOverride = &isTTY
 
 	tests := []struct {
@@ -354,6 +367,7 @@ func TestPrompt_SemanticStyling(t *testing.T) {
 	var stderr bytes.Buffer
 	isTTY := true
 	capturer := NewCapturer(strings.NewReader(""), io.Discard, &stderr, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = capturer.Close(context.Background()) })
 	capturer.isTTYOverride = &isTTY
 
 	capturer.Prompt("Answer > ")
@@ -371,12 +385,13 @@ func TestCapturer_Confirm_ContextCancelled(t *testing.T) {
 
 	// 2. Setup capturer with dummy streams (io.Discard or similar)
 	pr, pw := io.Pipe()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
 	t.Cleanup(func() {
 		_ = pr.Close()
 		_ = pw.Close()
 	})
-
-	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
 
 	// 3. Execute the blocking call
 	result, err := c.Confirm(ctx, "Proceed?")
@@ -398,12 +413,13 @@ func TestCapturer_ReadLine_ContextCancelled(t *testing.T) {
 
 	// 2. Setup capturer with dummy streams (io.Discard or similar)
 	pr, pw := io.Pipe()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
 	t.Cleanup(func() {
 		_ = pr.Close()
 		_ = pw.Close()
 	})
-
-	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
 
 	// 3. Execute the blocking call
 	result, err := c.ReadLine(ctx)
@@ -422,13 +438,14 @@ func TestCapturer_ReadLine_ContextCancellation_Concurrency(t *testing.T) {
 
 	// 1. Create a pipe that blocks forever because nothing will write to it
 	pr, pw := io.Pipe()
+
+	// 2. Setup capturer with the blocking reader using the constructor
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
 	t.Cleanup(func() {
 		_ = pr.Close()
 		_ = pw.Close()
 	})
-
-	// 2. Setup capturer with the blocking reader using the constructor
-	c := NewCapturer(pr, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true)
 
 	// 3. Create a context that cancels quickly
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -561,6 +578,7 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 			defer cancel()
 
 			c := NewCapturer(stdin, io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", tt.mockAnswer, tt.disableEscapeSequences).(*capturer)
+			t.Cleanup(func() { _ = c.Close(context.Background()) })
 			c.isTTYOverride = tt.isTTYOverride
 
 			got, err := c.ReadSingleKey(ctx)

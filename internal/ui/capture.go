@@ -90,9 +90,10 @@ func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.M
 }
 
 func (c *capturer) startWorker() {
+	reqChan := c.requestChan
 	go func() {
 		defer close(c.done)
-		for req := range c.requestChan {
+		for req := range reqChan {
 			var res ioResult
 			switch req.op {
 			case opReadByte:
