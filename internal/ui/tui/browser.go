@@ -439,6 +439,8 @@ func (m *rootBrowserModel) renderHistory() (string, []int) {
 		sb.WriteString(archivedStyle.Render("─── Start of History ───") + "\n\n")
 	}
 
+	offset := m.getSystemOffset()
+
 	for i, dto := range m.history {
 		turnOffsets = append(turnOffsets, strings.Count(sb.String(), "\n"))
 
@@ -447,7 +449,7 @@ func (m *rootBrowserModel) renderHistory() (string, []int) {
 			prefix = "> "
 		}
 
-		sb.WriteString(m.renderTurnHeader(dto, i == m.selectedTurn))
+		sb.WriteString(m.renderTurnHeader(dto, i == m.selectedTurn, offset))
 
 		if m.showThoughts && dto.ThoughtProcess != "" {
 			sb.WriteString(m.renderThoughts(dto, prefix))
@@ -467,7 +469,7 @@ func (m *rootBrowserModel) renderHistory() (string, []int) {
 	return sb.String(), turnOffsets
 }
 
-func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected bool) string {
+func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected bool, offset int) string {
 	prefix := "  "
 	if isSelected {
 		prefix = "> "
@@ -479,8 +481,8 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 	}
 
 	turnStr := ""
-	if !dto.IsArchived {
-		turnStr = fmt.Sprintf(" - %d", (dto.OriginalIndex/2)+1)
+	if !dto.IsArchived && (dto.OriginalIndex >= offset || dto.Role != "system") {
+		turnStr = fmt.Sprintf(" - %d", ((dto.OriginalIndex-offset)/2)+1)
 	}
 
 	var styledLabel string
@@ -614,12 +616,16 @@ func (m *rootBrowserModel) calculateFooterHeight() int {
 		return 1
 	}
 
+	offset := m.getSystemOffset()
 	activeTurns := 0
 	pinnedTurns := 0
 	lastTurnIdx := -1
 	for _, dto := range m.history {
 		if !dto.IsArchived {
-			turnIdx := dto.OriginalIndex / 2
+			if dto.OriginalIndex < offset && dto.Role == "system" {
+				continue
+			}
+			turnIdx := (dto.OriginalIndex - offset) / 2
 			if turnIdx != lastTurnIdx {
 				activeTurns++
 				if dto.IsPinned {
@@ -640,12 +646,16 @@ func (m *rootBrowserModel) renderFooter() string {
 	var sb strings.Builder
 
 	// Calculate Pinning Pressure
+	offset := m.getSystemOffset()
 	activeTurns := 0
 	pinnedTurns := 0
 	lastTurnIdx := -1
 	for _, dto := range m.history {
 		if !dto.IsArchived {
-			turnIdx := dto.OriginalIndex / 2
+			if dto.OriginalIndex < offset && dto.Role == "system" {
+				continue
+			}
+			turnIdx := (dto.OriginalIndex - offset) / 2
 			if turnIdx != lastTurnIdx {
 				activeTurns++
 				if dto.IsPinned {
@@ -708,6 +718,15 @@ func (m *rootBrowserModel) syncViewportToSelectedTurn() {
 	}
 }
 
+func (m *rootBrowserModel) getSystemOffset() int {
+	for _, dto := range m.history {
+		if dto.OriginalIndex == 0 && dto.Role == "system" {
+			return 1
+		}
+	}
+	return 0
+}
+
 func (m *rootBrowserModel) togglePin() {
 	if m.selectedTurn == -1 || m.selectedTurn >= len(m.history) {
 		return
@@ -718,8 +737,13 @@ func (m *rootBrowserModel) togglePin() {
 		return
 	}
 
+	offset := m.getSystemOffset()
+	if dto.OriginalIndex < offset && dto.Role == "system" {
+		return // System message cannot be pinned/unpinned manually via turn index
+	}
+
 	// Toggle pin state
-	err := m.cmdService.SetPinned(context.Background(), dto.OriginalIndex/2, !dto.IsPinned)
+	err := m.cmdService.SetPinned(context.Background(), (dto.OriginalIndex-offset)/2, !dto.IsPinned)
 	if err != nil {
 		m.err = err
 		return
@@ -727,10 +751,16 @@ func (m *rootBrowserModel) togglePin() {
 
 	// Update local DTOs for the turn to reflect toggle
 	newPinState := !dto.IsPinned
-	turnStartIdx := dto.OriginalIndex & ^1
+	turnStartIdx := ((dto.OriginalIndex - offset) & ^1) + offset
 	for idx := range m.history {
-		if !m.history[idx].IsArchived && (m.history[idx].OriginalIndex & ^1) == turnStartIdx {
-			m.history[idx].IsPinned = newPinState
+		if !m.history[idx].IsArchived && (m.history[idx].OriginalIndex & ^1) == (turnStartIdx & ^1) {
+			// Actually we should match the exact turn start index.
+			// The original logic 'dto.OriginalIndex & ^1' was simpler but offset-unaware.
+			// Let's use a more precise check.
+			msgOffset := m.history[idx].OriginalIndex - offset
+			if msgOffset >= 0 && (msgOffset&^1) == (dto.OriginalIndex-offset)&^1 {
+				m.history[idx].IsPinned = newPinState
+			}
 		}
 	}
 	m.lastMutationTime = time.Now()
@@ -761,8 +791,15 @@ func (m *rootBrowserModel) rollbackToSelected() tea.Cmd {
 		return nil
 	}
 
+	offset := m.getSystemOffset()
 	totalMsgs := lastActiveIdx + 1
-	targetStartIdx := dto.OriginalIndex & ^1
+	
+	// If user selected the system message, rollback everything after it.
+	targetStartIdx := dto.OriginalIndex
+	if targetStartIdx >= offset {
+		targetStartIdx = ((dto.OriginalIndex - offset) & ^1) + offset
+	}
+	
 	turnsToRemove := (totalMsgs - targetStartIdx + 1) / 2
 
 	_, _, _, err := m.cmdService.RollbackTurns(context.Background(), turnsToRemove)

@@ -181,9 +181,14 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Turns are pairs. Turn 0 is messages 0 and 1.
-	startIdx := turnIndex * 2
-	if startIdx < 0 || startIdx+1 >= len(m.Contents) {
+	offset := 0
+	if len(m.Contents) > 0 && m.Contents[0].Role == "system" {
+		offset = 1
+	}
+
+	// Turns are pairs. Turn 0 is messages offset and offset+1.
+	startIdx := offset + (turnIndex * 2)
+	if startIdx < offset || startIdx+1 >= len(m.Contents) {
 		return fmt.Errorf("invalid turn index: %d (history length: %d)", turnIndex, len(m.Contents))
 	}
 
@@ -235,10 +240,19 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	defer m.mu.Unlock()
 
 	originalLen := len(m.Contents)
-	actualRemoved, newLen := calculateRollbackBounds(originalLen, turns)
+	hasSystem := false
+	if originalLen > 0 && m.Contents[0].Role == "system" {
+		hasSystem = true
+	}
+
+	actualRemoved, newLen := calculateRollbackBounds(originalLen, turns, hasSystem)
 
 	if newLen == originalLen && actualRemoved == 0 {
-		return 0, len(m.Contents) / 2, len(m.Contents), nil
+		effectiveLen := originalLen
+		if hasSystem {
+			effectiveLen--
+		}
+		return 0, effectiveLen / 2, originalLen, nil
 	}
 
 	originalContents := m.Contents
@@ -261,35 +275,43 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	}
 
 	remainingMsgs = len(m.Contents)
-	remainingTurns = remainingMsgs / 2
+	effectiveLen := remainingMsgs
+	if hasSystem {
+		effectiveLen--
+	}
+	remainingTurns = effectiveLen / 2
 
 	return actualRemoved, remainingTurns, remainingMsgs, nil
 }
 
-func calculateRollbackBounds(originalLen int, turns int) (actualRemoved, newLen int) {
+func calculateRollbackBounds(originalLen int, turns int, hasSystem bool) (actualRemoved, newLen int) {
 	if originalLen <= 0 {
 		return 0, 0
 	}
 
+	offset := 0
+	if hasSystem {
+		offset = 1
+	}
+	effectiveLen := originalLen - offset
+
 	if turns <= 0 {
-		// Invariant: Rollback must result in an even number of messages (complete pairs).
-		// If the initial state is odd, we always drop the trailing partial turn even if turns=0.
-		if originalLen%2 != 0 {
+		// Invariant: Rollback must result in an even number of effective messages (complete pairs).
+		// If the initial state is odd (effective), we always drop the trailing partial turn even if turns=0.
+		if effectiveLen%2 != 0 {
 			return 0, originalLen - 1
 		}
 		return 0, originalLen
 	}
 
-	currentTurns := (originalLen + 1) / 2
+	currentTurns := (effectiveLen + 1) / 2
 	if turns >= currentTurns {
-		return currentTurns, 0
+		return currentTurns, offset
 	}
 
 	// Calculate how many messages to drop.
-	// If originalLen is odd (e.g., 3), dropping 1 turn means dropping the partial turn (1 message).
-	// Dropping 2 turns means dropping that partial turn AND one full turn (1 + 2 = 3 messages).
 	droppedMsgs := turns * 2
-	if originalLen%2 != 0 {
+	if effectiveLen%2 != 0 {
 		droppedMsgs -= 1
 	}
 
