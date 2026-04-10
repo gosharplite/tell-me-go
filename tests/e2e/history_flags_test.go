@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHistoryNavigationFlags(t *testing.T) {
@@ -44,6 +45,8 @@ func TestHistoryNavigationFlags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to send prompt %q: %v", p, err)
 		}
+		// Windows file lock mitigation - Increased for stability on slower CI/local Windows runs
+		time.Sleep(1000 * time.Millisecond)
 	}
 
 	t.Run("LastNMessages", func(t *testing.T) {
@@ -74,6 +77,7 @@ func TestHistoryNavigationFlags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CLI -b 1 failed: %v\nStderr: %s", err, stderr)
 		}
+		time.Sleep(100 * time.Millisecond)
 
 		// Verify that Message 3 was successfully deleted and we now see Message 1 and 2.
 		// We use -l 4 to see both remaining turns (Message 1 and Message 2).
@@ -101,6 +105,7 @@ func TestHistoryNavigationFlags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CLI --retry failed: %v\nStderr: %s", err, stderr)
 		}
+		time.Sleep(100 * time.Millisecond)
 
 		out := stripANSI(stdout)
 		if !strings.Contains(out, "Response to your prompt") {
@@ -148,6 +153,7 @@ func TestHistoryOnlyExit(t *testing.T) {
 
 	// 3. Pre-populate history
 	_, _, _ = runCommandWithEnv(env, "", "-c="+configPath, "initial message")
+	time.Sleep(100 * time.Millisecond)
 	chatCalled = false // Reset after setup
 
 	t.Run("ShowHistoryAndExit", func(t *testing.T) {
@@ -175,6 +181,7 @@ func TestHistoryOnlyExit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CLI -b 1 failed: %v\nStderr: %s", err, stderr)
 		}
+		time.Sleep(100 * time.Millisecond)
 
 		if chatCalled {
 			t.Error("Expected chat engine NOT to be called when using -b without a prompt")

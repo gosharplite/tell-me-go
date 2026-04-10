@@ -243,6 +243,9 @@ func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) (err e
 		return oerr
 	}
 	defer func() {
+		if serr := f.Sync(); serr != nil && err == nil {
+			err = serr
+		}
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
@@ -271,6 +274,9 @@ func (s *jsonlStore) Archive(ctx context.Context, contents []*llm.Content) (err 
 		return oerr
 	}
 	defer func() {
+		if serr := f.Sync(); serr != nil && err == nil {
+			err = serr
+		}
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
@@ -354,6 +360,9 @@ func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map
 		return oerr
 	}
 	defer func() {
+		if serr := f.Sync(); serr != nil && err == nil {
+			err = serr
+		}
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
@@ -399,6 +408,9 @@ func (s *jsonlStore) AppendParts(ctx context.Context, index int, parts []*llm.Pa
 		return oerr
 	}
 	defer func() {
+		if serr := f.Sync(); serr != nil && err == nil {
+			err = serr
+		}
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = cerr
 		}

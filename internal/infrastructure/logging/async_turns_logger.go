@@ -54,8 +54,15 @@ func NewAsyncTurnsLogger(fs infra_persistence.FileSystem, filePath string, logge
 
 // Listen starts the worker loop and blocks until the context is canceled.
 func (l *asyncTurnsLogger) Listen(ctx context.Context) error {
+	l.mu.RLock()
+	if l.closed {
+		l.mu.RUnlock()
+		return nil
+	}
+	l.wg.Add(1)
+	l.mu.RUnlock()
+
 	defer l.wg.Done()
-	l.wg.Add(1) // Track worker existence for backward compatibility with Close()
 
 	for {
 		select {

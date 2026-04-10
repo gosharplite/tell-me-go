@@ -25,6 +25,7 @@ type searchMockFile struct {
 
 func (f *searchMockFile) Close() error                      { return nil }
 func (f *searchMockFile) Write(p []byte) (n int, err error) { return 0, io.EOF }
+func (f *searchMockFile) Sync() error                       { return nil }
 func (f *searchMockFile) ReadDir(n int) ([]os.DirEntry, error) {
 	return nil, io.EOF
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -153,6 +154,9 @@ func TestAtomicWrite_RenameFailure(t *testing.T) {
 }
 
 func TestAtomicWrite_OpenFileFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows: os.Chmod does not reliably make directories non-writable for the owner.")
+	}
 	t.Parallel()
 	tmpDir := t.TempDir()
 	// Create a directory where we want to write, and make it read-only

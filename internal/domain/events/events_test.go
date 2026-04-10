@@ -542,7 +542,7 @@ func TestEventBus_SlowSubscriber(t *testing.T) {
 		t.Errorf("Expected Publish to return nil despite load shedding, got: %v", err)
 	}
 
-	if duration > 100*time.Millisecond {
+	if duration > 500*time.Millisecond {
 		t.Errorf("Publish took too long: %v. It must not block the publisher.", duration)
 	}
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1016,7 +1017,11 @@ func TestJSONLStore_AppendParts(t *testing.T) {
 
 func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
 	// Create an invalid store path
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), "/invalid_dir/file.jsonl", filepath.Join(filepath.Dir("/invalid_dir/file.jsonl"), "archive.jsonl"))
+	invalidDir := "/invalid_dir"
+	if runtime.GOOS == "windows" {
+		invalidDir = `C:\NUL\invalid`
+	}
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(invalidDir, "file.jsonl"), filepath.Join(invalidDir, "archive.jsonl"))
 	err := store.AppendParts(context.Background(), 0, []*llm.Part{{Text: "test"}})
 	if err == nil {
 		t.Error("expected error appending parts to invalid directory")

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
@@ -91,15 +92,28 @@ func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string, perm os.F
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	if err := fs.Rename(tmpPath, targetPath); err != nil {
-		// Implement fallback for EXDEV (cross-device link) errors
-		if isCrossDeviceError(err) {
-			return fallbackCopy(fs, tmpPath, targetPath, perm)
+	// Retry loop for Windows "Access is denied" during rename, which can be transient (e.g. anti-virus).
+	var lastErr error
+	for i := 0; i < 10; i++ {
+		if err := fs.Rename(tmpPath, targetPath); err != nil {
+			// Implement fallback for EXDEV (cross-device link) errors
+			if isCrossDeviceError(err) {
+				return fallbackCopy(fs, tmpPath, targetPath, perm)
+			}
+			lastErr = err
+			// If it's a transient error on Windows (like Access is denied), retry after a short delay.
+			if strings.Contains(err.Error(), "Access is denied") {
+				if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "atomic") {
+					fmt.Printf("DEBUG: retrying rename due to Access is denied (attempt %d): %s\n", i+1, targetPath)
+				}
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+			return fmt.Errorf("failed to rename temp file: %w", err)
 		}
-		return fmt.Errorf("failed to rename temp file: %w", err)
+		return nil
 	}
-
-	return nil
+	return fmt.Errorf("failed to rename temp file after 10 retries: %w", lastErr)
 }
 
 func isCrossDeviceError(err error) bool {

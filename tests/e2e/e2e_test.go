@@ -493,6 +493,9 @@ func TestSecurityGate(t *testing.T) {
 }
 
 func TestSymlinkAttack(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows: Symlinks require elevated privileges and /etc/passwd doesn't exist.")
+	}
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")

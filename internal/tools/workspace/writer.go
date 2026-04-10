@@ -132,6 +132,7 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 		return tools.ToolResult{}, fmt.Errorf("failed to open file: %w", oerr)
 	}
 	defer func() {
+		_ = f.Sync()
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = fmt.Errorf("failed to close file (data may be lost): %w", cerr)
 		}

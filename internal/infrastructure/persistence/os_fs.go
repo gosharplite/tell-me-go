@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
@@ -41,43 +43,113 @@ type FileSystem interface {
 type OSFileSystem struct{}
 
 func (f *OSFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm)
+	return retryOnWindows(func() error {
+		return os.MkdirAll(path, perm)
+	})
 }
 
 func (f *OSFileSystem) CreateTemp(dir, pattern string) (File, error) {
-	return os.CreateTemp(dir, pattern)
+	var res File
+	err := retryOnWindows(func() error {
+		var err error
+		res, err = os.CreateTemp(dir, pattern)
+		return err
+	})
+	return res, err
 }
 
 func (f *OSFileSystem) Rename(oldpath, newpath string) error {
-	return os.Rename(oldpath, newpath)
+	return retryOnWindows(func() error {
+		return os.Rename(oldpath, newpath)
+	})
 }
 
 func (f *OSFileSystem) Remove(name string) error {
-	return os.Remove(name)
+	return retryOnWindows(func() error {
+		return os.Remove(name)
+	})
 }
 
 func (f *OSFileSystem) RemoveAll(path string) error {
-	return os.RemoveAll(path)
+	return retryOnWindows(func() error {
+		return os.RemoveAll(path)
+	})
 }
 
 func (f *OSFileSystem) Stat(name string) (os.FileInfo, error) {
-	return os.Stat(name)
+	var res os.FileInfo
+	err := retryOnWindows(func() error {
+		var err error
+		res, err = os.Stat(name)
+		return err
+	})
+	return res, err
 }
 
 func (f *OSFileSystem) ReadDir(name string) ([]os.DirEntry, error) {
-	return os.ReadDir(name)
+	var res []os.DirEntry
+	err := retryOnWindows(func() error {
+		var err error
+		res, err = os.ReadDir(name)
+		return err
+	})
+	return res, err
 }
 
 func (f *OSFileSystem) ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
+	var res []byte
+	err := retryOnWindows(func() error {
+		var err error
+		res, err = os.ReadFile(name)
+		return err
+	})
+	return res, err
 }
 
 func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	return os.OpenFile(name, flag, perm)
+	var res File
+	err := retryOnWindows(func() error {
+		var err error
+		res, err = os.OpenFile(name, flag, perm)
+		return err
+	})
+	return res, err
 }
 
 func (f *OSFileSystem) Open(name string) (File, error) {
-	return os.Open(name)
+	var res File
+	err := retryOnWindows(func() error {
+		var err error
+		res, err = os.Open(name)
+		return err
+	})
+	return res, err
+}
+
+func retryOnWindows(op func() error) error {
+	var lastErr error
+	for i := 0; i < 5; i++ {
+		err := op()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if isWindowsTransientError(err) {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		return err
+	}
+	return lastErr
+}
+
+func isWindowsTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "access is denied") ||
+		strings.Contains(msg, "the process cannot access the file because it is being used by another process")
 }
 
 // domainFS wraps FileSystem to implement persistence.FileSystem (domain interface).

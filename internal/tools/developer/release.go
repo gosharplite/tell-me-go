@@ -46,9 +46,14 @@ type checkResult struct {
 }
 
 func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	root, err := m.sm.IsPathSafe(".")
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("security error: %w", err)
+	}
+
 	pipeline := []readinessCheck{
-		&secretScanner{sm: m.sm, fs: m.fs},
-		&dependencyChecker{fs: m.fs},
+		&secretScanner{root: root, fs: m.fs},
+		&dependencyChecker{root: root, fs: m.fs},
 		&linterChecker{runner: m.runner},
 		&buildChecker{runner: m.runner},
 		&testRunner{runner: m.runner},
@@ -139,8 +144,8 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 
 // secretScanner implementation
 type secretScanner struct {
-	sm domain_security.PathValidator
-	fs persistence.FileSystem
+	root string
+	fs   persistence.FileSystem
 }
 
 func (s *secretScanner) Name() string { return "Security Scan" }
@@ -157,12 +162,7 @@ func (s *secretScanner) Run(ctx context.Context) checkResult {
 	secretsFound := false
 	var findings []string
 
-	root, err := s.sm.IsPathSafe(".")
-	if err != nil {
-		return checkResult{OK: false, Message: fmt.Sprintf("Security error: %v", err)}
-	}
-
-	err = s.fs.Walk(ctx, root, func(path string, info os.FileInfo, err error) error {
+	err := s.fs.Walk(ctx, s.root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || s.isIgnored(path) {
 			return nil
 		}
@@ -202,25 +202,32 @@ func (s *secretScanner) scanContent(content []byte, path string, patterns []*reg
 }
 
 func (s *secretScanner) isIgnored(path string) bool {
-	return strings.Contains(path, ".git") ||
-		strings.Contains(path, "vendor/") ||
-		strings.Contains(path, "node_modules") ||
-		strings.HasSuffix(path, "_test.go") ||
-		strings.HasSuffix(path, ".md") ||
-		strings.HasSuffix(path, ".json") ||
-		strings.HasSuffix(path, ".golden")
+	p := filepath.ToSlash(path)
+	return strings.Contains(p, ".git") ||
+		strings.Contains(p, "vendor/") ||
+		strings.Contains(p, "node_modules") ||
+		strings.HasSuffix(p, "_test.go") ||
+		strings.HasSuffix(p, ".md") ||
+		strings.HasSuffix(p, ".json") ||
+		strings.HasSuffix(p, ".golden")
 }
 
 // dependencyChecker implementation
 type dependencyChecker struct {
-	fs persistence.FileSystem
+	root string
+	fs   persistence.FileSystem
 }
 
 func (c *dependencyChecker) Name() string { return "Dependency Check" }
 func (c *dependencyChecker) Run(ctx context.Context) checkResult {
-	modContent, err := c.fs.ReadFile(ctx, "go.mod")
+	modPath := "go.mod"
+	if c.root != "" {
+		modPath = filepath.Join(c.root, "go.mod")
+	}
+
+	modContent, err := c.fs.ReadFile(ctx, modPath)
 	if err != nil {
-		return checkResult{OK: false, Message: "Could not read go.mod"}
+		return checkResult{OK: false, Message: fmt.Sprintf("Could not read go.mod at %s", modPath)}
 	}
 
 	if strings.Contains(string(modContent), "replace ") {

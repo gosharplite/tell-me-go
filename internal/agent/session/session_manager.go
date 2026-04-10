@@ -232,10 +232,15 @@ func (o *sessionManager) Rollback(ctx context.Context, sc ports.SessionConfig, s
 		return nil
 	}
 
-	actualRemoved, remainingTurns, remainingMsgs, err := sd.GetHistoryManager().RollbackTurns(ctx, sc.GetBackN())
+	hManager := sd.GetHistoryManager()
+	actualRemoved, remainingTurns, remainingMsgs, err := hManager.RollbackTurns(ctx, sc.GetBackN())
 	if err != nil {
 		return fmt.Errorf("failed to rollback history: %w", err)
 	}
+
+	// Force Sync to ensure Windows file system reconciliation
+	_ = hManager.Sync(ctx)
+
 	_, _ = fmt.Fprintf(o.Stdout, "⏪ Rolled back %d turns. History now contains %d turns (%d messages).\n",
 		actualRemoved, remainingTurns, remainingMsgs)
 

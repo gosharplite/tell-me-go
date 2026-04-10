@@ -16,7 +16,7 @@ func TestRealExecutor(t *testing.T) {
 
 	t.Run("Output", func(t *testing.T) {
 		t.Parallel()
-		out, err := e.Output(ctx, "echo", "hello")
+		out, err := e.Output(ctx, helperPath, "echo", "hello")
 		if err != nil {
 			t.Fatalf("Output failed: %v", err)
 		}
@@ -27,7 +27,7 @@ func TestRealExecutor(t *testing.T) {
 
 	t.Run("CombinedOutput", func(t *testing.T) {
 		t.Parallel()
-		out, err := e.CombinedOutput(ctx, "echo", "world")
+		out, err := e.CombinedOutput(ctx, helperPath, "echo", "world")
 		if err != nil {
 			t.Fatalf("CombinedOutput failed: %v", err)
 		}

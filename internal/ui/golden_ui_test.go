@@ -9,6 +9,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +93,9 @@ func verifyGolden(t *testing.T, filename, actual string) {
 	t.Helper()
 	goldenPath := filepath.Join("testdata", filename)
 
+	// Normalize line endings for cross-platform consistency
+	actual = strings.ReplaceAll(actual, "\r\n", "\n")
+
 	if *update {
 		if err := os.WriteFile(goldenPath, []byte(actual), 0644); err != nil {
 			t.Fatalf("failed to update golden file %s: %v", filename, err)
@@ -106,7 +110,9 @@ func verifyGolden(t *testing.T, filename, actual string) {
 		t.Fatalf("failed to read golden file %s: %v", filename, err)
 	}
 
-	if actual != string(expected) {
-		t.Errorf("output mismatch for %s\nActual:\n%s\nExpected:\n%s", filename, actual, string(expected))
+	normalizedExpected := strings.ReplaceAll(string(expected), "\r\n", "\n")
+
+	if actual != normalizedExpected {
+		t.Errorf("output mismatch for %s\nActual:\n%s\nExpected:\n%s", filename, actual, normalizedExpected)
 	}
 }

@@ -71,7 +71,17 @@ func (m *Manager) Load(ctx context.Context) error {
 func (m *Manager) Save(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.store.Save(ctx, m.Contents)
+	if err := m.store.Save(ctx, m.Contents); err != nil {
+		return err
+	}
+	return m.Sync(ctx)
+}
+
+// Sync ensures all buffered data is persisted to the physical disk.
+func (m *Manager) Sync(ctx context.Context) error {
+	// For jsonlStore, Save already handles Sync and Close via AtomicWrite.
+	// This method provides a hook for future stores or explicit reconciliation.
+	return nil
 }
 
 // Archive appends content entries to the archive file.
@@ -259,11 +269,13 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 }
 
 func calculateRollbackBounds(originalLen int, turns int) (actualRemoved, newLen int) {
-	if originalLen == 0 {
+	if originalLen <= 0 {
 		return 0, 0
 	}
 
 	if turns <= 0 {
+		// Invariant: Rollback must result in an even number of messages (complete pairs).
+		// If the initial state is odd, we always drop the trailing partial turn even if turns=0.
 		if originalLen%2 != 0 {
 			return 0, originalLen - 1
 		}
@@ -271,18 +283,18 @@ func calculateRollbackBounds(originalLen int, turns int) (actualRemoved, newLen 
 	}
 
 	currentTurns := (originalLen + 1) / 2
-	if turns > currentTurns {
-		turns = currentTurns
+	if turns >= currentTurns {
+		return currentTurns, 0
 	}
 
+	// Calculate how many messages to drop.
+	// If originalLen is odd (e.g., 3), dropping 1 turn means dropping the partial turn (1 message).
+	// Dropping 2 turns means dropping that partial turn AND one full turn (1 + 2 = 3 messages).
 	droppedMsgs := turns * 2
 	if originalLen%2 != 0 {
 		droppedMsgs -= 1
 	}
 
-	if droppedMsgs >= originalLen {
-		return currentTurns, 0
-	}
 	return turns, originalLen - droppedMsgs
 }
 

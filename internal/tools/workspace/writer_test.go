@@ -151,6 +151,10 @@ func (m *mockFS) WriteFile(ctx context.Context, filename string, data []byte, pe
 	return os.WriteFile(filename, data, perm)
 }
 
+func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
+	return infrapersistence.NewOSFileSystem().OpenFile(ctx, name, flag, perm)
+}
+
 func TestWriteFile_Failures(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
@@ -343,25 +347,33 @@ func (m *mockFS_AppendWrite) OpenFile(ctx context.Context, name string, flag int
 	if err != nil {
 		return nil, err
 	}
-	return &mockFile{File: f, writeErr: m.writeErr}, nil
+	return &mockFileWriter{File: f, writeErr: m.writeErr}, nil
 }
 
-type mockFile struct {
+type mockFileWriter struct {
 	*os.File
 	writeErr error
 }
 
-func (m *mockFile) Write(p []byte) (n int, err error) {
+func (m *mockFileWriter) Write(p []byte) (n int, err error) {
 	if m.writeErr != nil {
 		return 0, m.writeErr
 	}
 	return m.File.Write(p)
 }
 
-func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
+func (m *mockFileWriter) Seek(offset int64, whence int) (int64, error) {
 	return m.File.Seek(offset, whence)
 }
 
-func (m *mockFile) Close() error {
+func (m *mockFileWriter) Close() error {
 	return m.File.Close()
+}
+
+func (m *mockFileWriter) Sync() error {
+	return m.File.Sync()
+}
+
+func (m *mockFileWriter) ReadDir(n int) ([]os.DirEntry, error) {
+	return nil, fmt.Errorf("not a directory")
 }

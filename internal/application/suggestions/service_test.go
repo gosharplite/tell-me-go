@@ -434,6 +434,10 @@ func (f *chunkedMockFile) Close() error {
 	return nil
 }
 
+func (f *chunkedMockFile) Sync() error {
+	return nil
+}
+
 // Dummy implementations for required methods of persistence.File
 func (f *chunkedMockFile) Read(p []byte) (n int, err error)             { return 0, io.EOF }
 func (f *chunkedMockFile) Write(p []byte) (n int, err error)            { return 0, nil }

@@ -276,5 +276,5 @@ func formatMatch(path string, lineNum int, text string) string {
 	if len(trimmed) > 500 {
 		trimmed = trimmed[:500] + " (truncated)"
 	}
-	return fmt.Sprintf("%s:%d: %s", path, lineNum, trimmed)
+	return fmt.Sprintf("%s:%d: %s", filepath.ToSlash(path), lineNum, trimmed)
 }
