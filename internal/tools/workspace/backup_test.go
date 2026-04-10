@@ -123,12 +123,22 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				// On Windows, Chmod 0444 on the file is more reliable than Chmod 0555 on the dir
-				if err := os.Chmod(path, 0444); err != nil {
-					t.Fatal(err)
-				}
-				return func() {
-					_ = os.Chmod(path, 0644)
+				// On Windows, Chmod 0444 on the file is more reliable.
+				// On POSIX, we must make the directory read-only to prevent Rename/CreateTemp.
+				if runtime.GOOS == "windows" {
+					if err := os.Chmod(path, 0444); err != nil {
+						t.Fatal(err)
+					}
+					return func() {
+						_ = os.Chmod(path, 0644)
+					}
+				} else {
+					if err := os.Chmod(tempDir, 0555); err != nil {
+						t.Fatal(err)
+					}
+					return func() {
+						_ = os.Chmod(tempDir, 0755)
+					}
 				}
 			},
 			snapshotPath:  "readonly.txt",
