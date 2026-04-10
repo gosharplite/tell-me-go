@@ -10,24 +10,24 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 )
 
-// DefaultConfigFinder implements the domain's ConfigFinder interface with tiered search logic.
-type DefaultConfigFinder struct {
+// defaultConfigFinder implements the domain's ConfigFinder interface with tiered search logic.
+type defaultConfigFinder struct {
 	baseDir string
 }
 
-// Option defines a functional option for DefaultConfigFinder.
-type Option func(*DefaultConfigFinder)
+// option defines a functional option for defaultConfigFinder.
+type option func(*defaultConfigFinder)
 
 // WithBaseDir sets the base directory for search operations.
-func WithBaseDir(dir string) Option {
-	return func(f *DefaultConfigFinder) {
+func WithBaseDir(dir string) option {
+	return func(f *defaultConfigFinder) {
 		f.baseDir = dir
 	}
 }
 
-// NewDefaultConfigFinder creates a new DefaultConfigFinder instance with optional configurations.
-func NewDefaultConfigFinder(opts ...Option) *DefaultConfigFinder {
-	f := &DefaultConfigFinder{}
+// NewDefaultConfigFinder creates a new defaultConfigFinder instance with optional configurations.
+func NewDefaultConfigFinder(opts ...option) config.ConfigFinder {
+	f := &defaultConfigFinder{}
 	for _, opt := range opts {
 		opt(f)
 	}
@@ -40,7 +40,7 @@ func NewDefaultConfigFinder(opts ...Option) *DefaultConfigFinder {
 // 3. Parent Traversal: Search for configs/assistant.yaml or .tell-me-go.yaml in up to 5 levels of parent directories.
 // 4. Standard OS Config Paths: e.g., ~/.config/tell-me-go/assistant.yaml on Linux or %AppData%\tell-me-go\assistant.yaml on Windows.
 // 5. Fallback: Returns "configs/assistant.yaml" if no file is found.
-func (f *DefaultConfigFinder) Find() (string, error) {
+func (f *defaultConfigFinder) Find() (string, error) {
 	// 1. Local Directory
 	base := f.baseDir
 	if base == "" {
@@ -108,5 +108,5 @@ func (f *DefaultConfigFinder) Find() (string, error) {
 	return filepath.Join(base, "configs", "assistant.yaml"), nil
 }
 
-// Ensure DefaultConfigFinder implements config.ConfigFinder
-var _ config.ConfigFinder = (*DefaultConfigFinder)(nil)
+// Ensure defaultConfigFinder implements config.ConfigFinder
+var _ config.ConfigFinder = (*defaultConfigFinder)(nil)

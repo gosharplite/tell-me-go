@@ -789,20 +789,20 @@ func TestCapturer_RequestAfterClose(t *testing.T) {
 	}
 
 	_, err = c.ReadLine(context.Background())
-	if !errors.Is(err, ErrCapturerClosed) {
-		t.Errorf("ReadLine: expected ErrCapturerClosed, got %v", err)
+	if !errors.Is(err, errCapturerClosed) {
+		t.Errorf("ReadLine: expected errCapturerClosed, got %v", err)
 	}
 
 	_, err = c.Confirm(context.Background(), "Proceed?")
-	if !errors.Is(err, ErrCapturerClosed) {
-		t.Errorf("Confirm: expected ErrCapturerClosed, got %v", err)
+	if !errors.Is(err, errCapturerClosed) {
+		t.Errorf("Confirm: expected errCapturerClosed, got %v", err)
 	}
 
 	isTTY := false
 	c.isTTYOverride = &isTTY
 	_, err = c.CapturePrompt(context.Background(), nil)
-	if !errors.Is(err, ErrCapturerClosed) {
-		t.Errorf("CapturePrompt: expected ErrCapturerClosed, got %v", err)
+	if !errors.Is(err, errCapturerClosed) {
+		t.Errorf("CapturePrompt: expected errCapturerClosed, got %v", err)
 	}
 }
 
