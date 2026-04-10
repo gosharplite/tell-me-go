@@ -603,3 +603,230 @@ func TestReadSingleKey_Comprehensive(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+func TestCapturer_ReadLine_Success(t *testing.T) {
+	t.Parallel()
+	input := "line one\nline two\n"
+	c := NewCapturer(strings.NewReader(input), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+
+	line, err := c.ReadLine(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if line != "line one\n" {
+		t.Errorf("expected 'line one\\n', got %q", line)
+	}
+
+	line, err = c.ReadLine(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if line != "line two\n" {
+		t.Errorf("expected 'line two\\n', got %q", line)
+	}
+}
+
+func TestCapturer_ReadLine_EOF(t *testing.T) {
+	t.Parallel()
+	input := "incomplete"
+	c := NewCapturer(strings.NewReader(input), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+
+	line, err := c.ReadLine(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if line != "incomplete" {
+		t.Errorf("expected 'incomplete', got %q", line)
+	}
+
+	line, err = c.ReadLine(context.Background())
+	if !errors.Is(err, io.EOF) {
+		t.Errorf("expected io.EOF, got %v", err)
+	}
+	if line != "" {
+		t.Errorf("expected empty string, got %q", line)
+	}
+}
+
+func TestCapturer_RequestAfterClose(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(strings.NewReader("data"), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+
+	err := c.Close(context.Background())
+	if err != nil {
+		t.Fatalf("failed to close: %v", err)
+	}
+
+	_, err = c.ReadLine(context.Background())
+	if !errors.Is(err, ErrCapturerClosed) {
+		t.Errorf("ReadLine: expected ErrCapturerClosed, got %v", err)
+	}
+
+	_, err = c.Confirm(context.Background(), "Proceed?")
+	if !errors.Is(err, ErrCapturerClosed) {
+		t.Errorf("Confirm: expected ErrCapturerClosed, got %v", err)
+	}
+
+	isTTY := false
+	c.isTTYOverride = &isTTY
+	_, err = c.CapturePrompt(context.Background(), nil)
+	if !errors.Is(err, ErrCapturerClosed) {
+		t.Errorf("CapturePrompt: expected ErrCapturerClosed, got %v", err)
+	}
+}
+
+func TestCapturer_ReadLine_ContextCancelled_BlockingSend(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+
+	// Action 1: Start a ReadLine call that will block in the worker
+	// The worker will be busy reading from 'pr'.
+	go func() {
+		_, _ = c.ReadLine(context.Background())
+	}()
+
+	// Give the goroutine a moment to send the request and start reading
+	time.Sleep(50 * time.Millisecond)
+
+	// Action 2: Call ReadLine with a pre-cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := c.ReadLine(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestCapturer_Close_Idempotent(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(strings.NewReader("data"), io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+
+	err := c.Close(context.Background())
+	if err != nil {
+		t.Fatalf("first close failed: %v", err)
+	}
+
+	err = c.Close(context.Background())
+	if err != nil {
+		t.Fatalf("second close failed: %v", err)
+	}
+}
+
+func TestCapturer_Close_ContextCancelled(t *testing.T) {
+	t.Parallel()
+	// Using a pipe that is never closed by the worker because it's stuck reading.
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+
+	// Action: Start a ReadLine call that will block in the worker
+	go func() {
+		_, _ = c.ReadLine(context.Background())
+	}()
+
+	// Give the goroutine a moment to send the request and start reading
+	time.Sleep(50 * time.Millisecond)
+
+	// Now try to close with a pre-cancelled context.
+	// Close will close requestChan, but the worker is stuck in ReadString and won't see the close until it finishes the read.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := c.Close(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestCapturer_ReadSingleKey_ContextCancelled_AfterSend(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.ReadSingleKey(ctx)
+		errCh <- err
+	}()
+
+	// Give it time to send the request
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for ReadSingleKey to return after cancellation")
+	}
+}
+
+func TestCapturer_ReadSingleKey_ContextCancelled_BlockingSend(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	c := NewCapturer(pr, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+
+	// Block the worker
+	go func() {
+		_, _ = c.ReadLine(context.Background())
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := c.ReadSingleKey(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestCapturer_ReadLine_IOError(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(&uiErrorReader{}, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+
+	_, err := c.ReadLine(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("expected read error, got %v", err)
+	}
+}
+
+func TestCapturer_ReadSingleKey_IOError(t *testing.T) {
+	t.Parallel()
+	c := NewCapturer(&uiErrorReader{}, io.Discard, io.Discard, nil, nil, "", "", true).(*capturer)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+
+	_, err := c.ReadSingleKey(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("expected read error, got %v", err)
+	}
+}

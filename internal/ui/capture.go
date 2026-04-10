@@ -22,6 +22,8 @@ import (
 var (
 	// ErrNoInput is returned when no input is provided and SkipTTYWait is true.
 	ErrNoInput = errors.New("no input")
+	// ErrCapturerClosed is returned when an operation is attempted on a closed capturer.
+	ErrCapturerClosed = errors.New("capturer closed")
 )
 
 const (
@@ -185,7 +187,7 @@ func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, 
 	c.readerMu.Lock()
 	if c.requestChan == nil {
 		c.readerMu.Unlock()
-		return "", errors.New("capturer closed")
+		return "", ErrCapturerClosed
 	}
 	select {
 	case c.requestChan <- readRequest{op: opReadAll, limit: maxPromptSize, resCh: resCh}:
@@ -224,7 +226,7 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 	c.readerMu.Lock()
 	if c.requestChan == nil {
 		c.readerMu.Unlock()
-		return "", errors.New("capturer closed")
+		return "", ErrCapturerClosed
 	}
 	select {
 	case c.requestChan <- readRequest{op: opReadAll, limit: maxPromptSize, resCh: resCh}:
@@ -362,7 +364,7 @@ func (c *capturer) readByteFallback(ctx context.Context) (string, error) {
 	c.readerMu.Lock()
 	if c.requestChan == nil {
 		c.readerMu.Unlock()
-		return "", errors.New("capturer closed")
+		return "", ErrCapturerClosed
 	}
 	select {
 	case c.requestChan <- readRequest{op: opReadByte, resCh: resCh}:
@@ -399,7 +401,7 @@ func (c *capturer) ReadLine(ctx context.Context) (string, error) {
 	c.readerMu.Lock()
 	if c.requestChan == nil {
 		c.readerMu.Unlock()
-		return "", errors.New("capturer closed")
+		return "", ErrCapturerClosed
 	}
 	select {
 	case c.requestChan <- readRequest{op: opReadString, delim: '\n', resCh: resCh}:
