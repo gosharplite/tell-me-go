@@ -39,13 +39,13 @@ const (
 
 type readRequest struct {
 	op    readOp
-	delim byte          // For ReadString
-	limit int64         // For ReadAll (use maxPromptSize)
+	delim byte  // For ReadString
+	limit int64 // For ReadAll (use maxPromptSize)
 	resCh chan ioResult
 }
 
 type ioResult struct {
-	data any   // Will hold byte, string, or []byte
+	data any // Will hold byte, string, or []byte
 	err  error
 }
 
@@ -92,26 +92,20 @@ func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.M
 func (c *capturer) startWorker() {
 	go func() {
 		defer close(c.done)
-		for {
-			select {
-			case req, ok := <-c.requestChan:
-				if !ok {
-					return
-				}
-				var res ioResult
-				switch req.op {
-				case opReadByte:
-					b, err := c.reader.ReadByte()
-					res = ioResult{data: b, err: err}
-				case opReadString:
-					s, err := c.reader.ReadString(req.delim)
-					res = ioResult{data: s, err: err}
-				case opReadAll:
-					bytes, err := io.ReadAll(io.LimitReader(c.reader, req.limit))
-					res = ioResult{data: bytes, err: err}
-				}
-				req.resCh <- res
+		for req := range c.requestChan {
+			var res ioResult
+			switch req.op {
+			case opReadByte:
+				b, err := c.reader.ReadByte()
+				res = ioResult{data: b, err: err}
+			case opReadString:
+				s, err := c.reader.ReadString(req.delim)
+				res = ioResult{data: s, err: err}
+			case opReadAll:
+				bytes, err := io.ReadAll(io.LimitReader(c.reader, req.limit))
+				res = ioResult{data: bytes, err: err}
 			}
+			req.resCh <- res
 		}
 	}()
 }

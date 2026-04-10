@@ -14,7 +14,7 @@ import (
 func TestGetSessionEvents_QueryError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	r := newEventStore(db)
 	mock.ExpectQuery("SELECT id, payload, created_at FROM events").
@@ -32,7 +32,7 @@ func TestGetSessionEvents_QueryError(t *testing.T) {
 func TestGetSessionEvents_ScanError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	r := newEventStore(db)
 	// Passing a NULL (nil) to a non-nullable Scan target (string) will trigger a scan error
@@ -51,7 +51,7 @@ func TestGetSessionEvents_ScanError(t *testing.T) {
 func TestGetSessionEvents_ParseTimeError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	r := newEventStore(db)
 	eventID := "event-bad-time"
@@ -70,7 +70,7 @@ func TestGetSessionEvents_ParseTimeError(t *testing.T) {
 func TestGetSessionEvents_IterationError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	r := newEventStore(db)
 	mock.ExpectQuery("SELECT id, payload, created_at FROM events").
@@ -90,7 +90,7 @@ func TestGetSessionEvents_IterationError(t *testing.T) {
 func TestGetSessionEvents_CloseError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	r := newEventStore(db)
 	mock.ExpectQuery("SELECT id, payload, created_at FROM events").
