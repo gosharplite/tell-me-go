@@ -243,6 +243,41 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 			handler: m.writer.undoFileChange,
 			opts:    &tools.ToolOptions{Serial: true},
 		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:            "delete_path",
+				Description:     "Deletes a file or directory. This is platform-agnostic and safer than using shell-specific commands like 'rm' or 'del'.",
+				RequiresConsent: true,
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path":      {Type: "STRING", Description: "The path to delete."},
+						"recursive": {Type: "BOOLEAN", Description: "If true, deletes directories and their contents recursively (default false)."},
+						"reason":    {Type: "STRING", Description: "Reason for deleting this path."},
+					},
+					Required: []string{"path", "reason"},
+				},
+			},
+			handler: m.writer.deletePath,
+			opts:    &tools.ToolOptions{Serial: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:            "create_directory",
+				Description:     "Creates a new directory and any necessary parent directories. This is platform-agnostic and safer than using shell-specific commands like 'mkdir' or 'md'.",
+				RequiresConsent: true,
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path":   {Type: "STRING", Description: "The directory path to create."},
+						"reason": {Type: "STRING", Description: "Reason for creating this directory."},
+					},
+					Required: []string{"path", "reason"},
+				},
+			},
+			handler: m.writer.createDirectory,
+			opts:    &tools.ToolOptions{Serial: true},
+		},
 	}
 
 	for _, spec := range specs {
@@ -266,7 +301,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
-		Description:     "Executes a command. Shell features like operators (&&, ||, ;, |, >, <), wildcards (*, ?), and variable expansion ($) are supported and automatically handled via 'sh -c'. Security: Only whitelisted commands are auto-approved. For advanced multi-stage pipes, use the 'pipe_commands' tool.\n\n[WINDOWS COMPATIBILITY]: This tool uses POSIX-style shell parsing (shlex). Backslashes in paths (e.g., 'C:\\Users') will be interpreted as escape characters and stripped. ALWAYS use forward slashes for Windows paths (e.g., 'C:/Users') to ensure integrity; they are natively supported by PowerShell and the Go toolchain.",
+		Description:     "Executes a command. Shell features like operators (&&, ||, ;, |, >, <), wildcards (*, ?), and variable expansion ($) are supported and automatically handled via 'sh -c'. Security: Only whitelisted commands are auto-approved. For advanced multi-stage pipes, use the 'pipe_commands' tool.\n\n[WINDOWS COMPATIBILITY]: This tool uses POSIX-style shell parsing (shlex). Backslashes in paths (e.g., 'C:\\Users') will be interpreted as escape characters and stripped. ALWAYS use forward slashes for Windows paths (e.g., 'C:/Users') to ensure integrity; they are natively supported by PowerShell and the Go toolchain. Windows shell built-in commands (e.g., 'del', 'dir', 'echo', 'mkdir') are automatically detected and wrapped in 'cmd /c' on Windows systems.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

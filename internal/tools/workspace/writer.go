@@ -170,3 +170,52 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 type writerSecurity interface {
 	domain_security.PathValidator
 }
+
+func (w *fileWriter) deletePath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	var params struct {
+		Path      string `json:"path"`
+		Recursive bool   `json:"recursive"`
+		Reason    string `json:"reason"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	resolvedPath, err := w.sm.IsPathWritable(params.Path)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Recursive {
+		if err := w.fs.RemoveAll(ctx, resolvedPath); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("failed to delete path recursively: %w", err)
+		}
+	} else {
+		if err := w.fs.Remove(ctx, resolvedPath); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("failed to delete path: %w", err)
+		}
+	}
+
+	return tools.ToolResult{Text: "Path deleted successfully."}, nil
+}
+
+func (w *fileWriter) createDirectory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	var params struct {
+		Path   string `json:"path"`
+		Reason string `json:"reason"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	resolvedPath, err := w.sm.IsPathWritable(params.Path)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if err := w.fs.MkdirAll(ctx, resolvedPath, 0755); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	return tools.ToolResult{Text: "Directory created successfully."}, nil
+}

@@ -39,6 +39,8 @@ func TestRegister(t *testing.T) {
 		"append_text",
 		"get_file_diff",
 		"undo_file_change",
+		"delete_path",
+		"create_directory",
 		"execute_command",
 		"pipe_commands",
 		"ask_user",

@@ -375,3 +375,55 @@ func TestCommandValidator_PathCorruption(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandValidator_HasShellFeatures_Windows(t *testing.T) {
+	v := NewCommandValidator(nil, nil).(*commandValidator)
+	v.goos = "windows"
+
+	tests := []struct {
+		cmd  string
+		want bool
+	}{
+		{"del file.txt", true},
+		{"dir", true},
+		{"mkdir test", true},
+		{"md test", true},
+		{"copy src dst", true},
+		{"move src dst", true},
+		{"ren old new", true},
+		{"type file.txt", true},
+		{"echo hello", true},
+		{"ls", false}, // ls is not a Windows built-in
+		{"git status", false},
+	}
+
+	for _, tt := range tests {
+		parts, _ := v.Split(tt.cmd)
+		got := v.HasShellFeatures(parts)
+		if got != tt.want {
+			t.Errorf("HasShellFeatures(%q) on Windows = %v, want %v", tt.cmd, got, tt.want)
+		}
+	}
+}
+
+func TestCommandValidator_HasShellFeatures_NonWindows(t *testing.T) {
+	v := NewCommandValidator(nil, nil).(*commandValidator)
+	v.goos = "linux"
+
+	tests := []struct {
+		cmd  string
+		want bool
+	}{
+		{"del file.txt", false}, // del is not a shell feature on Linux (unless it's an alias, but we check built-ins)
+		{"dir", false},
+		{"echo hello", false}, // echo is usually a binary on Linux or shell built-in but we don't treat it as "shell feature" for wrapper necessity there yet as it exists as binary
+	}
+
+	for _, tt := range tests {
+		parts, _ := v.Split(tt.cmd)
+		got := v.HasShellFeatures(parts)
+		if got != tt.want {
+			t.Errorf("HasShellFeatures(%q) on Linux = %v, want %v", tt.cmd, got, tt.want)
+		}
+	}
+}

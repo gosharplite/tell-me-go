@@ -5,6 +5,7 @@ package security
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/google/shlex"
@@ -17,6 +18,7 @@ type commandValidator struct {
 	sm         domain.Manager
 	safety     *domain.SafetyService
 	interactor domain.UserInteractor
+	goos       string // The operating system for platform-specific logic
 }
 
 // NewCommandValidator creates a new commandValidator.
@@ -30,7 +32,7 @@ func NewCommandValidator(sm domain.Manager, interactor domain.UserInteractor) do
 	if safety == nil {
 		safety = domain.NewSafetyService(domain.DefaultPolicy())
 	}
-	return &commandValidator{sm: sm, safety: safety, interactor: interactor}
+	return &commandValidator{sm: sm, safety: safety, interactor: interactor, goos: runtime.GOOS}
 }
 
 // IsSafe checks if a command is safe for auto-approval.
@@ -352,9 +354,25 @@ func (v *commandValidator) HasShellFeatures(parts []string) bool {
 		if i == 0 && v.isPowerShellCmdlet(part) {
 			return true
 		}
+
+		// 6. Check for Windows shell built-in commands (e.g. "del", "dir")
+		if i == 0 && v.goos == "windows" && v.isWindowsBuiltIn(part) {
+			return true
+		}
 	}
 
 	return false
+}
+
+func (v *commandValidator) isWindowsBuiltIn(token string) bool {
+	builtIns := map[string]bool{
+		"del": true, "erase": true, "dir": true, "echo": true, "mkdir": true,
+		"md": true, "rmdir": true, "rd": true, "copy": true, "move": true,
+		"ren": true, "rename": true, "type": true, "cls": true, "ver": true,
+		"vol": true, "set": true, "path": true, "pause": true, "exit": true,
+		"prompt": true, "title": true, "color": true, "start": true,
+	}
+	return builtIns[strings.ToLower(token)]
 }
 
 func (v *commandValidator) isPowerShellCmdlet(token string) bool {

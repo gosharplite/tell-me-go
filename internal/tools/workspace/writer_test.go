@@ -377,3 +377,125 @@ func (m *mockFileWriter) Sync() error {
 func (m *mockFileWriter) ReadDir(n int) ([]os.DirEntry, error) {
 	return nil, fmt.Errorf("not a directory")
 }
+
+func TestDeletePath(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+	fs := infrapersistence.NewOSFileSystem()
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
+	ctx := context.Background()
+
+	t.Run("delete file", func(t *testing.T) {
+		path := filepath.Join(tempDir, "to_delete.txt")
+		_ = os.WriteFile(path, []byte("test"), 0644)
+
+		_, err := w.deletePath(ctx, map[string]interface{}{
+			"path":      path,
+			"recursive": false,
+			"reason":    "testing",
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("file still exists after deletion")
+		}
+	})
+
+	t.Run("delete directory recursively", func(t *testing.T) {
+		dir := filepath.Join(tempDir, "dir_to_delete")
+		_ = os.MkdirAll(filepath.Join(dir, "sub"), 0755)
+		_ = os.WriteFile(filepath.Join(dir, "file.txt"), []byte("test"), 0644)
+
+		_, err := w.deletePath(ctx, map[string]interface{}{
+			"path":      dir,
+			"recursive": true,
+			"reason":    "testing",
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("directory still exists after recursive deletion")
+		}
+	})
+
+	t.Run("delete non-existent path", func(t *testing.T) {
+		path := filepath.Join(tempDir, "missing")
+		_, err := w.deletePath(ctx, map[string]interface{}{
+			"path":      path,
+			"recursive": false,
+			"reason":    "testing",
+		}, nil)
+		if err == nil {
+			t.Error("expected error for non-existent path with recursive=false")
+		}
+	})
+
+	t.Run("permission denied", func(t *testing.T) {
+		path := "/root/secret"
+		_, err := w.deletePath(ctx, map[string]interface{}{
+			"path":      path,
+			"recursive": false,
+			"reason":    "testing",
+		}, nil)
+		if err == nil {
+			t.Error("expected error for restricted path")
+		}
+	})
+}
+
+func TestCreateDirectory(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+	fs := infrapersistence.NewOSFileSystem()
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
+	ctx := context.Background()
+
+	t.Run("create single directory", func(t *testing.T) {
+		path := filepath.Join(tempDir, "new_dir")
+		_, err := w.createDirectory(ctx, map[string]interface{}{
+			"path":   path,
+			"reason": "testing",
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			t.Errorf("directory was not created correctly")
+		}
+	})
+
+	t.Run("create nested directories", func(t *testing.T) {
+		path := filepath.Join(tempDir, "a/b/c")
+		_, err := w.createDirectory(ctx, map[string]interface{}{
+			"path":   path,
+			"reason": "testing",
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			t.Errorf("nested directories were not created correctly")
+		}
+	})
+
+	t.Run("permission denied", func(t *testing.T) {
+		path := "/root/new_dir"
+		_, err := w.createDirectory(ctx, map[string]interface{}{
+			"path":   path,
+			"reason": "testing",
+		}, nil)
+		if err == nil {
+			t.Error("expected error for restricted path")
+		}
+	})
+}
