@@ -160,7 +160,10 @@ MAX_HISTORY_TOKENS: 180000
 ```
 
 ## ⌨️ Shell Integration (Recommended)
-Add these aliases to your `.bashrc` or `.zshrc` for a streamlined workflow:
+Choose the configuration that matches your operating system and shell.
+
+### Bash/Zsh (Linux/macOS)
+Add these to your `.bashrc` or `.zshrc`:
 
 ```bash
 # 1. Set the home directory for session history and global state
@@ -180,6 +183,37 @@ alias bl='b -l 10'
 alias b-new='b --new'
 # 6. Maintenance: Update and install
 alias b-install='(cd $TELL_ME_HOME && git pull && go install ./cmd/tell-me-go)'
+```
+
+### PowerShell (Windows)
+Add these to your PowerShell profile (run `notepad $PROFILE` to edit):
+
+```powershell
+# 1. Set the home directory for session history and global state
+$env:TELL_ME_HOME = "$HOME\tell-me-go"
+
+# 2. Main command functions with piping support
+function b {
+    if ($MyInvocation.ExpectingInput) { $input | & tell-me-go.exe -c "$env:TELL_ME_HOME\configs\assistant.yaml" @args }
+    else { & tell-me-go.exe -c "$env:TELL_ME_HOME\configs\assistant.yaml" @args }
+}
+
+# 3. Quick session undo
+function bb { b -b @args }
+
+# 4. Show last 10 messages
+function bl { b -l 10 @args }
+
+# 5. Start fresh session
+function b-new { b --new @args }
+
+# 6. Maintenance: Update and install
+function b-install {
+    Push-Location $env:TELL_ME_HOME
+    git pull
+    go install .\cmd\tell-me-go
+    Pop-Location
+}
 ```
 
 For advanced usage with piped multi-agent workflows and role-based review checklists, see [docs/user/piped-multi-agent-workflow.md](docs/user/piped-multi-agent-workflow.md), [docs/steps/review-by-roles.md](docs/steps/review-by-roles.md), and [docs/steps/reduce-cyclomatic-complexity.md](docs/steps/reduce-cyclomatic-complexity.md).
