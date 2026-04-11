@@ -288,6 +288,10 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 		{";", "command chaining is not allowed"},
 		{">", "redirection is not allowed (use output_file parameter)"},
 		{"<", "input redirection is not allowed"},
+		{"(", "subshells are not allowed"},
+		{")", "subshells are not allowed"},
+		{"{", "brace expansion is not allowed"},
+		{"}", "brace expansion is not allowed"},
 		{"$", "variable expansion is not allowed"},
 		{"`", "command substitution is not allowed"},
 		{"*", "wildcards are not allowed in auto-approvable commands"},
@@ -300,7 +304,10 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 		if strings.Contains(command, uc.char) {
 			// EXCEPTION: Allow $ in 'go test' for regex anchors like -run=^$
 			if uc.char == "$" && strings.HasPrefix(command, "go test") {
-				continue
+				// Only allow if NOT followed by (
+				if !strings.Contains(command, "$(") {
+					continue
+				}
 			}
 			return false, uc.reason
 		}

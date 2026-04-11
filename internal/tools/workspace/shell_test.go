@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -532,4 +533,54 @@ func TestShellTool_PrepareCommand_ShellSelection(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestWindowsTranslator_Translate_LS(t *testing.T) {
+	w := &windowsTranslator{}
+
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "ls -la",
+			input:    []string{"ls", "-la"},
+			expected: []string{"cmd", "/c", "dir", "/A"},
+		},
+		{
+			name:     "ls -R",
+			input:    []string{"ls", "-R"},
+			expected: []string{"cmd", "/c", "dir", "/S"},
+		},
+		{
+			name:     "ls -laR",
+			input:    []string{"ls", "-laR"},
+			expected: []string{"cmd", "/c", "dir", "/S", "/A"},
+		},
+		{
+			name:     "ls -l /some/path",
+			input:    []string{"ls", "-l", "/some/path"},
+			expected: []string{"cmd", "/c", "dir", "/some/path"},
+		},
+		{
+			name:     "ls --recursive --all",
+			input:    []string{"ls", "--recursive", "--all"},
+			expected: []string{"cmd", "/c", "dir", "/S", "/A"},
+		},
+		{
+			name:     "ls mixed",
+			input:    []string{"ls", "-lhR", "/tmp", "-a"},
+			expected: []string{"cmd", "/c", "dir", "/S", "/A", "/tmp"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := w.Translate(tt.input)
+			if !reflect.DeepEqual(got, tt.expected) {
+				t.Errorf("Translate() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
 }

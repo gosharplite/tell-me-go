@@ -231,6 +231,12 @@ func TestCommandValidator_GranularAuthorization(t *testing.T) {
 		cmd     string
 		allowed bool
 	}{
+		// Security Hardening: Shell Injection Prevention
+		{"go test -run=^$", true},
+		{"go test -v $(whoami)", false},
+		{"ls $(touch HACKED)", false},
+		{"echo ${HOME}", false},
+
 		// New allowed commands
 		{"golangci-lint run", true},
 		{"staticcheck ./...", true},

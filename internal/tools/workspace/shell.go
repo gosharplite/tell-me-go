@@ -37,7 +37,7 @@ func (w *windowsTranslator) Translate(parts []string) []string {
 
 	switch cmd {
 	case "ls":
-		return append([]string{"cmd", "/c", "dir"}, args...)
+		return w.translateLS(args)
 	case "rm":
 		isRecursive := false
 		for _, arg := range args {
@@ -446,4 +446,46 @@ func (t *shellTool) auditExecution(command, reason, outputFile string, isAppend 
 		argsAudit = append(argsAudit, "OUTPUT_FILE", outputFile, "APPEND", isAppend)
 	}
 	t.sm.LogAudit("EXECUTE_COMMAND", argsAudit...)
+}
+
+func (w *windowsTranslator) translateLS(args []string) []string {
+	recursive := false
+	showAll := false
+	var paths []string
+
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			if arg == "--recursive" {
+				recursive = true
+				continue
+			}
+			if arg == "--all" {
+				showAll = true
+				continue
+			}
+			if !strings.HasPrefix(arg, "--") {
+				// Combined short flags
+				for _, c := range arg[1:] {
+					switch c {
+					case 'R':
+						recursive = true
+					case 'a':
+						showAll = true
+					}
+				}
+			}
+			continue
+		}
+		paths = append(paths, arg)
+	}
+
+	translated := []string{"cmd", "/c", "dir"}
+	if recursive {
+		translated = append(translated, "/S")
+	}
+	if showAll {
+		translated = append(translated, "/A")
+	}
+	translated = append(translated, paths...)
+	return translated
 }
