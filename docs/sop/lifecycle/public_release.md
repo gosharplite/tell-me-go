@@ -24,7 +24,9 @@ This SOP defines the automated workflow for publishing a new public release of t
 1.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
 2.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: 
     ```bash
-    git fetch origin && git checkout dev && git pull origin dev
+    git fetch origin
+    git checkout dev
+    git pull origin dev
     ```
 3.  **Confirm Target Version**: Use `git tag -l` to check the last release version. Use `ask_user` to present the last version and propose the target release version (e.g., `v1.1.0`).
 
@@ -37,10 +39,11 @@ verify_release_readiness
 
 #### 3. Preparation
 1.  **Note**: This project relies on Git tags as the single source of truth for versioning. The version is injected at build time using Go linker flags (`ldflags`).
-2.  Run `go mod tidy` to ensure `go.sum` is up-to-date.
-3.  **Final Build Check**: Run the following build command (using your target version) to ensure everything compiles correctly:
+2.  **Cleanup**: Use the `delete_path` tool to remove any existing `tell-me-go` or `tell-me-go.exe` binary in the root directory.
+3.  Run `go mod tidy` to ensure `go.sum` is up-to-date.
+4.  **Final Build Check**: Run the following build command (using your target version) to ensure everything compiles correctly:
     ```bash
-    go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
+    go build -ldflags -X=main.version=vX.Y.Z -o tell-me-go ./cmd/tell-me-go
     ```
 
 #### 4. Git Tagging and Remote Synchronization
@@ -48,7 +51,7 @@ verify_release_readiness
     ```bash
     git checkout main
     git fetch origin
-    git reset --hard origin/main  # Safety: Ensure main matches remote truth
+    git reset --hard origin/main
     git merge dev --no-ff -m "Release version vX.Y.Z"
     ```
 2.  **Tag the release**:
@@ -57,12 +60,11 @@ verify_release_readiness
     ```
 3.  **Build and Verify Binary**:
     ```bash
-    go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
+    go build -ldflags -X=main.version=vX.Y.Z -o tell-me-go ./cmd/tell-me-go
     ```
-    Verify the binary reports the correct version. (On Windows, use `.\tell-me-go.exe --version`; on Linux/macOS, use `./tell-me-go --version`):
-    ```bash
-    ./tell-me-go --version
-    ```
+    Verify the binary reports the correct version. 
+    *   **On Windows**: `tell-me-go --version` (or `tell-me-go.exe --version`).
+    *   **On Linux/macOS**: `./tell-me-go --version`.
 4.  **Push Everything**:
     ```bash
     git push origin main dev --tags
@@ -74,15 +76,16 @@ verify_release_readiness
 
 #### 5. Cleanup and Security Restoration
 1.  **Verify Sync**: Run `git status` to ensure all branches are clean and synced.
+2.  **Binary Cleanup**: Use `delete_path` to remove the release binary created for verification.
 
 ---
 
 ### Code Templates
 
 #### Version Injection (ldflags)
-Use this command to build the binary with a specific version string:
+Use this command to build the binary with a specific version string (environment-agnostic syntax):
 ```bash
-go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
+go build -ldflags -X=main.version=vX.Y.Z -o tell-me-go ./cmd/tell-me-go
 ```
 
 ---
@@ -96,10 +99,12 @@ go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
 ---
 
 ### Best Practices
+- **Environment-Agnostic Syntax**: Use `-X=key=value` for `ldflags` to avoid platform-specific quoting issues.
 - **Never Re-tag**: If a release fails after tagging, increment the patch version (e.g., `v1.1.0` -> `v1.1.1`) instead of moving the tag.
 - **Fast-Forward Forbidden**: Always use `--no-ff` when merging to `main` to preserve release history.
 - **Atomic Release**: Do not commit any other changes to `main` during the release process except the merge from `dev`.
 - **Pre-tag Sync**: Always run `git fetch origin` before tagging to avoid conflicts with tags created by others.
+- **Atomic Operations**: Run commands individually instead of chaining with `&&` to simplify debugging and recovery.
 
 ---
 
