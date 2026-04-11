@@ -208,7 +208,9 @@ func TestSimpleEventBus_Race(t *testing.T) {
 	// We don't add this to wg because we want it to run until we cancel the context
 	// after all other tasks are done.
 	go func() {
-		_ = bus.Listen(ctx)
+		if err := bus.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("bus.Listen returned error: %v", err)
+		}
 	}()
 
 	// Publisher loop
@@ -633,7 +635,9 @@ func TestEventBus_SimpleSnapshot(t *testing.T) {
 	})
 
 	go func() {
-		_ = bus.Listen(ctx)
+		if err := bus.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("bus.Listen returned error: %v", err)
+		}
 	}()
 
 	err := bus.Publish(ctx, testEvent{val: "snapshot_test"})

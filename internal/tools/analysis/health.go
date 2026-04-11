@@ -275,28 +275,20 @@ func (m *healthManager) checkDeadCode(ctx context.Context, hb chan<- struct{}) (
 
 func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead string) string {
 	var recs []string
-	if test == "FAIL" || test == "TIMEOUT" || test == "CANCELLED" || test == "ERROR" {
-		recs = append(recs, "Fix failing or timed-out tests immediately.")
+	if r := m.recommendTest(test); r != "" {
+		recs = append(recs, r)
 	}
-	if strings.HasSuffix(cov, "%") {
-		var val float64
-		if _, err := fmt.Sscanf(cov, "%f%%", &val); err == nil {
-			if val < 80 {
-				recs = append(recs, fmt.Sprintf("Coverage (%.1f%%) is below the 80%% target.", val))
-			}
-		}
-	} else if cov == "ERROR" || cov == "TIMEOUT" {
-		recs = append(recs, "Address issues preventing coverage analysis.")
+	if r := m.recommendCoverage(cov); r != "" {
+		recs = append(recs, r)
 	}
-
-	if strings.Contains(comp, "Alerts") || comp == "ERROR" || comp == "TIMEOUT" {
-		recs = append(recs, "Refactor high-complexity functions.")
+	if r := m.recommendComplexity(comp); r != "" {
+		recs = append(recs, r)
 	}
-	if strings.Contains(lint, "Issues") || lint == "ERROR" || lint == "TIMEOUT" {
-		recs = append(recs, "Address linting issues.")
+	if r := m.recommendLint(lint); r != "" {
+		recs = append(recs, r)
 	}
-	if strings.Contains(dead, "Issues") || dead == "ERROR" || dead == "TIMEOUT" {
-		recs = append(recs, "Remove dead or effectively private code to improve encapsulation.")
+	if r := m.recommendDeadCode(dead); r != "" {
+		recs = append(recs, r)
 	}
 
 	if len(recs) == 0 {
@@ -304,6 +296,48 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead strin
 	}
 
 	return strings.Join(recs, " ")
+}
+
+func (m *healthManager) recommendTest(test string) string {
+	if test == "FAIL" || test == "TIMEOUT" || test == "CANCELLED" || test == "ERROR" {
+		return "Fix failing or timed-out tests immediately."
+	}
+	return ""
+}
+
+func (m *healthManager) recommendCoverage(cov string) string {
+	if strings.HasSuffix(cov, "%") {
+		var val float64
+		if _, err := fmt.Sscanf(cov, "%f%%", &val); err == nil {
+			if val < 80 {
+				return fmt.Sprintf("Coverage (%.1f%%) is below the 80%% target.", val)
+			}
+		}
+	} else if cov == "ERROR" || cov == "TIMEOUT" {
+		return "Address issues preventing coverage analysis."
+	}
+	return ""
+}
+
+func (m *healthManager) recommendComplexity(comp string) string {
+	if strings.Contains(comp, "Alerts") || comp == "ERROR" || comp == "TIMEOUT" {
+		return "Refactor high-complexity functions."
+	}
+	return ""
+}
+
+func (m *healthManager) recommendLint(lint string) string {
+	if strings.Contains(lint, "Issues") || lint == "ERROR" || lint == "TIMEOUT" {
+		return "Address linting issues."
+	}
+	return ""
+}
+
+func (m *healthManager) recommendDeadCode(dead string) string {
+	if strings.Contains(dead, "Issues") || dead == "ERROR" || dead == "TIMEOUT" {
+		return "Remove dead or effectively private code to improve encapsulation."
+	}
+	return ""
 }
 
 func (m *healthManager) GetDetailedCoverage(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
