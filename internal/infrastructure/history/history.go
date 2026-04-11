@@ -152,8 +152,11 @@ func (m *Manager) SetContents(ctx context.Context, contents []*llm.Content) erro
 		newContents[i] = m.clonePersistentContentLocked(c)
 	}
 
+	if err := m.store.Save(ctx, newContents); err != nil {
+		return err
+	}
 	m.Contents = newContents
-	return m.store.Save(ctx, m.Contents)
+	return nil
 }
 
 func (m *Manager) clonePersistentContentLocked(c *llm.Content) *llm.Content {
@@ -232,8 +235,11 @@ func (m *Manager) AppendParts(ctx context.Context, index int, parts []*llm.Part)
 		clonedParts[i] = dummy.Parts[0]
 	}
 
+	if err := m.store.AppendParts(ctx, index, clonedParts); err != nil {
+		return err
+	}
 	m.Contents[index].Parts = append(m.Contents[index].Parts, clonedParts...)
-	return m.store.AppendParts(ctx, index, clonedParts)
+	return nil
 }
 
 // RollbackTurns removes the last N turns (1 turn = 2 messages) from the history.

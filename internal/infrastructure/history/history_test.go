@@ -738,3 +738,70 @@ func (m *mockFailingAppendStore) Append(ctx context.Context, contents []*llm.Con
 }
 
 func (m *mockFailingAppendStore) Sync(ctx context.Context) error { return nil }
+
+func TestHistoryManager_SetContents_DurabilityFirst(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	// Initial state
+	initialContents := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
+	_ = m.SetContents(ctx, initialContents)
+
+	// Set a failing store
+	expectedErr := errors.New("save failed")
+	m.setStore(&mockFailingStore{err: expectedErr})
+
+	newContents := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "new"}}}}
+	err := m.SetContents(ctx, newContents)
+
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+
+	// Verify in-memory state was NOT updated
+	contents, _ := m.GetWindow(ctx, 0, -1)
+	if len(contents) != 1 || contents[0].Parts[0].Text != "initial" {
+		t.Errorf("expected original content after failed save, got %v", contents[0].Parts[0].Text)
+	}
+}
+
+func TestHistoryManager_AppendParts_DurabilityFirst(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	// Initial state
+	_ = m.addEntry(ctx, "user", "initial")
+
+	// Set a failing store
+	expectedErr := errors.New("append parts failed")
+	m.setStore(&mockFailingAppendPartsStore{err: expectedErr})
+
+	err := m.AppendParts(ctx, 0, []*llm.Part{{Text: " appended"}})
+
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+
+	// Verify in-memory state was NOT updated
+	contents, _ := m.GetWindow(ctx, 0, -1)
+	if len(contents[0].Parts) != 1 || contents[0].Parts[0].Text != "initial" {
+		t.Errorf("expected original parts after failed append, got %d parts, first is %q", len(contents[0].Parts), contents[0].Parts[0].Text)
+	}
+}
+
+type mockFailingAppendPartsStore struct {
+	mockStore
+	err error
+}
+
+func (m *mockFailingAppendPartsStore) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	return m.err
+}
+
+func (m *mockFailingAppendPartsStore) Sync(ctx context.Context) error { return nil }
