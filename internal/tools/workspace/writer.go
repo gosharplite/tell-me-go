@@ -186,14 +186,22 @@ func (w *fileWriter) deletePath(ctx context.Context, args map[string]interface{}
 		return tools.ToolResult{}, err
 	}
 
+	info, statErr := w.fs.Stat(ctx, resolvedPath)
+
 	if params.Recursive {
 		if err := w.fs.RemoveAll(ctx, resolvedPath); err != nil {
 			return tools.ToolResult{}, fmt.Errorf("failed to delete path recursively: %w", err)
 		}
-	} else {
-		if err := w.fs.Remove(ctx, resolvedPath); err != nil {
-			return tools.ToolResult{}, fmt.Errorf("failed to delete path: %w", err)
-		}
+		return tools.ToolResult{Text: "Path deleted successfully. NOTE: Recursive deletions are irreversible and cannot be undone via undo_file_change."}, nil
+	}
+
+	// Only snapshot if it is a file and not a directory
+	if statErr == nil && !info.IsDir() {
+		w.bm.snapshot(ctx, resolvedPath, "DELETE")
+	}
+
+	if err := w.fs.Remove(ctx, resolvedPath); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to delete path: %w", err)
 	}
 
 	return tools.ToolResult{Text: "Path deleted successfully."}, nil

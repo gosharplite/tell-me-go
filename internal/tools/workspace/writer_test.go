@@ -499,3 +499,76 @@ func TestCreateDirectory(t *testing.T) {
 		}
 	})
 }
+
+func TestDeletePath_Undo(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "to_delete_undo.txt")
+	content := "delete me"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+	fs := infrapersistence.NewOSFileSystem()
+	bm := newBackupManager(sm, fs, 10)
+	w := &fileWriter{sm: sm, bm: bm, fs: fs}
+	ctx := context.Background()
+
+	// 1. Delete the file
+	_, err := w.deletePath(ctx, map[string]interface{}{
+		"path":      path,
+		"recursive": false,
+		"reason":    "testing undo deletion",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify deletion
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("file still exists after deletion")
+	}
+
+	// 2. Undo
+	res, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1}, nil)
+	if err != nil {
+		t.Fatalf("undo failed: %v", err)
+	}
+	if !strings.Contains(res.Text, "Undo successful") {
+		t.Errorf("unexpected undo result: %s", res.Text)
+	}
+
+	// Verify restoration
+	got, _ := os.ReadFile(path)
+	if string(got) != content {
+		t.Errorf("after undo, expected %s, got %s", content, string(got))
+	}
+}
+
+func TestDeletePath_RecursiveWarning(t *testing.T) {
+	tempDir := t.TempDir()
+	dir := filepath.Join(tempDir, "recursive_delete")
+	_ = os.MkdirAll(dir, 0755)
+
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+	fs := infrapersistence.NewOSFileSystem()
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
+	ctx := context.Background()
+
+	res, err := w.deletePath(ctx, map[string]interface{}{
+		"path":      dir,
+		"recursive": true,
+		"reason":    "testing warning",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(res.Text, "irreversible") {
+		t.Errorf("expected warning in result text, got: %s", res.Text)
+	}
+}
