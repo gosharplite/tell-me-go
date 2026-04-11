@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func assertFileContent(t *testing.T, fs *mockFileSystem, ctx context.Context, path, expected string) {
@@ -351,4 +353,37 @@ func TestMockFileSystem_TableDriven(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMockFileSystem_WindowsPaths(t *testing.T) {
+	ctx := context.Background()
+	fs := NewMockFileSystem()
+
+	// Use Windows-style absolute path with drive letter
+	root := "C:\\Users\\test\\project"
+	file := "C:\\Users\\test\\project\\secret.go"
+
+	require.NoError(t, fs.WriteFile(ctx, file, []byte("data"), 0644))
+
+	t.Run("Walk with Windows path", func(t *testing.T) {
+		var seen []string
+		err := fs.Walk(ctx, root, func(path string, info os.FileInfo, err error) error {
+			seen = append(seen, path)
+			return nil
+		})
+		require.NoError(t, err)
+
+		// Files are stored with forward slashes internally
+		expectedFile := "C:/Users/test/project/secret.go"
+		found := false
+		for _, p := range seen {
+			if p == expectedFile {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected to see %s in walk, got %v", expectedFile, seen)
+		}
+	})
 }

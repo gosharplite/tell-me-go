@@ -24,141 +24,111 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 	tmpDir := t.TempDir()
 	archivePath := filepath.Join(tmpDir, "archive.jsonl")
 
-	contents := []*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "Hello 1"}}},
-		{Role: "assistant", Parts: []*llm.Part{{Text: "Response 1"}}},
-		{Role: "user", Parts: []*llm.Part{{Text: "Hello 2"}}},
-		{Role: "assistant", Parts: []*llm.Part{{Text: "Response 2"}}},
-	}
-
-	// Create a dummy JSONL file
-	f, err := os.Create(archivePath)
-	if err != nil {
-		t.Fatalf("failed to create test file: %v", err)
-	}
-
-	offsets := make([]int64, len(contents))
-	var currentOffset int64
-	for i, c := range contents {
+	appendContent := func(c *llm.Content) int64 {
+		stat, _ := os.Stat(archivePath)
+		var start int64
+		if stat != nil {
+			start = stat.Size()
+		}
+		f, _ := os.OpenFile(archivePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+		defer func() { _ = f.Close() }()
 		data, _ := json.Marshal(c)
 		data = append(data, '\n')
-		n, _ := f.Write(data)
-		offsets[i] = currentOffset
-		currentOffset += int64(n)
+		_, _ = f.Write(data)
+		return start
 	}
-	_ = f.Close()
+
+	off1 := appendContent(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello 1"}}})
+	appendContent(&llm.Content{Role: "assistant", Parts: []*llm.Part{{Text: "Response 1"}}})
+	off3 := appendContent(&llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello 2"}}})
+	appendContent(&llm.Content{Role: "assistant", Parts: []*llm.Part{{Text: "Response 2"}}})
 
 	reader := history.NewJSONLArchiveReader(fs, archivePath)
 
-	type testCase struct {
-		name           string
-		limit          int
-		offset         int64
-		setup          func()
-		expectedLen    int
-		expectedNext   int64
-		expectedFirst  string
-		expectedSecond string
-		validate       func(t *testing.T, dtos []ports.HistoryViewDTO)
-	}
+	t.Run("read first page", func(t *testing.T) {
+		dtos, nextOffset, err := reader.ReadPage(ctx, 2, off1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dtos) != 2 || dtos[0].ContentPreview != "Hello 1" {
+			t.Errorf("got %d dtos, first: %q", len(dtos), dtos[0].ContentPreview)
+		}
+		if nextOffset != off3 {
+			t.Errorf("expected nextOffset %d, got %d", off3, nextOffset)
+		}
+	})
 
-	tests := []testCase{
-		{
-			name:           "read first page",
-			limit:          2,
-			offset:         0,
-			expectedLen:    2,
-			expectedFirst:  "Hello 1",
-			expectedSecond: "Response 1",
-			expectedNext:   offsets[2],
-		},
-		{
-			name:           "read second page from offset",
-			limit:          2,
-			offset:         offsets[2],
-			expectedLen:    2,
-			expectedFirst:  "Hello 2",
-			expectedSecond: "Response 2",
-		},
-		{
-			name:   "masking large binary data",
-			limit:  1,
-			offset: currentOffset,
-			setup: func() {
-				c := &llm.Content{
-					Role: "user",
-					Parts: []*llm.Part{
-						{Text: "A picture:"},
-						{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("fake binary data")}},
-					},
-				}
-				f, _ := os.OpenFile(archivePath, os.O_APPEND|os.O_WRONLY, 0644)
-				data, _ := json.Marshal(c)
-				data = append(data, '\n')
-				_, _ = f.Write(data)
-				_ = f.Close()
-			},
-			expectedLen: 1,
-			validate: func(t *testing.T, dtos []ports.HistoryViewDTO) {
-				if !strings.Contains(dtos[0].ContentPreview, "[Attached Image]") {
-					t.Errorf("expected masked image, got: %s", dtos[0].ContentPreview)
-				}
-			},
-		},
-	}
+	t.Run("read second page", func(t *testing.T) {
+		dtos, _, err := reader.ReadPage(ctx, 2, off3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dtos) != 2 || dtos[0].ContentPreview != "Hello 2" {
+			t.Errorf("got %d dtos, first: %q", len(dtos), dtos[0].ContentPreview)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.setup != nil {
-				tt.setup()
-			}
-			dtos, nextOffset, err := reader.ReadPage(ctx, tt.limit, tt.offset)
-			assertArchivePage(t, dtos, nextOffset, err, tt)
+	t.Run("masking large binary data", func(t *testing.T) {
+		off := appendContent(&llm.Content{
+			Role: "user",
+			Parts: []*llm.Part{
+				{Text: "A picture:"},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("fake binary data")}},
+			},
 		})
-	}
-}
+		dtos, _, err := reader.ReadPage(ctx, 1, off)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(dtos[0].ContentPreview, "[Attached Image]") {
+			t.Errorf("expected masked image, got: %s", dtos[0].ContentPreview)
+		}
+	})
 
-func assertPreviewMatches(t *testing.T, name, label string, actual string, expected string) {
-	t.Helper()
-	if expected != "" && actual != expected {
-		t.Errorf("%s: unexpected %s DTO content: got %q, want %q", name, label, actual, expected)
-	}
-}
+	t.Run("complex content parts", func(t *testing.T) {
+		off := appendContent(&llm.Content{
+			Role: "assistant",
+			Parts: []*llm.Part{
+				{IsThought: true, Text: "Thinking..."},
+				{Text: "Result:"},
+				{FunctionCall: &llm.FunctionCall{Name: "get_weather"}},
+				{AssetID: "asset-123"},
+				nil,
+			},
+		})
+		dtos, _, err := reader.ReadPage(ctx, 1, off)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dtos[0].ThoughtProcess != "Thinking..." {
+			t.Errorf("expected thought 'Thinking...', got %q", dtos[0].ThoughtProcess)
+		}
+		if !strings.Contains(dtos[0].ContentPreview, "Result:") {
+			t.Errorf("expected preview to contain 'Result:', got %q", dtos[0].ContentPreview)
+		}
+		if !strings.Contains(dtos[0].ContentPreview, "[Attached Asset]") {
+			t.Errorf("expected preview to contain '[Attached Asset]', got %q", dtos[0].ContentPreview)
+		}
+		if len(dtos[0].ToolCalls) != 1 || dtos[0].ToolCalls[0] != "get_weather" {
+			t.Errorf("expected tool call 'get_weather', got %v", dtos[0].ToolCalls)
+		}
+	})
 
-func assertArchivePage(t *testing.T, dtos []ports.HistoryViewDTO, nextOffset int64, err error, tt struct {
-	name           string
-	limit          int
-	offset         int64
-	setup          func()
-	expectedLen    int
-	expectedNext   int64
-	expectedFirst  string
-	expectedSecond string
-	validate       func(t *testing.T, dtos []ports.HistoryViewDTO)
-}) {
-	t.Helper()
-	if err != nil {
-		t.Fatalf("%s: ReadPage() unexpected error: %v", tt.name, err)
-	}
-
-	if len(dtos) != tt.expectedLen {
-		t.Fatalf("%s: expected %d DTOs, got %d", tt.name, tt.expectedLen, len(dtos))
-	}
-
-	if tt.expectedLen >= 1 {
-		assertPreviewMatches(t, tt.name, "first", dtos[0].ContentPreview, tt.expectedFirst)
-	}
-	if tt.expectedLen >= 2 {
-		assertPreviewMatches(t, tt.name, "second", dtos[1].ContentPreview, tt.expectedSecond)
-	}
-
-	if tt.expectedNext != 0 && nextOffset != tt.expectedNext {
-		t.Errorf("%s: expected nextOffset %d, got %d", tt.name, tt.expectedNext, nextOffset)
-	}
-
-	if tt.validate != nil {
-		tt.validate(t, dtos)
-	}
+	t.Run("function response part", func(t *testing.T) {
+		off := appendContent(&llm.Content{
+			Role: "user",
+			Parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{Name: "get_weather", Response: map[string]interface{}{"temp": 22}}},
+			},
+		})
+		dtos, _, err := reader.ReadPage(ctx, 1, off)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dtos[0].ToolCalls) != 1 || dtos[0].ToolCalls[0] != "get_weather" {
+			t.Errorf("expected tool call 'get_weather', got %v", dtos[0].ToolCalls)
+		}
+	})
 }
 
 func BenchmarkReadPage(b *testing.B) {
@@ -348,4 +318,157 @@ func TestJSONLArchiveReader_ReadPrevious_Concurrency(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestJSONLArchiveReader_Resilience(t *testing.T) {
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "resilience.jsonl")
+
+	valid1 := `{"role":"user","parts":[{"text":"valid 1"}]}` + "\n"
+	invalid := `not json at all` + "\n"
+	partial := `{"role":"assistant","parts":[{"text":"partial` + "\n"
+	emptyLines := "\n\n\n"
+	largeLineText := strings.Repeat("A", 10000)
+	largeLine := `{"role":"user","parts":[{"text":"` + largeLineText + `"}]}` + "\n"
+	valid2 := `{"role":"assistant","parts":[{"text":"valid 2"}]}` + "\n"
+
+	content := valid1 + invalid + partial + emptyLines + largeLine + valid2
+	if err := os.WriteFile(archivePath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write resilience test file: %v", err)
+	}
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	t.Run("ReadPage handles corruption", func(t *testing.T) {
+		// Read 10 entries (should get 3 valid ones: valid1, largeLine, valid2)
+		dtos, nextOffset, err := reader.ReadPage(ctx, 10, 0)
+		if err != nil {
+			t.Fatalf("ReadPage failed: %v", err)
+		}
+
+		if len(dtos) != 3 {
+			t.Fatalf("expected 3 valid DTOs, got %d", len(dtos))
+		}
+
+		if dtos[0].ContentPreview != "valid 1" {
+			t.Errorf("expected 'valid 1', got %q", dtos[0].ContentPreview)
+		}
+		if dtos[1].ContentPreview != largeLineText {
+			t.Errorf("expected large text, got length %d", len(dtos[1].ContentPreview))
+		}
+		if dtos[2].ContentPreview != "valid 2" {
+			t.Errorf("expected 'valid 2', got %q", dtos[2].ContentPreview)
+		}
+
+		if nextOffset != int64(len(content)) {
+			t.Errorf("expected nextOffset %d, got %d", len(content), nextOffset)
+		}
+	})
+
+	t.Run("ReadPrevious handles corruption", func(t *testing.T) {
+		// Read 10 entries backwards from EOF
+		dtos, startOffset, err := reader.ReadPrevious(ctx, 10, -1)
+		if err != nil {
+			t.Fatalf("ReadPrevious failed: %v", err)
+		}
+
+		if len(dtos) != 3 {
+			t.Fatalf("expected 3 valid DTOs, got %d", len(dtos))
+		}
+
+		if dtos[0].ContentPreview != "valid 1" {
+			t.Errorf("expected 'valid 1', got %q", dtos[0].ContentPreview)
+		}
+		if dtos[1].ContentPreview != largeLineText {
+			t.Errorf("expected large text, got length %d", len(dtos[1].ContentPreview))
+		}
+		if dtos[2].ContentPreview != "valid 2" {
+			t.Errorf("expected 'valid 2', got %q", dtos[2].ContentPreview)
+		}
+
+		if startOffset != 0 {
+			t.Errorf("expected startOffset 0, got %d", startOffset)
+		}
+	})
+}
+
+func TestJSONLArchiveReader_Errors(t *testing.T) {
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "is_a_dir")
+	_ = os.Mkdir(archivePath, 0755)
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	t.Run("ReadPage error on directory", func(t *testing.T) {
+		_, _, err := reader.ReadPage(ctx, 10, 0)
+		if err == nil {
+			t.Error("expected error when reading a directory as an archive file")
+		}
+	})
+
+	t.Run("ReadPrevious error on indexing a directory", func(t *testing.T) {
+		_, _, err := reader.ReadPrevious(ctx, 10, -1)
+		if err == nil {
+			t.Error("expected error during indexing a directory")
+		}
+	})
+}
+
+func TestJSONLArchiveReader_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive.jsonl")
+	_ = os.WriteFile(archivePath, []byte(`{"role":"user","parts":[{"text":"message"}]}`+"\n"), 0644)
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	_, _, err := reader.ReadPage(ctx, 10, 0)
+	if err == nil || !strings.Contains(err.Error(), "context canceled") {
+		t.Errorf("expected context canceled error, got: %v", err)
+	}
+}
+
+func TestJSONLArchiveReader_ReadPrevious_EdgeCases(t *testing.T) {
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+
+	t.Run("empty archive", func(t *testing.T) {
+		archivePath := filepath.Join(tmpDir, "empty.jsonl")
+		_ = os.WriteFile(archivePath, []byte(""), 0644)
+		reader := history.NewJSONLArchiveReader(fs, archivePath)
+		dtos, startOffset, err := reader.ReadPrevious(ctx, 10, -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dtos) != 0 {
+			t.Errorf("expected 0 dtos, got %d", len(dtos))
+		}
+		if startOffset != 0 {
+			t.Errorf("expected startOffset 0, got %d", startOffset)
+		}
+	})
+
+	t.Run("offset at zero", func(t *testing.T) {
+		archivePath := filepath.Join(tmpDir, "one.jsonl")
+		_ = os.WriteFile(archivePath, []byte(`{"role":"user","parts":[{"text":"hi"}]}`+"\n"), 0644)
+		reader := history.NewJSONLArchiveReader(fs, archivePath)
+		dtos, startOffset, err := reader.ReadPrevious(ctx, 10, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(dtos) != 0 {
+			t.Errorf("expected 0 dtos, got %d", len(dtos))
+		}
+		if startOffset != 0 {
+			t.Errorf("expected startOffset 0, got %d", startOffset)
+		}
+	})
 }

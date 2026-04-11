@@ -30,7 +30,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			name: "MkdirAll fails",
 			setupMock: func() *mockFileSystem {
 				m := newMockFS()
-				m.MkdirAllFunc = func(path string, perm os.FileMode) error {
+				m.MkdirAllFunc = func(ctx context.Context, path string, perm os.FileMode) error {
 					return errors.New("disk full")
 				}
 				return m
@@ -42,7 +42,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			name: "CreateTemp fails",
 			setupMock: func() *mockFileSystem {
 				m := newMockFS()
-				m.CreateTempFunc = func(dir, pattern string) (File, error) {
+				m.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
 					return nil, errors.New("permission denied")
 				}
 				return m
@@ -54,7 +54,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			name: "Sync fails",
 			setupMock: func() *mockFileSystem {
 				m := newMockFS()
-				m.CreateTempFunc = func(dir, pattern string) (File, error) {
+				m.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
 					return &mockFile{
 						name: dir + "/temp123",
 						data: new(bytes.Buffer),
@@ -72,7 +72,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			name: "Chmod fails",
 			setupMock: func() *mockFileSystem {
 				m := newMockFS()
-				m.CreateTempFunc = func(dir, pattern string) (File, error) {
+				m.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
 					return &mockFile{
 						name: dir + "/temp123",
 						data: new(bytes.Buffer),
@@ -90,7 +90,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			name: "Close fails after sync",
 			setupMock: func() *mockFileSystem {
 				m := newMockFS()
-				m.CreateTempFunc = func(dir, pattern string) (File, error) {
+				m.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
 					return &mockFile{
 						name: dir + "/temp123",
 						data: new(bytes.Buffer),
@@ -108,7 +108,7 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			name: "Rename fails (not EXDEV)",
 			setupMock: func() *mockFileSystem {
 				m := newMockFS()
-				m.RenameFunc = func(oldpath, newpath string) error {
+				m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
 					return errors.New("rename denied")
 				}
 				return m
@@ -142,7 +142,7 @@ func TestAtomicWrite_DiskFull(t *testing.T) {
 	ctx := context.Background()
 	m := newMockFS()
 
-	m.CreateTempFunc = func(dir, pattern string) (File, error) {
+	m.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
 		mf := &mockFile{
 			name: dir + "/temp123",
 			data: new(bytes.Buffer),
@@ -203,12 +203,12 @@ func TestAtomicWrite_EXDEVFallback(t *testing.T) {
 	targetPath := "/mnt/external/file.txt"
 
 	// Configure Rename to return EXDEV
-	m.RenameFunc = func(oldpath, newpath string) error {
+	m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
 		return syscall.EXDEV
 	}
 
 	// We need to make sure CreateTemp works and adds to files map for OpenFile to find it
-	m.CreateTempFunc = func(dir, pattern string) (File, error) {
+	m.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
 		name := dir + "/temp123"
 		mf := &mockFile{
 			name: name,
@@ -249,7 +249,7 @@ type fallbackTestCase struct {
 
 func setupMockOpenFileSourceFails() *mockFileSystem {
 	m := newMockFS()
-	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+	m.OpenFileFunc = func(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 		if name == "/src" {
 			return nil, errors.New("open source failed")
 		}
@@ -260,7 +260,7 @@ func setupMockOpenFileSourceFails() *mockFileSystem {
 
 func setupMockOpenFileDestinationFails() *mockFileSystem {
 	m := newMockFS()
-	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+	m.OpenFileFunc = func(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 		if name == "/src" {
 			return &mockFile{name: name, data: new(bytes.Buffer)}, nil
 		}
@@ -274,7 +274,7 @@ func setupMockOpenFileDestinationFails() *mockFileSystem {
 
 func setupMockIoCopyFails() *mockFileSystem {
 	m := newMockFS()
-	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+	m.OpenFileFunc = func(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 		data := new(bytes.Buffer)
 		if name == "/src" {
 			data.Write([]byte("some data"))
@@ -295,7 +295,7 @@ func setupMockIoCopyFails() *mockFileSystem {
 
 func setupMockSyncFails() *mockFileSystem {
 	m := newMockFS()
-	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+	m.OpenFileFunc = func(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 		mf := &mockFile{
 			name: name,
 			data: new(bytes.Buffer),
@@ -312,7 +312,7 @@ func setupMockSyncFails() *mockFileSystem {
 
 func setupMockCloseFails() *mockFileSystem {
 	m := newMockFS()
-	m.OpenFileFunc = func(name string, flag int, perm os.FileMode) (File, error) {
+	m.OpenFileFunc = func(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 		mf := &mockFile{
 			name: name,
 			data: new(bytes.Buffer),
@@ -369,12 +369,13 @@ func buildFallbackTestCases() []fallbackTestCase {
 
 func TestFallbackCopy_Errors(t *testing.T) {
 	cases := buildFallbackTestCases()
+	ctx := context.Background()
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			m := tt.setupMock()
 
-			err := fallbackCopy(m, "/src", "/dst", 0644)
+			err := fallbackCopy(ctx, m, "/src", "/dst", 0644)
 
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("fallbackCopy() error = %v, wantErr %v", err, tt.wantErr)

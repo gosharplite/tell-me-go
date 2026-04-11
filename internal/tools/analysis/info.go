@@ -110,7 +110,9 @@ func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats, hb 
 		stats.fileCounts[ext]++
 
 		if ext == ".go" {
-			stats.packages[filepath.Dir(path)] = true
+			// Normalize package paths to use forward slashes for consistent test output across OSes
+			stats.packages[filepath.ToSlash(filepath.Dir(path))] = true
+
 			// Try cache first to avoid redundant disk I/O
 			var count int
 			var ok bool

@@ -6,7 +6,8 @@ package workspace
 import (
 	"context"
 	"fmt"
-	"runtime"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,41 +15,173 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type shellTool struct {
-	sm        shellSecurity
-	validator domain_security.CommandValidator
-	executor  *processExecutor
-	maxOutput int
+type commandTranslator interface {
+	Translate(parts []string) []string
 }
 
-func newshellTool(sm shellSecurity, validator domain_security.CommandValidator) *shellTool {
+type posixTranslator struct{}
+
+func (p *posixTranslator) Translate(parts []string) []string {
+	return parts
+}
+
+type windowsTranslator struct{}
+
+func (w *windowsTranslator) Translate(parts []string) []string {
+	if len(parts) == 0 {
+		return parts
+	}
+
+	cmd := parts[0]
+	args := parts[1:]
+
+	switch cmd {
+	case "ls":
+		return w.translateLS(args)
+	case "rm":
+		isRecursive := false
+		for _, arg := range args {
+			if arg == "-r" || arg == "-rf" {
+				isRecursive = true
+				break
+			}
+		}
+
+		filteredArgs := make([]string, 0, len(args))
+		for _, arg := range args {
+			if arg == "-r" || arg == "-rf" || arg == "-f" || arg == "-v" {
+				continue
+			}
+			filteredArgs = append(filteredArgs, arg)
+		}
+
+		if isRecursive {
+			return append([]string{"cmd", "/c", "rd", "/s", "/q"}, filteredArgs...)
+		}
+		return append([]string{"cmd", "/c", "del", "/f", "/q"}, filteredArgs...)
+	case "mkdir":
+		filteredArgs := make([]string, 0, len(args))
+		for _, arg := range args {
+			if arg == "-p" {
+				continue
+			}
+			filteredArgs = append(filteredArgs, arg)
+		}
+		return append([]string{"cmd", "/c", "mkdir"}, filteredArgs...)
+	case "cp":
+		return append([]string{"cmd", "/c", "copy"}, args...)
+	case "mv":
+		return append([]string{"cmd", "/c", "move"}, args...)
+	}
+
+	return parts
+}
+
+type shellWrapper interface {
+	Wrap(command string, parts []string) []string
+}
+
+type posixShellWrapper struct{}
+
+func (p *posixShellWrapper) Wrap(command string, parts []string) []string {
+	return []string{"sh", "-c", command}
+}
+
+type windowsShellWrapper struct{}
+
+func (w *windowsShellWrapper) Wrap(command string, parts []string) []string {
+	// Windows-specific selection: Prefer PowerShell/pwsh for cmdlets or PS indicators.
+	if w.isPowerShellIndicator(command, parts) {
+		shell := "powershell"
+		// Prefer pwsh (Core) over powershell (Desktop) if available.
+		if p, err := exec.LookPath("pwsh"); err == nil && p != "" {
+			shell = "pwsh"
+		}
+		return []string{shell, "-Command", command}
+	}
+
+	return []string{"cmd.exe", "/c", command}
+}
+
+func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+
+	// 1. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
+	first := parts[0]
+	dashIdx := strings.Index(first, "-")
+	if dashIdx > 0 && dashIdx < len(first)-1 {
+		return true
+	}
+
+	// 2. Check for other PowerShell-specific indicators
+	lower := strings.ToLower(command)
+	psIndicators := []string{"$env:", "$(", "select-string", "where-object", "foreach-object"}
+	for _, ind := range psIndicators {
+		if strings.Contains(lower, ind) {
+			return true
+		}
+	}
+
+	return false
+}
+
+type shellTool struct {
+	sm         shellSecurity
+	validator  domain_security.CommandValidator
+	executor   *processExecutor
+	translator commandTranslator
+	wrapper    shellWrapper
+	maxOutput  int
+}
+
+func newshellTool(sm shellSecurity, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper) *shellTool {
 	return &shellTool{
-		sm:        sm,
-		validator: validator,
-		executor:  newprocessExecutor(),
-		maxOutput: 50000,
+		sm:         sm,
+		validator:  validator,
+		executor:   newprocessExecutor(),
+		translator: translator,
+		wrapper:    wrapper,
+		maxOutput:  50000,
 	}
 }
 
 func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
-		Command    string `json:"command"`
-		Reason     string `json:"reason"`
-		OutputFile string `json:"output_file"`
-		Append     bool   `json:"append"`
-		Timeout    int    `json:"timeout"`
+		Command    string            `json:"command"`
+		Args       []string          `json:"args"`
+		Env        map[string]string `json:"env"`
+		Reason     string            `json:"reason"`
+		OutputFile string            `json:"output_file"`
+		Append     bool              `json:"append"`
+		Timeout    int               `json:"timeout"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if params.Command == "" {
-		return tools.ToolResult{Error: fmt.Errorf("command argument is required"), Text: "command argument is required"}, nil
+	if params.Command == "" && len(params.Args) == 0 {
+		return tools.ToolResult{Error: fmt.Errorf("command or args is required"), Text: "command or args is required"}, nil
 	}
 
-	parts, err := t.prepareCommand(params.Command)
-	if err != nil {
-		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
+	var parts []string
+	var displayCommand string
+	var err error
+
+	if len(params.Args) > 0 {
+		parts = make([]string, len(params.Args))
+		for i, arg := range params.Args {
+			parts[i] = filepath.FromSlash(arg)
+		}
+		parts = t.translator.Translate(parts)
+		displayCommand = strings.Join(params.Args, " ")
+	} else {
+		parts, err = t.prepareCommand(params.Command)
+		if err != nil {
+			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
+		}
+		displayCommand = params.Command
 	}
 
 	outputFile, err := t.resolveOutputFile(params.OutputFile)
@@ -56,13 +189,20 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	safe, _ := t.validator.IsSafe(params.Command)
-	approved, err := t.authorize(ctx, "Command", params.Command, params.Reason, safe, outputFile, params.Append)
-	if err != nil || !approved {
-		return t.handleAuthResult(approved, err, "command: "+params.Command)
+	// For structured args, we validate the first part as the base command.
+	safe := false
+	if len(params.Args) > 0 {
+		safe, _ = t.validator.IsSafe(params.Args[0])
+	} else {
+		safe, _ = t.validator.IsSafe(params.Command)
 	}
 
-	t.auditExecution(params.Command, params.Reason, params.OutputFile, params.Append)
+	approved, err := t.authorize(ctx, "Command", displayCommand, params.Reason, safe, outputFile, params.Append)
+	if err != nil || !approved {
+		return t.handleAuthResult(approved, err, "command: "+displayCommand)
+	}
+
+	t.auditExecution(displayCommand, params.Reason, params.OutputFile, params.Append)
 
 	stopHB := t.startHeartbeat(hb)
 	defer stopHB()
@@ -73,6 +213,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 			Append:     params.Append,
 			Feedback:   &warnWriter{sm: t.sm},
 			MaxCapture: t.maxOutput,
+			Env:        params.Env,
 		})
 	})
 
@@ -262,13 +403,9 @@ func (t *shellTool) prepareCommand(command string) ([]string, error) {
 		return nil, fmt.Errorf("error parsing command: %w", err)
 	}
 
-	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation)
+	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation, cmdlets)
 	if t.validator.HasShellFeatures(parts) {
-		if runtime.GOOS == "windows" {
-			parts = []string{"cmd.exe", "/c", command}
-		} else {
-			parts = []string{"sh", "-c", command}
-		}
+		parts = t.wrapper.Wrap(command, parts)
 	}
 
 	if err := t.validator.ValidateStructure(parts); err != nil {
@@ -309,4 +446,46 @@ func (t *shellTool) auditExecution(command, reason, outputFile string, isAppend 
 		argsAudit = append(argsAudit, "OUTPUT_FILE", outputFile, "APPEND", isAppend)
 	}
 	t.sm.LogAudit("EXECUTE_COMMAND", argsAudit...)
+}
+
+func (w *windowsTranslator) translateLS(args []string) []string {
+	recursive := false
+	showAll := false
+	var paths []string
+
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			if arg == "--recursive" {
+				recursive = true
+				continue
+			}
+			if arg == "--all" {
+				showAll = true
+				continue
+			}
+			if !strings.HasPrefix(arg, "--") {
+				// Combined short flags
+				for _, c := range arg[1:] {
+					switch c {
+					case 'R':
+						recursive = true
+					case 'a':
+						showAll = true
+					}
+				}
+			}
+			continue
+		}
+		paths = append(paths, arg)
+	}
+
+	translated := []string{"cmd", "/c", "dir"}
+	if recursive {
+		translated = append(translated, "/S")
+	}
+	if showAll {
+		translated = append(translated, "/A")
+	}
+	translated = append(translated, paths...)
+	return translated
 }

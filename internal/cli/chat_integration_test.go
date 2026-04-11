@@ -98,6 +98,11 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		t.Fatalf("Execute failed: %v\nStderr: %s", err, stderr.String())
 	}
 
+	// Ensure SecurityManager is closed to release file handles (commands.log) on Windows
+	if sm != nil {
+		_ = sm.Close()
+	}
+
 	t.Run("Archiving", func(t *testing.T) {
 		t.Parallel()
 		verifyArchiving(t, stdout.String(), tmpDir)

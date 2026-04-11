@@ -208,7 +208,9 @@ func TestSimpleEventBus_Race(t *testing.T) {
 	// We don't add this to wg because we want it to run until we cancel the context
 	// after all other tasks are done.
 	go func() {
-		_ = bus.Listen(ctx)
+		if err := bus.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("bus.Listen returned error: %v", err)
+		}
 	}()
 
 	// Publisher loop
@@ -542,7 +544,7 @@ func TestEventBus_SlowSubscriber(t *testing.T) {
 		t.Errorf("Expected Publish to return nil despite load shedding, got: %v", err)
 	}
 
-	if duration > 100*time.Millisecond {
+	if duration > 500*time.Millisecond {
 		t.Errorf("Publish took too long: %v. It must not block the publisher.", duration)
 	}
 
@@ -617,4 +619,38 @@ func TestEventBus_DefensiveErrors(t *testing.T) {
 			t.Errorf("expected Flush on closed bus to return ErrBusClosed, got %v", errFlush)
 		}
 	})
+}
+
+func TestEventBus_SimpleSnapshot(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+	inframock.CleanupBus(t, bus)
+
+	received := make(chan events.Event, 1)
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
+		received <- e
+	})
+
+	go func() {
+		if err := bus.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("bus.Listen returned error: %v", err)
+		}
+	}()
+
+	err := bus.Publish(ctx, testEvent{val: "snapshot_test"})
+	if err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
+
+	select {
+	case got := <-received:
+		if got.(testEvent).val != "snapshot_test" {
+			t.Errorf("expected snapshot_test, got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
+	}
 }

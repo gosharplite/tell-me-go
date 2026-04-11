@@ -115,6 +115,8 @@ type mockSecurityManager struct {
 	security.Manager
 }
 
+func (m *mockSecurityManager) RegisterReadOnlyPath(path string) {}
+
 func (m *mockSecurityManager) Close() error { return nil }
 
 type mockTracker struct {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -228,6 +229,9 @@ func TestMediaTools_ReadImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "permission denied failure" && runtime.GOOS == "windows" {
+				t.Skip("Skipping on Windows: os.Chmod(0200) does not reliably make files unreadable for the owner.")
+			}
 			sm := newMediaMockSecurityManager()
 			sm.isPathSafeFunc = func(path string) (string, error) {
 				if !tt.isPathSafe {

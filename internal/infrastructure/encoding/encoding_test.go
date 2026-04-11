@@ -49,3 +49,71 @@ func TestWrapReader(t *testing.T) {
 		})
 	}
 }
+
+func TestIsUTF8Env(t *testing.T) {
+	tests := []struct {
+		name     string
+		env      map[string]string
+		expected bool
+	}{
+		{
+			name: "LC_ALL=en_US.UTF-8",
+			env: map[string]string{
+				"LC_ALL": "en_US.UTF-8",
+			},
+			expected: true,
+		},
+		{
+			name: "LC_CTYPE=UTF-8",
+			env: map[string]string{
+				"LC_CTYPE": "UTF-8",
+			},
+			expected: true,
+		},
+		{
+			name: "LANG=C.UTF-8",
+			env: map[string]string{
+				"LANG": "C.UTF-8",
+			},
+			expected: true,
+		},
+		{
+			name: "LANG=zh_TW.Big5",
+			env: map[string]string{
+				"LANG": "zh_TW.Big5",
+			},
+			expected: false,
+		},
+		{
+			name:     "No environment variables set",
+			env:      map[string]string{},
+			expected: false,
+		},
+		{
+			name: "Variables set to empty string",
+			env: map[string]string{
+				"LANG": "",
+			},
+			expected: false,
+		},
+		{
+			name: "Case sensitivity check: lang=utf-8",
+			env: map[string]string{
+				"LANG": "utf-8",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			getenv := func(key string) string {
+				return tt.env[key]
+			}
+			got := isUTF8Env(getenv)
+			if got != tt.expected {
+				t.Errorf("isUTF8Env() = %v; want %v", got, tt.expected)
+			}
+		})
+	}
+}

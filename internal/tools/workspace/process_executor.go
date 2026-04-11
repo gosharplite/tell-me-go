@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,6 +27,7 @@ type executionConfig struct {
 	Append     bool
 	MaxCapture int
 	Feedback   io.Writer
+	Env        map[string]string
 }
 
 // executionResult holds the outcome of an execution.
@@ -96,6 +99,26 @@ func (e *processExecutor) setupCommand(ctx context.Context, parts []string, conf
 	}
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+
+	if runtime.GOOS == "windows" {
+		cmd.Cancel = func() error {
+			if cmd.Process == nil {
+				return nil
+			}
+			// /F = Forcefully terminate
+			// /T = Terminate child processes (the tree)
+			// /PID = Process ID
+			return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+		}
+	}
+
+	if len(config.Env) > 0 {
+		env := os.Environ()
+		for k, v := range config.Env {
+			env = append(env, fmt.Sprintf("%s=%s", k, v))
+		}
+		cmd.Env = env
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -191,7 +214,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 		return executionResult{ExitCode: 1}, fmt.Errorf("at least two commands are required for piping")
 	}
 
-	p, setupErr := e.newPipeline(ctx, pipedParts)
+	p, setupErr := e.newPipeline(ctx, pipedParts, config)
 	if setupErr != nil {
 		return executionResult{ExitCode: 1}, setupErr
 	}
@@ -243,14 +266,33 @@ type pipeline struct {
 	pipes       []io.Closer
 }
 
-func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string) (*pipeline, error) {
+func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string, config executionConfig) (*pipeline, error) {
 	p := &pipeline{cmds: make([]*exec.Cmd, len(pipedParts))}
 
 	for i, parts := range pipedParts {
 		if len(parts) == 0 {
 			return nil, fmt.Errorf("empty command at index %d", i)
 		}
-		p.cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
+		cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+		p.cmds[i] = cmd
+
+		if runtime.GOOS == "windows" {
+			// Each command in the pipeline needs to be terminated as a tree.
+			cmd.Cancel = func() error {
+				if cmd.Process == nil {
+					return nil
+				}
+				return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+			}
+		}
+
+		if len(config.Env) > 0 {
+			env := os.Environ()
+			for k, v := range config.Env {
+				env = append(env, fmt.Sprintf("%s=%s", k, v))
+			}
+			p.cmds[i].Env = env
+		}
 
 		stderr, err := p.cmds[i].StderrPipe()
 		if err != nil {
@@ -452,26 +494,25 @@ func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, erro
 	if config.OutputFile == "" {
 		return nil, nil
 	}
-	path := strings.TrimSpace(config.OutputFile)
-	path = strings.ReplaceAll(path, "\x00", "")
+
+	// CRITICAL: Strip null bytes BEFORE any other path processing to avoid Windows issues
+	path := strings.ReplaceAll(config.OutputFile, "\x00", "")
+	path = strings.TrimSpace(path)
+
 	if path == "" {
 		return nil, nil
 	}
 	path = filepath.Clean(path)
 
 	// Robust security check: prevent escaping the current directory via relative paths.
-	// We allow absolute paths as the agent may need to write to specific system locations
-	// if authorized, but relative paths should stay within the project structure.
 	if !filepath.IsAbs(path) {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current directory: %w", err)
 		}
 
-		// Join CWD with the path and Clean it to resolve any ".."
 		absPath := filepath.Join(cwd, path)
 
-		// Ensure the resulting absolute path is still within the CWD
 		rel, err := filepath.Rel(cwd, absPath)
 		if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
 			return nil, fmt.Errorf("output file path cannot escape current directory: %q", config.OutputFile)
@@ -486,7 +527,6 @@ func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, erro
 		flags |= os.O_TRUNC
 	}
 
-	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}

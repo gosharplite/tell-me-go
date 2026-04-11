@@ -89,13 +89,13 @@ func verifyScrollInteraction(t *testing.T, m *rootBrowserModel, expectedTurn int
 	}
 }
 
-func verifyPinInteraction(t *testing.T, m *rootBrowserModel, mock *mockHistoryModifier, expectedIndex int, expectedState bool) {
+func verifyPinInteraction(t *testing.T, m *rootBrowserModel, mock *mockHistoryModifier, expectedTurnIndex int, expectedOriginalIndex int, expectedState bool) {
 	t.Helper()
 	if !mock.SetPinnedCalled {
 		t.Error("expected SetPinned to be called")
 	}
-	if mock.LastPinnedIndex != expectedIndex {
-		t.Errorf("expected pinned index %d, got %d", expectedIndex, mock.LastPinnedIndex)
+	if mock.LastPinnedIndex != expectedTurnIndex {
+		t.Errorf("expected pinned turn index %d, got %d", expectedTurnIndex, mock.LastPinnedIndex)
 	}
 	if mock.LastPinnedState != expectedState {
 		t.Errorf("expected pinned state %v, got %v", expectedState, mock.LastPinnedState)
@@ -103,15 +103,15 @@ func verifyPinInteraction(t *testing.T, m *rootBrowserModel, mock *mockHistoryMo
 	// Verify local state update
 	found := false
 	for _, dto := range m.history {
-		if dto.OriginalIndex == expectedIndex {
+		if dto.OriginalIndex == expectedOriginalIndex {
 			if dto.IsPinned != expectedState {
-				t.Errorf("expected DTO at index %d to have IsPinned=%v", expectedIndex, expectedState)
+				t.Errorf("expected DTO at index %d to have IsPinned=%v", expectedOriginalIndex, expectedState)
 			}
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("could not find DTO with OriginalIndex %d in history", expectedIndex)
+		t.Errorf("could not find DTO with OriginalIndex %d in history", expectedOriginalIndex)
 	}
 }
 
@@ -630,7 +630,7 @@ func actionTestCases() []updateTestCase {
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")},
 			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				verifyPinInteraction(t, m, mock, 0, true)
+				verifyPinInteraction(t, m, mock, 0, 0, true)
 			},
 		},
 		{
@@ -643,7 +643,7 @@ func actionTestCases() []updateTestCase {
 			},
 			msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")},
 			check: func(t *testing.T, m *rootBrowserModel, cmd tea.Cmd, mock *mockHistoryModifier) {
-				verifyPinInteraction(t, m, mock, 0, false)
+				verifyPinInteraction(t, m, mock, 0, 0, false)
 			},
 		},
 		{
@@ -845,4 +845,44 @@ func systemTestCases() []updateTestCase {
 			},
 		},
 	}
+}
+
+func TestBrowserModel_SystemMessageOffset(t *testing.T) {
+	ctx := context.Background()
+	mockProvider := &mockHistoryProvider{}
+	mockModifier := &mockHistoryModifier{}
+
+	t.Run("Pinning with system message", func(t *testing.T) {
+		m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
+		m.history = []ports.HistoryViewDTO{
+			{Role: "system", ContentPreview: "sys", OriginalIndex: 0},
+			{Role: "user", ContentPreview: "u1", OriginalIndex: 1},
+			{Role: "assistant", ContentPreview: "m1", OriginalIndex: 2},
+		}
+		// Select U1 (index 1)
+		m.selectedTurn = 1
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+
+		// Expected turnIndex: (1 - 1) / 2 = 0. ExpectedOriginalIndex: 1.
+		verifyPinInteraction(t, m, mockModifier, 0, 1, true)
+	})
+
+	t.Run("Rollback with system message", func(t *testing.T) {
+		mockModifier.RollbackCalled = false
+		m := NewRootBrowserModel(ctx, mockProvider, mockModifier)
+		m.history = []ports.HistoryViewDTO{
+			{Role: "system", ContentPreview: "sys", OriginalIndex: 0},
+			{Role: "user", ContentPreview: "u1", OriginalIndex: 1},
+			{Role: "assistant", ContentPreview: "m1", OriginalIndex: 2},
+			{Role: "user", ContentPreview: "u2", OriginalIndex: 3},
+			{Role: "assistant", ContentPreview: "m2", OriginalIndex: 4},
+		}
+		// Select U2 (index 3)
+		m.selectedTurn = 3
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+
+		// totalMsgs = 5. targetStartIdx = ((3-1)&^1)+1 = 3.
+		// turnsToRemove = (5 - 3 + 1) / 2 = 1.
+		verifyRollbackInteraction(t, m, mockModifier, 1)
+	})
 }

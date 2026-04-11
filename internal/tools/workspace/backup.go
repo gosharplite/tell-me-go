@@ -21,7 +21,7 @@ type fileSnapshot struct {
 	Timestamp time.Time `json:"timestamp"`
 	Path      string    `json:"path"`
 	Content   []byte    `json:"content"`
-	Action    string    `json:"action"` // "WRITE" or "REPLACE"
+	Action    string    `json:"action"` // "WRITE", "REPLACE", "APPEND", or "DELETE"
 }
 
 // backupManager handles the snapshotting and restoration of files.

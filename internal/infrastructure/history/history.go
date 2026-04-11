@@ -71,7 +71,15 @@ func (m *Manager) Load(ctx context.Context) error {
 func (m *Manager) Save(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.store.Save(ctx, m.Contents)
+	if err := m.store.Save(ctx, m.Contents); err != nil {
+		return err
+	}
+	return m.Sync(ctx)
+}
+
+// Sync ensures all buffered data is persisted to the physical disk.
+func (m *Manager) Sync(ctx context.Context) error {
+	return m.store.Sync(ctx)
 }
 
 // Archive appends content entries to the archive file.
@@ -89,8 +97,11 @@ func (m *Manager) AddContent(ctx context.Context, content *llm.Content) error {
 	defer m.mu.Unlock()
 
 	cloned := m.clonePersistentContentLocked(content)
+	if err := m.store.Append(ctx, []*llm.Content{cloned}); err != nil {
+		return err
+	}
 	m.Contents = append(m.Contents, cloned)
-	return m.store.Append(ctx, []*llm.Content{cloned})
+	return nil
 }
 
 // GetTotalEntries returns the total number of content entries currently stored.
@@ -141,8 +152,11 @@ func (m *Manager) SetContents(ctx context.Context, contents []*llm.Content) erro
 		newContents[i] = m.clonePersistentContentLocked(c)
 	}
 
+	if err := m.store.Save(ctx, newContents); err != nil {
+		return err
+	}
 	m.Contents = newContents
-	return m.store.Save(ctx, m.Contents)
+	return nil
 }
 
 func (m *Manager) clonePersistentContentLocked(c *llm.Content) *llm.Content {
@@ -173,9 +187,14 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Turns are pairs. Turn 0 is messages 0 and 1.
-	startIdx := turnIndex * 2
-	if startIdx < 0 || startIdx+1 >= len(m.Contents) {
+	offset := 0
+	if len(m.Contents) > 0 && m.Contents[0].Role == "system" {
+		offset = 1
+	}
+
+	// Turns are pairs. Turn 0 is messages offset and offset+1.
+	startIdx := offset + (turnIndex * 2)
+	if startIdx < offset || startIdx+1 >= len(m.Contents) {
 		return fmt.Errorf("invalid turn index: %d (history length: %d)", turnIndex, len(m.Contents))
 	}
 
@@ -216,8 +235,11 @@ func (m *Manager) AppendParts(ctx context.Context, index int, parts []*llm.Part)
 		clonedParts[i] = dummy.Parts[0]
 	}
 
+	if err := m.store.AppendParts(ctx, index, clonedParts); err != nil {
+		return err
+	}
 	m.Contents[index].Parts = append(m.Contents[index].Parts, clonedParts...)
-	return m.store.AppendParts(ctx, index, clonedParts)
+	return nil
 }
 
 // RollbackTurns removes the last N turns (1 turn = 2 messages) from the history.
@@ -227,15 +249,24 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	defer m.mu.Unlock()
 
 	originalLen := len(m.Contents)
-	actualRemoved, newLen := calculateRollbackBounds(originalLen, turns)
+	hasSystem := originalLen > 0 && m.Contents[0].Role == "system"
+
+	actualRemoved, newLen := calculateRollbackBounds(originalLen, turns, hasSystem)
 
 	if newLen == originalLen && actualRemoved == 0 {
-		return 0, len(m.Contents) / 2, len(m.Contents), nil
+		effectiveLen := originalLen
+		if hasSystem {
+			effectiveLen--
+		}
+		return 0, effectiveLen / 2, originalLen, nil
 	}
 
-	originalContents := m.Contents
+	tempContents := m.Contents[:newLen]
+	if err := m.store.Save(ctx, tempContents); err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to persist rollback: %w", err)
+	}
 
-	// Nil out the truncated pointers to prevent memory leaks
+	// Persisted successfully, now safe to modify memory
 	for i := newLen; i < originalLen; i++ {
 		m.Contents[i] = nil
 	}
@@ -243,46 +274,50 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	if newLen == 0 {
 		m.Contents = nil
 	} else {
-		m.Contents = m.Contents[:newLen]
-	}
-
-	if err := m.store.Save(ctx, m.Contents); err != nil {
-		// Rollback in-memory state on I/O failure to maintain atomicity
-		m.Contents = originalContents
-		return 0, 0, 0, fmt.Errorf("failed to persist rollback: %w", err)
+		m.Contents = tempContents
 	}
 
 	remainingMsgs = len(m.Contents)
-	remainingTurns = remainingMsgs / 2
+	effectiveLen := remainingMsgs
+	if hasSystem {
+		effectiveLen--
+	}
+	remainingTurns = effectiveLen / 2
 
 	return actualRemoved, remainingTurns, remainingMsgs, nil
 }
 
-func calculateRollbackBounds(originalLen int, turns int) (actualRemoved, newLen int) {
-	if originalLen == 0 {
+func calculateRollbackBounds(originalLen int, turns int, hasSystem bool) (actualRemoved, newLen int) {
+	if originalLen <= 0 {
 		return 0, 0
 	}
 
+	offset := 0
+	if hasSystem {
+		offset = 1
+	}
+	effectiveLen := originalLen - offset
+
 	if turns <= 0 {
-		if originalLen%2 != 0 {
+		// Invariant: Rollback must result in an even number of effective messages (complete pairs).
+		// If the initial state is odd (effective), we always drop the trailing partial turn even if turns=0.
+		if effectiveLen%2 != 0 {
 			return 0, originalLen - 1
 		}
 		return 0, originalLen
 	}
 
-	currentTurns := (originalLen + 1) / 2
-	if turns > currentTurns {
-		turns = currentTurns
+	currentTurns := (effectiveLen + 1) / 2
+	if turns >= currentTurns {
+		return currentTurns, offset
 	}
 
+	// Calculate how many messages to drop.
 	droppedMsgs := turns * 2
-	if originalLen%2 != 0 {
+	if effectiveLen%2 != 0 {
 		droppedMsgs -= 1
 	}
 
-	if droppedMsgs >= originalLen {
-		return currentTurns, 0
-	}
 	return turns, originalLen - droppedMsgs
 }
 

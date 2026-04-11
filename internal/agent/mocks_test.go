@@ -246,3 +246,7 @@ func (m *mockEngineCostTracker) GetStats(ctx context.Context) (domain_pricing.Us
 }
 
 func (m *mockEngineCostTracker) Warmup() {}
+
+func (m *mockHistoryManager) Sync(ctx context.Context) error {
+	return nil
+}

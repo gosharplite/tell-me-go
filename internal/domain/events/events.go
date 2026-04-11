@@ -162,31 +162,26 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	}
 
 	b.mu.RLock()
-	closed := b.closed
-	b.mu.RUnlock()
-	if closed {
+	if b.closed {
+		b.mu.RUnlock()
 		return ErrBusClosed
 	}
 
 	// Synchronous mode for testing/specific use cases
 	if !b.asyncDispatch {
+		b.mu.RUnlock()
 		return b.dispatchSync(ctx, event)
-	}
-
-	// For async mode
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if b.closed {
-		return ErrBusClosed
 	}
 
 	specificSubs := b.subscribers[event.Type()]
 	globalSubs := b.globalSubscribers
 
-	// Create unified list of wrappers
+	// Create unified list of wrappers (snapshot)
 	wrappers := make([]*subscriberWrapper, 0, len(specificSubs)+len(globalSubs))
 	wrappers = append(wrappers, specificSubs...)
 	wrappers = append(wrappers, globalSubs...)
+
+	b.mu.RUnlock() // Release lock EARLY
 
 	for _, w := range wrappers {
 		b.incPending()

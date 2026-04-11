@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,9 @@ func setupTestEnvironment(t *testing.T) (binaryPath, tmpHome, configPath string)
 
 	// Build the binary
 	binaryPath = filepath.Join(os.TempDir(), "tell-me-go-e2e")
+	if runtime.GOOS == "windows" {
+		binaryPath += ".exe"
+	}
 	cmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/tell-me-go/")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)

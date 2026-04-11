@@ -77,7 +77,10 @@ func (r *fileSkillRepository) GetAll(ctx context.Context) ([]domain.Skill, error
 // parseSkill extracts the skill metadata from the Markdown frontmatter
 // and calculates the token count heuristic.
 func parseSkill(data []byte) (*domain.Skill, error) {
-	// A skill file must start with "---" and have a matching closing "---"
+	// Normalize Windows line endings to Unix-style for consistent parsing
+	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+
+	// A skill file must start with "---\n" and have a matching closing "---\n"
 	if !bytes.HasPrefix(data, []byte("---\n")) {
 		return nil, nil
 	}

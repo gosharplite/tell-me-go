@@ -94,25 +94,30 @@ func TestSecurityManager_Authorize(t *testing.T) {
 func TestSecurityManager_PathManagement(t *testing.T) {
 	t.Parallel()
 	sm := NewSecurityManager(nil)
-	sm.RegisterSafePath("/tmp/safe")
-	sm.RegisterReadOnlyPath("/tmp/readonly")
 
-	if !contains(sm.GetSafePaths(), "/tmp/safe") {
-		t.Error("Expected /tmp/safe in safe paths")
+	tmpDir := t.TempDir()
+	safePath := filepath.Join(tmpDir, "safe")
+	roPath := filepath.Join(tmpDir, "readonly")
+
+	sm.RegisterSafePath(safePath)
+	sm.RegisterReadOnlyPath(roPath)
+
+	if !contains(sm.GetSafePaths(), safePath) {
+		t.Errorf("Expected %s in safe paths", safePath)
 	}
-	if !contains(sm.getReadOnlyPaths(), "/tmp/readonly") {
-		t.Error("Expected /tmp/readonly in read-only paths")
+	if !contains(sm.getReadOnlyPaths(), roPath) {
+		t.Errorf("Expected %s in read-only paths", roPath)
 	}
 
-	_ = sm.removeSafePath("/tmp/safe")
-	if contains(sm.GetSafePaths(), "/tmp/safe") {
-		t.Error("Did not expect /tmp/safe in safe paths after removal")
+	_ = sm.removeSafePath(safePath)
+	if contains(sm.GetSafePaths(), safePath) {
+		t.Errorf("Did not expect %s in safe paths after removal", safePath)
 	}
 }
 
 func contains(slice []string, val string) bool {
 	for _, s := range slice {
-		if strings.Contains(s, val) { // Using Contains because Registered paths might be absolute
+		if strings.Contains(s, val) || strings.Contains(filepath.ToSlash(s), filepath.ToSlash(val)) {
 			return true
 		}
 	}
@@ -122,6 +127,9 @@ func contains(slice []string, val string) bool {
 func TestSecurityManager_Misc(t *testing.T) {
 	t.Parallel()
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
+	defer func() {
+		_ = sm.Close()
+	}()
 
 	// getPolicy / setPolicy
 	p := sm.getPolicy()
@@ -131,7 +139,7 @@ func TestSecurityManager_Misc(t *testing.T) {
 	sm.setPolicy(p)
 
 	// IsPathWritable
-	_, _ = sm.IsPathWritable("/tmp/test")
+	_, _ = sm.IsPathWritable(filepath.Join(t.TempDir(), "test"))
 
 	// confirmDestructiveAction
 	ok, err := sm.confirmDestructiveAction(context.Background(), "delete", "file", "detail")
@@ -145,14 +153,21 @@ func TestSecurityManager_Misc(t *testing.T) {
 	sm.SetCommandsLogFile(logFile)
 	sm.LogAudit("TEST_ACTION", "ACTION", "test", "DETAIL", "detail")
 
-	data, _ := os.ReadFile(logFile)
+	// Ensure file is closed before reading if needed, but auditor does it automatically or we close it
+	_ = sm.Close()
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
 	logContent := string(data)
 	if !strings.Contains(logContent, "AUDIT: TEST_ACTION") || !strings.Contains(logContent, "ACTION=test") {
 		t.Errorf("Audit log content mismatch: %q", logContent)
 	}
 
-	sm.RegisterReadOnlyPath("/tmp/ro")
-	_ = sm.removeReadOnlyPath("/tmp/ro")
+	roPath := filepath.Join(t.TempDir(), "ro")
+	sm.RegisterReadOnlyPath(roPath)
+	_ = sm.removeReadOnlyPath(roPath)
 
 	// Interactor methods
 	if sm.GetInteractor() == nil {
@@ -171,6 +186,9 @@ func TestSecurityManager_Confirm_Bypass(t *testing.T) {
 	// Default behavior (no bypass) - user says No
 	interactor := &MockInteractor{Answer: "n"}
 	sm := NewSecurityManager(interactor)
+	defer func() {
+		_ = sm.Close()
+	}()
 	ok, err := sm.Confirm(context.Background(), "Should I?")
 	if err != nil || ok {
 		t.Errorf("Confirm(user=n, bypass=false) = %v, %v; want false, nil", ok, err)

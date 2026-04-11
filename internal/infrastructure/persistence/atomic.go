@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
@@ -20,7 +21,7 @@ import (
 // It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
 func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
-	f, err := prepareTempFile(fs, dir, filepath.Base(path)+".*.tmp", perm)
+	f, err := prepareTempFile(ctx, fs, dir, filepath.Base(path)+".*.tmp", perm)
 	if err != nil {
 		return err
 	}
@@ -31,7 +32,7 @@ func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, p
 		// Attempt to close; ignore error if already closed
 		_ = f.Close()
 		if cleanup {
-			_ = fs.Remove(tmp)
+			_ = fs.Remove(context.Background(), tmp)
 		}
 	}()
 
@@ -53,7 +54,7 @@ func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, p
 	default:
 	}
 
-	if err := commitTempFile(fs, f, tmp, path, perm); err != nil {
+	if err := commitTempFile(ctx, fs, f, tmp, path, perm); err != nil {
 		return err
 	}
 
@@ -61,26 +62,26 @@ func AtomicWrite(ctx context.Context, fs FileSystem, path string, data []byte, p
 	return nil
 }
 
-func prepareTempFile(fs FileSystem, dir, pattern string, perm os.FileMode) (File, error) {
-	if err := fs.MkdirAll(dir, 0755); err != nil {
+func prepareTempFile(ctx context.Context, fs FileSystem, dir, pattern string, perm os.FileMode) (File, error) {
+	if err := fs.MkdirAll(ctx, dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	f, err := fs.CreateTemp(dir, pattern)
+	f, err := fs.CreateTemp(ctx, dir, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	if err := f.Chmod(perm); err != nil {
 		_ = f.Close()
-		_ = fs.Remove(f.Name())
+		_ = fs.Remove(ctx, f.Name())
 		return nil, fmt.Errorf("failed to chmod temp file: %w", err)
 	}
 
 	return f, nil
 }
 
-func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string, perm os.FileMode) error {
+func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetPath string, perm os.FileMode) error {
 	// Force flush to disk to prevent stale reads or zero-byte files on power loss
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("failed to sync temp file: %w", err)
@@ -91,15 +92,32 @@ func commitTempFile(fs FileSystem, f File, tmpPath, targetPath string, perm os.F
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	if err := fs.Rename(tmpPath, targetPath); err != nil {
-		// Implement fallback for EXDEV (cross-device link) errors
-		if isCrossDeviceError(err) {
-			return fallbackCopy(fs, tmpPath, targetPath, perm)
+	// Retry loop for Windows "Access is denied" during rename, which can be transient (e.g. anti-virus).
+	var lastErr error
+	for i := 0; i < 50; i++ {
+		if err := fs.Rename(ctx, tmpPath, targetPath); err != nil {
+			// Implement fallback for EXDEV (cross-device link) errors
+			if isCrossDeviceError(err) {
+				return fallbackCopy(ctx, fs, tmpPath, targetPath, perm)
+			}
+			lastErr = err
+			// If it's a transient error on Windows (like Access is denied), retry after a short delay.
+			if strings.Contains(err.Error(), "Access is denied") || strings.Contains(err.Error(), "used by another process") {
+				if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "atomic") {
+					fmt.Printf("DEBUG: retrying rename due to lock (attempt %d): %s\n", i+1, targetPath)
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(100 * time.Millisecond):
+				}
+				continue
+			}
+			return fmt.Errorf("failed to rename temp file: %w", err)
 		}
-		return fmt.Errorf("failed to rename temp file: %w", err)
+		return nil
 	}
-
-	return nil
+	return fmt.Errorf("failed to rename temp file after 50 retries: %w", lastErr)
 }
 
 func isCrossDeviceError(err error) bool {
@@ -111,15 +129,15 @@ func isCrossDeviceError(err error) bool {
 	return strings.Contains(err.Error(), "cross-device link")
 }
 
-func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) (err error) {
-	src, err := fs.OpenFile(srcPath, os.O_RDONLY, 0)
+func fallbackCopy(ctx context.Context, fs FileSystem, srcPath, dstPath string, perm os.FileMode) (err error) {
+	src, err := fs.OpenFile(ctx, srcPath, os.O_RDONLY, 0)
 	if err != nil {
 		return fmt.Errorf("fallback: failed to open source: %w", err)
 	}
 	defer func() { _ = src.Close() }()
 
 	// Open destination for writing, truncating if it already exists
-	dst, err := fs.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	dst, err := fs.OpenFile(ctx, dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
 		return fmt.Errorf("fallback: failed to open destination: %w", err)
 	}
@@ -130,7 +148,7 @@ func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) (err
 			err = closeErr
 		}
 		if !success {
-			_ = fs.Remove(dstPath)
+			_ = fs.Remove(context.Background(), dstPath)
 		}
 	}()
 
@@ -144,6 +162,6 @@ func fallbackCopy(fs FileSystem, srcPath, dstPath string, perm os.FileMode) (err
 
 	success = true
 	// Cleanup the source file after successful copy
-	_ = fs.Remove(srcPath)
+	_ = fs.Remove(ctx, srcPath)
 	return nil
 }

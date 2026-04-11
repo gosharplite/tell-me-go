@@ -29,12 +29,12 @@ type asyncTurnsLogger struct {
 }
 
 // NewAsyncTurnsLogger creates a new ports.TurnsLogger that writes to a file asynchronously.
-func NewAsyncTurnsLogger(fs infra_persistence.FileSystem, filePath string, logger *slog.Logger) (ports.TurnsLogger, error) {
+func NewAsyncTurnsLogger(ctx context.Context, fs infra_persistence.FileSystem, filePath string, logger *slog.Logger) (ports.TurnsLogger, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	f, err := fs.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := fs.OpenFile(ctx, filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open turns log file: %w", err)
 	}
@@ -54,8 +54,15 @@ func NewAsyncTurnsLogger(fs infra_persistence.FileSystem, filePath string, logge
 
 // Listen starts the worker loop and blocks until the context is canceled.
 func (l *asyncTurnsLogger) Listen(ctx context.Context) error {
+	l.mu.RLock()
+	if l.closed {
+		l.mu.RUnlock()
+		return nil
+	}
+	l.wg.Add(1)
+	l.mu.RUnlock()
+
 	defer l.wg.Done()
-	l.wg.Add(1) // Track worker existence for backward compatibility with Close()
 
 	for {
 		select {

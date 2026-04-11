@@ -247,17 +247,27 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 
 // Shutdown gracefully stops the agent and its components.
 func (a *agent) Shutdown(ctx context.Context) error {
+	var errs []error
+
+	if a.turnsLogger != nil {
+		if err := a.turnsLogger.Close(); err != nil {
+			a.getLogger().Debug("turns logger shutdown incomplete", slog.Any("error", err))
+			errs = append(errs, err)
+		}
+	}
+
 	if a.events != nil {
 		if err := a.events.Flush(ctx); err != nil {
 			a.getLogger().Debug("event bus flush incomplete during shutdown", slog.Any("error", err))
 		}
-		err := a.events.Shutdown(ctx)
-		if errors.Is(err, events.ErrBusNotInitialized) {
-			return nil
+		if err := a.events.Shutdown(ctx); err != nil {
+			if !errors.Is(err, events.ErrBusNotInitialized) {
+				errs = append(errs, err)
+			}
 		}
-		return err
 	}
-	return nil
+
+	return errors.Join(errs...)
 }
 
 func (a *agent) getLogger() *slog.Logger {

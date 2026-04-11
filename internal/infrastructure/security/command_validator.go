@@ -5,6 +5,7 @@ package security
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/google/shlex"
@@ -17,6 +18,7 @@ type commandValidator struct {
 	sm         domain.Manager
 	safety     *domain.SafetyService
 	interactor domain.UserInteractor
+	goos       string // The operating system for platform-specific logic
 }
 
 // NewCommandValidator creates a new commandValidator.
@@ -30,7 +32,7 @@ func NewCommandValidator(sm domain.Manager, interactor domain.UserInteractor) do
 	if safety == nil {
 		safety = domain.NewSafetyService(domain.DefaultPolicy())
 	}
-	return &commandValidator{sm: sm, safety: safety, interactor: interactor}
+	return &commandValidator{sm: sm, safety: safety, interactor: interactor, goos: runtime.GOOS}
 }
 
 // IsSafe checks if a command is safe for auto-approval.
@@ -88,7 +90,39 @@ func (v *commandValidator) Split(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("shlex split error: %w", err)
 	}
+
+	// Path Integrity Check (Issue #44)
+	// Detect if backslashes in Windows paths were stripped by the POSIX-style parser.
+	if strings.Contains(cmd, "\\") {
+		partsCount := 0
+		for _, part := range parts {
+			partsCount += strings.Count(part, "\\")
+		}
+
+		if partsCount < strings.Count(cmd, "\\") {
+			if v.isLikelyWindowsPath(cmd) {
+				return nil, fmt.Errorf("possible path corruption detected: backslashes in Windows paths are stripped by the POSIX-style parser. Please use forward slashes (/) instead (e.g., 'C:/Users' or './path/to/file')")
+			}
+		}
+	}
+
 	return parts, nil
+}
+
+func (v *commandValidator) isLikelyWindowsPath(cmd string) bool {
+	if strings.Contains(cmd, ":\\") || strings.Contains(cmd, "\\\\") {
+		return true
+	}
+	for i := 0; i < len(cmd)-1; i++ {
+		if cmd[i] == '\\' {
+			next := cmd[i+1]
+			// Backslash followed by alphanumeric is a strong indicator of a Windows path component
+			if (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || (next >= '0' && next <= '9') {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ValidateStructure ensures the command does not contain standalone shell operators
@@ -254,6 +288,10 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 		{";", "command chaining is not allowed"},
 		{">", "redirection is not allowed (use output_file parameter)"},
 		{"<", "input redirection is not allowed"},
+		{"(", "subshells are not allowed"},
+		{")", "subshells are not allowed"},
+		{"{", "brace expansion is not allowed"},
+		{"}", "brace expansion is not allowed"},
 		{"$", "variable expansion is not allowed"},
 		{"`", "command substitution is not allowed"},
 		{"*", "wildcards are not allowed in auto-approvable commands"},
@@ -266,7 +304,10 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 		if strings.Contains(command, uc.char) {
 			// EXCEPTION: Allow $ in 'go test' for regex anchors like -run=^$
 			if uc.char == "$" && strings.HasPrefix(command, "go test") {
-				continue
+				// Only allow if NOT followed by (
+				if !strings.Contains(command, "$(") {
+					continue
+				}
 			}
 			return false, uc.reason
 		}
@@ -315,9 +356,92 @@ func (v *commandValidator) HasShellFeatures(parts []string) bool {
 		if i == 0 && v.safety.HasForbiddenCharsInCommand(part) {
 			return true
 		}
+
+		// 5. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
+		if i == 0 && v.isPowerShellCmdlet(part) {
+			return true
+		}
+
+		// 6. Check for Windows shell built-in commands (e.g. "del", "dir")
+		if i == 0 && v.goos == "windows" && v.isWindowsBuiltIn(part) {
+			return true
+		}
 	}
 
 	return false
+}
+
+func (v *commandValidator) isWindowsBuiltIn(token string) bool {
+	// Strict matching against normalized lowercase token
+	builtIns := map[string]bool{
+		"del": true, "erase": true, "dir": true, "echo": true, "mkdir": true,
+		"md": true, "rmdir": true, "rd": true, "copy": true, "move": true,
+		"ren": true, "rename": true, "type": true, "cls": true, "ver": true,
+		"vol": true, "set": true, "path": true, "pause": true, "exit": true,
+		"prompt": true, "title": true, "color": true, "start": true,
+	}
+	return builtIns[strings.ToLower(token)]
+}
+
+func (v *commandValidator) isPowerShellCmdlet(token string) bool {
+	dashIdx := strings.Index(token, "-")
+	if dashIdx <= 0 || dashIdx == len(token)-1 {
+		return false
+	}
+
+	// Exclude list for common binaries that use dashes but are not cmdlets
+	excludes := map[string]bool{
+		"apt-get":        true,
+		"git-lfs":        true,
+		"npm-check":      true,
+		"pip-compile":    true,
+		"docker-compose": true,
+	}
+	if excludes[strings.ToLower(token)] {
+		return false
+	}
+
+	verb := token[:dashIdx]
+	// Verbs are typically 2+ characters
+	if len(verb) < 2 {
+		return false
+	}
+
+	// PowerShell standard: Verb-Noun (PascalCase)
+	// Heuristic: If Verb starts with an uppercase letter, it's likely a PowerShell cmdlet
+	if verb[0] >= 'A' && verb[0] <= 'Z' {
+		return true
+	}
+
+	// Fallback to standard PowerShell verbs (case-insensitive)
+	commonVerbs := map[string]bool{
+		"get":     true,
+		"set":     true,
+		"new":     true,
+		"remove":  true,
+		"update":  true,
+		"invoke":  true,
+		"test":    true,
+		"write":   true,
+		"read":    true,
+		"copy":    true,
+		"move":    true,
+		"clear":   true,
+		"add":     true,
+		"out":     true,
+		"foreach": true,
+		"where":   true,
+		"select":  true,
+		"export":  true,
+		"import":  true,
+		"start":   true,
+		"stop":    true,
+		"wait":    true,
+		"enable":  true,
+		"disable": true,
+	}
+
+	return commonVerbs[strings.ToLower(verb)]
 }
 
 func cleanPathArgument(arg string) string {

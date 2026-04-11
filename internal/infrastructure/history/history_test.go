@@ -537,52 +537,65 @@ func FuzzManager_RollbackTurns(f *testing.F) {
 
 	// 2. Fuzz Target
 	f.Fuzz(func(t *testing.T, turns int) {
-		// Test with both even and odd initial lengths
-		for initialLen := 9; initialLen <= 10; initialLen++ {
-			m := &Manager{
-				Contents: make([]*llm.Content, initialLen),
-				store:    &mockStore{},
-			}
-			for i := range m.Contents {
-				m.Contents[i] = &llm.Content{}
-			}
+		// Test with both even and odd initial lengths, and with/without system message
+		for _, hasSystem := range []bool{false, true} {
+			for initialLen := 9; initialLen <= 10; initialLen++ {
+				m := &Manager{
+					Contents: make([]*llm.Content, initialLen),
+					store:    &mockStore{},
+				}
+				for i := range m.Contents {
+					m.Contents[i] = &llm.Content{}
+				}
+				if hasSystem && initialLen > 0 {
+					m.Contents[0].Role = "system"
+				}
 
-			ctx := context.Background()
+				ctx := context.Background()
 
-			// Execute
-			actualRemoved, remainingTurns, remainingMsgs, err := m.RollbackTurns(ctx, turns)
+				// Execute
+				actualRemoved, remainingTurns, remainingMsgs, err := m.RollbackTurns(ctx, turns)
 
-			// Assert Invariants
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+				// Assert Invariants
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 
-			finalLen := len(m.Contents)
+				finalLen := len(m.Contents)
 
-			if finalLen < 0 {
-				t.Errorf("invariant violation: final length %d is negative (input turns: %d)", finalLen, turns)
-			}
+				if finalLen < 0 {
+					t.Errorf("invariant violation: final length %d is negative (input turns: %d)", finalLen, turns)
+				}
 
-			if finalLen > initialLen {
-				t.Errorf("invariant violation: final length %d exceeds initial length %d (input turns: %d)", finalLen, initialLen, turns)
-			}
+				if finalLen > initialLen {
+					t.Errorf("invariant violation: final length %d exceeds initial length %d (input turns: %d)", finalLen, initialLen, turns)
+				}
 
-			if finalLen%2 != 0 {
-				t.Errorf("invariant violation: final length %d is odd (input turns: %d). Rollback must leave complete pairs.", finalLen, turns)
-			}
+				expectedParity := 0
+				if hasSystem && finalLen > 0 {
+					expectedParity = 1
+				}
+				if finalLen%2 != expectedParity {
+					t.Errorf("invariant violation: final length %d has wrong parity (input turns: %d, hasSystem: %v). Rollback must leave complete pairs.", finalLen, turns, hasSystem)
+				}
 
-			if actualRemoved < 0 {
-				t.Errorf("invariant violation: actualRemoved %d is negative (input turns: %d)", actualRemoved, turns)
-			}
+				if actualRemoved < 0 {
+					t.Errorf("invariant violation: actualRemoved %d is negative (input turns: %d)", actualRemoved, turns)
+				}
 
-			// Ensure calculated remaining aligns with actual slice length
-			if remainingMsgs != finalLen {
-				t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
-			}
+				// Ensure calculated remaining aligns with actual slice length
+				if remainingMsgs != finalLen {
+					t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
+				}
 
-			expectedRemainingTurns := finalLen / 2
-			if remainingTurns != expectedRemainingTurns {
-				t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)
+				effectiveLen := finalLen
+				if hasSystem && finalLen > 0 {
+					effectiveLen--
+				}
+				expectedRemainingTurns := effectiveLen / 2
+				if remainingTurns != expectedRemainingTurns {
+					t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)
+				}
 			}
 		}
 	})
@@ -681,3 +694,114 @@ func TestManager_GetLastUserMessage(t *testing.T) {
 		})
 	}
 }
+
+func (s *mockStore) Sync(ctx context.Context) error              { return nil }
+func (m *mockFailingStore) Sync(ctx context.Context) error       { return nil }
+func (s *mockStoreErrorMetadata) Sync(ctx context.Context) error { return nil }
+
+func TestHistoryManager_AddContent_DurabilityFirst(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	// Initial state: empty
+	if m.GetTotalEntries() != 0 {
+		t.Fatalf("expected 0 entries, got %d", m.GetTotalEntries())
+	}
+
+	// Set a failing store
+	expectedErr := errors.New("append failed")
+	m.setStore(&mockFailingAppendStore{err: expectedErr})
+
+	content := &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}
+	err := m.AddContent(ctx, content)
+
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+
+	// Verify in-memory state was NOT updated
+	if m.GetTotalEntries() != 0 {
+		t.Errorf("expected 0 entries after failed append, got %d (drift detected!)", m.GetTotalEntries())
+	}
+}
+
+type mockFailingAppendStore struct {
+	mockStore
+	err error
+}
+
+func (m *mockFailingAppendStore) Append(ctx context.Context, contents []*llm.Content) error {
+	return m.err
+}
+
+func (m *mockFailingAppendStore) Sync(ctx context.Context) error { return nil }
+
+func TestHistoryManager_SetContents_DurabilityFirst(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	// Initial state
+	initialContents := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
+	_ = m.SetContents(ctx, initialContents)
+
+	// Set a failing store
+	expectedErr := errors.New("save failed")
+	m.setStore(&mockFailingStore{err: expectedErr})
+
+	newContents := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "new"}}}}
+	err := m.SetContents(ctx, newContents)
+
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+
+	// Verify in-memory state was NOT updated
+	contents, _ := m.GetWindow(ctx, 0, -1)
+	if len(contents) != 1 || contents[0].Parts[0].Text != "initial" {
+		t.Errorf("expected original content after failed save, got %v", contents[0].Parts[0].Text)
+	}
+}
+
+func TestHistoryManager_AppendParts_DurabilityFirst(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	// Initial state
+	_ = m.addEntry(ctx, "user", "initial")
+
+	// Set a failing store
+	expectedErr := errors.New("append parts failed")
+	m.setStore(&mockFailingAppendPartsStore{err: expectedErr})
+
+	err := m.AppendParts(ctx, 0, []*llm.Part{{Text: " appended"}})
+
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+
+	// Verify in-memory state was NOT updated
+	contents, _ := m.GetWindow(ctx, 0, -1)
+	if len(contents[0].Parts) != 1 || contents[0].Parts[0].Text != "initial" {
+		t.Errorf("expected original parts after failed append, got %d parts, first is %q", len(contents[0].Parts), contents[0].Parts[0].Text)
+	}
+}
+
+type mockFailingAppendPartsStore struct {
+	mockStore
+	err error
+}
+
+func (m *mockFailingAppendPartsStore) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	return m.err
+}
+
+func (m *mockFailingAppendPartsStore) Sync(ctx context.Context) error { return nil }

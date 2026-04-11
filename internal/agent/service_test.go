@@ -700,6 +700,7 @@ func (f *minimalFile) ReadAt(p []byte, off int64) (n int, err error) { return 0,
 func (f *minimalFile) ReadDir(n int) ([]os.DirEntry, error)          { return nil, nil }
 func (f *minimalFile) Seek(offset int64, whence int) (int64, error)  { return 0, nil }
 func (f *minimalFile) Write(p []byte) (int, error)                   { return 0, nil }
+func (f *minimalFile) Sync() error                                   { return nil }
 
 type errorReader struct{}
 
@@ -782,4 +783,8 @@ func TestStreamTurnsLog(t *testing.T) {
 			mFS.AssertExpectations(t)
 		})
 	}
+}
+
+func (m *mockHistoryManagerForRetry) Sync(ctx context.Context) error {
+	return nil
 }

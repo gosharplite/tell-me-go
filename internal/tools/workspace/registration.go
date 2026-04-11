@@ -4,6 +4,8 @@
 package workspace
 
 import (
+	"runtime"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -18,7 +20,7 @@ type fileSystemManager struct {
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
 func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem) error {
-	if err := registerFiles(r, sm, fs); err != nil {
+	if err := registerFiles(r, sm, fs, exec); err != nil {
 		return err
 	}
 	if err := registerSystem(r, sm, validator); err != nil {
@@ -30,10 +32,18 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 	return nil
 }
 
-func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.FileSystem) error {
+func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.FileSystem, exec tools.CommandExecutor) error {
 	bm := newBackupManager(sm, fs, 10)
+
+	// Inject the executor into the reader if it matches the internal commandExecutor interface.
+	// Since processExecutor implements commandExecutor, this works in production.
+	var internalExec commandExecutor
+	if pe, ok := exec.(*processExecutor); ok {
+		internalExec = pe
+	}
+
 	m := &fileSystemManager{
-		reader: &fileReader{sm: sm, fs: fs},
+		reader: &fileReader{sm: sm, fs: fs, executor: internalExec},
 		writer: &fileWriter{sm: sm, bm: bm, fs: fs},
 		search: &fileSearcher{sm: sm, fs: fs},
 	}
@@ -235,6 +245,41 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 			handler: m.writer.undoFileChange,
 			opts:    &tools.ToolOptions{Serial: true},
 		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:            "delete_path",
+				Description:     "Deletes a file or directory. This is platform-agnostic and safer than using shell-specific commands like 'rm' or 'del'. WARNING: Recursive deletions are irreversible and cannot be undone via undo_file_change.",
+				RequiresConsent: true,
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path":      {Type: "STRING", Description: "The path to delete."},
+						"recursive": {Type: "BOOLEAN", Description: "If true, deletes directories and their contents recursively (default false). NOTE: Bypasses undo history."},
+						"reason":    {Type: "STRING", Description: "Reason for deleting this path."},
+					},
+					Required: []string{"path", "reason"},
+				},
+			},
+			handler: m.writer.deletePath,
+			opts:    &tools.ToolOptions{Serial: true},
+		},
+		{
+			decl: &tools.ToolDeclaration{
+				Name:            "create_directory",
+				Description:     "Creates a new directory and any necessary parent directories. This is platform-agnostic and safer than using shell-specific commands like 'mkdir' or 'md'.",
+				RequiresConsent: true,
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"path":   {Type: "STRING", Description: "The directory path to create."},
+						"reason": {Type: "STRING", Description: "Reason for creating this directory."},
+					},
+					Required: []string{"path", "reason"},
+				},
+			},
+			handler: m.writer.createDirectory,
+			opts:    &tools.ToolOptions{Serial: true},
+		},
 	}
 
 	for _, spec := range specs {
@@ -253,12 +298,22 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 }
 
 func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator) error {
-	shell := newshellTool(sm, validator)
+	var translator commandTranslator
+	var wrapper shellWrapper
+	if runtime.GOOS == "windows" {
+		translator = &windowsTranslator{}
+		wrapper = &windowsShellWrapper{}
+	} else {
+		translator = &posixTranslator{}
+		wrapper = &posixShellWrapper{}
+	}
+
+	shell := newshellTool(sm, validator, translator, wrapper)
 	interaction := newinteractionTool(sm)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
-		Description:     "Executes a command. Shell features like operators (&&, ||, ;, |, >, <), wildcards (*, ?), and variable expansion ($) are supported and automatically handled via 'sh -c'. Security: Only whitelisted commands are auto-approved. For advanced multi-stage pipes, use the 'pipe_commands' tool.",
+		Description:     "Executes a command. Shell features like operators (&&, ||, ;, |, >, <), wildcards (*, ?), and variable expansion ($) are supported and automatically handled via 'sh -c'. Security: Only whitelisted commands are auto-approved. For advanced multi-stage pipes, use the 'pipe_commands' tool.\n\n[WINDOWS COMPATIBILITY]: This tool uses POSIX-style shell parsing (shlex). Backslashes in paths (e.g., 'C:\\Users') will be interpreted as escape characters and stripped. ALWAYS use forward slashes for Windows paths (e.g., 'C:/Users') to ensure integrity; they are natively supported by PowerShell and the Go toolchain. Windows shell built-in commands (e.g., 'del', 'dir', 'echo', 'mkdir') are automatically detected and wrapped in 'cmd /c' on Windows systems.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
@@ -266,6 +321,15 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 				"command": {
 					Type:        "STRING",
 					Description: "The shell command to execute (e.g., 'ls -la', 'go test ./...').",
+				},
+				"args": {
+					Type:        "ARRAY",
+					Items:       &tools.Schema{Type: "STRING"},
+					Description: "Optional: List of command arguments. Use this instead of 'command' to avoid quoting issues with spaces/special characters.",
+				},
+				"env": {
+					Type:        "OBJECT",
+					Description: "Optional: Environment variables to set for the command (e.g., {'KEY': 'VALUE'}).",
 				},
 				"timeout": {
 					Type:        "INTEGER",
@@ -292,7 +356,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "pipe_commands",
-		Description:     "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.",
+		Description:     "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.\n\n[WINDOWS COMPATIBILITY]: This tool uses POSIX-style shell parsing (shlex). Backslashes in paths (e.g., 'C:\\Users') will be interpreted as escape characters and stripped. ALWAYS use forward slashes for Windows paths (e.g., 'C:/Users') to ensure integrity.",
 		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

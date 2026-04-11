@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -117,6 +118,9 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 	})
 
 	t.Run("UnreadableLogFile", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping on Windows: os.Chmod(0000) does not make files unreadable for the owner.")
+		}
 		t.Parallel()
 		tempDir := t.TempDir()
 		sm := security.NewSecurityManager(nil)
@@ -149,10 +153,6 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 
 	t.Run("InvalidLogContent", func(t *testing.T) {
 		t.Parallel()
-		// To truly trigger parseUsage error after Open, we might need something that makes scanner fail.
-		// But parseUsage also returns error if it can't open the file (covered by UnreadableLogFile).
-		// Let's try to make it skip invalid lines and still work for valid ones.
-
 		tempDir := t.TempDir()
 		sm := security.NewSecurityManager(nil)
 		sm.RegisterSafePath(tempDir)

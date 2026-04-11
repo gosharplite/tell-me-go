@@ -5,7 +5,6 @@ package analysis
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -111,13 +110,15 @@ func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, 
 	tempDir := "/mock/todo-test"
 	sm.RegisterSafePath(tempDir)
 
+	absTempDir, err := sm.IsPathSafe(tempDir)
+	require.NoError(t, err)
+
 	for path, content := range files {
-		fullPath := filepath.Join(tempDir, path)
-		// Ensure parent directory exists in mock FS if it supports it,
-		// but persistence.MockFileSystem usually just takes any path.
+		// Normalize path to use mock FS separators
+		fullPath := strings.ReplaceAll(absTempDir+"/"+path, "\\", "/")
 		require.NoError(t, fs.WriteFile(ctx, fullPath, []byte(content), 0644))
 	}
-	return m, tempDir
+	return m, strings.ReplaceAll(absTempDir, "\\", "/")
 }
 
 func TestSearchUsagesGlobally(t *testing.T) {
@@ -128,21 +129,22 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	ctx := context.Background()
 
 	tempDir := "/mock/usages"
+	sm.RegisterSafePath(tempDir)
+	absTempDirRaw, err := sm.IsPathSafe(tempDir)
+	require.NoError(t, err)
+	absTempDir := strings.ReplaceAll(absTempDirRaw, "\\", "/")
 
 	// Create some files in mock FS
-	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "a.go"), []byte("package a\nfunc MyFunc() {}"), 0644); err != nil {
+	if err := fs.WriteFile(ctx, absTempDir+"/a.go", []byte("package a\nfunc MyFunc() {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "b.go"), []byte("package b\nimport \"a\"\nfunc main() { a.MyFunc() }"), 0644); err != nil {
+	if err := fs.WriteFile(ctx, absTempDir+"/b.go", []byte("package b\nimport \"a\"\nfunc main() { a.MyFunc() }"), 0644); err != nil {
 		t.Fatal(err)
 	}
-
-	// Authorize root
-	sm.RegisterSafePath(tempDir)
 
 	res, err := m.SearchUsagesGlobally(ctx, map[string]interface{}{
 		"query": "MyFunc",
-		"path":  tempDir,
+		"path":  absTempDir,
 	}, nil)
 	if err != nil {
 		t.Fatalf("SearchUsagesGlobally failed: %v", err)
@@ -164,7 +166,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	// Test no matches
 	res2, _ := m.SearchUsagesGlobally(ctx, map[string]interface{}{
 		"query": "NonExistentSymbol",
-		"path":  tempDir,
+		"path":  absTempDir,
 	}, nil)
 	if !strings.Contains(res2.Text, "No matches found") {
 		t.Errorf("expected 'No matches found' message, got: %s", res2.Text)

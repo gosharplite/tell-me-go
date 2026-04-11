@@ -231,6 +231,12 @@ func TestCommandValidator_GranularAuthorization(t *testing.T) {
 		cmd     string
 		allowed bool
 	}{
+		// Security Hardening: Shell Injection Prevention
+		{"go test -run=^$", true},
+		{"go test -v $(whoami)", false},
+		{"ls $(touch HACKED)", false},
+		{"echo ${HOME}", false},
+
 		// New allowed commands
 		{"golangci-lint run", true},
 		{"staticcheck ./...", true},
@@ -342,5 +348,131 @@ func TestCommandValidator_HasShellFeatures(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("HasShellFeatures(%q) = %v, want %v", tt.cmd, got, tt.want)
 		}
+	}
+}
+
+func TestCommandValidator_PathCorruption(t *testing.T) {
+	t.Parallel()
+	v := NewCommandValidator(nil, nil)
+
+	tests := []struct {
+		name    string
+		cmd     string
+		wantErr bool
+	}{
+		{"Windows path in quotes", `ls "C:\Users"`, true},
+		{"Windows UNC path", `ls \\server\share`, true},
+		{"Windows relative path with backslash", `ls .\internal\security`, true},
+		{"Legitimate space escape", `ls file\ name`, false},
+		{"Legitimate quote escape", `echo \"hello\"`, false},
+		{"No backslashes", `ls /usr/bin`, false},
+		{"Double backslash (escaped)", `ls C:\\Users`, true}, // We still want to force forward slashes
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := v.Split(tt.cmd)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Split(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+			}
+			if tt.wantErr && err != nil && !strings.Contains(err.Error(), "possible path corruption detected") {
+				t.Errorf("Split(%q) error %v, want message containing 'possible path corruption detected'", tt.cmd, err)
+			}
+		})
+	}
+}
+
+func TestCommandValidator_HasShellFeatures_Windows(t *testing.T) {
+	v := NewCommandValidator(nil, nil).(*commandValidator)
+	v.goos = "windows"
+
+	tests := []struct {
+		cmd  string
+		want bool
+	}{
+		{"del file.txt", true},
+		{"dir", true},
+		{"mkdir test", true},
+		{"md test", true},
+		{"copy src dst", true},
+		{"move src dst", true},
+		{"ren old new", true},
+		{"type file.txt", true},
+		{"echo hello", true},
+		{"ls", false}, // ls is not a Windows built-in
+		{"git status", false},
+	}
+
+	for _, tt := range tests {
+		parts, _ := v.Split(tt.cmd)
+		got := v.HasShellFeatures(parts)
+		if got != tt.want {
+			t.Errorf("HasShellFeatures(%q) on Windows = %v, want %v", tt.cmd, got, tt.want)
+		}
+	}
+}
+
+func TestCommandValidator_HasShellFeatures_NonWindows(t *testing.T) {
+	v := NewCommandValidator(nil, nil).(*commandValidator)
+	v.goos = "linux"
+
+	tests := []struct {
+		cmd  string
+		want bool
+	}{
+		{"del file.txt", false}, // del is not a shell feature on Linux (unless it's an alias, but we check built-ins)
+		{"dir", false},
+		{"echo hello", false}, // echo is usually a binary on Linux or shell built-in but we don't treat it as "shell feature" for wrapper necessity there yet as it exists as binary
+	}
+
+	for _, tt := range tests {
+		parts, _ := v.Split(tt.cmd)
+		got := v.HasShellFeatures(parts)
+		if got != tt.want {
+			t.Errorf("HasShellFeatures(%q) on Linux = %v, want %v", tt.cmd, got, tt.want)
+		}
+	}
+}
+
+func TestCommandValidator_ShellHeuristics(t *testing.T) {
+	v := NewCommandValidator(nil, nil).(*commandValidator)
+
+	tests := []struct {
+		name string
+		cmd  string
+		goos string
+		want bool
+	}{
+		// PowerShell cmdlets
+		{"PowerShell PascalCase", "Get-ChildItem", "windows", true},
+		{"PowerShell PascalCase (Linux)", "Get-ChildItem", "linux", true},
+		{"PowerShell lowercase common verb", "get-process", "windows", true},
+
+		// Binaries with dashes (exclude list)
+		{"Binary git-lfs", "git-lfs", "windows", false},
+		{"Binary apt-get", "apt-get", "linux", false},
+		{"Binary docker-compose", "docker-compose", "linux", false},
+
+		// Windows built-ins
+		{"Windows dir", "dir", "windows", true},
+		{"Windows echo", "echo", "windows", true},
+		{"Windows del", "del file.txt", "windows", true},
+
+		// Standard binaries
+		{"Standard git", "git status", "windows", false},
+		{"Standard go", "go test", "windows", false},
+		{"Standard ls", "ls -la", "linux", false},
+		{"Non-Windows dir", "dir", "linux", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v.goos = tt.goos
+			parts, _ := v.Split(tt.cmd)
+			got := v.HasShellFeatures(parts)
+			if got != tt.want {
+				t.Errorf("HasShellFeatures(%q) on %s = %v, want %v", tt.cmd, tt.goos, got, tt.want)
+			}
+		})
 	}
 }

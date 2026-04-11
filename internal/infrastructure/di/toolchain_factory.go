@@ -67,7 +67,7 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		Mode:             params.Mode,
 		PricingOverrides: params.PricingOverrides,
 		Client:           params.Client,
-		AssetsDir:        filepath.Join(f.HomeDir, "assets/generated"),
+		AssetsDir:        filepath.Join(f.HomeDir, "assets", "generated"),
 		EventBus:         params.Bus,
 		FileSystem:       infra_persistence.NewDomainFS(f.FileSystem),
 	}

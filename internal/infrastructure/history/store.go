@@ -26,6 +26,7 @@ type store interface {
 	AppendParts(ctx context.Context, index int, parts []*llm.Part) error
 	UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error
 	Compact(ctx context.Context) error
+	Sync(ctx context.Context) error
 }
 
 // historyPatch represents an append-only patch to history.
@@ -225,7 +226,7 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 		buf.WriteByte('\n')
 	}
 
-	return s.fs.WriteFile(ctx, s.filePath, buf.Bytes(), 0644)
+	return s.fs.AtomicWrite(ctx, s.filePath, buf.Bytes(), 0644)
 }
 
 // Append appends multiple content entries to the history file.
@@ -243,6 +244,9 @@ func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) (err e
 		return oerr
 	}
 	defer func() {
+		if serr := f.Sync(); serr != nil && err == nil {
+			err = serr
+		}
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
@@ -271,6 +275,9 @@ func (s *jsonlStore) Archive(ctx context.Context, contents []*llm.Content) (err 
 		return oerr
 	}
 	defer func() {
+		if serr := f.Sync(); serr != nil && err == nil {
+			err = serr
+		}
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
@@ -354,6 +361,9 @@ func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map
 		return oerr
 	}
 	defer func() {
+		if serr := f.Sync(); serr != nil && err == nil {
+			err = serr
+		}
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
@@ -399,6 +409,9 @@ func (s *jsonlStore) AppendParts(ctx context.Context, index int, parts []*llm.Pa
 		return oerr
 	}
 	defer func() {
+		if serr := f.Sync(); serr != nil && err == nil {
+			err = serr
+		}
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
@@ -433,4 +446,19 @@ func (s *jsonlStore) AppendParts(ctx context.Context, index int, parts []*llm.Pa
 
 	_, err = f.Write(line)
 	return err
+}
+
+// Sync ensures the history file is synchronized to disk.
+func (s *jsonlStore) Sync(ctx context.Context) error {
+	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_RDWR, 0644)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+	return f.Sync()
 }

@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -42,25 +43,36 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]ports.Task, err
 	}
 
 	// Handle empty file
-	if len(data) == 0 {
+	trimmed := strings.TrimSpace(string(data))
+	if len(trimmed) == 0 {
 		return nil, nil
 	}
 
 	// Try decoding as a JSON array first (backward compatibility/standard JSON)
-	var loaded []ports.Task
-	if data[0] == '[' {
-		if err := json.Unmarshal(data, &loaded); err == nil {
+	if trimmed[0] == '[' {
+		var loaded []ports.Task
+		if err := json.Unmarshal([]byte(trimmed), &loaded); err == nil {
 			return loaded, nil
 		}
 	}
 
 	// Fallback to JSONL format
-	loaded = nil
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	for decoder.More() {
+	var loaded []ports.Task
+	scanner := bufio.NewScanner(strings.NewReader(trimmed))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
 		var t ports.Task
-		if err := decoder.Decode(&t); err != nil {
-			return nil, fmt.Errorf("decoding task: %w", err)
+		if err := json.Unmarshal([]byte(line), &t); err != nil {
+			// Skip corrupted lines in legacy tasks to ensure boot continues.
+			// This handles cases where log lines or other non-JSON data may have leaked into the file.
+			// [DEBUG] Log corrupted lines to help identify the source of leakage on Windows.
+			if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "migration") {
+				fmt.Printf("DEBUG: corrupted task line in %s: %q (error: %v)\n", r.filePath, line, err)
+			}
+			continue
 		}
 		loaded = append(loaded, t)
 	}

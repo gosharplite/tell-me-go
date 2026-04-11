@@ -36,6 +36,7 @@ type HistoryWriter interface {
 	AddContent(ctx context.Context, content *llm.Content) error
 	AppendParts(ctx context.Context, index int, parts []*llm.Part) error
 	Save(ctx context.Context) error
+	Sync(ctx context.Context) error
 }
 
 // HistoryModifier defines the interface for specialized history operations.

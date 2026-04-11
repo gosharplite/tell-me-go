@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -39,12 +40,11 @@ func (l *YAMLConfigLoader) Load(path string) (*domain_config.Config, error) {
 func load(path string) (*domain_config.Config, error) {
 	v := viper.New()
 
-	// 1. Read the file manually to preserve ${VAR} expansion
+	// 1. Read the file content
 	data, err := os.ReadFile(path)
 	if err == nil {
-		expanded := os.ExpandEnv(string(data))
 		v.SetConfigType("yaml")
-		if err := v.ReadConfig(strings.NewReader(expanded)); err != nil {
+		if err := v.ReadConfig(strings.NewReader(string(data))); err != nil {
 			return nil, fmt.Errorf("viper failed to read config: %w", err)
 		}
 	} else if !os.IsNotExist(err) {
@@ -71,6 +71,11 @@ func load(path string) (*domain_config.Config, error) {
 	// 5. Unmarshal using `yaml` tags to avoid modifying domain structs
 	err = v.Unmarshal(&cfg, func(c *mapstructure.DecoderConfig) {
 		c.TagName = "yaml" // CRITICAL: Tell Viper to read the yaml tags
+		c.DecodeHook = mapstructure.ComposeDecodeHookFunc(
+			expandEnvHook,
+			mapstructure.StringToTimeDurationHookFunc(),
+			mapstructure.StringToSliceHookFunc(","),
+		)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal viper config: %w", err)
@@ -80,6 +85,13 @@ func load(path string) (*domain_config.Config, error) {
 	syncLegacyFields(&cfg)
 
 	return &cfg, nil
+}
+
+func expandEnvHook(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+	if f.Kind() != reflect.String {
+		return data, nil
+	}
+	return os.ExpandEnv(data.(string)), nil
 }
 
 func setDefaults(cfg *domain_config.Config) {

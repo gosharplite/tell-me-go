@@ -22,12 +22,13 @@ test:
 
 # AI-SAFE RACE TEST: 
 # Running 'go test -race ./...' globally times out in AI environments (>60s).
-# This target iterates through packages to stay within tool execution limits.
+# This target iterates through packages sequentially to ensure full coverage 
+# and stability in all environments (including Windows with Winlibs).
 test-race:
 	@echo "Running race tests package-by-package..."
 	@for pkg in $$(go list ./...); do \
 		echo "Testing $$pkg..."; \
-		go test -race -timeout 45s $$pkg || exit 1; \
+		go test -race -timeout 60s $$pkg || exit 1; \
 	done
 
 tidy:

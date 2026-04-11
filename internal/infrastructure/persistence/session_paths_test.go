@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,8 +17,9 @@ func TestInitializePaths(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	mode := "test-mode"
+	ctx := context.Background()
 
-	paths, err := initializePaths(&OSFileSystem{}, tmp, mode)
+	paths, err := initializePaths(ctx, &OSFileSystem{}, tmp, mode)
 	if err != nil {
 		t.Fatalf("initializePaths failed: %v", err)
 	}
@@ -37,8 +39,9 @@ func TestRotateSession(t *testing.T) {
 	tmp := t.TempDir()
 	homeDir := tmp
 	mode := "test-mode"
+	ctx := context.Background()
 
-	paths, err := initializePaths(&OSFileSystem{}, homeDir, mode)
+	paths, err := initializePaths(ctx, &OSFileSystem{}, homeDir, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +62,7 @@ func TestRotateSession(t *testing.T) {
 	}
 
 	// Rotate
-	err = RotateSession(&OSFileSystem{}, nil, *paths, 30)
+	err = RotateSession(ctx, &OSFileSystem{}, nil, *paths, 30)
 	if err != nil {
 		t.Fatalf("RotateSession failed: %v", err)
 	}
@@ -86,7 +89,8 @@ func TestCleanupOldBackups(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	mode := "test-mode"
-	paths, err := initializePaths(&OSFileSystem{}, tmp, mode)
+	ctx := context.Background()
+	paths, err := initializePaths(ctx, &OSFileSystem{}, tmp, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +112,7 @@ func TestCleanupOldBackups(t *testing.T) {
 	}
 
 	// Cleanup with 30 day retention
-	err = cleanupOldBackups(&OSFileSystem{}, *paths, 30)
+	err = cleanupOldBackups(ctx, &OSFileSystem{}, *paths, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +127,7 @@ func TestCleanupOldBackups(t *testing.T) {
 
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
 	t.Parallel()
-	err := cleanupOldBackups(&OSFileSystem{}, persistence.Paths{}, 0)
+	err := cleanupOldBackups(context.Background(), &OSFileSystem{}, persistence.Paths{}, 0)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with 0 retention should not error: %v", err)
 	}
@@ -133,7 +137,7 @@ func TestCleanupOldBackups_NoDir(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	paths := persistence.Paths{ModeDir: filepath.Join(tmp, "nonexistent")}
-	err := cleanupOldBackups(&OSFileSystem{}, paths, 30)
+	err := cleanupOldBackups(context.Background(), &OSFileSystem{}, paths, 30)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with nonexistent dir should not error: %v", err)
 	}
@@ -174,9 +178,10 @@ func TestEnsureDirectories(t *testing.T) {
 	tmp := t.TempDir()
 	mode := "test-ensure"
 	paths := persistence.ResolvePaths(tmp, mode)
+	ctx := context.Background()
 
 	fs := &OSFileSystem{}
-	err := EnsureDirectories(fs, paths)
+	err := EnsureDirectories(ctx, fs, paths)
 	if err != nil {
 		t.Fatalf("EnsureDirectories failed: %v", err)
 	}

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -16,9 +15,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+type commandExecutor interface {
+	RunCommand(ctx context.Context, parts []string, config executionConfig) (executionResult, error)
+	LookPath(file string) (string, error)
+}
+
 type fileReader struct {
-	sm domain_security.PathValidator
-	fs persistence.FileSystem
+	sm       domain_security.PathValidator
+	fs       persistence.FileSystem
+	executor commandExecutor
 }
 
 func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -314,8 +319,12 @@ func (r *fileReader) validateDiffPrerequisites(ctx context.Context, resolved1, r
 		return fmt.Errorf("file2 (%q) not found: %w", resolved2, err)
 	}
 
-	// Check for diff binary (ideally cached at struct initialization, but kept here for now)
-	if _, err := exec.LookPath("diff"); err != nil {
+	if r.executor == nil {
+		return fmt.Errorf("no command executor available for diffing")
+	}
+
+	// Check for diff binary
+	if _, err := r.executor.LookPath("diff"); err != nil {
 		return fmt.Errorf("'diff' command not found in system PATH: %w", err)
 	}
 
@@ -347,19 +356,20 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	// SECURE EXECUTION: Use '--' to prevent argument injection
-	cmd := exec.CommandContext(ctx, "diff", "-u", "--", resolved1, resolved2)
-	out, err := cmd.CombinedOutput()
+	// SECURE EXECUTION: Use the executor for portability and redirection handling
+	res, err := r.executor.RunCommand(ctx, []string{"diff", "-u", "--", resolved1, resolved2}, executionConfig{})
 
-	if len(out) == 0 && err == nil {
+	if len(res.Output) == 0 && err == nil {
 		return tools.ToolResult{Text: "Files are identical."}, nil
 	}
 
 	if err != nil {
-		if _, ok := err.(*exec.ExitError); !ok {
-			return tools.ToolResult{}, fmt.Errorf("diff failed: %w", err)
-		}
+		return tools.ToolResult{}, fmt.Errorf("diff failed: %w", err)
 	}
 
-	return tools.ToolResult{Text: string(out)}, nil
+	if res.ExitCode != 0 && res.ExitCode != 1 { // 1 is normal for diff finding differences
+		return tools.ToolResult{Text: res.Output}, fmt.Errorf("diff process failed with exit code %d", res.ExitCode)
+	}
+
+	return tools.ToolResult{Text: res.Output}, nil
 }

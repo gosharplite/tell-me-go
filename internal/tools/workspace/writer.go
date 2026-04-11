@@ -132,6 +132,7 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 		return tools.ToolResult{}, fmt.Errorf("failed to open file: %w", oerr)
 	}
 	defer func() {
+		_ = f.Sync()
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = fmt.Errorf("failed to close file (data may be lost): %w", cerr)
 		}
@@ -168,4 +169,85 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 
 type writerSecurity interface {
 	domain_security.PathValidator
+	domain_security.ActionConfirmer
+}
+
+func (w *fileWriter) deletePath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	var params struct {
+		Path      string `json:"path"`
+		Recursive bool   `json:"recursive"`
+		Reason    string `json:"reason"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	resolvedPath, err := w.sm.IsPathWritable(params.Path)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Recursive {
+		return w.performRecursiveDelete(ctx, resolvedPath, params.Reason)
+	}
+
+	return w.performSingleDelete(ctx, resolvedPath)
+}
+
+func (w *fileWriter) performRecursiveDelete(ctx context.Context, path, reason string) (tools.ToolResult, error) {
+	// 1. Mandatory Confirmation for Dangerous Operation
+	detail := fmt.Sprintf("Deleting directory and ALL its contents: %s", path)
+	approved, err := w.sm.Authorize(ctx, "RECURSIVE_DELETE", detail, reason, false)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization failed: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{}, fmt.Errorf("recursive deletion not authorized by user")
+	}
+
+	// 2. Perform Deletion
+	if err := w.fs.RemoveAll(ctx, path); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to delete path recursively: %w", err)
+	}
+
+	// 3. Return with explicit warning
+	return tools.ToolResult{
+		Text: "Path deleted successfully. NOTE: Recursive deletions are irreversible and cannot be undone via undo_file_change.",
+	}, nil
+}
+
+func (w *fileWriter) performSingleDelete(ctx context.Context, path string) (tools.ToolResult, error) {
+	info, statErr := w.fs.Stat(ctx, path)
+
+	// Only snapshot if it is a file and not a directory
+	if statErr == nil && !info.IsDir() {
+		w.bm.snapshot(ctx, path, "DELETE")
+	}
+
+	if err := w.fs.Remove(ctx, path); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to delete path: %w", err)
+	}
+
+	return tools.ToolResult{Text: "Path deleted successfully."}, nil
+}
+
+func (w *fileWriter) createDirectory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	var params struct {
+		Path   string `json:"path"`
+		Reason string `json:"reason"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	resolvedPath, err := w.sm.IsPathWritable(params.Path)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if err := w.fs.MkdirAll(ctx, resolvedPath, 0755); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	return tools.ToolResult{Text: "Directory created successfully."}, nil
 }

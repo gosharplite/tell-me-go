@@ -234,7 +234,7 @@ func TestStdUIRenderer_Spinner(t *testing.T) {
 		ui := r.getUIState()
 		stdout.Reset()
 		stderr.Reset()
-		r.drawLoadingIndicator(ui, "X", mc.now, " Thinking...", false)
+		r.drawLoadingIndicator(ui, "X", mc.now, " Thinking...", false, nil)
 		if !strings.Contains(stderr.String(), "X Thinking...") {
 			t.Errorf("expected stderr to contain spinner, got %q", stderr.String())
 		}
@@ -718,7 +718,7 @@ func TestStdUIRenderer_SpinnerWithMetrics(t *testing.T) {
 
 	// Draw another frame to capture updated metrics
 	ui := r.getUIState()
-	r.drawLoadingIndicator(ui, "X", mc.now.Add(-time.Second), "Loading...", true)
+	r.drawLoadingIndicator(ui, "X", mc.now.Add(-time.Second), "Loading...", true, nil)
 
 	stop()
 

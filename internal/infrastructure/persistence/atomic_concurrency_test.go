@@ -77,7 +77,7 @@ func TestAtomicWrite_EXDEV_Fallback(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock CreateTemp to return a fixed name for simplicity in this test
-	mockFS.CreateTempFunc = func(dir, pattern string) (File, error) {
+	mockFS.CreateTempFunc = func(ctx context.Context, dir, pattern string) (File, error) {
 		buf := new(bytes.Buffer)
 		mockFS.mu.Lock()
 		mockFS.files[tempPath] = buf
@@ -89,7 +89,7 @@ func TestAtomicWrite_EXDEV_Fallback(t *testing.T) {
 	}
 
 	// Configure the mock's Rename function to return an explicit cross-device link error
-	mockFS.RenameFunc = func(oldpath, newpath string) error {
+	mockFS.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
 		return &os.LinkError{
 			Op:  "rename",
 			Old: tempPath,
@@ -109,7 +109,7 @@ func TestAtomicWrite_EXDEV_Fallback(t *testing.T) {
 	}
 
 	// Verify the data was written to the target path
-	got, err := mockFS.ReadFile(targetPath)
+	got, err := mockFS.ReadFile(ctx, targetPath)
 	if err != nil {
 		t.Fatalf("Failed to read target file from mock FS: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestAtomicWrite_EXDEV_Fallback(t *testing.T) {
 	}
 
 	// Verify temp file was removed
-	if _, err := mockFS.ReadFile(tempPath); err == nil {
+	if _, err := mockFS.ReadFile(ctx, tempPath); err == nil {
 		t.Error("Temp file should have been removed after successful fallback copy")
 	}
 }

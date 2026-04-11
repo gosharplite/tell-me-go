@@ -57,7 +57,7 @@ type Bootstrapper struct {
 	ClientFactory    func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error)
 	RegisterAllTools func(params infra_tools.ToolRegistrationParams) error
 	RegisterMetrics  func(r tools.Registry, sm security.Manager, logFile, traceFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing, kvStore ports.KVStore) error
-	RotateSession    func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
+	RotateSession    func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
 	NewSessionState  func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
@@ -88,8 +88,8 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 	}
 
 	b.sessionFactory = newSessionFactory(homeDir, fs, sm, stdout, stderr, logger,
-		func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
-			return b.RotateSession(fs, stdout, paths, retentionDays)
+		func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
+			return b.RotateSession(ctx, fs, stdout, paths, retentionDays)
 		},
 		func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error) {
 			return b.NewSessionState(ctx, modeDir)
@@ -216,7 +216,6 @@ func (b *Bootstrapper) GetAgentFactory() ports.ChatterFactory {
 func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
 	var errs []error
 
-	// Finalize session
 	if saveErr := hManager.Save(ctx); saveErr != nil {
 		errs = append(errs, fmt.Errorf("error saving history: %w", saveErr))
 	}
@@ -242,7 +241,7 @@ func (b *Bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricin
 
 func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config) (ports.HistoryManager, error) {
 	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
-	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
+	if err := infra_persistence.EnsureDirectories(ctx, b.FileSystem, paths); err != nil {
 		return nil, fmt.Errorf("%w: failed to ensure session directories for %s: %w", errInfraInit, cfg.Mode, err)
 	}
 
@@ -257,7 +256,7 @@ func (b *Bootstrapper) GetHistoryManager(ctx stdctx.Context, cfg *config.Config)
 // GetUnifiedHistoryProvider assembles the read-model for the history browser.
 func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config.Config, hManager ports.HistoryManager) (ports.UnifiedHistoryProvider, error) {
 	paths := persistence.ResolvePaths(b.HomeDir, cfg.Mode)
-	if err := infra_persistence.EnsureDirectories(b.FileSystem, paths); err != nil {
+	if err := infra_persistence.EnsureDirectories(ctx, b.FileSystem, paths); err != nil {
 		return nil, fmt.Errorf("%w: failed to ensure session directories for unified history: %w", errInfraInit, err)
 	}
 

@@ -6,8 +6,6 @@ package developer
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -57,14 +55,14 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
-	cwd, _ := os.Getwd()
+	absCwdRaw, _ := sm.IsPathSafe(".")
+	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
 
 	fs := persistence.NewMockFileSystem()
-	fs.Files = map[string][]byte{
-		filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
-		filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
-		"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
-	}
+	ctx := context.Background()
+
+	require.NoError(t, fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), 0644))
+	require.NoError(t, fs.WriteFile(ctx, absCwd+"/main.go", []byte("package main\nfunc main() {}"), 0644))
 
 	runner := &mockReleaseRunner{}
 
@@ -88,42 +86,37 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
-	cwd, _ := os.Getwd()
+	absCwdRaw, _ := sm.IsPathSafe(".")
+	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
+	ctx := context.Background()
 
 	tests := []struct {
 		name        string
-		files       func() map[string][]byte
+		setupFiles  func(fs persistence.FileSystem)
 		setupRunner func() *mockReleaseRunner
 		wantSubstr  string
 	}{
 		{
 			name: "Secret found",
-			files: func() map[string][]byte {
-				return map[string][]byte{
-					filepath.Join(cwd, "go.mod"):    []byte("module test"),
-					filepath.Join(cwd, "secret.go"): []byte("package p\nvar k = \"AI_URL\""),
-					"go.mod":                        []byte("module test"),
-				}
+			setupFiles: func(fs persistence.FileSystem) {
+				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, absCwd+"/secret.go", []byte("package p\nvar k = \"AI_URL\""), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
 			wantSubstr:  "Potential secret",
 		},
 		{
 			name: "Replace directive",
-			files: func() map[string][]byte {
-				return map[string][]byte{
-					"go.mod": []byte("module test\nreplace foo => ../foo"),
-				}
+			setupFiles: func(fs persistence.FileSystem) {
+				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test\nreplace foo => ../foo"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
 			wantSubstr:  "contains 'replace' directives",
 		},
 		{
 			name: "Build failure",
-			files: func() map[string][]byte {
-				return map[string][]byte{
-					"go.mod": []byte("module test"),
-				}
+			setupFiles: func(fs persistence.FileSystem) {
+				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner {
 				return &mockReleaseRunner{
@@ -136,10 +129,8 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		},
 		{
 			name: "Linter failure",
-			files: func() map[string][]byte {
-				return map[string][]byte{
-					"go.mod": []byte("module test"),
-				}
+			setupFiles: func(fs persistence.FileSystem) {
+				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner {
 				return &mockReleaseRunner{
@@ -156,7 +147,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fs := persistence.NewMockFileSystem()
-			fs.Files = tt.files()
+			tt.setupFiles(fs)
 			runner := tt.setupRunner()
 			m := &releaseManager{sm: sm, fs: fs, runner: runner}
 
@@ -172,6 +163,9 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
+	absCwdRaw, _ := sm.IsPathSafe(".")
+	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
+	ctx := context.Background()
 
 	tests := []struct {
 		name        string
@@ -217,7 +211,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fs := persistence.NewMockFileSystem()
-			fs.Files = map[string][]byte{"go.mod": []byte("module test")}
+			_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
 			runner := tt.setupRunner()
 			m := &releaseManager{sm: sm, fs: fs, runner: runner}
 			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)

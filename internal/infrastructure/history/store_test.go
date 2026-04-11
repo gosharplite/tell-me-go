@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -707,6 +708,13 @@ func (m *mockFS) WriteFile(ctx context.Context, name string, data []byte, perm o
 	return m.FileSystem.WriteFile(context.Background(), name, data, perm)
 }
 
+func (m *mockFS) AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	if m.writeErr != nil {
+		return m.writeErr
+	}
+	return m.FileSystem.AtomicWrite(context.Background(), name, data, perm)
+}
+
 func (m *mockFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	if m.readErr != nil {
 		return nil, m.readErr
@@ -819,12 +827,12 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			wantErr: "write failed",
 		},
 		{
-			name:      "WriteFile Failure on Save",
-			setupMock: func(m *mockFS) { m.writeErr = errors.New("write file failed") },
+			name:      "AtomicWrite Failure on Save",
+			setupMock: func(m *mockFS) { m.writeErr = errors.New("atomic write failed") },
 			action: func(ctx context.Context, s *jsonlStore) error {
 				return s.Save(ctx, dummyContent)
 			},
-			wantErr: "write file failed",
+			wantErr: "atomic write failed",
 		},
 		{
 			name:      "Write Failure on UpdateMetadata",
@@ -1016,7 +1024,11 @@ func TestJSONLStore_AppendParts(t *testing.T) {
 
 func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
 	// Create an invalid store path
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), "/invalid_dir/file.jsonl", filepath.Join(filepath.Dir("/invalid_dir/file.jsonl"), "archive.jsonl"))
+	invalidDir := "/invalid_dir"
+	if runtime.GOOS == "windows" {
+		invalidDir = `C:\NUL\invalid`
+	}
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(invalidDir, "file.jsonl"), filepath.Join(invalidDir, "archive.jsonl"))
 	err := store.AppendParts(context.Background(), 0, []*llm.Part{{Text: "test"}})
 	if err == nil {
 		t.Error("expected error appending parts to invalid directory")
