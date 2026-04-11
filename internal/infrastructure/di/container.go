@@ -216,11 +216,8 @@ func (b *Bootstrapper) GetAgentFactory() ports.ChatterFactory {
 func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
 	var errs []error
 
-	// Finalize session - Force Sync/Close behavior for Windows reconciliation
 	if saveErr := hManager.Save(ctx); saveErr != nil {
 		errs = append(errs, fmt.Errorf("error saving history: %w", saveErr))
-	} else if syncErr := hManager.Sync(ctx); syncErr != nil {
-		errs = append(errs, fmt.Errorf("error syncing history: %w", syncErr))
 	}
 
 	// Calculate and record cost

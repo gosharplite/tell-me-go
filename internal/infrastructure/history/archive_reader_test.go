@@ -31,7 +31,7 @@ func TestJSONLArchiveReader_ReadPage(t *testing.T) {
 			start = stat.Size()
 		}
 		f, _ := os.OpenFile(archivePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		data, _ := json.Marshal(c)
 		data = append(data, '\n')
 		_, _ = f.Write(data)
