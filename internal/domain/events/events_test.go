@@ -618,3 +618,33 @@ func TestEventBus_DefensiveErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestEventBus_SimpleSnapshot(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+	inframock.CleanupBus(t, bus)
+
+	received := make(chan events.Event, 1)
+	bus.Subscribe(func(ctx context.Context, e events.Event) {
+		received <- e
+	})
+
+	go bus.Listen(ctx)
+
+	err := bus.Publish(ctx, testEvent{val: "snapshot_test"})
+	if err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
+
+	select {
+	case got := <-received:
+		if got.(testEvent).val != "snapshot_test" {
+			t.Errorf("expected snapshot_test, got %v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+}
