@@ -6,13 +6,17 @@
 package persistence
 
 import (
+	"errors"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // fsRetry implements Windows-specific retry logic for transient filesystem errors.
 func fsRetry(op func() error) error {
 	var lastErr error
+	delay := 50 * time.Millisecond
 	for i := 0; i < 5; i++ {
 		err := op()
 		if err == nil {
@@ -20,7 +24,8 @@ func fsRetry(op func() error) error {
 		}
 		lastErr = err
 		if isWindowsTransientError(err) {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(delay)
+			delay *= 2
 			continue
 		}
 		return err
@@ -33,6 +38,13 @@ func isWindowsTransientError(err error) bool {
 	if err == nil {
 		return false
 	}
+
+	var errno windows.Errno
+	if errors.As(err, &errno) {
+		return errno == windows.ERROR_ACCESS_DENIED || errno == windows.ERROR_SHARING_VIOLATION
+	}
+
+	// Secondary fallback for non-errno wrapped errors
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "access is denied") ||
 		strings.Contains(msg, "the process cannot access the file because it is being used by another process")

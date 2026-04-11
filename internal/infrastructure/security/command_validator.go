@@ -365,6 +365,7 @@ func (v *commandValidator) HasShellFeatures(parts []string) bool {
 }
 
 func (v *commandValidator) isWindowsBuiltIn(token string) bool {
+	// Strict matching against normalized lowercase token
 	builtIns := map[string]bool{
 		"del": true, "erase": true, "dir": true, "echo": true, "mkdir": true,
 		"md": true, "rmdir": true, "rd": true, "copy": true, "move": true,
@@ -380,27 +381,60 @@ func (v *commandValidator) isPowerShellCmdlet(token string) bool {
 	if dashIdx <= 0 || dashIdx == len(token)-1 {
 		return false
 	}
+
+	// Exclude list for common binaries that use dashes but are not cmdlets
+	excludes := map[string]bool{
+		"apt-get":        true,
+		"git-lfs":        true,
+		"npm-check":      true,
+		"pip-compile":    true,
+		"docker-compose": true,
+	}
+	if excludes[strings.ToLower(token)] {
+		return false
+	}
+
 	verb := token[:dashIdx]
 	// Verbs are typically 2+ characters
 	if len(verb) < 2 {
 		return false
 	}
-	// Common PowerShell verbs: Get, Set, New, Remove, Update, Invoke, etc.
-	// We'll use a simple heuristic: if it's Verb-Noun and not a known binary like "git-lfs"
-	// (though git-lfs would usually be called as "git lfs").
-	// To be safe, we check if the verb starts with an uppercase letter or is a common verb.
-	firstChar := verb[0]
-	if firstChar >= 'A' && firstChar <= 'Z' {
+
+	// PowerShell standard: Verb-Noun (PascalCase)
+	// Heuristic: If Verb starts with an uppercase letter, it's likely a PowerShell cmdlet
+	if verb[0] >= 'A' && verb[0] <= 'Z' {
 		return true
 	}
-	// Also allow lowercase common verbs for convenience
-	commonVerbs := []string{"get", "set", "new", "remove", "update", "invoke", "test", "write", "read", "copy", "move", "clear", "add"}
-	for _, v := range commonVerbs {
-		if strings.EqualFold(verb, v) {
-			return true
-		}
+
+	// Fallback to standard PowerShell verbs (case-insensitive)
+	commonVerbs := map[string]bool{
+		"get":     true,
+		"set":     true,
+		"new":     true,
+		"remove":  true,
+		"update":  true,
+		"invoke":  true,
+		"test":    true,
+		"write":   true,
+		"read":    true,
+		"copy":    true,
+		"move":    true,
+		"clear":   true,
+		"add":     true,
+		"out":     true,
+		"foreach": true,
+		"where":   true,
+		"select":  true,
+		"export":  true,
+		"import":  true,
+		"start":   true,
+		"stop":    true,
+		"wait":    true,
+		"enable":  true,
+		"disable": true,
 	}
-	return false
+
+	return commonVerbs[strings.ToLower(verb)]
 }
 
 func cleanPathArgument(arg string) string {

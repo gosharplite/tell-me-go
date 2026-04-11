@@ -427,3 +427,46 @@ func TestCommandValidator_HasShellFeatures_NonWindows(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandValidator_ShellHeuristics(t *testing.T) {
+	v := NewCommandValidator(nil, nil).(*commandValidator)
+
+	tests := []struct {
+		name string
+		cmd  string
+		goos string
+		want bool
+	}{
+		// PowerShell cmdlets
+		{"PowerShell PascalCase", "Get-ChildItem", "windows", true},
+		{"PowerShell PascalCase (Linux)", "Get-ChildItem", "linux", true},
+		{"PowerShell lowercase common verb", "get-process", "windows", true},
+
+		// Binaries with dashes (exclude list)
+		{"Binary git-lfs", "git-lfs", "windows", false},
+		{"Binary apt-get", "apt-get", "linux", false},
+		{"Binary docker-compose", "docker-compose", "linux", false},
+
+		// Windows built-ins
+		{"Windows dir", "dir", "windows", true},
+		{"Windows echo", "echo", "windows", true},
+		{"Windows del", "del file.txt", "windows", true},
+
+		// Standard binaries
+		{"Standard git", "git status", "windows", false},
+		{"Standard go", "go test", "windows", false},
+		{"Standard ls", "ls -la", "linux", false},
+		{"Non-Windows dir", "dir", "linux", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v.goos = tt.goos
+			parts, _ := v.Split(tt.cmd)
+			got := v.HasShellFeatures(parts)
+			if got != tt.want {
+				t.Errorf("HasShellFeatures(%q) on %s = %v, want %v", tt.cmd, tt.goos, got, tt.want)
+			}
+		})
+	}
+}
