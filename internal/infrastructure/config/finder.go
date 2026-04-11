@@ -15,6 +15,9 @@ type defaultConfigFinder struct {
 	baseDir string
 }
 
+// searchStrategy represents a single discovery attempt.
+type searchStrategy func() (string, bool)
+
 // option defines a functional option for defaultConfigFinder.
 type option func(*defaultConfigFinder)
 
@@ -41,42 +44,76 @@ func NewDefaultConfigFinder(opts ...option) config.ConfigFinder {
 // 4. Standard OS Config Paths: e.g., ~/.config/tell-me-go/assistant.yaml on Linux or %AppData%\tell-me-go\assistant.yaml on Windows.
 // 5. Fallback: Returns "configs/assistant.yaml" if no file is found.
 func (f *defaultConfigFinder) Find() (string, error) {
-	// 1. Local Directory
-	base := f.baseDir
-	if base == "" {
-		if wd, err := os.Getwd(); err == nil {
-			base = wd
-		} else {
-			base = "."
+	strategies := []searchStrategy{
+		f.findInLocalDir,
+		f.findInExecutableDir,
+		f.findInParentDirs,
+		f.findInSystemPaths,
+	}
+
+	for _, strategy := range strategies {
+		if path, found := strategy(); found {
+			return path, nil
 		}
 	}
 
+	return f.getFallbackPath(), nil
+}
+
+// getBaseDir returns the base directory for search operations.
+func (f *defaultConfigFinder) getBaseDir() string {
+	if f.baseDir != "" {
+		return f.baseDir
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return "."
+}
+
+// findInLocalDir searches in the local directory.
+func (f *defaultConfigFinder) findInLocalDir() (string, bool) {
+	base := f.getBaseDir()
 	localPaths := []string{
 		filepath.Join(base, "configs", "assistant.yaml"),
 		filepath.Join(base, "assistant.yaml"),
 	}
 	for _, path := range localPaths {
 		if _, err := os.Stat(path); err == nil {
-			return path, nil
+			return path, true
 		}
 	}
+	return "", false
+}
 
-	// 2. Executable Directory (for installed binaries or bundled configs)
-	if exe, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exe)
-		// Avoid redundant search if exeDir is same as base
-		if absBase, err := filepath.Abs(base); err == nil {
-			if absExeDir, err := filepath.Abs(exeDir); err == nil && absBase != absExeDir {
-				path := filepath.Join(exeDir, "configs", "assistant.yaml")
-				if _, err := os.Stat(path); err == nil {
-					return path, nil
-				}
-			}
-		}
+// findInExecutableDir searches in the directory of the executable.
+func (f *defaultConfigFinder) findInExecutableDir() (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", false
 	}
 
-	// 3. Parent Traversal (Upward)
-	searchDir := base
+	exeDir := filepath.Dir(exe)
+	base := f.getBaseDir()
+
+	// Avoid redundant search if exeDir is same as base
+	absBase, err1 := filepath.Abs(base)
+	absExeDir, err2 := filepath.Abs(exeDir)
+	if err1 == nil && err2 == nil && absBase == absExeDir {
+		return "", false
+	}
+
+	path := filepath.Join(exeDir, "configs", "assistant.yaml")
+	if _, err := os.Stat(path); err == nil {
+		return path, true
+	}
+
+	return "", false
+}
+
+// findInParentDirs searches in up to 5 levels of parent directories.
+func (f *defaultConfigFinder) findInParentDirs() (string, bool) {
+	searchDir := f.getBaseDir()
 	for i := 0; i < 5; i++ {
 		parentDir := filepath.Dir(searchDir)
 		if parentDir == searchDir {
@@ -90,22 +127,31 @@ func (f *defaultConfigFinder) Find() (string, error) {
 		}
 		for _, path := range paths {
 			if _, err := os.Stat(path); err == nil {
-				return path, nil
+				return path, true
 			}
 		}
 	}
+	return "", false
+}
 
-	// 4. Standard OS Paths
+// findInSystemPaths searches in standard OS config paths.
+func (f *defaultConfigFinder) findInSystemPaths() (string, bool) {
 	configDir, err := os.UserConfigDir()
-	if err == nil {
-		path := filepath.Join(configDir, "tell-me-go", "assistant.yaml")
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
+	if err != nil {
+		return "", false
 	}
 
-	// 5. Fallback
-	return filepath.Join(base, "configs", "assistant.yaml"), nil
+	path := filepath.Join(configDir, "tell-me-go", "assistant.yaml")
+	if _, err := os.Stat(path); err == nil {
+		return path, true
+	}
+
+	return "", false
+}
+
+// getFallbackPath returns the fallback configuration path.
+func (f *defaultConfigFinder) getFallbackPath() string {
+	return filepath.Join(f.getBaseDir(), "configs", "assistant.yaml")
 }
 
 // Ensure defaultConfigFinder implements config.ConfigFinder
