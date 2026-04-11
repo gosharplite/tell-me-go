@@ -29,11 +29,11 @@ type defaultSessionFactory struct {
 	Stderr          io.Writer
 	Stdout          io.Writer
 	Logger          *slog.Logger
-	RotateSession   func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
+	RotateSession   func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error
 	NewSessionState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)
 }
 
-func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error, newState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)) sessionFactory {
+func newSessionFactory(homeDir string, fs infra_persistence.FileSystem, sm ConfigurableSecurityManager, stdout, stderr io.Writer, logger *slog.Logger, rotate func(ctx stdctx.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error, newState func(ctx stdctx.Context, modeDir string) (ports.SessionProvider, error)) sessionFactory {
 	return &defaultSessionFactory{
 		HomeDir:         homeDir,
 		FileSystem:      fs,
@@ -118,7 +118,7 @@ func (f *defaultSessionFactory) handleNewSession(ctx stdctx.Context, paths *pers
 			retentionDays = parsed
 		}
 	}
-	if err := f.RotateSession(f.FileSystem, f.Stdout, *paths, retentionDays); err != nil {
+	if err := f.RotateSession(ctx, f.FileSystem, f.Stdout, *paths, retentionDays); err != nil {
 		return fmt.Errorf("session rotation failed: %w", err)
 	}
 	return nil
@@ -126,7 +126,7 @@ func (f *defaultSessionFactory) handleNewSession(ctx stdctx.Context, paths *pers
 
 func (f *defaultSessionFactory) BuildSession(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, pricingOverrides map[string]pricing.ModelPricing) (ports.SessionProvider, *persistence.Paths, func(stdctx.Context) error, error) {
 	paths := persistence.ResolvePaths(f.HomeDir, cfg.Mode)
-	if err := infra_persistence.EnsureDirectories(f.FileSystem, paths); err != nil {
+	if err := infra_persistence.EnsureDirectories(ctx, f.FileSystem, paths); err != nil {
 		return nil, nil, nil, fmt.Errorf("%w: failed to ensure directories for %s: %w", errInfraInit, cfg.Mode, err)
 	}
 

@@ -632,7 +632,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 		{
 			name: "SessionRotationFails",
 			mockSetup: func(b *Bootstrapper, sm *mockConfigurableSecurityManager) {
-				b.RotateSession = func(fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
+				b.RotateSession = func(ctx context.Context, fs infra_persistence.FileSystem, stdout io.Writer, paths persistence.Paths, retentionDays int) error {
 					return simulatedErr
 				}
 				sm.On("IsPathSafe", mock.Anything).Return("safe", nil).Maybe()
@@ -842,11 +842,11 @@ type mockFSWithErrors struct {
 	file infra_persistence.File
 }
 
-func (m *mockFSWithErrors) OpenFile(name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
+func (m *mockFSWithErrors) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
 	return m.file, nil
 }
-func (m *mockFSWithErrors) MkdirAll(path string, perm os.FileMode) error { return nil }
-func (m *mockFSWithErrors) Stat(name string) (os.FileInfo, error) {
+func (m *mockFSWithErrors) MkdirAll(ctx context.Context, path string, perm os.FileMode) error { return nil }
+func (m *mockFSWithErrors) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	return nil, os.ErrNotExist
 }
 

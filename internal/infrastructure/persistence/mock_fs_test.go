@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"sync"
@@ -100,16 +101,16 @@ type mockFileSystem struct {
 	removedFiles []string
 
 	// Custom behavior
-	MkdirAllFunc   func(path string, perm os.FileMode) error
-	CreateTempFunc func(dir, pattern string) (File, error)
-	RenameFunc     func(oldpath, newpath string) error
-	RemoveFunc     func(name string) error
-	RemoveAllFunc  func(path string) error
-	StatFunc       func(name string) (os.FileInfo, error)
-	ReadDirFunc    func(name string) ([]os.DirEntry, error)
-	ReadFileFunc   func(name string) ([]byte, error)
-	OpenFileFunc   func(name string, flag int, perm os.FileMode) (File, error)
-	OpenFunc       func(name string) (File, error)
+	MkdirAllFunc   func(ctx context.Context, path string, perm os.FileMode) error
+	CreateTempFunc func(ctx context.Context, dir, pattern string) (File, error)
+	RenameFunc     func(ctx context.Context, oldpath, newpath string) error
+	RemoveFunc     func(ctx context.Context, name string) error
+	RemoveAllFunc  func(ctx context.Context, path string) error
+	StatFunc       func(ctx context.Context, name string) (os.FileInfo, error)
+	ReadDirFunc    func(ctx context.Context, name string) ([]os.DirEntry, error)
+	ReadFileFunc   func(ctx context.Context, name string) ([]byte, error)
+	OpenFileFunc   func(ctx context.Context, name string, flag int, perm os.FileMode) (File, error)
+	OpenFunc       func(ctx context.Context, name string) (File, error)
 }
 
 func newMockFS() *mockFileSystem {
@@ -119,9 +120,9 @@ func newMockFS() *mockFileSystem {
 	}
 }
 
-func (m *mockFileSystem) MkdirAll(path string, perm os.FileMode) error {
+func (m *mockFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	if m.MkdirAllFunc != nil {
-		return m.MkdirAllFunc(path, perm)
+		return m.MkdirAllFunc(ctx, path, perm)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -129,9 +130,9 @@ func (m *mockFileSystem) MkdirAll(path string, perm os.FileMode) error {
 	return nil
 }
 
-func (m *mockFileSystem) CreateTemp(dir, pattern string) (File, error) {
+func (m *mockFileSystem) CreateTemp(ctx context.Context, dir, pattern string) (File, error) {
 	if m.CreateTempFunc != nil {
-		return m.CreateTempFunc(dir, pattern)
+		return m.CreateTempFunc(ctx, dir, pattern)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -143,9 +144,9 @@ func (m *mockFileSystem) CreateTemp(dir, pattern string) (File, error) {
 	return f, nil
 }
 
-func (m *mockFileSystem) Rename(oldpath, newpath string) error {
+func (m *mockFileSystem) Rename(ctx context.Context, oldpath, newpath string) error {
 	if m.RenameFunc != nil {
-		return m.RenameFunc(oldpath, newpath)
+		return m.RenameFunc(ctx, oldpath, newpath)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -157,9 +158,9 @@ func (m *mockFileSystem) Rename(oldpath, newpath string) error {
 	return nil
 }
 
-func (m *mockFileSystem) Remove(name string) error {
+func (m *mockFileSystem) Remove(ctx context.Context, name string) error {
 	if m.RemoveFunc != nil {
-		return m.RemoveFunc(name)
+		return m.RemoveFunc(ctx, name)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -168,9 +169,9 @@ func (m *mockFileSystem) Remove(name string) error {
 	return nil
 }
 
-func (m *mockFileSystem) RemoveAll(path string) error {
+func (m *mockFileSystem) RemoveAll(ctx context.Context, path string) error {
 	if m.RemoveAllFunc != nil {
-		return m.RemoveAllFunc(path)
+		return m.RemoveAllFunc(ctx, path)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -178,9 +179,9 @@ func (m *mockFileSystem) RemoveAll(path string) error {
 	return nil
 }
 
-func (m *mockFileSystem) Stat(name string) (os.FileInfo, error) {
+func (m *mockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	if m.StatFunc != nil {
-		return m.StatFunc(name)
+		return m.StatFunc(ctx, name)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -202,16 +203,16 @@ type mockFileInfo struct {
 func (m *mockFileInfo) Name() string { return m.name }
 func (m *mockFileInfo) IsDir() bool  { return m.isDir }
 
-func (m *mockFileSystem) ReadDir(name string) ([]os.DirEntry, error) {
+func (m *mockFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
 	if m.ReadDirFunc != nil {
-		return m.ReadDirFunc(name)
+		return m.ReadDirFunc(ctx, name)
 	}
 	return nil, nil
 }
 
-func (m *mockFileSystem) ReadFile(name string) ([]byte, error) {
+func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	if m.ReadFileFunc != nil {
-		return m.ReadFileFunc(name)
+		return m.ReadFileFunc(ctx, name)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -221,9 +222,9 @@ func (m *mockFileSystem) ReadFile(name string) ([]byte, error) {
 	return nil, os.ErrNotExist
 }
 
-func (m *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+func (m *mockFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 	if m.OpenFileFunc != nil {
-		return m.OpenFileFunc(name, flag, perm)
+		return m.OpenFileFunc(ctx, name, flag, perm)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -246,11 +247,11 @@ func (m *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File
 	}, nil
 }
 
-func (m *mockFileSystem) Open(name string) (File, error) {
+func (m *mockFileSystem) Open(ctx context.Context, name string) (File, error) {
 	if m.OpenFunc != nil {
-		return m.OpenFunc(name)
+		return m.OpenFunc(ctx, name)
 	}
-	return m.OpenFile(name, os.O_RDONLY, 0)
+	return m.OpenFile(ctx, name, os.O_RDONLY, 0)
 }
 
 // Ensure mockFile and mockFileSystem implement the interfaces

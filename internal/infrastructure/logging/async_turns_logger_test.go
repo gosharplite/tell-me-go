@@ -40,8 +40,9 @@ func TestAsyncTurnsLogger_Log(t *testing.T) {
 	fs := &infra_persistence.OSFileSystem{}
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "turns.log")
+	ctx := context.Background()
 
-	tl, err := NewAsyncTurnsLogger(fs, logFile, slog.Default())
+	tl, err := NewAsyncTurnsLogger(ctx, fs, logFile, slog.Default())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,7 +82,8 @@ func TestAsyncTurnsLogger_Log(t *testing.T) {
 
 func TestAsyncTurnsLogger_New_Error(t *testing.T) {
 	fs := &infra_persistence.OSFileSystem{}
-	_, err := NewAsyncTurnsLogger(fs, "/non/existent/path/to/logfile.log", slog.Default())
+	ctx := context.Background()
+	_, err := NewAsyncTurnsLogger(ctx, fs, "/non/existent/path/to/logfile.log", slog.Default())
 	assert.Error(t, err)
 }
 
@@ -89,8 +91,9 @@ func TestAsyncTurnsLogger_Concurrency(t *testing.T) {
 	fs := &infra_persistence.OSFileSystem{}
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "concurrency.log")
+	ctx := context.Background()
 
-	tl, err := NewAsyncTurnsLogger(fs, logFile, slog.Default())
+	tl, err := NewAsyncTurnsLogger(ctx, fs, logFile, slog.Default())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -158,7 +161,7 @@ type errorSyncFS struct {
 	infra_persistence.FileSystem
 }
 
-func (fs *errorSyncFS) OpenFile(_ string, _ int, _ os.FileMode) (infra_persistence.File, error) {
+func (fs *errorSyncFS) OpenFile(ctx context.Context, _ string, _ int, _ os.FileMode) (infra_persistence.File, error) {
 	return &errorSyncFile{}, nil
 }
 
@@ -166,8 +169,9 @@ func TestAsyncTurnsLogger_SyncError(t *testing.T) {
 	fs := &errorSyncFS{}
 	handler := &slogHandler{}
 	logger := slog.New(handler)
+	ctx := context.Background()
 
-	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
+	tl, err := NewAsyncTurnsLogger(ctx, fs, "dummy", logger)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -205,8 +209,9 @@ func TestAsyncTurnsLogger_Close_Twice(t *testing.T) {
 	fs := &infra_persistence.OSFileSystem{}
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "close_twice.log")
+	ctx := context.Background()
 
-	logger, err := NewAsyncTurnsLogger(fs, logFile, slog.Default())
+	logger, err := NewAsyncTurnsLogger(ctx, fs, logFile, slog.Default())
 	require.NoError(t, err)
 
 	err = logger.Close()
@@ -254,7 +259,7 @@ type blockingFS struct {
 	file *blockingFile
 }
 
-func (fs *blockingFS) OpenFile(name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
+func (fs *blockingFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
 	return fs.file, nil
 }
 
@@ -265,9 +270,10 @@ func TestAsyncTurnsLogger_BufferFull(t *testing.T) {
 
 	handler := &slogHandler{}
 	logger := slog.New(handler)
+	ctx := context.Background()
 
 	// Inject a logger with the custom handler
-	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
+	tl, err := NewAsyncTurnsLogger(ctx, fs, "dummy", logger)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -330,7 +336,7 @@ type errorWriteFS struct {
 	infra_persistence.FileSystem
 }
 
-func (fs *errorWriteFS) OpenFile(_ string, _ int, _ os.FileMode) (infra_persistence.File, error) {
+func (fs *errorWriteFS) OpenFile(ctx context.Context, _ string, _ int, _ os.FileMode) (infra_persistence.File, error) {
 	return &errorWriteFile{}, nil
 }
 
@@ -338,8 +344,9 @@ func TestAsyncTurnsLogger_WriteError(t *testing.T) {
 	fs := &errorWriteFS{}
 	handler := &slogHandler{}
 	logger := slog.New(handler)
+	ctx := context.Background()
 
-	tl, err := NewAsyncTurnsLogger(fs, "dummy", logger)
+	tl, err := NewAsyncTurnsLogger(ctx, fs, "dummy", logger)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -396,15 +403,16 @@ type spyFS struct {
 	file *spyFile
 }
 
-func (fs *spyFS) OpenFile(name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
+func (fs *spyFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
 	return fs.file, nil
 }
 
 func TestAsyncTurnsLogger_CallsSync(t *testing.T) {
 	file := &spyFile{}
 	fs := &spyFS{file: file}
+	ctx := context.Background()
 
-	tl, err := NewAsyncTurnsLogger(fs, "dummy", slog.Default())
+	tl, err := NewAsyncTurnsLogger(ctx, fs, "dummy", slog.Default())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

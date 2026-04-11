@@ -5,8 +5,10 @@
 
 package persistence
 
+import "context"
+
 // fsRetry implements POSIX-specific retry logic for filesystem errors.
 // On non-Windows platforms, we return errors immediately.
-func fsRetry(op func() error) error {
+func fsRetry(ctx context.Context, op func() error) error {
 	return op()
 }

@@ -6,6 +6,7 @@
 package persistence
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ import (
 )
 
 // fsRetry implements Windows-specific retry logic for transient filesystem errors.
-func fsRetry(op func() error) error {
+func fsRetry(ctx context.Context, op func() error) error {
 	var lastErr error
 	delay := 50 * time.Millisecond
 	for i := 0; i < 5; i++ {
@@ -24,7 +25,11 @@ func fsRetry(op func() error) error {
 		}
 		lastErr = err
 		if isWindowsTransientError(err) {
-			time.Sleep(delay)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
 			delay *= 2
 			continue
 		}

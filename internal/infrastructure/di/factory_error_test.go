@@ -31,32 +31,32 @@ type mockFailingFS struct {
 	statErr  error
 }
 
-func (m *mockFailingFS) MkdirAll(path string, perm os.FileMode) error {
+func (m *mockFailingFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	return m.mkdirErr
 }
 
-func (m *mockFailingFS) OpenFile(name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
+func (m *mockFailingFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
 	if m.openErr != nil {
 		return nil, m.openErr
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockFailingFS) Stat(name string) (os.FileInfo, error) {
+func (m *mockFailingFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	if m.statErr != nil {
 		return nil, m.statErr
 	}
 	return nil, os.ErrNotExist
 }
 
-func (m *mockFailingFS) CreateTemp(dir, pattern string) (infra_persistence.File, error) {
+func (m *mockFailingFS) CreateTemp(ctx context.Context, dir, pattern string) (infra_persistence.File, error) {
 	if m.openErr != nil {
 		return nil, m.openErr
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockFailingFS) ReadFile(name string) ([]byte, error) {
+func (m *mockFailingFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	if m.openErr != nil {
 		return nil, m.openErr
 	}

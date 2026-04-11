@@ -47,7 +47,7 @@ func (f *defaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 
 	var turnsLogger ports.TurnsLogger = &ports.NoOpTurnsLogger{}
 	if paths.TurnsLogPath != "" {
-		if tl, err := logging.NewAsyncTurnsLogger(f.FileSystem, paths.TurnsLogPath, f.Logger); err == nil {
+		if tl, err := logging.NewAsyncTurnsLogger(ctx, f.FileSystem, paths.TurnsLogPath, f.Logger); err == nil {
 			turnsLogger = tl
 
 			origCleanup := cleanup

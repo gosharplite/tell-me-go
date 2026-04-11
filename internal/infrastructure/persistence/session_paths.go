@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,24 +16,24 @@ import (
 )
 
 // initializePaths creates the necessary directories and returns the Paths for the session.
-func initializePaths(fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
+func initializePaths(ctx context.Context, fs FileSystem, homeDir string, mode string) (*persistence.Paths, error) {
 	paths := persistence.ResolvePaths(homeDir, mode)
-	if err := EnsureDirectories(fs, paths); err != nil {
+	if err := EnsureDirectories(ctx, fs, paths); err != nil {
 		return nil, err
 	}
 	return paths, nil
 }
 
 // EnsureDirectories creates the necessary directories for the session.
-func EnsureDirectories(fs FileSystem, paths *persistence.Paths) error {
-	if err := fs.MkdirAll(paths.ModeDir, 0755); err != nil {
+func EnsureDirectories(ctx context.Context, fs FileSystem, paths *persistence.Paths) error {
+	if err := fs.MkdirAll(ctx, paths.ModeDir, 0755); err != nil {
 		return fmt.Errorf("failed to create session directory [%s]: %w", paths.ModeDir, err)
 	}
 	return nil
 }
 
 // RotateSession archives existing session files and cleans up old backups.
-func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentionDays int) error {
+func RotateSession(ctx context.Context, fs FileSystem, w io.Writer, paths persistence.Paths, retentionDays int) error {
 	timestamp := time.Now().Format("20060102_150405")
 	outputDir := filepath.Dir(paths.ModeDir)
 
@@ -50,9 +51,9 @@ func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentio
 	var errs []error
 	backupCreated := false
 	for _, f := range filesToMove {
-		if _, err := fs.Stat(f); err == nil {
+		if _, err := fs.Stat(ctx, f); err == nil {
 			if !backupCreated {
-				if err := fs.MkdirAll(backupDir, 0755); err != nil {
+				if err := fs.MkdirAll(ctx, backupDir, 0755); err != nil {
 					return fmt.Errorf("error creating backup directory: %w", err)
 				}
 				if w != nil {
@@ -61,14 +62,14 @@ func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentio
 				backupCreated = true
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))
-			if err := fs.Rename(f, dest); err != nil {
+			if err := fs.Rename(ctx, f, dest); err != nil {
 				errs = append(errs, fmt.Errorf("error archiving %s: %w", f, err))
 			}
 		}
 	}
 
 	// Always execute cleanup regardless of previous file archiving failures
-	if cleanupErr := cleanupOldBackups(fs, paths, retentionDays); cleanupErr != nil {
+	if cleanupErr := cleanupOldBackups(ctx, fs, paths, retentionDays); cleanupErr != nil {
 		errs = append(errs, cleanupErr)
 	}
 
@@ -79,14 +80,14 @@ func RotateSession(fs FileSystem, w io.Writer, paths persistence.Paths, retentio
 }
 
 // cleanupOldBackups removes backups older than the specified retention days.
-func cleanupOldBackups(fs FileSystem, paths persistence.Paths, retentionDays int) error {
+func cleanupOldBackups(ctx context.Context, fs FileSystem, paths persistence.Paths, retentionDays int) error {
 	if retentionDays <= 0 {
 		return nil
 	}
 
 	outputDir := filepath.Dir(paths.ModeDir)
 	backupBaseDir := filepath.Join(outputDir, "backups")
-	entries, err := fs.ReadDir(backupBaseDir)
+	entries, err := fs.ReadDir(ctx, backupBaseDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -106,7 +107,7 @@ func cleanupOldBackups(fs FileSystem, paths persistence.Paths, retentionDays int
 		}
 
 		path := filepath.Join(backupBaseDir, entry.Name())
-		if err := fs.RemoveAll(path); err != nil {
+		if err := fs.RemoveAll(ctx, path); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
 		}
 	}

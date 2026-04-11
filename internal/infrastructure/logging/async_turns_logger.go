@@ -29,12 +29,12 @@ type asyncTurnsLogger struct {
 }
 
 // NewAsyncTurnsLogger creates a new ports.TurnsLogger that writes to a file asynchronously.
-func NewAsyncTurnsLogger(fs infra_persistence.FileSystem, filePath string, logger *slog.Logger) (ports.TurnsLogger, error) {
+func NewAsyncTurnsLogger(ctx context.Context, fs infra_persistence.FileSystem, filePath string, logger *slog.Logger) (ports.TurnsLogger, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	f, err := fs.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := fs.OpenFile(ctx, filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open turns log file: %w", err)
 	}

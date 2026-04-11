@@ -25,30 +25,30 @@ type File interface {
 
 // FileSystem defines the interface for filesystem operations to allow mocking.
 type FileSystem interface {
-	MkdirAll(path string, perm os.FileMode) error
-	CreateTemp(dir, pattern string) (File, error)
-	Rename(oldpath, newpath string) error
-	Remove(name string) error
-	RemoveAll(path string) error
-	Stat(name string) (os.FileInfo, error)
-	ReadDir(name string) ([]os.DirEntry, error)
-	ReadFile(name string) ([]byte, error)
-	OpenFile(name string, flag int, perm os.FileMode) (File, error)
-	Open(name string) (File, error)
+	MkdirAll(ctx context.Context, path string, perm os.FileMode) error
+	CreateTemp(ctx context.Context, dir, pattern string) (File, error)
+	Rename(ctx context.Context, oldpath, newpath string) error
+	Remove(ctx context.Context, name string) error
+	RemoveAll(ctx context.Context, path string) error
+	Stat(ctx context.Context, name string) (os.FileInfo, error)
+	ReadDir(ctx context.Context, name string) ([]os.DirEntry, error)
+	ReadFile(ctx context.Context, name string) ([]byte, error)
+	OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error)
+	Open(ctx context.Context, name string) (File, error)
 }
 
 // OSFileSystem implements the local FileSystem interface using the os package.
 type OSFileSystem struct{}
 
-func (f *OSFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	return fsRetry(func() error {
+func (f *OSFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+	return fsRetry(ctx, func() error {
 		return os.MkdirAll(path, perm)
 	})
 }
 
-func (f *OSFileSystem) CreateTemp(dir, pattern string) (File, error) {
+func (f *OSFileSystem) CreateTemp(ctx context.Context, dir, pattern string) (File, error) {
 	var res File
-	err := fsRetry(func() error {
+	err := fsRetry(ctx, func() error {
 		var err error
 		res, err = os.CreateTemp(dir, pattern)
 		return err
@@ -56,27 +56,27 @@ func (f *OSFileSystem) CreateTemp(dir, pattern string) (File, error) {
 	return res, err
 }
 
-func (f *OSFileSystem) Rename(oldpath, newpath string) error {
-	return fsRetry(func() error {
+func (f *OSFileSystem) Rename(ctx context.Context, oldpath, newpath string) error {
+	return fsRetry(ctx, func() error {
 		return os.Rename(oldpath, newpath)
 	})
 }
 
-func (f *OSFileSystem) Remove(name string) error {
-	return fsRetry(func() error {
+func (f *OSFileSystem) Remove(ctx context.Context, name string) error {
+	return fsRetry(ctx, func() error {
 		return os.Remove(name)
 	})
 }
 
-func (f *OSFileSystem) RemoveAll(path string) error {
-	return fsRetry(func() error {
+func (f *OSFileSystem) RemoveAll(ctx context.Context, path string) error {
+	return fsRetry(ctx, func() error {
 		return os.RemoveAll(path)
 	})
 }
 
-func (f *OSFileSystem) Stat(name string) (os.FileInfo, error) {
+func (f *OSFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	var res os.FileInfo
-	err := fsRetry(func() error {
+	err := fsRetry(ctx, func() error {
 		var err error
 		res, err = os.Stat(name)
 		return err
@@ -84,9 +84,9 @@ func (f *OSFileSystem) Stat(name string) (os.FileInfo, error) {
 	return res, err
 }
 
-func (f *OSFileSystem) ReadDir(name string) ([]os.DirEntry, error) {
+func (f *OSFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
 	var res []os.DirEntry
-	err := fsRetry(func() error {
+	err := fsRetry(ctx, func() error {
 		var err error
 		res, err = os.ReadDir(name)
 		return err
@@ -94,9 +94,9 @@ func (f *OSFileSystem) ReadDir(name string) ([]os.DirEntry, error) {
 	return res, err
 }
 
-func (f *OSFileSystem) ReadFile(name string) ([]byte, error) {
+func (f *OSFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	var res []byte
-	err := fsRetry(func() error {
+	err := fsRetry(ctx, func() error {
 		var err error
 		res, err = os.ReadFile(name)
 		return err
@@ -104,9 +104,9 @@ func (f *OSFileSystem) ReadFile(name string) ([]byte, error) {
 	return res, err
 }
 
-func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+func (f *OSFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 	var res File
-	err := fsRetry(func() error {
+	err := fsRetry(ctx, func() error {
 		var err error
 		res, err = os.OpenFile(name, flag, perm)
 		return err
@@ -114,9 +114,9 @@ func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, 
 	return res, err
 }
 
-func (f *OSFileSystem) Open(name string) (File, error) {
+func (f *OSFileSystem) Open(ctx context.Context, name string) (File, error) {
 	var res File
-	err := fsRetry(func() error {
+	err := fsRetry(ctx, func() error {
 		var err error
 		res, err = os.Open(name)
 		return err
@@ -142,14 +142,14 @@ func (f *domainFS) ReadDir(ctx context.Context, name string) ([]os.DirEntry, err
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	return f.fs.ReadDir(name)
+	return f.fs.ReadDir(ctx, name)
 }
 
 func (f *domainFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	return f.fs.ReadFile(name)
+	return f.fs.ReadFile(ctx, name)
 }
 
 func (f *domainFS) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
@@ -164,21 +164,21 @@ func (f *domainFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) 
 	if err := f.checkDone(ctx); err != nil {
 		return err
 	}
-	return f.fs.MkdirAll(path, perm)
+	return f.fs.MkdirAll(ctx, path, perm)
 }
 
 func (f *domainFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	return f.fs.Stat(name)
+	return f.fs.Stat(ctx, name)
 }
 
 func (f *domainFS) Open(ctx context.Context, name string) (persistence.File, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	file, err := f.fs.Open(name)
+	file, err := f.fs.Open(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func (f *domainFS) OpenFile(ctx context.Context, name string, flag int, perm os.
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
-	file, err := f.fs.OpenFile(name, flag, perm)
+	file, err := f.fs.OpenFile(ctx, name, flag, perm)
 	if err != nil {
 		return nil, err
 	}
@@ -200,14 +200,14 @@ func (f *domainFS) Remove(ctx context.Context, name string) error {
 	if err := f.checkDone(ctx); err != nil {
 		return err
 	}
-	return f.fs.Remove(name)
+	return f.fs.Remove(ctx, name)
 }
 
 func (f *domainFS) RemoveAll(ctx context.Context, path string) error {
 	if err := f.checkDone(ctx); err != nil {
 		return err
 	}
-	return f.fs.RemoveAll(path)
+	return f.fs.RemoveAll(ctx, path)
 }
 
 func (f *domainFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
