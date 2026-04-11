@@ -255,9 +255,12 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 		return 0, effectiveLen / 2, originalLen, nil
 	}
 
-	originalContents := m.Contents
+	tempContents := m.Contents[:newLen]
+	if err := m.store.Save(ctx, tempContents); err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to persist rollback: %w", err)
+	}
 
-	// Nil out the truncated pointers to prevent memory leaks
+	// Persisted successfully, now safe to modify memory
 	for i := newLen; i < originalLen; i++ {
 		m.Contents[i] = nil
 	}
@@ -265,13 +268,7 @@ func (m *Manager) RollbackTurns(ctx context.Context, turns int) (actualRemoved i
 	if newLen == 0 {
 		m.Contents = nil
 	} else {
-		m.Contents = m.Contents[:newLen]
-	}
-
-	if err := m.store.Save(ctx, m.Contents); err != nil {
-		// Rollback in-memory state on I/O failure to maintain atomicity
-		m.Contents = originalContents
-		return 0, 0, 0, fmt.Errorf("failed to persist rollback: %w", err)
+		m.Contents = tempContents
 	}
 
 	remainingMsgs = len(m.Contents)
