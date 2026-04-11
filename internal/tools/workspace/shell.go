@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -16,19 +15,135 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type shellTool struct {
-	sm        shellSecurity
-	validator domain_security.CommandValidator
-	executor  *processExecutor
-	maxOutput int
+type commandTranslator interface {
+	Translate(parts []string) []string
 }
 
-func newshellTool(sm shellSecurity, validator domain_security.CommandValidator) *shellTool {
+type posixTranslator struct{}
+
+func (p *posixTranslator) Translate(parts []string) []string {
+	return parts
+}
+
+type windowsTranslator struct{}
+
+func (w *windowsTranslator) Translate(parts []string) []string {
+	if len(parts) == 0 {
+		return parts
+	}
+
+	cmd := parts[0]
+	args := parts[1:]
+
+	switch cmd {
+	case "ls":
+		return append([]string{"cmd", "/c", "dir"}, args...)
+	case "rm":
+		isRecursive := false
+		for _, arg := range args {
+			if arg == "-r" || arg == "-rf" {
+				isRecursive = true
+				break
+			}
+		}
+
+		filteredArgs := make([]string, 0, len(args))
+		for _, arg := range args {
+			if arg == "-r" || arg == "-rf" || arg == "-f" || arg == "-v" {
+				continue
+			}
+			filteredArgs = append(filteredArgs, arg)
+		}
+
+		if isRecursive {
+			return append([]string{"cmd", "/c", "rd", "/s", "/q"}, filteredArgs...)
+		}
+		return append([]string{"cmd", "/c", "del", "/f", "/q"}, filteredArgs...)
+	case "mkdir":
+		filteredArgs := make([]string, 0, len(args))
+		for _, arg := range args {
+			if arg == "-p" {
+				continue
+			}
+			filteredArgs = append(filteredArgs, arg)
+		}
+		return append([]string{"cmd", "/c", "mkdir"}, filteredArgs...)
+	case "cp":
+		return append([]string{"cmd", "/c", "copy"}, args...)
+	case "mv":
+		return append([]string{"cmd", "/c", "move"}, args...)
+	}
+
+	return parts
+}
+
+type shellWrapper interface {
+	Wrap(command string, parts []string) []string
+}
+
+type posixShellWrapper struct{}
+
+func (p *posixShellWrapper) Wrap(command string, parts []string) []string {
+	return []string{"sh", "-c", command}
+}
+
+type windowsShellWrapper struct{}
+
+func (w *windowsShellWrapper) Wrap(command string, parts []string) []string {
+	// Windows-specific selection: Prefer PowerShell/pwsh for cmdlets or PS indicators.
+	if w.isPowerShellIndicator(command, parts) {
+		shell := "powershell"
+		// Prefer pwsh (Core) over powershell (Desktop) if available.
+		if p, err := exec.LookPath("pwsh"); err == nil && p != "" {
+			shell = "pwsh"
+		}
+		return []string{shell, "-Command", command}
+	}
+
+	return []string{"cmd.exe", "/c", command}
+}
+
+func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+
+	// 1. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
+	first := parts[0]
+	dashIdx := strings.Index(first, "-")
+	if dashIdx > 0 && dashIdx < len(first)-1 {
+		return true
+	}
+
+	// 2. Check for other PowerShell-specific indicators
+	lower := strings.ToLower(command)
+	psIndicators := []string{"$env:", "$(", "select-string", "where-object", "foreach-object"}
+	for _, ind := range psIndicators {
+		if strings.Contains(lower, ind) {
+			return true
+		}
+	}
+
+	return false
+}
+
+type shellTool struct {
+	sm         shellSecurity
+	validator  domain_security.CommandValidator
+	executor   *processExecutor
+	translator commandTranslator
+	wrapper    shellWrapper
+	maxOutput  int
+}
+
+func newshellTool(sm shellSecurity, validator domain_security.CommandValidator, translator commandTranslator, wrapper shellWrapper) *shellTool {
 	return &shellTool{
-		sm:        sm,
-		validator: validator,
-		executor:  newprocessExecutor(),
-		maxOutput: 50000,
+		sm:         sm,
+		validator:  validator,
+		executor:   newprocessExecutor(),
+		translator: translator,
+		wrapper:    wrapper,
+		maxOutput:  50000,
 	}
 }
 
@@ -59,7 +174,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		for i, arg := range params.Args {
 			parts[i] = filepath.FromSlash(arg)
 		}
-		parts = t.applyWindowsCompatibility(parts)
+		parts = t.translator.Translate(parts)
 		displayCommand = strings.Join(params.Args, " ")
 	} else {
 		parts, err = t.prepareCommand(params.Command)
@@ -290,7 +405,7 @@ func (t *shellTool) prepareCommand(command string) ([]string, error) {
 
 	// Automatically wrap in shell if shell features are detected (operators, wildcards, interpolation, cmdlets)
 	if t.validator.HasShellFeatures(parts) {
-		parts = t.wrapInShell(command, parts)
+		parts = t.wrapper.Wrap(command, parts)
 	}
 
 	if err := t.validator.ValidateStructure(parts); err != nil {
@@ -298,48 +413,6 @@ func (t *shellTool) prepareCommand(command string) ([]string, error) {
 	}
 
 	return parts, nil
-}
-
-func (t *shellTool) wrapInShell(command string, parts []string) []string {
-	if runtime.GOOS != "windows" {
-		return []string{"sh", "-c", command}
-	}
-
-	// Windows-specific selection: Prefer PowerShell/pwsh for cmdlets or PS indicators.
-	if t.isPowerShellIndicator(command, parts) {
-		shell := "powershell"
-		// Prefer pwsh (Core) over powershell (Desktop) if available.
-		if p, err := exec.LookPath("pwsh"); err == nil && p != "" {
-			shell = "pwsh"
-		}
-		return []string{shell, "-Command", command}
-	}
-
-	return []string{"cmd.exe", "/c", command}
-}
-
-func (t *shellTool) isPowerShellIndicator(command string, parts []string) bool {
-	if len(parts) == 0 {
-		return false
-	}
-
-	// 1. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
-	first := parts[0]
-	dashIdx := strings.Index(first, "-")
-	if dashIdx > 0 && dashIdx < len(first)-1 {
-		return true
-	}
-
-	// 2. Check for other PowerShell-specific indicators
-	lower := strings.ToLower(command)
-	psIndicators := []string{"$env:", "$(", "select-string", "where-object", "foreach-object"}
-	for _, ind := range psIndicators {
-		if strings.Contains(lower, ind) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (t *shellTool) startHeartbeat(hb chan<- struct{}) (stop func()) {
@@ -373,54 +446,4 @@ func (t *shellTool) auditExecution(command, reason, outputFile string, isAppend 
 		argsAudit = append(argsAudit, "OUTPUT_FILE", outputFile, "APPEND", isAppend)
 	}
 	t.sm.LogAudit("EXECUTE_COMMAND", argsAudit...)
-}
-
-func (t *shellTool) applyWindowsCompatibility(parts []string) []string {
-	if runtime.GOOS != "windows" || len(parts) == 0 {
-		return parts
-	}
-
-	cmd := parts[0]
-	args := parts[1:]
-
-	switch cmd {
-	case "ls":
-		return append([]string{"cmd", "/c", "dir"}, args...)
-	case "rm":
-		isRecursive := false
-		for _, arg := range args {
-			if arg == "-r" || arg == "-rf" {
-				isRecursive = true
-				break
-			}
-		}
-
-		filteredArgs := make([]string, 0, len(args))
-		for _, arg := range args {
-			if arg == "-r" || arg == "-rf" || arg == "-f" || arg == "-v" {
-				continue
-			}
-			filteredArgs = append(filteredArgs, arg)
-		}
-
-		if isRecursive {
-			return append([]string{"cmd", "/c", "rd", "/s", "/q"}, filteredArgs...)
-		}
-		return append([]string{"cmd", "/c", "del", "/f", "/q"}, filteredArgs...)
-	case "mkdir":
-		filteredArgs := make([]string, 0, len(args))
-		for _, arg := range args {
-			if arg == "-p" {
-				continue
-			}
-			filteredArgs = append(filteredArgs, arg)
-		}
-		return append([]string{"cmd", "/c", "mkdir"}, filteredArgs...)
-	case "cp":
-		return append([]string{"cmd", "/c", "copy"}, args...)
-	case "mv":
-		return append([]string{"cmd", "/c", "move"}, args...)
-	}
-
-	return parts
 }

@@ -13,7 +13,7 @@ import (
 func TestShellTool_ExecuteCommand_Validation_POSIX(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	tests := []struct {

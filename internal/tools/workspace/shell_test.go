@@ -78,7 +78,7 @@ func setupTruncationTest(t *testing.T) (*shellTool, context.Context, map[string]
 	t.Helper()
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 	// Use forward slashes for the helper path to avoid POSIX parser errors on Windows
 	cmd := fmt.Sprintf("%s printf 世界", filepath.ToSlash(helperPath))
@@ -119,7 +119,7 @@ func verifyTruncationResult(t *testing.T, res tools.ToolResult, expected, forbid
 func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	t.Run("Empty command", func(t *testing.T) {
@@ -150,7 +150,7 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 
 	tests := []struct {
 		name     string
@@ -213,7 +213,7 @@ func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 func TestShellTool_PipeCommands(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	helperSlash := filepath.ToSlash(helperPath)
@@ -275,7 +275,7 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 
 	mockSM := &mockShellSecurity{SecurityManager: sm}
 	validator := security.NewCommandValidator(sm, nil)
-	tool := newshellTool(mockSM, validator)
+	tool := newshellTool(mockSM, validator, &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	helperSlash := filepath.ToSlash(helperPath)
@@ -422,7 +422,7 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 
 				validator := security.NewCommandValidator(sm, nil)
 				// 2. Initialize the tool with the mock
-				tool := newshellTool(mockSec, validator)
+				tool := newshellTool(mockSec, validator, &posixTranslator{}, &posixShellWrapper{})
 
 				// 3. Action: Attempt to execute a command
 				res, err := tool.ExecuteCommand(context.Background(), map[string]interface{}{
@@ -453,7 +453,7 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 func TestShellTool_TimeoutParameter(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	helperSlash := filepath.ToSlash(helperPath)
@@ -487,7 +487,8 @@ func TestShellTool_PrepareCommand_ShellSelection(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
 	validator := security.NewCommandValidator(sm, nil)
-	tool := newshellTool(sm, validator)
+	wrapper := &windowsShellWrapper{}
+	_ = newshellTool(sm, validator, &posixTranslator{}, wrapper)
 
 	t.Run("PowerShell indicators", func(t *testing.T) {
 		tests := []struct {
@@ -505,7 +506,7 @@ func TestShellTool_PrepareCommand_ShellSelection(t *testing.T) {
 		}
 
 		for _, tt := range tests {
-			got := tool.isPowerShellIndicator(tt.cmd, tt.parts)
+			got := wrapper.isPowerShellIndicator(tt.cmd, tt.parts)
 			if got != tt.want {
 				t.Errorf("isPowerShellIndicator(%q) = %v, want %v", tt.cmd, got, tt.want)
 			}

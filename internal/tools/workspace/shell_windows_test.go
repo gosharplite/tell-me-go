@@ -13,7 +13,7 @@ import (
 func TestShellTool_ExecuteCommand_Validation_Windows(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &windowsTranslator{}, &windowsShellWrapper{})
 	ctx := context.Background()
 
 	tests := []struct {

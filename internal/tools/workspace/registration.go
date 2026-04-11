@@ -4,6 +4,8 @@
 package workspace
 
 import (
+	"runtime"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -296,7 +298,17 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 }
 
 func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator) error {
-	shell := newshellTool(sm, validator)
+	var translator commandTranslator
+	var wrapper shellWrapper
+	if runtime.GOOS == "windows" {
+		translator = &windowsTranslator{}
+		wrapper = &windowsShellWrapper{}
+	} else {
+		translator = &posixTranslator{}
+		wrapper = &posixShellWrapper{}
+	}
+
+	shell := newshellTool(sm, validator, translator, wrapper)
 	interaction := newinteractionTool(sm)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
