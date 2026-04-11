@@ -38,7 +38,10 @@ verify_release_readiness
 #### 3. Preparation
 1.  **Note**: This project relies on Git tags as the single source of truth for versioning. The version is injected at build time using Go linker flags (`ldflags`).
 2.  Run `go mod tidy` to ensure `go.sum` is up-to-date.
-3.  **Final Build Check**: Run `make build VERSION=vX.Y.Z` (using your target version) to ensure everything compiles with the version flag.
+3.  **Final Build Check**: Run the following build command (using your target version) to ensure everything compiles correctly:
+    ```bash
+    go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
+    ```
 
 #### 4. Git Tagging and Remote Synchronization
 1.  **Sync and Merge into main**:
@@ -54,9 +57,12 @@ verify_release_readiness
     ```
 3.  **Build and Verify Binary**:
     ```bash
-    make build VERSION=vX.Y.Z
+    go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
     ```
-    Verify the binary reports the correct version: `./tell-me-go --version` (or relevant version command).
+    Verify the binary reports the correct version. (On Windows, use `.\tell-me-go.exe --version`; on Linux/macOS, use `./tell-me-go --version`):
+    ```bash
+    ./tell-me-go --version
+    ```
 4.  **Push Everything**:
     ```bash
     git push origin main dev --tags
@@ -74,7 +80,7 @@ verify_release_readiness
 ### Code Templates
 
 #### Version Injection (ldflags)
-If the `Makefile` is unavailable, use this template:
+Use this command to build the binary with a specific version string:
 ```bash
 go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
 ```
@@ -83,7 +89,7 @@ go build -ldflags="-X 'main.version=vX.Y.Z'" -o tell-me-go ./cmd/tell-me-go
 
 ### Verification/Testing
 1.  **Tag Existence**: `git tag -l vX.Y.Z` must return the new tag.
-2.  **Binary Integrity**: `./tell-me-go --version` must output exactly `vX.Y.Z`.
+2.  **Binary Integrity**: Running the binary with `--version` must output exactly `vX.Y.Z`.
 3.  **Remote State**: Check the remote repository (e.g., GitHub/Azure DevOps) to ensure tags and branch updates are visible.
 4.  **Readiness Audit**: The `verify_release_readiness` report must be reviewed.
 
