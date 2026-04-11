@@ -389,6 +389,11 @@ func (v *commandValidator) isPowerShellCmdlet(token string) bool {
 		return false
 	}
 
+	// If it contains a path separator before the dash, it's likely a path, not a cmdlet.
+	if strings.ContainsAny(token[:dashIdx], "/\\") {
+		return false
+	}
+
 	// Exclude list for common binaries that use dashes but are not cmdlets
 	excludes := map[string]bool{
 		"apt-get":        true,
