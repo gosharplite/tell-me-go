@@ -632,7 +632,9 @@ func TestEventBus_SimpleSnapshot(t *testing.T) {
 		received <- e
 	})
 
-	go bus.Listen(ctx)
+	go func() {
+		_ = bus.Listen(ctx)
+	}()
 
 	err := bus.Publish(ctx, testEvent{val: "snapshot_test"})
 	if err != nil {
