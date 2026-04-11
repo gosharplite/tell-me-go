@@ -97,7 +97,15 @@ func (w *windowsShellWrapper) Wrap(command string, parts []string) []string {
 		if p, err := exec.LookPath("pwsh"); err == nil && p != "" {
 			shell = "pwsh"
 		}
-		return []string{shell, "-Command", command}
+		// Force UTF-8 output encoding to avoid mojibake on localized systems.
+		// Use -NoProfile and -NonInteractive for stability and performance.
+		return []string{
+			shell,
+			"-NoProfile",
+			"-NonInteractive",
+			"-Command",
+			"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " + command,
+		}
 	}
 
 	return []string{"cmd.exe", "/c", command}
@@ -108,14 +116,20 @@ func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []stri
 		return false
 	}
 
-	// 1. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
+	// 1. Check for common PowerShell-specific indicators or aliases.
 	first := parts[0]
+	lowerFirst := strings.ToLower(first)
+	if lowerFirst == "ps" || lowerFirst == "kill" || lowerFirst == "cat" || lowerFirst == "curl" || lowerFirst == "wget" {
+		return true
+	}
+
+	// 2. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
 	dashIdx := strings.Index(first, "-")
 	if dashIdx > 0 && dashIdx < len(first)-1 {
 		return true
 	}
 
-	// 2. Check for other PowerShell-specific indicators
+	// 3. Check for other PowerShell-specific indicators
 	lower := strings.ToLower(command)
 	psIndicators := []string{"$env:", "$(", "select-string", "where-object", "foreach-object"}
 	for _, ind := range psIndicators {

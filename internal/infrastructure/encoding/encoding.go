@@ -4,14 +4,30 @@
 package encoding
 
 import (
+	"bytes"
 	"io"
 	"strings"
+	"unicode/utf8"
 )
 
 // WrapReader wraps an io.Reader to decode it to UTF-8 based on the current system's locale.
 // On non-Windows platforms, it currently returns the reader as-is.
 func WrapReader(r io.Reader) io.Reader {
 	return wrapReaderPlatform(r)
+}
+
+// DecodeBytes decodes a byte slice to UTF-8 based on the current system's locale.
+// If the input is already valid UTF-8, it returns the input as-is.
+func DecodeBytes(b []byte) []byte {
+	if len(b) == 0 || utf8.Valid(b) {
+		return b
+	}
+	r := WrapReader(bytes.NewReader(b))
+	decoded, err := io.ReadAll(r)
+	if err != nil {
+		return b
+	}
+	return decoded
 }
 
 func isUTF8Env(getenv func(string) string) bool {
