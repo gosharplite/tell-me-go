@@ -226,7 +226,7 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 		buf.WriteByte('\n')
 	}
 
-	return s.fs.WriteFile(ctx, s.filePath, buf.Bytes(), 0644)
+	return s.fs.AtomicWrite(ctx, s.filePath, buf.Bytes(), 0644)
 }
 
 // Append appends multiple content entries to the history file.

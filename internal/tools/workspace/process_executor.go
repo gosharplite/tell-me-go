@@ -25,6 +25,7 @@ type executionConfig struct {
 	Append     bool
 	MaxCapture int
 	Feedback   io.Writer
+	Env        map[string]string
 }
 
 // executionResult holds the outcome of an execution.
@@ -96,6 +97,14 @@ func (e *processExecutor) setupCommand(ctx context.Context, parts []string, conf
 	}
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+
+	if len(config.Env) > 0 {
+		env := os.Environ()
+		for k, v := range config.Env {
+			env = append(env, fmt.Sprintf("%s=%s", k, v))
+		}
+		cmd.Env = env
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -191,7 +200,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 		return executionResult{ExitCode: 1}, fmt.Errorf("at least two commands are required for piping")
 	}
 
-	p, setupErr := e.newPipeline(ctx, pipedParts)
+	p, setupErr := e.newPipeline(ctx, pipedParts, config)
 	if setupErr != nil {
 		return executionResult{ExitCode: 1}, setupErr
 	}
@@ -243,7 +252,7 @@ type pipeline struct {
 	pipes       []io.Closer
 }
 
-func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string) (*pipeline, error) {
+func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string, config executionConfig) (*pipeline, error) {
 	p := &pipeline{cmds: make([]*exec.Cmd, len(pipedParts))}
 
 	for i, parts := range pipedParts {
@@ -251,6 +260,14 @@ func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string
 			return nil, fmt.Errorf("empty command at index %d", i)
 		}
 		p.cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
+
+		if len(config.Env) > 0 {
+			env := os.Environ()
+			for k, v := range config.Env {
+				env = append(env, fmt.Sprintf("%s=%s", k, v))
+			}
+			p.cmds[i].Env = env
+		}
 
 		stderr, err := p.cmds[i].StderrPipe()
 		if err != nil {

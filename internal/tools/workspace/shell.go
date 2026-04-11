@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -33,23 +34,39 @@ func newshellTool(sm shellSecurity, validator domain_security.CommandValidator) 
 
 func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
-		Command    string `json:"command"`
-		Reason     string `json:"reason"`
-		OutputFile string `json:"output_file"`
-		Append     bool   `json:"append"`
-		Timeout    int    `json:"timeout"`
+		Command    string            `json:"command"`
+		Args       []string          `json:"args"`
+		Env        map[string]string `json:"env"`
+		Reason     string            `json:"reason"`
+		OutputFile string            `json:"output_file"`
+		Append     bool              `json:"append"`
+		Timeout    int               `json:"timeout"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if params.Command == "" {
-		return tools.ToolResult{Error: fmt.Errorf("command argument is required"), Text: "command argument is required"}, nil
+	if params.Command == "" && len(params.Args) == 0 {
+		return tools.ToolResult{Error: fmt.Errorf("command or args is required"), Text: "command or args is required"}, nil
 	}
 
-	parts, err := t.prepareCommand(params.Command)
-	if err != nil {
-		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
+	var parts []string
+	var displayCommand string
+	var err error
+
+	if len(params.Args) > 0 {
+		parts = make([]string, len(params.Args))
+		for i, arg := range params.Args {
+			parts[i] = filepath.FromSlash(arg)
+		}
+		parts = t.applyWindowsCompatibility(parts)
+		displayCommand = strings.Join(params.Args, " ")
+	} else {
+		parts, err = t.prepareCommand(params.Command)
+		if err != nil {
+			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
+		}
+		displayCommand = params.Command
 	}
 
 	outputFile, err := t.resolveOutputFile(params.OutputFile)
@@ -57,13 +74,20 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	safe, _ := t.validator.IsSafe(params.Command)
-	approved, err := t.authorize(ctx, "Command", params.Command, params.Reason, safe, outputFile, params.Append)
-	if err != nil || !approved {
-		return t.handleAuthResult(approved, err, "command: "+params.Command)
+	// For structured args, we validate the first part as the base command.
+	safe := false
+	if len(params.Args) > 0 {
+		safe, _ = t.validator.IsSafe(params.Args[0])
+	} else {
+		safe, _ = t.validator.IsSafe(params.Command)
 	}
 
-	t.auditExecution(params.Command, params.Reason, params.OutputFile, params.Append)
+	approved, err := t.authorize(ctx, "Command", displayCommand, params.Reason, safe, outputFile, params.Append)
+	if err != nil || !approved {
+		return t.handleAuthResult(approved, err, "command: "+displayCommand)
+	}
+
+	t.auditExecution(displayCommand, params.Reason, params.OutputFile, params.Append)
 
 	stopHB := t.startHeartbeat(hb)
 	defer stopHB()
@@ -74,6 +98,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 			Append:     params.Append,
 			Feedback:   &warnWriter{sm: t.sm},
 			MaxCapture: t.maxOutput,
+			Env:        params.Env,
 		})
 	})
 
@@ -348,4 +373,54 @@ func (t *shellTool) auditExecution(command, reason, outputFile string, isAppend 
 		argsAudit = append(argsAudit, "OUTPUT_FILE", outputFile, "APPEND", isAppend)
 	}
 	t.sm.LogAudit("EXECUTE_COMMAND", argsAudit...)
+}
+
+func (t *shellTool) applyWindowsCompatibility(parts []string) []string {
+	if runtime.GOOS != "windows" || len(parts) == 0 {
+		return parts
+	}
+
+	cmd := parts[0]
+	args := parts[1:]
+
+	switch cmd {
+	case "ls":
+		return append([]string{"cmd", "/c", "dir"}, args...)
+	case "rm":
+		isRecursive := false
+		for _, arg := range args {
+			if arg == "-r" || arg == "-rf" {
+				isRecursive = true
+				break
+			}
+		}
+
+		filteredArgs := make([]string, 0, len(args))
+		for _, arg := range args {
+			if arg == "-r" || arg == "-rf" || arg == "-f" || arg == "-v" {
+				continue
+			}
+			filteredArgs = append(filteredArgs, arg)
+		}
+
+		if isRecursive {
+			return append([]string{"cmd", "/c", "rd", "/s", "/q"}, filteredArgs...)
+		}
+		return append([]string{"cmd", "/c", "del", "/f", "/q"}, filteredArgs...)
+	case "mkdir":
+		filteredArgs := make([]string, 0, len(args))
+		for _, arg := range args {
+			if arg == "-p" {
+				continue
+			}
+			filteredArgs = append(filteredArgs, arg)
+		}
+		return append([]string{"cmd", "/c", "mkdir"}, filteredArgs...)
+	case "cp":
+		return append([]string{"cmd", "/c", "copy"}, args...)
+	case "mv":
+		return append([]string{"cmd", "/c", "move"}, args...)
+	}
+
+	return parts
 }

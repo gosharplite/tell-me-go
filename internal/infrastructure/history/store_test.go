@@ -708,6 +708,13 @@ func (m *mockFS) WriteFile(ctx context.Context, name string, data []byte, perm o
 	return m.FileSystem.WriteFile(context.Background(), name, data, perm)
 }
 
+func (m *mockFS) AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	if m.writeErr != nil {
+		return m.writeErr
+	}
+	return m.FileSystem.AtomicWrite(context.Background(), name, data, perm)
+}
+
 func (m *mockFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	if m.readErr != nil {
 		return nil, m.readErr
@@ -820,12 +827,12 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			wantErr: "write failed",
 		},
 		{
-			name:      "WriteFile Failure on Save",
-			setupMock: func(m *mockFS) { m.writeErr = errors.New("write file failed") },
+			name:      "AtomicWrite Failure on Save",
+			setupMock: func(m *mockFS) { m.writeErr = errors.New("atomic write failed") },
 			action: func(ctx context.Context, s *jsonlStore) error {
 				return s.Save(ctx, dummyContent)
 			},
-			wantErr: "write file failed",
+			wantErr: "atomic write failed",
 		},
 		{
 			name:      "Write Failure on UpdateMetadata",

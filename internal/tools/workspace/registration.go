@@ -310,6 +310,15 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 					Type:        "STRING",
 					Description: "The shell command to execute (e.g., 'ls -la', 'go test ./...').",
 				},
+				"args": {
+					Type:        "ARRAY",
+					Items:       &tools.Schema{Type: "STRING"},
+					Description: "Optional: List of command arguments. Use this instead of 'command' to avoid quoting issues with spaces/special characters.",
+				},
+				"env": {
+					Type:        "OBJECT",
+					Description: "Optional: Environment variables to set for the command (e.g., {'KEY': 'VALUE'}).",
+				},
 				"timeout": {
 					Type:        "INTEGER",
 					Description: "Optional: Execution timeout in seconds. Default is 300.",

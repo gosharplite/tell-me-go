@@ -24,6 +24,7 @@ var commands = map[string]func([]string){
 	"printf":        handlePrintf,
 	"stress-output": handleStressOutput,
 	"diff":          handleDiff,
+	"printenv":      handlePrintenv,
 }
 
 func main() {
@@ -229,4 +230,12 @@ func handleDiff(args []string) {
 		}
 	}
 	os.Exit(1)
+}
+
+func handlePrintenv(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "printenv: missing variable")
+		os.Exit(1)
+	}
+	fmt.Println(os.Getenv(args[0]))
 }

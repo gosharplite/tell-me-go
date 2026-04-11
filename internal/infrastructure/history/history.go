@@ -97,8 +97,11 @@ func (m *Manager) AddContent(ctx context.Context, content *llm.Content) error {
 	defer m.mu.Unlock()
 
 	cloned := m.clonePersistentContentLocked(content)
+	if err := m.store.Append(ctx, []*llm.Content{cloned}); err != nil {
+		return err
+	}
 	m.Contents = append(m.Contents, cloned)
-	return m.store.Append(ctx, []*llm.Content{cloned})
+	return nil
 }
 
 // GetTotalEntries returns the total number of content entries currently stored.

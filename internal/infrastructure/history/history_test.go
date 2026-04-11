@@ -698,3 +698,43 @@ func TestManager_GetLastUserMessage(t *testing.T) {
 func (s *mockStore) Sync(ctx context.Context) error              { return nil }
 func (m *mockFailingStore) Sync(ctx context.Context) error       { return nil }
 func (s *mockStoreErrorMetadata) Sync(ctx context.Context) error { return nil }
+
+func TestHistoryManager_AddContent_DurabilityFirst(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	archiveFile := filepath.Join(tmpDir, "archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	// Initial state: empty
+	if m.GetTotalEntries() != 0 {
+		t.Fatalf("expected 0 entries, got %d", m.GetTotalEntries())
+	}
+
+	// Set a failing store
+	expectedErr := errors.New("append failed")
+	m.setStore(&mockFailingAppendStore{err: expectedErr})
+
+	content := &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}
+	err := m.AddContent(ctx, content)
+
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+
+	// Verify in-memory state was NOT updated
+	if m.GetTotalEntries() != 0 {
+		t.Errorf("expected 0 entries after failed append, got %d (drift detected!)", m.GetTotalEntries())
+	}
+}
+
+type mockFailingAppendStore struct {
+	mockStore
+	err error
+}
+
+func (m *mockFailingAppendStore) Append(ctx context.Context, contents []*llm.Content) error {
+	return m.err
+}
+
+func (m *mockFailingAppendStore) Sync(ctx context.Context) error { return nil }
