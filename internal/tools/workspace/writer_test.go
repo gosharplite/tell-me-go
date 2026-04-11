@@ -572,3 +572,74 @@ func TestDeletePath_RecursiveWarning(t *testing.T) {
 		t.Errorf("expected warning in result text, got: %s", res.Text)
 	}
 }
+
+func TestDeletePath_DirectoryWithoutRecursive(t *testing.T) {
+	tempDir := t.TempDir()
+	dir := filepath.Join(tempDir, "not_recursive")
+	_ = os.MkdirAll(dir, 0755)
+	_ = os.WriteFile(filepath.Join(dir, "file.txt"), []byte("test"), 0644)
+
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+	fs := infrapersistence.NewOSFileSystem()
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
+	ctx := context.Background()
+
+	_, err := w.deletePath(ctx, map[string]interface{}{
+		"path":      dir,
+		"recursive": false,
+		"reason":    "testing fail on directory",
+	}, nil)
+
+	if err == nil {
+		t.Error("expected error when deleting directory without recursive=true, got nil")
+	}
+}
+
+type mockSecurity_Authorize struct {
+	writerSecurity
+	authorized bool
+}
+
+func (m *mockSecurity_Authorize) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return m.authorized, nil
+}
+
+func TestDeletePath_RecursiveAuthorization(t *testing.T) {
+	tempDir := t.TempDir()
+	dir := filepath.Join(tempDir, "auth_delete")
+	_ = os.MkdirAll(dir, 0755)
+
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(false) // Trigger authorization check
+	sm.RegisterSafePath(tempDir)
+	
+	fs := infrapersistence.NewOSFileSystem()
+	
+	t.Run("authorized", func(t *testing.T) {
+		ms := &mockSecurity_Authorize{writerSecurity: sm, authorized: true}
+		w := &fileWriter{sm: ms, bm: newBackupManager(sm, fs, 10), fs: fs}
+		_, err := w.deletePath(context.Background(), map[string]interface{}{
+			"path":      dir,
+			"recursive": true,
+			"reason":    "testing auth",
+		}, nil)
+		if err != nil {
+			t.Errorf("expected success when authorized, got error: %v", err)
+		}
+	})
+
+	t.Run("not authorized", func(t *testing.T) {
+		ms := &mockSecurity_Authorize{writerSecurity: sm, authorized: false}
+		w := &fileWriter{sm: ms, bm: newBackupManager(sm, fs, 10), fs: fs}
+		_, err := w.deletePath(context.Background(), map[string]interface{}{
+			"path":      dir,
+			"recursive": true,
+			"reason":    "testing auth",
+		}, nil)
+		if err == nil || !strings.Contains(err.Error(), "not authorized") {
+			t.Errorf("expected 'not authorized' error, got: %v", err)
+		}
+	})
+}

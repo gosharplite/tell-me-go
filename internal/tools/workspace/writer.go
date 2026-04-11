@@ -169,6 +169,7 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 
 type writerSecurity interface {
 	domain_security.PathValidator
+	domain_security.ActionConfirmer
 }
 
 func (w *fileWriter) deletePath(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -186,21 +187,44 @@ func (w *fileWriter) deletePath(ctx context.Context, args map[string]interface{}
 		return tools.ToolResult{}, err
 	}
 
-	info, statErr := w.fs.Stat(ctx, resolvedPath)
-
 	if params.Recursive {
-		if err := w.fs.RemoveAll(ctx, resolvedPath); err != nil {
-			return tools.ToolResult{}, fmt.Errorf("failed to delete path recursively: %w", err)
-		}
-		return tools.ToolResult{Text: "Path deleted successfully. NOTE: Recursive deletions are irreversible and cannot be undone via undo_file_change."}, nil
+		return w.performRecursiveDelete(ctx, resolvedPath, params.Reason)
 	}
+
+	return w.performSingleDelete(ctx, resolvedPath)
+}
+
+func (w *fileWriter) performRecursiveDelete(ctx context.Context, path, reason string) (tools.ToolResult, error) {
+	// 1. Mandatory Confirmation for Dangerous Operation
+	detail := fmt.Sprintf("Deleting directory and ALL its contents: %s", path)
+	approved, err := w.sm.Authorize(ctx, "RECURSIVE_DELETE", detail, reason, false)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization failed: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{}, fmt.Errorf("recursive deletion not authorized by user")
+	}
+
+	// 2. Perform Deletion
+	if err := w.fs.RemoveAll(ctx, path); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to delete path recursively: %w", err)
+	}
+
+	// 3. Return with explicit warning
+	return tools.ToolResult{
+		Text: "Path deleted successfully. NOTE: Recursive deletions are irreversible and cannot be undone via undo_file_change.",
+	}, nil
+}
+
+func (w *fileWriter) performSingleDelete(ctx context.Context, path string) (tools.ToolResult, error) {
+	info, statErr := w.fs.Stat(ctx, path)
 
 	// Only snapshot if it is a file and not a directory
 	if statErr == nil && !info.IsDir() {
-		w.bm.snapshot(ctx, resolvedPath, "DELETE")
+		w.bm.snapshot(ctx, path, "DELETE")
 	}
 
-	if err := w.fs.Remove(ctx, resolvedPath); err != nil {
+	if err := w.fs.Remove(ctx, path); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to delete path: %w", err)
 	}
 

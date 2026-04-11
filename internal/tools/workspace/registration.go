@@ -248,13 +248,13 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 		{
 			decl: &tools.ToolDeclaration{
 				Name:            "delete_path",
-				Description:     "Deletes a file or directory. This is platform-agnostic and safer than using shell-specific commands like 'rm' or 'del'.",
+				Description:     "Deletes a file or directory. This is platform-agnostic and safer than using shell-specific commands like 'rm' or 'del'. WARNING: Recursive deletions are irreversible and cannot be undone via undo_file_change.",
 				RequiresConsent: true,
 				Parameters: &tools.Schema{
 					Type: "OBJECT",
 					Properties: map[string]*tools.Schema{
 						"path":      {Type: "STRING", Description: "The path to delete."},
-						"recursive": {Type: "BOOLEAN", Description: "If true, deletes directories and their contents recursively (default false)."},
+						"recursive": {Type: "BOOLEAN", Description: "If true, deletes directories and their contents recursively (default false). NOTE: Bypasses undo history."},
 						"reason":    {Type: "STRING", Description: "Reason for deleting this path."},
 					},
 					Required: []string{"path", "reason"},
