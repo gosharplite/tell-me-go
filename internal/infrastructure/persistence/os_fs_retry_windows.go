@@ -16,6 +16,9 @@ import (
 
 // fsRetry implements Windows-specific retry logic for transient filesystem errors.
 func fsRetry(ctx context.Context, op func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	var lastErr error
 	delay := 50 * time.Millisecond
 	for i := 0; i < 5; i++ {

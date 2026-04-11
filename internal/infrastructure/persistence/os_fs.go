@@ -129,26 +129,11 @@ type domainFS struct {
 	fs FileSystem
 }
 
-func (f *domainFS) checkDone(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		return nil
-	}
-}
-
 func (f *domainFS) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
-	if err := f.checkDone(ctx); err != nil {
-		return nil, err
-	}
 	return f.fs.ReadDir(ctx, name)
 }
 
 func (f *domainFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
-	if err := f.checkDone(ctx); err != nil {
-		return nil, err
-	}
 	return f.fs.ReadFile(ctx, name)
 }
 
@@ -161,23 +146,14 @@ func (f *domainFS) AtomicWrite(ctx context.Context, name string, data []byte, pe
 }
 
 func (f *domainFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
-	if err := f.checkDone(ctx); err != nil {
-		return err
-	}
 	return f.fs.MkdirAll(ctx, path, perm)
 }
 
 func (f *domainFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
-	if err := f.checkDone(ctx); err != nil {
-		return nil, err
-	}
 	return f.fs.Stat(ctx, name)
 }
 
 func (f *domainFS) Open(ctx context.Context, name string) (persistence.File, error) {
-	if err := f.checkDone(ctx); err != nil {
-		return nil, err
-	}
 	file, err := f.fs.Open(ctx, name)
 	if err != nil {
 		return nil, err
@@ -186,9 +162,6 @@ func (f *domainFS) Open(ctx context.Context, name string) (persistence.File, err
 }
 
 func (f *domainFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
-	if err := f.checkDone(ctx); err != nil {
-		return nil, err
-	}
 	file, err := f.fs.OpenFile(ctx, name, flag, perm)
 	if err != nil {
 		return nil, err
@@ -197,22 +170,16 @@ func (f *domainFS) OpenFile(ctx context.Context, name string, flag int, perm os.
 }
 
 func (f *domainFS) Remove(ctx context.Context, name string) error {
-	if err := f.checkDone(ctx); err != nil {
-		return err
-	}
 	return f.fs.Remove(ctx, name)
 }
 
 func (f *domainFS) RemoveAll(ctx context.Context, path string) error {
-	if err := f.checkDone(ctx); err != nil {
-		return err
-	}
 	return f.fs.RemoveAll(ctx, path)
 }
 
 func (f *domainFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err := f.checkDone(ctx); err != nil {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		return fn(path, info, err)
