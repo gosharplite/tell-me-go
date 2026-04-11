@@ -39,12 +39,19 @@ verify_release_readiness
 
 #### 3. Preparation
 1.  **Note**: This project relies on Git tags as the single source of truth for versioning. The version is injected at build time using Go linker flags (`ldflags`).
-2.  **Cleanup**: Use the `delete_path` tool to remove any existing `tell-me-go` or `tell-me-go.exe` binary in the root directory.
+2.  **Cleanup**: Ensure any existing `tell-me-go` or `tell-me-go.exe` binaries are removed.
+    *   **Tooling**: Use the `delete_path` tool.
+    *   **Manual Fallback**: If the tool is blocked, use `del tell-me-go.exe` (Windows) or `rm -f tell-me-go` (Linux/macOS).
 3.  Run `go mod tidy` to ensure `go.sum` is up-to-date.
-4.  **Final Build Check**: Run the following build command (using your target version) to ensure everything compiles correctly:
-    ```bash
-    go build -ldflags -X=main.version=vX.Y.Z -o tell-me-go ./cmd/tell-me-go
-    ```
+4. **Final Build Check**: Run the build command for your current OS to ensure everything compiles correctly:
+    *   **Windows**:
+        ```bash
+        go build -ldflags -X=main.version=vX.Y.Z -o tell-me-go.exe ./cmd/tell-me-go
+        ```
+    *   **Linux/macOS**:
+        ```bash
+        go build -ldflags -X=main.version=vX.Y.Z -o tell-me-go ./cmd/tell-me-go
+        ```
 
 #### 4. Git Tagging and Remote Synchronization
 1.  **Sync and Merge into main**:
