@@ -19,4 +19,4 @@ We decided to switch to a **JSONL (JSON Lines)** format for history persistence,
 - **Improved Performance**: Writing to history is now instantaneous regardless of session length.
 - **Resilience**: Append-only writes are significantly more resilient to power failures or process crashes. Even if the last line is partial, previous history remains valid.
 - **Architectural Shift**: The `HistoryManager` now handles stream-based parsing and state reconciliation (applying patches to base turns).
-- **Compaction (Future)**: Periodically, the history can be "compacted" by merging patches into base records to keep load times fast.
+- **Compaction Strategy**: History is naturally compacted during operations that trigger an atomic rewrite of the full file (e.g., `RollbackTurns` or `SetContents`). Since the in-memory state always reflects the reconciled history (base records + applied patches), any call to `Save` effectively merges outstanding patches into clean base records, ensuring the log remains efficient over time without requiring a dedicated manual compaction command.
