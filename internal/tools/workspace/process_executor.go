@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -97,6 +99,18 @@ func (e *processExecutor) setupCommand(ctx context.Context, parts []string, conf
 	}
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+
+	if runtime.GOOS == "windows" {
+		cmd.Cancel = func() error {
+			if cmd.Process == nil {
+				return nil
+			}
+			// /F = Forcefully terminate
+			// /T = Terminate child processes (the tree)
+			// /PID = Process ID
+			return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+		}
+	}
 
 	if len(config.Env) > 0 {
 		env := os.Environ()
@@ -259,7 +273,18 @@ func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string
 		if len(parts) == 0 {
 			return nil, fmt.Errorf("empty command at index %d", i)
 		}
-		p.cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
+		cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+		p.cmds[i] = cmd
+
+		if runtime.GOOS == "windows" {
+			// Each command in the pipeline needs to be terminated as a tree.
+			cmd.Cancel = func() error {
+				if cmd.Process == nil {
+					return nil
+				}
+				return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+			}
+		}
 
 		if len(config.Env) > 0 {
 			env := os.Environ()

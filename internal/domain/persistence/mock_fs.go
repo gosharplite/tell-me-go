@@ -213,64 +213,143 @@ func (m *mockFileSystem) RemoveAll(ctx context.Context, path string) error {
 }
 
 func (m *mockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
-	rootSlash := m.toSlash(root)
-	dirsNotified := make(map[string]bool)
-	skippedDirs := make(map[string]bool)
-
-	m.mu.RLock()
-	var paths []string
-	for p := range m.Files {
-		paths = append(paths, m.toSlash(p))
+	s := &walkSession{
+		fs:           m,
+		rootSlash:    m.toSlash(root),
+		fn:           fn,
+		dirsNotified: make(map[string]bool),
+		skippedDirs:  make(map[string]bool),
 	}
-	m.mu.RUnlock()
+	return s.execute(ctx)
+}
+
+type walkSession struct {
+	fs           *mockFileSystem
+	rootSlash    string
+	fn           WalkFunc
+	dirsNotified map[string]bool
+	skippedDirs  map[string]bool
+}
+
+func (s *walkSession) execute(ctx context.Context) error {
+	s.fs.mu.RLock()
+	var paths []string
+	for p := range s.fs.Files {
+		paths = append(paths, s.fs.toSlash(p))
+	}
+	s.fs.mu.RUnlock()
 	sort.Strings(paths)
 
-	rootClean := strings.TrimSuffix(rootSlash, "/")
+	if err := s.handleRoot(ctx); err != nil {
+		if err == filepath.SkipDir {
+			return nil
+		}
+		return err
+	}
+
+	for _, pathSlash := range paths {
+		if err := s.walkFile(ctx, pathSlash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *walkSession) handleRoot(ctx context.Context) error {
+	rootClean := strings.TrimSuffix(s.rootSlash, "/")
 	if rootClean == "" {
 		rootClean = "/"
 	}
 
-	rootInfo, err := m.Stat(ctx, rootSlash)
+	rootInfo, err := s.fs.Stat(ctx, s.rootSlash)
 	if err == nil {
-		if err := fn(rootSlash, rootInfo, nil); err != nil {
-			if err == filepath.SkipDir {
-				return nil
-			}
+		if err := s.fn(s.rootSlash, rootInfo, nil); err != nil {
 			return err
 		}
 		if rootInfo.IsDir() {
-			dirsNotified[rootClean] = true
+			s.dirsNotified[rootClean] = true
 		}
 	}
+	return nil
+}
 
-	for _, pathSlash := range paths {
-		if pathSlash == rootSlash {
-			continue
+func (s *walkSession) walkFile(ctx context.Context, pathSlash string) error {
+	if pathSlash == s.rootSlash || !isUnderRoot(pathSlash, s.rootSlash) {
+		return nil
+	}
+
+	skip, err := s.notifyParents(pathSlash)
+	if err != nil || skip {
+		return err
+	}
+
+	return s.processFile(pathSlash)
+}
+
+func (s *walkSession) processFile(pathSlash string) error {
+	s.fs.mu.RLock()
+	content, ok := s.fs.Files[pathSlash]
+	s.fs.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+
+	info := &mockFileInfo{name: path.Base(pathSlash), size: int64(len(content)), dir: false}
+	if err := s.fn(pathSlash, info, nil); err != nil && err != filepath.SkipDir {
+		return err
+	}
+	return nil
+}
+
+func (s *walkSession) notifyParents(pathSlash string) (bool, error) {
+	parts := strings.Split(pathSlash, "/")
+	current := ""
+	for i := 0; i < len(parts)-1; i++ {
+		if current == "" {
+			current = parts[i]
+		} else {
+			current = current + "/" + parts[i]
 		}
-		if isUnderRoot(pathSlash, rootSlash) {
-			skip, err := m.notifyParents(pathSlash, rootSlash, dirsNotified, skippedDirs, fn)
-			if err != nil {
-				return err
-			}
-			if skip {
-				continue
-			}
 
-			m.mu.RLock()
-			content, ok := m.Files[pathSlash]
-			m.mu.RUnlock()
-			if !ok {
-				continue
-			}
-
-			info := &mockFileInfo{name: path.Base(pathSlash), size: int64(len(content)), dir: false}
-			if err := fn(pathSlash, info, nil); err != nil {
-				if err == filepath.SkipDir {
-					continue
-				}
-				return err
-			}
+		skip, err := s.checkAndNotifyParent(current)
+		if err != nil || skip {
+			return skip, err
 		}
+	}
+	return false, nil
+}
+
+func (s *walkSession) checkAndNotifyParent(current string) (bool, error) {
+	if !isUnderRoot(current, s.rootSlash) {
+		return false, nil
+	}
+
+	if s.skippedDirs[current] {
+		return true, nil
+	}
+
+	if s.dirsNotified[current] {
+		return false, nil
+	}
+
+	if err := s.notifyParentDir(current); err != nil {
+		if err == filepath.SkipDir {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
+func (s *walkSession) notifyParentDir(pathSlash string) error {
+	s.dirsNotified[pathSlash] = true
+	info := &mockFileInfo{name: path.Base(pathSlash), size: 0, dir: true}
+	if err := s.fn(pathSlash, info, nil); err != nil {
+		if err == filepath.SkipDir {
+			s.skippedDirs[pathSlash] = true
+			return filepath.SkipDir
+		}
+		return err
 	}
 	return nil
 }
@@ -286,39 +365,6 @@ func isUnderRoot(pathSlash, rootSlash string) bool {
 		return true
 	}
 	return p == r || strings.HasPrefix(p, r+"/")
-}
-
-func (m *mockFileSystem) notifyParents(pathSlash, rootSlash string, dirsNotified, skippedDirs map[string]bool, fn WalkFunc) (bool, error) {
-	parts := strings.Split(pathSlash, "/")
-	current := ""
-	for i := 0; i < len(parts)-1; i++ {
-		if current == "" {
-			current = parts[i]
-		} else {
-			current = current + "/" + parts[i]
-		}
-
-		if !isUnderRoot(current, rootSlash) {
-			continue
-		}
-
-		if skippedDirs[current] {
-			return true, nil
-		}
-
-		if !dirsNotified[current] {
-			dirsNotified[current] = true
-			info := &mockFileInfo{name: path.Base(current), size: 0, dir: true}
-			if err := fn(current, info, nil); err != nil {
-				if err == filepath.SkipDir {
-					skippedDirs[current] = true
-					return true, nil
-				}
-				return false, err
-			}
-		}
-	}
-	return false, nil
 }
 
 type mockDirEntry struct {
