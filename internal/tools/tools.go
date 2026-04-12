@@ -47,10 +47,11 @@ func RegisterAll(params ToolRegistrationParams) error {
 			return err
 		}
 	}
-	if err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem); err != nil {
+	archVerify, err := analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem)
+	if err != nil {
 		return err
 	}
-	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem); err != nil {
+	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, archVerify); err != nil {
 		return err
 	}
 	if err := integrations.RegisterAll(params.Registry, params.SecurityManager, params.Client, params.AssetsDir); err != nil {

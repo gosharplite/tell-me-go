@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 	"github.com/stretchr/testify/assert"
@@ -70,6 +71,9 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 		sm:     sm,
 		fs:     fs,
 		runner: runner,
+		archVerifier: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return tools.ToolResult{Text: "✅ PASSED"}, nil
+		},
 	}
 
 	res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
@@ -141,6 +145,14 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			},
 			wantSubstr: "golangci-lint found issues",
 		},
+		{
+			name: "Architecture violation",
+			setupFiles: func(fs persistence.FileSystem) {
+				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+			},
+			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
+			wantSubstr:  "Layer violations",
+		},
 	}
 
 	for _, tt := range tests {
@@ -149,7 +161,17 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			fs := persistence.NewMockFileSystem()
 			tt.setupFiles(fs)
 			runner := tt.setupRunner()
-			m := &releaseManager{sm: sm, fs: fs, runner: runner}
+			m := &releaseManager{
+				sm:     sm,
+				fs:     fs,
+				runner: runner,
+				archVerifier: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+					if tt.name == "Architecture violation" {
+						return tools.ToolResult{Text: "❌ FAILED: Layer violation"}, nil
+					}
+					return tools.ToolResult{Text: "✅ PASSED"}, nil
+				},
+			}
 
 			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 			require.NoError(t, err)
@@ -213,7 +235,14 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 			fs := persistence.NewMockFileSystem()
 			_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
 			runner := tt.setupRunner()
-			m := &releaseManager{sm: sm, fs: fs, runner: runner}
+			m := &releaseManager{
+				sm:     sm,
+				fs:     fs,
+				runner: runner,
+				archVerifier: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+					return tools.ToolResult{Text: "✅ PASSED"}, nil
+				},
+			}
 			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 			require.NoError(t, err)
 			assert.Contains(t, res.Text, tt.wantSubstr)

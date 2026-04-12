@@ -13,7 +13,7 @@ import (
 )
 
 // Register adds all consolidated analysis tools to the registry.
-func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) error {
+func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) (tools.ToolFunc, error) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	m := newAnalysisManager(idx, cache, sm, bus, executor, fs)
@@ -329,14 +329,14 @@ func Register(r tools.Registry, sm domain_security.Manager, bus events.EventBus,
 	for _, spec := range specs {
 		if spec.opts != nil {
 			if err := r.RegisterWithOptions(spec.decl, spec.handler, *spec.opts); err != nil {
-				return err
+				return nil, err
 			}
 		} else {
 			if err := r.Register(spec.decl, spec.handler); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	return nil
+	return m.Arch.VerifyArchitecture, nil
 }

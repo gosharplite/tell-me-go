@@ -13,7 +13,7 @@ import (
 )
 
 // Register adds all development workflow and release tools to the registry.
-func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem) error {
+func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem, archVerify tools.ToolFunc) error {
 	runner := toolchain.NewGoRunner(exec)
 	dev := newDevManager(sm, validator, runner)
 
@@ -93,9 +93,10 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 
 	// Release Management
 	rel := &releaseManager{
-		sm:     sm,
-		fs:     fs,
-		runner: runner,
+		sm:           sm,
+		fs:           fs,
+		runner:       runner,
+		archVerifier: archVerify,
 	}
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_release_readiness",

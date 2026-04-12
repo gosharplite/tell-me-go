@@ -30,9 +30,10 @@ type releaseGoRunner interface {
 }
 
 type releaseManager struct {
-	sm     domain_security.PathValidator
-	fs     persistence.FileSystem
-	runner releaseGoRunner
+	sm           domain_security.PathValidator
+	fs           persistence.FileSystem
+	runner       releaseGoRunner
+	archVerifier tools.ToolFunc
 }
 
 type readinessCheck interface {
@@ -55,6 +56,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 		&secretScanner{root: root, fs: m.fs},
 		&dependencyChecker{root: root, fs: m.fs},
 		&linterChecker{runner: m.runner},
+		&architectureChecker{verifier: m.archVerifier},
 		&buildChecker{runner: m.runner},
 		&testRunner{runner: m.runner},
 	}
@@ -315,4 +317,25 @@ func (c *linterChecker) handleLinterResult(out []byte, err error, name string) c
 	}
 
 	return checkResult{OK: false, Message: fmt.Sprintf("%s failed: %v\nOutput: %s", name, err, string(out))}
+}
+
+// architectureChecker implementation
+type architectureChecker struct {
+	verifier tools.ToolFunc
+}
+
+func (c *architectureChecker) Name() string { return "Architectural Integrity Verification" }
+
+func (c *architectureChecker) Run(ctx context.Context) checkResult {
+	if c.verifier == nil {
+		return checkResult{OK: false, Message: "Architecture verifier is not available."}
+	}
+	res, err := c.verifier(ctx, nil, nil)
+	if err != nil {
+		return checkResult{OK: false, Message: fmt.Sprintf("Architecture check failed: %v", err)}
+	}
+	if strings.Contains(res.Text, "❌ FAILED") {
+		return checkResult{OK: false, Message: "Layer violations or circular dependencies detected."}
+	}
+	return checkResult{OK: true, Message: "No architectural violations detected."}
 }

@@ -73,7 +73,7 @@ func TestRegister(t *testing.T) {
 	fs := persistence.NewMockFileSystem()
 	exec := &mockToolchainExecutor{}
 
-	if err := Register(registry, sm, exec, validator, fs); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, nil); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
