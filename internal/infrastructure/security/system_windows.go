@@ -17,12 +17,16 @@ func getSystemDirectories() []string {
 		`C:\Windows`,
 		`C:\Program Files`,
 		`C:\Program Files (x86)`,
+		`C:\Users\Public`,
+		`C:\System Volume Information`,
 		`C:\ProgramData`,
+		`C:\`,
+		`D:\`,
 	}
 	for _, f := range fallbacks {
 		abs, err := filepath.Abs(filepath.Clean(f))
 		if err == nil {
-			sensitive = append(sensitive, abs)
+			sensitive = append(sensitive, filepath.ToSlash(abs))
 		}
 	}
 
@@ -32,7 +36,7 @@ func getSystemDirectories() []string {
 		if val := os.Getenv(env); val != "" {
 			abs, err := filepath.Abs(filepath.Clean(val))
 			if err == nil {
-				sensitive = append(sensitive, abs)
+				sensitive = append(sensitive, filepath.ToSlash(abs))
 			}
 		}
 	}

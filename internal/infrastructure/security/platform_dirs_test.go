@@ -37,8 +37,8 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 		}{
 			{"/etc is forbidden", "/etc", true},
 			{"/etc/passwd is forbidden", "/etc/passwd", true},
-			{"/usr is forbidden", "/usr", true},
 			{"/usr/bin is forbidden", "/usr/bin", true},
+			{"/usr/sbin is forbidden", "/usr/sbin", true},
 			{"/bin is forbidden", "/bin", true},
 			{"/sbin is forbidden", "/sbin", true},
 			{"/var is forbidden", "/var", true},

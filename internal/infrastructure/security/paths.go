@@ -114,7 +114,10 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	}
 	absPath = p.resolveSymlinks(absPath)
 
-	if err := p.isSystemDirectory(absPath); err != nil {
+	// Convert to forward slashes for cross-platform consistency in internal checks
+	normalizedPath := filepath.ToSlash(absPath)
+
+	if err := p.isSystemDirectory(normalizedPath); err != nil {
 		return "", err
 	}
 
@@ -151,7 +154,7 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 
 	// 1. Explicitly exempt the evaluated OS temporary directory
 	if p.resolvedTempDir != "" {
-		temp := p.resolvedTempDir
+		temp := filepath.ToSlash(p.resolvedTempDir)
 		if !isCaseSensitive() {
 			temp = strings.ToLower(temp)
 			abs := strings.ToLower(absPath)
@@ -164,18 +167,19 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 	}
 
 	sensitive := getSystemDirectories()
-	separator := string(filepath.Separator)
+	separator := "/" // Use forward slash since we use filepath.ToSlash(absPath)
 	caseSensitive := isCaseSensitive()
 
 	for _, s := range sensitive {
+		sNormalized := filepath.ToSlash(s)
 		if !caseSensitive {
-			sLower := strings.ToLower(s)
+			sLower := strings.ToLower(sNormalized)
 			absLower := strings.ToLower(absPath)
 			if absLower == sLower || strings.HasPrefix(absLower, sLower+separator) {
 				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
 			}
 		} else {
-			if absPath == s || strings.HasPrefix(absPath, s+separator) {
+			if absPath == sNormalized || strings.HasPrefix(absPath, sNormalized+separator) {
 				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
 			}
 		}
@@ -188,7 +192,8 @@ func (p *pathPolicy) RegisterPath(path string, writable bool) {
 	if path == "" {
 		return
 	}
-	abs, err := filepath.Abs(path)
+	cleaned := filepath.Clean(path)
+	abs, err := filepath.Abs(cleaned)
 	if err != nil {
 		return
 	}
@@ -216,7 +221,8 @@ func (p *pathPolicy) RegisterPath(path string, writable bool) {
 
 // RemovePath removes a path from the allowed boundaries.
 func (p *pathPolicy) RemovePath(path string, writable bool) error {
-	abs, err := filepath.Abs(path)
+	cleaned := filepath.Clean(path)
+	abs, err := filepath.Abs(cleaned)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}

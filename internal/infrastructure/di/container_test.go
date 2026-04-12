@@ -456,7 +456,7 @@ func (m *mockSessionDeps) GetPaths() *persistence.Paths {
 func (m *mockSessionDeps) GetPricingData() pricing.PricingData     { return pricing.PricingData{} }
 func (m *mockSessionDeps) GetGateway() llm.LLMGateway              { return m.gw }
 func (m *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return m.hManager }
-func (m *mockSessionDeps) GetRegistry() tools.Registry             { return m.reg }
+func (m *mockSessionDeps) GetRegistry() (tools.Registry, error)    { return m.reg, nil }
 func (m *mockSessionDeps) GetSecurityManager() security.Manager {
 	return m.sm
 }
@@ -552,7 +552,9 @@ func TestSessionDeps_Getters(t *testing.T) {
 
 	assert.NotNil(t, deps.GetGateway())
 	assert.Equal(t, hManager, deps.GetHistoryManager())
-	assert.Equal(t, reg, deps.GetRegistry())
+	regGot, regErr := deps.GetRegistry()
+	assert.Equal(t, reg, regGot)
+	assert.NoError(t, regErr)
 	assert.Equal(t, sm, deps.GetSecurityManager())
 	assert.Equal(t, bus, deps.GetEventBus())
 	assert.Equal(t, paths, deps.GetPaths())

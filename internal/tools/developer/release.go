@@ -88,9 +88,9 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	results := make([]checkResult, len(pipeline))
 	g, gCtx := errgroup.WithContext(ctx)
 
-	// Limit concurrent execution to 2 processes to prevent CPU/RAM exhaustion
+	// Limit concurrent execution to prevent CPU/RAM exhaustion
 	// and avoid build cache locking collisions in CI.
-	sem := semaphore.NewWeighted(2)
+	sem := semaphore.NewWeighted(m.getParallelism())
 
 	for i, check := range pipeline {
 		i, c := i, check // Captured for closure
@@ -153,7 +153,12 @@ type secretScanner struct {
 func (s *secretScanner) Name() string { return "Security Scan" }
 func (s *secretScanner) Run(ctx context.Context) checkResult {
 	secretPatterns := []string{
-		fmt.Sprintf("AI_%s", "URL"),
+		`sk-[a-zA-Z0-9]{32,}`,                                 // OpenAI/Generic
+		`ant-api-key-v1-[a-zA-Z0-9_-]{95,}`,                  // Anthropic
+		`AIza[0-9A-Za-z-_]{35}`,                               // Google AI
+		`AKIA[0-9A-Z]{16}`,                                    // AWS Access Key
+		`(?i)(AI|OPENAI|ANTHROPIC|GEMINI|AWS)_(API_)?KEY`,      // Environment Keys
+		`https?://[a-zA-Z0-9]+:[a-zA-Z0-9]+@[a-zA-Z0-9.-]+`, // URLs with Credentials
 	}
 
 	compiledPatterns := make([]*regexp.Regexp, len(secretPatterns))
@@ -196,8 +201,15 @@ func (s *secretScanner) Run(ctx context.Context) checkResult {
 func (s *secretScanner) scanContent(content []byte, path string, patterns []*regexp.Regexp) []string {
 	var matches []string
 	for _, re := range patterns {
-		if re.Match(content) {
-			matches = append(matches, fmt.Sprintf("Potential secret in %s: pattern `%s`", path, re.String()))
+		if m := re.Find(content); m != nil {
+			secret := string(m)
+			masked := secret
+			if len(secret) > 8 {
+				masked = fmt.Sprintf("%s...%s", secret[:4], secret[len(secret)-4:])
+			} else {
+				masked = "****"
+			}
+			matches = append(matches, fmt.Sprintf("Potential secret in %s: pattern `%s` (found `%s`)", path, re.String(), masked))
 		}
 	}
 	return matches
@@ -338,4 +350,20 @@ func (c *architectureChecker) Run(ctx context.Context) checkResult {
 		return checkResult{OK: false, Message: "Layer violations or circular dependencies detected."}
 	}
 	return checkResult{OK: true, Message: "No architectural violations detected."}
+}
+
+func (m *releaseManager) getParallelism() int64 {
+	const defaultParallelism = 2
+	val := os.Getenv("TELL_ME_GO_RELEASE_PARALLELISM")
+	if val == "" {
+		return defaultParallelism
+	}
+	var p int
+	if _, err := fmt.Sscanf(val, "%d", &p); err != nil {
+		return defaultParallelism
+	}
+	if p < 1 {
+		return 1
+	}
+	return int64(p)
 }

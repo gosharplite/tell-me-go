@@ -90,7 +90,7 @@ func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gate
 func (d *sessionDependencies) GetHistoryManager() ports.HistoryManager {
 	return d.HistoryManager
 }
-func (d *sessionDependencies) GetRegistry() domaintools.Registry { return d.Registry }
+func (d *sessionDependencies) GetRegistry() (domaintools.Registry, error) { return d.Registry, nil }
 func (d *sessionDependencies) GetSecurityManager() domain_security.Manager {
 	return d.SecurityManager
 }

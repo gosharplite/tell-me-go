@@ -114,12 +114,13 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	assert.Equal(t, 0, callCount)
 
 	// 2. First call to GetRegistry should trigger it
-	reg := deps.GetRegistry()
+	reg, err := deps.GetRegistry()
+	assert.NoError(t, err)
 	assert.Equal(t, 1, callCount)
 	_ = reg
 
 	// 3. Subsequent calls should NOT trigger it again
-	_ = deps.GetRegistry()
+	_, _ = deps.GetRegistry()
 	assert.Equal(t, 1, callCount)
 }
 

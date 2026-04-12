@@ -354,3 +354,24 @@ func TestPathPolicy_RegisterPath_Idempotency(t *testing.T) {
 		}
 	})
 }
+
+func TestPathPolicy_SystemDirectoryBlockedEvenIfRegistered(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+
+	var forbidden string
+	if runtime.GOOS == "windows" {
+		forbidden = `C:\Windows\System32\drivers\etc\hosts`
+	} else {
+		forbidden = "/etc/passwd"
+	}
+
+	// Register it as a safe path
+	p.RegisterPath(forbidden, false)
+
+	// It should still be blocked because system directory check comes first
+	_, err := p.ValidatePath(forbidden, false)
+	if err == nil {
+		t.Errorf("ValidatePath allowed access to system directory %s even though it was registered", forbidden)
+	}
+}

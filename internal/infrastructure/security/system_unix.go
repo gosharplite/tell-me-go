@@ -8,15 +8,16 @@ package security
 func getSystemDirectories() []string {
 	return []string{
 		"/etc",
-		"/usr",
+		"/var",
+		"/usr/bin",
+		"/usr/sbin",
 		"/bin",
 		"/sbin",
-		"/var",
 		"/root",
-		"/boot",
-		"/dev",
-		"/proc",
 		"/sys",
+		"/proc",
+		"/dev",
+		"/boot",
 		"/private/etc",
 		"/private/var",
 	}

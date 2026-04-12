@@ -6,6 +6,7 @@ package developer
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -104,10 +105,19 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			name: "Secret found",
 			setupFiles: func(fs persistence.FileSystem) {
 				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
-				_ = fs.WriteFile(ctx, absCwd+"/secret.go", []byte("package p\nvar k = \"AI_URL\""), 0644)
+				_ = fs.WriteFile(ctx, absCwd+"/secret.go", []byte("package p\nvar k = \"sk-12345678901234567890123456789012\""), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
-			wantSubstr:  "Potential secret",
+			wantSubstr:  "Potential secret in",
+		},
+		{
+			name: "Secret found (masked)",
+			setupFiles: func(fs persistence.FileSystem) {
+				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, absCwd+"/env.go", []byte("package p\nvar k = \"ANTHROPIC_API_KEY\""), 0644)
+			},
+			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
+			wantSubstr:  "found `ANTH..._KEY`",
 		},
 		{
 			name: "Replace directive",
@@ -248,4 +258,36 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 			assert.Contains(t, res.Text, tt.wantSubstr)
 		})
 	}
+}
+
+func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(".")
+	
+	m := &releaseManager{
+		sm: sm,
+	}
+
+	t.Run("Default", func(t *testing.T) {
+		os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM")
+		assert.Equal(t, int64(2), m.getParallelism())
+	})
+
+	t.Run("Custom", func(t *testing.T) {
+		os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "4")
+		defer os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM")
+		assert.Equal(t, int64(4), m.getParallelism())
+	})
+
+	t.Run("Minimum", func(t *testing.T) {
+		os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "0")
+		defer os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM")
+		assert.Equal(t, int64(1), m.getParallelism())
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "invalid")
+		defer os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM")
+		assert.Equal(t, int64(2), m.getParallelism())
+	})
 }

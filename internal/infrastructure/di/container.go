@@ -246,7 +246,7 @@ func (d *sessionDeps) GetGateway() llm.LLMGateway {
 	return &lazyLLMProxy{deps: d}
 }
 func (d *sessionDeps) GetHistoryManager() ports.HistoryManager { return d.hManager }
-func (d *sessionDeps) GetRegistry() tools.Registry {
+func (d *sessionDeps) GetRegistry() (tools.Registry, error) {
 	d.regOnce.Do(func() {
 		reg, err := d.regFactory()
 		if err != nil {
@@ -256,7 +256,7 @@ func (d *sessionDeps) GetRegistry() tools.Registry {
 		}
 		d.reg = reg
 	})
-	return d.reg
+	return d.reg, d.regErr
 }
 func (d *sessionDeps) GetSecurityManager() security.Manager { return d.sm }
 func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
