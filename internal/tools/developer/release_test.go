@@ -263,7 +263,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
-	
+
 	m := &releaseManager{
 		sm: sm,
 	}

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -41,7 +40,7 @@ type engineConfig struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	CostTracker      domain_pricing.CostTracker
 	SM               domain_security.Manager
-	Logger           *slog.Logger
+	Logger           ports.Logger
 }
 
 // turnPhase represents the current stage of a single agent turn.
@@ -183,7 +182,7 @@ type turn struct {
 	ProviderName string
 	Model        string
 	Mode         string
-	Logger       *slog.Logger
+	Logger       ports.Logger
 
 	// Results/Outputs
 	Stop bool
@@ -235,7 +234,7 @@ func WithEngineConfig(sm domain_security.Manager, providerName, model, mode stri
 }
 
 // WithEngineLogger sets the logger for the engine.
-func WithEngineLogger(l *slog.Logger) engineOption {
+func WithEngineLogger(l ports.Logger) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		cfg.Logger = l
 	}
@@ -415,8 +414,8 @@ func (e *Engine) executeTurn(parentCtx context.Context, turn *turn) error {
 	if err := events.SafePublish(ctx, e.events, events.TraceEvent{Trace: trace}); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			e.getLogger().Error("event_publish_failed",
-				slog.String("event_type", "TraceEvent"),
-				slog.Any("error", err))
+				"event_type", "TraceEvent",
+				"error", err)
 		}
 	}
 
@@ -510,8 +509,8 @@ func (p *guardStep) Process(ctx context.Context, turn *turn) (processResult, err
 			return processResult{NextPhase: phaseRefining}, nil
 		}
 		turn.getLogger().Error("event_publish_failed",
-			slog.String("event_type", string(evt.Type())),
-			slog.Any("error", err))
+			"event_type", string(evt.Type()),
+			"error", err)
 		return processResult{}, err
 	}
 	return processResult{NextPhase: phaseRefining}, nil
@@ -574,8 +573,7 @@ func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (respConten
 		// Detach context to ensure the UI ALWAYS receives the stop signal even on timeout
 		stopCtx := context.WithoutCancel(ctx)
 		if err := events.SafePublish(stopCtx, turn.Events, events.ResponseEvent{Content: safeContent}); err != nil {
-			turn.getLogger().ErrorContext(stopCtx, "Failed to publish ResponseEvent; UI spinner may hang",
-				slog.Any("error", err))
+			turn.getLogger().Error("Failed to publish ResponseEvent; UI spinner may hang", "error", err)
 		}
 	}()
 
@@ -752,9 +750,9 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 
 	// Log retry to application logs (Technical debugging only)
 	turn.getLogger().Debug("retrying_after_transient_error",
-		slog.Any("error", turn.State.LastError),
-		slog.Duration("delay", delay),
-		slog.Int("attempt", turn.State.RetryCount))
+		"error", turn.State.LastError,
+		"delay", delay,
+		"attempt", turn.State.RetryCount)
 
 	// Publish retry notification to the UI/EventBus
 	msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
@@ -766,8 +764,8 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	if err := events.SafePublish(ctx, turn.Events, evt); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			turn.getLogger().Error("event_publish_failed",
-				slog.String("event_type", string(evt.Type())),
-				slog.Any("error", err))
+				"event_type", string(evt.Type()),
+				"error", err)
 			return processResult{}, err
 		}
 	}
@@ -832,25 +830,25 @@ func (p *executionStep) handleOversizedPayload(ctx context.Context, turn *turn, 
 	if err := events.SafePublish(ctx, turn.Events, evt); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			turn.getLogger().Error("event_publish_failed",
-				slog.String("event_type", string(evt.Type())),
-				slog.Any("error", err))
+				"event_type", string(evt.Type()),
+				"error", err)
 		}
 	}
 }
 
-func (e *Engine) getLogger() *slog.Logger {
+func (e *Engine) getLogger() ports.Logger {
 	cfg := e.config.Load()
 	if cfg != nil && cfg.Logger != nil {
 		return cfg.Logger
 	}
-	return slog.Default()
+	return &ports.NoOpLogger{}
 }
 
-func (t *turn) getLogger() *slog.Logger {
+func (t *turn) getLogger() ports.Logger {
 	if t.Logger != nil {
 		return t.Logger
 	}
-	return slog.Default()
+	return &ports.NoOpLogger{}
 }
 
 // StartTelemetry coordinates the lifecycle of background listeners and telemetry workers.

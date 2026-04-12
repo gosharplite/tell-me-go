@@ -469,7 +469,7 @@ func (m *mockSessionDeps) GetTracker() pricing.CostTracker {
 }
 func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
 func (m *mockSessionDeps) GetClient() llm.LLMClient                             { return m.client }
-func (m *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
+func (m *mockSessionDeps) GetLogger() ports.Logger                              { return &ports.NoOpLogger{} }
 func (m *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger {
 	return &ports.NoOpTurnsLogger{}
 }

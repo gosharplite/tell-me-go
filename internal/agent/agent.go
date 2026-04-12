@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync/atomic"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
@@ -20,7 +19,6 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -44,7 +42,7 @@ type agent struct {
 	events        events.EventBus
 	tracker       domain_pricing.CostTracker
 	turnsLogger   ports.TurnsLogger
-	logger        *slog.Logger
+	logger        ports.Logger
 
 	config atomic.Pointer[runtimeConfig]
 }
@@ -57,7 +55,11 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	}
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(registry))
-	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
+	logger := cfg.logger
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
+	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, logger, &executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
@@ -159,8 +161,8 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: newCfg.Limits}); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			a.getLogger().Error("event_publish_failed",
-				slog.String("event_type", "ConfigUpdated"),
-				slog.Any("error", err))
+				"event_type", "ConfigUpdated",
+				"error", err)
 			return err
 		}
 	}
@@ -189,8 +191,8 @@ func (a *agent) emit(ctx context.Context, e events.Event) {
 	if err := events.SafePublish(ctx, a.events, e); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			a.getLogger().Error("event_publish_failed",
-				slog.String("event_type", string(e.Type())),
-				slog.Any("error", err))
+				"event_type", string(e.Type()),
+				"error", err)
 		}
 	}
 }
@@ -251,14 +253,14 @@ func (a *agent) Shutdown(ctx context.Context) error {
 
 	if a.turnsLogger != nil {
 		if err := a.turnsLogger.Close(); err != nil {
-			a.getLogger().Debug("turns logger shutdown incomplete", slog.Any("error", err))
+			a.getLogger().Debug("turns logger shutdown incomplete", "error", err)
 			errs = append(errs, err)
 		}
 	}
 
 	if a.events != nil {
 		if err := a.events.Flush(ctx); err != nil {
-			a.getLogger().Debug("event bus flush incomplete during shutdown", slog.Any("error", err))
+			a.getLogger().Debug("event bus flush incomplete during shutdown", "error", err)
 		}
 		if err := a.events.Shutdown(ctx); err != nil {
 			if !errors.Is(err, events.ErrBusNotInitialized) {
@@ -270,9 +272,9 @@ func (a *agent) Shutdown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func (a *agent) getLogger() *slog.Logger {
+func (a *agent) getLogger() ports.Logger {
 	if a.logger != nil {
 		return a.logger
 	}
-	return slog.Default()
+	return &ports.NoOpLogger{}
 }

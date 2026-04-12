@@ -5,7 +5,6 @@ package agent
 
 import (
 	"context"
-	"log/slog"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -26,7 +25,7 @@ type agentConfig struct {
 	sessionLoader    domain_config.SessionLoader
 	tracker          domain_pricing.CostTracker
 	initCtx          context.Context
-	logger           *slog.Logger
+	logger           ports.Logger
 	turnsLogger      ports.TurnsLogger
 }
 
@@ -92,7 +91,7 @@ func withSessionLoader(loader domain_config.SessionLoader) Option {
 }
 
 // WithLogger sets the logger for the agent.
-func WithLogger(l *slog.Logger) Option {
+func WithLogger(l ports.Logger) Option {
 	return func(c *agentConfig) {
 		c.logger = l
 	}

@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -32,14 +31,14 @@ type ContextManager struct {
 	Factory         *PipelineFactory
 	Summarizer      ports.Summarizer
 	SessionProvider ports.SessionProvider
-	logger          *slog.Logger
+	logger          ports.Logger
 }
 
 // contextManagerOption defines a functional option for configuring the ContextManager.
 type contextManagerOption func(*ContextManager)
 
 // WithLogger sets the logger for the ContextManager.
-func WithLogger(l *slog.Logger) contextManagerOption {
+func WithLogger(l ports.Logger) contextManagerOption {
 	return func(cm *ContextManager) {
 		cm.logger = l
 	}
@@ -52,7 +51,7 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 		History:  history,
 		Events:   bus,
 		Factory:  factory,
-		logger:   slog.Default(),
+		logger:   &ports.NoOpLogger{},
 	}
 
 	for _, opt := range opts {
@@ -338,8 +337,8 @@ func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tok
 			return
 		}
 		cm.logger.Error("event_publish_failed",
-			slog.String("event_type", "SystemMessageEvent"),
-			slog.Any("error", err))
+			"event_type", "SystemMessageEvent",
+			"error", err)
 	}
 }
 

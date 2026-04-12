@@ -20,7 +20,7 @@ func TestSecurity_CWDWriteAuthorization(t *testing.T) {
 	// 1. Setup workspace
 	workspace := t.TempDir()
 	homeDir := t.TempDir()
-	
+
 	// Ensure we are testing in a subdirectory to avoid any root-level weirdness
 	projectDir := filepath.Join(workspace, "my-project")
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
@@ -45,14 +45,14 @@ func TestSecurity_CWDWriteAuthorization(t *testing.T) {
 
 	// 3. Run command with CWD set to projectDir
 	stdout, stderr, err := runCommandWithEnvInDir(projectDir, env, "", "-c", configPath, "create a directory named test_dir")
-	
+
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s\nStdout: %s", err, stderr, stdout)
 	}
 
 	// 4. Verify results
 	combined := stripANSI(stdout + stderr)
-	
+
 	// Check if the tool execution was blocked
 	if strings.Contains(combined, "Action blocked by the system sandbox security policy") {
 		t.Errorf("Security regression: CWD write was blocked.\nOutput: %s", combined)

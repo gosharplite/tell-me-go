@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log/slog"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -94,8 +93,8 @@ func (e *Engine) publishTurnStatus(ctx context.Context, turn *turn, isPostCall b
 	if err := events.SafePublish(ctx, e.events, evt); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			e.getLogger().Error("event_publish_failed",
-				slog.String("event_type", string(evt.Type())),
-				slog.Any("error", err))
+				"event_type", string(evt.Type()),
+				"error", err)
 		}
 	}
 }
@@ -125,8 +124,8 @@ func (e *Engine) withMetrics() turnMiddleware {
 				if err := events.SafePublish(ctx, e.events, evt); err != nil {
 					if !errors.Is(err, events.ErrBusNotInitialized) {
 						e.getLogger().Error("event_publish_failed",
-							slog.String("event_type", string(evt.Type())),
-							slog.Any("error", err))
+							"event_type", string(evt.Type()),
+							"error", err)
 					}
 				}
 			}

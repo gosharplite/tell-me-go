@@ -6,7 +6,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -47,7 +46,7 @@ func withBridgeLogFile(path string) bridgeOption {
 }
 
 // withBridgeLogger sets the structured logger.
-func withBridgeLogger(l *slog.Logger) bridgeOption {
+func withBridgeLogger(l ports.Logger) bridgeOption {
 	return func(b *uiBridge) { b.logger = l }
 }
 
@@ -81,7 +80,7 @@ type uiBridge struct {
 	loopCancel         context.CancelFunc
 	cancel             context.CancelFunc
 	renderer           ports.UIRenderer
-	logger             *slog.Logger
+	logger             ports.Logger
 	clock              clock.Clock
 	showThoughts       bool
 	showTools          bool
@@ -109,7 +108,7 @@ func newUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
 		loopCtx:        loopCtx,
 		loopCancel:     loopCancel,
 		renderer:       renderer,
-		logger:         slog.Default(),
+		logger:         &ports.NoOpLogger{},
 		clock:          clock.RealClock{},
 		eventCh:        make(chan events.Event, 100),
 		cleanupTimeout: 5 * time.Second,
@@ -119,7 +118,7 @@ func newUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *uiBridge {
 		opt(b)
 	}
 	if b.logger == nil {
-		b.logger = slog.Default()
+		b.logger = &ports.NoOpLogger{}
 	}
 	b.wg.Add(1)
 	return b

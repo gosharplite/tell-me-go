@@ -137,7 +137,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		pricingData:      pricingData,
 		pricingOverrides: pricingOverrides,
 		bus:              bus,
-		logger:           b.Logger,
+		logger:           telemetry.NewSlogLogger(b.Logger),
 		turnsLogger:      turnsLogger,
 		sessionProvider:  sessionProvider,
 		clientFactory:    clientFactory,
@@ -181,7 +181,7 @@ type sessionDeps struct {
 	pricingData      pricing.PricingData
 	pricingOverrides map[string]pricing.ModelPricing
 	bus              events.EventBus
-	logger           *slog.Logger
+	logger           ports.Logger
 	turnsLogger      ports.TurnsLogger
 	sessionProvider  ports.SessionProvider
 
@@ -259,10 +259,10 @@ func (d *sessionDeps) GetRegistry() (tools.Registry, error) {
 	return d.reg, d.regErr
 }
 func (d *sessionDeps) GetSecurityManager() security.Manager { return d.sm }
-func (d *sessionDeps) GetEventBus() events.EventBus            { return d.bus }
-func (d *sessionDeps) GetLogger() *slog.Logger                 { return d.logger }
-func (d *sessionDeps) GetTurnsLogger() ports.TurnsLogger       { return d.turnsLogger }
-func (d *sessionDeps) GetPaths() *persistence.Paths            { return d.paths }
+func (d *sessionDeps) GetEventBus() events.EventBus         { return d.bus }
+func (d *sessionDeps) GetLogger() ports.Logger              { return d.logger }
+func (d *sessionDeps) GetTurnsLogger() ports.TurnsLogger    { return d.turnsLogger }
+func (d *sessionDeps) GetPaths() *persistence.Paths         { return d.paths }
 func (d *sessionDeps) GetSessionProvider() ports.SessionProvider {
 	return d.sessionProvider
 }

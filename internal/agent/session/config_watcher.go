@@ -4,13 +4,13 @@
 package session
 
 import (
-	"log/slog"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // FileStat defines the interface for file status checks.
@@ -38,7 +38,7 @@ type fileConfigWatcher struct {
 	Loader               config.ConfigLoader
 	SessionLoader        config.SessionLoader
 	FS                   FileStat
-	logger               *slog.Logger
+	logger               ports.Logger
 	mainPath             string
 	sessionPath          string
 	lastMainMod          time.Time
@@ -57,7 +57,7 @@ type fileConfigWatcher struct {
 }
 
 // NewFileConfigWatcher creates a new fileConfigWatcher with default values.
-func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.SessionLoader, tokens, toolTurns, historyTurns int, logger *slog.Logger) ConfigWatcher {
+func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.SessionLoader, tokens, toolTurns, historyTurns int, logger ports.Logger) ConfigWatcher {
 	defaultThreshold := config.DefaultTieredThreshold
 	defaultWindow := 1000000
 	if dp := config.DefaultPricing(); dp.Models != nil {

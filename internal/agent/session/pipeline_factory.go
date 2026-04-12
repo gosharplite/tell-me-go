@@ -4,8 +4,6 @@
 package session
 
 import (
-	"log/slog"
-
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -30,7 +28,7 @@ type PipelineFactory struct {
 	SkillSelector skills.SkillSelector
 	Events        events.EventBus
 	Profile       optimizationProfile
-	Logger        *slog.Logger
+	Logger        ports.Logger
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.

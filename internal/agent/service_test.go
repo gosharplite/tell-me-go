@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -139,8 +138,8 @@ func (m *mockServiceSessionDependencies) GetSecurityManager() security.Manager {
 func (m *mockServiceSessionDependencies) GetEventBus() events.EventBus {
 	return m.Called().Get(0).(events.EventBus)
 }
-func (m *mockServiceSessionDependencies) GetLogger() *slog.Logger {
-	return m.Called().Get(0).(*slog.Logger)
+func (m *mockServiceSessionDependencies) GetLogger() ports.Logger {
+	return m.Called().Get(0).(ports.Logger)
 }
 func (m *mockServiceSessionDependencies) GetTurnsLogger() ports.TurnsLogger {
 	args := m.Called()
@@ -297,7 +296,7 @@ func TestProcessMessage(t *testing.T) {
 				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
-				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetLogger").Return(&ports.NoOpLogger{})
 				deps.On("GetTurnsLogger").Return(tl)
 				deps.On("GetSessionProvider").Return(nil)
 
@@ -364,7 +363,7 @@ func TestProcessMessage(t *testing.T) {
 				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
-				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetLogger").Return(&ports.NoOpLogger{})
 				deps.On("GetTurnsLogger").Return(tl)
 				deps.On("GetSessionProvider").Return(nil)
 
@@ -496,7 +495,7 @@ func TestProcessMessage(t *testing.T) {
 				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
-				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetLogger").Return(&ports.NoOpLogger{})
 				deps.On("GetTurnsLogger").Return(tl)
 				deps.On("GetSessionProvider").Return(nil)
 
@@ -543,7 +542,7 @@ func TestProcessMessage(t *testing.T) {
 				deps.On("GetPaths").Return(&persistence.Paths{TurnsLogPath: "turns.log"})
 				deps.On("GetHistoryManager").Return(mockHM)
 				deps.On("GetPricingData").Return(pricing.PricingData{})
-				deps.On("GetLogger").Return(slog.Default())
+				deps.On("GetLogger").Return(&ports.NoOpLogger{})
 				deps.On("GetTurnsLogger").Return(tl)
 				deps.On("GetSessionProvider").Return(nil)
 

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -18,14 +17,14 @@ import (
 type historyPruner struct {
 	Policy ports.PruningPolicy
 	Events events.EventBus
-	Logger *slog.Logger
+	Logger ports.Logger
 }
 
-func (t *historyPruner) getLogger() *slog.Logger {
+func (t *historyPruner) getLogger() ports.Logger {
 	if t.Logger != nil {
 		return t.Logger
 	}
-	return slog.Default()
+	return &ports.NoOpLogger{}
 }
 
 func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -68,10 +67,10 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 
 func (t *historyPruner) reportPruning(ctx context.Context, req *ports.ContextRequest, initialTurnCount, prunedCount, keptCount int) error {
 	t.getLogger().Info("History pruning triggered",
-		slog.Int("initial_turns", initialTurnCount),
-		slog.Int("pruned_turns", prunedCount),
-		slog.Int("remaining_turns", keptCount),
-		slog.Any("policy_breakdown", req.Metadata.KeptByPolicy),
+		"initial_turns", initialTurnCount,
+		"pruned_turns", prunedCount,
+		"remaining_turns", keptCount,
+		"policy_breakdown", req.Metadata.KeptByPolicy,
 	)
 
 	if t.Events != nil {
@@ -82,8 +81,8 @@ func (t *historyPruner) reportPruning(ctx context.Context, req *ports.ContextReq
 		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
 			if !errors.Is(err, events.ErrBusNotInitialized) {
 				t.getLogger().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
+					"event_type", string(evt.Type()),
+					"error", err)
 				return err
 			}
 		}

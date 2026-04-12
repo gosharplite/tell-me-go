@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -28,7 +27,7 @@ type tokenGatekeeper struct {
 	Events      events.EventBus
 	Strategies  map[string]ThresholdStrategy
 	DefaultTier string
-	Logger      *slog.Logger
+	Logger      ports.Logger
 }
 
 func (t *tokenGatekeeper) getStrategy() ThresholdStrategy {
@@ -95,8 +94,8 @@ func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
 			if !errors.Is(err, events.ErrBusNotInitialized) {
 				t.getLogger().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
+					"event_type", string(evt.Type()),
+					"error", err)
 				return tokens, err
 			}
 		}
@@ -147,8 +146,8 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 			if err := events.SafePublish(ctx, t.Events, e1); err != nil {
 				if !errors.Is(err, events.ErrBusNotInitialized) {
 					t.getLogger().Error("event_publish_failed",
-						slog.String("event_type", string(e1.Type())),
-						slog.Any("error", err))
+						"event_type", string(e1.Type()),
+						"error", err)
 				}
 			}
 
@@ -159,8 +158,8 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 			if err := events.SafePublish(ctx, t.Events, e2); err != nil {
 				if !errors.Is(err, events.ErrBusNotInitialized) {
 					t.getLogger().Error("event_publish_failed",
-						slog.String("event_type", string(e2.Type())),
-						slog.Any("error", err))
+						"event_type", string(e2.Type()),
+						"error", err)
 				}
 			}
 		}
@@ -222,8 +221,8 @@ func (t *tokenGatekeeper) publishSystemEvent(ctx context.Context, message, level
 	if err := events.SafePublish(ctx, t.Events, evt); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			t.getLogger().Error("event_publish_failed",
-				slog.String("event_type", string(evt.Type())),
-				slog.Any("error", err))
+				"event_type", string(evt.Type()),
+				"error", err)
 		}
 	}
 }
@@ -349,9 +348,9 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 	return updated
 }
 
-func (t *tokenGatekeeper) getLogger() *slog.Logger {
+func (t *tokenGatekeeper) getLogger() ports.Logger {
 	if t.Logger != nil {
 		return t.Logger
 	}
-	return slog.Default()
+	return &ports.NoOpLogger{}
 }

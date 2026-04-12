@@ -75,7 +75,7 @@ func TestBuildSessionDependencies_LazyInitialization_Proxy(t *testing.T) {
 	require.True(t, ok)
 	client := concreteDeps.GetClient()
 	assert.NotNil(t, client)
-	
+
 	// Calling methods on client proxy should also return the same error
 	err = client.RefreshAuth()
 	assert.Error(t, err)
@@ -97,7 +97,7 @@ func TestBuildSessionDependencies_LazyRegistry(t *testing.T) {
 	}
 
 	b := NewBootstrapper(tempDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
-	
+
 	callCount := 0
 	mockToolchain := new(mockToolchainFactory)
 	mockToolchain.On("BuildRegistry", mock.Anything).Run(func(args mock.Arguments) {

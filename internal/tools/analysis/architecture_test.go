@@ -339,12 +339,12 @@ func TestArchitectureManager_Classify(t *testing.T) {
 		// Special Case: internal/service/toolchain maps to Infrastructure
 		{"github.com/org/repo/internal/service/toolchain/compiler", LayerInfrastructure},
 		// Edge Cases & Unknowns
-		{"github.com/org/repo", LayerUnknown},                 // Module root
-		{"github.com/org/repo/internal", LayerUnknown},          // Bare internal
-		{"github.com/org/repo/internal/unknown", LayerUnknown},   // Unknown internal segment
-		{"github.com/org/repo/pkg/external", LayerUnknown},      // Outside tracked directories
+		{"github.com/org/repo", LayerUnknown},                  // Module root
+		{"github.com/org/repo/internal", LayerUnknown},         // Bare internal
+		{"github.com/org/repo/internal/unknown", LayerUnknown}, // Unknown internal segment
+		{"github.com/org/repo/pkg/external", LayerUnknown},     // Outside tracked directories
 		{"github.com/other/module/pkg", LayerUnknown},          // External module
-		{"", LayerUnknown},                                     // Empty path
+		{"", LayerUnknown}, // Empty path
 	}
 
 	for _, tt := range tests {
