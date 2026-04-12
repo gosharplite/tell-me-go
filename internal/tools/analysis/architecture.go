@@ -39,7 +39,8 @@ type architectureManager struct {
 	Runner     AnalysisGoRunner
 	idx        symbolIndex
 	ModulePath string
-	once       sync.Once
+	once       sync.Once // for ModulePath detection
+	loaderOnce sync.Once // for Loader initialization
 	Loader     packageProvider
 }
 
@@ -165,13 +166,15 @@ type rule struct {
 }
 
 func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	if m.Loader == nil {
-		if m.idx != nil {
-			m.Loader = &indexedPackageProvider{m: m, idx: m.idx}
-		} else {
-			m.Loader = &realpackageProvider{m: m, Runner: m.Runner}
+	m.loaderOnce.Do(func() {
+		if m.Loader == nil {
+			if m.idx != nil {
+				m.Loader = &indexedPackageProvider{m: m, idx: m.idx}
+			} else {
+				m.Loader = &realpackageProvider{m: m, Runner: m.Runner}
+			}
 		}
-	}
+	})
 
 	// Heartbeat while loading packages
 	done := make(chan struct{})
