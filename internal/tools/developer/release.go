@@ -203,7 +203,7 @@ func (s *secretScanner) scanContent(content []byte, path string, patterns []*reg
 	for _, re := range patterns {
 		if m := re.Find(content); m != nil {
 			secret := string(m)
-			masked := secret
+			var masked string
 			if len(secret) > 8 {
 				masked = fmt.Sprintf("%s...%s", secret[:4], secret[len(secret)-4:])
 			} else {
