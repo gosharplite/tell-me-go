@@ -164,6 +164,24 @@ func (p *pathPolicy) isSystemDirectory(absPath string, getenv EnvProvider, goos 
 	isWindows := goos == "windows"
 
 	if isWindows {
+		// HARDCODED FALLBACKS (Defense in Depth)
+		fallbacks := []string{
+			`C:\Windows`,
+			`C:\Program Files`,
+			`C:\Program Files (x86)`,
+			`C:\ProgramData`,
+		}
+		for _, f := range fallbacks {
+			val := f
+			if runtime.GOOS != "windows" && !strings.HasPrefix(val, "/") {
+				val = "/" + val
+			}
+			abs, err := filepath.Abs(filepath.Clean(val))
+			if err == nil {
+				sensitive = append(sensitive, abs)
+			}
+		}
+
 		// Populate sensitive Windows directories via environment variables
 		winDirs := []string{"SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "WINDIR"}
 		for _, env := range winDirs {

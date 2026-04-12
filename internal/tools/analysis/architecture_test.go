@@ -155,7 +155,7 @@ func TestArchitectureManager_FormatReport(t *testing.T) {
 
 func TestArchitectureManager_IsLayer(t *testing.T) {
 	t.Parallel()
-	m := &architectureManager{}
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	tests := []struct {
 		pkg   string
 		layer string
@@ -166,6 +166,7 @@ func TestArchitectureManager_IsLayer(t *testing.T) {
 		{"github.com/org/repo/internal/domain-logic", LayerDomain, false},
 		{"github.com/org/repo/internal/agent/service", LayerApplication, true},
 		{"github.com/org/repo/internal/pkg/stringsutil", LayerShared, true},
+		{"github.com/org/repo/internal/service/toolchain/compiler", LayerInfrastructure, true},
 		{"github.com/org/repo/pkg/domain", LayerDomain, false},
 	}
 

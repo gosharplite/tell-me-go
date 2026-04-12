@@ -222,46 +222,44 @@ func (m *architectureManager) sendHeartbeat(hb chan<- struct{}) {
 }
 
 func (m *architectureManager) classify(pkgPath string) string {
-	if m.isCmd(pkgPath) {
+	rel := strings.TrimPrefix(pkgPath, m.ModulePath)
+	rel = strings.Trim(rel, "/")
+	if rel == "" {
+		return LayerUnknown
+	}
+
+	segments := strings.Split(rel, "/")
+	if segments[0] == "cmd" {
 		return LayerCmd
 	}
 
-	const internalSegment = "internal/"
-	idx := strings.Index(pkgPath, internalSegment)
-	if idx == -1 {
-		return LayerUnknown
+	if segments[0] == "internal" {
+		if len(segments) < 2 {
+			return LayerUnknown
+		}
+
+		// Special Case: internal/service/toolchain
+		if segments[1] == "service" && len(segments) > 2 && segments[2] == "toolchain" {
+			return LayerInfrastructure
+		}
+
+		switch segments[1] {
+		case "domain":
+			return LayerDomain
+		case "infrastructure":
+			return LayerInfrastructure
+		case "agent", "cli", "ui", "service", "application":
+			return LayerApplication
+		case "tools":
+			return LayerTools
+		case "pkg":
+			return LayerShared
+		default:
+			return LayerUnknown
+		}
 	}
 
-	// Ensure it's exactly the segment "internal/"
-	if idx > 0 && pkgPath[idx-1] != '/' {
-		return LayerUnknown
-	}
-
-	remaining := pkgPath[idx+len(internalSegment):]
-	if strings.HasPrefix(remaining, "service/toolchain") {
-		return LayerInfrastructure
-	}
-
-	parts := strings.Split(remaining, "/")
-	if len(parts) == 0 || parts[0] == "" {
-		return LayerUnknown
-	}
-
-	segment := parts[0]
-	switch segment {
-	case "domain":
-		return LayerDomain
-	case "infrastructure":
-		return LayerInfrastructure
-	case "agent", "cli", "ui", "service", "application":
-		return LayerApplication
-	case "tools":
-		return LayerTools
-	case "pkg":
-		return LayerShared
-	default:
-		return LayerUnknown
-	}
+	return LayerUnknown
 }
 
 func (m *architectureManager) isLayer(pkgPath, layerName string) bool {
@@ -271,10 +269,6 @@ func (m *architectureManager) isLayer(pkgPath, layerName string) bool {
 func (m *architectureManager) isCompositionRoot(pkgPath string) bool {
 	return strings.Contains(pkgPath, "internal/infrastructure/di") ||
 		strings.Contains(pkgPath, "internal/infrastructure/factory")
-}
-
-func (m *architectureManager) isCmd(pkgPath string) bool {
-	return strings.Contains(pkgPath, "/cmd/") || strings.HasSuffix(pkgPath, "/cmd")
 }
 
 func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb chan<- struct{}) []violation {
@@ -343,14 +337,7 @@ func (m *architectureManager) checkSinglePackageViolations(pkg string, imports [
 
 		for _, imp := range imports {
 			for _, forbidden := range rule.Forbidden {
-				match := false
-				if forbidden == LayerCmd {
-					match = m.isCmd(imp)
-				} else {
-					match = m.isLayer(imp, forbidden)
-				}
-
-				if match {
+				if m.isLayer(imp, forbidden) {
 					violations = append(violations, violation{
 						pkg:      shortPkg,
 						category: "[LAYER VIOLATION]",
@@ -372,7 +359,7 @@ func (m *architectureManager) checkGeneralCmdImport(pkg string, imports []string
 	var found []violation
 	shortPkg := m.shorten(pkg)
 	for _, imp := range imports {
-		if m.isCmd(imp) {
+		if m.isLayer(imp, LayerCmd) {
 			candidate := violation{
 				pkg:      shortPkg,
 				category: "[LAYER VIOLATION]",

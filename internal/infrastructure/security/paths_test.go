@@ -313,6 +313,22 @@ func TestPathPolicy_IsSystemDirectory_Internal(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "Windows: hardcoded fallbacks when env is empty",
+			path: func() string {
+				val := `C:\Windows\System32`
+				if os.PathSeparator == '/' {
+					val = "/" + val
+				}
+				abs, _ := filepath.Abs(filepath.Clean(val))
+				return abs
+			}(),
+			goos: "windows",
+			getenv: func(s string) string {
+				return ""
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -323,4 +339,52 @@ func TestPathPolicy_IsSystemDirectory_Internal(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPathPolicy_RegisterPath_Idempotency(t *testing.T) {
+	t.Parallel()
+	p := newPathPolicy(nil)
+	testPath := "/tmp/idempotent_test"
+	absPath, _ := filepath.Abs(testPath)
+
+	t.Run("Safe Paths (writable=true)", func(t *testing.T) {
+		p.RegisterPath(testPath, true)
+		p.RegisterPath(testPath, true)
+
+		paths := p.GetPaths(true)
+		if len(paths) != 1 {
+			t.Errorf("expected 1 safe path, got %d", len(paths))
+		}
+		if paths[0] != absPath {
+			t.Errorf("expected path %s, got %s", absPath, paths[0])
+		}
+	})
+
+	t.Run("Read-Only Paths (writable=false)", func(t *testing.T) {
+		p.RegisterPath(testPath, false)
+		p.RegisterPath(testPath, false)
+
+		paths := p.GetPaths(false)
+		if len(paths) != 1 {
+			t.Errorf("expected 1 read-only path, got %d", len(paths))
+		}
+		if paths[0] != absPath {
+			t.Errorf("expected path %s, got %s", absPath, paths[0])
+		}
+	})
+
+	t.Run("Empty path input", func(t *testing.T) {
+		initialSafeCount := len(p.GetPaths(true))
+		initialROCount := len(p.GetPaths(false))
+
+		p.RegisterPath("", true)
+		p.RegisterPath("", false)
+
+		if len(p.GetPaths(true)) != initialSafeCount {
+			t.Errorf("RegisterPath(\"\") added a safe path")
+		}
+		if len(p.GetPaths(false)) != initialROCount {
+			t.Errorf("RegisterPath(\"\") added a read-only path")
+		}
+	})
 }
