@@ -8,11 +8,13 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -144,9 +146,20 @@ func (idx *indexer) harvestPackages(ctx context.Context, fset *token.FileSet, pk
 	results := make(chan pkgResult, len(pkgs))
 	g, gCtx := errgroup.WithContext(ctx)
 
+	limit := int64(runtime.NumCPU())
+	if limit < 1 {
+		limit = 1
+	}
+	sem := semaphore.NewWeighted(limit)
+
 	for _, pkg := range pkgs {
 		p := pkg // Captured for closure
 		g.Go(func() error {
+			if err := sem.Acquire(gCtx, 1); err != nil {
+				return err
+			}
+			defer sem.Release(1)
+
 			res, err := idx.processPackage(gCtx, fset, p)
 			if err != nil {
 				return err

@@ -116,7 +116,7 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	}
 	absPath = p.resolveSymlinks(absPath)
 
-	if err := p.isSystemDirectory(absPath); err != nil {
+	if err := p.isSystemDirectory(absPath, os.Getenv, runtime.GOOS); err != nil {
 		return "", err
 	}
 
@@ -143,7 +143,10 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	return "", fmt.Errorf("%w: path '%s' is not in a %s boundary", domain_security.ErrSandboxViolation, path, mode)
 }
 
-func (p *pathPolicy) isSystemDirectory(absPath string) error {
+// EnvProvider defines a function type for environment variable lookups.
+type EnvProvider func(string) string
+
+func (p *pathPolicy) isSystemDirectory(absPath string, getenv EnvProvider, goos string) error {
 	// NEW: Explicitly exempt CWD and its children
 	if cwd, err := os.Getwd(); err == nil {
 		if ok, _ := p.checkBoundary(absPath, cwd); ok {
@@ -158,13 +161,13 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 
 	// 2. Standard Deny-List
 	var sensitive []string
-	isWindows := runtime.GOOS == "windows"
+	isWindows := goos == "windows"
 
 	if isWindows {
 		// Populate sensitive Windows directories via environment variables
-		winDirs := []string{"SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData"}
+		winDirs := []string{"SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "WINDIR"}
 		for _, env := range winDirs {
-			if val := os.Getenv(env); val != "" {
+			if val := getenv(env); val != "" {
 				abs, err := filepath.Abs(filepath.Clean(val))
 				if err == nil {
 					sensitive = append(sensitive, abs)
@@ -176,6 +179,10 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 	}
 
 	separator := string(os.PathSeparator)
+	if isWindows {
+		separator = "\\"
+	}
+
 	for _, s := range sensitive {
 		if isWindows {
 			sLower := strings.ToLower(s)

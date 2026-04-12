@@ -16,21 +16,15 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 	cwd, _ := os.Getwd()
 
 	// Test CWD exemption
-	if err := p.isSystemDirectory(cwd); err != nil {
+	if err := p.isSystemDirectory(cwd, os.Getenv, runtime.GOOS); err != nil {
 		t.Errorf("expected CWD to be allowed, got error: %v", err)
 	}
 
 	// Test Temp dir exemption
 	tempDir := os.TempDir()
-	// We need to be careful here because resolvedTempDir might have symlinks resolved
-	// but the check in isSystemDirectory uses strings.HasPrefix with p.resolvedTempDir
-	// and p.resolvedTempDir has a trailing separator.
-	
-	// Since we can't easily guess how it was initialized in newPathPolicy, 
-	// let's just check that SOME temp file is allowed.
 	tempFile := filepath.Join(tempDir, "test.txt")
 	absTempFile, _ := filepath.Abs(tempFile)
-	if err := p.isSystemDirectory(absTempFile); err != nil {
+	if err := p.isSystemDirectory(absTempFile, os.Getenv, runtime.GOOS); err != nil {
 		t.Errorf("expected temp file to be allowed, got error: %v", err)
 	}
 
@@ -60,7 +54,7 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				abs, _ := filepath.Abs(tt.path)
-				err := p.isSystemDirectory(abs)
+				err := p.isSystemDirectory(abs, os.Getenv, runtime.GOOS)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("isSystemDirectory(%s) error = %v, wantErr %v", tt.path, err, tt.wantErr)
 				}
@@ -78,7 +72,7 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 		if sysRoot != "" {
 			absSys, _ := filepath.Abs(sysRoot)
 			t.Run("SystemRoot is forbidden", func(t *testing.T) {
-				if err := p.isSystemDirectory(absSys); err == nil {
+				if err := p.isSystemDirectory(absSys, os.Getenv, runtime.GOOS); err == nil {
 					t.Errorf("expected SystemRoot (%s) to be forbidden", absSys)
 				}
 			})
@@ -86,7 +80,7 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 			t.Run("SystemRoot subdir is forbidden (case-insensitive)", func(t *testing.T) {
 				path := filepath.Join(strings.ToUpper(sysRoot), "System32")
 				abs, _ := filepath.Abs(path)
-				if err := p.isSystemDirectory(abs); err == nil {
+				if err := p.isSystemDirectory(abs, os.Getenv, runtime.GOOS); err == nil {
 					t.Errorf("expected %s to be forbidden", abs)
 				}
 			})

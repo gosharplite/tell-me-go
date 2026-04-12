@@ -219,3 +219,108 @@ func TestNewPathPolicy_Initialization(t *testing.T) {
 		t.Errorf("expected resolvedTempDir to be populated")
 	}
 }
+
+func TestPathPolicy_IsSystemDirectory_Internal(t *testing.T) {
+	p := newPathPolicy(nil)
+	cwd, _ := os.Getwd()
+
+	tests := []struct {
+		name    string
+		path    string
+		goos    string
+		getenv  EnvProvider
+		wantErr bool
+	}{
+		{
+			name: "Unix: forbidden /etc",
+			path: "/etc/passwd",
+			goos: "linux",
+			getenv: func(s string) string { return "" },
+			wantErr: true,
+		},
+		{
+			name: "Unix: forbidden /usr/bin",
+			path: "/usr/bin/go",
+			goos: "linux",
+			getenv: func(s string) string { return "" },
+			wantErr: true,
+		},
+		{
+			name: "Unix: allowed /tmp/test",
+			path: filepath.Join(os.TempDir(), "test.txt"),
+			goos: "linux",
+			getenv: func(s string) string { return "" },
+			wantErr: false,
+		},
+		{
+			name: "Unix: allowed CWD",
+			path: filepath.Join(cwd, "test.txt"),
+			goos: "linux",
+			getenv: func(s string) string { return "" },
+			wantErr: false,
+		},
+		{
+			name: "Windows: forbidden WINDIR",
+			path: "/windows\\system32",
+			goos: "windows",
+			getenv: func(s string) string {
+				if s == "WINDIR" {
+					return "/windows"
+				}
+				return ""
+			},
+			wantErr: true,
+		},
+		{
+			name: "Windows: forbidden ProgramFiles",
+			path: "/ProgramFiles\\App",
+			goos: "windows",
+			getenv: func(s string) string {
+				if s == "ProgramFiles" {
+					return "/ProgramFiles"
+				}
+				return ""
+			},
+			wantErr: true,
+		},
+		{
+			name: "Windows: forbidden exact match",
+			path: "/windows",
+			goos: "windows",
+			getenv: func(s string) string {
+				if s == "SystemRoot" {
+					return "/windows"
+				}
+				return ""
+			},
+			wantErr: true,
+		},
+		{
+			name: "Windows: allowed CWD",
+			path: filepath.Join(cwd, "safe.txt"),
+			goos: "windows",
+			getenv: func(s string) string {
+				return ""
+			},
+			wantErr: false,
+		},
+		{
+			name: "Windows: missing env variables",
+			path: "C:\\SomeDir\\File.txt",
+			goos: "windows",
+			getenv: func(s string) string {
+				return ""
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := p.isSystemDirectory(tt.path, tt.getenv, tt.goos)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("isSystemDirectory() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
