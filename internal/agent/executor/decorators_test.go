@@ -6,11 +6,13 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 )
@@ -167,5 +169,37 @@ func TestFormatToolExecutionError(t *testing.T) {
 	t.Run("no errors", func(t *testing.T) {
 		got := formatToolExecutionError(nil, nil)
 		assert.Equal(t, "", got)
+	})
+}
+
+func TestClassifyToolError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Security error - includes message", func(t *testing.T) {
+		err := fmt.Errorf("%w: access to system directory '/var' is forbidden", domain_security.ErrSandboxViolation)
+		status, msg := classifyToolError(err, nil)
+		assert.Equal(t, "security_blocked", status)
+		assert.Contains(t, msg, "Action blocked by the system sandbox security policy")
+		assert.Contains(t, msg, "access to system directory '/var' is forbidden")
+	})
+
+	t.Run("User declined", func(t *testing.T) {
+		err := tools.ErrUserDeclined
+		status, msg := classifyToolError(err, nil)
+		assert.Equal(t, "user_declined", status)
+		assert.Contains(t, msg, "The user explicitly denied this action")
+	})
+
+	t.Run("Other error", func(t *testing.T) {
+		err := errors.New("other error")
+		status, msg := classifyToolError(err, nil)
+		assert.Equal(t, "error", status)
+		assert.Equal(t, "", msg)
+	})
+
+	t.Run("Success", func(t *testing.T) {
+		status, msg := classifyToolError(nil, nil)
+		assert.Equal(t, "success", status)
+		assert.Equal(t, "", msg)
 	})
 }

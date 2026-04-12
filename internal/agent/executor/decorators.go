@@ -322,7 +322,7 @@ func classifyToolError(err error, resultErr error) (string, string) {
 		return "user_declined", "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach."
 	}
 	if checkBoth(err, resultErr, isSecurityError) {
-		return "security_blocked", "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
+		return "security_blocked", fmt.Sprintf("Action blocked by the system sandbox security policy: %v", formatToolExecutionError(err, resultErr))
 	}
 	// Logic remains identical to original: cancellation and other errors both return "error"
 	if checkBoth(err, resultErr, isCancellationError) || err != nil || resultErr != nil {

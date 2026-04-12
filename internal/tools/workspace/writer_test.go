@@ -614,9 +614,9 @@ func TestDeletePath_RecursiveAuthorization(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(false) // Trigger authorization check
 	sm.RegisterSafePath(tempDir)
-	
+
 	fs := infrapersistence.NewOSFileSystem()
-	
+
 	t.Run("authorized", func(t *testing.T) {
 		ms := &mockSecurity_Authorize{writerSecurity: sm, authorized: true}
 		w := &fileWriter{sm: ms, bm: newBackupManager(sm, fs, 10), fs: fs}

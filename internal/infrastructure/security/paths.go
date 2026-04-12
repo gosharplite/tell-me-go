@@ -143,6 +143,13 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 }
 
 func (p *pathPolicy) isSystemDirectory(absPath string) error {
+	// NEW: Explicitly exempt CWD and its children
+	if cwd, err := os.Getwd(); err == nil {
+		if ok, _ := p.checkBoundary(absPath, cwd); ok {
+			return nil
+		}
+	}
+
 	// 1. Explicitly exempt the evaluated OS temporary directory
 	if p.resolvedTempDir != "" && strings.HasPrefix(absPath, p.resolvedTempDir) {
 		return nil

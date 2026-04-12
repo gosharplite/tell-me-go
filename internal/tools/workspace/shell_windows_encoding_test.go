@@ -10,12 +10,12 @@ import (
 
 func TestWindowsShellWrapper_UTF8Forcing(t *testing.T) {
 	wrapper := &windowsShellWrapper{}
-	
+
 	t.Run("PowerShell forced to UTF-8", func(t *testing.T) {
 		cmd := "Get-ChildItem"
 		parts := []string{"Get-ChildItem"}
 		wrapped := wrapper.Wrap(cmd, parts)
-		
+
 		foundUTF8 := false
 		for _, arg := range wrapped {
 			if strings.Contains(arg, "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;") {
@@ -23,7 +23,7 @@ func TestWindowsShellWrapper_UTF8Forcing(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if !foundUTF8 {
 			t.Errorf("expected wrapped command to contain UTF-8 forcing, got %v", wrapped)
 		}

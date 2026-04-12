@@ -845,7 +845,9 @@ type mockFSWithErrors struct {
 func (m *mockFSWithErrors) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
 	return m.file, nil
 }
-func (m *mockFSWithErrors) MkdirAll(ctx context.Context, path string, perm os.FileMode) error { return nil }
+func (m *mockFSWithErrors) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+	return nil
+}
 func (m *mockFSWithErrors) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	return nil, os.ErrNotExist
 }

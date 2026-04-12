@@ -206,13 +206,13 @@ func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
 	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	pkgs := map[string][]string{
 		"github.com/org/repo/internal/domain": {
-			"github.com/org/repo/internal/agent",         // Violation
-			"github.com/org/repo/internal/pkg/clock",     // OK
+			"github.com/org/repo/internal/agent",     // Violation
+			"github.com/org/repo/internal/pkg/clock", // OK
 		},
 		"github.com/org/repo/internal/agent": {
-			"github.com/org/repo/internal/domain",        // OK
-			"github.com/org/repo/cmd/app",                // Violation
-			"github.com/org/repo/internal/pkg/strings",   // OK
+			"github.com/org/repo/internal/domain",      // OK
+			"github.com/org/repo/cmd/app",              // Violation
+			"github.com/org/repo/internal/pkg/strings", // OK
 		},
 	}
 
