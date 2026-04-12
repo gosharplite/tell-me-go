@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package session_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -69,7 +70,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	bridge := newUIBridge(mock, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
+	bridge := session.NewUIBridge(mock, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -85,7 +86,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 		bridge.Cleanup()
 	}()
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
-		_ = bridge.handleEvent(ctx, e)
+		_ = bridge.HandleEvent(ctx, e)
 	})
 
 	// Phase 1: The Panic
@@ -115,13 +116,13 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	logBuffer := inframock.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mockRenderer := new(mockUIRenderer)
+	mockRenderer := new(session.MockUIRenderer)
 	// This mock will panic when StartSpinnerWithStatus is called
 	mockRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("intentional test panic")
 	}).Return(func() {})
 
-	bridge := newUIBridge(mockRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
+	bridge := session.NewUIBridge(mockRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -138,7 +139,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	}()
 
 	// Trigger the panic
-	_ = bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+	_ = bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
 
 	// Wait for shutdown and check logs
 	select {
@@ -159,16 +160,16 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mRenderer := new(mockUIRenderer)
+	mRenderer := new(session.MockUIRenderer)
 	// Mock the renderer to return a closure that panics when called.
-	// We use .Maybe() because syncBridge might trigger resumeActiveSpinner which calls this again.
+	// We use .Maybe() because SyncBridge might trigger resumeActiveSpinner which calls this again.
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {
 		panic("renderer panic in stop closure")
 	}).Maybe()
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
+	bridge := session.NewUIBridge(mRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
 	done := make(chan struct{})
 	testCtx, testCancel := context.WithCancel(context.Background())
 	t.Cleanup(testCancel)
@@ -185,11 +186,11 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	}()
 
 	// 1. Start a spinner to set b.stopSpinner.
-	_ = bridge.handleEvent(ctx, events.InferenceStartedEvent{Model: "test-model"})
+	_ = bridge.HandleEvent(ctx, events.InferenceStartedEvent{Model: "test-model"})
 
 	// 2. Wait for the event to be processed and b.stopSpinner to be set.
-	// Use syncBridge to ensure the first event is fully processed.
-	syncBridge(t, bridge, mRenderer)
+	// Use SyncBridge to ensure the first event is fully processed.
+	session.SyncBridge(t, bridge, mRenderer)
 
 	// 3. Trigger a primary panic.
 	// This will trigger the recovery block, which calls b.stopActiveSpinner().
@@ -198,7 +199,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 		panic("primary panic")
 	}).Once()
 
-	_ = bridge.handleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{Mode: "test"}})
+	_ = bridge.HandleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{Mode: "test"}})
 
 	// 4. Assert that the uiBridge survives and cancels successfully.
 	select {
@@ -217,13 +218,13 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	logBuffer := inframock.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mRenderer := new(mockUIRenderer)
+	mRenderer := new(session.MockUIRenderer)
 	// First event panics
 	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("first panic")
 	}).Once()
 
-	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
+	bridge := session.NewUIBridge(mRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)
@@ -234,11 +235,10 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 		close(errChan)
 	}()
 	bridge.WaitStarted()
-	bridge.WaitStarted()
 
 	// Send two events
-	_ = bridge.handleEvent(ctx, events.TurnStatusEvent{})
-	_ = bridge.handleEvent(ctx, events.ResponseEvent{})
+	_ = bridge.HandleEvent(ctx, events.TurnStatusEvent{})
+	_ = bridge.HandleEvent(ctx, events.ResponseEvent{})
 
 	// Wait for shutdown and cleanup
 	bridge.CloseInput()
@@ -255,10 +255,10 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 
 func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(mockUIRenderer)
+	mRenderer := new(session.MockUIRenderer)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("test.log"), withBridgeLogger(logger))
+	bridge := session.NewUIBridge(mRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)
@@ -276,17 +276,17 @@ func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	// Attempt to send an event after the channel is closed.
 	// This should trigger the panic recovery and return without crashing.
 	assert.NotPanics(t, func() {
-		_ = bridge.handleEvent(ctx, events.ResponseEvent{})
+		_ = bridge.HandleEvent(ctx, events.ResponseEvent{})
 	})
 
 	// Ensure that critical events also don't panic.
 	assert.NotPanics(t, func() {
-		_ = bridge.handleEvent(ctx, events.TurnStarted{})
+		_ = bridge.HandleEvent(ctx, events.TurnStarted{})
 	})
 
 	// Ensure that transient events also don't panic.
 	assert.NotPanics(t, func() {
-		_ = bridge.handleEvent(ctx, events.InferenceStartedEvent{})
+		_ = bridge.HandleEvent(ctx, events.InferenceStartedEvent{})
 	})
 
 	// Clean up.

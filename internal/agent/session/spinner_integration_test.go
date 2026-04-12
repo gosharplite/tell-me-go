@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package session_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -76,7 +77,7 @@ func (c *controlledClock) Tick() {
 func TestSpinner_E2E_Visibility(t *testing.T) {
 	// 1. Setup Environment
 	stdoutRaw, stderrRaw := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
-	stderr := &syncWriter{Writer: stderrRaw, onWrite: make(chan struct{}, 100)}
+	stderr := &session.SyncWriter{Writer: stderrRaw, OnWrite: make(chan struct{}, 100)}
 	stdout := stdoutRaw
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
@@ -87,9 +88,9 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	uiRenderer := ui.NewRenderer(nil, stdout, stderr, clock, nil)
 	uiRenderer.SetForceSpinner(true) // Bypass TTY check for testing
 
-	mChatter := new(mockChatter)
-	mCapturer := new(mockCapturer)
-	mHistory := new(mockHistoryManager)
+	mChatter := new(session.MockChatter)
+	mCapturer := new(session.MockCapturer)
+	mHistory := new(session.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
@@ -97,7 +98,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		return mChatter, nil
 	}
 
-	orch := newSessionManager("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
+	orch := session.NewSessionManager("home", "1.0.0", nil, nil, stdout, stderr, factory, nil, uiRenderer, clock, strings.NewReader("deterministic_entropy"))
 
 	// 2. Mock Agent Behavior
 	// When Chat is called, it will emit events via the event bus.
@@ -122,7 +123,7 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 
 		// Wait for the spinner to start and write to stderr
 		select {
-		case <-stderr.onWrite:
+		case <-stderr.OnWrite:
 		case <-time.After(5 * time.Second):
 			t.Fatal("Timeout waiting for spinner start")
 		}
@@ -131,14 +132,14 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 		// Phase B: Ticks (Spinner frames)
 		clock.Tick() // Frame 1
 		select {
-		case <-stderr.onWrite:
+		case <-stderr.OnWrite:
 		case <-time.After(2 * time.Second):
 			t.Error("Timeout waiting for spinner frame 1")
 		}
 
 		clock.Tick() // Frame 2
 		select {
-		case <-stderr.onWrite:
+		case <-stderr.OnWrite:
 		case <-time.After(2 * time.Second):
 			t.Error("Timeout waiting for spinner frame 2")
 		}
@@ -150,12 +151,12 @@ func TestSpinner_E2E_Visibility(t *testing.T) {
 	}).Return(nil)
 
 	// 3. Execution
-	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model:            "model",
 		Mode:             "mode",
 		SelectedProvider: "provider",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(session.MockSessionProvider))
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	assert.NoError(t, err)
@@ -183,7 +184,7 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	// the spinner continues to run because it's using the bridge's session context.
 
 	stdoutRaw, stderrRaw := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
-	stderr := &syncWriter{Writer: stderrRaw, onWrite: make(chan struct{}, 100)}
+	stderr := &session.SyncWriter{Writer: stderrRaw, OnWrite: make(chan struct{}, 100)}
 	stdout := stdoutRaw
 	clock := &controlledClock{
 		now:         time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
@@ -194,13 +195,13 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	uiRenderer.SetForceSpinner(true)
 
 	// Create bridge with a long-lived context
-	bridge := newUIBridge(uiRenderer,
-		withBridgeThoughts(true),
-		withBridgeTools(true),
-		withBridgeRawOutput(false),
-		withBridgeColor(true),
-		withBridgeLogFile("log.txt"),
-		withBridgeLogger(slog.Default()),
+	bridge := session.NewUIBridge(uiRenderer,
+		session.WithBridgeThoughts(true),
+		session.WithBridgeTools(true),
+		session.WithBridgeRawOutput(false),
+		session.WithBridgeColor(true),
+		session.WithBridgeLogFile("log.txt"),
+		session.WithBridgeLogger(slog.Default()),
 	)
 	sessionCtx, sessionCancel := context.WithCancel(context.Background())
 	t.Cleanup(sessionCancel)
@@ -221,11 +222,11 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	handlerCtx, cancel := context.WithTimeout(sessionCtx, 100*time.Millisecond)
 	defer cancel()
 
-	_ = bridge.handleEvent(handlerCtx, events.InferenceStartedEvent{})
+	_ = bridge.HandleEvent(handlerCtx, events.InferenceStartedEvent{})
 
 	// Wait for the spinner to start
 	select {
-	case <-stderr.onWrite:
+	case <-stderr.OnWrite:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for spinner start")
 	}
@@ -235,13 +236,13 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	stderrRaw.Reset()
 	clock.Tick()
 	select {
-	case <-stderr.onWrite:
+	case <-stderr.OnWrite:
 	case <-time.After(2 * time.Second):
 		t.Error("Timeout waiting for spinner tick after handler context expired")
 	}
 	clock.Tick()
 	select {
-	case <-stderr.onWrite:
+	case <-stderr.OnWrite:
 	case <-time.After(2 * time.Second):
 		t.Error("Timeout waiting for second spinner tick")
 	}
@@ -250,5 +251,5 @@ func TestSpinner_ContextTimeout_Resilience(t *testing.T) {
 	assert.Contains(t, output, "⠙", "Spinner should still be ticking even after handler context expired")
 
 	// Cleanup
-	_ = bridge.handleEvent(sessionCtx, events.ResponseEvent{Content: &llm.Content{}})
+	_ = bridge.HandleEvent(sessionCtx, events.ResponseEvent{Content: &llm.Content{}})
 }

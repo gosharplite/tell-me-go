@@ -65,8 +65,32 @@ type mockLoader struct {
 }
 
 type mockTracker struct {
-	domain_pricing.CostTracker
+	mu sync.Mutex
 }
+
+func (m *mockTracker) CalculateCost(mt llm.Metrics) float64 {
+	return 0.05
+}
+
+func (m *mockTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
+	return 0.05
+}
+
+func (m *mockTracker) Accumulate(mt llm.Metrics) {}
+
+func (m *mockTracker) GetTotalCost(ctx context.Context) float64 {
+	return 0.05
+}
+
+func (m *mockTracker) GetDailyCost(ctx context.Context) float64 {
+	return 0.05
+}
+
+func (m *mockTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
+	return domain_pricing.UsageStats{}, 0.05
+}
+
+func (m *mockTracker) Warmup() {}
 
 type mockSessionLoader struct {
 	domain_config.SessionLoader
