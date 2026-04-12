@@ -6,6 +6,7 @@ package security
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -14,6 +15,11 @@ func TestPathPolicy_ValidatePath(t *testing.T) {
 	p := newPathPolicy(nil)
 	cwd, _ := os.Getwd()
 	tempDir := os.TempDir()
+
+	outsidePath := "/tellmego_outside"
+	if runtime.GOOS == "windows" {
+		outsidePath = `C:\tellmego_outside`
+	}
 
 	tests := []struct {
 		name     string
@@ -35,32 +41,37 @@ func TestPathPolicy_ValidatePath(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:     "Outside is unsafe by default",
-			path:     "/etc/passwd",
+			name: "Outside is unsafe by default",
+			path: func() string {
+				if runtime.GOOS == "windows" {
+					return `C:\Windows\System32\drivers\etc\hosts`
+				}
+				return "/etc/passwd"
+			}(),
 			writable: false,
 			wantErr:  true,
 		},
 		{
 			name:     "Registered safe path is safe",
-			path:     "/nonexistent/safe/file.txt",
+			path:     filepath.Join(outsidePath, "safe", "file.txt"),
 			writable: true,
 			setup: func() {
-				p.RegisterPath("/nonexistent/safe", true)
+				p.RegisterPath(filepath.Join(outsidePath, "safe"), true)
 			},
 			wantErr: false,
 		},
 		{
 			name:     "Registered read-only path is safe for read",
-			path:     "/nonexistent/readonly/file.txt",
+			path:     filepath.Join(outsidePath, "readonly", "file.txt"),
 			writable: false,
 			setup: func() {
-				p.RegisterPath("/nonexistent/readonly", false)
+				p.RegisterPath(filepath.Join(outsidePath, "readonly"), false)
 			},
 			wantErr: false,
 		},
 		{
 			name:     "Registered read-only path is unsafe for write",
-			path:     "/nonexistent/readonly/file.txt",
+			path:     filepath.Join(outsidePath, "readonly", "file.txt"),
 			writable: true,
 			wantErr:  true,
 		},
@@ -68,13 +79,12 @@ func TestPathPolicy_ValidatePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			if tt.setup != nil {
 				tt.setup()
 			}
 			_, err := p.ValidatePath(tt.path, tt.writable)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidatePath() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ValidatePath(%s) error = %v, wantErr %v", tt.path, err, tt.wantErr)
 			}
 		})
 	}
@@ -130,14 +140,23 @@ func TestPathPolicy_SymlinkBypass_DirectAccess(t *testing.T) {
 	p, workspace := setupSymlinkTestEnv(t)
 
 	// Test symlink to a forbidden system file
+	var target string
+	if runtime.GOOS == "windows" {
+		target = `C:\Windows\System32\drivers\etc\hosts`
+	} else {
+		target = "/etc/passwd"
+	}
 	passwdLink := filepath.Join(workspace, "passwd_link")
-	target := "/etc/passwd"
 
 	// Create symlink. If it fails, we might be on a platform that requires admin for symlinks
 	// or doesn't support this path.
 	if err := os.Symlink(target, passwdLink); err != nil {
 		// Fallback to a non-existent path that is outside our boundaries
-		target = "/nonexistent_outside_path"
+		if runtime.GOOS == "windows" {
+			target = `C:\nonexistent_outside_path`
+		} else {
+			target = "/nonexistent_outside_path"
+		}
 		if err := os.Symlink(target, passwdLink); err != nil {
 			t.Skip("failed to create symlink for test")
 		}
@@ -172,16 +191,23 @@ func TestPathPolicy_SymlinkBypass_NonExistentTarget(t *testing.T) {
 	p, workspace := setupSymlinkTestEnv(t)
 
 	// Link inside workspace to /etc (which is forbidden)
-	linkToEtc := filepath.Join(workspace, "etc_link")
-	if err := os.Symlink("/etc", linkToEtc); err != nil {
-		t.Skip("failed to create link to /etc")
+	var forbiddenDir string
+	if runtime.GOOS == "windows" {
+		forbiddenDir = `C:\Windows`
+	} else {
+		forbiddenDir = "/etc"
+	}
+
+	linkToForbidden := filepath.Join(workspace, "forbidden_link")
+	if err := os.Symlink(forbiddenDir, linkToForbidden); err != nil {
+		t.Skipf("failed to create link to %s", forbiddenDir)
 	}
 
 	// Path to non-existent file via the link
-	targetPath := filepath.Join(linkToEtc, "new_file.txt")
+	targetPath := filepath.Join(linkToForbidden, "new_file.txt")
 
 	if _, err := p.ValidatePath(targetPath, true); err == nil {
-		t.Error("ValidatePath allowed creation of file in /etc via symlink")
+		t.Errorf("ValidatePath allowed creation of file in %s via symlink", forbiddenDir)
 	}
 }
 
@@ -189,16 +215,27 @@ func TestPathPolicy_SymlinkBypass_MultiLevelNonExistent(t *testing.T) {
 	t.Parallel()
 	p, workspace := setupSymlinkTestEnv(t)
 
-	linkToEtc := filepath.Join(workspace, "etc_link_multi")
-	if err := os.Symlink("/etc", linkToEtc); err != nil {
-		t.Skip("failed to create link to /etc")
+	var forbiddenDir string
+	if runtime.GOOS == "windows" {
+		forbiddenDir = `C:\Windows`
+	} else {
+		forbiddenDir = "/etc"
+	}
+
+	linkToForbidden := filepath.Join(workspace, "forbidden_link_multi")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(forbiddenDir, linkToForbidden); err != nil {
+		t.Skipf("failed to create link to %s", forbiddenDir)
 	}
 
 	// Two levels of non-existence
-	targetPath := filepath.Join(linkToEtc, "nonexistent_dir", "new_file.txt")
+	targetPath := filepath.Join(linkToForbidden, "nonexistent_dir", "new_file.txt")
 
 	if _, err := p.ValidatePath(targetPath, true); err == nil {
-		t.Error("ValidatePath allowed creation of file in /etc/nonexistent_dir via symlink")
+		t.Errorf("ValidatePath allowed creation of file in %s/nonexistent_dir via symlink", forbiddenDir)
 	}
 }
 
@@ -206,11 +243,11 @@ func TestNewPathPolicy_Initialization(t *testing.T) {
 	t.Parallel()
 
 	// 1. Test Defensive Copy
-	original := []string{"/tmp/safe"}
+	original := []string{filepath.Join(os.TempDir(), "safe")}
 	p := newPathPolicy(original)
 
-	original[0] = "/tmp/hacked"
-	if p.safePaths[0] == "/tmp/hacked" {
+	original[0] = filepath.Join(os.TempDir(), "hacked")
+	if p.safePaths[0] == filepath.Join(os.TempDir(), "hacked") {
 		t.Errorf("safePaths suffered from slice reference leak")
 	}
 
@@ -227,115 +264,44 @@ func TestPathPolicy_IsSystemDirectory_Internal(t *testing.T) {
 	tests := []struct {
 		name    string
 		path    string
-		goos    string
-		getenv  EnvProvider
 		wantErr bool
 	}{
 		{
-			name: "Unix: forbidden /etc",
-			path: "/etc/passwd",
-			goos: "linux",
-			getenv: func(s string) string { return "" },
-			wantErr: true,
-		},
-		{
-			name: "Unix: forbidden /usr/bin",
-			path: "/usr/bin/go",
-			goos: "linux",
-			getenv: func(s string) string { return "" },
-			wantErr: true,
-		},
-		{
-			name: "Unix: allowed /tmp/test",
-			path: filepath.Join(os.TempDir(), "test.txt"),
-			goos: "linux",
-			getenv: func(s string) string { return "" },
-			wantErr: false,
-		},
-		{
-			name: "Unix: allowed CWD",
-			path: filepath.Join(cwd, "test.txt"),
-			goos: "linux",
-			getenv: func(s string) string { return "" },
-			wantErr: false,
-		},
-		{
-			name: "Windows: forbidden WINDIR",
-			path: "/windows\\system32",
-			goos: "windows",
-			getenv: func(s string) string {
-				if s == "WINDIR" {
-					return "/windows"
-				}
-				return ""
-			},
-			wantErr: true,
-		},
-		{
-			name: "Windows: forbidden ProgramFiles",
-			path: "/ProgramFiles\\App",
-			goos: "windows",
-			getenv: func(s string) string {
-				if s == "ProgramFiles" {
-					return "/ProgramFiles"
-				}
-				return ""
-			},
-			wantErr: true,
-		},
-		{
-			name: "Windows: forbidden exact match",
-			path: "/windows",
-			goos: "windows",
-			getenv: func(s string) string {
-				if s == "SystemRoot" {
-					return "/windows"
-				}
-				return ""
-			},
-			wantErr: true,
-		},
-		{
-			name: "Windows: allowed CWD",
-			path: filepath.Join(cwd, "safe.txt"),
-			goos: "windows",
-			getenv: func(s string) string {
-				return ""
-			},
-			wantErr: false,
-		},
-		{
-			name: "Windows: missing env variables",
-			path: "C:\\SomeDir\\File.txt",
-			goos: "windows",
-			getenv: func(s string) string {
-				return ""
-			},
-			wantErr: false,
-		},
-		{
-			name: "Windows: hardcoded fallbacks when env is empty",
+			name: "Forbidden system directory",
 			path: func() string {
-				val := `C:\Windows\System32`
-				if os.PathSeparator == '/' {
-					val = "/" + val
+				if runtime.GOOS == "windows" {
+					return `C:\Windows\System32`
 				}
-				abs, _ := filepath.Abs(filepath.Clean(val))
-				return abs
+				return "/etc/passwd"
 			}(),
-			goos: "windows",
-			getenv: func(s string) string {
-				return ""
-			},
 			wantErr: true,
+		},
+		{
+			name:    "Allowed Temp directory",
+			path:    filepath.Join(os.TempDir(), "test.txt"),
+			wantErr: false,
+		},
+		{
+			name:    "Allowed CWD",
+			path:    filepath.Join(cwd, "test.txt"),
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := p.isSystemDirectory(tt.path, tt.getenv, tt.goos)
+			err := p.isSystemDirectory(tt.path)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("isSystemDirectory() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("isSystemDirectory(%s) error = %v, wantErr %v", tt.path, err, tt.wantErr)
+			}
+		})
+	}
+
+	if runtime.GOOS == "windows" {
+		t.Run("Windows: case-insensitive check", func(t *testing.T) {
+			err := p.isSystemDirectory(`c:\windows\system32`)
+			if err == nil {
+				t.Error("expected error for case-insensitive system directory match on Windows")
 			}
 		})
 	}
@@ -344,7 +310,7 @@ func TestPathPolicy_IsSystemDirectory_Internal(t *testing.T) {
 func TestPathPolicy_RegisterPath_Idempotency(t *testing.T) {
 	t.Parallel()
 	p := newPathPolicy(nil)
-	testPath := "/tmp/idempotent_test"
+	testPath := filepath.Join(os.TempDir(), "idempotent_test")
 	absPath, _ := filepath.Abs(testPath)
 
 	t.Run("Safe Paths (writable=true)", func(t *testing.T) {

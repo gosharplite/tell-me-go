@@ -81,7 +81,8 @@ func verifyPathBoundaries(t *testing.T, policy *pathPolicy, originalPath, valida
 	}
 
 	// 3. The path must be within one of the authorized boundaries
-	allowed := []string{cwd, temp, "/tmp", "/private/tmp"}
+	allowed := []string{cwd, temp}
+	allowed = append(allowed, getExtraTempDirs()...)
 	allowed = append(allowed, policy.GetPaths(true)...)
 	if !writable {
 		allowed = append(allowed, policy.GetPaths(false)...)

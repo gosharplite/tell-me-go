@@ -16,7 +16,7 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 	cwd, _ := os.Getwd()
 
 	// Test CWD exemption
-	if err := p.isSystemDirectory(cwd, os.Getenv, runtime.GOOS); err != nil {
+	if err := p.isSystemDirectory(cwd); err != nil {
 		t.Errorf("expected CWD to be allowed, got error: %v", err)
 	}
 
@@ -24,7 +24,7 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 	tempDir := os.TempDir()
 	tempFile := filepath.Join(tempDir, "test.txt")
 	absTempFile, _ := filepath.Abs(tempFile)
-	if err := p.isSystemDirectory(absTempFile, os.Getenv, runtime.GOOS); err != nil {
+	if err := p.isSystemDirectory(absTempFile); err != nil {
 		t.Errorf("expected temp file to be allowed, got error: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				abs, _ := filepath.Abs(tt.path)
-				err := p.isSystemDirectory(abs, os.Getenv, runtime.GOOS)
+				err := p.isSystemDirectory(abs)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("isSystemDirectory(%s) error = %v, wantErr %v", tt.path, err, tt.wantErr)
 				}
@@ -72,15 +72,15 @@ func TestIsSystemDirectory_PlatformAware(t *testing.T) {
 		if sysRoot != "" {
 			absSys, _ := filepath.Abs(sysRoot)
 			t.Run("SystemRoot is forbidden", func(t *testing.T) {
-				if err := p.isSystemDirectory(absSys, os.Getenv, runtime.GOOS); err == nil {
+				if err := p.isSystemDirectory(absSys); err == nil {
 					t.Errorf("expected SystemRoot (%s) to be forbidden", absSys)
 				}
 			})
-			
+
 			t.Run("SystemRoot subdir is forbidden (case-insensitive)", func(t *testing.T) {
 				path := filepath.Join(strings.ToUpper(sysRoot), "System32")
 				abs, _ := filepath.Abs(path)
-				if err := p.isSystemDirectory(abs, os.Getenv, runtime.GOOS); err == nil {
+				if err := p.isSystemDirectory(abs); err == nil {
 					t.Errorf("expected %s to be forbidden", abs)
 				}
 			})

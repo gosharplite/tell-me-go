@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -58,12 +57,11 @@ func (p *pathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error
 		return true, nil
 	}
 
-	// NEW: System-wide /tmp (including symlink resolution)
-	if ok, _ := p.checkBoundary(absPath, "/tmp"); ok {
-		return true, nil
-	}
-	if ok, _ := p.checkBoundary(absPath, "/private/tmp"); ok {
-		return true, nil
+	// Platform-specific extra temp boundaries (e.g., /tmp, /private/tmp for Unix)
+	for _, tmpDir := range getExtraTempDirs() {
+		if ok, _ := p.checkBoundary(absPath, tmpDir); ok {
+			return true, nil
+		}
 	}
 
 	return false, nil
@@ -116,7 +114,7 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	}
 	absPath = p.resolveSymlinks(absPath)
 
-	if err := p.isSystemDirectory(absPath, os.Getenv, runtime.GOOS); err != nil {
+	if err := p.isSystemDirectory(absPath); err != nil {
 		return "", err
 	}
 
@@ -143,11 +141,8 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	return "", fmt.Errorf("%w: path '%s' is not in a %s boundary", domain_security.ErrSandboxViolation, path, mode)
 }
 
-// EnvProvider defines a function type for environment variable lookups.
-type EnvProvider func(string) string
-
-func (p *pathPolicy) isSystemDirectory(absPath string, getenv EnvProvider, goos string) error {
-	// NEW: Explicitly exempt CWD and its children
+func (p *pathPolicy) isSystemDirectory(absPath string) error {
+	// Explicitly exempt CWD and its children
 	if cwd, err := os.Getwd(); err == nil {
 		if ok, _ := p.checkBoundary(absPath, cwd); ok {
 			return nil
@@ -155,54 +150,25 @@ func (p *pathPolicy) isSystemDirectory(absPath string, getenv EnvProvider, goos 
 	}
 
 	// 1. Explicitly exempt the evaluated OS temporary directory
-	if p.resolvedTempDir != "" && strings.HasPrefix(absPath, p.resolvedTempDir) {
-		return nil
+	if p.resolvedTempDir != "" {
+		temp := p.resolvedTempDir
+		if !isCaseSensitive() {
+			temp = strings.ToLower(temp)
+			abs := strings.ToLower(absPath)
+			if strings.HasPrefix(abs, temp) {
+				return nil
+			}
+		} else if strings.HasPrefix(absPath, temp) {
+			return nil
+		}
 	}
 
-	// 2. Standard Deny-List
-	var sensitive []string
-	isWindows := goos == "windows"
-
-	if isWindows {
-		// HARDCODED FALLBACKS (Defense in Depth)
-		fallbacks := []string{
-			`C:\Windows`,
-			`C:\Program Files`,
-			`C:\Program Files (x86)`,
-			`C:\ProgramData`,
-		}
-		for _, f := range fallbacks {
-			val := f
-			if runtime.GOOS != "windows" && !strings.HasPrefix(val, "/") {
-				val = "/" + val
-			}
-			abs, err := filepath.Abs(filepath.Clean(val))
-			if err == nil {
-				sensitive = append(sensitive, abs)
-			}
-		}
-
-		// Populate sensitive Windows directories via environment variables
-		winDirs := []string{"SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "WINDIR"}
-		for _, env := range winDirs {
-			if val := getenv(env); val != "" {
-				abs, err := filepath.Abs(filepath.Clean(val))
-				if err == nil {
-					sensitive = append(sensitive, abs)
-				}
-			}
-		}
-	} else {
-		sensitive = []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys", "/private/etc", "/private/var"}
-	}
-
-	separator := string(os.PathSeparator)
-	if isWindows {
-		separator = "\\"
-	}
+	sensitive := getSystemDirectories()
+	separator := string(filepath.Separator)
+	caseSensitive := isCaseSensitive()
 
 	for _, s := range sensitive {
-		if isWindows {
+		if !caseSensitive {
 			sLower := strings.ToLower(s)
 			absLower := strings.ToLower(absPath)
 			if absLower == sLower || strings.HasPrefix(absLower, sLower+separator) {
