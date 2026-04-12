@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package agent_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -40,7 +41,13 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 
 	// Register a slow tool to keep the agent busy
 	toolProceed := make(chan struct{})
-	defer close(toolProceed) // Ensure it's closed to prevent deadlock
+	defer func() {
+		select {
+		case <-toolProceed:
+		default:
+			close(toolProceed)
+		}
+	}()
 	err := reg.Register(&tools.ToolDeclaration{
 		Name: "slow_tool",
 	}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -64,9 +71,9 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
-	a, err := NewAgent(mockClient, bus, hManager, "test-provider", reg, sm)
+	a, err := agent.NewAgent(mockClient, bus, hManager, "test-provider", reg, sm)
 	require.NoError(t, err)
-	session := &ports.Session{History: hManager, StartTime: time.Now()}
+	sess := &ports.Session{History: hManager, StartTime: time.Now()}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -77,7 +84,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	// Goroutine 1: Run Chat
 	go func() {
 		defer wg.Done()
-		_ = a.Chat(ctx, session, "start")
+		_ = a.Chat(ctx, sess, "start")
 	}()
 
 	// Goroutine 2: Hammer configuration updates
@@ -124,7 +131,13 @@ func TestDispatcher_ConcurrentExecutionAndConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	toolProceedTask := make(chan struct{})
-	defer close(toolProceedTask)
+	defer func() {
+		select {
+		case <-toolProceedTask:
+		default:
+			close(toolProceedTask)
+		}
+	}()
 
 	err = reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 		select {
@@ -250,16 +263,15 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	inframock.CleanupBus(t, bus)
 
 	// Create a single engine instance
-	gw := &mockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{
-				PromptTokens:   1000,
-				ResponseTokens: 1000,
-			}, nil
-		},
+	gw := &agent.MockLLMClient{}
+	gw.SendChatFn = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{
+			PromptTokens:   1000,
+			ResponseTokens: 1000,
+		}, nil
 	}
 
-	executor := &mockExecutor{
+	mockEx := &agent.MockExecutor{
 		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 			return nil, nil
 		},
@@ -268,11 +280,11 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	cm := session.NewContextManager(strategy, h, bus, nil)
-	cm.Pipeline = session.NewContextPipeline()
+	cm.SetPipeline(session.NewContextPipeline())
 
-	tracker := &mockEngineCostTracker{} // Returns 0.05 per call
+	tracker := &agent.MockCostTracker{} // Returns 0.05 per call
 
-	e := orchestrator.NewEngine(gw, executor, cm, reg, bus, strategy, orchestrator.WithEngineCostTracker(tracker))
+	e := orchestrator.NewEngine(gw, mockEx, cm, reg, bus, strategy, orchestrator.WithEngineCostTracker(tracker))
 	strategy.SetLimits(10000, 10, 10)
 
 	var wg sync.WaitGroup

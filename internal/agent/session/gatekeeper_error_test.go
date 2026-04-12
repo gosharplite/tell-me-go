@@ -1,4 +1,4 @@
-package session
+package session_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -46,11 +47,12 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 		req.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	gatekeeper := &tokenGatekeeper{
+	gatekeeper := &session.TokenGatekeeper{
 		MaxTokens:  100,
-		Estimator:  &mockEstimator{tokens: 95},
+		Estimator:  &session.MockEstimator{},
 		Summarizer: &mockFailingSummarizer{},
 	}
+	gatekeeper.Estimator.(*session.MockEstimator).SetTokens(95)
 
 	err := gatekeeper.Transform(ctx, req)
 	if err == nil || err.Error() != "summarizer failed" {
@@ -69,11 +71,12 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 		req2.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	tc := &mockTokenCounter{tokens: 95}
-	cs := NewContextStrategy(tc)
-	cs.setTieredThreshold(10)
+	tc := &session.MockTokenCounter{}
+	tc.SetTokens(95)
+	cs := session.NewContextStrategy(tc)
+	cs.SetTieredThreshold(10)
 
-	gatekeeper2 := &tokenGatekeeper{
+	gatekeeper2 := &session.TokenGatekeeper{
 		MaxTokens:  100,
 		Estimator:  cs,
 		Summarizer: &mockFailingSummarizer{},
@@ -86,10 +89,11 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 }
 
 func TestContextManager_FirstMessageRoleError(t *testing.T) {
-	tc := &mockTokenCounter{tokens: 10}
-	cs := NewContextStrategy(tc)
-	hm := &mockHistoryManager{}
-	cm := NewContextManager(cs, hm, nil, nil)
+	tc := &session.MockTokenCounter{}
+	tc.SetTokens(10)
+	cs := session.NewContextStrategy(tc)
+	hm := &session.MockHistoryManager{}
+	cm := session.NewContextManager(cs, hm, nil, nil)
 
 	err := cm.AddContent(context.Background(), &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "first"}}})
 	if err == nil || err.Error() != "first message must be 'user', got 'model'" {
@@ -98,7 +102,7 @@ func TestContextManager_FirstMessageRoleError(t *testing.T) {
 }
 
 func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
-	hr := &historyRepairer{}
+	hr := &session.HistoryRepairer{}
 	req := &ports.ContextRequest{History: nil}
 	err := hr.Transform(context.Background(), req)
 	if err != nil {
@@ -107,19 +111,20 @@ func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 }
 
 func TestInternalTools_Errors(t *testing.T) {
-	tc := &mockTokenCounter{tokens: 10}
-	cs := NewContextStrategy(tc)
-	hm := &mockHistoryManager{}
-	cm := NewContextManager(cs, hm, nil, nil)
+	tc := &session.MockTokenCounter{}
+	tc.SetTokens(10)
+	cs := session.NewContextStrategy(tc)
+	hm := &session.MockHistoryManager{}
+	cm := session.NewContextManager(cs, hm, nil, nil)
 
-	it := NewInternalTools(cm)
+	it := session.NewInternalTools(cm)
 
-	_, err := it.summarizeHistory(context.Background(), map[string]interface{}{"turns": "invalid"}, nil)
+	_, err := it.SummarizeHistory(context.Background(), map[string]interface{}{"turns": "invalid"}, nil)
 	if err == nil {
 		t.Error("Expected error from unmarshal in summarizeHistory")
 	}
 
-	_, err = it.summarizeHistory(context.Background(), map[string]interface{}{"turns": float64(1)}, nil)
+	_, err = it.SummarizeHistory(context.Background(), map[string]interface{}{"turns": float64(1)}, nil)
 	if err == nil || err.Error() != "terminal error: summarizer not initialized" {
 		t.Errorf("Expected summarizer error, got: %v", err)
 	}
@@ -187,15 +192,15 @@ func TestSessionManager_ConfigError(t *testing.T) {
 		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
-	o := newSessionManager("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
+	o := session.NewSessionManager("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
 
 	cfg := &config.Config{
 		SelectedProvider: "test",
 	}
-	sc := newSessionConfig("", false, 0, 0, false, "test prompt", cfg)
+	sc := session.NewSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := newSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
+	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(session.MockSessionProvider))
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
@@ -209,11 +214,12 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	mockBus.SetPublishErr(context.Canceled)
 
 	// Create a strategy that will trigger warnings to force event publishing
-	counter := &mockTokenCounter{tokens: 200}
-	strategy := NewContextStrategy(counter)
-	strategy.setTieredThreshold(100) // Trigger tiered threshold
+	counter := &session.MockTokenCounter{}
+	counter.SetTokens(200)
+	strategy := session.NewContextStrategy(counter)
+	strategy.SetTieredThreshold(100) // Trigger tiered threshold
 
-	gatekeeper := &tokenGatekeeper{
+	gatekeeper := &session.TokenGatekeeper{
 		MaxTokens: 1000,
 		Estimator: strategy,
 		Events:    mockBus,
@@ -238,9 +244,10 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{})
+	tc := &session.MockTokenCounter{}
+	strategy := session.NewContextStrategy(tc)
 
-	gatekeeper := &tokenGatekeeper{
+	gatekeeper := &session.TokenGatekeeper{
 		MaxTokens: 10,
 		Estimator: strategy,
 	}
@@ -256,6 +263,6 @@ func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T)
 		{Role: "user", Parts: []*llm.Part{{Text: "Message 2"}}},
 	}
 
-	_, _, _, err := gatekeeper.findSummarizableRange(ctx, history)
+	_, _, _, err := gatekeeper.FindSummarizableRange(ctx, history)
 	require.ErrorIs(t, err, context.Canceled)
 }

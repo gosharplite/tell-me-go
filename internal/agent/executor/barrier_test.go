@@ -1,13 +1,14 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package executor
+package executor_test
 
 import (
 	"context"
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -18,21 +19,21 @@ func TestDispatcher_ConcurrentSerialAndParallelTools(t *testing.T) {
 		t.Skip("skipping slow integration test in short mode")
 	}
 
-	toolsMap := map[string]toolBehavior{
+	toolsMap := map[string]executor.ToolBehavior{
 		"parallel_tool": {
-			observe: func() {},
-			result:  tools.ToolResult{Text: "parallel_ok"},
+			Observe: func() {},
+			Result:  tools.ToolResult{Text: "parallel_ok"},
 		},
 		"serial_tool": {
-			serial:  true,
-			observe: func() {},
-			result:  tools.ToolResult{Text: "serial_ok"},
+			Serial:  true,
+			Observe: func() {},
+			Result:  tools.ToolResult{Text: "serial_ok"},
 		},
 	}
 
 	t.Run("Parallel Before Serial", func(t *testing.T) {
 		t.Parallel()
-		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		exec, _, _ := SetupTestExecutor(t, toolsMap, nil)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "parallel_tool"}},
@@ -45,7 +46,7 @@ func TestDispatcher_ConcurrentSerialAndParallelTools(t *testing.T) {
 
 	t.Run("Serial Before Parallel", func(t *testing.T) {
 		t.Parallel()
-		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		exec, _, _ := SetupTestExecutor(t, toolsMap, nil)
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "serial_tool"}},
@@ -63,21 +64,21 @@ func TestDispatcher_ConcurrentSerialAndParallelTools(t *testing.T) {
 		var parallelStartedAfterSerial bool
 		var mu sync.Mutex
 
-		toolsMap := map[string]toolBehavior{
+		toolsMap := map[string]executor.ToolBehavior{
 			"p_tool": {
-				result: tools.ToolResult{Text: "p_ok"},
+				Result: tools.ToolResult{Text: "p_ok"},
 			},
 			"s_tool": {
-				serial: true,
-				result: tools.ToolResult{Text: "s_ok"},
+				Serial: true,
+				Result: tools.ToolResult{Text: "s_ok"},
 			},
 		}
 
-		exec, _, behaviors := setupTestExecutor(t, toolsMap, nil)
-		behaviors["s_tool"].observe = func() {
+		exec, _, behaviors := SetupTestExecutor(t, toolsMap, nil)
+		behaviors["s_tool"].Observe = func() {
 			close(serialFinished)
 		}
-		behaviors["p_tool"].observe = func() {
+		behaviors["p_tool"].Observe = func() {
 			select {
 			case <-serialFinished:
 				mu.Lock()

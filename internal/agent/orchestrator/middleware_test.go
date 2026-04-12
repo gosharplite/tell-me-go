@@ -1,53 +1,54 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package orchestrator_test
 
 import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
-type mockEventBus struct {
+type localMockEventBus struct {
 	events []events.Event
 }
 
-func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
+func (m *localMockEventBus) Publish(ctx context.Context, e events.Event) error {
 	m.events = append(m.events, e)
 	return nil
 }
 
-func (m *mockEventBus) Subscribe(f func(context.Context, events.Event)) {}
-func (m *mockEventBus) Shutdown(ctx context.Context) error              { return nil }
-func (m *mockEventBus) Flush(ctx context.Context) error                 { return nil }
-func (m *mockEventBus) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
+func (m *localMockEventBus) Subscribe(f func(context.Context, events.Event)) {}
+func (m *localMockEventBus) Shutdown(ctx context.Context) error              { return nil }
+func (m *localMockEventBus) Flush(ctx context.Context) error                 { return nil }
+func (m *localMockEventBus) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
 
-type mockProcessor struct {
+type localMockProcessor struct {
 	called bool
 }
 
-func (m *mockProcessor) Process(ctx context.Context, turn *turn) (processResult, error) {
+func (m *localMockProcessor) Process(ctx context.Context, turn *orchestrator.Turn) (orchestrator.ProcessResult, error) {
 	m.called = true
-	return processResult{}, nil
+	return orchestrator.ProcessResult{}, nil
 }
 
 func TestWithStatusReporter(t *testing.T) {
 	t.Parallel()
-	bus := &mockEventBus{}
-	engine := &Engine{events: bus}
-	mw := engine.withStatusReporter()
-	next := &mockProcessor{}
+	bus := &localMockEventBus{}
+	engine := orchestrator.NewEngine(nil, nil, nil, nil, bus, nil)
+	mw := engine.WithStatusReporter()
+	next := &localMockProcessor{}
 
-	strategy := session.NewContextStrategy(&mockTokenCounter{})
-	cm := newTestContextManager(strategy, &mockHistoryManager{}, bus)
-	turn := &turn{
-		State:      &turnState{Phase: phaseInference},
+	strategy := session.NewContextStrategy(&orchestrator.MockTokenCounter{})
+	cm := orchestrator.NewTestContextManager(strategy, &orchestrator.MockHistoryManager{}, bus)
+	turn := &orchestrator.Turn{
+		State:      &orchestrator.TurnState{Phase: orchestrator.PhaseInference},
 		CtxManager: cm,
-		Clock:      &mockClock{},
+		Clock:      &orchestrator.MockClock{},
 	}
 
 	_, _ = mw(next).Process(context.Background(), turn)
@@ -62,13 +63,13 @@ func TestWithStatusReporter(t *testing.T) {
 
 func TestWithMetrics(t *testing.T) {
 	t.Parallel()
-	bus := &mockEventBus{}
-	engine := &Engine{events: bus}
-	mw := engine.withMetrics()
-	next := &mockProcessor{}
+	bus := &localMockEventBus{}
+	engine := orchestrator.NewEngine(nil, nil, nil, nil, bus, nil)
+	mw := engine.WithMetrics()
+	next := &localMockProcessor{}
 
-	turn := &turn{
-		State: &turnState{Phase: phaseInference, Metrics: &llm.Metrics{}},
+	turn := &orchestrator.Turn{
+		State: &orchestrator.TurnState{Phase: orchestrator.PhaseInference, Metrics: &llm.Metrics{}},
 	}
 
 	_, _ = mw(next).Process(context.Background(), turn)
@@ -76,9 +77,4 @@ func TestWithMetrics(t *testing.T) {
 	if !next.called {
 		t.Error("Next processor was not called")
 	}
-}
-
-func TestWithLoopDetector_Rotation(t *testing.T) {
-	t.Parallel()
-	// This test depends on logic in middleware.go which uses domain_config.DefaultMaxLoopRepetitions
 }

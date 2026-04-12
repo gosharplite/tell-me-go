@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package orchestrator_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -22,15 +23,15 @@ import (
 )
 
 type errorPhaseTracker struct {
-	phases    []turnPhase
-	lastState *turnState
+	phases    []orchestrator.TurnPhase
+	lastState *orchestrator.TurnState
 }
 
-func (t *errorPhaseTracker) BeforeTurn(turn *turn) {}
-func (t *errorPhaseTracker) AfterTurn(turn *turn, err error) {
+func (t *errorPhaseTracker) BeforeTurn(turn *orchestrator.Turn) {}
+func (t *errorPhaseTracker) AfterTurn(turn *orchestrator.Turn, err error) {
 	t.lastState = turn.State
 }
-func (t *errorPhaseTracker) OnPhaseTransition(from, to turnPhase, state *turnState) {
+func (t *errorPhaseTracker) OnPhaseTransition(from, to orchestrator.TurnPhase, state *orchestrator.TurnState) {
 	t.phases = append(t.phases, to)
 }
 
@@ -45,15 +46,15 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 	return nil, nil
 }
 
-func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec ToolExecutor, tracker *errorPhaseTracker) (*Engine, *session.ContextManager) {
+func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec orchestrator.ToolExecutor, tracker *errorPhaseTracker) (*orchestrator.Engine, *session.ContextManager) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
-	reg := &mockToolRegistry{}
+	reg := &orchestrator.MockToolRegistry{}
 
 	tmpDir := t.TempDir()
 	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
-	strategy := session.NewContextStrategy(&mockTokenCounter{})
+	strategy := session.NewContextStrategy(&orchestrator.MockTokenCounter{})
 	factory := &session.PipelineFactory{
 		History:   hManager,
 		Events:    bus,
@@ -61,9 +62,9 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec ToolExecutor, tr
 	}
 	cm := session.NewContextManager(strategy, hManager, bus, factory)
 
-	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
+	policy := &orchestrator.DefaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
-	engine := NewEngine(gw, exec, cm, reg, bus, strategy, withEngineRetryPolicy(policy), withEngineHook(tracker), withEngineClock(&mockClock{}))
+	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, strategy, orchestrator.WithEngineRetryPolicy(policy), orchestrator.WithEngineHook(tracker), orchestrator.WithEngineClock(&orchestrator.MockClock{}))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -76,11 +77,11 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &mockGateway{
+	gw := &orchestrator.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
-				return nil, nil, newAgentError(llm.ErrTransient, "temporary failure", nil)
+				return nil, nil, orchestrator.NewAgentError(llm.ErrTransient, "temporary failure", nil)
 			}
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 		},
@@ -103,8 +104,8 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 		t.Errorf("Expected RetryCount 1, got %d", tracker.lastState.RetryCount)
 	}
 
-	// Verification: Phase sequence should include: Guard -> Refining -> Inference -> Recovering -> Refining -> Inference
-	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
+	// Verification: Phase sequence should include: PhaseGuard -> PhaseRefining -> PhaseInference -> PhaseRecovering -> PhaseRefining -> PhaseInference
+	expectedPhases := []orchestrator.TurnPhase{orchestrator.PhaseRefining, orchestrator.PhaseInference, orchestrator.PhaseRecovering, orchestrator.PhaseRefining, orchestrator.PhaseInference, orchestrator.PhasePersisting, orchestrator.PhaseComplete}
 
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
@@ -122,11 +123,11 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &mockGateway{
+	gw := &orchestrator.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
-				return nil, nil, newAgentError(llm.ErrRateLimit, "resource exhausted", nil)
+				return nil, nil, orchestrator.NewAgentError(llm.ErrRateLimit, "resource exhausted", nil)
 			}
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 		},
@@ -154,8 +155,8 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 		t.Errorf("Expected 2 calls, got %d", callCount)
 	}
 
-	// Verification: Phase sequence should include: Refining -> Inference -> Recovering -> Refining -> Inference -> Persisting -> Complete
-	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
+	// Verification: Phase sequence should include: PhaseRefining -> PhaseInference -> PhaseRecovering -> PhaseRefining -> PhaseInference -> PhasePersisting -> PhaseComplete
+	expectedPhases := []orchestrator.TurnPhase{orchestrator.PhaseRefining, orchestrator.PhaseInference, orchestrator.PhaseRecovering, orchestrator.PhaseRefining, orchestrator.PhaseInference, orchestrator.PhasePersisting, orchestrator.PhaseComplete}
 
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
@@ -173,10 +174,10 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &mockGateway{
+	gw := &orchestrator.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			return nil, nil, newAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
+			return nil, nil, orchestrator.NewAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
 		},
 	}
 
@@ -207,11 +208,11 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	}
 
 	// Phase sequence:
-	// 1. Guard -> Refining
-	// 2. Refining -> Inference
-	// 3. Inference -> Recovering
-	// 4. Recovering -> Complete
-	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseComplete}
+	// 1. Guard -> PhaseRefining
+	// 2. PhaseRefining -> PhaseInference
+	// 3. PhaseInference -> PhaseRecovering
+	// 4. PhaseRecovering -> PhaseComplete
+	expectedPhases := []orchestrator.TurnPhase{orchestrator.PhaseRefining, orchestrator.PhaseInference, orchestrator.PhaseRecovering, orchestrator.PhaseComplete}
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
 	} else {
@@ -227,7 +228,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	t.Parallel()
 	tracker := &errorPhaseTracker{}
 
-	gw := &mockGateway{
+	gw := &orchestrator.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{
 				Role:  "model",
@@ -238,7 +239,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 
 	exec := &errorMockExecutor{
 		executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-			return nil, newAgentError(errLogic, "tool not found", errLogic)
+			return nil, orchestrator.NewAgentError(orchestrator.ErrLogic, "tool not found", orchestrator.ErrLogic)
 		},
 	}
 
@@ -250,12 +251,12 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 		t.Fatal("Expected error, got nil")
 	}
 
-	if !errors.Is(err, errLogic) {
-		t.Errorf("Expected errLogic, got: %v", err)
+	if !errors.Is(err, orchestrator.ErrLogic) {
+		t.Errorf("Expected orchestrator.ErrLogic, got: %v", err)
 	}
 
-	// Verification: The state machine should transition to Recovering, see it's a Logic error, and then move to Complete (failure).
-	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseExecuting, phaseRecovering, phaseComplete}
+	// Verification: The state machine should transition to PhaseRecovering, see it's a Logic error, and then move to PhaseComplete (failure).
+	expectedPhases := []orchestrator.TurnPhase{orchestrator.PhaseRefining, orchestrator.PhaseInference, orchestrator.PhaseExecuting, orchestrator.PhaseRecovering, orchestrator.PhaseComplete}
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
 	} else {
@@ -272,10 +273,10 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &mockGateway{
+	gw := &orchestrator.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			return nil, nil, newAgentError(llm.ErrTransient, "always transient", nil)
+			return nil, nil, orchestrator.NewAgentError(llm.ErrTransient, "always transient", nil)
 		},
 	}
 
@@ -312,53 +313,54 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 
 func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 	t.Parallel()
-	gw := &mockGateway{}
+	gw := &orchestrator.MockGateway{}
 	exec := &errorMockExecutor{}
 	engine, _ := setupEngineForErrors(t, gw, exec, &errorPhaseTracker{})
 
-	turn := &turn{
-		State: &turnState{
+	turn := &orchestrator.Turn{
+		State: &orchestrator.TurnState{
 			Phase: "PhaseNonExistent",
 		},
-		Clock: &mockClock{},
+		Clock: &orchestrator.MockClock{},
 	}
 
-	_, err := engine.executePhase(context.Background(), turn)
+	// executePhase is unexported. Let's add it to export_test.go
+	_, err := orchestrator.ExecutePhase(engine, context.Background(), turn)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "no processor for phase") {
 		t.Errorf("Expected 'no processor for phase' in error message, got: %v", err)
 	}
-	if !errors.Is(err, errLogic) {
-		t.Errorf("Expected errLogic, got: %v", err)
+	if !errors.Is(err, orchestrator.ErrLogic) {
+		t.Errorf("Expected orchestrator.ErrLogic, got: %v", err)
 	}
 }
 
 func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	t.Parallel()
-	gw := &mockGateway{
+	gw := &orchestrator.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, nil // No error, but nil content
 		},
 	}
 
-	step := &inferenceStep{}
+	step := &orchestrator.InferenceStep{}
 
-	hm := &mockHistoryManager{}
+	hm := &orchestrator.MockHistoryManager{}
 	cm := &session.ContextManager{
 		History: hm,
 	}
-	reg := &mockToolRegistry{}
+	reg := &orchestrator.MockToolRegistry{}
 
-	turn := &turn{
+	turn := &orchestrator.Turn{
 		Gateway:    gw,
 		Registry:   reg,
 		CtxManager: cm,
-		State: &turnState{
+		State: &orchestrator.TurnState{
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		},
-		Clock: &mockClock{},
+		Clock: &orchestrator.MockClock{},
 	}
 
 	_, err := step.Process(context.Background(), turn)
@@ -368,8 +370,8 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	if !strings.Contains(err.Error(), "api returned nil content") {
 		t.Errorf("Expected 'api returned nil content' in error message, got: %v", err)
 	}
-	if !errors.Is(err, errLogic) {
-		t.Errorf("Expected errLogic, got: %v", err)
+	if !errors.Is(err, orchestrator.ErrLogic) {
+		t.Errorf("Expected orchestrator.ErrLogic, got: %v", err)
 	}
 }
 
@@ -377,20 +379,20 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 	t.Parallel()
 	expectedErr := errors.New("mock db failure")
 
-	hm := &mockHistoryManager{
+	hm := &orchestrator.MockHistoryManager{
 		Contents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		AddContentFunc: func(ctx context.Context, content *llm.Content) error {
 			return expectedErr
 		},
 	}
 
-	step := &persistenceStep{}
+	step := &orchestrator.PersistenceStep{}
 
-	turn := &turn{
+	turn := &orchestrator.Turn{
 		CtxManager: &session.ContextManager{
 			History: hm,
 		},
-		State: &turnState{
+		State: &orchestrator.TurnState{
 			Response:     &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}},
 			ToolResponse: &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Result"}}},
 		},
@@ -409,7 +411,7 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 	t.Parallel()
 	expectedErr := llm.ErrTransient // Use transient error to hit the 'if isTransient' block
 
-	hm := &mockHistoryManager{
+	hm := &orchestrator.MockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "Model"}}},
@@ -419,13 +421,13 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 		},
 	}
 
-	step := &persistenceStep{}
+	step := &orchestrator.PersistenceStep{}
 
-	turn := &turn{
+	turn := &orchestrator.Turn{
 		CtxManager: &session.ContextManager{
 			History: hm,
 		},
-		State: &turnState{
+		State: &orchestrator.TurnState{
 			// Skip Response to isolate ToolResponse test
 			Response:     nil,
 			ToolResponse: &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Result"}}},
@@ -443,13 +445,13 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 
 func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 	t.Parallel()
-	step := &executionStep{}
+	step := &orchestrator.ExecutionStep{}
 
 	expectedErr := llm.ErrTransient // Is transient
 
 	ctx := context.Background()
-	turnObj := &turn{
-		State: &turnState{
+	turnObj := &orchestrator.Turn{
+		State: &orchestrator.TurnState{
 			HasToolCalls: true,
 			Response:     &llm.Content{},
 		},
@@ -458,7 +460,7 @@ func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 				return nil, expectedErr
 			},
 		},
-		Clock: &mockClock{},
+		Clock: &orchestrator.MockClock{},
 	}
 
 	_, err := step.Process(ctx, turnObj)

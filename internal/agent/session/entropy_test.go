@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package session_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -24,14 +25,14 @@ import (
 )
 
 func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
-	mChatter := new(mockChatter)
-	mCapturer := new(mockCapturer)
-	mHistory := new(mockHistoryManager)
+	mChatter := new(session.MockChatter)
+	mCapturer := new(session.MockCapturer)
+	mHistory := new(session.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, mEventBus)
 
-	mClock := new(mockClock)
-	mEntropy := new(mockEntropySource)
+	mClock := new(session.MockClock)
+	mEntropy := new(session.MockEntropySource)
 
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
@@ -45,15 +46,15 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 		return mChatter, nil
 	}
 
-	mHistoryRenderer := new(mockHistoryRenderer)
-	mUIRenderer := new(mockUIRenderer)
-	orch := newSessionManager("home", "1.0.0", nil, nil, io.Discard, &stderr, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
+	mHistoryRenderer := new(session.MockHistoryRenderer)
+	mUIRenderer := new(session.MockUIRenderer)
+	orch := session.NewSessionManager("home", "1.0.0", nil, nil, io.Discard, &stderr, factory, mHistoryRenderer, mUIRenderer, mClock, mEntropy)
 
-	sCfg := newSessionConfig("", false, 0, 0, false, "hello", &config.Config{
+	sCfg := session.NewSessionConfig("", false, 0, 0, false, "hello", &config.Config{
 		Model: "model",
 		Mode:  "mode",
 	})
-	deps := newSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(mockSessionProvider))
+	deps := session.NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus, slog.Default(), &ports.NoOpTurnsLogger{}, new(session.MockSessionProvider))
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()

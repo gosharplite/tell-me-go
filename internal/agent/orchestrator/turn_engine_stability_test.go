@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package orchestrator_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -16,12 +17,12 @@ import (
 
 func TestTurnEngine_RetryCap(t *testing.T) {
 	t.Parallel()
-	policy := &defaultRetryPolicy{
+	policy := &orchestrator.DefaultRetryPolicy{
 		MaxRetries:       15,
 		Backoff:          1 * time.Second,
 		RateLimitBackoff: 5 * time.Second,
 	}
-	c := &mockClock{}
+	c := &orchestrator.MockClock{}
 
 	// Test exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 120s (cap)
 	// attempt 0: delay = 1s
@@ -60,7 +61,7 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 	}
 
 	// Test initial cap when base > maxDelay
-	policyLarge := &defaultRetryPolicy{
+	policyLarge := &orchestrator.DefaultRetryPolicy{
 		MaxRetries: 5,
 		Backoff:    300 * time.Second,
 	}
@@ -74,14 +75,14 @@ func TestTurnEngine_NilGuards_Robustness(t *testing.T) {
 	t.Parallel()
 	t.Run("hasToolCalls handles nil content", func(t *testing.T) {
 		t.Parallel()
-		step := &inferenceStep{}
+		step := &orchestrator.InferenceStep{}
 		// Assert no panic occurs
 		defer func() {
 			if r := recover(); r != nil {
 				t.Errorf("hasToolCalls panicked with nil content: %v", r)
 			}
 		}()
-		if step.hasToolCalls(nil) != false {
+		if step.HasToolCalls(nil) != false {
 			t.Error("hasToolCalls(nil) should be false")
 		}
 	})
@@ -89,41 +90,41 @@ func TestTurnEngine_NilGuards_Robustness(t *testing.T) {
 
 func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 	t.Parallel()
-	policy := &defaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Second}
-	step := &recoveryStep{Policy: policy}
+	policy := &orchestrator.DefaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Second}
+	step := &orchestrator.RecoveryStep{Policy: policy}
 
 	t.Run("Transient error triggers retry state (Refining)", func(t *testing.T) {
 		t.Parallel()
-		turn := &turn{
-			State: &turnState{
+		turn := &orchestrator.Turn{
+			State: &orchestrator.TurnState{
 				LastError:  llm.ErrTransient,
 				RetryCount: 0,
 			},
-			Clock: &mockClock{},
+			Clock: &orchestrator.MockClock{},
 		}
 		res, err := step.Process(context.Background(), turn)
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
-		if res.NextPhase != phaseRefining {
-			t.Errorf("Expected NextPhase %s, got %s", phaseRefining, res.NextPhase)
+		if res.NextPhase != orchestrator.PhaseRefining {
+			t.Errorf("Expected NextPhase %s, got %s", orchestrator.PhaseRefining, res.NextPhase)
 		}
 	})
 
 	t.Run("Terminal error breaks loop immediately (Complete)", func(t *testing.T) {
 		t.Parallel()
-		turn := &turn{
-			State: &turnState{
+		turn := &orchestrator.Turn{
+			State: &orchestrator.TurnState{
 				LastError: llm.ErrTerminal,
 			},
-			Clock: &mockClock{},
+			Clock: &orchestrator.MockClock{},
 		}
 		res, err := step.Process(context.Background(), turn)
 		if !errors.Is(err, llm.ErrTerminal) {
 			t.Errorf("Expected ErrTerminal, got %v", err)
 		}
-		if res.NextPhase != phaseComplete {
-			t.Errorf("Expected NextPhase %s, got %s", phaseComplete, res.NextPhase)
+		if res.NextPhase != orchestrator.PhaseComplete {
+			t.Errorf("Expected NextPhase %s, got %s", orchestrator.PhaseComplete, res.NextPhase)
 		}
 	})
 }
@@ -132,20 +133,20 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	gw := &mockGateway{
+	gw := &orchestrator.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, ctx.Err()
 		},
 	}
 
-	step := &inferenceStep{}
-	turn := &turn{
+	step := &orchestrator.InferenceStep{}
+	turn := &orchestrator.Turn{
 		Gateway:  gw,
-		State:    &turnState{},
-		Clock:    &mockClock{},
-		Registry: &mockToolRegistry{},
+		State:    &orchestrator.TurnState{},
+		Clock:    &orchestrator.MockClock{},
+		Registry: &orchestrator.MockToolRegistry{},
 		CtxManager: &session.ContextManager{
-			History: &mockHistoryManager{},
+			History: &orchestrator.MockHistoryManager{},
 		},
 	}
 

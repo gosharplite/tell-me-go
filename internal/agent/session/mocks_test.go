@@ -5,12 +5,15 @@ package session
 
 import (
 	"context"
+	"io"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -361,4 +364,168 @@ func (m *mockTurnsLogger) Close() error {
 
 func (m *mockHistoryManager) Sync(ctx context.Context) error {
 	return nil
+}
+
+type mockUIRenderer struct {
+	mock.Mock
+}
+
+func (m *mockUIRenderer) StartSpinner(ctx context.Context) func() {
+	args := m.Called(ctx)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *mockUIRenderer) StartSpinnerWithStatus(ctx context.Context, status string) func() {
+	args := m.Called(ctx, status)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *mockUIRenderer) StartSpinnerWithMetrics(ctx context.Context, status string) func() {
+	args := m.Called(ctx, status)
+	if fn, ok := args.Get(0).(func()); ok {
+		return fn
+	}
+	return func() {}
+}
+
+func (m *mockUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
+	m.Called(ctx, content, showThoughts, rawOutput)
+}
+
+func (m *mockUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
+	m.Called(ctx, status)
+}
+
+func (m *mockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
+	m.Called(ctx, metrics, logFile, startTime)
+}
+
+func (m *mockUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+	m.Called(ctx, calls, turn, maxTurns, showTools)
+}
+
+func (m *mockUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
+	m.Called(ctx, name, result, showTools)
+}
+
+func (m *mockUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
+	m.Called(ctx, msg, level)
+}
+
+func (m *mockUIRenderer) SetUseColor(use bool) {
+	m.Called(use)
+}
+
+func (m *mockUIRenderer) SetForceSpinner(force bool) {
+	m.Called(force)
+}
+
+type mockChatter struct {
+	mock.Mock
+}
+
+func (m *mockChatter) Chat(ctx context.Context, s *ports.Session, prompt string) error {
+	args := m.Called(ctx, s, prompt)
+	return args.Error(0)
+}
+
+func (m *mockChatter) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+	args := m.Called(ctx, toolTurns, historyTokens, historyTurns)
+	return args.Error(0)
+}
+
+func (m *mockChatter) SetTieredThreshold(ctx context.Context, threshold int) error {
+	args := m.Called(ctx, threshold)
+	return args.Error(0)
+}
+
+func (m *mockChatter) Subscribe(sub func(context.Context, events.Event)) {
+	m.Called(sub)
+}
+
+func (m *mockChatter) Shutdown(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+type mockHistoryRenderer struct {
+	mock.Mock
+}
+
+func (m *mockHistoryRenderer) Render(w io.Writer, h ports.HistoryReader, n int, options ports.HistoryRenderOptions) {
+	m.Called(w, h, n, options)
+}
+
+type mockCapturer struct {
+	mock.Mock
+}
+
+func (m *mockCapturer) IsTTY(v any) bool {
+	args := m.Called(v)
+	return args.Bool(0)
+}
+
+func (m *mockCapturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
+	callArgs := m.Called(ctx, args, opts)
+	return callArgs.String(0), callArgs.Error(1)
+}
+
+func (m *mockCapturer) Confirm(ctx context.Context, message string) (bool, error) {
+	args := m.Called(ctx, message)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *mockCapturer) Close(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+type mockEntropySource struct {
+	mock.Mock
+}
+
+func (m *mockEntropySource) Read(p []byte) (n int, err error) {
+	args := m.Called(p)
+	if args.Get(0) != nil {
+		copy(p, args.Get(0).([]byte))
+	}
+	return args.Int(1), args.Error(2)
+}
+
+type mockClock struct {
+	mock.Mock
+}
+
+func (m *mockClock) Now() time.Time {
+	args := m.Called()
+	return args.Get(0).(time.Time)
+}
+
+func (m *mockClock) Since(t time.Time) time.Duration {
+	return m.Now().Sub(t)
+}
+
+func (m *mockClock) Sleep(d time.Duration) {
+	m.Called(d)
+}
+
+func (m *mockClock) After(d time.Duration) <-chan time.Time {
+	args := m.Called(d)
+	return args.Get(0).(<-chan time.Time)
+}
+
+func (m *mockClock) NewTicker(d time.Duration) clock.Ticker {
+	args := m.Called(d)
+	return args.Get(0).(clock.Ticker)
+}
+
+func (m *mockClock) Jitter(base float64) float64 {
+	args := m.Called(base)
+	return args.Get(0).(float64)
 }

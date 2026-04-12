@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package executor
+package executor_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -29,7 +30,7 @@ func TestDispatcher_ConfigRace(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, &executor.MockEventBus{}, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -83,7 +84,7 @@ func TestDispatcher_ContextCancellation_MidBatch(t *testing.T) {
 	})
 	require.NoError(t, regErr)
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, &executor.MockEventBus{}, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

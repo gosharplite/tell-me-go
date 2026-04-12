@@ -25,6 +25,7 @@ const (
 	LayerTools          = "tools"
 	LayerShared         = "shared" // Cross-cutting utilities in internal/pkg
 	LayerCmd            = "cmd"
+	LayerTest           = "test"
 	LayerUnknown        = "unknown"
 )
 
@@ -222,6 +223,10 @@ func (m *architectureManager) sendHeartbeat(hb chan<- struct{}) {
 }
 
 func (m *architectureManager) classify(pkgPath string) string {
+	if strings.HasSuffix(pkgPath, "_test") || strings.HasSuffix(pkgPath, ".test") {
+		return LayerTest
+	}
+
 	rel := strings.TrimPrefix(pkgPath, m.ModulePath)
 	rel = strings.Trim(rel, "/")
 	if rel == "" {

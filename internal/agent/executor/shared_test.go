@@ -1,89 +1,63 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package executor
+package executor_test
 
 import (
 	"context"
+	"testing"
+	"time"
 
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/stretchr/testify/require"
 )
 
-type mockSecurityManager struct {
-	domain_security.Manager
-	allowedCommands map[string]bool
-	allowAll        bool
-}
-
-func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
-	if m.allowAll {
-		return true
+func SetupTestRegistry(t *testing.T, toolsMap map[string]executor.ToolBehavior) (tools.Registry, map[string]*executor.ToolBehavior) {
+	t.Helper()
+	reg := registry.New()
+	behaviors := make(map[string]*executor.ToolBehavior)
+	for name, behavior := range toolsMap {
+		b := behavior
+		behaviors[name] = &b
+		opts := registry.ToolOptions{
+			Serial:      b.Serial,
+			LongRunning: b.Long,
+		}
+		if err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			if b.Observe != nil {
+				b.Observe()
+			}
+			if b.Panic != nil {
+				panic(b.Panic)
+			}
+			if b.Delay > 0 {
+				timer := time.NewTimer(b.Delay)
+				defer timer.Stop()
+				select {
+				case <-ctx.Done():
+					return tools.ToolResult{}, ctx.Err()
+				case <-timer.C:
+				}
+			}
+			return b.Result, b.Err
+		}, opts); err != nil {
+			t.Fatalf("failed to register tool %s: %v", name, err)
+		}
 	}
-	return m.allowedCommands[command]
+	return reg, behaviors
 }
 
-func (m *mockSecurityManager) Close() error { return nil }
+func SetupTestExecutor(t *testing.T, toolsMap map[string]executor.ToolBehavior, allowedTools []string, opts ...executor.ExecutorOption) (*executor.Dispatcher, *inframock.TestEventBus, map[string]*executor.ToolBehavior) {
+	reg, behaviors := SetupTestRegistry(t, toolsMap)
+	sm := executor.SetupMockSecurityManager(allowedTools)
 
-type mockConsentSecurityManager struct {
-	domain_security.Manager
-	confirmResult bool
-}
+	bus := &inframock.TestEventBus{}
+	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	require.NoError(t, err)
 
-func (m *mockConsentSecurityManager) IsBypassActive() bool { return false }
-func (m *mockConsentSecurityManager) TerminalLock()        {}
-func (m *mockConsentSecurityManager) TerminalUnlock()      {}
-func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {
-	return m.confirmResult, nil
-}
-
-func (m *mockConsentSecurityManager) Close() error { return nil }
-
-type panicRegistry struct {
-	tools.Registry
-	panicOnExec bool
-	panicOnGet  bool
-	serial      bool
-}
-
-func (r *panicRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	if r.panicOnGet {
-		panic("registry GetDeclarations panic")
-	}
-	return []*tools.ToolDeclaration{{Name: "any"}}
-}
-
-func (r *panicRegistry) IsSerial(name string) bool {
-	return r.serial
-}
-
-func (r *panicRegistry) IsLongRunning(name string) bool {
-	return false
-}
-
-func (r *panicRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	if r.panicOnExec {
-		panic("registry Execute panic")
-	}
-	return tools.ToolResult{}, nil
-}
-
-func (r *panicRegistry) GetOptions(name string) tools.ToolOptions {
-	return tools.ToolOptions{}
-}
-
-func (r *panicRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
-	panic("not implemented")
-}
-
-func (r *panicRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
-	panic("not implemented")
-}
-
-func (r *panicRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
-	panic("not implemented")
-}
-
-func (r *panicRegistry) ListAvailableToolkits() []string {
-	panic("not implemented")
+	return exec, bus, behaviors
 }

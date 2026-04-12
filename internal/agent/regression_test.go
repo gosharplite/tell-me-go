@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package agent_test
 
 import (
 	"context"
@@ -10,8 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -19,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,15 +38,15 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	})
 
 	registry := internaltools.New()
-	client := &mockLLMClient{}
-	sm := &mockSecurityManager{AllowAll: true}
+	client := &agent.MockLLMClient{}
+	sm := &agent.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
-	a, err := NewAgent(client, bus, h, "test-provider", registry, sm)
+	a, err := agent.NewAgent(client, bus, h, "test-provider", registry, sm)
 	require.NoError(t, err)
 
 	// Prepare should trigger the contentCleaner transformer
-	preparedHistory, _, err := a.(*agent).ctxManager.Prepare(ctx, 1)
+	preparedHistory, _, err := a.(*agent.AgentInternal).GetCtxManager().Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -73,16 +73,16 @@ func TestAgent_InLoopPruning(t *testing.T) {
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: fmt.Sprintf("M%d", i)}}})
 	}
 
-	client := &mockLLMClient{}
-	sm := &mockSecurityManager{AllowAll: true}
+	client := &agent.MockLLMClient{}
+	sm := &agent.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
-	a, err := NewAgent(client, bus, h, "test-provider", registry, sm)
+	a, err := agent.NewAgent(client, bus, h, "test-provider", registry, sm)
 	require.NoError(t, err)
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
 	// Prepare should trigger the pruning pipeline
-	preparedHistory, _, err := a.(*agent).ctxManager.Prepare(ctx, 1)
+	preparedHistory, _, err := a.(*agent.AgentInternal).GetCtxManager().Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -111,14 +111,14 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
-	sm := &mockSecurityManager{AllowAll: true}
+	sm := &agent.MockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool
 	mockClient := newMultiModalMockClient()
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	inframock.CleanupBus(t, bus)
-	a, err := NewAgent(mockClient, bus, h, "test-provider", registry, sm)
+	a, err := agent.NewAgent(mockClient, bus, h, "test-provider", registry, sm)
 	require.NoError(t, err)
 	sess := ports.NewSession("regression-multimodal", h)
 	ctx := context.Background()
@@ -159,8 +159,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	}
 }
 
-func newMultiModalMockClient() *mockLLMClient {
-	return &mockLLMClient{
+func newMultiModalMockClient() *agent.MockLLMClient {
+	return &agent.MockLLMClient{
 		SendChatFn: func(ctx context.Context, history []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 			// 1. Identify the last user prompt
 			lastUserPrompt := ""

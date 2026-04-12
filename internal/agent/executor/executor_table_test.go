@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package executor
+package executor_test
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -25,36 +26,26 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type toolBehavior struct {
-	result  tools.ToolResult
-	err     error
-	delay   time.Duration
-	panic   interface{}
-	serial  bool
-	long    bool
-	observe func() // Callback to signal execution
-}
-
-func setupTestRegistry(t *testing.T, toolsMap map[string]toolBehavior) (tools.Registry, map[string]*toolBehavior) {
+func setupTestRegistry(t *testing.T, toolsMap map[string]executor.ToolBehavior) (tools.Registry, map[string]*executor.ToolBehavior) {
 	t.Helper()
 	reg := registry.New()
-	behaviors := make(map[string]*toolBehavior)
+	behaviors := make(map[string]*executor.ToolBehavior)
 	for name, behavior := range toolsMap {
 		b := behavior
 		behaviors[name] = &b
 		opts := registry.ToolOptions{
-			Serial:      b.serial,
-			LongRunning: b.long,
+			Serial:      b.Serial,
+			LongRunning: b.Long,
 		}
 		if err := reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-			if b.observe != nil {
-				b.observe()
+			if b.Observe != nil {
+				b.Observe()
 			}
-			if b.panic != nil {
-				panic(b.panic)
+			if b.Panic != nil {
+				panic(b.Panic)
 			}
-			if b.delay > 0 {
-				timer := time.NewTimer(b.delay)
+			if b.Delay > 0 {
+				timer := time.NewTimer(b.Delay)
 				defer timer.Stop()
 				select {
 				case <-ctx.Done():
@@ -62,7 +53,7 @@ func setupTestRegistry(t *testing.T, toolsMap map[string]toolBehavior) (tools.Re
 				case <-timer.C:
 				}
 			}
-			return b.result, b.err
+			return b.Result, b.Err
 		}, opts); err != nil {
 			t.Fatalf("failed to register tool %s: %v", name, err)
 		}
@@ -70,25 +61,25 @@ func setupTestRegistry(t *testing.T, toolsMap map[string]toolBehavior) (tools.Re
 	return reg, behaviors
 }
 
-func setupMockSecurityManager(allowedTools []string) *mockSecurityManager {
+func setupMockSecurityManager(allowedTools []string) *executor.MockSecurityManager {
 	if allowedTools != nil {
-		sm := &mockSecurityManager{
-			allowedCommands: make(map[string]bool),
+		sm := &executor.MockSecurityManager{
+			AllowedCommands: make(map[string]bool),
 		}
 		for _, tool := range allowedTools {
-			sm.allowedCommands[tool] = true
+			sm.AllowedCommands[tool] = true
 		}
 		return sm
 	}
-	return &mockSecurityManager{allowAll: true}
+	return &executor.MockSecurityManager{AllowAll: true}
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string, opts ...executorOption) (*Dispatcher, *inframock.TestEventBus, map[string]*toolBehavior) {
+func setupTestExecutor(t *testing.T, toolsMap map[string]executor.ToolBehavior, allowedTools []string, opts ...executor.ExecutorOption) (*executor.Dispatcher, *inframock.TestEventBus, map[string]*executor.ToolBehavior) {
 	reg, behaviors := setupTestRegistry(t, toolsMap)
 	sm := setupMockSecurityManager(allowedTools)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, opts...)
+	exec, err := executor.NewPipelineDispatcher(reg, sm, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, opts...)
 	require.NoError(t, err)
 
 	return exec, bus, behaviors
@@ -110,7 +101,7 @@ func assertExecutionSuccess(t *testing.T, resp *llm.Content, err error, expected
 		}
 		res := resp.Parts[i].FunctionResponse.Response["result"].(string)
 		if res != expected {
-			t.Errorf("part %d: unexpected result: %s, want %s", i, res, expected)
+			t.Errorf("part %d: unexpected Result: %s, want %s", i, res, expected)
 		}
 	}
 }
@@ -161,9 +152,9 @@ func TestDispatcher_Success(t *testing.T) {
 
 	t.Run("Parallel Execution", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"tool1": {result: tools.ToolResult{Text: "res1"}},
-			"tool2": {result: tools.ToolResult{Text: "res2"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"tool1": {Result: tools.ToolResult{Text: "res1"}},
+			"tool2": {Result: tools.ToolResult{Text: "res2"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		exec.SetConcurrency(2)
@@ -179,9 +170,9 @@ func TestDispatcher_Success(t *testing.T) {
 
 	t.Run("Sequential Execution", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"serial_tool": {result: tools.ToolResult{Text: "serial_res"}, serial: true},
-			"tool2":       {result: tools.ToolResult{Text: "res2"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"serial_tool": {Result: tools.ToolResult{Text: "serial_res"}, Serial: true},
+			"tool2":       {Result: tools.ToolResult{Text: "res2"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		exec.SetConcurrency(2)
@@ -201,8 +192,8 @@ func TestDispatcher_Errors(t *testing.T) {
 
 	t.Run("Tool Not Found", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"existing": {result: tools.ToolResult{Text: "ok"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"existing": {Result: tools.ToolResult{Text: "ok"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -218,8 +209,8 @@ func TestDispatcher_Errors(t *testing.T) {
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"list_files": {result: tools.ToolResult{Text: "ok"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"list_files": {Result: tools.ToolResult{Text: "ok"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -235,8 +226,8 @@ func TestDispatcher_Errors(t *testing.T) {
 
 	t.Run("Security Violation", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"forbidden": {result: tools.ToolResult{Text: "ok"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"forbidden": {Result: tools.ToolResult{Text: "ok"}},
 		}
 		exec, bus, _ := setupTestExecutor(t, toolsMap, []string{"allowed"})
 		content := &llm.Content{Parts: []*llm.Part{
@@ -249,8 +240,8 @@ func TestDispatcher_Errors(t *testing.T) {
 
 	t.Run("Tool Returns Error", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"fail_tool": {err: errors.New("tool failed")},
+		toolsMap := map[string]executor.ToolBehavior{
+			"fail_tool": {Err: errors.New("tool failed")},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -270,10 +261,10 @@ func TestDispatcher_SafetyLimits(t *testing.T) {
 
 	t.Run("Tool Timeout", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"slow": {delay: 500 * time.Millisecond, result: tools.ToolResult{Text: "too late"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"slow": {Delay: 500 * time.Millisecond, Result: tools.ToolResult{Text: "too late"}},
 		}
-		exec, bus, _ := setupTestExecutor(t, toolsMap, nil, withToolTimeout(50*time.Millisecond))
+		exec, bus, _ := setupTestExecutor(t, toolsMap, nil, executor.WithToolTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "slow"}},
@@ -285,8 +276,8 @@ func TestDispatcher_SafetyLimits(t *testing.T) {
 
 	t.Run("Max Turns Reached", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"tool": {result: tools.ToolResult{Text: "ok"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"tool": {Result: tools.ToolResult{Text: "ok"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -301,10 +292,10 @@ func TestDispatcher_SafetyLimits(t *testing.T) {
 
 	t.Run("Long Running Tool - Extended Timeout", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "finally finished"}, long: true},
+		toolsMap := map[string]executor.ToolBehavior{
+			"long_tool": {Delay: 100 * time.Millisecond, Result: tools.ToolResult{Text: "finally finished"}, Long: true},
 		}
-		exec, _, _ := setupTestExecutor(t, toolsMap, nil, withToolTimeout(50*time.Millisecond))
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil, executor.WithToolTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "long_tool"}},
@@ -329,8 +320,8 @@ func TestDispatcher_PanicRecovery(t *testing.T) {
 
 	t.Run("Parallel Panic", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"panic_tool": {panic: "kaboom"},
+		toolsMap := map[string]executor.ToolBehavior{
+			"panic_tool": {Panic: "kaboom"},
 		}
 		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -343,9 +334,9 @@ func TestDispatcher_PanicRecovery(t *testing.T) {
 
 	t.Run("Serial Panic", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"serial_panic": {panic: "serial kaboom", serial: true},
-			"next_serial":  {result: tools.ToolResult{Text: "should skip"}, serial: true},
+		toolsMap := map[string]executor.ToolBehavior{
+			"serial_panic": {Panic: "serial kaboom", Serial: true},
+			"next_serial":  {Result: tools.ToolResult{Text: "should skip"}, Serial: true},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -376,10 +367,10 @@ func TestDispatcher_Concurrency(t *testing.T) {
 
 	t.Run("Concurrency Limit", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"t1": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "r1"}},
-			"t2": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "r2"}},
-			"t3": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "r3"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"t1": {Delay: 100 * time.Millisecond, Result: tools.ToolResult{Text: "r1"}},
+			"t2": {Delay: 100 * time.Millisecond, Result: tools.ToolResult{Text: "r2"}},
+			"t3": {Delay: 100 * time.Millisecond, Result: tools.ToolResult{Text: "r3"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		exec.SetConcurrency(2)
@@ -396,10 +387,10 @@ func TestDispatcher_Concurrency(t *testing.T) {
 
 	t.Run("Mixed Path - Parallel then Serial", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"p1": {result: tools.ToolResult{Text: "pr1"}},
-			"p2": {result: tools.ToolResult{Text: "pr2"}},
-			"s1": {result: tools.ToolResult{Text: "sr1"}, serial: true},
+		toolsMap := map[string]executor.ToolBehavior{
+			"p1": {Result: tools.ToolResult{Text: "pr1"}},
+			"p2": {Result: tools.ToolResult{Text: "pr2"}},
+			"s1": {Result: tools.ToolResult{Text: "sr1"}, Serial: true},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		exec.SetConcurrency(2)
@@ -434,8 +425,8 @@ func TestDispatcher_ExecutionControl(t *testing.T) {
 
 	t.Run("Context Cancellation During Execution", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "ok"}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"tool": {Delay: 100 * time.Millisecond, Result: tools.ToolResult{Text: "ok"}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 
@@ -466,7 +457,7 @@ func TestDispatcher_ConcurrencyLimit_Strict(t *testing.T) {
 		require.NoError(t, reg.Register(&tools.ToolDeclaration{Name: fmt.Sprintf("tool%d", i)}, toolFunc))
 	}
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, &executor.MockEventBus{}, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.SetConcurrency(2)
 
@@ -510,7 +501,7 @@ func createTestToolContent(count int) *llm.Content {
 	return content
 }
 
-func executeConcurrentWorkers(t *testing.T, exec *Dispatcher, content *llm.Content, startedCh <-chan struct{}, waitCount int) *errgroup.Group {
+func executeConcurrentWorkers(t *testing.T, exec *executor.Dispatcher, content *llm.Content, startedCh <-chan struct{}, waitCount int) *errgroup.Group {
 	t.Helper()
 	g, _ := errgroup.WithContext(context.Background())
 	g.Go(func() error {
@@ -519,7 +510,7 @@ func executeConcurrentWorkers(t *testing.T, exec *Dispatcher, content *llm.Conte
 	})
 
 	for i := 0; i < waitCount; i++ {
-		timer := time.NewTimer(ciSafeTimeout)
+		timer := time.NewTimer(executor.CISafeTimeout)
 		select {
 		case <-startedCh:
 			timer.Stop()
@@ -578,7 +569,7 @@ func TestDispatcher_SuggestTool(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.hallucinated, func(t *testing.T) {
 			t.Parallel()
-			got := suggestTool(tt.hallucinated, validTools)
+			got := executor.SuggestTool(tt.hallucinated, validTools)
 			if got != tt.expected {
 				t.Errorf("suggestTool(%q) = %q, want %q", tt.hallucinated, got, tt.expected)
 			}
@@ -610,7 +601,7 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{})
+	e, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, &executor.MockEventBus{}, &ports.NoOpLogger{}, &executor.MockLogger{})
 	require.NoError(t, err)
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
@@ -620,7 +611,7 @@ func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 			Text:       "Here is your image",
 			BinaryData: []tools.BinaryData{{MIMEType: "image/png", Data: []byte("blob")}},
 		}}
-		content := e.assembleResponse(calls, results)
+		content := e.AssembleResponse(calls, results)
 		if len(content.Parts) != 2 {
 			t.Fatalf("Got %d parts, want 2", len(content.Parts))
 		}
@@ -637,7 +628,7 @@ func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 				{MIMEType: "text/plain", Data: []byte{4, 5, 6}},
 			},
 		}}
-		content := e.assembleResponse(calls, results)
+		content := e.AssembleResponse(calls, results)
 		if len(content.Parts) != 3 {
 			t.Fatalf("Got %d parts, want 3", len(content.Parts))
 		}
@@ -655,7 +646,7 @@ func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 				{MIMEType: "image/jpeg", Data: []byte("photo2")},
 			},
 		}}
-		content := e.assembleResponse(calls, results)
+		content := e.AssembleResponse(calls, results)
 		assertFunctionResponse(t, content.Parts[0], "Captured 2 photos")
 		assertInlineData(t, content.Parts[1], "image/jpeg", []byte("photo1"))
 		assertInlineData(t, content.Parts[2], "image/jpeg", []byte("photo2"))
@@ -670,7 +661,7 @@ func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 				{MIMEType: "image/png", Data: []byte("data")},
 			},
 		}}
-		content := e.assembleResponse(calls, results)
+		content := e.AssembleResponse(calls, results)
 		if len(content.Parts) != 2 {
 			t.Fatalf("Got %d parts, want 2", len(content.Parts))
 		}
@@ -688,7 +679,7 @@ func TestDispatcher_EventPublishing(t *testing.T) {
 	require.NoError(t, err)
 
 	bus := &inframock.TestEventBus{}
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	content := &llm.Content{
@@ -714,12 +705,12 @@ func TestDispatcher_EventPublishing(t *testing.T) {
 func TestDispatcher_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := registry.New()
-	e, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, &executor.MockEventBus{}, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
 	results := []tools.ToolResult{{Text: "res"}}
-	content := e.assembleResponse(calls, results)
+	content := e.AssembleResponse(calls, results)
 	if len(content.Parts) == 0 {
 		t.Error("markdownStrategy produced no parts")
 	}
@@ -730,9 +721,9 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 
 	t.Run("Serial executeTool Panic", func(t *testing.T) {
 		t.Parallel()
-		reg := &panicRegistry{panicOnExec: true, serial: true}
+		reg := &executor.PanicRegistry{PanicOnExec: true, Serial: true}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -749,9 +740,9 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 
 	t.Run("Parallel executeTool Panic", func(t *testing.T) {
 		t.Parallel()
-		reg := &panicRegistry{panicOnExec: true, serial: false}
+		reg := &executor.PanicRegistry{PanicOnExec: true, Serial: false}
 		bus := &inframock.TestEventBus{}
-		exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -796,8 +787,8 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 
 	t.Run("User Declined Return Error", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"decline_tool": {err: tools.ErrUserDeclined},
+		toolsMap := map[string]executor.ToolBehavior{
+			"decline_tool": {Err: tools.ErrUserDeclined},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -810,8 +801,8 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 
 	t.Run("Security Policy Blocked Return Error", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"security_tool": {err: tools.ErrSecurityPolicy},
+		toolsMap := map[string]executor.ToolBehavior{
+			"security_tool": {Err: tools.ErrSecurityPolicy},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -824,8 +815,8 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 
 	t.Run("User Declined Result Error", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"decline_result_tool": {result: tools.ToolResult{Error: tools.ErrUserDeclined}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"decline_result_tool": {Result: tools.ToolResult{Error: tools.ErrUserDeclined}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -838,8 +829,8 @@ func TestDispatcher_SecurityAndConsentRejections(t *testing.T) {
 
 	t.Run("Security Policy Blocked Result Error", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"security_result_tool": {result: tools.ToolResult{Error: tools.ErrSecurityPolicy}},
+		toolsMap := map[string]executor.ToolBehavior{
+			"security_result_tool": {Result: tools.ToolResult{Error: tools.ErrSecurityPolicy}},
 		}
 		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
 		content := &llm.Content{Parts: []*llm.Part{
@@ -856,10 +847,10 @@ func TestDispatcher_LongRunningTimeout(t *testing.T) {
 
 	t.Run("Long Running Tool - Timeout Exceeded", func(t *testing.T) {
 		t.Parallel()
-		toolsMap := map[string]toolBehavior{
-			"very_long_tool": {delay: 500 * time.Millisecond, result: tools.ToolResult{Text: "too late"}, long: true},
+		toolsMap := map[string]executor.ToolBehavior{
+			"very_long_tool": {Delay: 500 * time.Millisecond, Result: tools.ToolResult{Text: "too late"}, Long: true},
 		}
-		exec, _, _ := setupTestExecutor(t, toolsMap, nil, WithLongRunningTimeout(50*time.Millisecond))
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil, executor.WithLongRunningTimeout(50*time.Millisecond))
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "very_long_tool"}},
@@ -884,7 +875,7 @@ func TestDispatcher_ZombieTool(t *testing.T) {
 	}, registry.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := executor.NewPipelineDispatcher(reg, &executor.MockSecurityManager{AllowAll: true}, &executor.MockEventBus{}, &ports.NoOpLogger{}, &executor.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)

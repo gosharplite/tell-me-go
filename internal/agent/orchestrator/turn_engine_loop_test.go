@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package orchestrator_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -40,7 +41,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	cm := session.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
-	engine := NewEngine(gw, exec, cm, reg, bus, counter)
+	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
 	ctx := context.Background()
 
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
@@ -74,7 +75,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	window, _ := h.GetWindow(ctx, 0, -1)
 	foundWarning := false
 	for _, msg := range window {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
+		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == orchestrator.LoopWarning {
 			foundWarning = true
 			break
 		}
@@ -102,7 +103,7 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	cm := session.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
-	engine := NewEngine(gw, exec, cm, reg, bus, counter)
+	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
 	ctx := context.Background()
 
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
@@ -136,7 +137,7 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	window, _ := h.GetWindow(ctx, 0, -1)
 	foundWarning := false
 	for _, msg := range window {
-		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == loopWarning {
+		if msg.Role == "user" && len(msg.Parts) > 0 && msg.Parts[0].Text == orchestrator.LoopWarning {
 			foundWarning = true
 			break
 		}

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package session_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -29,14 +30,16 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Turn 2 User"}}})
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Turn 2 Model"}}})
 
-	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100})
+	tc := &session.MockTokenCounter{}
+	tc.SetTokens(100)
+	strategy := session.NewContextStrategy(tc)
 
-	cm := NewContextManager(strategy, hManager, nil, nil)
-	cm.Summarizer = &mockSummarizer{
-		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-			return "Summary of history", &llm.Metrics{}, nil
-		},
-	}
+	cm := session.NewContextManager(strategy, hManager, nil, nil)
+	ms := &session.MockSummarizer{}
+	ms.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "Summary of history", &llm.Metrics{}, nil
+	})
+	cm.Summarizer = ms
 
 	// 2. Summarize all available turns (will summarize total-1 turns = 1 turn because of clamping in prepareSummarizationMetadata)
 	// Actually, prepareSummarizationMetadata says:

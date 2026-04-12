@@ -1,26 +1,26 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package agent_test
 
 import (
 	"context"
 	"sync"
 	"testing"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	t.Parallel()
-	client := &mockLLMClient{}
+	client := &agent.MockLLMClient{}
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
@@ -44,7 +44,7 @@ func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	})
 
 	// New should not crash even if applyConfig fails
-	a, err := NewAgent(client, bus, h, "test-provider", reg, sm, withInitContext(ctx))
+	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm, agent.WithInitContext(ctx))
 	require.NoError(t, err)
 
 	if a == nil {

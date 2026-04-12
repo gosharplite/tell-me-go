@@ -1,21 +1,23 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package orchestrator_test
 
 import (
 	"context"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 )
 
 func TestTurnEngine_ExecutionStep_NoToolCalls(t *testing.T) {
 	t.Parallel()
-	step := &executionStep{}
-	tn := &turn{
-		State: &turnState{
+	step := &orchestrator.ExecutionStep{}
+	tn := &orchestrator.Turn{
+		State: &orchestrator.TurnState{
 			HasToolCalls: false,
 		},
-		Clock: &mockClock{},
+		Clock: &orchestrator.MockClock{},
 	}
 
 	res, err := step.Process(context.Background(), tn)
@@ -23,19 +25,19 @@ func TestTurnEngine_ExecutionStep_NoToolCalls(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
-	if res.NextPhase != phasePersisting {
-		t.Errorf("expected phase %s, got %s", phasePersisting, res.NextPhase)
+	if res.NextPhase != orchestrator.PhasePersisting {
+		t.Errorf("expected phase %s, got %s", orchestrator.PhasePersisting, res.NextPhase)
 	}
 }
 
 func TestTurnEngine_RecoveryStep_NoLastError(t *testing.T) {
 	t.Parallel()
-	step := &recoveryStep{}
-	tn := &turn{
-		State: &turnState{
+	step := &orchestrator.RecoveryStep{}
+	tn := &orchestrator.Turn{
+		State: &orchestrator.TurnState{
 			LastError: nil,
 		},
-		Clock: &mockClock{},
+		Clock: &orchestrator.MockClock{},
 	}
 
 	res, err := step.Process(context.Background(), tn)
@@ -43,7 +45,7 @@ func TestTurnEngine_RecoveryStep_NoLastError(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
-	if res.NextPhase != phaseComplete {
-		t.Errorf("expected phase %s, got %s", phaseComplete, res.NextPhase)
+	if res.NextPhase != orchestrator.PhaseComplete {
+		t.Errorf("expected phase %s, got %s", orchestrator.PhaseComplete, res.NextPhase)
 	}
 }

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package cli
+package cli_test
 
 import (
 	stdctx "context"
@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/cli"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -76,7 +77,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		infra_persistence.NewOSFileSystem(),
 	)
 
-	cmdCtx := &context{
+	cmdCtx := &cli.Context{
 		Version:      "1.0.0",
 		Stdin:        strings.NewReader("hello"),
 		Stdout:       &stdout,
@@ -86,7 +87,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		Bootstrapper: container,
 		Loader:       loader,
 	}
-	cmd := newChatCommand(cmdCtx, nil)
+	cmd := cli.NewChatCommand(cmdCtx, nil)
 	root := &cobra.Command{}
 	root.PersistentFlags().StringP("config", "c", "", "Path to the configuration file (default: auto-discover)")
 	root.AddCommand(cmd)
@@ -118,7 +119,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 }
 
 type wrappedContainer struct {
-	Bootstrapper
+	cli.Bootstrapper
 	AgentFactory ports.ChatterFactory
 }
 

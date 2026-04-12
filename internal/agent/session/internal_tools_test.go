@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package session_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -27,8 +28,8 @@ func TestAgent_ManageHistory(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U2"}}})
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "M2"}}})
 
-	cm := NewContextManager(nil, hManager, nil, nil)
-	it := NewInternalTools(cm)
+	cm := session.NewContextManager(nil, hManager, nil, nil)
+	it := session.NewInternalTools(cm)
 
 	tests := []struct {
 		name        string
@@ -93,9 +94,9 @@ func TestAgent_ManageHistory(t *testing.T) {
 }
 
 func TestRegisterInternal(t *testing.T) {
-	registry := &mockToolRegistry{}
-	cm := NewContextManager(nil, nil, nil, nil)
-	if err := RegisterInternal(registry, cm); err != nil {
+	registry := &session.MockToolRegistry{}
+	cm := session.NewContextManager(nil, nil, nil, nil)
+	if err := session.RegisterInternal(registry, cm); err != nil {
 		t.Fatalf("RegisterInternal failed: %v", err)
 	}
 
@@ -151,26 +152,24 @@ func validateTool(t *testing.T, found *tools.ToolDeclaration, expectedParams []s
 }
 
 func TestInternalTools_SummarizeHistory(t *testing.T) {
-	mockSumm := &mockSummarizer{
-		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-			return "summary result", &llm.Metrics{ResponseTokens: 10}, nil
-		},
-	}
-	factory := &PipelineFactory{
+	mockSumm := &session.MockSummarizer{}
+	mockSumm.SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "summary result", &llm.Metrics{ResponseTokens: 10}, nil
+	})
+	factory := &session.PipelineFactory{
 		Summarizer: mockSumm,
-		Estimator:  NewContextStrategy(&mockTokenCounter{}),
-		Events:     &mockEventBus{},
+		Estimator:  session.NewContextStrategy(&session.MockTokenCounter{}),
+		Events:     &session.MockEventBus{},
 	}
-	hManager := &mockHistoryManager{
-		contents: []*llm.Content{
-			{Role: "user", Parts: []*llm.Part{{Text: "U1"}}},
-			{Role: "model", Parts: []*llm.Part{{Text: "M1"}}},
-			{Role: "user", Parts: []*llm.Part{{Text: "U2"}}},
-			{Role: "model", Parts: []*llm.Part{{Text: "M2"}}},
-		},
-	}
-	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), hManager, &mockEventBus{}, factory)
-	it := NewInternalTools(cm)
+	hManager := &session.MockHistoryManager{}
+	hManager.SetInternalContents([]*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "U1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "M1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "U2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "M2"}}},
+	})
+	cm := session.NewContextManager(session.NewContextStrategy(&session.MockTokenCounter{}), hManager, &session.MockEventBus{}, factory)
+	it := session.NewInternalTools(cm)
 
 	ctx := context.Background()
 
@@ -179,7 +178,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 			"turns": 1.0,
 			"focus": "test focus",
 		}
-		res, err := it.summarizeHistory(ctx, args, nil)
+		res, err := it.SummarizeHistory(ctx, args, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -196,7 +195,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 		args := map[string]interface{}{
 			"turns": 0.0,
 		}
-		_, err := it.summarizeHistory(ctx, args, nil)
+		_, err := it.SummarizeHistory(ctx, args, nil)
 		if err == nil {
 			t.Fatal("expected error for 0 turns, got nil")
 		}
@@ -204,7 +203,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 
 	t.Run("missing arguments", func(t *testing.T) {
 		args := map[string]interface{}{}
-		_, err := it.summarizeHistory(ctx, args, nil)
+		_, err := it.SummarizeHistory(ctx, args, nil)
 		if err == nil {
 			t.Fatal("expected error for missing arguments, got nil")
 		}
@@ -228,12 +227,11 @@ func TestRegisterInternal_ErrorPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := &mockToolRegistry{
-				registerErr: fmt.Errorf("registry error"),
-				failAfter:   tt.failAfter,
-			}
-			cm := NewContextManager(nil, nil, nil, nil)
-			err := RegisterInternal(registry, cm)
+			registry := &session.MockToolRegistry{}
+			registry.SetRegisterErr(fmt.Errorf("registry error"))
+			registry.SetFailAfter(tt.failAfter)
+			cm := session.NewContextManager(nil, nil, nil, nil)
+			err := session.RegisterInternal(registry, cm)
 			if err == nil {
 				t.Fatalf("expected initialization to fail when registry returns an error (failAfter=%d)", tt.failAfter)
 			}

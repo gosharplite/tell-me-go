@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package session
+package session_test
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -63,16 +64,16 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
-	factory := &PipelineFactory{
+	factory := &session.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := NewContextManager(strategy, hManager, bus, factory)
+	cm := session.NewContextManager(strategy, hManager, bus, factory)
 
 	// Set a token limit to trigger auto-summarization.
 	// Use 100000. Safety limit = 99000. 90% = 90000.
@@ -151,7 +152,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	verifyAutoSummarizeLog(t, logReceived)
 }
 
-func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager, events.EventBus, *httptest.Server) {
+func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *session.ContextManager, events.EventBus, *httptest.Server) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
@@ -172,16 +173,16 @@ func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
-	factory := &PipelineFactory{
+	factory := &session.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := NewContextManager(strategy, hManager, bus, factory)
+	cm := session.NewContextManager(strategy, hManager, bus, factory)
 
 	return hManager, cm, bus, server
 }
@@ -234,16 +235,16 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	// Set initial system instructions
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, gemini.WithSystemInstruction("Initial System Instruction"), gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
-	factory := &PipelineFactory{
+	factory := &session.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := NewContextManager(strategy, hManager, bus, factory)
+	cm := session.NewContextManager(strategy, hManager, bus, factory)
 	cm.Reconfigure(events.Limits{MaxHistoryTokens: 3500, MaxToolTurns: 10, MaxHistoryTurns: 20}) // Limit to trigger summarization
 
 	// Add some turns (approx 3451 tokens with base overhead and tools)
@@ -319,16 +320,16 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	client, _ := gemini.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, gemini.WithEventBus(bus), gemini.WithTimeout(5*time.Second))
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg))
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	gw := llm.NewResilientClient(client)
-	factory := &PipelineFactory{
+	factory := &session.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
-	cm := NewContextManager(strategy, hManager, bus, factory)
+	cm := session.NewContextManager(strategy, hManager, bus, factory)
 
 	// 3. Set a tight token limit.
 	// Base overhead ~300.
@@ -376,9 +377,11 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 }
 
 func TestTokenGatekeeper_AutoSummarize_NilSummarizer(t *testing.T) {
-	tg := &tokenGatekeeper{
+	tc := &session.MockEstimator{}
+	tc.SetTokens(100)
+	tg := &session.TokenGatekeeper{
 		MaxTokens:  1000,
-		Estimator:  &mockEstimator{tokens: 100},
+		Estimator:  tc, 
 		Summarizer: nil, // This should trigger the panic if not handled
 	}
 
@@ -401,7 +404,7 @@ func TestTokenGatekeeper_AutoSummarize_NilSummarizer(t *testing.T) {
 	ctx := context.Background()
 
 	// After fix, this should not panic and should return llm.ErrTerminal
-	_, err := tg.autoSummarize(ctx, req)
+	_, err := tg.AutoSummarize(ctx, req)
 	if err == nil {
 		t.Fatal("expected an error when summarizer is nil, but got nil")
 	}

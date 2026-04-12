@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package orchestrator_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
@@ -112,8 +113,8 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 		gw := &integrationMockLLMGateway{}
 		exec := &integrationMockExecutor{}
-		reg := &mockToolRegistry{}
-		engine := NewEngine(gw, exec, cm, reg, bus, counter)
+		reg := &orchestrator.MockToolRegistry{}
+		engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
 
 		ctx := context.Background()
 
@@ -133,9 +134,9 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		counter.val = 6000
 
 		// Run the turn
-		t0 := engine.createTurn(0, time.Now())
+		t0 := engine.CreateTurn(0, time.Now())
 		t0.State.ToolCallCount = make(map[string]int)
-		err := engine.executeTurn(ctx, t0)
+		err := engine.ExecuteTurn(ctx, t0)
 		assert.NoError(t, err, "Engine should not crash on truncation")
 
 		// 4. Assertions: Check mutation
@@ -150,8 +151,8 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		assert.Contains(t, last.Parts[0].FunctionResponse.Response["error"].(string), "The individual tool output is too massive.")
 
 		// 6. Assertions: Check token preservation in next turn
-		turn1 := engine.createTurn(1, time.Now())
-		refiner := &contextRefiner{}
+		turn1 := engine.CreateTurn(1, time.Now())
+		refiner := &orchestrator.ContextRefiner{}
 		// Clear trigger so refiner uses heuristic for the real (mutated) history
 		counter.trigger = nil
 		_, err = refiner.Process(ctx, turn1)
@@ -185,8 +186,8 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 		gw := &integrationMockLLMGateway{}
 		exec := &integrationMockExecutor{}
-		reg := &mockToolRegistry{}
-		engine := NewEngine(gw, exec, cm, reg, bus, counter)
+		reg := &orchestrator.MockToolRegistry{}
+		engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
 
 		ctx := context.Background()
 
@@ -196,9 +197,9 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		// Force refiner and other history processing to see 8500 tokens
 		counter.historyVal = 8500
 
-		turn0 := engine.createTurn(0, time.Now())
+		turn0 := engine.CreateTurn(0, time.Now())
 		turn0.State.ToolCallCount = make(map[string]int)
-		refiner := &contextRefiner{}
+		refiner := &orchestrator.ContextRefiner{}
 		_, err := refiner.Process(ctx, turn0)
 		assert.NoError(t, err)
 		assert.Equal(t, 8500, turn0.State.Tokens)
@@ -216,7 +217,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		counter.trigger = toolResp
 		counter.val = 1000
 
-		err = engine.executeTurn(ctx, turn0)
+		err = engine.ExecuteTurn(ctx, turn0)
 		assert.NoError(t, err)
 
 		// 4. Assertions: Check mutation
@@ -297,10 +298,10 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	gw := &integrationMockLLMGateway{}
 	// Real executor
-	exec, err := executor.NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
+	exec, err := executor.NewPipelineDispatcher(reg, &orchestrator.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
 
-	engine := NewEngine(gw, exec, cm, reg, bus, counter)
+	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -320,11 +321,11 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	// 3. Execute turn in goroutine
 	errCh := make(chan error, 1)
-	turn0 := engine.createTurn(0, time.Now())
+	turn0 := engine.CreateTurn(0, time.Now())
 	turn0.State.ToolCallCount = make(map[string]int)
 
 	go func() {
-		errCh <- engine.executeTurn(ctx, turn0)
+		errCh <- engine.ExecuteTurn(ctx, turn0)
 	}()
 
 	// 4. Wait for both tools to start, then cancel

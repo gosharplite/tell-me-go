@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package orchestrator_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -80,7 +81,7 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 2, MaxHistoryTurns: 10})
 
 	reg := &limitMockRegistry{}
-	engine := NewEngine(gw, exec, cm, reg, bus, counter)
+	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)
 
 	ctx := context.Background()
 
@@ -165,7 +166,7 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			counter := &mockTokenCounter{tokens: tt.toolTokens}
+			counter := &orchestrator.MockTokenCounter{Tokens: tt.toolTokens}
 			strategy := session.NewContextStrategy(counter)
 			strategy.SetLimits(tt.maxTokens, 10, 10)
 
@@ -184,18 +185,23 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			inframock.CleanupBus(t, bus)
-			turn := &turn{
+			turn := &orchestrator.Turn{
 				CtxManager:   cm,
 				TokenCounter: counter,
-				State: &turnState{
+				State: &orchestrator.TurnState{
 					Tokens:       tt.existingTokens,
 					ToolResponse: toolResponse,
 				},
 				Events: bus,
 			}
 
-			p := &executionStep{}
-			p.validatePayloadLimits(context.Background(), turn)
+			p := &orchestrator.ExecutionStep{}
+			// validatePayloadLimits is unexported but we need it.
+			// Actually, Process calls it. Or we can export it.
+			// Let's add it to export_test.go if we really want to test it in isolation.
+			// Looking at engine.go, executionStep.Process calls validatePayloadLimits.
+			// I'll add a wrapper to export_test.go.
+			orchestrator.ValidatePayloadLimits(p, context.Background(), turn)
 
 			if tt.expectedTruncated {
 				assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response, "error")

@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -33,7 +31,7 @@ func (m *mockExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 
 // mockHistoryManager implements ports.HistoryManager for testing.
 type mockHistoryManager struct {
-	mu       sync.RWMutex
+	Mu       sync.RWMutex
 	Contents []*llm.Content
 	Backup   []*llm.Content
 	Resolver llm.AssetResolver
@@ -43,8 +41,8 @@ type mockHistoryManager struct {
 }
 
 func (m *mockHistoryManager) GetTotalEntries() int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.Mu.RLock()
+	defer m.Mu.RUnlock()
 	return len(m.Contents)
 }
 
@@ -53,8 +51,8 @@ func (m *mockHistoryManager) GetLastUserMessage(ctx context.Context) (string, in
 }
 
 func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.Mu.RLock()
+	defer m.Mu.RUnlock()
 
 	total := len(m.Contents)
 	if startIdx < 0 {
@@ -82,8 +80,8 @@ func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Co
 	if m.SetContentsFunc != nil {
 		return m.SetContentsFunc(ctx, contents)
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	m.Contents = contents
 	return nil
 }
@@ -96,8 +94,8 @@ func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Conten
 	if m.AddContentFunc != nil {
 		return m.AddContentFunc(ctx, content)
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	m.Contents = append(m.Contents, llm.CloneContent(content))
 	return nil
 }
@@ -107,8 +105,8 @@ func (m *mockHistoryManager) GetResolver() llm.AssetResolver {
 }
 
 func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	startIdx := turnIndex * 2
 	if startIdx < 0 || startIdx+1 >= len(m.Contents) {
 		return fmt.Errorf("invalid turn index")
@@ -123,8 +121,8 @@ func (m *mockHistoryManager) Save(ctx context.Context) error {
 }
 
 func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 
 	originalLen := len(m.Contents)
 	if originalLen == 0 || turns <= 0 {
@@ -164,41 +162,41 @@ func (m *mockClock) After(d time.Duration) <-chan time.Time {
 	return ch
 }
 func (m *mockClock) NewTicker(d time.Duration) clock.Ticker {
-	return mockTicker{c: m.After(d)}
+	return MockTicker{CVal: m.After(d)}
 }
 func (m *mockClock) Jitter(base float64) float64 { return base }
 
-type mockTicker struct {
-	c <-chan time.Time
+type MockTicker struct {
+	CVal <-chan time.Time
 }
 
-func (m mockTicker) C() <-chan time.Time { return m.c }
-func (m mockTicker) Stop()               {}
+func (m MockTicker) C() <-chan time.Time { return m.CVal }
+func (m MockTicker) Stop()               {}
 
 type mockHook struct {
-	beforeCalled int
-	afterCalled  int
-	transCalled  int
+	BeforeCalled int
+	AfterCalled  int
+	TransCalled  int
 }
 
-func (h *mockHook) BeforeTurn(turn *turn)                              { h.beforeCalled++ }
-func (h *mockHook) AfterTurn(turn *turn, err error)                    { h.afterCalled++ }
-func (h *mockHook) OnPhaseTransition(from, to turnPhase, s *turnState) { h.transCalled++ }
+func (h *mockHook) BeforeTurn(turn *turn)                              { h.BeforeCalled++ }
+func (h *mockHook) AfterTurn(turn *turn, err error)                    { h.AfterCalled++ }
+func (h *mockHook) OnPhaseTransition(from, to turnPhase, s *turnState) { h.TransCalled++ }
 
 type mockRetryPolicy struct {
-	shouldRetryCalled bool
-	delay             time.Duration
-	retry             bool
+	ShouldRetryCalled bool
+	Delay             time.Duration
+	Retry             bool
 }
 
 func (m *mockRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int, hasSeenRateLimit bool) (time.Duration, bool) {
-	m.shouldRetryCalled = true
-	return m.delay, m.retry
+	m.ShouldRetryCalled = true
+	return m.Delay, m.Retry
 }
 
 type mockEngineCostTracker struct {
-	mu               sync.Mutex
-	accumulatedCount int
+	Mu               sync.Mutex
+	AccumulatedCount int
 }
 
 func (m *mockEngineCostTracker) CalculateCost(mt llm.Metrics) float64 {
@@ -206,16 +204,16 @@ func (m *mockEngineCostTracker) CalculateCost(mt llm.Metrics) float64 {
 }
 
 func (m *mockEngineCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.accumulatedCount++
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.AccumulatedCount++
 	return 0.05
 }
 
 func (m *mockEngineCostTracker) Accumulate(mt llm.Metrics) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.accumulatedCount++
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	m.AccumulatedCount++
 }
 
 func (m *mockEngineCostTracker) GetTotalCost(ctx context.Context) float64 {
@@ -244,11 +242,11 @@ func newTestContextManager(s *session.ContextStrategy, h ports.HistoryManager, b
 
 // testTurnEnv holds the standard environment for TurnEngine tests.
 type testTurnEnv struct {
-	gw       *mockGateway
-	reg      *mockToolRegistry
-	bus      *events.SimpleEventBus
-	cm       *session.ContextManager
-	hManager ports.HistoryManager
+	Gw       *mockGateway
+	Reg      *mockToolRegistry
+	Bus      *events.SimpleEventBus
+	Cm       *session.ContextManager
+	HManager ports.HistoryManager
 }
 
 func setupTurnEngineTest(t *testing.T) *testTurnEnv {
@@ -256,7 +254,8 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	reg := &mockToolRegistry{}
 	// Use synchronous event bus for deterministic test results
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	inframock.CleanupBus(t, bus)
+	t.Cleanup(func() { bus.Shutdown(context.Background()) })
+
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	hManager := &mockHistoryManager{}
 	cm := newTestContextManager(strategy, hManager, bus)
@@ -266,68 +265,68 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	return &testTurnEnv{
-		gw:       gw,
-		reg:      reg,
-		bus:      bus,
-		cm:       cm,
-		hManager: hManager,
+		Gw:       gw,
+		Reg:      reg,
+		Bus:      bus,
+		Cm:       cm,
+		HManager: hManager,
 	}
 }
 
 // costCapturer captures usage metrics and turn status events for assertions.
 type costCapturer struct {
-	mu           sync.Mutex
-	bus          events.EventBus
-	turnCosts    []float64
-	lastTaskCost float64
+	Mu           sync.Mutex
+	Bus          events.EventBus
+	TurnCosts    []float64
+	LastTaskCost float64
 }
 
 func newCostCapturer(bus events.EventBus) *costCapturer {
-	c := &costCapturer{bus: bus}
+	c := &costCapturer{Bus: bus}
 	bus.Subscribe(func(ctx context.Context, ev events.Event) {
-		c.mu.Lock()
-		defer c.mu.Unlock()
+		c.Mu.Lock()
+		defer c.Mu.Unlock()
 		if um, ok := ev.(events.UsageMetricsEvent); ok {
 			if um.Metrics != nil {
-				c.turnCosts = append(c.turnCosts, um.Metrics.Cost)
+				c.TurnCosts = append(c.TurnCosts, um.Metrics.Cost)
 			}
 		}
 		if ts, ok := ev.(events.TurnStatusEvent); ok {
-			c.lastTaskCost = ts.Status.TaskCost
+			c.LastTaskCost = ts.Status.TaskCost
 		}
 	})
 	return c
 }
 
-func (c *costCapturer) reset() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.turnCosts = nil
-	c.lastTaskCost = 0
+func (c *costCapturer) Reset() {
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	c.TurnCosts = nil
+	c.LastTaskCost = 0
 }
 
-func (c *costCapturer) assertTaskCost(t *testing.T, expected float64) {
+func (c *costCapturer) AssertTaskCost(t *testing.T, expected float64) {
 	t.Helper()
-	_ = c.bus.Flush(context.Background())
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if fmt.Sprintf("%.6f", c.lastTaskCost) != fmt.Sprintf("%.6f", expected) {
-		t.Errorf("expected task cost %f, got %f", expected, c.lastTaskCost)
+	_ = c.Bus.Flush(context.Background())
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	if fmt.Sprintf("%.6f", c.LastTaskCost) != fmt.Sprintf("%.6f", expected) {
+		t.Errorf("expected task cost %f, got %f", expected, c.LastTaskCost)
 	}
 }
 
-func (c *costCapturer) assertTurnCosts(t *testing.T, expected []float64) {
+func (c *costCapturer) AssertTurnCosts(t *testing.T, expected []float64) {
 	t.Helper()
-	_ = c.bus.Flush(context.Background())
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.turnCosts) != len(expected) {
-		t.Errorf("expected %d turn costs, got %d", len(expected), len(c.turnCosts))
+	_ = c.Bus.Flush(context.Background())
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	if len(c.TurnCosts) != len(expected) {
+		t.Errorf("expected %d turn costs, got %d", len(expected), len(c.TurnCosts))
 		return
 	}
 	for i, v := range expected {
-		if fmt.Sprintf("%.6f", c.turnCosts[i]) != fmt.Sprintf("%.6f", v) {
-			t.Errorf("turn %d: expected cost %f, got %f", i, v, c.turnCosts[i])
+		if fmt.Sprintf("%.6f", c.TurnCosts[i]) != fmt.Sprintf("%.6f", v) {
+			t.Errorf("turn %d: expected cost %f, got %f", i, v, c.TurnCosts[i])
 		}
 	}
 }
@@ -392,8 +391,8 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 }
 
 func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	if index >= 0 && index < len(m.Contents) {
 		m.Contents[index].Parts = append(m.Contents[index].Parts, parts...)
 	}
@@ -403,20 +402,20 @@ func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 func (m *mockHistoryManager) GetFilePath() string { return "" }
 
 type mockTokenCounter struct {
-	tokens int
+	Tokens int
 }
 
 func (m *mockTokenCounter) Count(contents []*llm.Content) int {
-	return m.tokens
+	return m.Tokens
 }
 
 func (m *mockTokenCounter) CountTokens(text string) int {
-	return m.tokens
+	return m.Tokens
 }
 
 type mockGateway struct {
 	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	sendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	SendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 }
 
 func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -427,8 +426,8 @@ func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools 
 }
 
 func (m *mockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	if m.sendChatFn != nil {
-		return m.sendChatFn(ctx, history, tools, resolver)
+	if m.SendChatFn != nil {
+		return m.SendChatFn(ctx, history, tools, resolver)
 	}
 	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
 }
@@ -493,11 +492,11 @@ func (m *mockToolRegistry) ListAvailableToolkits() []string {
 }
 
 type mockEventBusFail struct {
-	publishErr error
+	PublishErr error
 }
 
 func (m *mockEventBusFail) Publish(ctx context.Context, e events.Event) error {
-	return m.publishErr
+	return m.PublishErr
 }
 func (m *mockEventBusFail) Subscribe(f func(context.Context, events.Event)) {}
 func (m *mockEventBusFail) Shutdown(ctx context.Context) error              { return nil }
@@ -521,3 +520,37 @@ func (m *mockSecurityManager) Close() error { return nil }
 func (m *mockHistoryManager) Sync(ctx context.Context) error {
 	return nil
 }
+
+// engineOption extensions for testing
+func withEngineMiddleware(m ...turnMiddleware) engineOption {
+	return func(e *Engine, cfg *engineConfig) {
+		e.middleware = append(e.middleware, m...)
+	}
+}
+
+func withEngineProcessor(phase turnPhase, p turnProcessor) engineOption {
+	return func(e *Engine, cfg *engineConfig) {
+		e.processors[phase] = p
+	}
+}
+
+func withEngineHook(h turnHook) engineOption {
+	return func(e *Engine, cfg *engineConfig) {
+		e.hooks = append(e.hooks, h)
+	}
+}
+
+func withEngineRetryPolicy(p retryPolicy) engineOption {
+	return func(e *Engine, cfg *engineConfig) {
+		e.retryPolicy = p
+	}
+}
+
+type mockTransformer struct {
+	TransformFunc func(ctx context.Context, req *ports.ContextRequest) error
+}
+
+func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+	return m.TransformFunc(ctx, req)
+}
+func (m *mockTransformer) Priority() int { return 10 }

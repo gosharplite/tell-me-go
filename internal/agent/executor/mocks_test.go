@@ -10,6 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -73,3 +74,104 @@ func (m *mockEventBus) Publish(ctx context.Context, e events.Event) error {
 func (m *mockEventBus) Subscribe(sub func(context.Context, events.Event)) {}
 func (m *mockEventBus) Shutdown(ctx context.Context) error                { return nil }
 func (m *mockEventBus) Flush(ctx context.Context) error                   { return nil }
+
+type mockSecurityManager struct {
+	domain_security.Manager
+	AllowedCommands map[string]bool
+	AllowAll        bool
+}
+
+func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
+	if m.AllowAll {
+		return true
+	}
+	return m.AllowedCommands[command]
+}
+
+func (m *mockSecurityManager) Close() error { return nil }
+
+type mockConsentSecurityManager struct {
+	domain_security.Manager
+	ConfirmResult bool
+}
+
+func (m *mockConsentSecurityManager) IsBypassActive() bool { return false }
+func (m *mockConsentSecurityManager) TerminalLock()        {}
+func (m *mockConsentSecurityManager) TerminalUnlock()      {}
+func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {
+	return m.ConfirmResult, nil
+}
+
+func (m *mockConsentSecurityManager) Close() error { return nil }
+
+type panicRegistry struct {
+	tools.Registry
+	PanicOnExec bool
+	PanicOnGet  bool
+	Serial      bool
+}
+
+func (r *panicRegistry) GetDeclarations() []*tools.ToolDeclaration {
+	if r.PanicOnGet {
+		panic("registry GetDeclarations panic")
+	}
+	return []*tools.ToolDeclaration{{Name: "any"}}
+}
+
+func (r *panicRegistry) IsSerial(name string) bool {
+	return r.Serial
+}
+
+func (r *panicRegistry) IsLongRunning(name string) bool {
+	return false
+}
+
+func (r *panicRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	if r.PanicOnExec {
+		panic("registry Execute panic")
+	}
+	return tools.ToolResult{}, nil
+}
+
+func (r *panicRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{}
+}
+
+func (r *panicRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	panic("not implemented")
+}
+
+func (r *panicRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	panic("not implemented")
+}
+
+func (r *panicRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	panic("not implemented")
+}
+
+func (r *panicRegistry) ListAvailableToolkits() []string {
+	panic("not implemented")
+}
+
+type ToolBehavior struct {
+	Result  tools.ToolResult
+	Err     error
+	Delay   time.Duration
+	Panic   interface{}
+	Serial  bool
+	Long    bool
+	Observe func() // Callback to signal execution
+}
+
+func SetupMockSecurityManager(allowedTools []string) *mockSecurityManager {
+	if allowedTools != nil {
+		sm := &mockSecurityManager{
+			AllowedCommands: make(map[string]bool),
+		}
+		for _, tool := range allowedTools {
+			sm.AllowedCommands[tool] = true
+		}
+		return sm
+	}
+	return &mockSecurityManager{AllowAll: true}
+}
