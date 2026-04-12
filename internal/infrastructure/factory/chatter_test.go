@@ -34,7 +34,7 @@ type mockSessionDeps struct {
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
 func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
-func (d *mockSessionDeps) GetRegistry() tools.Registry                          { return d.reg }
+func (d *mockSessionDeps) GetRegistry() (tools.Registry, error)                 { return d.reg, nil }
 func (d *mockSessionDeps) GetSecurityManager() security.Manager                 { return d.sm }
 func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
 func (d *mockSessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
