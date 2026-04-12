@@ -216,8 +216,10 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return nil, simulatedErr
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
+				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 			},
-			targetErr: simulatedErr,
+			wantErr: "", // No longer fails here
 		},
 		{
 			name: "FailsOnRegisterPolicyToolsError",
@@ -228,8 +230,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(simulatedErr)
 				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 			},
-			wantErr:   "failed to register policy tools",
-			targetErr: simulatedErr,
+			wantErr: "", // No longer fails here because registration is lazy
 		},
 		{
 			name: "FailsOnStateInitError",
@@ -268,6 +269,12 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, cf)
 			newSession := strings.Contains(tt.name, "TriggerNewSession")
 			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
+
+			if tt.wantErr == "" && tt.targetErr == nil {
+				assert.NoError(t, err)
+				return
+			}
+
 			assert.Error(t, err)
 			if err != nil {
 				if tt.wantErr != "" {
@@ -535,9 +542,15 @@ func TestSessionDeps_Getters(t *testing.T) {
 		tracker:         tracker,
 		pricingData:     pData,
 		sessionProvider: sessionProvider,
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return client, nil
+		},
+		regFactory: func() (tools.Registry, error) {
+			return reg, nil
+		},
 	}
 
-	assert.Equal(t, gw, deps.GetGateway())
+	assert.NotNil(t, deps.GetGateway())
 	assert.Equal(t, hManager, deps.GetHistoryManager())
 	assert.Equal(t, reg, deps.GetRegistry())
 	assert.Equal(t, sm, deps.GetSecurityManager())
@@ -545,7 +558,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	assert.Equal(t, paths, deps.GetPaths())
 	assert.Equal(t, tracker, deps.GetTracker())
 	assert.Equal(t, pData, deps.GetPricingData())
-	assert.Equal(t, client, deps.GetClient())
+	assert.NotNil(t, deps.GetClient())
 	assert.Equal(t, sessionProvider, deps.GetSessionProvider())
 }
 
@@ -618,7 +631,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			wantErr: "failed to register core tools: simulated error",
+			wantErr: "", // Lazy initialization
 		},
 		{
 			name: "TelemetryRegistrationFails",
@@ -627,7 +640,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			wantErr: "failed to register metrics tools: simulated error",
+			wantErr: "", // Lazy initialization
 		},
 		{
 			name: "SessionRotationFails",
