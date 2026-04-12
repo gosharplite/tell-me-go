@@ -155,22 +155,24 @@ func TestArchitectureManager_FormatReport(t *testing.T) {
 
 func TestArchitectureManager_IsLayer(t *testing.T) {
 	t.Parallel()
+	m := &architectureManager{}
 	tests := []struct {
 		pkg   string
 		layer string
 		want  bool
 	}{
-		{"github.com/org/repo/internal/domain", "domain", true},
-		{"github.com/org/repo/internal/domain/sub", "domain", true},
-		{"github.com/org/repo/internal/domain-logic", "domain", false},
-		{"github.com/org/repo/internal/agent/service", "agent", true},
-		{"github.com/org/repo/pkg/domain", "domain", false},
+		{"github.com/org/repo/internal/domain", LayerDomain, true},
+		{"github.com/org/repo/internal/domain/sub", LayerDomain, true},
+		{"github.com/org/repo/internal/domain-logic", LayerDomain, false},
+		{"github.com/org/repo/internal/agent/service", LayerApplication, true},
+		{"github.com/org/repo/internal/pkg/stringsutil", LayerShared, true},
+		{"github.com/org/repo/pkg/domain", LayerDomain, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.pkg+"_"+tt.layer, func(t *testing.T) {
 			t.Parallel()
-			if got := isLayer(tt.pkg, tt.layer); got != tt.want {
+			if got := m.isLayer(tt.pkg, tt.layer); got != tt.want {
 				t.Errorf("isLayer(%q, %q) = %v, want %v", tt.pkg, tt.layer, got, tt.want)
 			}
 		})
@@ -204,11 +206,13 @@ func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
 	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	pkgs := map[string][]string{
 		"github.com/org/repo/internal/domain": {
-			"github.com/org/repo/internal/agent", // Violation
+			"github.com/org/repo/internal/agent",         // Violation
+			"github.com/org/repo/internal/pkg/clock",     // OK
 		},
 		"github.com/org/repo/internal/agent": {
-			"github.com/org/repo/internal/domain", // OK
-			"github.com/org/repo/cmd/app",         // Violation
+			"github.com/org/repo/internal/domain",        // OK
+			"github.com/org/repo/cmd/app",                // Violation
+			"github.com/org/repo/internal/pkg/strings",   // OK
 		},
 	}
 

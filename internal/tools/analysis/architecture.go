@@ -19,11 +19,13 @@ import (
 )
 
 const (
-	layerDomain   = "domain"
-	layerAgent    = "agent"
-	layerTools    = "tools"
-	layerStorage  = "infrastructure/storage"
-	layerSecurity = "infrastructure/security"
+	LayerDomain         = "domain"
+	LayerInfrastructure = "infrastructure"
+	LayerApplication    = "application" // Groups agent, cli, ui, service, application
+	LayerTools          = "tools"
+	LayerShared         = "shared" // Cross-cutting utilities in internal/pkg
+	LayerCmd            = "cmd"
+	LayerUnknown        = "unknown"
 )
 
 // packageProvider defines the interface for loading package information.
@@ -216,31 +218,56 @@ func (m *architectureManager) sendHeartbeat(hb chan<- struct{}) {
 	}
 }
 
-func isLayer(pkgPath, layerName string) bool {
-	// Pre-check for "internal/" to avoid splitting if not needed
+func (m *architectureManager) classify(pkgPath string) string {
+	if m.isCmd(pkgPath) {
+		return LayerCmd
+	}
+
 	const internalSegment = "internal/"
 	idx := strings.Index(pkgPath, internalSegment)
 	if idx == -1 {
-		return false
+		return LayerUnknown
 	}
 
 	// Ensure it's exactly the segment "internal/"
 	if idx > 0 && pkgPath[idx-1] != '/' {
-		return false
+		return LayerUnknown
 	}
 
 	remaining := pkgPath[idx+len(internalSegment):]
-	// check if it starts with layerName and then a slash or end of string
-	if !strings.HasPrefix(remaining, layerName) {
-		return false
+	if strings.HasPrefix(remaining, "service/toolchain") {
+		return LayerInfrastructure
 	}
 
-	layerEnd := len(layerName)
-	if len(remaining) == layerEnd || remaining[layerEnd] == '/' {
-		return true
+	parts := strings.Split(remaining, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return LayerUnknown
 	}
 
-	return false
+	segment := parts[0]
+	switch segment {
+	case "domain":
+		return LayerDomain
+	case "infrastructure":
+		return LayerInfrastructure
+	case "agent", "cli", "ui", "service", "application":
+		return LayerApplication
+	case "tools":
+		return LayerTools
+	case "pkg":
+		return LayerShared
+	default:
+		return LayerUnknown
+	}
+}
+
+func (m *architectureManager) isLayer(pkgPath, layerName string) bool {
+	return m.classify(pkgPath) == layerName
+}
+
+func (m *architectureManager) isCompositionRoot(pkgPath string) bool {
+	return strings.Contains(pkgPath, "internal/infrastructure/di") ||
+		strings.Contains(pkgPath, "internal/infrastructure/factory")
 }
 
 func (m *architectureManager) isCmd(pkgPath string) bool {
@@ -250,29 +277,24 @@ func (m *architectureManager) isCmd(pkgPath string) bool {
 func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb chan<- struct{}) []violation {
 	rules := []rule{
 		{
-			SourceLayer: layerDomain,
-			Forbidden:   []string{layerAgent, layerTools, layerStorage, layerSecurity},
-			Reason:      "Domain must not depend on other internal layers.",
+			SourceLayer: LayerDomain,
+			Forbidden:   []string{LayerApplication, LayerInfrastructure, LayerTools, LayerCmd},
+			Reason:      "Domain must not depend on Application, Infrastructure, Tools, or Cmd layers.",
 		},
 		{
-			SourceLayer: layerAgent,
-			Forbidden:   []string{layerTools, layerStorage, "cmd"},
-			Reason:      "Application/Agent layer must not depend on Infrastructure/Tools implementations or Composition Root (cmd).",
+			SourceLayer: LayerApplication,
+			Forbidden:   []string{LayerInfrastructure, LayerTools, LayerCmd},
+			Reason:      "Application layer must not depend on Infrastructure, Tools, or Cmd layers.",
 		},
 		{
-			SourceLayer: layerTools,
-			Forbidden:   []string{layerAgent, "cmd"},
-			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
+			SourceLayer: LayerInfrastructure,
+			Forbidden:   []string{LayerApplication, LayerCmd},
+			Reason:      "Infrastructure layer must not depend on Application or Cmd layers.",
 		},
 		{
-			SourceLayer: layerStorage,
-			Forbidden:   []string{layerAgent, "cmd"},
-			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
-		},
-		{
-			SourceLayer: layerSecurity,
-			Forbidden:   []string{layerAgent, "cmd"},
-			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
+			SourceLayer: LayerTools,
+			Forbidden:   []string{LayerApplication, LayerCmd},
+			Reason:      "Tools layer must not depend on Application or Cmd layers.",
 		},
 	}
 
@@ -293,6 +315,13 @@ func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb 
 			}
 		}
 		imports := pkgs[pkg]
+		if m.isCompositionRoot(pkg) {
+			// Skip source-layer rule checks for Composition Roots (DI/Factory),
+			// but still check for improper cmd imports.
+			violations = append(violations, m.checkGeneralCmdImport(pkg, imports, violations)...)
+			continue
+		}
+
 		violations = append(violations, m.checkSinglePackageViolations(pkg, imports, rules)...)
 		violations = append(violations, m.checkGeneralCmdImport(pkg, imports, violations)...)
 	}
@@ -305,17 +334,17 @@ func (m *architectureManager) checkSinglePackageViolations(pkg string, imports [
 	shortPkg := m.shorten(pkg)
 
 	for _, rule := range rules {
-		if !isLayer(pkg, rule.SourceLayer) {
+		if !m.isLayer(pkg, rule.SourceLayer) {
 			continue
 		}
 
 		for _, imp := range imports {
 			for _, forbidden := range rule.Forbidden {
 				match := false
-				if forbidden == "cmd" {
+				if forbidden == LayerCmd {
 					match = m.isCmd(imp)
 				} else {
-					match = isLayer(imp, forbidden)
+					match = m.isLayer(imp, forbidden)
 				}
 
 				if match {
@@ -466,8 +495,20 @@ func (m *architectureManager) shortenList(pkgs []string) []string {
 }
 
 func (m *architectureManager) formatReport(violations []violation) string {
+	var layerViolations, circularRefs int
+	for _, v := range violations {
+		if v.category == "[LAYER VIOLATION]" {
+			layerViolations++
+		} else if v.category == "[CIRCULAR REFERENCE]" {
+			circularRefs++
+		}
+	}
+
 	var sb strings.Builder
 	sb.WriteString("### Architectural Integrity Report: ❌ FAILED\n\n")
+
+	_, _ = fmt.Fprintf(&sb, "Found **%d** layer violations and **%d** circular references.\n\n", layerViolations, circularRefs)
+
 	sb.WriteString("| Package | Violation | Target | Reason |\n")
 	sb.WriteString("| :--- | :--- | :--- | :--- |\n")
 
