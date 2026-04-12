@@ -220,7 +220,8 @@ func (s *secretScanner) isIgnored(path string) bool {
 	// Check for common ignored directories in any part of the path
 	parts := strings.Split(p, "/")
 	for _, part := range parts {
-		if part == ".git" || part == "vendor" || part == "node_modules" {
+		// Added "configs" to the exclusion list to prevent false positives from environment variable placeholders
+		if part == ".git" || part == "vendor" || part == "node_modules" || part == "configs" {
 			return true
 		}
 	}

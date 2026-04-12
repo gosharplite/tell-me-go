@@ -291,3 +291,30 @@ func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
 		assert.Equal(t, int64(2), m.getParallelism())
 	})
 }
+
+func TestSecretScanner_IsIgnored(t *testing.T) {
+	s := &secretScanner{}
+	tests := []struct {
+		path   string
+		ignore bool
+	}{
+		{"main.go", false},
+		{".git/config", true},
+		{"vendor/pkg/foo.go", true},
+		{"node_modules/pkg/foo.js", true},
+		{"configs/architect.yaml", true},
+		{"internal/configs/foo.yaml", true},
+		{"foo_test.go", true},
+		{"README.md", true},
+		{"data.json", true},
+		{"test.golden", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := s.isIgnored(tt.path); got != tt.ignore {
+				t.Errorf("isIgnored(%q) = %v; want %v", tt.path, got, tt.ignore)
+			}
+		})
+	}
+}
