@@ -6,6 +6,7 @@ package e2e
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -77,10 +78,26 @@ func TestSecurity_DetailedErrorMessage(t *testing.T) {
 	// This test verifies that if a security block occurs, the detailed error is visible.
 	homeDir := t.TempDir()
 	provider := "google"
-	
-	// Try to read /etc/passwd which should definitely be blocked
+
+	var targetPath string
+	var expectedMention string
+
+	if runtime.GOOS == "windows" {
+		sysRoot := os.Getenv("SystemRoot")
+		if sysRoot == "" {
+			t.Fatal("SystemRoot environment variable is not set on Windows")
+		}
+		absSysRoot, _ := filepath.Abs(filepath.Clean(sysRoot))
+		targetPath = filepath.Join(absSysRoot, "System32", "drivers", "etc", "hosts")
+		expectedMention = absSysRoot
+	} else {
+		targetPath = "/etc/passwd"
+		expectedMention = "/etc"
+	}
+
+	// Try to read a sensitive path which should definitely be blocked
 	server, receivedResponse := setupProviderMockServer(t, provider, "read_file", map[string]interface{}{
-		"filepath": "/etc/passwd",
+		"filepath": targetPath,
 	}, nil)
 	defer server.Close()
 
@@ -90,16 +107,16 @@ func TestSecurity_DetailedErrorMessage(t *testing.T) {
 		"TELL_ME_MOCK_URL=" + server.URL,
 	}
 
-	_, stderr, _ := runCommandWithEnv(env, "", "-c", configPath, "read /etc/passwd")
-	
+	_, stderr, _ := runCommandWithEnv(env, "", "-c", configPath, "read "+targetPath)
+
 	errOut := stripANSI(stderr)
-	
+
 	// Check for the specific error message instead of the generic one
 	if !strings.Contains(errOut, "access to system directory") && !strings.Contains(*receivedResponse, "access to system directory") {
 		t.Errorf("Expected detailed security error message (access to system directory), but got generic or none.\nStderr: %s\nResponse: %s", errOut, *receivedResponse)
 	}
-	
-	if !strings.Contains(errOut, "/etc") && !strings.Contains(*receivedResponse, "/etc") {
-		t.Errorf("Expected blocked path '/etc' to be mentioned in error message.\nStderr: %s\nResponse: %s", errOut, *receivedResponse)
+
+	if !strings.Contains(errOut, expectedMention) && !strings.Contains(*receivedResponse, expectedMention) {
+		t.Errorf("Expected blocked path '%s' to be mentioned in error message.\nStderr: %s\nResponse: %s", expectedMention, errOut, *receivedResponse)
 	}
 }

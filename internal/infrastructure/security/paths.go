@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -156,10 +157,36 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 	}
 
 	// 2. Standard Deny-List
-	sensitive := []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys", "/private/etc", "/private/var"}
+	var sensitive []string
+	isWindows := runtime.GOOS == "windows"
+
+	if isWindows {
+		// Populate sensitive Windows directories via environment variables
+		winDirs := []string{"SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData"}
+		for _, env := range winDirs {
+			if val := os.Getenv(env); val != "" {
+				abs, err := filepath.Abs(filepath.Clean(val))
+				if err == nil {
+					sensitive = append(sensitive, abs)
+				}
+			}
+		}
+	} else {
+		sensitive = []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys", "/private/etc", "/private/var"}
+	}
+
+	separator := string(os.PathSeparator)
 	for _, s := range sensitive {
-		if absPath == s || strings.HasPrefix(absPath, s+"/") {
-			return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
+		if isWindows {
+			sLower := strings.ToLower(s)
+			absLower := strings.ToLower(absPath)
+			if absLower == sLower || strings.HasPrefix(absLower, sLower+separator) {
+				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
+			}
+		} else {
+			if absPath == s || strings.HasPrefix(absPath, s+separator) {
+				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
+			}
 		}
 	}
 	return nil
