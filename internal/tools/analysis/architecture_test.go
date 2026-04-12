@@ -321,3 +321,37 @@ func TestArchitectureManager_IsTrackedPackage(t *testing.T) {
 		}
 	}
 }
+
+func TestArchitectureManager_Classify(t *testing.T) {
+	t.Parallel()
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
+
+	tests := []struct {
+		pkg  string
+		want string
+	}{
+		{"github.com/org/repo/internal/domain", LayerDomain},
+		{"github.com/org/repo/internal/infrastructure/db", LayerInfrastructure},
+		{"github.com/org/repo/internal/service/api", LayerApplication},
+		{"github.com/org/repo/internal/tools/checker", LayerTools},
+		{"github.com/org/repo/internal/pkg/utils", LayerShared},
+		{"github.com/org/repo/cmd/server", LayerCmd},
+		// Special Case: internal/service/toolchain maps to Infrastructure
+		{"github.com/org/repo/internal/service/toolchain/compiler", LayerInfrastructure},
+		// Edge Cases & Unknowns
+		{"github.com/org/repo", LayerUnknown},                 // Module root
+		{"github.com/org/repo/internal", LayerUnknown},          // Bare internal
+		{"github.com/org/repo/internal/unknown", LayerUnknown},   // Unknown internal segment
+		{"github.com/org/repo/pkg/external", LayerUnknown},      // Outside tracked directories
+		{"github.com/other/module/pkg", LayerUnknown},          // External module
+		{"", LayerUnknown},                                     // Empty path
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.pkg, func(t *testing.T) {
+			if got := m.classify(tt.pkg); got != tt.want {
+				t.Errorf("classify(%q) = %q, want %q", tt.pkg, got, tt.want)
+			}
+		})
+	}
+}
