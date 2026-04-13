@@ -460,6 +460,7 @@ func (e *Engine) EmergencySave(Turn *Turn) {
 func (e *Engine) ExecutePhase(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 	processor, ok := e.processors[Turn.State.Phase]
 	if !ok {
+		Turn.State.Phase = PhaseComplete // Force exit to prevent infinite loop in runPhaseLoop
 		return ProcessResult{}, NewAgentError(ErrLogic, fmt.Sprintf("no processor for phase: %s", Turn.State.Phase), nil)
 	}
 
