@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
@@ -166,7 +165,7 @@ func TestGitTools(t *testing.T) {
 			}
 
 			reg := registry.New()
-			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem()); err != nil {
 				t.Fatalf("Register failed: %v", err)
 			}
 
@@ -258,7 +257,7 @@ func TestGitDestructiveActions(t *testing.T) {
 			}
 
 			reg := registry.New()
-			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem()); err != nil {
 				t.Fatalf("Register failed: %v", err)
 			}
 
@@ -296,7 +295,7 @@ func TestGitBlameSafety(t *testing.T) {
 	}
 
 	reg := registry.New()
-	if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+	if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem()); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 

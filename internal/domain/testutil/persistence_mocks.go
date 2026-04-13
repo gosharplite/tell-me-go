@@ -38,10 +38,10 @@ func (m *mockOSFS) AtomicWrite(ctx context.Context, name string, data []byte, pe
 		return err
 	}
 	tempName := tempFile.Name()
-	defer os.Remove(tempName)
+	defer func() { _ = os.Remove(tempName) }()
 
 	if _, err := tempFile.Write(data); err != nil {
-		tempFile.Close()
+		_ = tempFile.Close()
 		return err
 	}
 	if err := tempFile.Close(); err != nil {

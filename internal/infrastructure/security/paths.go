@@ -114,10 +114,7 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	}
 	absPath = p.resolveSymlinks(absPath)
 
-	// Convert to forward slashes for cross-platform consistency in internal checks
-	normalizedPath := filepath.ToSlash(absPath)
-
-	if err := p.isSystemDirectory(normalizedPath); err != nil {
+	if err := p.isSystemDirectory(absPath); err != nil {
 		return "", err
 	}
 
@@ -145,6 +142,12 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 }
 
 func (p *pathPolicy) isSystemDirectory(absPath string) error {
+	// 0. Normalize and resolve input path for internal consistency.
+	// This ensures that short/long names on Windows and symlinks are handled
+	// before prefix matching against system directories and exemptions.
+	absPath = p.resolveSymlinks(absPath)
+	absPath = filepath.ToSlash(absPath)
+
 	// Explicitly exempt CWD and its children
 	if cwd, err := os.Getwd(); err == nil {
 		if ok, _ := p.checkBoundary(absPath, cwd); ok {
@@ -167,19 +170,25 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 	}
 
 	sensitive := getSystemDirectories()
-	separator := "/" // Use forward slash since we use filepath.ToSlash(absPath)
 	caseSensitive := isCaseSensitive()
 
 	for _, s := range sensitive {
 		sNormalized := filepath.ToSlash(s)
+		sTarget := sNormalized
+		sPrefix := sNormalized
+		if !strings.HasSuffix(sPrefix, "/") {
+			sPrefix += "/"
+		}
+
 		if !caseSensitive {
-			sLower := strings.ToLower(sNormalized)
+			sTarget = strings.ToLower(sTarget)
+			sPrefix = strings.ToLower(sPrefix)
 			absLower := strings.ToLower(absPath)
-			if absLower == sLower || strings.HasPrefix(absLower, sLower+separator) {
+			if absLower == sTarget || strings.HasPrefix(absLower, sPrefix) {
 				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
 			}
 		} else {
-			if absPath == sNormalized || strings.HasPrefix(absPath, sNormalized+separator) {
+			if absPath == sTarget || strings.HasPrefix(absPath, sPrefix) {
 				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
 			}
 		}

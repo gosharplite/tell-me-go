@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -75,11 +77,22 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 	}
 }
 
+func newTestShellTool(sm shellSecurity, validator domain_security.CommandValidator) *shellTool {
+	var translator commandTranslator = &posixTranslator{}
+	var wrapper shellWrapper = &posixShellWrapper{}
+	if runtime.GOOS == "windows" {
+		translator = &windowsTranslator{}
+		wrapper = &windowsShellWrapper{}
+	}
+	return newshellTool(sm, validator, translator, wrapper)
+}
+
 func setupTruncationTest(t *testing.T) (*shellTool, context.Context, map[string]interface{}) {
 	t.Helper()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, &testutil.MockCommandValidator{}, &posixTranslator{}, &posixShellWrapper{})
+
+	tool := newTestShellTool(sm, &testutil.MockCommandValidator{})
 	ctx := context.Background()
 	// Use forward slashes for the helper path to avoid POSIX parser errors on Windows
 	cmd := fmt.Sprintf("%s printf 世界", filepath.ToSlash(helperPath))
@@ -120,7 +133,7 @@ func verifyTruncationResult(t *testing.T, res tools.ToolResult, expected, forbid
 func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, &testutil.MockCommandValidator{}, &posixTranslator{}, &posixShellWrapper{})
+	tool := newTestShellTool(sm, &testutil.MockCommandValidator{})
 	ctx := context.Background()
 
 	t.Run("Empty command", func(t *testing.T) {
@@ -160,7 +173,7 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, &testutil.MockCommandValidator{}, &posixTranslator{}, &posixShellWrapper{})
+	tool := newTestShellTool(sm, &testutil.MockCommandValidator{})
 
 	tests := []struct {
 		name     string
@@ -224,7 +237,7 @@ func TestShellTool_PipeCommands(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	validator := &testutil.MockCommandValidator{}
-	tool := newshellTool(sm, validator, &posixTranslator{}, &posixShellWrapper{})
+	tool := newTestShellTool(sm, validator)
 	ctx := context.Background()
 
 	helperSlash := filepath.ToSlash(helperPath)
@@ -294,7 +307,7 @@ func TestShellTool_SecurityVisibility(t *testing.T) {
 
 	mockSM := &mockShellSecurity{MockSecurityManager: sm}
 	validator := &testutil.MockCommandValidator{}
-	tool := newshellTool(mockSM, validator, &posixTranslator{}, &posixShellWrapper{})
+	tool := newTestShellTool(mockSM, validator)
 	ctx := context.Background()
 
 	helperSlash := filepath.ToSlash(helperPath)
@@ -441,7 +454,7 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 
 				validator := &testutil.MockCommandValidator{}
 				// 2. Initialize the tool with the mock
-				tool := newshellTool(mockSec, validator, &posixTranslator{}, &posixShellWrapper{})
+				tool := newTestShellTool(mockSec, validator)
 
 				// 3. Action: Attempt to execute a command
 				res, err := tool.ExecuteCommand(context.Background(), map[string]interface{}{
@@ -472,7 +485,7 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 func TestShellTool_TimeoutParameter(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, &testutil.MockCommandValidator{}, &posixTranslator{}, &posixShellWrapper{})
+	tool := newTestShellTool(sm, &testutil.MockCommandValidator{})
 	ctx := context.Background()
 
 	helperSlash := filepath.ToSlash(helperPath)

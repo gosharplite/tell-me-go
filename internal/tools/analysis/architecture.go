@@ -487,9 +487,10 @@ func (m *architectureManager) shortenList(pkgs []string) []string {
 func (m *architectureManager) formatReport(violations []violation) string {
 	var layerViolations, circularRefs int
 	for _, v := range violations {
-		if v.category == "[LAYER VIOLATION]" {
+		switch v.category {
+		case "[LAYER VIOLATION]":
 			layerViolations++
-		} else if v.category == "[CIRCULAR REFERENCE]" {
+		case "[CIRCULAR REFERENCE]":
 			circularRefs++
 		}
 	}

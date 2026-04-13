@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestReplaceText_Uniqueness(t *testing.T) {
@@ -33,7 +33,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 	sm.RegisterSafePath(tmpDir)
 	sm.SetBypassActive(true) // Avoid interactive prompts
 
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: infrapersistence.NewOSFileSystem()}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	// 1. Test failure when old_text appears multiple times
@@ -68,7 +68,7 @@ func TestWriteFile(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: infrapersistence.NewOSFileSystem()}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "new.txt")
@@ -92,7 +92,7 @@ func TestAppendText(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: infrapersistence.NewOSFileSystem()}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "append.txt")
@@ -152,7 +152,7 @@ func (m *mockFS) WriteFile(ctx context.Context, filename string, data []byte, pe
 }
 
 func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
-	return infrapersistence.NewOSFileSystem().OpenFile(ctx, name, flag, perm)
+	return testutil.NewOSFileSystem().OpenFile(ctx, name, flag, perm)
 }
 
 func TestWriteFile_Failures(t *testing.T) {
@@ -164,7 +164,7 @@ func TestWriteFile_Failures(t *testing.T) {
 
 	t.Run("mkdir failure", func(t *testing.T) {
 		mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
-		w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
+		w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: mfs}
 		_, err := w.writeFile(context.Background(), map[string]interface{}{
 			"filepath": "/mock/any/file.txt",
 			"content":  "test",
@@ -177,7 +177,7 @@ func TestWriteFile_Failures(t *testing.T) {
 
 	t.Run("write failure", func(t *testing.T) {
 		mfs := &mockFS{writeErr: fmt.Errorf("write error")}
-		w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
+		w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: mfs}
 		tempDir := t.TempDir()
 		sm.RegisterSafePath(tempDir)
 		path := filepath.Join(tempDir, "file.txt")
@@ -203,8 +203,8 @@ func TestUndoFileChange(t *testing.T) {
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	bm := newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10)
-	w := &fileWriter{sm: sm, bm: bm, fs: infrapersistence.NewOSFileSystem()}
+	bm := newBackupManager(sm, testutil.NewOSFileSystem(), 10)
+	w := &fileWriter{sm: sm, bm: bm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	// Perform a write
@@ -248,7 +248,7 @@ func TestReplaceText_NotFound(t *testing.T) {
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: infrapersistence.NewOSFileSystem()}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	_, err := w.replaceText(ctx, map[string]interface{}{
@@ -270,8 +270,8 @@ func TestAppendText_Failures(t *testing.T) {
 	sm.RegisterSafePath("/mock")
 
 	t.Run("open failure", func(t *testing.T) {
-		mfs := &mockFS_Append{FileSystem: infrapersistence.NewOSFileSystem(), openErr: fmt.Errorf("open error")}
-		w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
+		mfs := &mockFS_Append{FileSystem: testutil.NewOSFileSystem(), openErr: fmt.Errorf("open error")}
+		w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: mfs}
 		_, err := w.appendText(context.Background(), map[string]interface{}{
 			"filepath": "/mock/any.txt",
 			"content":  "test",
@@ -295,8 +295,8 @@ func (m *mockFS_Append) OpenFile(ctx context.Context, name string, flag int, per
 func TestUndoFileChange_Errors(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	bm := newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10)
-	w := &fileWriter{sm: sm, bm: bm, fs: infrapersistence.NewOSFileSystem()}
+	bm := newBackupManager(sm, testutil.NewOSFileSystem(), 10)
+	w := &fileWriter{sm: sm, bm: bm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	t.Run("no backups", func(t *testing.T) {
@@ -324,8 +324,8 @@ func TestAppendText_WriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mfs := &mockFS_AppendWrite{FileSystem: infrapersistence.NewOSFileSystem(), writeErr: fmt.Errorf("write error")}
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
+	mfs := &mockFS_AppendWrite{FileSystem: testutil.NewOSFileSystem(), writeErr: fmt.Errorf("write error")}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, testutil.NewOSFileSystem(), 10), fs: mfs}
 
 	_, err := w.appendText(context.Background(), map[string]interface{}{
 		"filepath": path,
@@ -383,7 +383,7 @@ func TestDeletePath(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := infrapersistence.NewOSFileSystem()
+	fs := testutil.NewOSFileSystem()
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
 	ctx := context.Background()
 
@@ -437,6 +437,9 @@ func TestDeletePath(t *testing.T) {
 	})
 
 	t.Run("permission denied", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping Unix-specific permission denial test on Windows")
+		}
 		path := "/root/secret"
 		_, err := w.deletePath(ctx, map[string]interface{}{
 			"path":      path,
@@ -454,7 +457,7 @@ func TestCreateDirectory(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := infrapersistence.NewOSFileSystem()
+	fs := testutil.NewOSFileSystem()
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
 	ctx := context.Background()
 
@@ -489,6 +492,9 @@ func TestCreateDirectory(t *testing.T) {
 	})
 
 	t.Run("permission denied", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping Unix-specific permission denial test on Windows")
+		}
 		path := "/root/new_dir"
 		_, err := w.createDirectory(ctx, map[string]interface{}{
 			"path":   path,
@@ -511,7 +517,7 @@ func TestDeletePath_Undo(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := infrapersistence.NewOSFileSystem()
+	fs := testutil.NewOSFileSystem()
 	bm := newBackupManager(sm, fs, 10)
 	w := &fileWriter{sm: sm, bm: bm, fs: fs}
 	ctx := context.Background()
@@ -555,7 +561,7 @@ func TestDeletePath_RecursiveWarning(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := infrapersistence.NewOSFileSystem()
+	fs := testutil.NewOSFileSystem()
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
 	ctx := context.Background()
 
@@ -582,7 +588,7 @@ func TestDeletePath_DirectoryWithoutRecursive(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
-	fs := infrapersistence.NewOSFileSystem()
+	fs := testutil.NewOSFileSystem()
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, fs, 10), fs: fs}
 	ctx := context.Background()
 
@@ -615,7 +621,7 @@ func TestDeletePath_RecursiveAuthorization(t *testing.T) {
 	sm.SetBypassActive(false) // Trigger authorization check
 	sm.RegisterSafePath(tempDir)
 
-	fs := infrapersistence.NewOSFileSystem()
+	fs := testutil.NewOSFileSystem()
 
 	t.Run("authorized", func(t *testing.T) {
 		ms := &mockSecurity_Authorize{writerSecurity: sm, authorized: true}

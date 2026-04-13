@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
-	domain_testutil "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 )
 
@@ -22,7 +21,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	historyFile := filepath.Join(tmpDir, "history.jsonl")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
 
-	hManager := history.NewManager(domain_testutil.NewOSFileSystem(), historyFile, archiveFile)
+	hManager := history.NewManager(testutil.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// 1. Add some history (2 turns = 4 messages)
@@ -64,7 +63,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	}
 
 	// Load archive and verify contents
-	archiveStore := history.NewManager(domain_testutil.NewOSFileSystem(), archiveFile, archiveFile+".archive")
+	archiveStore := history.NewManager(testutil.NewOSFileSystem(), archiveFile, archiveFile+".archive")
 	if err := archiveStore.Load(ctx); err != nil {
 		t.Fatalf("failed to load archive: %v", err)
 	}

@@ -20,8 +20,6 @@ func getSystemDirectories() []string {
 		`C:\Users\Public`,
 		`C:\System Volume Information`,
 		`C:\ProgramData`,
-		`C:\`,
-		`D:\`,
 	}
 	for _, f := range fallbacks {
 		abs, err := filepath.Abs(filepath.Clean(f))

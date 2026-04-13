@@ -272,25 +272,31 @@ func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
 	}
 
 	t.Run("Default", func(t *testing.T) {
-		os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM")
+		require.NoError(t, os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM"))
 		assert.Equal(t, int64(2), m.getParallelism())
 	})
 
 	t.Run("Custom", func(t *testing.T) {
-		os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "4")
-		defer os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM")
+		require.NoError(t, os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "4"))
+		defer func() {
+			require.NoError(t, os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM"))
+		}()
 		assert.Equal(t, int64(4), m.getParallelism())
 	})
 
 	t.Run("Minimum", func(t *testing.T) {
-		os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "0")
-		defer os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM")
+		require.NoError(t, os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "0"))
+		defer func() {
+			require.NoError(t, os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM"))
+		}()
 		assert.Equal(t, int64(1), m.getParallelism())
 	})
 
 	t.Run("Invalid", func(t *testing.T) {
-		os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "invalid")
-		defer os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM")
+		require.NoError(t, os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "invalid"))
+		defer func() {
+			require.NoError(t, os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM"))
+		}()
 		assert.Equal(t, int64(2), m.getParallelism())
 	})
 }

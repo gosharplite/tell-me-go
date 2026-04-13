@@ -51,6 +51,8 @@ func (m *mockPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, 
 	return res, nil
 }
 
+func (m *mockPromptTracker) Close() error { return nil }
+
 func (m *mockPromptTracker) GetPrompts() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

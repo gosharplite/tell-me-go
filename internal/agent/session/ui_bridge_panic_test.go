@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
-	inframock "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -114,7 +113,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 
 	// Create a custom slog handler to capture the panic log.
 	// We use LevelDebug to ensure the stack trace log is captured.
-	logBuffer := inframock.NewSafeBuffer()
+	logBuffer := testutil.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	mockRenderer := new(testutil.MockUIRenderer)
@@ -216,7 +215,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 func TestUIBridge_PoisonPill(t *testing.T) {
 	t.Parallel()
 
-	logBuffer := inframock.NewSafeBuffer()
+	logBuffer := testutil.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	mRenderer := new(testutil.MockUIRenderer)

@@ -11,8 +11,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
-
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
@@ -29,7 +27,7 @@ func TestListFiles(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	t.Run("list root", func(t *testing.T) {
@@ -59,7 +57,7 @@ func TestReadFile(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path}, nil)
@@ -81,7 +79,7 @@ func TestGetTree(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	t.Run("basic tree", func(t *testing.T) {
@@ -111,7 +109,7 @@ func TestFindFile(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	t.Run("find .go files", func(t *testing.T) {
@@ -169,7 +167,7 @@ func TestGetFileDiff(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{
 		sm:       sm,
-		fs:       infrapersistence.NewOSFileSystem(),
+		fs:       testutil.NewOSFileSystem(),
 		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
 	}
 	ctx := context.Background()
@@ -205,7 +203,7 @@ func TestReadFile_Truncation(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path}, nil)
@@ -229,7 +227,7 @@ func TestReadFile_Binary(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path}, nil)
@@ -251,7 +249,7 @@ func TestGetFileDiff_Errors(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{
 		sm:       sm,
-		fs:       infrapersistence.NewOSFileSystem(),
+		fs:       testutil.NewOSFileSystem(),
 		executor: &mockDiffExecutor{processExecutor: newprocessExecutor()},
 	}
 	ctx := context.Background()
@@ -286,7 +284,7 @@ func TestReadFiles(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	t.Run("read multiple files", func(t *testing.T) {
@@ -355,7 +353,7 @@ func TestReadFile_UTF8Truncation(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path}, nil)
@@ -391,7 +389,7 @@ func TestReadFiles_UTF8Truncation(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{path}}, nil)
@@ -424,7 +422,7 @@ func TestReadFile_Directory(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	_, err := r.readFile(ctx, map[string]interface{}{"filepath": subDir}, nil)
@@ -443,7 +441,7 @@ func TestReadFiles_Directory(t *testing.T) {
 	}
 
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	res, err := r.readFiles(ctx, map[string]interface{}{"filepaths": []interface{}{subDir}}, nil)
@@ -457,7 +455,7 @@ func TestReadFiles_Directory(t *testing.T) {
 
 func TestReadFiles_Limit(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	r := &fileReader{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	// More than 50 files

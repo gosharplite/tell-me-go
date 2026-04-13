@@ -16,7 +16,6 @@ import (
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
-	domain_testutil "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -25,7 +24,7 @@ import (
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(domain_testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Setup history ending in FunctionResponse
@@ -126,7 +125,7 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(domain_testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// 1. Fill history with 10 messages (5 turns)
@@ -135,7 +134,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "model"}}})
 	}
 
-	bus := domain_testutil.NewCountingEventBus()
+	bus := testutil.NewCountingEventBus()
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 
 	cm := session.NewContextManager(strategy, hManager, bus, nil)
@@ -189,7 +188,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(domain_testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	counter := &testutil.MockTokenCounter{}
@@ -219,7 +218,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	// Test case: Above threshold
 	// Use a fresh manager to ensure we have exactly 2 turns and no interference from previous call
 	historyPath2 := filepath.Join(tmpDir, "history2.json")
-	hManager2 := history.NewManager(domain_testutil.NewOSFileSystem(), historyPath2, historyPath2+".archive")
+	hManager2 := history.NewManager(testutil.NewOSFileSystem(), historyPath2, historyPath2+".archive")
 	for i := 0; i < 2; i++ {
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
@@ -240,7 +239,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(domain_testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial history: 1 turn
@@ -293,7 +292,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(domain_testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial history: 4 turns (8 messages)
@@ -384,7 +383,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 func setupSummarizationTest(t *testing.T) (*session.ContextManager, *[]*domain_llm.Content) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.json")
-	hManager := history.NewManager(domain_testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
 	capturedInput := new([]*domain_llm.Content)
 	g := &testutil.MockGateway{}
 	g.SetGenerateFn(func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
@@ -486,7 +485,7 @@ func verifyBinaryDataMapping(t *testing.T, capturedInput *[]*domain_llm.Content)
 func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "history.jsonl")
-	hManager := history.NewManager(domain_testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
+	hManager := history.NewManager(testutil.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial message

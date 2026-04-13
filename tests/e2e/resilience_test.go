@@ -24,14 +24,18 @@ func TestResilience_504Retry(t *testing.T) {
 		if count == 1 {
 			w.WriteHeader(http.StatusGatewayTimeout)
 			// Return a message that specifically avoids current regex matches but represents a 504
-			fmt.Fprint(w, `{"error": {"code": 504, "message": "The server encountered a temporary error and could not complete your request."}}`)
+			if _, err := fmt.Fprint(w, `{"error": {"code": 504, "message": "The server encountered a temporary error and could not complete your request."}}`); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		// Use Google provider format for the successful response
 		resp := createTextResponse("google", "The operation succeeded after retry.")
-		fmt.Fprint(w, resp)
+		if _, err := fmt.Fprint(w, resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 
@@ -89,13 +93,17 @@ func TestResilience_429Retry(t *testing.T) {
 		if count == 1 {
 			w.WriteHeader(http.StatusTooManyRequests)
 			// Return a message that specifically avoids legacy regex matches but represents a 429
-			fmt.Fprint(w, `{"error": {"code": 429, "message": "Error 429: Rate limit reached"}}`)
+			if _, err := fmt.Fprint(w, `{"error": {"code": 429, "message": "Error 429: Rate limit reached"}}`); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		resp := createTextResponse("google", "The operation succeeded after rate limit retry.")
-		fmt.Fprint(w, resp)
+		if _, err := fmt.Fprint(w, resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 

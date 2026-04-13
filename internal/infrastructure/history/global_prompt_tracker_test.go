@@ -28,6 +28,7 @@ func assertPromptsMatch(t *testing.T, got, expected []string) {
 func TestGlobalPromptTracker(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tracker.Close() }()
 
 	prompts := []string{"hello", "world", "hello", "foo", "bar", "hello"}
 	for _, p := range prompts {
@@ -62,6 +63,7 @@ func TestGlobalPromptTracker(t *testing.T) {
 func TestGlobalPromptTrackerNoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracker, _ := NewGlobalPromptTracker(filepath.Join(tmpDir, "non-existent"))
+	defer func() { _ = tracker.Close() }()
 
 	got, err := tracker.LoadTopN(context.Background(), 10)
 	if err != nil {
@@ -75,6 +77,7 @@ func TestGlobalPromptTrackerNoFile(t *testing.T) {
 func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tracker.Close() }()
 
 	// Create a payload larger than 64KB (e.g., 70,000 chars)
 	// We'll use a string that's clearly larger than bufio.MaxScanTokenSize (64*1024)
@@ -108,6 +111,7 @@ func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	tmpDir := t.TempDir()
 	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tracker.Close() }()
 
 	// Add 10 "duplicate" prompts
 	for i := 0; i < 10; i++ {
@@ -120,21 +124,22 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	uniquePrompts := []string{"p1", "p2", "p3", "p4", "p5"}
 	// We append them first, so they are at the beginning of the file.
 	// But to test that it returns them even if they are far back:
-	tracker, _ = NewGlobalPromptTracker(t.TempDir()) // Reset
+	tracker2, _ := NewGlobalPromptTracker(t.TempDir()) // Reset
+	defer func() { _ = tracker2.Close() }()
 	for _, p := range uniquePrompts {
-		if err := tracker.Append(context.Background(), p); err != nil {
+		if err := tracker2.Append(context.Background(), p); err != nil {
 			t.Fatalf("Append failed: %v", err)
 		}
 	}
 	for i := 0; i < 10; i++ {
-		if err := tracker.Append(context.Background(), "duplicate"); err != nil {
+		if err := tracker2.Append(context.Background(), "duplicate"); err != nil {
 			t.Fatalf("Append failed: %v", err)
 		}
 	}
 
 	// Should return ["duplicate", "p5", "p4", "p3", "p2"]
 	limit := 5
-	got, err := tracker.LoadTopN(context.Background(), limit)
+	got, err := tracker2.LoadTopN(context.Background(), limit)
 	if err != nil {
 		t.Fatalf("LoadTopN failed: %v", err)
 	}
@@ -146,6 +151,7 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 func TestGlobalPromptTracker_Compaction(t *testing.T) {
 	tmpDir := t.TempDir()
 	tr, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
 	// Add duplicates and many entries
@@ -188,6 +194,7 @@ func TestGlobalPromptTracker_Compaction(t *testing.T) {
 func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
 	tmpDir := t.TempDir()
 	tr, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
 	done := make(chan struct{})
@@ -436,6 +443,7 @@ func TestNewGlobalPromptTracker_MkdirError(t *testing.T) {
 func TestGlobalPromptTracker_CompactionIgnoresContextCancellation(t *testing.T) {
 	tmpDir := t.TempDir()
 	tr, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
 	// Set a small threshold for testing to trigger compaction quickly

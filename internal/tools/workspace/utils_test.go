@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestIsIgnoredDir(t *testing.T) {
@@ -84,7 +83,7 @@ func TestWalkAndProcess(t *testing.T) {
 	}
 
 	t.Run("safe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), tempDir, nil, processor)
+		err := walkAndProcess(ctx, sm, testutil.NewOSFileSystem(), tempDir, nil, processor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +93,7 @@ func TestWalkAndProcess(t *testing.T) {
 	})
 
 	t.Run("unsafe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, infrapersistence.NewOSFileSystem(), "/etc", nil, processor)
+		err := walkAndProcess(ctx, sm, testutil.NewOSFileSystem(), "/etc", nil, processor)
 		if err == nil {
 			t.Error("expected error for unsafe path")
 		}
