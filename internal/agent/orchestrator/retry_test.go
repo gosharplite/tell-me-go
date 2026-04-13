@@ -108,3 +108,31 @@ func TestDefaultRetryPolicy_ShouldRetry(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultRetryPolicy_OverflowSafety(t *testing.T) {
+	policy := &DefaultRetryPolicy{
+		MaxRetries:       100,
+		Backoff:          2 * time.Second,
+		RateLimitBackoff: 10 * time.Second,
+	}
+	mc := &testutil.MockClock{}
+	const maxDelay = 2 * time.Minute
+
+	tests := []struct {
+		name    string
+		attempt int
+	}{
+		{"Extreme attempt 31", 31},
+		{"Extreme attempt 63", 63},
+		{"Extreme attempt 99", 99},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			delay, retry := policy.ShouldRetry(mc, llm.ErrTransient, tt.attempt, false)
+			assert.True(t, retry)
+			assert.LessOrEqual(t, delay, maxDelay)
+			assert.GreaterOrEqual(t, delay, time.Duration(0))
+		})
+	}
+}

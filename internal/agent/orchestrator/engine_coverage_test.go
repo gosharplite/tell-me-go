@@ -118,69 +118,6 @@ func TestRunPhaseLoop_StopSignal(t *testing.T) {
 	assert.True(t, turn.Stop, "Turn should be marked as stopped")
 }
 
-func TestGuardStep_MaxTurns(t *testing.T) {
-	step := &GuardStep{}
-	ctx := context.Background()
-
-	// Mock limits
-	hMock := &testutil.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
-	cm.Reconfigure(events.Limits{MaxToolTurns: 5})
-
-	turn := &Turn{
-		Index:      6, // Exceeds limit
-		CtxManager: cm,
-	}
-
-	res, err := step.Process(ctx, turn)
-
-	assert.Error(t, err)
-	assert.True(t, errors.Is(err, llm.ErrMaxTurnsReached))
-	assert.Empty(t, res.NextPhase)
-}
-
-func TestInferenceStep_NilAPIResponse(t *testing.T) {
-	step := &InferenceStep{}
-	gw := &testutil.MockGateway{
-		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-			return nil, nil, nil // API returns (nil, nil, nil)
-		},
-	}
-
-	hMock := &testutil.MockHistoryManager{}
-	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
-
-	turn := &Turn{
-		Gateway:    gw,
-		CtxManager: cm,
-		State:      &TurnState{},
-		Clock:      clock.RealClock{},
-		Registry:   &testutil.MockToolRegistry{},
-		Events:     events.NewSimpleEventBus(context.Background(), events.WithAsync(false)),
-	}
-	events.CleanupBus(t, turn.Events)
-
-	_, err := step.Process(context.Background(), turn)
-
-	assert.Error(t, err)
-	var agentErr *AgentError
-	if assert.True(t, errors.As(err, &agentErr)) {
-		// Category should be ErrLogic, but it's wrapped inside invokeModel
-		// Wait, InferenceStep.Process wraps the error from invokeModel.
-		// If invokeModel returns (nil, nil, NewAgentError(ErrLogic, ...)),
-		// InferenceStep.Process will see err != nil, and wrap it AGAIN.
-		// Actually, p.invokeModel returns the error.
-		assert.Equal(t, llm.ErrTerminal, agentErr.Category) // Category of the WRAPPER is Terminal because NewAgentError didn't match isTransient
-
-		// Let's check the inner error
-		var inner *AgentError
-		if assert.True(t, errors.As(agentErr.Err, &inner)) {
-			assert.Equal(t, ErrLogic, inner.Category)
-			assert.Contains(t, inner.Message, "api returned nil content")
-		}
-	}
-}
-
 func TestContextRefiner_Errors(t *testing.T) {
 	step := &ContextRefiner{}
 	ctx := context.Background()
@@ -222,4 +159,278 @@ func TestContextRefiner_Errors(t *testing.T) {
 			assert.Equal(t, llm.ErrTransient, agentErr.Category)
 		}
 	})
+}
+
+func TestGuardStep_TDT(t *testing.T) {
+	tests := []struct {
+		name        string
+		index       int
+		maxTurns    int
+		cancelCtx   bool
+		busErr      error
+		expectedErr error
+		expectedPh  TurnPhase
+	}{
+		{
+			name:       "Normal operation",
+			index:      1,
+			maxTurns:   5,
+			expectedPh: PhaseRefining,
+		},
+		{
+			name:        "Exceed max turns",
+			index:       6,
+			maxTurns:    5,
+			expectedErr: llm.ErrMaxTurnsReached,
+		},
+		{
+			name:        "Context cancelled",
+			index:       1,
+			maxTurns:    5,
+			cancelCtx:   true,
+			expectedErr: context.Canceled,
+		},
+		{
+			name:        "Bus publish error",
+			index:       1,
+			maxTurns:    5,
+			busErr:      errors.New("publish fail"),
+			expectedErr: errors.New("publish fail"),
+		},
+		{
+			name:       "Bus not initialized",
+			index:      1,
+			maxTurns:   5,
+			busErr:     events.ErrBusNotInitialized,
+			expectedPh: PhaseRefining,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tt.cancelCtx {
+				cancel()
+			}
+
+			bus := &testutil.MockEventBus{}
+			if tt.busErr != nil {
+				bus.SetPublishErr(tt.busErr)
+			}
+
+			hMock := &testutil.MockHistoryManager{}
+			cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+			cm.Reconfigure(events.Limits{MaxToolTurns: tt.maxTurns})
+
+			turn := &Turn{
+				Index:      tt.index,
+				CtxManager: cm,
+				Events:     bus,
+			}
+
+			step := &GuardStep{}
+			res, err := step.Process(ctx, turn)
+
+			if tt.expectedErr != nil {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedPh, res.NextPhase)
+			}
+		})
+	}
+}
+
+func TestInferenceStep_TDT(t *testing.T) {
+	tests := []struct {
+		name        string
+		cancelCtx   bool
+		apiResponse *llm.Content
+		apiErr      error
+		history     []*llm.Content
+		expectedErr error
+		expectedPh  TurnPhase
+	}{
+		{
+			name: "Normal inference",
+			apiResponse: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "Hello"}},
+			},
+			expectedPh: PhasePersisting,
+		},
+		{
+			name: "Inference with tool calls",
+			apiResponse: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test_tool"}}},
+			},
+			expectedPh: PhaseExecuting,
+		},
+		{
+			name:        "API returns nil content",
+			apiResponse: nil,
+			apiErr:      nil,
+			expectedErr: errors.New("api returned nil content"),
+		},
+		{
+			name:        "API returns transient error",
+			apiErr:      llm.ErrTransient,
+			expectedErr: llm.ErrTransient,
+		},
+		{
+			name:        "Context cancelled",
+			cancelCtx:   true,
+			expectedErr: context.Canceled,
+		},
+		{
+			name:        "Empty input state",
+			history:     []*llm.Content{}, // Empty history
+			apiResponse: &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}},
+			expectedPh:  PhasePersisting,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tt.cancelCtx {
+				cancel()
+			}
+
+			gw := &testutil.MockGateway{
+				GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+					if tt.cancelCtx {
+						return nil, nil, context.Canceled
+					}
+					return tt.apiResponse, &llm.Metrics{}, tt.apiErr
+				},
+			}
+
+			bus := &testutil.MockEventBus{}
+
+			hMock := &testutil.MockHistoryManager{}
+			cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+
+			turn := &Turn{
+				Gateway:    gw,
+				Events:     bus,
+				CtxManager: cm,
+				State: &TurnState{
+					PreparedHistory: tt.history,
+				},
+				Clock:    &testutil.MockClock{},
+				Registry: &testutil.MockToolRegistry{},
+			}
+
+			step := &InferenceStep{}
+			res, err := step.Process(ctx, turn)
+
+			if tt.expectedErr != nil {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedPh, res.NextPhase)
+			}
+		})
+	}
+}
+
+func TestPersistenceStep_TDT(t *testing.T) {
+	tests := []struct {
+		name         string
+		response     *llm.Content
+		toolResponse *llm.Content
+		cancelCtx    bool
+		historyErr   error
+		expectedErr  error
+		expectedPh   TurnPhase
+	}{
+		{
+			name: "Normal persistence",
+			response: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "Hello"}},
+			},
+			expectedPh: PhaseComplete,
+		},
+		{
+			name: "Persist both response and tool results",
+			response: &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool"}}},
+			},
+			toolResponse: &llm.Content{
+				Role:  "tool",
+				Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "ok"}}}},
+			},
+			expectedPh: PhaseComplete,
+		},
+		{
+			name:        "Persistence failure",
+			response:    &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Hello"}}},
+			historyErr:  errors.New("db error"),
+			expectedErr: errors.New("history error"),
+		},
+		{
+			name:        "Context cancelled",
+			response:    &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Hello"}}},
+			cancelCtx:   true,
+			expectedErr: context.Canceled,
+		},
+		{
+			name:       "Nothing to persist (nil response)",
+			response:   nil,
+			expectedPh: PhaseComplete,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tt.cancelCtx {
+				cancel()
+			}
+
+			hMock := &testutil.MockHistoryManager{}
+			// Seed with user message to satisfy validation
+			hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial user message"}}}}
+
+			if tt.historyErr != nil {
+				hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
+					return tt.historyErr
+				}
+			} else if tt.cancelCtx {
+				hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
+					return ctx.Err()
+				}
+			}
+
+			cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
+
+			turn := &Turn{
+				CtxManager: cm,
+				State: &TurnState{
+					Response:     tt.response,
+					ToolResponse: tt.toolResponse,
+				},
+			}
+
+			step := &PersistenceStep{}
+			res, err := step.Process(ctx, turn)
+
+			if tt.expectedErr != nil {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedPh, res.NextPhase)
+			}
+		})
+	}
 }

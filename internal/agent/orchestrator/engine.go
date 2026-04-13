@@ -103,6 +103,10 @@ func (p *DefaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int, 
 		} else {
 			// 2. Safely double the delay, breaking early to prevent int64 overflow
 			for i := 0; i < attempt; i++ {
+				if delay >= maxDelay/2 {
+					delay = maxDelay
+					break
+				}
 				delay *= 2
 				if delay >= maxDelay {
 					delay = maxDelay
