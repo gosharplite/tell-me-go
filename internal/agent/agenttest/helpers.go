@@ -1,13 +1,14 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package agenttest
 
 import (
 	"context"
 	"io"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -18,6 +19,20 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 )
+
+// AgentInternal provides a wrapper around the agent's internal accessor.
+type AgentInternal struct {
+	agent.InternalAccessor
+}
+
+// AsAgentInternal wraps a ports.Chatter to provide access to internal components.
+func AsAgentInternal(c ports.Chatter) *AgentInternal {
+	inner := agent.AsInternal(c)
+	if inner == nil {
+		return nil
+	}
+	return &AgentInternal{inner}
+}
 
 // stubUIRenderer is a stub implementation of ports.UIRenderer for testing.
 type stubUIRenderer struct{}
@@ -69,7 +84,7 @@ type mockSessionLifecycleManager struct {
 	mock.Mock
 }
 
-func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
+func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
 	args := m.Called(ctx, cfg, configPath, newSession, capturer)
 	var deps ports.SessionDependencies
 	if args.Get(0) != nil {

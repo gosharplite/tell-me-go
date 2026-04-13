@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -45,7 +46,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Prepare should trigger the contentCleaner transformer
-	preparedHistory, _, err := agent.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
+	preparedHistory, _, err := agenttest.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
 	// Prepare should trigger the pruning pipeline
-	preparedHistory, _, err := agent.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
+	preparedHistory, _, err := agenttest.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}

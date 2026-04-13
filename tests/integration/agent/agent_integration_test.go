@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -60,7 +61,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	require.NoError(t, err)
 
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
-	ai := agent.AsAgentInternal(a)
+	ai := agenttest.AsAgentInternal(a)
 	_ = ai.GetEvents().Flush(context.Background())
 
 	limits := ai.GetCtxManager().GetLimits()
@@ -127,7 +128,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Re-injecting path configuration for integration test
-	ai := agent.AsAgentInternal(a)
+	ai := agenttest.AsAgentInternal(a)
 	ai.GetConfigWatcher().SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
@@ -173,8 +174,8 @@ func TestAgent_TieredThreshold(t *testing.T) {
 		t.Errorf("Timeout waiting for TieredThreshold update event")
 	}
 
-	if agent.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold() != 100000 {
-		t.Errorf("expected TieredThreshold 100000, got %d", agent.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold())
+	if agenttest.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold() != 100000 {
+		t.Errorf("expected TieredThreshold 100000, got %d", agenttest.AsAgentInternal(a).GetCtxManager().Strategy.GetTieredThreshold())
 	}
 }
 
@@ -310,10 +311,10 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	require.NoError(t, err)
 
 	// Build pipeline
-	agent.AsAgentInternal(a).GetCtxManager().SetPipeline(agent.AsAgentInternal(a).GetCtxManager().Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
+	agenttest.AsAgentInternal(a).GetCtxManager().SetPipeline(agenttest.AsAgentInternal(a).GetCtxManager().Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	err = session.RegisterInternal(reg, agent.AsAgentInternal(a).GetCtxManager())
+	err = session.RegisterInternal(reg, agenttest.AsAgentInternal(a).GetCtxManager())
 	require.NoError(t, err)
 
 	// Verify that at least one transformer has the registry
@@ -327,7 +328,7 @@ func TestAgent_PinningFlow(t *testing.T) {
 		defer cancel()
 		_ = a.Shutdown(shutdownCtx)
 	})
-	it := session.NewInternalTools(agent.AsAgentInternal(a).GetCtxManager())
+	it := session.NewInternalTools(agenttest.AsAgentInternal(a).GetCtxManager())
 
 	t.Run("PinTurn", func(t *testing.T) {
 		verifyPinAction(t, it, h, ctx, "pin", 0)
@@ -413,7 +414,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	}
 
 	// 5. Verify results
-	prepared, meta, err := agent.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 11)
+	prepared, meta, err := agenttest.AsAgentInternal(a).GetCtxManager().Prepare(ctx, 11)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -434,7 +435,7 @@ func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, contex
 	if err != nil {
 		panic(err)
 	}
-	return a, agent.AsAgentInternal(a).GetCtxManager().History, ctx
+	return a, agenttest.AsAgentInternal(a).GetCtxManager().History, ctx
 }
 
 func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
@@ -482,16 +483,16 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	if agent.AsAgentInternal(a).GetTracker() != tracker1 {
+	if agenttest.AsAgentInternal(a).GetTracker() != tracker1 {
 		t.Error("withSessionCostTracker didn't set tracker")
 	}
 
 	// Test tracker replacement
 	tracker2 := &testutil.MockCostTracker{}
-	agent.AsAgentInternal(a).SetTracker(tracker2)
-	_ = agent.AsAgentInternal(a).ApplyConfig(context.Background())
+	agenttest.AsAgentInternal(a).SetTracker(tracker2)
+	_ = agenttest.AsAgentInternal(a).ApplyConfig(context.Background())
 
-	if agent.AsAgentInternal(a).GetTracker() != tracker2 {
+	if agenttest.AsAgentInternal(a).GetTracker() != tracker2 {
 		t.Error("tracker didn't update after replacement and applyConfig")
 	}
 }
@@ -515,7 +516,7 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	cfg := agent.AsAgentInternal(a).GetRuntimeConfig().(*agent.RuntimeConfigInternal)
+	cfg := agenttest.AsAgentInternal(a).GetRuntimeConfig().(*agent.RuntimeConfigInternal)
 	if cfg.Model != "test-model" {
 		t.Errorf("expected model test-model, got %s", cfg.Model)
 	}
@@ -595,17 +596,17 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	if agent.AsAgentInternal(a).GetTracker() != tracker {
+	if agenttest.AsAgentInternal(a).GetTracker() != tracker {
 		t.Error("a.tracker does not match passed tracker")
 	}
 
 	// 2. Test direct setting (since we removed the ability to use the option at runtime)
 	tracker2 := &testutil.MockCostTracker{}
-	agent.AsAgentInternal(a).SetTracker(tracker2)
+	agenttest.AsAgentInternal(a).SetTracker(tracker2)
 	// We can't call Reconfigure easily on Engine without exporting more.
 	// But let's check tracker is updated.
 
-	if agent.AsAgentInternal(a).GetTracker() != tracker2 {
+	if agenttest.AsAgentInternal(a).GetTracker() != tracker2 {
 		t.Error("a.tracker does not match updated tracker")
 	}
 }
@@ -693,7 +694,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 	sess := ports.NewSession("test-cancel", h)
 
-	err = agent.AsAgentInternal(a).ApplyConfig(ctx)
+	err = agenttest.AsAgentInternal(a).ApplyConfig(ctx)
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled from applyConfig, got %v", err)
 	}
@@ -735,7 +736,7 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	}
 
 	// Verify summarizer is bound to ContextManager
-	if agent.AsAgentInternal(a).GetCtxManager().Summarizer != mockSumm {
+	if agenttest.AsAgentInternal(a).GetCtxManager().Summarizer != mockSumm {
 		t.Error("summarizer not bound to ContextManager")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,12 +21,12 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		setup   func(sf *agent.MockSessionLifecycleManager)
+		setup   func(sf *agenttest.MockSessionLifecycleManager)
 		wantErr string
 	}{
 		{
 			name: "Build Session Dependencies Failure",
-			setup: func(sf *agent.MockSessionLifecycleManager) {
+			setup: func(sf *agenttest.MockSessionLifecycleManager) {
 				sf.On("BuildSessionDependencies", context.Background(), &config.Config{}, "config.yaml", false, nil).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 			},
 			wantErr: "build error",
@@ -34,15 +35,15 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockSM := &agent.MockServiceSecurityManager{}
-			mockSF := &agent.MockSessionLifecycleManager{}
+			mockSM := &agenttest.MockServiceSecurityManager{}
+			mockSF := &agenttest.MockSessionLifecycleManager{}
 			if tt.setup != nil {
 				tt.setup(mockSF)
 			}
 
 			service := agent.NewChatService(
 				"home", "v1", io.Discard, io.Discard, mockSM,
-				mockSF, nil, &agent.StubUIRenderer{}, &agent.StubHistoryRenderer{}, &agent.StubHistoryBrowser{}, nil,
+				mockSF, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil,
 			)
 
 			// 3. Attempt ProcessMessage

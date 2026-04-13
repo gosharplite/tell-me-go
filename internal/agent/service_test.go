@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package agent_test
 
 import (
 	"bytes"
@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -28,8 +30,8 @@ func TestProcessMessage(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		setupMock        func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error
-		cmd              ChatCommand
+		setupMock        func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error
+		cmd              agent.ChatCommand
 		cfg              *config.Config
 		wantErr          bool
 		errMsg           string
@@ -38,7 +40,7 @@ func TestProcessMessage(t *testing.T) {
 	}{
 		{
 			name: "Success",
-			cmd:  ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{
@@ -46,7 +48,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -75,11 +77,11 @@ func TestProcessMessage(t *testing.T) {
 				tl.On("Close").Return(nil)
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
-				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-				agent.On("Subscribe", mock.Anything).Return()
-				agent.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
-				agent.On("Shutdown", mock.Anything).Return(nil)
+				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("Subscribe", mock.Anything).Return()
+				agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+				agentMock.On("Shutdown", mock.Anything).Return(nil)
 
 				cap.On("IsTTY", mock.Anything).Return(true)
 				cap.On("Close", mock.Anything).Return(nil)
@@ -92,9 +94,9 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "BuildSessionDepsError",
-			cmd:  ChatCommand{ConfigPath: "config.yaml"},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml"},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 				return nil
@@ -105,7 +107,7 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "RetrySuccess",
-			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{
@@ -113,7 +115,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -142,11 +144,11 @@ func TestProcessMessage(t *testing.T) {
 				tl.On("Close").Return(nil)
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
-				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-				agent.On("Subscribe", mock.Anything).Return()
-				agent.On("Chat", mock.Anything, mock.Anything, "retry this").Return(nil)
-				agent.On("Shutdown", mock.Anything).Return(nil)
+				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("Subscribe", mock.Anything).Return()
+				agentMock.On("Chat", mock.Anything, mock.Anything, "retry this").Return(nil)
+				agentMock.On("Shutdown", mock.Anything).Return(nil)
 
 				cap.On("Confirm", mock.Anything, mock.MatchedBy(func(s string) bool {
 					return strings.Contains(s, "retry this")
@@ -162,7 +164,7 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "RetryAborted",
-			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{
@@ -170,7 +172,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -193,9 +195,9 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "RetryNoHistory",
-			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				mockHM := &mockHistoryManagerForRetry{msg: "", turns: 0}
@@ -209,9 +211,9 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "RetryHistoryError",
-			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				mockHM := &mockHistoryManagerForRetry{err: errors.New("db error")}
@@ -225,9 +227,9 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "RetryConfirmError",
-			cmd:  ChatCommand{ConfigPath: "config.yaml", Retry: true},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				mockHM := &mockHistoryManagerForRetry{msg: "retry me", turns: 1}
@@ -242,7 +244,7 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "FinalizeErrorOnly",
-			cmd:  ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{
@@ -250,7 +252,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -273,11 +275,11 @@ func TestProcessMessage(t *testing.T) {
 
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
-				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-				agent.On("Subscribe", mock.Anything).Return()
-				agent.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
-				agent.On("Shutdown", mock.Anything).Return(nil)
+				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("Subscribe", mock.Anything).Return()
+				agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(nil)
+				agentMock.On("Shutdown", mock.Anything).Return(nil)
 
 				cap.On("IsTTY", mock.Anything).Return(true)
 
@@ -289,7 +291,7 @@ func TestProcessMessage(t *testing.T) {
 		},
 		{
 			name: "DoubleError",
-			cmd:  ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
+			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Prompt: "hello"},
 			cfg: &config.Config{
 				Mode: "assistant",
 				Providers: map[string]config.LLMProvider{
@@ -297,7 +299,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *mockSessionLifecycleManager, sm *mockServiceSecurityManager, cap *mockServiceCapturer, deps *mockServiceSessionDependencies, bus *mockServiceEventBus, agent *mockServiceAgent, tl *mockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -320,11 +322,11 @@ func TestProcessMessage(t *testing.T) {
 
 				bus.On("Shutdown", mock.Anything).Return(nil)
 
-				agent.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				agent.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
-				agent.On("Subscribe", mock.Anything).Return()
-				agent.On("Chat", mock.Anything, mock.Anything, "hello").Return(errChat)
-				agent.On("Shutdown", mock.Anything).Return(nil)
+				agentMock.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
+				agentMock.On("Subscribe", mock.Anything).Return()
+				agentMock.On("Chat", mock.Anything, mock.Anything, "hello").Return(errChat)
+				agentMock.On("Shutdown", mock.Anything).Return(nil)
 
 				cap.On("IsTTY", mock.Anything).Return(true)
 
@@ -340,26 +342,26 @@ func TestProcessMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			sf := &mockSessionLifecycleManager{}
-			sm := &mockServiceSecurityManager{}
-			capturer := &mockServiceCapturer{}
-			deps := &mockServiceSessionDependencies{}
-			bus := &mockServiceEventBus{}
-			agent := &mockServiceAgent{}
-			tl := &mockTurnsLogger{}
+			sf := &agenttest.MockSessionLifecycleManager{}
+			sm := &agenttest.MockServiceSecurityManager{}
+			capturer := &agenttest.MockServiceCapturer{}
+			deps := &agenttest.MockServiceSessionDependencies{}
+			bus := &agenttest.MockServiceEventBus{}
+			agentMock := &agenttest.MockServiceAgent{}
+			tl := &agenttest.MockTurnsLogger{}
 
 			chatterFactory := ports.ChatterFactory(func(ctx context.Context, sd ports.SessionDependencies, cCfg ports.ChatterConfig) (ports.Chatter, error) {
-				return agent, nil
+				return agentMock, nil
 			})
 
-			service := NewChatService(
+			service := agent.NewChatService(
 				"home", "v1", io.Discard, io.Discard, sm,
-				sf, chatterFactory, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{}, nil,
+				sf, chatterFactory, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil,
 			)
 
 			var verify func(context.Context) error
 			if tt.setupMock != nil {
-				verify = tt.setupMock(sf, sm, capturer, deps, bus, agent, tl)
+				verify = tt.setupMock(sf, sm, capturer, deps, bus, agentMock, tl)
 			}
 
 			err := service.ProcessMessage(ctx, tt.cfg, tt.cmd, capturer)
@@ -386,7 +388,7 @@ func TestProcessMessage(t *testing.T) {
 			sf.AssertExpectations(t)
 			if !tt.wantErr {
 				if tt.name != "RetryAborted" {
-					agent.AssertExpectations(t)
+					agentMock.AssertExpectations(t)
 					tl.AssertExpectations(t)
 				}
 				bus.AssertExpectations(t)
@@ -397,13 +399,13 @@ func TestProcessMessage(t *testing.T) {
 
 func TestGetLastUserMessage(t *testing.T) {
 	ctx := context.Background()
-	sm := &mockServiceSecurityManager{}
+	sm := &agenttest.MockServiceSecurityManager{}
 
 	mockHM := &mockHistoryManagerForRetry{msg: "last message", turns: 1}
 
-	service := NewChatService(
+	service := agent.NewChatService(
 		"home", "v1", io.Discard, io.Discard, sm,
-		nil, nil, &stubUIRenderer{}, &stubHistoryRenderer{}, &stubHistoryBrowser{}, nil,
+		nil, nil, &agenttest.StubUIRenderer{}, &agenttest.StubHistoryRenderer{}, &agenttest.StubHistoryBrowser{}, nil,
 	)
 
 	msg, turns, err := service.GetLastUserMessage(ctx, mockHM)
@@ -537,7 +539,7 @@ func TestStreamTurnsLog(t *testing.T) {
 				tt.setupMock(mFS)
 			}
 
-			service := NewChatService(
+			service := agent.NewChatService(
 				homeDir, "v1", io.Discard, io.Discard, nil,
 				nil, nil, nil, nil, nil, mFS,
 			)
