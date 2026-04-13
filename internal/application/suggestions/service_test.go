@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package suggestions
+package suggestions_test
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/application/suggestions"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type mockPromptTracker struct {
@@ -51,6 +51,8 @@ func (m *mockPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, 
 	return res, nil
 }
 
+func (m *mockPromptTracker) Close() error { return nil }
+
 func (m *mockPromptTracker) GetPrompts() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -62,7 +64,8 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 		prompts: []string{"test-prompt-1", "test-prompt-2"},
 	}
 
-	service, err := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, []string{"hello", "world"}, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, []string{"hello", "world"}, io.Discard)
 	if err != nil {
 		t.Fatalf("failed to create service: %v", err)
 	}
@@ -109,12 +112,13 @@ func TestMultiSourceSuggestionService_GetSuggestions(t *testing.T) {
 
 func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
-	// Create many files to make scan slow
-	tmpDir := t.TempDir()
-	for i := 0; i < 1000; i++ {
-		_ = os.WriteFile(filepath.Join(tmpDir, "test-file-"+string(rune(i))), []byte(""), 0644)
+	// Create many files in mock FS to make scan potentially slow (though mock is fast)
+	tmpDir := "/tmp/test"
+	for i := 0; i < 100; i++ {
+		_ = fs.WriteFile(context.Background(), filepath.Join(tmpDir, fmt.Sprintf("test-file-%d", i)), []byte(""), 0644)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -128,13 +132,14 @@ func TestMultiSourceSuggestionService_ContextCancellation(t *testing.T) {
 
 func TestMultiSourceSuggestionService_FileSystemSearch(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
-	// Create some test files
-	tmpDir := t.TempDir()
+	// Create some test files in mock FS
+	tmpDir := "/tmp/test"
 	files := []string{"foo.txt", "bar.txt", "baz.txt", ".git"}
 	for _, f := range files {
-		_ = os.WriteFile(filepath.Join(tmpDir, f), []byte(""), 0644)
+		_ = fs.WriteFile(context.Background(), filepath.Join(tmpDir, f), []byte(""), 0644)
 	}
 
 	prefix := filepath.Join(tmpDir, "ba")
@@ -171,7 +176,8 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 	tracker := &mockPromptTracker{
 		appended: appended,
 	}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
 	prompt := "new-unique-prompt"
 	err := service.RecordPrompt(context.Background(), prompt)
@@ -201,7 +207,7 @@ func TestMultiSourceSuggestionService_RecordPrompt(t *testing.T) {
 }
 
 func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
-	s := &multiSourceSuggestionService{logger: io.Discard}
+	s := suggestions.NewInternalService(io.Discard)
 	tests := []struct {
 		name     string
 		s1       []string
@@ -248,7 +254,7 @@ func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := s.mergeSuggestions(tt.s1, tt.s2, tt.limit)
+			got := s.MergeSuggestions(tt.s1, tt.s2, tt.limit)
 			if len(got) != len(tt.expected) {
 				t.Errorf("got length %d; want %d", len(got), len(tt.expected))
 			}
@@ -263,23 +269,18 @@ func TestMultiSourceSuggestionService_MergeSuggestions(t *testing.T) {
 
 func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
-	// Create a temp directory with some files
-	tmpDir := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmpDir, "test1.txt"), []byte(""), 0644)
+	// Create some files in mock FS
+	tmpDir := "/tmp/test"
+	_ = fs.WriteFile(context.Background(), filepath.Join(tmpDir, "test1.txt"), []byte(""), 0644)
 
 	// Case 1: Pre-cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// Calling scanFiles indirectly via GetSuggestions
-	// Need to ensure the prefix looks like a path
 	prefix := tmpDir + string(os.PathSeparator) + "t"
-
-	// We call GetSuggestions. It checks ctx.Err() at the beginning.
-	// But we also want to hit the check inside scanFiles loop.
-	// scanFiles is called AFTER the initial check in GetSuggestions.
 
 	results, err := service.GetSuggestions(ctx, prefix)
 	if err == nil {
@@ -289,20 +290,9 @@ func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 		t.Errorf("expected 0 results, got %d", len(results))
 	}
 
-	// To specifically cover the check INSIDE scanFiles (line 108-110),
-	// we'd ideally want a context that cancels MID-SCAN.
-	// But since GetSuggestions checks it first, we might need to call scanFiles directly if possible,
-	// or use a context that cancels after a short delay if the scan is slow enough.
-	// Since scanFiles is unexported, we can use the receiver.
-
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	// We can't easily trigger cancellation mid-scan without a very large directory or a hook.
-	// However, if we call GetSuggestions with a NON-cancelled context, it passes the first check.
-	// If we then cancel it, and scanFiles is slow...
-	// Let's just call scanFiles via the service struct since we are in the same package.
-
 	cancel2()
-	res := service.(*multiSourceSuggestionService).scanFiles(ctx2, prefix)
+	res := service.(*suggestions.MultiSourceSuggestionServiceInternal).ScanFiles(ctx2, prefix)
 	if len(res) != 0 {
 		t.Errorf("scanFiles: expected 0 results for cancelled context, got %d", len(res))
 	}
@@ -310,12 +300,12 @@ func TestSuggestionService_ScanFiles_CancelledContext(t *testing.T) {
 
 func TestSuggestionService_ScanFiles_InvalidDir(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
-	// Call GetSuggestions with a path that definitely doesn't exist
-	invalidPath := filepath.Join(t.TempDir(), "non-existent-dir", "file")
+	// Call GetSuggestions with a path that definitely doesn't exist in mock FS
+	invalidPath := "/non-existent-dir/file"
 
-	// Ensure it looks like a path to trigger scanFiles
 	prefix := invalidPath
 
 	got, err := service.GetSuggestions(context.Background(), prefix)
@@ -323,7 +313,6 @@ func TestSuggestionService_ScanFiles_InvalidDir(t *testing.T) {
 		t.Fatalf("GetSuggestions failed: %v", err)
 	}
 
-	// Should return nil/empty results from scanFiles and whatever is in trie
 	if len(got) != 0 {
 		t.Errorf("expected 0 suggestions for invalid path, got %v", got)
 	}
@@ -339,8 +328,9 @@ func (e *errorPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string,
 
 func TestSuggestionService_LoadTopNFails(t *testing.T) {
 	tracker := &errorPromptTracker{}
+	fs := persistence.NewMockFileSystem()
 	// This should log to stderr but not return an error
-	service, err := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	service, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 	if err != nil {
 		t.Fatalf("NewMultiSourceSuggestionService should not fail when tracker fails to load: %v", err)
 	}
@@ -351,7 +341,8 @@ func TestSuggestionService_LoadTopNFails(t *testing.T) {
 
 func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
 	err := service.RecordPrompt(context.Background(), "")
 	if err != nil {
@@ -366,12 +357,13 @@ func TestSuggestionService_RecordPrompt_EmptyPath(t *testing.T) {
 
 func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
-	tmpDir := t.TempDir()
+	tmpDir := "/tmp/test"
 
-	// 1. Check directory path separator (Line 127)
-	_ = os.MkdirAll(filepath.Join(tmpDir, "sub-dir"), 0755)
+	// 1. Check directory path separator
+	_ = fs.WriteFile(context.Background(), filepath.Join(tmpDir, "sub-dir", "f.txt"), []byte(""), 0644)
 	prefix := tmpDir + string(os.PathSeparator) + "s"
 	got, _ := service.GetSuggestions(context.Background(), prefix)
 	foundDir := false
@@ -385,9 +377,9 @@ func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T)
 		t.Errorf("expected directory to have path separator, got: %v", got)
 	}
 
-	// 2. Check exclusions (Line 122)
-	_ = os.MkdirAll(filepath.Join(tmpDir, "vendor"), 0755)
-	_ = os.MkdirAll(filepath.Join(tmpDir, "node_modules"), 0755)
+	// 2. Check exclusions
+	_ = fs.WriteFile(context.Background(), filepath.Join(tmpDir, "vendor", "f.txt"), []byte(""), 0644)
+	_ = fs.WriteFile(context.Background(), filepath.Join(tmpDir, "node_modules", "f.txt"), []byte(""), 0644)
 	prefix2 := tmpDir + string(os.PathSeparator)
 	got2, _ := service.GetSuggestions(context.Background(), prefix2)
 	for _, v := range got2 {
@@ -396,9 +388,9 @@ func TestMultiSourceSuggestionService_ScanFiles_ExclusionsAndLimit(t *testing.T)
 		}
 	}
 
-	// 3. Check limit (Line 131)
+	// 3. Check limit
 	for i := 0; i < 20; i++ {
-		_ = os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)), []byte(""), 0644)
+		_ = fs.WriteFile(context.Background(), filepath.Join(tmpDir, fmt.Sprintf("file-%d.txt", i)), []byte(""), 0644)
 	}
 	prefix3 := tmpDir + string(os.PathSeparator) + "f"
 	got3, _ := service.GetSuggestions(context.Background(), prefix3)
@@ -475,10 +467,8 @@ func TestScanFiles_RespectsCancellationBetweenChunks(t *testing.T) {
 		file: mockFile,
 	}
 
-	service := &multiSourceSuggestionService{
-		fs:     fs,
-		logger: io.Discard,
-	}
+	service := suggestions.NewInternalService(io.Discard)
+	service.SetFS(fs)
 
 	// Calling scanFiles.
 	// 1st iteration:
@@ -488,7 +478,7 @@ func TestScanFiles_RespectsCancellationBetweenChunks(t *testing.T) {
 	//   ctx.Err() is now non-nil (context cancelled)
 	//   The loop should exit early BEFORE calling ReadDir(100) again.
 
-	service.scanFiles(ctx, "mat")
+	service.ScanFiles(ctx, "mat")
 
 	calledCount := atomic.LoadInt32(&mockFile.readCalled)
 	if calledCount != 1 {
@@ -510,7 +500,8 @@ func assertSuggestionsMatch(t *testing.T, got, expected []string) {
 
 func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
 	// 1. Record multiple prompts
 	prompts := []string{"p1", "p2", "p3"}
@@ -540,7 +531,7 @@ func TestMultiSourceSuggestionService_RecordPrompt_MRU(t *testing.T) {
 	}
 
 	// Access the underlying history to check the 100 limit
-	history := service.(*multiSourceSuggestionService).history
+	history := service.(*suggestions.MultiSourceSuggestionServiceInternal).GetHistory()
 	if len(history) != 100 {
 		t.Errorf("expected history to be limited to 100, got %d", len(history))
 	}
@@ -554,7 +545,8 @@ func TestMultiSourceSuggestionService_Close_WaitsForBackgroundTasks(t *testing.T
 	tracker := &mockPromptTracker{
 		appended: appended,
 	}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
 	// Record a prompt
 	prompt := "close-test-prompt"
@@ -575,6 +567,7 @@ func TestMultiSourceSuggestionService_Close_WaitsForBackgroundTasks(t *testing.T
 
 func TestNewMultiSourceSuggestionService_NilLogger(t *testing.T) {
 	tracker := &errorPromptTracker{}
+	fs := persistence.NewMockFileSystem()
 
 	// This should NOT panic even if tracker fails and logger is nil
 	defer func() {
@@ -583,7 +576,7 @@ func TestNewMultiSourceSuggestionService_NilLogger(t *testing.T) {
 		}
 	}()
 
-	_, err := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, nil)
+	_, err := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, nil)
 	if err != nil {
 		t.Fatalf("NewMultiSourceSuggestionService failed: %v", err)
 	}
@@ -592,8 +585,9 @@ func TestNewMultiSourceSuggestionService_NilLogger(t *testing.T) {
 func TestRecordPrompt_NilLogger(t *testing.T) {
 	// We need a tracker that fails Append
 	failTracker := &failingAppendTracker{}
+	fs := persistence.NewMockFileSystem()
 
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), failTracker, nil, nil)
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, failTracker, nil, nil)
 
 	_ = service.RecordPrompt(context.Background(), "test")
 
@@ -610,8 +604,8 @@ func (f *failingAppendTracker) Append(ctx context.Context, prompt string) error 
 }
 
 func TestMultiSourceSuggestionService_Close_Timeout(t *testing.T) {
-	service := &multiSourceSuggestionService{}
-	service.wg.Add(1) // Simulate a task that won't call Done()
+	service := suggestions.NewInternalService(io.Discard)
+	service.AddWork(1) // Simulate a task that won't call Done()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -623,8 +617,8 @@ func TestMultiSourceSuggestionService_Close_Timeout(t *testing.T) {
 }
 
 func TestMultiSourceSuggestionService_Close_ImmediateCancellation(t *testing.T) {
-	service := &multiSourceSuggestionService{}
-	service.wg.Add(1) // Simulate a task that won't call Done()
+	service := suggestions.NewInternalService(io.Discard)
+	service.AddWork(1) // Simulate a task that won't call Done()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -637,7 +631,8 @@ func TestMultiSourceSuggestionService_Close_ImmediateCancellation(t *testing.T) 
 
 func TestRecordPrompt_AfterClose(t *testing.T) {
 	tracker := &mockPromptTracker{}
-	service, _ := NewMultiSourceSuggestionService(context.Background(), infra_persistence.NewOSFileSystem(), tracker, nil, io.Discard)
+	fs := persistence.NewMockFileSystem()
+	service, _ := suggestions.NewMultiSourceSuggestionService(context.Background(), fs, tracker, nil, io.Discard)
 
 	// Call Close on the service
 	err := service.Close(context.Background())

@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func syncBridge(t *testing.T, b *uiBridge, m *mockUIRenderer) {
+func syncBridge(t *testing.T, b *UIBridge, m interface {
+	On(methodName string, arguments ...interface{}) *mock.Call
+}) {
 	t.Helper()
 	// Use a sentinel event that is handled by the bridge and calls a mock method.
 	// LogSystemMessage is ideal as it's safe to call when no spinner is active.

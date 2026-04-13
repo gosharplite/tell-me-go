@@ -6,11 +6,15 @@ import (
 	"go/ast"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 type defaultComplexityAnalyzer struct {
@@ -58,31 +62,66 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 }
 
 func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, error) {
+	g, gCtx := errgroup.WithContext(ctx)
+	limit := int64(runtime.NumCPU())
+	if limit < 1 {
+		limit = 1
+	}
+	sem := semaphore.NewWeighted(limit)
+
 	var complexities []funcComplexity
+	var mu sync.Mutex
+
 	count := 0
 	err := filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-gCtx.Done():
+			return gCtx.Err()
 		default:
 		}
-		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+		if info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
+		path := filePath
 		count++
-		if count%10 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
+		c := count
+		g.Go(func() error {
+			if err := sem.Acquire(gCtx, 1); err != nil {
+				return err
 			}
-		}
+			defer sem.Release(1)
 
-		fileComplexities := a.analyzeFile(filePath)
-		complexities = append(complexities, fileComplexities...)
+			if c%10 == 0 && hb != nil {
+				select {
+				case hb <- struct{}{}:
+				default:
+				}
+			}
+
+			fileComplexities := a.analyzeFile(path)
+			if len(fileComplexities) > 0 {
+				mu.Lock()
+				complexities = append(complexities, fileComplexities...)
+				mu.Unlock()
+			}
+			return nil
+		})
 		return nil
 	})
-	return complexities, err
+
+	if err != nil {
+		return nil, err
+	}
+
+	if waitErr := g.Wait(); waitErr != nil {
+		return nil, waitErr
+	}
+
+	return complexities, nil
 }
 
 func (a *defaultComplexityAnalyzer) analyzeFile(filePath string) []funcComplexity {

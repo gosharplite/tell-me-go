@@ -9,6 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +33,7 @@ func TestTokenGatekeeper_DomainBoundaryValidation(t *testing.T) {
 			history: []*llm.Content{
 				{Role: "", Parts: []*llm.Part{{Text: "Hello"}}},
 			},
-			expectedError: errInvalidPayload,
+			expectedError: ErrInvalidPayload,
 		},
 		{
 			name: "Nil Parts (not strictly invalid by groupTurns but often problematic)",
@@ -48,8 +49,8 @@ func TestTokenGatekeeper_DomainBoundaryValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			gatekeeper := &tokenGatekeeper{
-				Estimator: &mockEstimator{tokens: 10},
+			gatekeeper := &TokenGatekeeper{
+				Estimator: &testutil.MockTokenCounter{Tokens: 10},
 			}
 
 			req := &ports.ContextRequest{

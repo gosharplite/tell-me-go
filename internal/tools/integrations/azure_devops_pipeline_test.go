@@ -11,14 +11,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAdoListPipelines(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	tests := []struct {
 		name       string
@@ -283,7 +283,7 @@ func assertVariable(t *testing.T, vars map[string]adoVariable, name string, valu
 
 func TestAdoGetPipelineDefinition(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)

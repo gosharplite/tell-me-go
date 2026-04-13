@@ -9,9 +9,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
-// truncateOversizedResponse mutates the toolResponse by replacing function response payloads
+// TruncateOversizedResponse mutates the toolResponse by replacing function response payloads
 // with a context-aware truncation error message when they exceed safety limits.
-func truncateOversizedResponse(toolResponse *llm.Content, estimatedTokens int, instruction string) {
+func TruncateOversizedResponse(toolResponse *llm.Content, estimatedTokens int, instruction string) {
 	if toolResponse == nil {
 		return
 	}

@@ -8,76 +8,26 @@ import (
 	"fmt"
 	"sync"
 
-	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/skills"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type mockGateway struct {
-	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	sendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-}
-
-func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	if m.GenerateFunc != nil {
-		return m.GenerateFunc(ctx, input, tools, resolver)
-	}
-	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
-}
-
-func (m *mockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	if m.sendChatFn != nil {
-		return m.sendChatFn(ctx, history, tools, resolver)
-	}
-	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
-}
-
-func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return [][]byte{}, nil
-}
-
-func (m *mockGateway) RefreshAuth() error { return nil }
-
-type mockSecurityManager struct {
+type MockSecurityManager struct {
 	domain_security.Manager
 	AllowAll bool
 }
 
-func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
-func (m *mockSecurityManager) TerminalLock()                          {}
-func (m *mockSecurityManager) TerminalUnlock()                        {}
-func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
+func (m *MockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
+func (m *MockSecurityManager) TerminalLock()                          {}
+func (m *MockSecurityManager) TerminalUnlock()                        {}
+func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.AllowAll
 }
 
-func (m *mockSecurityManager) Close() error { return nil }
+func (m *MockSecurityManager) Close() error { return nil }
 
-type mockSummarizer struct {
-	ports.Summarizer
-}
-
-type mockLoader struct {
-	domain_config.ConfigLoader
-}
-
-type mockTracker struct {
-	domain_pricing.CostTracker
-}
-
-type mockSessionLoader struct {
-	domain_config.SessionLoader
-}
-
-type mockSkillSelector struct {
-	skills.SkillSelector
-}
-
-// mockHistoryManager implements ports.HistoryManager for testing.
-type mockHistoryManager struct {
+// MockHistoryManager implements ports.HistoryManager for testing.
+type MockHistoryManager struct {
 	mu       sync.RWMutex
 	Contents []*llm.Content
 	Backup   []*llm.Content
@@ -87,17 +37,17 @@ type mockHistoryManager struct {
 	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
 }
 
-func (m *mockHistoryManager) GetTotalEntries() int {
+func (m *MockHistoryManager) GetTotalEntries() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.Contents)
 }
 
-func (m *mockHistoryManager) GetLastUserMessage(ctx context.Context) (string, int, error) {
+func (m *MockHistoryManager) GetLastUserMessage(ctx context.Context) (string, int, error) {
 	return "", 0, nil
 }
 
-func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+func (m *MockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -123,7 +73,7 @@ func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int
 	return res, nil
 }
 
-func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
+func (m *MockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
 	if m.SetContentsFunc != nil {
 		return m.SetContentsFunc(ctx, contents)
 	}
@@ -133,11 +83,11 @@ func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Co
 	return nil
 }
 
-func (m *mockHistoryManager) Archive(ctx context.Context, contents []*llm.Content) error {
+func (m *MockHistoryManager) Archive(ctx context.Context, contents []*llm.Content) error {
 	return nil
 }
 
-func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
+func (m *MockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
 	if m.AddContentFunc != nil {
 		return m.AddContentFunc(ctx, content)
 	}
@@ -147,11 +97,11 @@ func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Conten
 	return nil
 }
 
-func (m *mockHistoryManager) GetResolver() llm.AssetResolver {
+func (m *MockHistoryManager) GetResolver() llm.AssetResolver {
 	return m.Resolver
 }
 
-func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *MockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	startIdx := turnIndex * 2
@@ -163,11 +113,11 @@ func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinne
 	return nil
 }
 
-func (m *mockHistoryManager) Save(ctx context.Context) error {
+func (m *MockHistoryManager) Save(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+func (m *MockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -192,7 +142,7 @@ func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 	return actualRemoved, remainingTurns, remainingMsgs, nil
 }
 
-func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+func (m *MockHistoryManager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if index >= 0 && index < len(m.Contents) {
@@ -201,52 +151,8 @@ func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 	return nil
 }
 
-func (m *mockHistoryManager) GetFilePath() string { return "" }
+func (m *MockHistoryManager) GetFilePath() string { return "" }
 
-type mockExecutor struct {
-	ExecuteFunc func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
-}
-
-func (m *mockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-	return m.ExecuteFunc(ctx, respContent, turn, maxToolTurns)
-}
-
-type mockEngineCostTracker struct {
-	mu               sync.Mutex
-	accumulatedCount int
-}
-
-func (m *mockEngineCostTracker) CalculateCost(mt llm.Metrics) float64 {
-	return 0.05
-}
-
-func (m *mockEngineCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.accumulatedCount++
-	return 0.05
-}
-
-func (m *mockEngineCostTracker) Accumulate(mt llm.Metrics) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.accumulatedCount++
-}
-
-func (m *mockEngineCostTracker) GetTotalCost(ctx context.Context) float64 {
-	return 0
-}
-
-func (m *mockEngineCostTracker) GetDailyCost(ctx context.Context) float64 {
-	return 0
-}
-
-func (m *mockEngineCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
-	return domain_pricing.UsageStats{}, 0
-}
-
-func (m *mockEngineCostTracker) Warmup() {}
-
-func (m *mockHistoryManager) Sync(ctx context.Context) error {
+func (m *MockHistoryManager) Sync(ctx context.Context) error {
 	return nil
 }

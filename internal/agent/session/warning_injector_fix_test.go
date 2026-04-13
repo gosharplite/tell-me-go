@@ -9,14 +9,15 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestWarningInjector_SequenceBreak(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
-	injector := &warningInjector{Strategy: strategy}
+	injector := &WarningInjector{Strategy: strategy}
 
 	// Case where last message is a FunctionResponse
 	req := &request{
@@ -62,9 +63,9 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 
 func TestWarningInjector_Idempotency(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	strategy.SetLimits(100, 10, 10) // 100 token limit
-	injector := &warningInjector{Strategy: strategy}
+	injector := &WarningInjector{Strategy: strategy}
 
 	// Case 1: First turn reaches threshold (90% threshold -> > 90 tokens)
 	req1 := &request{

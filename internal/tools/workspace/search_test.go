@@ -12,8 +12,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestSearchFiles_SkipsBinary(t *testing.T) {
@@ -35,8 +34,8 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
-	s := &fileSearcher{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	sm := &testutil.MockSecurityManager{AllowAll: true}
+	s := &fileSearcher{sm: sm, fs: testutil.NewOSFileSystem()}
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -77,7 +76,7 @@ func setupGrepTest(t *testing.T, files map[string]string) (persistence.FileSyste
 			t.Fatal(err)
 		}
 	}
-	return infrapersistence.NewOSFileSystem(), tempDir
+	return testutil.NewOSFileSystem(), tempDir
 }
 
 type grepResult struct {
@@ -131,7 +130,7 @@ func testGrepFunctions(t *testing.T) {
 		"script.js": "function jsFunc() {}\nconst arrow = () => {}",
 		"main.go":   "func main() {}",
 	})
-	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
+	s := &fileSearcher{sm: &testutil.MockSecurityManager{AllowAll: true}, fs: fs}
 	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +148,7 @@ func testGrepStructs(t *testing.T) {
 		"data.go": "type User struct {\n    ID int\n}",
 		"app.py":  "class App:\n    pass",
 	})
-	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
+	s := &fileSearcher{sm: &testutil.MockSecurityManager{AllowAll: true}, fs: fs}
 	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +163,7 @@ func testGrepInterfaces(t *testing.T) {
 	fs, root := setupGrepTest(t, map[string]string{
 		"service.go": "type Service interface {\n    Run()\n}",
 	})
-	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
+	s := &fileSearcher{sm: &testutil.MockSecurityManager{AllowAll: true}, fs: fs}
 	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +177,7 @@ func testGrepComplexPatterns(t *testing.T) {
 	fs, root := setupGrepTest(t, map[string]string{
 		"script.py": "def my_func():\n    pass\nclass MyClass:\n    pass",
 	})
-	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
+	s := &fileSearcher{sm: &testutil.MockSecurityManager{AllowAll: true}, fs: fs}
 
 	t.Run("with query", func(t *testing.T) {
 		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "my_func"}, nil)
@@ -197,7 +196,7 @@ func testGrepComplexPatterns(t *testing.T) {
 
 func testGrepErrorPaths(t *testing.T) {
 	fs, root := setupGrepTest(t, map[string]string{})
-	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
+	s := &fileSearcher{sm: &testutil.MockSecurityManager{AllowAll: true}, fs: fs}
 
 	t.Run("no results", func(t *testing.T) {
 		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "nonexistent"}, nil)
@@ -218,8 +217,8 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 		}
 	}
 
-	sm := security.NewSecurityManager(nil)
-	s := &fileSearcher{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	sm := &testutil.MockSecurityManager{AllowAll: true}
+	s := &fileSearcher{sm: sm, fs: testutil.NewOSFileSystem()}
 	ctx := context.Background()
 
 	args := map[string]interface{}{

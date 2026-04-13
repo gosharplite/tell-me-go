@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestTokenGatekeeper_Table(t *testing.T) {
@@ -22,9 +23,9 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tg := &tokenGatekeeper{
+			tg := &TokenGatekeeper{
 				MaxTokens: tt.maxTokens,
-				Estimator: &mockEstimator{tokens: tt.tokens},
+				Estimator: &testutil.MockTokenCounter{Tokens: tt.tokens},
 			}
 			req := &request{
 				History: []*llm.Content{{Role: "user"}},

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 )
@@ -16,21 +17,21 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-func TestContextStrategy_estimateTokens(t *testing.T) {
-	registry := &mockToolRegistry{}
+func TestContextStrategy_EstimateTokens(t *testing.T) {
+	registry := &testutil.MockToolRegistry{}
 	cs := NewContextStrategy(NewHeuristicTokenCounter(registry))
 
 	t.Run("Base overhead", func(t *testing.T) {
-		registry.declarations = nil
+		registry.Declarations = nil
 		// base = 300
-		got := cs.estimateTokens(nil)
+		got := cs.EstimateTokens(nil)
 		if got != 300 {
 			t.Errorf("expected 300 tokens, got %d", got)
 		}
 	})
 
 	t.Run("Tool Declarations", func(t *testing.T) {
-		registry.declarations = []*tools.ToolDeclaration{
+		registry.Declarations = []*tools.ToolDeclaration{
 			{
 				Name:        "my_tool",
 				Description: "does something",
@@ -39,11 +40,11 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 		}
 		// charCount = base(300) + (len("my_tool") (7) + len("does something") (14)) / 4 + 50 (params)
 		// total = 300 + 5 + 50 = 355
-		got := cs.estimateTokens(nil)
+		got := cs.EstimateTokens(nil)
 		if got != 355 {
 			t.Errorf("expected 355 tokens, got %d", got)
 		}
-		registry.declarations = nil // reset
+		registry.Declarations = nil // reset
 	})
 
 	t.Run("Blob Handling", func(t *testing.T) {
@@ -59,8 +60,8 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 				},
 			},
 		}
-		base := cs.estimateTokens(nil)
-		withBlob := cs.estimateTokens(contents)
+		base := cs.EstimateTokens(nil)
+		withBlob := cs.EstimateTokens(contents)
 		diff := withBlob - base
 		// 160 chars / 3.2 = 50 tokens
 		if diff != 50 {
@@ -86,7 +87,7 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 		// charCount: (base 300) + (name "test"(4) + key "nested"(6) + slice [1,2] -> 10+10)/3.2
 		// 30 / 3.2 = 9.375 -> 9
 		// total = 300 + 9 = 309
-		got := cs.estimateTokens(contents)
+		got := cs.EstimateTokens(contents)
 		if got != 309 {
 			t.Errorf("expected 309 tokens, got %d", got)
 		}
@@ -94,7 +95,7 @@ func TestContextStrategy_estimateTokens(t *testing.T) {
 }
 
 func setupWarningTest() *ContextStrategy {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	cs.SetLimits(1000, 10, 100)
 	return cs
 }
@@ -166,7 +167,7 @@ func TestContextStrategy_Warnings_TurnCountLimits(t *testing.T) {
 }
 
 func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
@@ -255,17 +256,17 @@ func verifyWarningContains(t *testing.T, turns int, warnings []warning, expected
 	}
 }
 
-func TestContextStrategy_setTieredThresholdZero(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+func TestContextStrategy_SetTieredThresholdZero(t *testing.T) {
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 
 	// First set to a non-zero value
-	cs.setTieredThreshold(100)
+	cs.SetTieredThreshold(100)
 	if got := cs.GetTieredThreshold(); got != 100 {
 		t.Errorf("expected tieredThreshold to be 100, got %d", got)
 	}
 
 	// Set threshold to 0 (disable)
-	cs.setTieredThreshold(0)
+	cs.SetTieredThreshold(0)
 	if got := cs.GetTieredThreshold(); got != 0 {
 		t.Errorf("expected tieredThreshold to be 0, got %d", got)
 	}
@@ -450,7 +451,7 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 }
 
 func TestContextStrategy_Count(t *testing.T) {
-	mockCounter := &mockTokenCounter{tokens: 42}
+	mockCounter := &testutil.MockTokenCounter{Tokens: 42}
 	cs := NewContextStrategy(mockCounter)
 
 	contents := []*llm.Content{{Parts: []*llm.Part{{Text: "hello"}}}}

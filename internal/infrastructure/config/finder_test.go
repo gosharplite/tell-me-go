@@ -9,87 +9,90 @@ import (
 	"testing"
 )
 
+type fileSetup struct {
+	path    string
+	content string
+}
+
+func setupTestFS(t *testing.T, tmpDir string, files []fileSetup) {
+	t.Helper()
+	for _, f := range files {
+		fullPath := filepath.Join(tmpDir, f.path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("failed to create directory: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(f.content), 0644); err != nil {
+			t.Fatalf("failed to write file: %v", err)
+		}
+	}
+}
+
 func TestDefaultConfigFinder_Find(t *testing.T) {
-	t.Run("Local Directory configs/assistant.yaml", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "configs", "assistant.yaml")
-		err := os.MkdirAll(filepath.Dir(configPath), 0755)
-		if err != nil {
-			t.Fatalf("failed to create configs directory: %v", err)
-		}
-		err = os.WriteFile(configPath, []byte("test content"), 0644)
-		if err != nil {
-			t.Fatalf("failed to create assistant.yaml: %v", err)
-		}
+	tests := []struct {
+		name         string
+		files        []fileSetup
+		baseDir      string
+		expectedPath string
+		wantErr      bool
+	}{
+		{
+			name: "Local Directory configs/assistant.yaml",
+			files: []fileSetup{
+				{path: "configs/assistant.yaml", content: "test content"},
+			},
+			expectedPath: "configs/assistant.yaml",
+		},
+		{
+			name: "Local Directory assistant.yaml",
+			files: []fileSetup{
+				{path: "assistant.yaml", content: "test content"},
+			},
+			expectedPath: "assistant.yaml",
+		},
+		{
+			name: "Parent Traversal",
+			files: []fileSetup{
+				{path: ".tell-me-go.yaml", content: "test content"},
+			},
+			baseDir:      "child",
+			expectedPath: ".tell-me-go.yaml",
+		},
+		{
+			name:         "Fallback",
+			files:        []fileSetup{},
+			expectedPath: "configs/assistant.yaml",
+		},
+	}
 
-		finder := NewDefaultConfigFinder(WithBaseDir(tmpDir))
-		path, err := finder.Find()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
 
-		expectedPath := filepath.Join(tmpDir, "configs", "assistant.yaml")
-		if path != expectedPath {
-			t.Errorf("got path %q; want %q", path, expectedPath)
-		}
-	})
+			// Setup files
+			setupTestFS(t, tmpDir, tt.files)
 
-	t.Run("Local Directory assistant.yaml", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		configPath := filepath.Join(tmpDir, "assistant.yaml")
-		err := os.WriteFile(configPath, []byte("test content"), 0644)
-		if err != nil {
-			t.Fatalf("failed to create assistant.yaml: %v", err)
-		}
+			// Determine base directory for finder
+			actualBaseDir := tmpDir
+			if tt.baseDir != "" {
+				actualBaseDir = filepath.Join(tmpDir, tt.baseDir)
+				if err := os.MkdirAll(actualBaseDir, 0755); err != nil {
+					t.Fatalf("failed to create baseDir: %v", err)
+				}
+			}
 
-		finder := NewDefaultConfigFinder(WithBaseDir(tmpDir))
-		path, err := finder.Find()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+			finder := NewDefaultConfigFinder(WithBaseDir(actualBaseDir))
+			path, err := finder.Find()
 
-		if path != configPath {
-			t.Errorf("got path %q; want %q", path, configPath)
-		}
-	})
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Find() error = %v, wantErr %v", err, tt.wantErr)
+			}
 
-	t.Run("Parent Traversal", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		parentDir := filepath.Join(tmpDir, "parent")
-		childDir := filepath.Join(parentDir, "child")
-		err := os.MkdirAll(childDir, 0755)
-		if err != nil {
-			t.Fatalf("failed to create directories: %v", err)
-		}
-
-		configPath := filepath.Join(parentDir, ".tell-me-go.yaml")
-		err = os.WriteFile(configPath, []byte("test content"), 0644)
-		if err != nil {
-			t.Fatalf("failed to create .tell-me-go.yaml: %v", err)
-		}
-
-		finder := NewDefaultConfigFinder(WithBaseDir(childDir))
-		path, err := finder.Find()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if path != configPath {
-			t.Errorf("got path %q; want %q", path, configPath)
-		}
-	})
-
-	t.Run("Fallback", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		finder := NewDefaultConfigFinder(WithBaseDir(tmpDir))
-		path, err := finder.Find()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		expectedPath := filepath.Join(tmpDir, "configs", "assistant.yaml")
-		if path != expectedPath {
-			t.Errorf("got path %q; want %q", path, expectedPath)
-		}
-	})
+			if !tt.wantErr {
+				expected := filepath.Join(tmpDir, tt.expectedPath)
+				if path != expected {
+					t.Errorf("got path %q; want %q", path, expected)
+				}
+			}
+		})
+	}
 }

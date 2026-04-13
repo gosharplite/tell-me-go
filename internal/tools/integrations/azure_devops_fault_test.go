@@ -11,7 +11,7 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,7 +37,7 @@ func TestHTTPClient_NetworkFault_MidStream(t *testing.T) {
 	}
 
 	// 3. Initialize your client with the mock transport
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	m := newADOManager(sm, withHTTPClient(mockClient), withToken("test-pat"))
 
 	// 4. Execute the call
@@ -77,7 +77,7 @@ func TestHTTPClient_NetworkFault_OnStatusError(t *testing.T) {
 	}
 
 	// 3. Initialize your client with the mock transport
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	m := newADOManager(sm, withHTTPClient(mockClient), withToken("test-pat"))
 
 	// 4. Execute the call

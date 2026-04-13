@@ -61,6 +61,11 @@ func TestClassify(t *testing.T) {
 			expectedWrap: llm.ErrRateLimit,
 		},
 		{
+			name:         "HTTP 408 via APIError",
+			input:        &APIError{Status: 408, Body: "Request Timeout"},
+			expectedWrap: llm.ErrTransient,
+		},
+		{
 			name:         "HTTP 503 via APIError",
 			input:        &APIError{Status: 503, Body: "Service Unavailable"},
 			expectedWrap: llm.ErrTransient,
@@ -152,6 +157,24 @@ func TestClassify(t *testing.T) {
 			containsMatch: "504",
 		},
 		{
+			name:          "String matching Error 504 (Task 1 Regression)",
+			input:         errors.New("Error 504, Message: The server encountered a temporary error and could not complete your request., Status: , Details: []"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "504",
+		},
+		{
+			name:          "String matching 504 without prefix",
+			input:         errors.New("something went wrong: 504"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "504",
+		},
+		{
+			name:          "String matching Gateway Timeout with colon",
+			input:         errors.New("Gateway: Timeout"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "TIMEOUT",
+		},
+		{
 			name:          "String matching 499 and CANCELLED",
 			input:         errors.New("Error 499, Message: The operation was cancelled., Status: CANCELLED"),
 			expectedWrap:  llm.ErrTransient,
@@ -162,6 +185,36 @@ func TestClassify(t *testing.T) {
 			input:         errors.New("Status: UNAVAILABLE"),
 			expectedWrap:  llm.ErrTransient,
 			containsMatch: "UNAVAILABLE",
+		},
+		{
+			name:          "String matching HTTP 408",
+			input:         errors.New("Request Timeout (Status Code: 408)"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "408",
+		},
+		{
+			name:          "String matching 5xx range (507)",
+			input:         errors.New("Internal Server Error (507)"),
+			expectedWrap:  llm.ErrTransient,
+			containsMatch: "507",
+		},
+		{
+			name:          "String matching 429 without prefix",
+			input:         errors.New("something went wrong: 429"),
+			expectedWrap:  llm.ErrRateLimit,
+			containsMatch: "429",
+		},
+		{
+			name:          "String matching Error 429 (Task 4 Regression)",
+			input:         errors.New("Error 429: Rate limit reached"),
+			expectedWrap:  llm.ErrRateLimit,
+			containsMatch: "429",
+		},
+		{
+			name:          "String matching RATE LIMIT with space",
+			input:         errors.New("exceeded RATE LIMIT"),
+			expectedWrap:  llm.ErrRateLimit,
+			containsMatch: "RATE LIMIT",
 		},
 		{
 			name:         "Unclassified error defaults to terminal",

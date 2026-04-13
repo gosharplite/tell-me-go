@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-
 	_ "modernc.org/sqlite"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -227,7 +225,7 @@ func TestTraceTelemetry(t *testing.T) {
 	t.Run("RegisterTraceSubscriber", func(t *testing.T) {
 		t.Parallel()
 		bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-		inframock.CleanupBus(t, bus)
+		events.CleanupBus(t, bus)
 		RegisterTraceSubscriber(bus, traceFile)
 
 		_ = bus.Publish(context.Background(), events.TraceEvent{Trace: trace})

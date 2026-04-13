@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -56,8 +55,8 @@ func (c *sessionConfig) GetBackN() int             { return c.BackN }
 func (c *sessionConfig) GetRawOutput() bool        { return c.RawOutput }
 func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
 
-// newSessionConfig creates a new sessionConfig with required parameters.
-func newSessionConfig(configPath string, newSession bool, lastN, backN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
+// NewSessionConfig creates a new sessionConfig with required parameters.
+func NewSessionConfig(configPath string, newSession bool, lastN, backN int, rawOutput bool, prompt string, cfg *config.Config) ports.SessionConfig {
 	return &sessionConfig{
 		ConfigPath: configPath,
 		NewSession: newSession,
@@ -81,7 +80,7 @@ type sessionDependencies struct {
 	PricingData      domain_pricing.PricingData
 	PricingOverrides map[string]domain_pricing.ModelPricing
 	EventBus         events.EventBus
-	Logger           *slog.Logger
+	Logger           ports.Logger
 	TurnsLogger      ports.TurnsLogger
 	SessionProvider  ports.SessionProvider
 }
@@ -90,12 +89,12 @@ func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gate
 func (d *sessionDependencies) GetHistoryManager() ports.HistoryManager {
 	return d.HistoryManager
 }
-func (d *sessionDependencies) GetRegistry() domaintools.Registry { return d.Registry }
+func (d *sessionDependencies) GetRegistry() (domaintools.Registry, error) { return d.Registry, nil }
 func (d *sessionDependencies) GetSecurityManager() domain_security.Manager {
 	return d.SecurityManager
 }
 func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
-func (d *sessionDependencies) GetLogger() *slog.Logger      { return d.Logger }
+func (d *sessionDependencies) GetLogger() ports.Logger      { return d.Logger }
 func (d *sessionDependencies) GetTurnsLogger() ports.TurnsLogger {
 	return d.TurnsLogger
 }
@@ -111,8 +110,8 @@ func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 	return d.PricingData
 }
 
-// newSessionDependencies creates a new sessionDependencies with all required components.
-func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger *slog.Logger, turnsLogger ports.TurnsLogger, sessionProvider ports.SessionProvider) ports.SessionDependencies {
+// NewSessionDependencies creates a new sessionDependencies with all required components.
+func NewSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger ports.Logger, turnsLogger ports.TurnsLogger, sessionProvider ports.SessionProvider) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -130,8 +129,8 @@ func newSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 	}
 }
 
-// newSessionManager creates a new sessionManager.
-func newSessionManager(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
+// NewSessionManager creates a new sessionManager.
+func NewSessionManager(homeDir, version string, loader config.ConfigLoader, sm domain_security.Manager, stdout, stderr io.Writer, factory ports.ChatterFactory, historyRenderer ports.HistoryRenderer, uiRenderer ports.UIRenderer, clk clock.Clock, entropy io.Reader) SessionManager {
 	return &sessionManager{
 		HomeDir:         homeDir,
 		Version:         version,
@@ -257,7 +256,7 @@ func (o *sessionManager) RenderHistory(hManager ports.HistoryManager, sCfg ports
 	})
 }
 
-func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*uiBridge, error) {
+func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*UIBridge, error) {
 	cfg := sCfg.GetConfig()
 	paths := sd.GetPaths()
 	pData := sd.GetPricingData()
@@ -277,20 +276,20 @@ func (o *sessionManager) applyConfiguration(ctx context.Context, chatAgent ports
 	return bridge, chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger *slog.Logger, capturer ports.Capturer) *uiBridge {
+func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.Chatter, cfg *config.Config, rawOutput bool, logPath string, logger ports.Logger, capturer ports.Capturer) *UIBridge {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
-	bridge := newUIBridge(o.UIRenderer,
-		withBridgeThoughts(cfg.ShowThoughts),
-		withBridgeTools(cfg.ShowTools),
-		withBridgeRawOutput(rawOutput),
-		withBridgeColor(useColor),
-		withBridgeLogFile(logPath),
-		withBridgeLogger(logger),
+	bridge := NewUIBridge(o.UIRenderer,
+		WithBridgeThoughts(cfg.ShowThoughts),
+		WithBridgeTools(cfg.ShowTools),
+		WithBridgeRawOutput(rawOutput),
+		WithBridgeColor(useColor),
+		WithBridgeLogFile(logPath),
+		WithBridgeLogger(logger),
 		withBridgeClock(o.Clock),
 	)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
-		if err := bridge.handleEvent(ctx, e); err != nil {
+		if err := bridge.HandleEvent(ctx, e); err != nil {
 			logger.Warn("Failed to handle bridge event", "error", err, "event", fmt.Sprintf("%T", e))
 		}
 	})
@@ -332,7 +331,7 @@ func Run(ctx context.Context, params RunParams) error {
 		entropy = rand.Reader
 	}
 
-	orch := newSessionManager(
+	orch := NewSessionManager(
 		params.HomeDir,
 		params.Version,
 		params.Loader,
@@ -346,7 +345,7 @@ func Run(ctx context.Context, params RunParams) error {
 		entropy,
 	)
 
-	sCfg := newSessionConfig(
+	sCfg := NewSessionConfig(
 		params.ConfigPath,
 		params.NewSession,
 		params.LastN,

@@ -5,12 +5,12 @@ package agent
 
 import (
 	"context"
-	"log/slog"
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // agentConfig holds initialization-only dependencies and configuration.
@@ -26,8 +26,9 @@ type agentConfig struct {
 	sessionLoader    domain_config.SessionLoader
 	tracker          domain_pricing.CostTracker
 	initCtx          context.Context
-	logger           *slog.Logger
+	logger           ports.Logger
 	turnsLogger      ports.TurnsLogger
+	clock            clock.Clock
 }
 
 // Option defines a functional option for configuring an Agent.
@@ -40,8 +41,8 @@ func WithSessionProvider(sp ports.SessionProvider) Option {
 	}
 }
 
-// withInitContext sets the context for the agent initialization.
-func withInitContext(ctx context.Context) Option {
+// WithInitContext sets the context for the agent initialization.
+func WithInitContext(ctx context.Context) Option {
 	return func(c *agentConfig) {
 		c.initCtx = ctx
 	}
@@ -70,8 +71,8 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// withLoader sets the configuration loader for the agent.
-func withLoader(loader domain_config.ConfigLoader) Option {
+// WithLoader sets the configuration loader for the agent.
+func WithLoader(loader domain_config.ConfigLoader) Option {
 	return func(c *agentConfig) {
 		c.loader = loader
 	}
@@ -84,15 +85,15 @@ func WithSessionCostTracker(tracker domain_pricing.CostTracker) Option {
 	}
 }
 
-// withSessionLoader sets the session configuration loader for the agent.
-func withSessionLoader(loader domain_config.SessionLoader) Option {
+// WithSessionLoader sets the session configuration loader for the agent.
+func WithSessionLoader(loader domain_config.SessionLoader) Option {
 	return func(c *agentConfig) {
 		c.sessionLoader = loader
 	}
 }
 
 // WithLogger sets the logger for the agent.
-func WithLogger(l *slog.Logger) Option {
+func WithLogger(l ports.Logger) Option {
 	return func(c *agentConfig) {
 		c.logger = l
 	}
@@ -109,5 +110,12 @@ func WithSkillSelector(s skills.SkillSelector) Option {
 func WithTurnsLogger(tl ports.TurnsLogger) Option {
 	return func(c *agentConfig) {
 		c.turnsLogger = tl
+	}
+}
+
+// WithClock sets the clock for the agent and its components.
+func WithClock(c clock.Clock) Option {
+	return func(cfg *agentConfig) {
+		cfg.clock = c
 	}
 }

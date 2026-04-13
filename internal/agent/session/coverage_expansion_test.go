@@ -108,7 +108,7 @@ func (m *mockExpEventBus) Listen(ctx context.Context) error                  { <
 
 func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 	bus := &mockExpEventBus{}
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		MaxTokens: 5000, // Buffer will be 500 (10% of 5000)
 		Events:    bus,
 	}
@@ -145,7 +145,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
-	tg := &tokenGatekeeper{}
+	tg := &TokenGatekeeper{}
 
 	pinnedTurn := []*llm.Content{{Pinned: true}}
 	unpinnedTurn := []*llm.Content{{Pinned: false}}
@@ -199,7 +199,7 @@ func TestCompositePruningPolicy_Name_Coverage(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ErrorPath(t *testing.T) {
-	tg := &tokenGatekeeper{}
+	tg := &TokenGatekeeper{}
 	// History with no summarizable blocks (all pinned)
 	history := []*llm.Content{
 		{Role: "user", Pinned: true},
@@ -211,7 +211,7 @@ func TestTokenGatekeeper_FindSummarizableRange_ErrorPath(t *testing.T) {
 
 func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 	bus := &mockExpEventBus{}
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		MaxTokens: 1000,
 		Events:    bus,
 	}

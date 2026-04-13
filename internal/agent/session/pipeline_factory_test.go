@@ -10,11 +10,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPipelineFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{})
+	strategy := NewContextStrategy(&testutil.MockTokenCounter{})
 	factory := &PipelineFactory{
 		Estimator: strategy,
 		Profile:   profilePrecise,
@@ -36,12 +37,12 @@ func TestPipelineFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
 
 			hasPruner := false
 			for _, tr := range pipeline.transformers {
-				if _, ok := tr.(*historyPruner); ok {
+				if _, ok := tr.(*HistoryPruner); ok {
 					hasPruner = true
 					break
 				}
 			}
-			assert.Equal(t, tt.expectPruner, hasPruner, "historyPruner inclusion state mismatch")
+			assert.Equal(t, tt.expectPruner, hasPruner, "HistoryPruner inclusion state mismatch")
 
 			// Ensure the constructed pipeline is valid and executable
 			ctx := context.Background()

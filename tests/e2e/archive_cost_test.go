@@ -6,22 +6,17 @@ package e2e
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestArchiveCostPreservation(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipping slow E2E test in short mode")
 	}
-	binaryPath, tmpHome, configPath := setupTestEnvironment(t)
-
-	outputDir := filepath.Join(tmpHome, "output")
-	ledgerPath := filepath.Join(outputDir, "global_costs.json")
 
 	tests := []struct {
 		name        string
@@ -38,75 +33,45 @@ func TestArchiveCostPreservation(t *testing.T) {
 	}
 
 	for _, tc := range tests {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			// Clear output directory for a fresh subtest state
-			_ = os.RemoveAll(outputDir)
+			t.Parallel()
+
+			// 1. Setup Hermetic Environment
+			tmpHome := t.TempDir()
+			outputDir := filepath.Join(tmpHome, "output")
+			configDir := filepath.Join(tmpHome, "configs")
 			if err := os.MkdirAll(outputDir, 0755); err != nil {
 				t.Fatal(err)
 			}
+			if err := os.MkdirAll(configDir, 0755); err != nil {
+				t.Fatal(err)
+			}
 
-			// 1. Seed the ledger with a "previous" session cost
+			// Create a dummy config
+			configPath := filepath.Join(configDir, "test.yaml")
+			configContent := "MODE: \"test\""
+			if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			ledgerPath := filepath.Join(outputDir, "global_costs.json")
+
+			// 2. Seed the ledger with a "previous" session cost
 			seedPreviousSession(t, outputDir, "tokens.log", tc.initialCost)
 
-			// 2. Run the tool with -new flag to trigger archiving
-			runAppWithNewSession(t, binaryPath, configPath)
+			// 3. Run the tool with -new flag to trigger archiving
+			env := []string{
+				"TELL_ME_HOME=" + tmpHome,
+				"TELL_ME_MOCK_ANSWER=Acknowledged.",
+				"TELL_ME_MOCK_URL=http://localhost:9999", // Fail gracefully
+			}
+			_, _, _ = runCommandWithEnv(env, "", "-c", configPath, "--new", "New session start")
 
-			// 3. Verify the ledger (global_costs.json)
+			// 4. Verify the ledger (global_costs.json)
 			verifyCostLedger(t, ledgerPath, "tokens.log", tc.initialCost)
 		})
 	}
-}
-
-func setupTestEnvironment(t *testing.T) (binaryPath, tmpHome, configPath string) {
-	t.Helper()
-
-	// Build the binary
-	binaryPath = filepath.Join(os.TempDir(), "tell-me-go-e2e")
-	if runtime.GOOS == "windows" {
-		binaryPath += ".exe"
-	}
-	cmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/tell-me-go/")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to build binary: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Remove(binaryPath) })
-
-	// Setup Test Home
-	var err error
-	tmpHome, err = os.MkdirTemp("", "archive_cost_home")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmpHome) })
-
-	if err := os.Setenv("TELL_ME_HOME", tmpHome); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Unsetenv("TELL_ME_HOME") })
-
-	// Create directories
-	outputDir := filepath.Join(tmpHome, "output")
-	configDir := filepath.Join(tmpHome, "configs")
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a dummy config
-	configPath = filepath.Join(configDir, "test.yaml")
-	configContent := `
-MODE: "test"
-AIMODEL: "gemini-test-flash"
-AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/google/models"
-MAX_HISTORY_TURNS: 10
-`
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	return binaryPath, tmpHome, configPath
 }
 
 func seedPreviousSession(t *testing.T, outputDir, sessionName string, cost float64) {
@@ -121,41 +86,15 @@ func seedPreviousSession(t *testing.T, outputDir, sessionName string, cost float
 			"total_cost": cost,
 		},
 	}
-	ledgerBytes, err := json.MarshalIndent(initialLedger, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(ledgerPath, ledgerBytes, 0644); err != nil {
-		t.Fatal(err)
-	}
+	ledgerBytes, _ := json.MarshalIndent(initialLedger, "", "  ")
+	_ = os.WriteFile(ledgerPath, ledgerBytes, 0644)
 
 	// Simulate a previous session log file
 	modeDir := filepath.Join(outputDir, "test")
-	if err := os.MkdirAll(modeDir, 0755); err != nil {
-		t.Fatal(err)
-	}
+	_ = os.MkdirAll(modeDir, 0755)
 	logFile := filepath.Join(modeDir, sessionName)
 	logContent := "[10:00:00] H: 100 M: 100 C: 100 T: 300 N: 300(1%) S: 0 Th: 0 [1.00s]\n"
-	if err := os.WriteFile(logFile, []byte(logContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func runAppWithNewSession(t *testing.T, binaryPath, configPath string) {
-	t.Helper()
-
-	if err := os.Setenv("TELL_ME_MOCK_ANSWER", "Acknowledged."); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Unsetenv("TELL_ME_MOCK_ANSWER") })
-	if err := os.Setenv("TELL_ME_MOCK_URL", "http://localhost:9999"); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Unsetenv("TELL_ME_MOCK_URL") })
-
-	cmd := exec.Command(binaryPath, "-c", configPath, "--new", "New session start")
-	// Expected to fail after archiving due to mock server not existing, but we only care about the archiving logic here.
-	_ = cmd.Run()
+	_ = os.WriteFile(logFile, []byte(logContent), 0644)
 }
 
 type sessionCostRecord struct {
@@ -166,7 +105,14 @@ type sessionCostRecord struct {
 func verifyCostLedger(t *testing.T, ledgerPath string, originalSession string, originalCost float64) {
 	t.Helper()
 
-	history := loadLedger(t, ledgerPath)
+	data, err := os.ReadFile(ledgerPath)
+	if err != nil {
+		t.Fatalf("Failed to read ledger: %v", err)
+	}
+	var history []sessionCostRecord
+	if err := json.Unmarshal(data, &history); err != nil {
+		t.Fatalf("Failed to parse ledger: %v", err)
+	}
 
 	var hasBackup, originalPreserved bool
 	for _, r := range history {
@@ -184,19 +130,6 @@ func verifyCostLedger(t *testing.T, ledgerPath string, originalSession string, o
 	if !originalPreserved {
 		t.Errorf("The original session entry was overwritten or deleted. History: %+v", history)
 	}
-}
-
-func loadLedger(t *testing.T, path string) []sessionCostRecord {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("Failed to read ledger: %v", err)
-	}
-	var history []sessionCostRecord
-	if err := json.Unmarshal(data, &history); err != nil {
-		t.Fatalf("Failed to parse ledger: %v", err)
-	}
-	return history
 }
 
 func isBackupOf(sessionPath, originalName string) bool {

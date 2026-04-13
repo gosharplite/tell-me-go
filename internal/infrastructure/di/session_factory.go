@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -101,6 +102,11 @@ func loadPathsFromSettings(ctx stdctx.Context, kv ports.KVStore, key string, reg
 func (f *defaultSessionFactory) setupSecurity(paths *persistence.Paths, configPath string) error {
 	f.SM.RegisterSafePath(filepath.Join(f.HomeDir, "output"))
 	f.SM.RegisterReadOnlyPath(configPath)
+
+	// NEW: Restore implicit CWD safety by explicit registration
+	if wd, err := os.Getwd(); err == nil {
+		f.SM.RegisterSafePath(wd)
+	}
 	return nil
 }
 

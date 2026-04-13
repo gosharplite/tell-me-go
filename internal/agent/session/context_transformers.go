@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	// errInvalidPayload is returned when the history content is malformed or invalid.
-	errInvalidPayload = errors.New("invalid payload history")
+	// ErrInvalidPayload is returned when the history content is malformed or invalid.
+	ErrInvalidPayload = errors.New("invalid payload history")
 )
 
 // emptyTurnFilter removes turns where both user and model messages have no meaningful content.
@@ -58,7 +58,7 @@ type finalContextValidator struct {
 
 func (t *finalContextValidator) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	maxTokens, _, _ := t.Strategy.getLimits()
-	finalTokens := t.Strategy.estimateTokens(req.History)
+	finalTokens := t.Strategy.EstimateTokens(req.History)
 
 	req.Metadata.FinalTokenCount = finalTokens
 	req.Metadata.FinalTurnCount = len(req.History) / 2
@@ -71,13 +71,13 @@ func (t *finalContextValidator) Transform(ctx context.Context, req *ports.Contex
 
 func (t *finalContextValidator) Priority() int { return priorityTransientThreshold + 10 } // Run last
 
-// transientMerger merges TransientParts into Parts for the final API payload.
-type transientMerger struct{}
+// TransientMerger merges TransientParts into Parts for the final API payload.
+type TransientMerger struct{}
 
-func (t *transientMerger) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *TransientMerger) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	for i, msg := range req.History {
 		if msg == nil {
-			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+			return fmt.Errorf("%w: nil message at index %d", ErrInvalidPayload, i)
 		}
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared
@@ -89,11 +89,11 @@ func (t *transientMerger) Transform(ctx context.Context, req *ports.ContextReque
 	return nil
 }
 
-func (t *transientMerger) Priority() int { return priorityTransientThreshold + 5 }
+func (t *TransientMerger) Priority() int { return priorityTransientThreshold + 5 }
 
 func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, error) {
 	if history == nil {
-		return nil, fmt.Errorf("groupTurns: %w", errInvalidPayload)
+		return nil, fmt.Errorf("groupTurns: %w", ErrInvalidPayload)
 	}
 	if len(history) == 0 {
 		return nil, nil
@@ -125,7 +125,7 @@ func groupTurns(ctx context.Context, history []*llm.Content) ([][]*llm.Content, 
 
 func validateTurnContent(ctx context.Context, msg *llm.Content, index int) error {
 	if msg == nil {
-		return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, index)
+		return fmt.Errorf("%w: nil message at index %d", ErrInvalidPayload, index)
 	}
 	if index%100 == 0 {
 		select {
@@ -135,7 +135,7 @@ func validateTurnContent(ctx context.Context, msg *llm.Content, index int) error
 		}
 	}
 	if msg.Role == "" {
-		return fmt.Errorf("%w: empty role at index %d", errInvalidPayload, index)
+		return fmt.Errorf("%w: empty role at index %d", ErrInvalidPayload, index)
 	}
 	return nil
 }
@@ -156,7 +156,7 @@ func isTurnBoundary(msg *llm.Content, current []*llm.Content) (bool, error) {
 	if msg.Role == "user" {
 		last := current[len(current)-1]
 		if last == nil {
-			return false, fmt.Errorf("%w: nil message in current turn", errInvalidPayload)
+			return false, fmt.Errorf("%w: nil message in current turn", ErrInvalidPayload)
 		}
 		if last.Role == "model" {
 			toolCall, err := isToolCall(last)
@@ -174,11 +174,11 @@ func isTurnBoundary(msg *llm.Content, current []*llm.Content) (bool, error) {
 
 func isToolCall(msg *llm.Content) (bool, error) {
 	if msg == nil {
-		return false, fmt.Errorf("%w: nil message", errInvalidPayload)
+		return false, fmt.Errorf("%w: nil message", ErrInvalidPayload)
 	}
 	for i, p := range msg.Parts {
 		if p == nil {
-			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("%w: nil part at index %d", ErrInvalidPayload, i)
 		}
 		if p.FunctionCall != nil {
 			return true, nil
@@ -190,11 +190,11 @@ func isToolCall(msg *llm.Content) (bool, error) {
 func isTurnEmpty(turn []*llm.Content) (bool, error) {
 	for i, msg := range turn {
 		if msg == nil {
-			return false, fmt.Errorf("%w: nil message in turn at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("%w: nil message in turn at index %d", ErrInvalidPayload, i)
 		}
 		for j, p := range msg.Parts {
 			if p == nil {
-				return false, fmt.Errorf("%w: nil part in message %d at index %d", errInvalidPayload, i, j)
+				return false, fmt.Errorf("%w: nil part in message %d at index %d", ErrInvalidPayload, i, j)
 			}
 			if !p.IsEmpty() {
 				return false, nil
@@ -204,17 +204,17 @@ func isTurnEmpty(turn []*llm.Content) (bool, error) {
 	return true, nil
 }
 
-// historyRepairer ensures the history is valid for the API after a crash or interruption.
-type historyRepairer struct{}
+// HistoryRepairer ensures the history is valid for the API after a crash or interruption.
+type HistoryRepairer struct{}
 
-func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *HistoryRepairer) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	if len(req.History) == 0 {
 		return nil
 	}
 
 	last := req.History[len(req.History)-1]
 	if last == nil {
-		return fmt.Errorf("%w: nil message at end of history", errInvalidPayload)
+		return fmt.Errorf("%w: nil message at end of history", ErrInvalidPayload)
 	}
 	if last.Role != "model" {
 		return nil
@@ -223,14 +223,14 @@ func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextReque
 	responses := make([]*llm.Part, 0, len(last.Parts))
 	for i, p := range last.Parts {
 		if p == nil {
-			return fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+			return fmt.Errorf("%w: nil part at index %d", ErrInvalidPayload, i)
 		}
 		if p.FunctionCall != nil {
 			responses = append(responses, &llm.Part{
 				FunctionResponse: &llm.FunctionResponse{
 					ID:       p.FunctionCall.ID, // Copy ID from the function call
 					Name:     p.FunctionCall.Name,
-					Response: map[string]interface{}{"result": "Error: System rebooted or session interrupted during tool execution. Results lost."},
+					Response: map[string]interface{}{"result": "error: system rebooted or session interrupted during tool execution; results lost"},
 				},
 			})
 		}
@@ -246,7 +246,7 @@ func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextReque
 	return nil
 }
 
-func (t *historyRepairer) Priority() int { return 0 }
+func (t *HistoryRepairer) Priority() int { return 0 }
 
 // contentCleaner ensures no empty parts are sent to the API, preventing 400 errors.
 type contentCleaner struct{}
@@ -255,7 +255,7 @@ func (t *contentCleaner) Transform(ctx context.Context, req *ports.ContextReques
 	modified := false
 	for i, content := range req.History {
 		if content == nil {
-			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+			return fmt.Errorf("%w: nil message at index %d", ErrInvalidPayload, i)
 		}
 		changed, err := cleanContent(content)
 		if err != nil {
@@ -273,13 +273,13 @@ func (t *contentCleaner) Transform(ctx context.Context, req *ports.ContextReques
 
 func cleanContent(content *llm.Content) (bool, error) {
 	if content == nil {
-		return false, fmt.Errorf("%w: nil message", errInvalidPayload)
+		return false, fmt.Errorf("%w: nil message", ErrInvalidPayload)
 	}
 	// 1. O(N) check to see if an allocation/rebuild is actually needed
 	hasEmpty := false
 	for i, p := range content.Parts {
 		if p == nil {
-			return false, fmt.Errorf("%w: nil part at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("%w: nil part at index %d", ErrInvalidPayload, i)
 		}
 		if p.IsEmpty() {
 			hasEmpty = true
@@ -323,7 +323,7 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 
 	for i, content := range req.History {
 		if content == nil {
-			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+			return fmt.Errorf("%w: nil message at index %d", ErrInvalidPayload, i)
 		}
 		partsBefore := len(content.Parts)
 
@@ -353,7 +353,7 @@ func (t *toolResponseCleaner) Transform(ctx context.Context, req *ports.ContextR
 
 func cleanToolParts(content *llm.Content) (bool, error) {
 	if content == nil {
-		return false, fmt.Errorf("cleanToolParts: %w", errInvalidPayload)
+		return false, fmt.Errorf("cleanToolParts: %w", ErrInvalidPayload)
 	}
 	cleanParts := make([]*llm.Part, 0, len(content.Parts))
 	changed := false
@@ -361,7 +361,7 @@ func cleanToolParts(content *llm.Content) (bool, error) {
 	for i, p := range content.Parts {
 		// Skip nil parts
 		if p == nil {
-			return false, fmt.Errorf("cleanToolParts: %w at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("cleanToolParts: %w at index %d", ErrInvalidPayload, i)
 		}
 		// Skip tool calls with empty IDs - they cause API errors
 		if p.FunctionCall != nil && p.FunctionCall.ID == "" {
@@ -382,7 +382,7 @@ func cleanToolParts(content *llm.Content) (bool, error) {
 	return changed, nil
 }
 
-func (t *toolResponseCleaner) Priority() int { return 3 } // Run after historyRepairer (0) but before contentCleaner (5)
+func (t *toolResponseCleaner) Priority() int { return 3 } // Run after HistoryRepairer (0) but before contentCleaner (5)
 // emptyMessagePruner explicitly drops messages that have 0 parts.
 // This runs before contentCleaner (which adds [empty response] fallbacks for messages with empty parts)
 // so that genuinely empty messages are fully removed from the history.
@@ -394,7 +394,7 @@ func (t *emptyMessagePruner) Transform(ctx context.Context, req *ports.ContextRe
 
 	for i, content := range req.History {
 		if content == nil {
-			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+			return fmt.Errorf("%w: nil message at index %d", ErrInvalidPayload, i)
 		}
 		if len(content.Parts) == 0 {
 			modified = true
@@ -421,7 +421,7 @@ func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.C
 	modified := false
 	for i, content := range req.History {
 		if content == nil {
-			return fmt.Errorf("%w: nil message at index %d", errInvalidPayload, i)
+			return fmt.Errorf("%w: nil message at index %d", ErrInvalidPayload, i)
 		}
 		if content.Role != "model" {
 			continue
@@ -443,13 +443,13 @@ func (t *thoughtSignaturePropagator) Transform(ctx context.Context, req *ports.C
 
 func propagateSignatureToMessage(content *llm.Content) (bool, error) {
 	if content == nil {
-		return false, fmt.Errorf("propagateSignatureToMessage: %w", errInvalidPayload)
+		return false, fmt.Errorf("propagateSignatureToMessage: %w", ErrInvalidPayload)
 	}
 	var signature []byte
 	// First pass: find the signature
 	for i, p := range content.Parts {
 		if p == nil {
-			return false, fmt.Errorf("propagateSignatureToMessage: %w at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("propagateSignatureToMessage: %w at index %d", ErrInvalidPayload, i)
 		}
 		if len(p.ThoughtSignature) > 0 {
 			signature = p.ThoughtSignature
@@ -465,7 +465,7 @@ func propagateSignatureToMessage(content *llm.Content) (bool, error) {
 	// Second pass: attach it to function calls if missing
 	for i, p := range content.Parts {
 		if p == nil {
-			return false, fmt.Errorf("propagateSignatureToMessage: %w at index %d", errInvalidPayload, i)
+			return false, fmt.Errorf("propagateSignatureToMessage: %w at index %d", ErrInvalidPayload, i)
 		}
 		if p.FunctionCall != nil && len(p.ThoughtSignature) == 0 {
 			// We must allocate a new slice to avoid sharing pointers

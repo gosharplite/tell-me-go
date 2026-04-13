@@ -10,10 +10,9 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -33,7 +32,7 @@ func (m *mockSessionProvider) GetSettings() ports.KVStore     { return nil }
 
 func TestNewToolRegistry(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		Registry:        r,
@@ -42,7 +41,7 @@ func TestNewToolRegistry(t *testing.T) {
 		Model:           "model",
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
-		FileSystem:      infrapersistence.NewOSFileSystem(),
+		FileSystem:      testutil.NewOSFileSystem(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
@@ -54,7 +53,7 @@ func TestNewToolRegistry(t *testing.T) {
 
 func TestRegisterAll_WithSessionProvider(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	sp := &mockSessionProvider{}
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
@@ -65,7 +64,7 @@ func TestRegisterAll_WithSessionProvider(t *testing.T) {
 		Model:           "model",
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
-		FileSystem:      infrapersistence.NewOSFileSystem(),
+		FileSystem:      testutil.NewOSFileSystem(),
 	}); err != nil {
 		t.Fatalf("RegisterAll with SessionProvider failed: %v", err)
 	}
@@ -73,7 +72,7 @@ func TestRegisterAll_WithSessionProvider(t *testing.T) {
 
 func TestToolExecution(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		Registry:        r,
@@ -82,7 +81,7 @@ func TestToolExecution(t *testing.T) {
 		Model:           "model",
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
-		FileSystem:      infrapersistence.NewOSFileSystem(),
+		FileSystem:      testutil.NewOSFileSystem(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
@@ -97,7 +96,7 @@ func TestToolExecution(t *testing.T) {
 
 func TestGenerateMermaidDiagram(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		Registry:        r,
@@ -106,7 +105,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 		Model:           "model",
 		Mode:            "mode",
 		AssetsDir:       t.TempDir(),
-		FileSystem:      infrapersistence.NewOSFileSystem(),
+		FileSystem:      testutil.NewOSFileSystem(),
 	}); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}

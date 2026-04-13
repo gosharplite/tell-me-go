@@ -19,7 +19,7 @@ import (
 type summarizer struct {
 	gateway llm.LLMGateway
 	events  events.EventBus
-	logger  *slog.Logger
+	logger  ports.Logger
 }
 
 // NewSummarizer creates a new summarization service.
@@ -27,7 +27,7 @@ func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...summarizerOpti
 	s := &summarizer{
 		gateway: g,
 		events:  bus,
-		logger:  slog.Default(),
+		logger:  &ports.NoOpLogger{},
 	}
 
 	for _, opt := range opts {
@@ -41,7 +41,7 @@ func NewSummarizer(g llm.LLMGateway, bus events.EventBus, opts ...summarizerOpti
 type summarizerOption func(*summarizer)
 
 // WithLogger sets the logger for the summarizer.
-func WithLogger(l *slog.Logger) summarizerOption {
+func WithLogger(l ports.Logger) summarizerOption {
 	return func(s *summarizer) {
 		s.logger = l
 	}

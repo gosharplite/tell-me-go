@@ -56,7 +56,7 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 		if r := recover(); r != nil {
 			result = tools.ToolResult{
 				Text:  "Tool \"" + call.Name + "\" encountered an internal fatal error (panic) and was terminated.",
-				Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
+				Error: fmt.Errorf("%w: tool execution panic: %v", llm.ErrTerminal, r),
 			}
 		}
 	}()
@@ -94,7 +94,7 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 			result.Error = err
 		}
 		if result.Text == "" {
-			result.Text = fmt.Sprintf("Error: %v", err)
+			result.Text = fmt.Sprintf("Error: tool execution failed: %s: %v", call.Name, err)
 		}
 		// Do not wrap in llm.ErrTerminal so the LLM can see the error and retry.
 	}
@@ -141,21 +141,21 @@ type Dispatcher struct {
 	zombie   *tools.ZombieTool
 }
 
-type executorOption func(*dispatcherConfig)
+type ExecutorOption func(*dispatcherConfig)
 
-func WithLongRunningTimeout(timeout time.Duration) executorOption {
+func WithLongRunningTimeout(timeout time.Duration) ExecutorOption {
 	return func(cfg *dispatcherConfig) {
 		cfg.LongRunningTimeout = timeout
 	}
 }
 
-func withZombieTimeout(timeout time.Duration) executorOption {
+func withZombieTimeout(timeout time.Duration) ExecutorOption {
 	return func(cfg *dispatcherConfig) {
 		cfg.ZombieTimeout = timeout
 	}
 }
 
-func withToolTimeout(timeout time.Duration) executorOption {
+func WithToolTimeout(timeout time.Duration) ExecutorOption {
 	return func(cfg *dispatcherConfig) {
 		cfg.ToolTimeout = timeout
 	}
@@ -181,7 +181,7 @@ func validateDispatcherDeps(pipeline ToolPipeline, logger ports.Logger, observer
 		return errors.New("pipeline is required")
 	}
 	if observer == nil {
-		return errors.New("ExecutionObserver is required")
+		return errors.New("execution observer is required")
 	}
 	if logger == nil {
 		return errors.New("logger is required")
@@ -189,7 +189,7 @@ func validateDispatcherDeps(pipeline ToolPipeline, logger ports.Logger, observer
 	return nil
 }
 
-func newDispatcher(cfg dispatcherConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
+func newDispatcher(cfg dispatcherConfig, pipeline ToolPipeline, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...ExecutorOption) (*Dispatcher, error) {
 	if err := validateDispatcherDeps(pipeline, logger, observer); err != nil {
 		return nil, err
 	}
@@ -293,11 +293,11 @@ func (e *Dispatcher) Execute(ctx context.Context, respContent *llm.Content, turn
 			"duration_ms", duration.Milliseconds(),
 		)
 		if ctx.Err() != nil {
-			return e.assembleResponse(calls, results), ctx.Err()
+			return e.AssembleResponse(calls, results), ctx.Err()
 		}
 
 		if errors.Is(waitErr, llm.ErrTerminal) {
-			return e.assembleResponse(calls, results), waitErr
+			return e.AssembleResponse(calls, results), waitErr
 		}
 
 		waitErr = nil
@@ -309,7 +309,7 @@ func (e *Dispatcher) Execute(ctx context.Context, respContent *llm.Content, turn
 		)
 	}
 
-	return e.assembleResponse(calls, results), waitErr
+	return e.AssembleResponse(calls, results), waitErr
 }
 
 func (e *Dispatcher) extractFunctionCalls(respContent *llm.Content) []*llm.FunctionCall {
@@ -322,7 +322,7 @@ func (e *Dispatcher) extractFunctionCalls(respContent *llm.Content) []*llm.Funct
 	return functionCalls
 }
 
-func (e *Dispatcher) assembleResponse(calls []*llm.FunctionCall, results []tools.ToolResult) *llm.Content {
+func (e *Dispatcher) AssembleResponse(calls []*llm.FunctionCall, results []tools.ToolResult) *llm.Content {
 	var responseParts []*llm.Part
 	for i, tr := range results {
 		responseParts = append(responseParts, e.strategy.Format(calls[i], tr))
@@ -339,6 +339,10 @@ func (e *Dispatcher) assembleResponse(calls []*llm.FunctionCall, results []tools
 		Role:  "user",
 		Parts: responseParts,
 	}
+}
+
+func SuggestTool(hallucinated string, validTools []string) string {
+	return suggestTool(hallucinated, validTools)
 }
 
 type taskBatch struct {
@@ -488,7 +492,7 @@ func (e *Dispatcher) parallelWorker(ctx context.Context, calls []*llm.FunctionCa
 			resultsCh <- toolExecResult{
 				index: -1,
 				name:  "context_cancelled",
-				tr:    tools.ToolResult{Text: "Skipped: Context cancelled", Error: ctx.Err()},
+				tr:    tools.ToolResult{Text: "skipped: context cancelled", Error: ctx.Err()},
 			}
 			return // Graceful exit on cancellation
 		case i, ok := <-jobsCh:
@@ -531,7 +535,7 @@ func (e *Dispatcher) evaluateBatchOutcome(ctx context.Context, batchIdx int, bat
 			e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
 				"batch_idx", batchIdx,
 				"tool_name", calls[batch.tasks[0]].Name)
-			e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
+			e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "skipped: execution halted due to previous serial tool error, timeout or cancellation")
 
 			if ctx.Err() != nil {
 				return true, ctx.Err()

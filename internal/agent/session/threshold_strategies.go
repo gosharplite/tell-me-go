@@ -11,7 +11,7 @@ type ThresholdStrategy interface {
 
 // dynamicThresholdStrategy implements a threshold strategy that delegates to the estimator.
 type dynamicThresholdStrategy struct {
-	Estimator tokenEstimator
+	Estimator TokenEstimator
 }
 
 // Evaluate checks if tokens exceed the dynamic threshold from the estimator.

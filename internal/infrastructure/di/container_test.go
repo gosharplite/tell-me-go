@@ -26,7 +26,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -216,8 +215,10 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				return nil, simulatedErr
 			},
 			mockSetup: func(sm *mockConfigurableSecurityManager) {
+				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(nil).Maybe()
+				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 			},
-			targetErr: simulatedErr,
+			wantErr: "", // No longer fails here
 		},
 		{
 			name: "FailsOnRegisterPolicyToolsError",
@@ -228,8 +229,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 				sm.On("RegisterPolicyTools", mock.Anything, mock.Anything).Return(simulatedErr)
 				sm.On("SetBypassActive", mock.Anything).Return().Maybe()
 			},
-			wantErr:   "failed to register policy tools",
-			targetErr: simulatedErr,
+			wantErr: "", // No longer fails here because registration is lazy
 		},
 		{
 			name: "FailsOnStateInitError",
@@ -268,6 +268,12 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 			b := NewBootstrapper(homeDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, cf)
 			newSession := strings.Contains(tt.name, "TriggerNewSession")
 			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", newSession, nil)
+
+			if tt.wantErr == "" && tt.targetErr == nil {
+				assert.NoError(t, err)
+				return
+			}
+
 			assert.Error(t, err)
 			if err != nil {
 				if tt.wantErr != "" {
@@ -401,7 +407,7 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 
 	// Execute the factory
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	inframock.CleanupBus(t, bus)
+	events.CleanupBus(t, bus)
 	client := new(mockLLMClient)
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
@@ -449,7 +455,7 @@ func (m *mockSessionDeps) GetPaths() *persistence.Paths {
 func (m *mockSessionDeps) GetPricingData() pricing.PricingData     { return pricing.PricingData{} }
 func (m *mockSessionDeps) GetGateway() llm.LLMGateway              { return m.gw }
 func (m *mockSessionDeps) GetHistoryManager() ports.HistoryManager { return m.hManager }
-func (m *mockSessionDeps) GetRegistry() tools.Registry             { return m.reg }
+func (m *mockSessionDeps) GetRegistry() (tools.Registry, error)    { return m.reg, nil }
 func (m *mockSessionDeps) GetSecurityManager() security.Manager {
 	return m.sm
 }
@@ -462,7 +468,7 @@ func (m *mockSessionDeps) GetTracker() pricing.CostTracker {
 }
 func (m *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
 func (m *mockSessionDeps) GetClient() llm.LLMClient                             { return m.client }
-func (m *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
+func (m *mockSessionDeps) GetLogger() ports.Logger                              { return &ports.NoOpLogger{} }
 func (m *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger {
 	return &ports.NoOpTurnsLogger{}
 }
@@ -519,7 +525,7 @@ func TestSessionDeps_Getters(t *testing.T) {
 	reg := registry.New()
 	sm := new(mockConfigurableSecurityManager)
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	inframock.CleanupBus(t, bus)
+	events.CleanupBus(t, bus)
 	tracker := &mockTracker{}
 	pData := pricing.PricingData{}
 	sessionProvider := new(mockSessionProvider)
@@ -535,17 +541,25 @@ func TestSessionDeps_Getters(t *testing.T) {
 		tracker:         tracker,
 		pricingData:     pData,
 		sessionProvider: sessionProvider,
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return client, nil
+		},
+		regFactory: func() (tools.Registry, error) {
+			return reg, nil
+		},
 	}
 
-	assert.Equal(t, gw, deps.GetGateway())
+	assert.NotNil(t, deps.GetGateway())
 	assert.Equal(t, hManager, deps.GetHistoryManager())
-	assert.Equal(t, reg, deps.GetRegistry())
+	regGot, regErr := deps.GetRegistry()
+	assert.Equal(t, reg, regGot)
+	assert.NoError(t, regErr)
 	assert.Equal(t, sm, deps.GetSecurityManager())
 	assert.Equal(t, bus, deps.GetEventBus())
 	assert.Equal(t, paths, deps.GetPaths())
 	assert.Equal(t, tracker, deps.GetTracker())
 	assert.Equal(t, pData, deps.GetPricingData())
-	assert.Equal(t, client, deps.GetClient())
+	assert.NotNil(t, deps.GetClient())
 	assert.Equal(t, sessionProvider, deps.GetSessionProvider())
 }
 
@@ -618,7 +632,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			wantErr: "failed to register core tools: simulated error",
+			wantErr: "", // Lazy initialization
 		},
 		{
 			name: "TelemetryRegistrationFails",
@@ -627,7 +641,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 					return simulatedErr
 				}
 			},
-			wantErr: "failed to register metrics tools: simulated error",
+			wantErr: "", // Lazy initialization
 		},
 		{
 			name: "SessionRotationFails",
@@ -845,7 +859,9 @@ type mockFSWithErrors struct {
 func (m *mockFSWithErrors) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (infra_persistence.File, error) {
 	return m.file, nil
 }
-func (m *mockFSWithErrors) MkdirAll(ctx context.Context, path string, perm os.FileMode) error { return nil }
+func (m *mockFSWithErrors) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+	return nil
+}
 func (m *mockFSWithErrors) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	return nil, os.ErrNotExist
 }

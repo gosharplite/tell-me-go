@@ -16,7 +16,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	infra_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"go.uber.org/goleak"
 )
 
@@ -46,7 +46,7 @@ func (m *mediaMockSecurityManager) IsPathSafe(path string) (string, error) {
 
 func newMediaMockSecurityManager() *mediaMockSecurityManager {
 	return &mediaMockSecurityManager{
-		Manager: infra_security.NewSecurityManager(nil),
+		Manager: &testutil.MockSecurityManager{AllowAll: true},
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
 
 type releaseGoRunner interface {
@@ -30,9 +30,10 @@ type releaseGoRunner interface {
 }
 
 type releaseManager struct {
-	sm     domain_security.PathValidator
-	fs     persistence.FileSystem
-	runner releaseGoRunner
+	sm           domain_security.PathValidator
+	fs           persistence.FileSystem
+	runner       releaseGoRunner
+	archVerifier tools.ToolFunc
 }
 
 type readinessCheck interface {
@@ -55,6 +56,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 		&secretScanner{root: root, fs: m.fs},
 		&dependencyChecker{root: root, fs: m.fs},
 		&linterChecker{runner: m.runner},
+		&architectureChecker{verifier: m.archVerifier},
 		&buildChecker{runner: m.runner},
 		&testRunner{runner: m.runner},
 	}
@@ -86,9 +88,9 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	results := make([]checkResult, len(pipeline))
 	g, gCtx := errgroup.WithContext(ctx)
 
-	// Limit concurrent execution to 2 processes to prevent CPU/RAM exhaustion
+	// Limit concurrent execution to prevent CPU/RAM exhaustion
 	// and avoid build cache locking collisions in CI.
-	sem := semaphore.NewWeighted(2)
+	sem := semaphore.NewWeighted(m.getParallelism())
 
 	for i, check := range pipeline {
 		i, c := i, check // Captured for closure
@@ -151,7 +153,12 @@ type secretScanner struct {
 func (s *secretScanner) Name() string { return "Security Scan" }
 func (s *secretScanner) Run(ctx context.Context) checkResult {
 	secretPatterns := []string{
-		fmt.Sprintf("AI_%s", "URL"),
+		`sk-[a-zA-Z0-9]{32,}`,                               // OpenAI/Generic
+		`ant-api-key-v1-[a-zA-Z0-9_-]{95,}`,                 // Anthropic
+		`AIza[0-9A-Za-z-_]{35}`,                             // Google AI
+		`AKIA[0-9A-Z]{16}`,                                  // AWS Access Key
+		`(?i)(AI|OPENAI|ANTHROPIC|GEMINI|AWS)_(API_)?KEY`,   // Environment Keys
+		`https?://[a-zA-Z0-9]+:[a-zA-Z0-9]+@[a-zA-Z0-9.-]+`, // URLs with Credentials
 	}
 
 	compiledPatterns := make([]*regexp.Regexp, len(secretPatterns))
@@ -194,8 +201,15 @@ func (s *secretScanner) Run(ctx context.Context) checkResult {
 func (s *secretScanner) scanContent(content []byte, path string, patterns []*regexp.Regexp) []string {
 	var matches []string
 	for _, re := range patterns {
-		if re.Match(content) {
-			matches = append(matches, fmt.Sprintf("Potential secret in %s: pattern `%s`", path, re.String()))
+		if m := re.Find(content); m != nil {
+			secret := string(m)
+			var masked string
+			if len(secret) > 8 {
+				masked = fmt.Sprintf("%s...%s", secret[:4], secret[len(secret)-4:])
+			} else {
+				masked = "****"
+			}
+			matches = append(matches, fmt.Sprintf("Potential secret in %s: pattern `%s` (found `%s`)", path, re.String(), masked))
 		}
 	}
 	return matches
@@ -206,7 +220,8 @@ func (s *secretScanner) isIgnored(path string) bool {
 	// Check for common ignored directories in any part of the path
 	parts := strings.Split(p, "/")
 	for _, part := range parts {
-		if part == ".git" || part == "vendor" || part == "node_modules" {
+		// Added "configs" to the exclusion list to prevent false positives from environment variable placeholders
+		if part == ".git" || part == "vendor" || part == "node_modules" || part == "configs" {
 			return true
 		}
 	}
@@ -315,4 +330,41 @@ func (c *linterChecker) handleLinterResult(out []byte, err error, name string) c
 	}
 
 	return checkResult{OK: false, Message: fmt.Sprintf("%s failed: %v\nOutput: %s", name, err, string(out))}
+}
+
+// architectureChecker implementation
+type architectureChecker struct {
+	verifier tools.ToolFunc
+}
+
+func (c *architectureChecker) Name() string { return "Architectural Integrity Verification" }
+
+func (c *architectureChecker) Run(ctx context.Context) checkResult {
+	if c.verifier == nil {
+		return checkResult{OK: false, Message: "Architecture verifier is not available."}
+	}
+	res, err := c.verifier(ctx, nil, nil)
+	if err != nil {
+		return checkResult{OK: false, Message: fmt.Sprintf("Architecture check failed: %v", err)}
+	}
+	if strings.Contains(res.Text, "❌ FAILED") {
+		return checkResult{OK: false, Message: "Layer violations or circular dependencies detected."}
+	}
+	return checkResult{OK: true, Message: "No architectural violations detected."}
+}
+
+func (m *releaseManager) getParallelism() int64 {
+	const defaultParallelism = 2
+	val := os.Getenv("TELL_ME_GO_RELEASE_PARALLELISM")
+	if val == "" {
+		return defaultParallelism
+	}
+	var p int
+	if _, err := fmt.Sscanf(val, "%d", &p); err != nil {
+		return defaultParallelism
+	}
+	if p < 1 {
+		return 1
+	}
+	return int64(p)
 }

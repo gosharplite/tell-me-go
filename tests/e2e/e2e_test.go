@@ -90,7 +90,7 @@ func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...stri
 	cmd := exec.CommandContext(ctx, binPath, finalArgs...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
-	cmd.Env = append(cmd.Env, "GEMINI_API_KEY=dummy")
+	cmd.Env = append(cmd.Env, "GEMINI_API_KEY=dummy", "TELL_ME_FAST_RETRY=1")
 
 	// If a mock server is spun up, TELL_ME_MOCK_URL might be needed by gemini.go
 	// we will inject it where necessary inside the tests.

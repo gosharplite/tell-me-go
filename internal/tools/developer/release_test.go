@@ -6,12 +6,14 @@ package developer
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,16 +55,17 @@ func (m *mockReleaseRunner) BuildCode(ctx context.Context, outputBinary, path st
 
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
-	sm.RegisterSafePath(".")
-	absCwdRaw, _ := sm.IsPathSafe(".")
-	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
+	root := "/test/project"
+	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return root, nil
+	}
 
 	fs := persistence.NewMockFileSystem()
 	ctx := context.Background()
 
-	require.NoError(t, fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), 0644))
-	require.NoError(t, fs.WriteFile(ctx, absCwd+"/main.go", []byte("package main\nfunc main() {}"), 0644))
+	require.NoError(t, fs.WriteFile(ctx, root+"/go.mod", []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), 0644))
+	require.NoError(t, fs.WriteFile(ctx, root+"/main.go", []byte("package main\nfunc main() {}"), 0644))
 
 	runner := &mockReleaseRunner{}
 
@@ -70,6 +73,9 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 		sm:     sm,
 		fs:     fs,
 		runner: runner,
+		archVerifier: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+			return tools.ToolResult{Text: "✅ PASSED"}, nil
+		},
 	}
 
 	res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
@@ -84,10 +90,11 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 
 func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
-	sm.RegisterSafePath(".")
-	absCwdRaw, _ := sm.IsPathSafe(".")
-	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
+	root := "/test/project"
+	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return root, nil
+	}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -99,16 +106,25 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Secret found",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
-				_ = fs.WriteFile(ctx, absCwd+"/secret.go", []byte("package p\nvar k = \"AI_URL\""), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/secret.go", []byte("package p\nvar k = \"sk-12345678901234567890123456789012\""), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
-			wantSubstr:  "Potential secret",
+			wantSubstr:  "Potential secret in",
+		},
+		{
+			name: "Secret found (masked)",
+			setupFiles: func(fs persistence.FileSystem) {
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/env.go", []byte("package p\nvar k = \"ANTHROPIC_API_KEY\""), 0644)
+			},
+			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
+			wantSubstr:  "found `ANTH..._KEY`",
 		},
 		{
 			name: "Replace directive",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test\nreplace foo => ../foo"), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test\nreplace foo => ../foo"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
 			wantSubstr:  "contains 'replace' directives",
@@ -116,7 +132,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Build failure",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner {
 				return &mockReleaseRunner{
@@ -130,7 +146,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Linter failure",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner {
 				return &mockReleaseRunner{
@@ -141,6 +157,14 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			},
 			wantSubstr: "golangci-lint found issues",
 		},
+		{
+			name: "Architecture violation",
+			setupFiles: func(fs persistence.FileSystem) {
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
+			},
+			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
+			wantSubstr:  "Layer violations",
+		},
 	}
 
 	for _, tt := range tests {
@@ -149,7 +173,17 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			fs := persistence.NewMockFileSystem()
 			tt.setupFiles(fs)
 			runner := tt.setupRunner()
-			m := &releaseManager{sm: sm, fs: fs, runner: runner}
+			m := &releaseManager{
+				sm:     sm,
+				fs:     fs,
+				runner: runner,
+				archVerifier: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+					if tt.name == "Architecture violation" {
+						return tools.ToolResult{Text: "❌ FAILED: Layer violation"}, nil
+					}
+					return tools.ToolResult{Text: "✅ PASSED"}, nil
+				},
+			}
 
 			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 			require.NoError(t, err)
@@ -161,10 +195,11 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 
 func TestLinterChecker_Fallbacks(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
-	sm.RegisterSafePath(".")
-	absCwdRaw, _ := sm.IsPathSafe(".")
-	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
+	root := "/test/project"
+	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return root, nil
+	}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -211,12 +246,84 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fs := persistence.NewMockFileSystem()
-			_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+			_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			runner := tt.setupRunner()
-			m := &releaseManager{sm: sm, fs: fs, runner: runner}
+			m := &releaseManager{
+				sm:     sm,
+				fs:     fs,
+				runner: runner,
+				archVerifier: func(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+					return tools.ToolResult{Text: "✅ PASSED"}, nil
+				},
+			}
 			res, err := m.verifyReleaseReadiness(context.Background(), nil, nil)
 			require.NoError(t, err)
 			assert.Contains(t, res.Text, tt.wantSubstr)
+		})
+	}
+}
+
+func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
+	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm.RegisterSafePath(".")
+
+	m := &releaseManager{
+		sm: sm,
+	}
+
+	t.Run("Default", func(t *testing.T) {
+		require.NoError(t, os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM"))
+		assert.Equal(t, int64(2), m.getParallelism())
+	})
+
+	t.Run("Custom", func(t *testing.T) {
+		require.NoError(t, os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "4"))
+		defer func() {
+			require.NoError(t, os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM"))
+		}()
+		assert.Equal(t, int64(4), m.getParallelism())
+	})
+
+	t.Run("Minimum", func(t *testing.T) {
+		require.NoError(t, os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "0"))
+		defer func() {
+			require.NoError(t, os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM"))
+		}()
+		assert.Equal(t, int64(1), m.getParallelism())
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		require.NoError(t, os.Setenv("TELL_ME_GO_RELEASE_PARALLELISM", "invalid"))
+		defer func() {
+			require.NoError(t, os.Unsetenv("TELL_ME_GO_RELEASE_PARALLELISM"))
+		}()
+		assert.Equal(t, int64(2), m.getParallelism())
+	})
+}
+
+func TestSecretScanner_IsIgnored(t *testing.T) {
+	s := &secretScanner{}
+	tests := []struct {
+		path   string
+		ignore bool
+	}{
+		{"main.go", false},
+		{".git/config", true},
+		{"vendor/pkg/foo.go", true},
+		{"node_modules/pkg/foo.js", true},
+		{"configs/architect.yaml", true},
+		{"internal/configs/foo.yaml", true},
+		{"foo_test.go", true},
+		{"README.md", true},
+		{"data.json", true},
+		{"test.golden", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := s.isIgnored(tt.path); got != tt.ignore {
+				t.Errorf("isIgnored(%q) = %v; want %v", tt.path, got, tt.ignore)
+			}
 		})
 	}
 }

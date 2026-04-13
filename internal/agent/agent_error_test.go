@@ -1,4 +1,7 @@
-package agent
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package agent_test
 
 import (
 	"context"
@@ -6,8 +9,7 @@ import (
 	"testing"
 	"time"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -20,7 +22,7 @@ func TestAgent_ConfigFailure(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	hm := &mockHistoryManager{
+	hm := &agent.MockHistoryManager{
 		AddContentFunc: func(c context.Context, content *llm.Content) error {
 			// Cancel context right after AddContent succeeds so applyConfig fails
 			cancel()
@@ -29,16 +31,15 @@ func TestAgent_ConfigFailure(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	inframock.CleanupBus(t, bus)
-	a := &agent{
-		events: bus,
-		ctxManager: &session.ContextManager{
-			History: hm,
-		},
-	}
+	events.CleanupBus(t, bus)
+	a := agent.NewAgentInternal()
+	a.SetEvents(bus)
+	a.SetCtxManager(&session.ContextManager{
+		History: hm,
+	})
 
-	session := &ports.Session{StartTime: time.Now()}
-	err := a.Chat(ctx, session, "hello")
+	sess := &ports.Session{StartTime: time.Now()}
+	err := a.Chat(ctx, sess, "hello")
 
 	if err == nil {
 		t.Fatal("Expected error due to config failure/context cancellation, got nil")

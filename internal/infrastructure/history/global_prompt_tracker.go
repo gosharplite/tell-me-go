@@ -37,6 +37,7 @@ type globalPromptTracker struct {
 	compacting         atomic.Bool
 	mu                 sync.RWMutex
 	testCompactionHook func()
+	wg                 sync.WaitGroup
 }
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
@@ -127,10 +128,20 @@ func (t *globalPromptTracker) Append(ctx context.Context, prompt string) error {
 	// Trigger async compaction if file size exceeds threshold and no compaction is already in progress
 	if size > compactionThresholdBytes {
 		if t.compacting.CompareAndSwap(false, true) {
-			go t.compactLog(context.WithoutCancel(ctx))
+			t.wg.Add(1)
+			go func() {
+				defer t.wg.Done()
+				t.compactLog(context.WithoutCancel(ctx))
+			}()
 		}
 	}
 
+	return nil
+}
+
+// Close ensures any ongoing compaction is finished or aborted.
+func (t *globalPromptTracker) Close() error {
+	t.wg.Wait()
 	return nil
 }
 
@@ -389,6 +400,7 @@ func (n *noOpPromptTracker) Append(ctx context.Context, prompt string) error { r
 func (n *noOpPromptTracker) LoadTopN(ctx context.Context, limit int) ([]string, error) {
 	return nil, nil
 }
+func (n *noOpPromptTracker) Close() error { return nil }
 
 // NewNoOpTracker returns a PromptTracker that performs no operations.
 func NewNoOpTracker() ports.PromptTracker {

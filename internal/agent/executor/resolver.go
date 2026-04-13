@@ -35,15 +35,15 @@ func (r *defaultResolver) Resolve(call *llm.FunctionCall) (*tools.ToolDeclaratio
 	if tool == nil {
 		sort.Strings(validTools)
 		errorMessage := fmt.Sprintf(
-			"Error: Tool %q is not defined. Available tools are: [%s].",
+			"tool %q is not defined; available tools: [%s]",
 			call.Name, strings.Join(validTools, ", "),
 		)
 
 		if suggestion := suggestTool(call.Name, validTools); suggestion != "" {
-			errorMessage += fmt.Sprintf(" Did you mean %q?", suggestion)
+			errorMessage += fmt.Sprintf("; did you mean %q?", suggestion)
 		}
 
-		errorMessage += " Please check the spelling or use a different tool from the authorized list."
+		errorMessage += "; please check the spelling or use a different tool from the authorized list"
 
 		return nil, fmt.Errorf("%s", errorMessage)
 	}
@@ -90,15 +90,15 @@ func resolveTool(reg tools.Registry, call *llm.FunctionCall) (*tools.ToolDeclara
 	if tool == nil {
 		sort.Strings(validTools)
 		errorMessage := fmt.Sprintf(
-			"Error: Tool %q is not defined. Available tools are: [%s].",
+			"tool %q is not defined; available tools: [%s]",
 			call.Name, strings.Join(validTools, ", "),
 		)
 
 		if suggestion := suggestTool(call.Name, validTools); suggestion != "" {
-			errorMessage += fmt.Sprintf(" Did you mean %q?", suggestion)
+			errorMessage += fmt.Sprintf("; did you mean %q?", suggestion)
 		}
 
-		errorMessage += " Please check the spelling or use a different tool from the authorized list."
+		errorMessage += "; please check the spelling or use a different tool from the authorized list"
 
 		return nil, fmt.Errorf("%s", errorMessage)
 	}

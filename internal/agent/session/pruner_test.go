@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,15 +24,15 @@ func TestPruner_MidExecutionCancel(t *testing.T) {
 	var cancelOnce sync.Once
 
 	// 3. Configure the Mock
-	mockPolicy := &mockPruningPolicy{
-		markTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+	mockPolicy := &testutil.MockPruningPolicy{
+		MarkTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 			cancelOnce.Do(cancel) // Deterministically cancel during execution
 			return 0, nil
 		},
 	}
 
 	// 4. Execute and Assert
-	pruner := &historyPruner{
+	pruner := &HistoryPruner{
 		Policy: mockPolicy,
 	}
 
@@ -62,10 +63,10 @@ func TestPruner_Policies_ContextCancelled(t *testing.T) {
 		name   string
 		policy ports.PruningPolicy
 	}{
-		{"SlidingWindow", &slidingWindowPolicy{MaxTurns: 10}},
+		{"SlidingWindow", &SlidingWindowPolicy{MaxTurns: 10}},
 		{"Importance", &importanceRankPolicy{}},
 		{"Pinning", &pinningPolicy{}},
-		{"Composite", &compositePruningPolicy{Policies: []ports.PruningPolicy{&slidingWindowPolicy{MaxTurns: 10}}}},
+		{"Composite", &compositePruningPolicy{Policies: []ports.PruningPolicy{&SlidingWindowPolicy{MaxTurns: 10}}}},
 	}
 
 	for _, tt := range tests {
@@ -80,14 +81,14 @@ func TestPruner_Policies_ContextCancelled(t *testing.T) {
 func TestPruner_ApplyPolicies_ErrorPropagation(t *testing.T) {
 	// 1. Create a mock pruning policy that returns an error
 	mockErr := errors.New("mock policy failure")
-	mockPolicy := &mockPruningPolicy{
-		markTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+	mockPolicy := &testutil.MockPruningPolicy{
+		MarkTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 			return 0, mockErr
 		},
 	}
 
-	// 2. Instantiate Pruner (historyPruner)
-	pruner := &historyPruner{
+	// 2. Instantiate Pruner (HistoryPruner)
+	pruner := &HistoryPruner{
 		Policy: mockPolicy,
 	}
 
@@ -110,8 +111,8 @@ func TestPruner_ApplyPolicies_ErrorPropagation(t *testing.T) {
 func TestPruner_CompositePolicy_ErrorPropagation(t *testing.T) {
 	// 1. Create a sub-policy that returns an error
 	mockErr := errors.New("composite sub-policy failure")
-	mockSubPolicy := &mockPruningPolicy{
-		markTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+	mockSubPolicy := &testutil.MockPruningPolicy{
+		MarkTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 			return 0, mockErr
 		},
 	}
@@ -122,7 +123,7 @@ func TestPruner_CompositePolicy_ErrorPropagation(t *testing.T) {
 	}
 
 	// 3. Instantiate Pruner
-	pruner := &historyPruner{
+	pruner := &HistoryPruner{
 		Policy: composite,
 	}
 
@@ -142,11 +143,11 @@ func TestPruner_CompositePolicy_ErrorPropagation(t *testing.T) {
 }
 
 func TestCompositePruningPolicy_MarkTurns_ErrorPropagation(t *testing.T) {
-	// Although historyPruner handles composites specifically, the MarkTurns method
+	// Although HistoryPruner handles composites specifically, the MarkTurns method
 	// of compositePruningPolicy also has an error path that should be tested.
 	mockErr := errors.New("composite direct call failure")
-	mockSubPolicy := &mockPruningPolicy{
-		markTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+	mockSubPolicy := &testutil.MockPruningPolicy{
+		MarkTurnsFn: func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 			return 0, mockErr
 		},
 	}

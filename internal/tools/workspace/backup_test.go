@@ -5,21 +5,21 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestBackupManager_Undo(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.RegisterSafePath(tempDir)
-	bm := newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10)
+	bm := newBackupManager(sm, testutil.NewOSFileSystem(), 10)
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "test.txt")
@@ -67,7 +67,7 @@ func TestBackupManager_Undo(t *testing.T) {
 
 type undoErrorTestCase struct {
 	name          string
-	setup         func(t *testing.T, tempDir string, sm *security.SecurityManager) func()
+	setup         func(t *testing.T, tempDir string, sm *testutil.MockSecurityManager) func()
 	snapshotPath  string
 	snapshotOp    string
 	wantErrSubstr string
@@ -78,14 +78,18 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 	tests := []undoErrorTestCase{
 		{
 			name: "NoSnapshots",
-			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
+			setup: func(t *testing.T, tempDir string, sm *testutil.MockSecurityManager) func() {
 				return func() {}
 			},
 			wantResSubstr: "No snapshots available to undo.",
 		},
 		{
 			name: "PermissionDenied",
-			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
+			setup: func(t *testing.T, tempDir string, sm *testutil.MockSecurityManager) func() {
+				sm.AllowAll = false
+				sm.IsWritableFunc = func(path string) (string, error) {
+					return "", errors.New("security violation")
+				}
 				return func() {}
 			},
 			snapshotPath: func() string {
@@ -99,7 +103,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 		},
 		{
 			name: "RemoveFailed",
-			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
+			setup: func(t *testing.T, tempDir string, sm *testutil.MockSecurityManager) func() {
 				sm.RegisterSafePath(tempDir)
 				dirPath := filepath.Join(tempDir, "is_a_dir")
 				if err := os.Mkdir(dirPath, 0755); err != nil {
@@ -116,7 +120,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 		},
 		{
 			name: "AtomicWriteFailed",
-			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
+			setup: func(t *testing.T, tempDir string, sm *testutil.MockSecurityManager) func() {
 				sm.RegisterSafePath(tempDir)
 				path := filepath.Join(tempDir, "readonly.txt")
 				if err := os.WriteFile(path, []byte("initial"), 0644); err != nil {
@@ -156,8 +160,8 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 
 func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 	tempDir := t.TempDir()
-	sm := security.NewSecurityManager(nil)
-	bm := newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
+	bm := newBackupManager(sm, testutil.NewOSFileSystem(), 10)
 	ctx := context.Background()
 
 	cleanup := tc.setup(t, tempDir, sm)

@@ -1,11 +1,12 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package orchestrator_test
 
 import (
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
 )
@@ -15,7 +16,7 @@ func TestTruncateOversizedResponse(t *testing.T) {
 	t.Run("Nil tool response", func(t *testing.T) {
 		t.Parallel()
 		assert.NotPanics(t, func() {
-			truncateOversizedResponse(nil, 1000, "instruction")
+			orchestrator.TruncateOversizedResponse(nil, 1000, "instruction")
 		})
 	})
 
@@ -42,7 +43,7 @@ func TestTruncateOversizedResponse(t *testing.T) {
 		}
 
 		instruction := "Try using a smaller range."
-		truncateOversizedResponse(toolResponse, 5000, instruction)
+		orchestrator.TruncateOversizedResponse(toolResponse, 5000, instruction)
 
 		// Part 0 truncated
 		assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "5000 tokens")

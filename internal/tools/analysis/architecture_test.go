@@ -155,22 +155,25 @@ func TestArchitectureManager_FormatReport(t *testing.T) {
 
 func TestArchitectureManager_IsLayer(t *testing.T) {
 	t.Parallel()
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	tests := []struct {
 		pkg   string
 		layer string
 		want  bool
 	}{
-		{"github.com/org/repo/internal/domain", "domain", true},
-		{"github.com/org/repo/internal/domain/sub", "domain", true},
-		{"github.com/org/repo/internal/domain-logic", "domain", false},
-		{"github.com/org/repo/internal/agent/service", "agent", true},
-		{"github.com/org/repo/pkg/domain", "domain", false},
+		{"github.com/org/repo/internal/domain", layerDomain, true},
+		{"github.com/org/repo/internal/domain/sub", layerDomain, true},
+		{"github.com/org/repo/internal/domain-logic", layerDomain, false},
+		{"github.com/org/repo/internal/agent/service", layerApplication, true},
+		{"github.com/org/repo/internal/pkg/stringsutil", layerShared, true},
+		{"github.com/org/repo/internal/infrastructure/toolchain/compiler", layerInfrastructure, true},
+		{"github.com/org/repo/pkg/domain", layerDomain, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.pkg+"_"+tt.layer, func(t *testing.T) {
 			t.Parallel()
-			if got := isLayer(tt.pkg, tt.layer); got != tt.want {
+			if got := m.isLayer(tt.pkg, tt.layer); got != tt.want {
 				t.Errorf("isLayer(%q, %q) = %v, want %v", tt.pkg, tt.layer, got, tt.want)
 			}
 		})
@@ -204,11 +207,13 @@ func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
 	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	pkgs := map[string][]string{
 		"github.com/org/repo/internal/domain": {
-			"github.com/org/repo/internal/agent", // Violation
+			"github.com/org/repo/internal/agent",     // Violation
+			"github.com/org/repo/internal/pkg/clock", // OK
 		},
 		"github.com/org/repo/internal/agent": {
-			"github.com/org/repo/internal/domain", // OK
-			"github.com/org/repo/cmd/app",         // Violation
+			"github.com/org/repo/internal/domain",      // OK
+			"github.com/org/repo/cmd/app",              // Violation
+			"github.com/org/repo/internal/pkg/strings", // OK
 		},
 	}
 
@@ -314,5 +319,38 @@ func TestArchitectureManager_IsTrackedPackage(t *testing.T) {
 		if got := m.isTrackedPackage(tt.path); got != tt.want {
 			t.Errorf("isTrackedPackage(%q) = %v, want %v", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestArchitectureManager_Classify(t *testing.T) {
+	t.Parallel()
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
+
+	tests := []struct {
+		pkg  string
+		want string
+	}{
+		{"github.com/org/repo/internal/domain", layerDomain},
+		{"github.com/org/repo/internal/infrastructure/db", layerInfrastructure},
+		{"github.com/org/repo/internal/service/api", layerApplication},
+		{"github.com/org/repo/internal/tools/checker", layerTools},
+		{"github.com/org/repo/internal/pkg/utils", layerShared},
+		{"github.com/org/repo/cmd/server", layerCmd},
+		{"github.com/org/repo/internal/infrastructure/toolchain/compiler", layerInfrastructure},
+		// Edge Cases & Unknowns
+		{"github.com/org/repo", layerUnknown},                  // Module root
+		{"github.com/org/repo/internal", layerUnknown},         // Bare internal
+		{"github.com/org/repo/internal/unknown", layerUnknown}, // Unknown internal segment
+		{"github.com/org/repo/pkg/external", layerUnknown},     // Outside tracked directories
+		{"github.com/other/module/pkg", layerUnknown},          // External module
+		{"", layerUnknown}, // Empty path
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.pkg, func(t *testing.T) {
+			if got := m.classify(tt.pkg); got != tt.want {
+				t.Errorf("classify(%q) = %q, want %q", tt.pkg, got, tt.want)
+			}
+		})
 	}
 }

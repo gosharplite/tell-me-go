@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
@@ -29,7 +29,7 @@ func (m *mockGitExecutor) CombinedOutput(ctx context.Context, name string, args 
 func TestGitTools(t *testing.T) {
 	// SecurityManager requires a reader for InteractionHandler
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	// Allow all paths for testing
 	sm.SetBypassActive(true)
 
@@ -165,7 +165,7 @@ func TestGitTools(t *testing.T) {
 			}
 
 			reg := registry.New()
-			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem()); err != nil {
 				t.Fatalf("Register failed: %v", err)
 			}
 
@@ -248,13 +248,7 @@ func TestGitDestructiveActions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var input string
-			if tt.approved {
-				input = "y\n"
-			} else {
-				input = "n\n"
-			}
-			sm := security.NewSecurityManager(&security.MockInteractor{Answer: input})
+			sm := &testutil.MockSecurityManager{AllowAll: true}
 
 			executor := &mockGitExecutor{
 				handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -263,7 +257,7 @@ func TestGitDestructiveActions(t *testing.T) {
 			}
 
 			reg := registry.New()
-			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+			if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem()); err != nil {
 				t.Fatalf("Register failed: %v", err)
 			}
 
@@ -285,7 +279,13 @@ func TestGitDestructiveActions(t *testing.T) {
 }
 
 func TestGitBlameSafety(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		if strings.Contains(path, "etc") {
+			return "", fmt.Errorf("security violation")
+		}
+		return path, nil
+	}
 	// Do NOT set bypass.
 
 	executor := &mockGitExecutor{
@@ -295,7 +295,7 @@ func TestGitBlameSafety(t *testing.T) {
 	}
 
 	reg := registry.New()
-	if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+	if err := Register(reg, sm, executor, security.NewCommandValidator(sm, nil), testutil.NewOSFileSystem()); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 

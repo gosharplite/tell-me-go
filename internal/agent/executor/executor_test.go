@@ -90,7 +90,7 @@ func TestDispatcher_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,7 +145,7 @@ func TestDispatcher_ContextCancellation(t *testing.T) {
 func TestDispatcher_PoolClosed_FailsGracefully(t *testing.T) {
 	t.Parallel()
 	reg := &mockToolRegistry{}
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{
@@ -178,7 +178,7 @@ func TestDispatcher_WithActiveTrace_RecordsExecution(t *testing.T) {
 			return tools.ToolResult{Text: "tool success"}, nil
 		},
 	}
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	// Setup trace context
@@ -206,7 +206,7 @@ func Test_newDispatcher_NilObserver(t *testing.T) {
 	pipeline := &defaultToolPipeline{}
 	_, err := newDispatcher(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
-	assert.Equal(t, "ExecutionObserver is required", err.Error())
+	assert.Equal(t, "execution observer is required", err.Error())
 }
 
 func Test_newDispatcher_NilRegistry(t *testing.T) {
@@ -348,7 +348,7 @@ func TestDispatcher_ConsentEvents_DetachedContext(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{allowAll: true}, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 	exec.pipeline.(*defaultToolPipeline).authorizer = auth
 
@@ -439,7 +439,7 @@ func TestRunExecutionPlan_ContextCancellation(t *testing.T) {
 	}
 
 	// We need to bypass the security manager for the test, or the tools will be automatically declined
-	sm := &mockSecurityManager{allowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	// Use NewPipelineDispatcher to ensure full pipeline hookup
 	exec, err := NewPipelineDispatcher(reg, sm, bus, logger, &mockLogger{})
@@ -574,7 +574,7 @@ func TestExecutor_PanicRecovery(t *testing.T) {
 	// We need a proper pipeline to test ExecuteTool
 	pipeline := newDefaultToolPipeline(
 		reg,
-		&mockSecurityManager{allowAll: true},
+		&mockSecurityManager{AllowAll: true},
 		&mockEventBus{},
 		&ports.NoOpLogger{},
 		nil,

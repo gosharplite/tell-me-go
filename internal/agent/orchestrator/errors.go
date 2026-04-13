@@ -11,10 +11,10 @@ import (
 
 // Category definitions
 var (
-	// errLogic is strictly for agent loop/turn limits.
+	// ErrLogic is strictly for agent loop/Turn limits.
 	// Note: tool-level human rejections are handled via domaintools.ErrUserDeclined sentinels,
-	// which are NOT categorized as errLogic.
-	errLogic = errors.New("logic violation") // Should stop, indicates bug or limit
+	// which are NOT categorized as ErrLogic.
+	ErrLogic = errors.New("logic violation") // Should stop, indicates bug or limit
 )
 
 // agentError provides structured error context for the orchestration engine.
@@ -39,8 +39,8 @@ func (e *agentError) Is(target error) bool {
 	return e.Category == target || errors.Is(e.Category, target)
 }
 
-// newAgentError is a helper for creating categorized errors.
-func newAgentError(category error, message string, err error) error {
+// NewAgentError is a helper for creating categorized errors.
+func NewAgentError(category error, message string, err error) error {
 	return &agentError{
 		Category: category,
 		Message:  message,
@@ -48,16 +48,16 @@ func newAgentError(category error, message string, err error) error {
 	}
 }
 
-// isTransient checks if the error should trigger a retry.
-func isTransient(err error) bool {
+// IsTransient checks if the error should trigger a retry.
+func IsTransient(err error) bool {
 	if err == nil {
 		return false
 	}
 	return llm.IsTransient(err)
 }
 
-// isFatal checks if the error should halt the current turn and session.
-func isFatal(err error) bool {
+// IsFatal checks if the error should halt the current Turn and session.
+func IsFatal(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -66,5 +66,5 @@ func isFatal(err error) bool {
 		return true
 	}
 	// Check agent-specific logic violations
-	return errors.Is(err, errLogic)
+	return errors.Is(err, ErrLogic)
 }

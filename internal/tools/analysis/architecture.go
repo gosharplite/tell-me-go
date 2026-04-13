@@ -19,11 +19,14 @@ import (
 )
 
 const (
-	layerDomain   = "domain"
-	layerAgent    = "agent"
-	layerTools    = "tools"
-	layerStorage  = "infrastructure/storage"
-	layerSecurity = "infrastructure/security"
+	layerDomain         = "domain"
+	layerInfrastructure = "infrastructure"
+	layerApplication    = "application" // Groups agent, cli, ui, service, application
+	layerTools          = "tools"
+	layerShared         = "shared" // Cross-cutting utilities in internal/pkg
+	layerCmd            = "cmd"
+	layerTest           = "test"
+	layerUnknown        = "unknown"
 )
 
 // packageProvider defines the interface for loading package information.
@@ -37,7 +40,8 @@ type architectureManager struct {
 	Runner     AnalysisGoRunner
 	idx        symbolIndex
 	ModulePath string
-	once       sync.Once
+	once       sync.Once // for ModulePath detection
+	loaderOnce sync.Once // for Loader initialization
 	Loader     packageProvider
 }
 
@@ -163,13 +167,15 @@ type rule struct {
 }
 
 func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	if m.Loader == nil {
-		if m.idx != nil {
-			m.Loader = &indexedPackageProvider{m: m, idx: m.idx}
-		} else {
-			m.Loader = &realpackageProvider{m: m, Runner: m.Runner}
+	m.loaderOnce.Do(func() {
+		if m.Loader == nil {
+			if m.idx != nil {
+				m.Loader = &indexedPackageProvider{m: m, idx: m.idx}
+			} else {
+				m.Loader = &realpackageProvider{m: m, Runner: m.Runner}
+			}
 		}
-	}
+	})
 
 	// Heartbeat while loading packages
 	done := make(chan struct{})
@@ -216,63 +222,76 @@ func (m *architectureManager) sendHeartbeat(hb chan<- struct{}) {
 	}
 }
 
-func isLayer(pkgPath, layerName string) bool {
-	// Pre-check for "internal/" to avoid splitting if not needed
-	const internalSegment = "internal/"
-	idx := strings.Index(pkgPath, internalSegment)
-	if idx == -1 {
-		return false
+func (m *architectureManager) classify(pkgPath string) string {
+	if strings.HasSuffix(pkgPath, "_test") || strings.HasSuffix(pkgPath, ".test") {
+		return layerTest
 	}
 
-	// Ensure it's exactly the segment "internal/"
-	if idx > 0 && pkgPath[idx-1] != '/' {
-		return false
+	rel := strings.TrimPrefix(pkgPath, m.ModulePath)
+	rel = strings.Trim(rel, "/")
+	if rel == "" {
+		return layerUnknown
 	}
 
-	remaining := pkgPath[idx+len(internalSegment):]
-	// check if it starts with layerName and then a slash or end of string
-	if !strings.HasPrefix(remaining, layerName) {
-		return false
+	segments := strings.Split(rel, "/")
+	if segments[0] == "cmd" {
+		return layerCmd
 	}
 
-	layerEnd := len(layerName)
-	if len(remaining) == layerEnd || remaining[layerEnd] == '/' {
-		return true
+	if segments[0] == "internal" {
+		if len(segments) < 2 {
+			return layerUnknown
+		}
+
+		switch segments[1] {
+		case "domain":
+			return layerDomain
+		case "infrastructure":
+			return layerInfrastructure
+		case "agent", "cli", "ui", "service", "application":
+			return layerApplication
+		case "tools":
+			return layerTools
+		case "pkg":
+			return layerShared
+		default:
+			return layerUnknown
+		}
 	}
 
-	return false
+	return layerUnknown
 }
 
-func (m *architectureManager) isCmd(pkgPath string) bool {
-	return strings.Contains(pkgPath, "/cmd/") || strings.HasSuffix(pkgPath, "/cmd")
+func (m *architectureManager) isLayer(pkgPath, layerName string) bool {
+	return m.classify(pkgPath) == layerName
+}
+
+func (m *architectureManager) isCompositionRoot(pkgPath string) bool {
+	return strings.Contains(pkgPath, "internal/infrastructure/di") ||
+		strings.Contains(pkgPath, "internal/infrastructure/factory")
 }
 
 func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb chan<- struct{}) []violation {
 	rules := []rule{
 		{
 			SourceLayer: layerDomain,
-			Forbidden:   []string{layerAgent, layerTools, layerStorage, layerSecurity},
-			Reason:      "Domain must not depend on other internal layers.",
+			Forbidden:   []string{layerApplication, layerInfrastructure, layerTools, layerCmd},
+			Reason:      "Domain must not depend on Application, Infrastructure, Tools, or Cmd layers.",
 		},
 		{
-			SourceLayer: layerAgent,
-			Forbidden:   []string{layerTools, layerStorage, "cmd"},
-			Reason:      "Application/Agent layer must not depend on Infrastructure/Tools implementations or Composition Root (cmd).",
+			SourceLayer: layerApplication,
+			Forbidden:   []string{layerInfrastructure, layerTools, layerCmd},
+			Reason:      "Application layer must not depend on Infrastructure, Tools, or Cmd layers.",
+		},
+		{
+			SourceLayer: layerInfrastructure,
+			Forbidden:   []string{layerApplication, layerCmd},
+			Reason:      "Infrastructure layer must not depend on Application or Cmd layers.",
 		},
 		{
 			SourceLayer: layerTools,
-			Forbidden:   []string{layerAgent, "cmd"},
-			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
-		},
-		{
-			SourceLayer: layerStorage,
-			Forbidden:   []string{layerAgent, "cmd"},
-			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
-		},
-		{
-			SourceLayer: layerSecurity,
-			Forbidden:   []string{layerAgent, "cmd"},
-			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
+			Forbidden:   []string{layerApplication, layerCmd},
+			Reason:      "Tools layer must not depend on Application or Cmd layers.",
 		},
 	}
 
@@ -293,6 +312,13 @@ func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb 
 			}
 		}
 		imports := pkgs[pkg]
+		if m.isCompositionRoot(pkg) {
+			// Skip source-layer rule checks for Composition Roots (DI/Factory),
+			// but still check for improper cmd imports.
+			violations = append(violations, m.checkGeneralCmdImport(pkg, imports, violations)...)
+			continue
+		}
+
 		violations = append(violations, m.checkSinglePackageViolations(pkg, imports, rules)...)
 		violations = append(violations, m.checkGeneralCmdImport(pkg, imports, violations)...)
 	}
@@ -305,20 +331,13 @@ func (m *architectureManager) checkSinglePackageViolations(pkg string, imports [
 	shortPkg := m.shorten(pkg)
 
 	for _, rule := range rules {
-		if !isLayer(pkg, rule.SourceLayer) {
+		if !m.isLayer(pkg, rule.SourceLayer) {
 			continue
 		}
 
 		for _, imp := range imports {
 			for _, forbidden := range rule.Forbidden {
-				match := false
-				if forbidden == "cmd" {
-					match = m.isCmd(imp)
-				} else {
-					match = isLayer(imp, forbidden)
-				}
-
-				if match {
+				if m.isLayer(imp, forbidden) {
 					violations = append(violations, violation{
 						pkg:      shortPkg,
 						category: "[LAYER VIOLATION]",
@@ -340,7 +359,7 @@ func (m *architectureManager) checkGeneralCmdImport(pkg string, imports []string
 	var found []violation
 	shortPkg := m.shorten(pkg)
 	for _, imp := range imports {
-		if m.isCmd(imp) {
+		if m.isLayer(imp, layerCmd) {
 			candidate := violation{
 				pkg:      shortPkg,
 				category: "[LAYER VIOLATION]",
@@ -466,8 +485,21 @@ func (m *architectureManager) shortenList(pkgs []string) []string {
 }
 
 func (m *architectureManager) formatReport(violations []violation) string {
+	var layerViolations, circularRefs int
+	for _, v := range violations {
+		switch v.category {
+		case "[LAYER VIOLATION]":
+			layerViolations++
+		case "[CIRCULAR REFERENCE]":
+			circularRefs++
+		}
+	}
+
 	var sb strings.Builder
 	sb.WriteString("### Architectural Integrity Report: ❌ FAILED\n\n")
+
+	_, _ = fmt.Fprintf(&sb, "Found **%d** layer violations and **%d** circular references.\n\n", layerViolations, circularRefs)
+
 	sb.WriteString("| Package | Violation | Target | Reason |\n")
 	sb.WriteString("| :--- | :--- | :--- | :--- |\n")
 

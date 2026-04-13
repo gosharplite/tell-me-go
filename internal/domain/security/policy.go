@@ -71,6 +71,8 @@ func DefaultPolicy() *Policy {
 			"replace_text":      true,
 			"find_file":         true,
 			"write_file":        true,
+			"delete_path":       true,
+			"create_directory":  true,
 			"append_text":       true,
 			"get_file_diff":     true,
 			"undo_file_change":  true,

@@ -14,21 +14,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// historyPruner enforces history turn limits using a policy.
-type historyPruner struct {
+// HistoryPruner enforces history turn limits using a policy.
+type HistoryPruner struct {
 	Policy ports.PruningPolicy
 	Events events.EventBus
-	Logger *slog.Logger
+	Logger ports.Logger
 }
 
-func (t *historyPruner) getLogger() *slog.Logger {
+func (t *HistoryPruner) getLogger() ports.Logger {
 	if t.Logger != nil {
 		return t.Logger
 	}
 	return slog.Default()
 }
 
-func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *HistoryPruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	initialLen := len(req.History)
 	if initialLen == 0 {
 		return nil
@@ -66,24 +66,24 @@ func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest
 	return nil
 }
 
-func (t *historyPruner) reportPruning(ctx context.Context, req *ports.ContextRequest, initialTurnCount, prunedCount, keptCount int) error {
-	t.getLogger().Info("History pruning triggered",
-		slog.Int("initial_turns", initialTurnCount),
-		slog.Int("pruned_turns", prunedCount),
-		slog.Int("remaining_turns", keptCount),
-		slog.Any("policy_breakdown", req.Metadata.KeptByPolicy),
+func (t *HistoryPruner) reportPruning(ctx context.Context, req *ports.ContextRequest, initialTurnCount, prunedCount, keptCount int) error {
+	t.getLogger().Info("history pruning triggered",
+		"initial_turns", initialTurnCount,
+		"pruned_turns", prunedCount,
+		"remaining_turns", keptCount,
+		"policy_breakdown", req.Metadata.KeptByPolicy,
 	)
 
 	if t.Events != nil {
 		evt := events.SystemMessageEvent{
-			Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, keptCount),
+			Message: fmt.Sprintf("history pruned: %d turns removed, %d turns remaining", prunedCount, keptCount),
 			Level:   "info",
 		}
 		if err := events.SafePublish(ctx, t.Events, evt); err != nil {
 			if !errors.Is(err, events.ErrBusNotInitialized) {
 				t.getLogger().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
+					"event_type", string(evt.Type()),
+					"error", err)
 				return err
 			}
 		}
@@ -91,7 +91,7 @@ func (t *historyPruner) reportPruning(ctx context.Context, req *ports.ContextReq
 	return nil
 }
 
-func (t *historyPruner) applyPruningPolicies(ctx context.Context, turns [][]*llm.Content, keep []bool, keptByPolicy map[string]int) error {
+func (t *HistoryPruner) applyPruningPolicies(ctx context.Context, turns [][]*llm.Content, keep []bool, keptByPolicy map[string]int) error {
 	// If it's a composite policy, we track sub-policies individually.
 	if cp, ok := t.Policy.(*compositePruningPolicy); ok {
 		for _, p := range cp.Policies {
@@ -111,7 +111,7 @@ func (t *historyPruner) applyPruningPolicies(ctx context.Context, turns [][]*llm
 	return nil
 }
 
-func (t *historyPruner) reconstructHistory(ctx context.Context, turns [][]*llm.Content, keep []bool) ([]*llm.Content, int, int, error) {
+func (t *HistoryPruner) reconstructHistory(ctx context.Context, turns [][]*llm.Content, keep []bool) ([]*llm.Content, int, int, error) {
 	var newHistory []*llm.Content
 	prunedCount := 0
 	keptCount := 0
@@ -134,7 +134,7 @@ func (t *historyPruner) reconstructHistory(ctx context.Context, turns [][]*llm.C
 	return newHistory, prunedCount, keptCount, nil
 }
 
-func (t *historyPruner) Priority() int { return 110 }
+func (t *HistoryPruner) Priority() int { return 110 }
 
 // compositePruningPolicy aggregates multiple policies using OR logic.
 type compositePruningPolicy struct {
@@ -155,12 +155,12 @@ func (p *compositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.C
 
 func (p *compositePruningPolicy) Name() string { return "Composite" }
 
-// slidingWindowPolicy keeps the last N turns.
-type slidingWindowPolicy struct {
+// SlidingWindowPolicy keeps the last N turns.
+type SlidingWindowPolicy struct {
 	MaxTurns int
 }
 
-func (p *slidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+func (p *SlidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
 	if p.MaxTurns <= 0 {
 		return 0, nil
 	}
@@ -186,7 +186,7 @@ func (p *slidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Cont
 	return count, nil
 }
 
-func (p *slidingWindowPolicy) Name() string { return "SlidingWindow" }
+func (p *SlidingWindowPolicy) Name() string { return "SlidingWindow" }
 
 // importanceRankPolicy keeps turns containing function calls, responses, or data.
 type importanceRankPolicy struct{}

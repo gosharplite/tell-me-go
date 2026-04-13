@@ -13,14 +13,15 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
 func TestUIBridge_StressConcurrency(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	mRenderer := new(testutil.MockUIRenderer)
+	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)
@@ -54,9 +55,9 @@ func TestUIBridge_StressConcurrency(t *testing.T) {
 			defer wg.Done()
 			<-start
 			if idx%2 == 0 {
-				_ = bridge.handleEvent(context.Background(), events.ToolExecutionStartedEvent{ToolNames: []string{"test_tool"}})
+				_ = bridge.HandleEvent(context.Background(), events.ToolExecutionStartedEvent{ToolNames: []string{"test_tool"}})
 			} else {
-				_ = bridge.handleEvent(context.Background(), events.ResponseEvent{
+				_ = bridge.HandleEvent(context.Background(), events.ResponseEvent{
 					Content: &llm.Content{},
 				})
 			}
@@ -78,8 +79,8 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	t.Parallel()
 	testCtx := context.Background()
 
-	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer, withBridgeThoughts(true), withBridgeTools(true), withBridgeRawOutput(false), withBridgeColor(true), withBridgeLogFile("log.txt"), withBridgeLogger(slog.Default()))
+	mRenderer := new(testutil.MockUIRenderer)
+	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errChan := make(chan error, 1)
@@ -103,8 +104,8 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	mRenderer.On("RenderResponse", mock.Anything, mock.Anything, true, false).Return().Once()
 
 	// 3. Queue the events sequentially
-	_ = bridge.handleEvent(testCtx, events.ToolExecutionStartedEvent{})
-	_ = bridge.handleEvent(testCtx, events.ResponseEvent{Content: &llm.Content{}})
+	_ = bridge.HandleEvent(testCtx, events.ToolExecutionStartedEvent{})
+	_ = bridge.HandleEvent(testCtx, events.ResponseEvent{Content: &llm.Content{}})
 
 	// 4. Flush the queue using the robust syncBridge helper
 	syncBridge(t, bridge, mRenderer)

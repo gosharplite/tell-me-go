@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +22,7 @@ func TestContextManager_FindSummarizationBoundary_Cancelled(t *testing.T) {
 	// but we can at least verify it returns the context error.
 	cancel()
 
-	hm := &mockHistoryManager{contents: []*llm.Content{
+	hm := &testutil.MockHistoryManager{Contents: []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 	}}
 	cm := NewContextManager(nil, hm, nil, nil)
@@ -49,9 +50,9 @@ func TestContextManager_ValidateSubset_Cancelled(t *testing.T) {
 }
 
 func TestTokenGatekeeper_AutoSummarize_GroupTurnsError(t *testing.T) {
-	tg := &tokenGatekeeper{
-		Estimator:  &mockEstimator{},
-		Summarizer: &mockSummarizer{},
+	tg := &TokenGatekeeper{
+		Estimator:  &testutil.MockTokenCounter{},
+		Summarizer: &testutil.MockSummarizer{},
 	}
 
 	// Trigger invalid payload via groupTurns failing
@@ -69,7 +70,7 @@ func TestTokenGatekeeper_AutoSummarize_GroupTurnsError(t *testing.T) {
 	}
 
 	_, err := tg.autoSummarize(context.Background(), req)
-	require.ErrorIs(t, err, errInvalidPayload)
+	require.ErrorIs(t, err, ErrInvalidPayload)
 }
 
 type mockFailingEventBus struct {
@@ -85,8 +86,8 @@ func (m *mockFailingEventBus) Flush(ctx context.Context) error                 {
 func (m *mockFailingEventBus) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
 
 func TestHistoryPruner_EventPublishError(t *testing.T) {
-	pruner := &historyPruner{
-		Policy: &slidingWindowPolicy{MaxTurns: 1},
+	pruner := &HistoryPruner{
+		Policy: &SlidingWindowPolicy{MaxTurns: 1},
 		Events: &mockFailingEventBus{err: errors.New("publish failed")},
 	}
 
@@ -131,14 +132,14 @@ func TestSkillInjector_SelectorError(t *testing.T) {
 }
 
 func TestContextManager_FinalizeSummarization_ArchiveError(t *testing.T) {
-	hm := &mockHistoryManager{
-		contents: []*llm.Content{
+	hm := &testutil.MockHistoryManager{
+		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
 		},
 	}
-	// Use a wrapper to inject Archive error since mockHistoryManager doesn't support it easily
-	failingHM := &archiveFailingHM{mockHistoryManager: hm, err: errors.New("archive failed")}
+	// Use a wrapper to inject Archive error since MockHistoryManager doesn't support it easily
+	failingHM := &archiveFailingHM{MockHistoryManager: hm, err: errors.New("archive failed")}
 
 	cm := NewContextManager(nil, failingHM, nil, nil)
 
@@ -153,7 +154,7 @@ func TestContextManager_FinalizeSummarization_ArchiveError(t *testing.T) {
 }
 
 type archiveFailingHM struct {
-	*mockHistoryManager
+	*testutil.MockHistoryManager
 	err error
 }
 
@@ -162,12 +163,12 @@ func (m *archiveFailingHM) Archive(ctx context.Context, contents []*llm.Content)
 }
 
 func TestContextManager_FinalizeSummarization_SetContentsError(t *testing.T) {
-	hm := &mockHistoryManager{
-		contents: []*llm.Content{
+	hm := &testutil.MockHistoryManager{
+		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
 		},
-		setContentsErr: errors.New("set contents failed"),
+		SetContentsErr: errors.New("set contents failed"),
 	}
 
 	cm := NewContextManager(nil, hm, nil, nil)
@@ -183,8 +184,8 @@ func TestContextManager_FinalizeSummarization_SetContentsError(t *testing.T) {
 }
 
 func TestContextManager_FinalizeSummarization_PrunedError(t *testing.T) {
-	hm := &mockHistoryManager{
-		contents: []*llm.Content{
+	hm := &testutil.MockHistoryManager{
+		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		},
 	}
@@ -204,9 +205,9 @@ func TestContextManager_FinalizeSummarization_PrunedError(t *testing.T) {
 
 func TestTokenGatekeeper_TriggerSummarization_EventError(t *testing.T) {
 	mockBus := &mockFailingEventBus{err: errors.New("event error")}
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		Events:    mockBus,
-		Estimator: &mockEstimator{},
+		Estimator: &testutil.MockTokenCounter{},
 	}
 
 	req := &ports.ContextRequest{
@@ -219,14 +220,13 @@ func TestTokenGatekeeper_TriggerSummarization_EventError(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_MaintenanceBlocked(t *testing.T) {
-	tg := &tokenGatekeeper{
-		Estimator: &mockEstimator{},
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-				return "", nil, errors.New("summarize error")
-			},
-		},
+	tg := &TokenGatekeeper{
+		Estimator:  &testutil.MockTokenCounter{},
+		Summarizer: &testutil.MockSummarizer{},
 	}
+	tg.Summarizer.(*testutil.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "", nil, errors.New("summarize error")
+	})
 
 	// Not enough history ( < 10)
 	history := make([]*llm.Content, 4)
@@ -277,22 +277,22 @@ func TestContextManager_UpdateCache_VersionMismatch(t *testing.T) {
 }
 
 func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
-	hm := &mockHistoryManager{
-		contents: []*llm.Content{
+	hm := &testutil.MockHistoryManager{
+		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		},
 	}
 
 	factory := &PipelineFactory{}
 	pipeline := NewContextPipeline(
-		&mockTransformer{
-			transformFn: func(ctx context.Context, req *ports.ContextRequest) error {
+		&testutil.MockTransformer{
+			TransformFunc: func(ctx context.Context, req *ports.ContextRequest) error {
 				return errors.New("transform error")
 			},
 		},
 	)
 
-	strategy := NewContextStrategy(&mockTokenCounter{})
+	strategy := NewContextStrategy(&testutil.MockTokenCounter{})
 	cm := NewContextManager(strategy, hm, nil, nil)
 	cm.Factory = factory
 	cm.SetPipeline(pipeline)
@@ -303,11 +303,11 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 }
 
 func TestContextManager_AddContent_GetWindowError(t *testing.T) {
-	hm := &mockHistoryManager{
-		contents: []*llm.Content{
+	hm := &testutil.MockHistoryManager{
+		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		},
-		getWindowErr: errors.New("get window error"),
+		GetWindowErr: errors.New("get window error"),
 	}
 
 	cm := NewContextManager(nil, hm, nil, nil)
@@ -318,8 +318,8 @@ func TestContextManager_AddContent_GetWindowError(t *testing.T) {
 }
 
 func TestContextManager_Prepare_HistoryGetWindowError(t *testing.T) {
-	hm := &mockHistoryManager{
-		getWindowErr: errors.New("get window error"),
+	hm := &testutil.MockHistoryManager{
+		GetWindowErr: errors.New("get window error"),
 	}
 
 	cm := NewContextManager(nil, hm, nil, nil)
@@ -339,8 +339,8 @@ func TestContextManager_EmitSummarizationEvent_Error(t *testing.T) {
 
 func TestTokenGatekeeper_GetStrategy_Coverage(t *testing.T) {
 	// Strategy nil
-	tg := &tokenGatekeeper{
-		Estimator: &mockEstimator{},
+	tg := &TokenGatekeeper{
+		Estimator: &testutil.MockTokenCounter{},
 	}
 	strategy := tg.getStrategy()
 	require.NotNil(t, strategy)
@@ -355,15 +355,14 @@ func TestTokenGatekeeper_GetStrategy_Coverage(t *testing.T) {
 func TestTokenGatekeeper_TriggerSummarization_EventError_Swallowed(t *testing.T) {
 	// We want to verify that other errors from SafePublish are NOT swallowed.
 	mockBus := &mockFailingEventBus{err: errors.New("publish error")}
-	tg := &tokenGatekeeper{
-		Events:    mockBus,
-		Estimator: &mockEstimator{},
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-				return "summary", nil, nil
-			},
-		},
+	tg := &TokenGatekeeper{
+		Events:     mockBus,
+		Estimator:  &testutil.MockTokenCounter{},
+		Summarizer: &testutil.MockSummarizer{},
 	}
+	tg.Summarizer.(*testutil.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "summary", nil, nil
+	})
 
 	history := make([]*llm.Content, 20)
 	for i := range history {
@@ -388,7 +387,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	tg := &tokenGatekeeper{}
+	tg := &TokenGatekeeper{}
 	turns := make([][]*llm.Content, 200)
 	for i := range turns {
 		turns[i] = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "u"}}}}
@@ -401,7 +400,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_Cancelled(t *testing.T) {
 
 func TestTokenGatekeeper_GetStrategy_Found(t *testing.T) {
 	mockStrategy := &dynamicThresholdStrategy{}
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		Strategies:  map[string]ThresholdStrategy{"main": mockStrategy},
 		DefaultTier: "main",
 	}
@@ -410,7 +409,7 @@ func TestTokenGatekeeper_GetStrategy_Found(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_AlreadyAttempted(t *testing.T) {
-	tg := &tokenGatekeeper{}
+	tg := &TokenGatekeeper{}
 	req := &ports.ContextRequest{
 		Metadata: ports.ContextMetadata{SummarizationAttempted: true},
 	}
@@ -420,14 +419,13 @@ func TestTokenGatekeeper_TriggerSummarization_AlreadyAttempted(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_OtherError(t *testing.T) {
-	tg := &tokenGatekeeper{
-		Estimator: &mockEstimator{},
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-				return "", nil, errors.New("other error")
-			},
-		},
+	tg := &TokenGatekeeper{
+		Estimator:  &testutil.MockTokenCounter{},
+		Summarizer: &testutil.MockSummarizer{},
 	}
+	tg.Summarizer.(*testutil.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "", nil, errors.New("other error")
+	})
 
 	// Enough history to NOT be blocked ( >= 10)
 	history := make([]*llm.Content, 10)
@@ -450,14 +448,13 @@ func TestTokenGatekeeper_TriggerSummarization_OtherError(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_NilEvents(t *testing.T) {
-	tg := &tokenGatekeeper{
-		Estimator: &mockEstimator{},
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-				return "summary", nil, nil
-			},
-		},
+	tg := &TokenGatekeeper{
+		Estimator:  &testutil.MockTokenCounter{},
+		Summarizer: &testutil.MockSummarizer{},
 	}
+	tg.Summarizer.(*testutil.MockSummarizer).SetSummarizeFn(func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "summary", nil, nil
+	})
 
 	history := make([]*llm.Content, 20)
 	for i := range history {
@@ -478,8 +475,8 @@ func TestTokenGatekeeper_TriggerSummarization_NilEvents(t *testing.T) {
 }
 
 func TestTokenGatekeeper_TriggerSummarization_InvalidPayload(t *testing.T) {
-	tg := &tokenGatekeeper{
-		Estimator: &mockEstimator{},
+	tg := &TokenGatekeeper{
+		Estimator: &testutil.MockTokenCounter{},
 	}
 
 	history := make([]*llm.Content, 12)
@@ -494,5 +491,5 @@ func TestTokenGatekeeper_TriggerSummarization_InvalidPayload(t *testing.T) {
 	}
 
 	_, err := tg.triggerSummarization(context.Background(), req, 100, 10, "test")
-	require.ErrorIs(t, err, errInvalidPayload)
+	require.ErrorIs(t, err, ErrInvalidPayload)
 }

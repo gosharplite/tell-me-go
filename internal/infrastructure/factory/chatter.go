@@ -65,12 +65,17 @@ func NewChatter(ctx stdctx.Context, deps ports.SessionDependencies, cfg ports.Ch
 	}
 
 	// 3. Return the new Agent.
+	reg, err := deps.GetRegistry()
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve tool registry: %w", err)
+	}
+
 	return agent.NewAgent(
 		deps.GetGateway(),
 		deps.GetEventBus(),
 		deps.GetHistoryManager(),
 		cfg.ProviderName,
-		deps.GetRegistry(),
+		reg,
 		deps.GetSecurityManager(),
 		opts...,
 	)

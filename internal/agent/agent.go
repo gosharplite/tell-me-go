@@ -20,7 +20,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -44,7 +44,7 @@ type agent struct {
 	events        events.EventBus
 	tracker       domain_pricing.CostTracker
 	turnsLogger   ports.TurnsLogger
-	logger        *slog.Logger
+	logger        ports.Logger
 
 	config atomic.Pointer[runtimeConfig]
 }
@@ -57,7 +57,15 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	}
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(registry))
-	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, telemetry.NewSlogLogger(cfg.logger), &executor.TelemetryLogger{})
+	logger := cfg.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	clk := cfg.clock
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
+	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, logger, &executor.TelemetryLogger{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool executor: %w", err)
 	}
@@ -65,7 +73,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	cw := session.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
 
 	if cfg.loader != nil || cfg.sessionLoader != nil {
-		cw = session.NewFileConfigWatcher(cfg.loader, cfg.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, cfg.logger)
+		cw = session.NewFileConfigWatcher(cfg.loader, cfg.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, logger)
 	}
 
 	a := &agent{
@@ -76,7 +84,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		events:        bus,
 		tracker:       cfg.tracker,
 		turnsLogger:   cfg.turnsLogger,
-		logger:        cfg.logger,
+		logger:        logger,
 	}
 
 	a.config.Store(&runtimeConfig{
@@ -101,7 +109,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	}
 
 	ctxManager := session.NewContextManager(strategy, hManager, bus, factory,
-		session.WithLogger(cfg.logger),
+		session.WithLogger(logger),
 		session.WithSessionProvider(cfg.sessionProvider),
 	)
 	a.ctxManager = ctxManager
@@ -113,6 +121,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		orchestrator.WithEngineCostTracker(a.tracker),
 		orchestrator.WithEngineLogger(a.logger),
 		orchestrator.WithEngineTurnsLogger(a.turnsLogger),
+		orchestrator.WithEngineClock(clk),
 	)
 
 	if cfg.registerInternal {
@@ -159,8 +168,8 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: newCfg.Limits}); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			a.getLogger().Error("event_publish_failed",
-				slog.String("event_type", "ConfigUpdated"),
-				slog.Any("error", err))
+				"event_type", "ConfigUpdated",
+				"error", err)
 			return err
 		}
 	}
@@ -189,8 +198,8 @@ func (a *agent) emit(ctx context.Context, e events.Event) {
 	if err := events.SafePublish(ctx, a.events, e); err != nil {
 		if !errors.Is(err, events.ErrBusNotInitialized) {
 			a.getLogger().Error("event_publish_failed",
-				slog.String("event_type", string(e.Type())),
-				slog.Any("error", err))
+				"event_type", string(e.Type()),
+				"error", err)
 		}
 	}
 }
@@ -251,14 +260,14 @@ func (a *agent) Shutdown(ctx context.Context) error {
 
 	if a.turnsLogger != nil {
 		if err := a.turnsLogger.Close(); err != nil {
-			a.getLogger().Debug("turns logger shutdown incomplete", slog.Any("error", err))
+			a.getLogger().Debug("turns logger shutdown incomplete", "error", err)
 			errs = append(errs, err)
 		}
 	}
 
 	if a.events != nil {
 		if err := a.events.Flush(ctx); err != nil {
-			a.getLogger().Debug("event bus flush incomplete during shutdown", slog.Any("error", err))
+			a.getLogger().Debug("event bus flush incomplete during shutdown", "error", err)
 		}
 		if err := a.events.Shutdown(ctx); err != nil {
 			if !errors.Is(err, events.ErrBusNotInitialized) {
@@ -270,9 +279,97 @@ func (a *agent) Shutdown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func (a *agent) getLogger() *slog.Logger {
+func (a *agent) getLogger() ports.Logger {
 	if a.logger != nil {
 		return a.logger
 	}
 	return slog.Default()
 }
+
+// InternalAccessor provides access to internal agent components for white-box testing.
+// [FOR TESTING ONLY] DO NOT use this interface in production code or main application logic.
+// It is intended solely for the agenttest package to bridge internal state for integration tests.
+type InternalAccessor interface {
+	ports.Chatter
+	ApplyConfig(ctx context.Context) error
+	GetCtxManager() *session.ContextManager
+	GetEvents() events.EventBus
+	GetConfigWatcher() session.ConfigWatcher
+	SetTracker(t domain_pricing.CostTracker)
+	GetTracker() domain_pricing.CostTracker
+	GetRuntimeConfig() any
+	SetConfigWatcher(cw session.ConfigWatcher)
+	SetEvents(bus events.EventBus)
+	SetLogger(l ports.Logger)
+	SetRuntimeConfig(cfg any)
+	SetCtxManager(cm *session.ContextManager)
+}
+
+// AsInternal wraps a ports.Chatter to provide access to its internal components.
+// [FOR TESTING ONLY] This is a testing utility and should not be used in production code paths.
+func AsInternal(c ports.Chatter) InternalAccessor {
+	if a, ok := c.(*agent); ok {
+		return a
+	}
+	return nil
+}
+
+func (a *agent) ApplyConfig(ctx context.Context) error {
+	return a.applyConfig(ctx)
+}
+
+func (a *agent) GetCtxManager() *session.ContextManager {
+	return a.ctxManager
+}
+
+func (a *agent) GetEvents() events.EventBus {
+	return a.events
+}
+
+func (a *agent) GetConfigWatcher() session.ConfigWatcher {
+	return a.configWatcher
+}
+
+func (a *agent) SetTracker(t domain_pricing.CostTracker) {
+	a.tracker = t
+}
+
+func (a *agent) GetTracker() domain_pricing.CostTracker {
+	return a.tracker
+}
+
+func (a *agent) GetRuntimeConfig() any {
+	return a.config.Load()
+}
+
+func (a *agent) SetConfigWatcher(cw session.ConfigWatcher) {
+	a.configWatcher = cw
+}
+
+func (a *agent) SetEvents(bus events.EventBus) {
+	a.events = bus
+}
+
+func (a *agent) SetLogger(l ports.Logger) {
+	a.logger = l
+}
+
+func (a *agent) SetRuntimeConfig(cfg any) {
+	if rc, ok := cfg.(*runtimeConfig); ok {
+		a.config.Store(rc)
+	}
+}
+
+func (a *agent) SetCtxManager(cm *session.ContextManager) {
+	a.ctxManager = cm
+}
+
+// NewAgentInternal returns an InternalAccessor for testing purposes.
+// [FOR TESTING ONLY] DO NOT use in production code.
+func NewAgentInternal() InternalAccessor {
+	return &agent{}
+}
+
+// RuntimeConfigInternal exports runtimeConfig for testing purposes.
+// [FOR TESTING ONLY]
+type RuntimeConfigInternal = runtimeConfig

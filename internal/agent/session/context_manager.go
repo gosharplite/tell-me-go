@@ -32,14 +32,14 @@ type ContextManager struct {
 	Factory         *PipelineFactory
 	Summarizer      ports.Summarizer
 	SessionProvider ports.SessionProvider
-	logger          *slog.Logger
+	logger          ports.Logger
 }
 
 // contextManagerOption defines a functional option for configuring the ContextManager.
 type contextManagerOption func(*ContextManager)
 
 // WithLogger sets the logger for the ContextManager.
-func WithLogger(l *slog.Logger) contextManagerOption {
+func WithLogger(l ports.Logger) contextManagerOption {
 	return func(cm *ContextManager) {
 		cm.logger = l
 	}
@@ -84,8 +84,8 @@ func (cm *ContextManager) Reconfigure(limits events.Limits) {
 	cm.version++
 	if cm.Strategy != nil {
 		cm.Strategy.SetLimits(limits.MaxHistoryTokens, limits.MaxToolTurns, limits.MaxHistoryTurns)
-		cm.Strategy.setContextWindow(limits.ContextWindow)
-		cm.Strategy.setTieredThreshold(limits.TieredThreshold)
+		cm.Strategy.SetContextWindow(limits.ContextWindow)
+		cm.Strategy.SetTieredThreshold(limits.TieredThreshold)
 	}
 	if cm.Factory != nil {
 		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits)
@@ -201,10 +201,10 @@ func (cm *ContextManager) commitToCache(snapshotVersion int, persisted bool, req
 func validateHistoryBoundaries(history []*llm.Content) error {
 	for i, msg := range history {
 		if msg == nil {
-			return fmt.Errorf("%w: nil message at index %d in loaded history", errInvalidPayload, i)
+			return fmt.Errorf("%w: nil message at index %d in loaded history", ErrInvalidPayload, i)
 		}
 		if err := msg.ValidateStructure(); err != nil {
-			return fmt.Errorf("%w: invalid content at index %d: %w", errInvalidPayload, i, err)
+			return fmt.Errorf("%w: invalid content at index %d: %w", ErrInvalidPayload, i, err)
 		}
 	}
 	return nil
@@ -317,7 +317,7 @@ func (cm *ContextManager) handleSummarizationPrep(subset []*llm.Content, err err
 	if err != nil {
 		return "", nil, err
 	}
-	return "History is too short to summarize yet.", nil, nil
+	return "history is too short to summarize yet", nil, nil
 }
 
 func (cm *ContextManager) wrapSummarizationError(err error) error {
@@ -338,8 +338,8 @@ func (cm *ContextManager) emitSummarizationEvent(ctx context.Context, turns, tok
 			return
 		}
 		cm.logger.Error("event_publish_failed",
-			slog.String("event_type", "SystemMessageEvent"),
-			slog.Any("error", err))
+			"event_type", "SystemMessageEvent",
+			"error", err)
 	}
 }
 
@@ -375,7 +375,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "", nil, err
 	}
 
-	return fmt.Sprintf("Summarized the first %d turns of history.", actualTurns), metrics, nil
+	return fmt.Sprintf("summarized the first %d turns of history", actualTurns), metrics, nil
 }
 
 func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
@@ -393,7 +393,7 @@ func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numT
 		return subset, endIdx, 0, err
 	}
 
-	tokens = strategy.estimateTokens(subset)
+	tokens = strategy.EstimateTokens(subset)
 
 	window := strategy.getContextWindow()
 	if ok, limit := isTokenCountSafe(tokens, window); !ok {
@@ -537,4 +537,8 @@ func (cm *ContextManager) validateSummarizationSubset(ctx context.Context, curre
 		}
 	}
 	return nil
+}
+
+func (cm *ContextManager) SetLogger(l ports.Logger) {
+	cm.logger = l
 }

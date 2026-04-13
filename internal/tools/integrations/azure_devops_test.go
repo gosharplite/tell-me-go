@@ -14,15 +14,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestAdoGetPullRequest(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -135,7 +135,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 func TestAdoListPullRequests(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -232,7 +232,7 @@ func TestAdoListPullRequests(t *testing.T) {
 func TestAdoGetPrDiff(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -297,7 +297,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 func TestAdoGetPrThreads(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -383,7 +383,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 func TestAdoGetFileContent(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		fileContent := "package main\n\nfunc main() {}"
@@ -461,7 +461,7 @@ func TestAdoGetFileContent(t *testing.T) {
 func TestAdoListRepositoryItems(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -524,7 +524,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 
 func TestAdoListPipelineRuns(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{"value": [{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "myrepo"}}]}`
@@ -548,7 +548,7 @@ func TestAdoListPipelineRuns(t *testing.T) {
 
 func TestAdoGetPipelineRun(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{"id": 101, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01", "url": "http://run"}`
@@ -570,7 +570,7 @@ func TestAdoGetPipelineRun(t *testing.T) {
 
 func TestAdoGetPipelineLogs(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("List Logs", func(t *testing.T) {
 		jsonResponse := `{"value": [{"id": 1, "lineCount": 10}]}`
@@ -610,7 +610,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 
 func TestAdoGetPrStatuses(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -679,7 +679,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 
 func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	jsonResponse := `{
 		"value": [
@@ -795,7 +795,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 
 func TestAdoListBranchPolicies(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -877,7 +877,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 
 func TestAdoGetBuildTimeline(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -925,7 +925,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 
 func TestAdoGetTaskLog(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		logContent := "Successfully completed task"
@@ -971,7 +971,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 
 func TestAdoGetBuildChanges(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -1512,7 +1512,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 }
 
 func TestAdoTools_AuthError(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	m := newADOManager(sm)
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -1559,7 +1559,7 @@ func TestPolicyMatchesBranch_MissingScope(t *testing.T) {
 
 func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("List Path - Request Failure", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
@@ -1611,7 +1611,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("fetchPrStatuses - 404", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1642,7 +1642,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 
 func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("fetchRepositoryId - 404", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1674,7 +1674,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 
 func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("401", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1711,7 +1711,7 @@ func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(security.NewSecurityManager(nil), withBaseURL(server.URL), withToken("test-pat"))
+	m := newADOManager(&testutil.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), withToken("test-pat"))
 
 	_, err := m.adoGetFileContent(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"}, nil)
 	assert.Error(t, err)
@@ -1726,7 +1726,7 @@ func TestAdoListPipelineRuns_Empty(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(security.NewSecurityManager(nil), withBaseURL(server.URL), withToken("test-pat"))
+	m := newADOManager(&testutil.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), withToken("test-pat"))
 
 	result, err := m.adoListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}, nil)
 	assert.NoError(t, err)
@@ -1735,7 +1735,7 @@ func TestAdoListPipelineRuns_Empty(t *testing.T) {
 
 func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("404", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1772,7 +1772,7 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	m := newADOManager(security.NewSecurityManager(nil), withBaseURL(server.URL), withToken("test-pat"))
+	m := newADOManager(&testutil.MockSecurityManager{AllowAll: true}, withBaseURL(server.URL), withToken("test-pat"))
 
 	result, err := m.adoGetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1}, nil)
 	assert.NoError(t, err)
@@ -1781,7 +1781,7 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 
 func TestAdoTools_MissingParams(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	m := newADOManager(sm)
 	ctx := context.Background()
 
@@ -1836,7 +1836,7 @@ func TestFormatKey(t *testing.T) {
 
 func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1894,7 +1894,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 		t.Skip("skipping slow integration test in short mode")
 	}
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -2021,7 +2021,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 
 func TestAdoListPipelineRuns_Features(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	t.Run("Pipeline Name Resolution", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -3,7 +3,7 @@
 
 //go:build darwin
 
-package ui
+package ui_test
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	telemetry "github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // controllableClock is a test clock that allows manual advancement of time and ticking.
@@ -172,16 +173,16 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			// Build the UI renderer with the mock provider
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
-			renderer := NewRenderer(nil, stdout, stderr, nil, provider).(*stdUIRenderer)
+			renderer := ui.NewRenderer(nil, stdout, stderr, nil, provider).(*ui.StdUIRenderer)
 			renderer.SetForceSpinner(true)
 
 			// Create controllable clock for deterministic timing
 			startTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-			clock := &controllableClock{
+			c := &controllableClock{
 				now:      startTime,
 				tickChan: make(chan time.Time, 10), // buffered to avoid blocking
 			}
-			renderer.SetClock(clock)
+			renderer.SetClock(c)
 
 			// Start a spinner that shows metrics
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -197,9 +198,9 @@ func TestSpinnerWithMetrics(t *testing.T) {
 			provider.SetCPUStats(tt.total2, tt.idle2)
 
 			// Advance clock by 1 second to trigger CPU recalculation
-			clock.advance(1 * time.Second)
+			c.advance(1 * time.Second)
 			// Send a tick to cause the spinner goroutine to draw again
-			clock.tick()
+			c.tick()
 
 			// Wait for the draw that includes updated CPU metrics
 			time.Sleep(50 * time.Millisecond) // allow spinner goroutine to process tick and draw

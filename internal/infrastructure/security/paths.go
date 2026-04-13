@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 
@@ -16,9 +15,9 @@ import (
 
 // pathPolicy manages allowed boundaries and validates paths.
 type pathPolicy struct {
-	safePaths       []string
+	safePaths       map[string]struct{}
 	safePathsMu     sync.RWMutex
-	readOnlyPaths   []string
+	readOnlyPaths   map[string]struct{}
 	readOnlyPathsMu sync.RWMutex
 	resolvedTempDir string
 }
@@ -26,7 +25,14 @@ type pathPolicy struct {
 // newPathPolicy creates a new pathPolicy.
 func newPathPolicy(safePaths []string) *pathPolicy {
 	policy := &pathPolicy{
-		safePaths: slices.Clone(safePaths),
+		safePaths:     make(map[string]struct{}),
+		readOnlyPaths: make(map[string]struct{}),
+	}
+
+	for _, p := range safePaths {
+		if abs, err := filepath.Abs(p); err == nil {
+			policy.safePaths[abs] = struct{}{}
+		}
 	}
 
 	if temp := os.TempDir(); temp != "" {
@@ -57,23 +63,22 @@ func (p *pathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error
 		return true, nil
 	}
 
-	// NEW: System-wide /tmp (including symlink resolution)
-	if ok, _ := p.checkBoundary(absPath, "/tmp"); ok {
-		return true, nil
-	}
-	if ok, _ := p.checkBoundary(absPath, "/private/tmp"); ok {
-		return true, nil
+	// Platform-specific extra temp boundaries (e.g., /tmp, /private/tmp for Unix)
+	for _, tmpDir := range getExtraTempDirs() {
+		if ok, _ := p.checkBoundary(absPath, tmpDir); ok {
+			return true, nil
+		}
 	}
 
 	return false, nil
 }
 
-// checkSafePaths checks against the safePaths slice.
+// checkSafePaths checks against the safePaths map.
 func (p *pathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
 	p.safePathsMu.RLock()
 	defer p.safePathsMu.RUnlock()
 
-	for _, sp := range p.safePaths {
+	for sp := range p.safePaths {
 		if ok, _ := p.checkBoundary(absPath, sp); ok {
 			return true, nil
 		}
@@ -81,7 +86,7 @@ func (p *pathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
 	return false, nil
 }
 
-// checkReadOnlyPaths if writable is false, checks against the readOnlyPaths slice.
+// checkReadOnlyPaths if writable is false, checks against the readOnlyPaths map.
 func (p *pathPolicy) checkReadOnlyPaths(absPath string, writable bool) (bool, error) {
 	if writable {
 		return false, nil
@@ -90,7 +95,7 @@ func (p *pathPolicy) checkReadOnlyPaths(absPath string, writable bool) (bool, er
 	p.readOnlyPathsMu.RLock()
 	defer p.readOnlyPathsMu.RUnlock()
 
-	for _, rop := range p.readOnlyPaths {
+	for rop := range p.readOnlyPaths {
 		if ok, _ := p.checkBoundary(absPath, rop); ok {
 			return true, nil
 		}
@@ -143,16 +148,55 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 }
 
 func (p *pathPolicy) isSystemDirectory(absPath string) error {
-	// 1. Explicitly exempt the evaluated OS temporary directory
-	if p.resolvedTempDir != "" && strings.HasPrefix(absPath, p.resolvedTempDir) {
-		return nil
+	// 0. Normalize and resolve input path for internal consistency.
+	// This ensures that short/long names on Windows and symlinks are handled
+	// before prefix matching against system directories and exemptions.
+	absPath = p.resolveSymlinks(absPath)
+	absPath = filepath.ToSlash(absPath)
+
+	// Explicitly exempt CWD and its children
+	if cwd, err := os.Getwd(); err == nil {
+		if ok, _ := p.checkBoundary(absPath, cwd); ok {
+			return nil
+		}
 	}
 
-	// 2. Standard Deny-List
-	sensitive := []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys", "/private/etc", "/private/var"}
+	// 1. Explicitly exempt the evaluated OS temporary directory
+	if p.resolvedTempDir != "" {
+		temp := filepath.ToSlash(p.resolvedTempDir)
+		if !isCaseSensitive() {
+			temp = strings.ToLower(temp)
+			abs := strings.ToLower(absPath)
+			if strings.HasPrefix(abs, temp) {
+				return nil
+			}
+		} else if strings.HasPrefix(absPath, temp) {
+			return nil
+		}
+	}
+
+	sensitive := getSystemDirectories()
+	caseSensitive := isCaseSensitive()
+
 	for _, s := range sensitive {
-		if absPath == s || strings.HasPrefix(absPath, s+"/") {
-			return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
+		sNormalized := filepath.ToSlash(s)
+		sTarget := sNormalized
+		sPrefix := sNormalized
+		if !strings.HasSuffix(sPrefix, "/") {
+			sPrefix += "/"
+		}
+
+		if !caseSensitive {
+			sTarget = strings.ToLower(sTarget)
+			sPrefix = strings.ToLower(sPrefix)
+			absLower := strings.ToLower(absPath)
+			if absLower == sTarget || strings.HasPrefix(absLower, sPrefix) {
+				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
+			}
+		} else {
+			if absPath == sTarget || strings.HasPrefix(absPath, sPrefix) {
+				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
+			}
 		}
 	}
 	return nil
@@ -163,7 +207,8 @@ func (p *pathPolicy) RegisterPath(path string, writable bool) {
 	if path == "" {
 		return
 	}
-	abs, err := filepath.Abs(path)
+	cleaned := filepath.Clean(path)
+	abs, err := filepath.Abs(cleaned)
 	if err != nil {
 		return
 	}
@@ -171,69 +216,49 @@ func (p *pathPolicy) RegisterPath(path string, writable bool) {
 	if writable {
 		p.safePathsMu.Lock()
 		defer p.safePathsMu.Unlock()
-		for _, sp := range p.safePaths {
-			if sp == abs {
-				return
-			}
-		}
-		p.safePaths = append(p.safePaths, abs)
+		p.safePaths[abs] = struct{}{}
 	} else {
 		p.readOnlyPathsMu.Lock()
 		defer p.readOnlyPathsMu.Unlock()
-		for _, rop := range p.readOnlyPaths {
-			if rop == abs {
-				return
-			}
-		}
-		p.readOnlyPaths = append(p.readOnlyPaths, abs)
+		p.readOnlyPaths[abs] = struct{}{}
 	}
 }
 
 // RemovePath removes a path from the allowed boundaries.
 func (p *pathPolicy) RemovePath(path string, writable bool) error {
-	abs, err := filepath.Abs(path)
+	cleaned := filepath.Clean(path)
+	abs, err := filepath.Abs(cleaned)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
 	var mu *sync.RWMutex
-	var paths *[]string
+	var paths map[string]struct{}
 	var mode string
 
 	if writable {
 		mu = &p.safePathsMu
-		paths = &p.safePaths
+		paths = p.safePaths
 		mode = "safe"
 	} else {
 		mu = &p.readOnlyPathsMu
-		paths = &p.readOnlyPaths
+		paths = p.readOnlyPaths
 		mode = "read-only"
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	newPaths := make([]string, 0, len(*paths))
-	found := false
-	for _, entry := range *paths {
-		if entry == abs {
-			found = true
-			continue
-		}
-		newPaths = append(newPaths, entry)
-	}
-
-	if !found {
+	if _, ok := paths[abs]; !ok {
 		return fmt.Errorf("path '%s' not found in %s authorized list", abs, mode)
 	}
-
-	*paths = newPaths
+	delete(paths, abs)
 	return nil
 }
 
 // GetPaths returns a copy of the registered paths.
 func (p *pathPolicy) GetPaths(writable bool) []string {
-	var paths []string
+	var paths map[string]struct{}
 
 	if writable {
 		p.safePathsMu.RLock()
@@ -245,8 +270,10 @@ func (p *pathPolicy) GetPaths(writable bool) []string {
 		defer p.readOnlyPathsMu.RUnlock()
 	}
 
-	res := make([]string, len(paths))
-	copy(res, paths)
+	res := make([]string, 0, len(paths))
+	for path := range paths {
+		res = append(res, path)
+	}
 	return res
 }
 

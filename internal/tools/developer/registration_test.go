@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,12 +68,12 @@ func (m *mockToolchainExecutor) LookPath(file string) (string, error) {
 func TestRegister(t *testing.T) {
 	t.Parallel()
 	registry := &mockToolRegistry{}
-	sm := security.NewSecurityManager(nil)
-	validator := security.NewCommandValidator(sm, nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
+	validator := &testutil.MockCommandValidator{}
 	fs := persistence.NewMockFileSystem()
 	exec := &mockToolchainExecutor{}
 
-	if err := Register(registry, sm, exec, validator, fs); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, nil); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 

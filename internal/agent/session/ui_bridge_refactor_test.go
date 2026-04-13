@@ -17,14 +17,14 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name          string
-		setup         func(b *uiBridge)
+		setup         func(b *UIBridge)
 		ctx           func() context.Context
 		event         events.Event
 		expectEnqueue bool
 	}{
 		{
 			name: "bridge is closed",
-			setup: func(b *uiBridge) {
+			setup: func(b *UIBridge) {
 				b.isClosed.Store(true)
 			},
 			ctx:           context.Background,
@@ -33,7 +33,7 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 		},
 		{
 			name:  "caller context is cancelled",
-			setup: func(b *uiBridge) {},
+			setup: func(b *UIBridge) {},
 			ctx: func() context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
@@ -44,7 +44,7 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 		},
 		{
 			name:          "normal case - enqueued",
-			setup:         func(b *uiBridge) {},
+			setup:         func(b *UIBridge) {},
 			ctx:           context.Background,
 			event:         events.ResponseEvent{},
 			expectEnqueue: true,
@@ -54,10 +54,10 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			// Manual setup of uiBridge to avoid starting background loop
+			// Manual setup of UIBridge to avoid starting background loop
 			loopCtx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			b := &uiBridge{
+			b := &UIBridge{
 				loopCtx: loopCtx,
 				eventCh: make(chan events.Event, 10),
 				logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -65,7 +65,7 @@ func TestUIBridge_HandleEvent_SafetyWrapper(t *testing.T) {
 
 			tt.setup(b)
 
-			_ = b.handleEvent(tt.ctx(), tt.event)
+			_ = b.HandleEvent(tt.ctx(), tt.event)
 
 			if tt.expectEnqueue {
 				select {
@@ -119,7 +119,7 @@ func TestUIBridge_EnqueueEvent_RoutingLogic(t *testing.T) {
 			t.Parallel()
 			loopCtx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			b := &uiBridge{
+			b := &UIBridge{
 				loopCtx: loopCtx,
 				eventCh: make(chan events.Event, 1),
 				logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -167,7 +167,7 @@ func TestUIBridge_EnqueueEvent_CriticalBlocking(t *testing.T) {
 	t.Parallel()
 	loopCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	b := &uiBridge{
+	b := &UIBridge{
 		loopCtx: loopCtx,
 		eventCh: make(chan events.Event, 1),
 		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),

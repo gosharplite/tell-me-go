@@ -46,7 +46,7 @@ func wrapReaderPlatform(r io.Reader) io.Reader {
 
 	fallbackCP := getConsoleOutputCP()
 	acp := getACP()
-	
+
 	if fallbackCP == 65001 && acp != 65001 {
 		fallbackCP = acp
 	}
@@ -113,13 +113,13 @@ func (s *sniffingReader) Read(p []byte) (int, error) {
 			}
 			break // EOF reached, decide with what we have
 		}
-		
-		// Heuristic: If we find a non-ASCII byte that makes the buffer invalid UTF-8, 
+
+		// Heuristic: If we find a non-ASCII byte that makes the buffer invalid UTF-8,
 		// we can decide immediately.
 		if containsNonASCII(s.buf.Bytes()) && !utf8.Valid(s.buf.Bytes()) {
 			break
 		}
-		
+
 		// If we found non-ASCII but it IS valid UTF-8, we can also decide immediately.
 		if containsUTF8MultiByte(s.buf.Bytes()) {
 			break

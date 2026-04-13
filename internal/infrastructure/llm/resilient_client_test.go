@@ -10,8 +10,6 @@ import (
 	"reflect"
 	"testing"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -114,7 +112,7 @@ func TestNewClient(t *testing.T) {
 			}
 			pData := pricing.PricingData{}
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-			inframock.CleanupBus(t, bus)
+			events.CleanupBus(t, bus)
 
 			client, err := NewClient(cfg, pData, bus, nil)
 

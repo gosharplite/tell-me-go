@@ -23,4 +23,5 @@ type SuggestionService interface {
 type PromptTracker interface {
 	Append(ctx context.Context, prompt string) error
 	LoadTopN(ctx context.Context, limit int) ([]string, error)
+	Close() error
 }

@@ -5,12 +5,9 @@ package factory
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
-
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -34,14 +31,14 @@ type mockSessionDeps struct {
 
 func (d *mockSessionDeps) GetGateway() llm.LLMGateway                           { return d.gw }
 func (d *mockSessionDeps) GetHistoryManager() ports.HistoryManager              { return d.hManager }
-func (d *mockSessionDeps) GetRegistry() tools.Registry                          { return d.reg }
+func (d *mockSessionDeps) GetRegistry() (tools.Registry, error)                 { return d.reg, nil }
 func (d *mockSessionDeps) GetSecurityManager() security.Manager                 { return d.sm }
 func (d *mockSessionDeps) GetEventBus() events.EventBus                         { return d.bus }
 func (d *mockSessionDeps) GetPaths() *persistence.Paths                         { return d.paths }
 func (d *mockSessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing { return nil }
 func (d *mockSessionDeps) GetTracker() pricing.CostTracker                      { return d.tracker }
 func (d *mockSessionDeps) GetPricingData() pricing.PricingData                  { return pricing.PricingData{} }
-func (d *mockSessionDeps) GetLogger() *slog.Logger                              { return slog.Default() }
+func (d *mockSessionDeps) GetLogger() ports.Logger                              { return &ports.NoOpLogger{} }
 func (d *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger                    { return nil }
 func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return d.sessionProvider }
 
@@ -139,7 +136,7 @@ func TestNewChatter(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	inframock.CleanupBus(t, bus)
+	events.CleanupBus(t, bus)
 
 	deps := &mockSessionDeps{
 		gw:       &mockGateway{},

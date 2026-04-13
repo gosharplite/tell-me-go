@@ -537,68 +537,82 @@ func FuzzManager_RollbackTurns(f *testing.F) {
 
 	// 2. Fuzz Target
 	f.Fuzz(func(t *testing.T, turns int) {
-		// Test with both even and odd initial lengths, and with/without system message
-		for _, hasSystem := range []bool{false, true} {
-			for initialLen := 9; initialLen <= 10; initialLen++ {
-				m := &Manager{
-					Contents: make([]*llm.Content, initialLen),
-					store:    &mockStore{},
-				}
-				for i := range m.Contents {
-					m.Contents[i] = &llm.Content{}
-				}
-				if hasSystem && initialLen > 0 {
-					m.Contents[0].Role = "system"
-				}
-
-				ctx := context.Background()
-
-				// Execute
-				actualRemoved, remainingTurns, remainingMsgs, err := m.RollbackTurns(ctx, turns)
-
-				// Assert Invariants
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-
-				finalLen := len(m.Contents)
-
-				if finalLen < 0 {
-					t.Errorf("invariant violation: final length %d is negative (input turns: %d)", finalLen, turns)
-				}
-
-				if finalLen > initialLen {
-					t.Errorf("invariant violation: final length %d exceeds initial length %d (input turns: %d)", finalLen, initialLen, turns)
-				}
-
-				expectedParity := 0
-				if hasSystem && finalLen > 0 {
-					expectedParity = 1
-				}
-				if finalLen%2 != expectedParity {
-					t.Errorf("invariant violation: final length %d has wrong parity (input turns: %d, hasSystem: %v). Rollback must leave complete pairs.", finalLen, turns, hasSystem)
-				}
-
-				if actualRemoved < 0 {
-					t.Errorf("invariant violation: actualRemoved %d is negative (input turns: %d)", actualRemoved, turns)
-				}
-
-				// Ensure calculated remaining aligns with actual slice length
-				if remainingMsgs != finalLen {
-					t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
-				}
-
-				effectiveLen := finalLen
-				if hasSystem && finalLen > 0 {
-					effectiveLen--
-				}
-				expectedRemainingTurns := effectiveLen / 2
-				if remainingTurns != expectedRemainingTurns {
-					t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)
-				}
-			}
-		}
+		runRollbackSimulation(t, turns)
 	})
+}
+
+func runRollbackSimulation(t *testing.T, turns int) {
+	// Test with both even and odd initial lengths, and with/without system message
+	for _, hasSystem := range []bool{false, true} {
+		for initialLen := 9; initialLen <= 10; initialLen++ {
+			m := setupRollbackFuzzState(initialLen, hasSystem)
+			ctx := context.Background()
+
+			// Execute
+			actualRemoved, remainingTurns, remainingMsgs, err := m.RollbackTurns(ctx, turns)
+
+			// Assert Invariants
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			validateRollbackInvariants(t, m, turns, initialLen, hasSystem, actualRemoved, remainingTurns, remainingMsgs)
+		}
+	}
+}
+
+func setupRollbackFuzzState(initialLen int, hasSystem bool) *Manager {
+	m := &Manager{
+		Contents: make([]*llm.Content, initialLen),
+		store:    &mockStore{},
+	}
+	for i := range m.Contents {
+		m.Contents[i] = &llm.Content{}
+	}
+	if hasSystem && initialLen > 0 {
+		m.Contents[0].Role = "system"
+	}
+	return m
+}
+
+func validateRollbackInvariants(t *testing.T, m *Manager, turns, initialLen int, hasSystem bool, actualRemoved, remainingTurns, remainingMsgs int) {
+	t.Helper()
+	finalLen := len(m.Contents)
+	validateBoundsInvariants(t, finalLen, initialLen, actualRemoved, turns)
+	validateStructureInvariants(t, finalLen, hasSystem, turns, remainingTurns, remainingMsgs)
+}
+
+func validateBoundsInvariants(t *testing.T, finalLen, initialLen, actualRemoved, turns int) {
+	if finalLen < 0 {
+		t.Errorf("invariant violation: final length %d is negative (input turns: %d)", finalLen, turns)
+	}
+	if finalLen > initialLen {
+		t.Errorf("invariant violation: final length %d exceeds initial length %d (input turns: %d)", finalLen, initialLen, turns)
+	}
+	if actualRemoved < 0 {
+		t.Errorf("invariant violation: actualRemoved %d is negative (input turns: %d)", actualRemoved, turns)
+	}
+}
+
+func validateStructureInvariants(t *testing.T, finalLen int, hasSystem bool, turns, remainingTurns, remainingMsgs int) {
+	expectedParity := 0
+	if hasSystem && finalLen > 0 {
+		expectedParity = 1
+	}
+	if finalLen%2 != expectedParity {
+		t.Errorf("invariant violation: final length %d has wrong parity (input turns: %d, hasSystem: %v). Rollback must leave complete pairs.", finalLen, turns, hasSystem)
+	}
+	if remainingMsgs != finalLen {
+		t.Errorf("invariant violation: remainingMsgs %d does not match final length %d", remainingMsgs, finalLen)
+	}
+	effectiveLen := finalLen
+	if hasSystem && finalLen > 0 {
+		effectiveLen--
+	}
+	expectedRemainingTurns := effectiveLen / 2
+	if remainingTurns != expectedRemainingTurns {
+		t.Errorf("invariant violation: remainingTurns %d does not match expected %d", remainingTurns, expectedRemainingTurns)
+	}
 }
 
 func TestManager_GetLastUserMessage(t *testing.T) {

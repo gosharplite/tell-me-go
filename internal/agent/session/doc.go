@@ -6,11 +6,11 @@ Package session manages the session lifecycle and coordinates between the domain
 
 # UI Concurrency (Actor Model)
 
-The uiBridge component within this package follows the Actor Model to handle asynchronous UI updates safely.
+The UIBridge component within this package follows the Actor Model to handle asynchronous UI updates safely.
 All events received from the domain are funneled into a single background goroutine (the "actor loop") via
 a mailbox channel.
 
-Rules for uiBridge:
+Rules for UIBridge:
   - All internal state (isRendering, activePhase, etc.) must remain private to the loop() goroutine.
   - sync.Mutex is strictly forbidden for state protection; use channels and events instead.
   - The component must be formally shut down using Cleanup() to prevent goroutine leaks.
