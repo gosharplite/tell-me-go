@@ -224,9 +224,3 @@ func (cs *ContextStrategy) GetMaxToolTurns() int {
 	defer cs.mu.RUnlock()
 	return cs.maxToolTurns
 }
-
-func (cs *ContextStrategy) GetMaxHistoryTurns() int {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.maxHistoryTurns
-}

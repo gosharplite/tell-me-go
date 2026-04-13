@@ -42,10 +42,6 @@ func (m *MockEstimator) Count(contents []*llm.Content) int {
 	return m.tokens
 }
 
-func (m *MockEstimator) CountTokens(text string) int {
-	return m.tokens
-}
-
 // TestifyMockClock is a mock implementation of clock.Clock using testify/mock.
 type TestifyMockClock struct {
 	mock.Mock

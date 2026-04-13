@@ -23,19 +23,6 @@ type MockSecurityManager struct {
 	Interactor      security.UserInteractor
 }
 
-func SetupMockSecurityManager(allowedTools []string) *MockSecurityManager {
-	if allowedTools != nil {
-		sm := &MockSecurityManager{
-			AllowedCommands: make(map[string]bool),
-		}
-		for _, tool := range allowedTools {
-			sm.AllowedCommands[tool] = true
-		}
-		return sm
-	}
-	return &MockSecurityManager{AllowAll: true}
-}
-
 var _ security.Manager = (*MockSecurityManager)(nil)
 
 func (m *MockSecurityManager) IsPathSafe(path string) (string, error) {

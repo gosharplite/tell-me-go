@@ -9,7 +9,6 @@ import (
 
 // Export internal symbols for external test package
 type Context = context
-type CliOptions = cliOptions
 
 func NewChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 	return newChatCommand(ctx, opts)

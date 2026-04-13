@@ -171,7 +171,7 @@ func TestInferenceStep_NilAPIResponse(t *testing.T) {
 		// InferenceStep.Process will see err != nil, and wrap it AGAIN.
 		// Actually, p.invokeModel returns the error.
 		assert.Equal(t, llm.ErrTerminal, agentErr.Category) // Category of the WRAPPER is Terminal because NewAgentError didn't match isTransient
-		
+
 		// Let's check the inner error
 		var inner *AgentError
 		if assert.True(t, errors.As(agentErr.Err, &inner)) {

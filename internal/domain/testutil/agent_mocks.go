@@ -153,10 +153,6 @@ func (m *MockTokenCounter) SetTokens(n int) {
 	m.Tokens = n
 }
 
-func (m *MockTokenCounter) CountTokens(text string) int {
-	return m.Tokens
-}
-
 // MockHistoryManager is a mock implementation of ports.HistoryManager.
 type MockHistoryManager struct {
 	Mu             sync.RWMutex
@@ -245,8 +241,7 @@ func (m *MockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 	return nil
 }
 
-func (m *MockHistoryManager) GetResolver() llm.AssetResolver  { return m.resolver }
-func (m *MockHistoryManager) SetResolver(r llm.AssetResolver) { m.resolver = r }
+func (m *MockHistoryManager) GetResolver() llm.AssetResolver { return m.resolver }
 func (m *MockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
 	return nil
 }
@@ -486,8 +481,6 @@ func (m *MockLLMClient) Generate(ctx context.Context, input []*llm.Content, tool
 	return m.SendChat(ctx, input, tools, resolver)
 }
 
-const CISafeTimeout = 2 * time.Second
-
 // PanicRegistry is a mock tool registry that can simulate panics.
 type PanicRegistry struct {
 	tools.Registry
@@ -600,10 +593,6 @@ func (m *MockLogger) ExecutionCompletedLate(toolID string) {}
 type MockCostTracker struct {
 	mu               sync.Mutex
 	AccumulatedCount int
-}
-
-func (m *MockCostTracker) CalculateCost(mt llm.Metrics) float64 {
-	return 0.05
 }
 
 func (m *MockCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {

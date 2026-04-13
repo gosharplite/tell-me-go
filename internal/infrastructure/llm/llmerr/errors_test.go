@@ -217,7 +217,7 @@ func TestClassify(t *testing.T) {
 			containsMatch: "RATE LIMIT",
 		},
 		{
-			name:          "Unclassified error defaults to terminal",
+			name:         "Unclassified error defaults to terminal",
 			input:        errors.New("unknown error"),
 			expectedWrap: llm.ErrTerminal,
 		},

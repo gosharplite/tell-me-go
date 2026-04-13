@@ -8,25 +8,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/mock"
 )
 
 // Exported for external tests
-type ContextManagerInternal = ContextManager
 type SessionManagerInternal = sessionManager
 type SessionConfigInternal = sessionConfig
 type SessionDependenciesInternal = sessionDependencies
-
-func (cm *ContextManager) GetHistory() []*llm.Content {
-	contents, _ := cm.History.GetWindow(context.Background(), 0, -1)
-	return contents
-}
-
-func (cm *ContextManager) GetHistoryManager() any {
-	return cm.History
-}
 
 func (o *sessionManager) ApplyConfiguration(ctx context.Context, chatAgent ports.Chatter, sCfg ports.SessionConfig, sd ports.SessionDependencies, capturer ports.Capturer) (*UIBridge, error) {
 	return o.applyConfiguration(ctx, chatAgent, sCfg, sd, capturer)

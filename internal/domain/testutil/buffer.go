@@ -106,14 +106,3 @@ func (w *SyncWriter) String() string {
 	}
 	return w.buf.String()
 }
-
-func (w *SyncWriter) Reset() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.Writer != nil {
-		if r, ok := w.Writer.(interface{ Reset() }); ok {
-			r.Reset()
-		}
-	}
-	w.buf.Reset()
-}

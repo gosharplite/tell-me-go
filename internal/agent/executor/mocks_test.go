@@ -152,26 +152,3 @@ func (r *panicRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.To
 func (r *panicRegistry) ListAvailableToolkits() []string {
 	panic("not implemented")
 }
-
-type ToolBehavior struct {
-	Result  tools.ToolResult
-	Err     error
-	Delay   time.Duration
-	Panic   interface{}
-	Serial  bool
-	Long    bool
-	Observe func() // Callback to signal execution
-}
-
-func SetupMockSecurityManager(allowedTools []string) *mockSecurityManager {
-	if allowedTools != nil {
-		sm := &mockSecurityManager{
-			AllowedCommands: make(map[string]bool),
-		}
-		for _, tool := range allowedTools {
-			sm.AllowedCommands[tool] = true
-		}
-		return sm
-	}
-	return &mockSecurityManager{AllowAll: true}
-}
