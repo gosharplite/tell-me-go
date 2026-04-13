@@ -1,82 +1,384 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package orchestrator_test
+package orchestrator
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator/orchestratortest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
-type localMockEventBus struct {
-	events []events.Event
+func TestWithStatusReporter_Scenarios(t *testing.T) {
+	t.Run("Scenario A: Inference Header", func(t *testing.T) {
+		bus := &testutil.MockEventBus{}
+		engine := &Engine{events: bus}
+		mw := engine.WithStatusReporter()
+
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			return ProcessResult{NextPhase: PhaseComplete}, nil
+		})
+
+		hMock := &testutil.MockHistoryManager{}
+		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		turn := &Turn{
+			State:      &TurnState{Phase: PhaseInference, RetryCount: 0},
+			CtxManager: cm,
+			Clock:      &testutil.MockClock{},
+		}
+
+		_, err := mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+
+		// Should have published TurnStatusEvent (Header)
+		found := false
+		for _, e := range bus.GetEvents() {
+			if evt, ok := e.(events.TurnStatusEvent); ok {
+				assert.False(t, evt.Status.IsPostCall)
+				assert.False(t, evt.Status.IsFinal)
+				found = true
+			}
+		}
+		assert.True(t, found, "TurnStatusEvent (header) should be published")
+	})
+
+	t.Run("Scenario B: Persisting Footer and Metrics", func(t *testing.T) {
+		bus := &testutil.MockEventBus{}
+		engine := &Engine{events: bus}
+		mw := engine.WithStatusReporter()
+
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			return ProcessResult{NextPhase: PhaseComplete}, nil
+		})
+
+		hMock := &testutil.MockHistoryManager{}
+		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		turn := &Turn{
+			State: &TurnState{
+				Phase:   PhasePersisting,
+				Metrics: &llm.Metrics{PromptTokens: 10},
+			},
+			CtxManager: cm,
+			Clock:      &testutil.MockClock{},
+		}
+
+		_, err := mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+
+		// Should have published two events: Metrics line and Ready footer
+		var postCallCount, finalCount int
+		for _, e := range bus.GetEvents() {
+			if evt, ok := e.(events.TurnStatusEvent); ok {
+				if evt.Status.IsPostCall {
+					postCallCount++
+				}
+				if evt.Status.IsFinal {
+					finalCount++
+				}
+			}
+		}
+		assert.Equal(t, 1, postCallCount, "Should publish one post-call status event (metrics)")
+		assert.Equal(t, 1, finalCount, "Should publish one final status event (ready footer)")
+	})
+
+	t.Run("Scenario C: Error handling", func(t *testing.T) {
+		bus := &testutil.MockEventBus{}
+		engine := &Engine{events: bus}
+		mw := engine.WithStatusReporter()
+
+		expectedErr := errors.New("processor failed")
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			return ProcessResult{}, expectedErr
+		})
+
+		hMock := &testutil.MockHistoryManager{}
+		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+		turn := &Turn{
+			State:      &TurnState{Phase: PhaseInference},
+			CtxManager: cm,
+			Clock:      &testutil.MockClock{},
+		}
+
+		_, err := mw(next).Process(context.Background(), turn)
+		assert.ErrorIs(t, err, expectedErr)
+	})
 }
 
-func (m *localMockEventBus) Publish(ctx context.Context, e events.Event) error {
-	m.events = append(m.events, e)
-	return nil
+func TestWithMetrics_Scenarios(t *testing.T) {
+	t.Run("Scenario A: Processor returns metrics", func(t *testing.T) {
+		bus := &testutil.MockEventBus{}
+		engine := &Engine{events: bus}
+		mw := engine.WithMetrics()
+
+		metrics := &llm.Metrics{PromptTokens: 100, ResponseTokens: 50}
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			turn.State.Metrics = metrics
+			return ProcessResult{}, nil
+		})
+
+		startTime := time.Now()
+		turn := &Turn{
+			State:     &TurnState{Phase: PhaseInference},
+			StartTime: startTime,
+		}
+
+		_, err := mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+
+		found := false
+		for _, e := range bus.GetEvents() {
+			if evt, ok := e.(events.UsageMetricsEvent); ok {
+				assert.Equal(t, metrics, evt.Metrics)
+				assert.Equal(t, startTime, evt.StartTime)
+				found = true
+			}
+		}
+		assert.True(t, found, "UsageMetricsEvent should be published")
+	})
+
+	t.Run("Scenario B: Processor returns nil metrics", func(t *testing.T) {
+		bus := &testutil.MockEventBus{}
+		engine := &Engine{events: bus}
+		mw := engine.WithMetrics()
+
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			turn.State.Metrics = nil
+			return ProcessResult{}, nil
+		})
+
+		turn := &Turn{
+			State: &TurnState{Phase: PhaseInference},
+		}
+
+		_, err := mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+
+		for _, e := range bus.GetEvents() {
+			_, ok := e.(events.UsageMetricsEvent)
+			assert.False(t, ok, "UsageMetricsEvent should NOT be published for nil metrics")
+		}
+	})
+
+	t.Run("Scenario C: Cost accumulation", func(t *testing.T) {
+		bus := &testutil.MockEventBus{}
+		tracker := &testutil.MockCostTracker{}
+		engine := &Engine{events: bus}
+		mw := engine.WithMetrics()
+
+		metrics := &llm.Metrics{PromptTokens: 100}
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			turn.State.Metrics = metrics
+			return ProcessResult{}, nil
+		})
+
+		turn := &Turn{
+			State:       &TurnState{Phase: PhaseInference},
+			CostTracker: tracker,
+		}
+
+		_, err := mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+		assert.Equal(t, 0.05, turn.State.TaskCost)
+		assert.Equal(t, 0.05, turn.State.Metrics.Cost)
+	})
 }
 
-func (m *localMockEventBus) Subscribe(f func(context.Context, events.Event)) {}
-func (m *localMockEventBus) Shutdown(ctx context.Context) error              { return nil }
-func (m *localMockEventBus) Flush(ctx context.Context) error                 { return nil }
-func (m *localMockEventBus) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
+func TestLoopDetector_Scenarios(t *testing.T) {
+	t.Run("Detect Text Loop", func(t *testing.T) {
+		bus := &testutil.MockEventBus{}
+		mw := withLoopDetector()
 
-type localMockProcessor struct {
-	called bool
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Repeat me"}}}
+			return ProcessResult{}, nil
+		})
+
+		hMock := &testutil.MockHistoryManager{}
+		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
+		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+
+		turn := &Turn{
+			State: &TurnState{
+				Phase: PhaseInference,
+				// Ensure clean state
+				RecentResponseHashes: nil, 
+				ToolCallCount:        make(map[string]int),
+			},
+			CtxManager: cm,
+			Events:     bus,
+		}
+
+		// First call - no loop
+		_, err := mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+		assert.NotNil(t, turn.State.Response, "Response should NOT be nil on first call")
+		assert.Equal(t, 1, len(turn.State.RecentResponseHashes))
+
+		// Second call with same response - loop detected (triggers on immediate duplicate for text)
+		_, err = mw(next).Process(context.Background(), turn)
+		assert.NoError(t, err)
+		assert.Nil(t, turn.State.Response, "Response should be cleared on loop detection (2nd call)")
+		
+		found := false
+		for _, e := range bus.GetEvents() {
+			if evt, ok := e.(events.SystemMessageEvent); ok {
+				if evt.Level == "warn" && evt.Message == "Infinite loop detected! Injecting corrective feedback to break the cycle..." {
+					found = true
+				}
+			}
+		}
+		assert.True(t, found, "SystemMessageEvent should be published")
+	})
+
+	t.Run("Detect Tool Loop", func(t *testing.T) {
+		bus := &testutil.MockEventBus{}
+		mw := withLoopDetector()
+
+		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+			turn.State.Response = &llm.Content{
+				Role: "model",
+				Parts: []*llm.Part{{
+					FunctionCall: &llm.FunctionCall{
+						Name: "test_tool",
+						Args: map[string]interface{}{"cmd": "ls"},
+					},
+				}},
+			}
+			return ProcessResult{}, nil
+		})
+
+		hMock := &testutil.MockHistoryManager{}
+		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
+		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+
+		turn := &Turn{
+			State: &TurnState{
+				Phase: PhaseInference,
+				RecentResponseHashes: nil,
+				ToolCallCount:        make(map[string]int),
+			},
+			CtxManager: cm,
+			Events:     bus,
+		}
+
+		// First call
+		_, _ = mw(next).Process(context.Background(), turn)
+		assert.NotNil(t, turn.State.Response)
+
+		// 2nd call - triggers TEXT loop detection because the whole Response JSON is identical.
+		_, _ = mw(next).Process(context.Background(), turn)
+		assert.Nil(t, turn.State.Response)
+	})
 }
 
-func (m *localMockProcessor) Process(ctx context.Context, Turn *orchestrator.Turn) (orchestrator.ProcessResult, error) {
-	m.called = true
-	return orchestrator.ProcessResult{}, nil
+func TestHandleLoopBreak_Error_Internal(t *testing.T) {
+	bus := &testutil.MockEventBus{}
+	
+	hMock := &testutil.MockHistoryManager{}
+	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
+	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
+		if content.Role == "model" {
+			return errors.New("history persistence failed")
+		}
+		return nil
+	}
+	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+
+	turn := &Turn{
+		State: &TurnState{
+			Response: &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "loop"}}},
+		},
+		CtxManager: cm,
+		Events:     bus,
+	}
+
+	_, err := handleLoopBreak(context.Background(), turn)
+	assert.Error(t, err)
+	assert.Equal(t, "history persistence failed", err.Error())
 }
 
-func TestWithStatusReporter(t *testing.T) {
-	t.Parallel()
-	bus := &localMockEventBus{}
-	engine := orchestrator.NewEngine(nil, nil, nil, nil, bus, nil)
-	mw := engine.WithStatusReporter()
-	next := &localMockProcessor{}
+func TestTruncateSafe_Middleware(t *testing.T) {
+	tests := []struct {
+		input    string
+		max      int
+		expected string
+	}{
+		{"hello world", 5, "hello..."},
+		{"hello", 10, "hello"},
+		{"こんにちは", 2, "こん..."},
+		{"", 5, ""},
+	}
 
-	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
-	cm := orchestratortest.NewTestContextManager(strategy, &testutil.MockHistoryManager{}, bus)
-	Turn := &orchestrator.Turn{
-		State:      &orchestrator.TurnState{Phase: orchestrator.PhaseInference},
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			res := TruncateSafe([]byte(tt.input), tt.max)
+			assert.Equal(t, tt.expected, res)
+		})
+	}
+}
+
+func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
+	bus := &testutil.MockEventBus{}
+	engine := &Engine{events: bus}
+	
+	hMock := &testutil.MockHistoryManager{}
+	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	
+	turn := &Turn{
+		State:      &TurnState{},
 		CtxManager: cm,
 		Clock:      &testutil.MockClock{},
+		CostTracker: nil,
 	}
-
-	_, _ = mw(next).Process(context.Background(), Turn)
-
-	if !next.called {
-		t.Error("Next processor was not called")
+	
+	engine.publishTurnStatus(context.Background(), turn, false, false)
+	
+	found := false
+	for _, e := range bus.GetEvents() {
+		if _, ok := e.(events.TurnStatusEvent); ok {
+			found = true
+		}
 	}
-	if len(bus.events) == 0 {
-		t.Error("No events published")
-	}
+	assert.True(t, found)
 }
 
-func TestWithMetrics(t *testing.T) {
-	t.Parallel()
-	bus := &localMockEventBus{}
-	engine := orchestrator.NewEngine(nil, nil, nil, nil, bus, nil)
-	mw := engine.WithMetrics()
-	next := &localMockProcessor{}
+func TestHandleLoopBreak_Error_Warning(t *testing.T) {
+	bus := &testutil.MockEventBus{}
+	
+	hMock := &testutil.MockHistoryManager{}
+	// Seed history
+	hMock.SetInternalContents([]*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}})
+	
+	callCount := 0
+	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
+		callCount++
+		if callCount == 2 { // Fail on the second call (the warning message)
+			return errors.New("warning persistence failed")
+		}
+		// Update contents to allow next AddContent to call AddContentFunc (alternating roles)
+		hMock.Mu.Lock()
+		hMock.Contents = append(hMock.Contents, content)
+		hMock.Mu.Unlock()
+		return nil
+	}
+	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 
-	Turn := &orchestrator.Turn{
-		State: &orchestrator.TurnState{Phase: orchestrator.PhaseInference, Metrics: &llm.Metrics{}},
+	turn := &Turn{
+		State: &TurnState{
+			Response: &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "loop"}}},
+		},
+		CtxManager: cm,
+		Events:     bus,
 	}
 
-	_, _ = mw(next).Process(context.Background(), Turn)
-
-	if !next.called {
-		t.Error("Next processor was not called")
-	}
+	_, err := handleLoopBreak(context.Background(), turn)
+	assert.Error(t, err)
+	assert.Equal(t, "warning persistence failed", err.Error())
 }
