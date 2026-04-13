@@ -20,6 +20,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -59,6 +60,10 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	logger := cfg.logger
 	if logger == nil {
 		logger = slog.Default()
+	}
+	clk := cfg.clock
+	if clk == nil {
+		clk = clock.RealClock{}
 	}
 	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, logger, &executor.TelemetryLogger{})
 	if err != nil {
@@ -116,6 +121,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		orchestrator.WithEngineCostTracker(a.tracker),
 		orchestrator.WithEngineLogger(a.logger),
 		orchestrator.WithEngineTurnsLogger(a.turnsLogger),
+		orchestrator.WithEngineClock(clk),
 	)
 
 	if cfg.registerInternal {

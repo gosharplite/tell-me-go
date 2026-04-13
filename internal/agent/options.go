@@ -10,6 +10,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/skills"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // agentConfig holds initialization-only dependencies and configuration.
@@ -27,6 +28,7 @@ type agentConfig struct {
 	initCtx          context.Context
 	logger           ports.Logger
 	turnsLogger      ports.TurnsLogger
+	clock            clock.Clock
 }
 
 // Option defines a functional option for configuring an Agent.
@@ -108,5 +110,12 @@ func WithSkillSelector(s skills.SkillSelector) Option {
 func WithTurnsLogger(tl ports.TurnsLogger) Option {
 	return func(c *agentConfig) {
 		c.turnsLogger = tl
+	}
+}
+
+// WithClock sets the clock for the agent and its components.
+func WithClock(c clock.Clock) Option {
+	return func(cfg *agentConfig) {
+		cfg.clock = c
 	}
 }

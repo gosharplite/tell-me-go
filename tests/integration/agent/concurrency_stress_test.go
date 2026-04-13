@@ -93,6 +93,9 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 			_ = a.SetLimits(ctx, 10, 1000+i, 20)
 			runtime.Gosched()
 		}
+		// Signal tool to proceed as soon as we are done hammering.
+		// This avoids waiting for the context timeout or 30s ToolTimeout.
+		close(toolProceed)
 	}()
 
 	wg.Wait()
@@ -169,6 +172,9 @@ func TestDispatcher_ConcurrentExecutionAndConfig(t *testing.T) {
 		for i := 0; i < 100; i++ {
 			exec.SetConcurrency(1 + (i % 10))
 		}
+		// Signal tools to proceed NOW that we are done hammering.
+		// This avoids waiting for the 30s ToolTimeout.
+		close(toolProceedTask)
 	}()
 
 	wg.Wait()

@@ -607,7 +607,6 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	b.mu.RUnlock()
 
 	if !async {
-		<-ctx.Done()
 		return nil
 	}
 
