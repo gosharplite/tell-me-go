@@ -19,14 +19,14 @@ import (
 )
 
 const (
-	LayerDomain         = "domain"
-	LayerInfrastructure = "infrastructure"
-	LayerApplication    = "application" // Groups agent, cli, ui, service, application
-	LayerTools          = "tools"
-	LayerShared         = "shared" // Cross-cutting utilities in internal/pkg
-	LayerCmd            = "cmd"
-	LayerTest           = "test"
-	LayerUnknown        = "unknown"
+	layerDomain         = "domain"
+	layerInfrastructure = "infrastructure"
+	layerApplication    = "application" // Groups agent, cli, ui, service, application
+	layerTools          = "tools"
+	layerShared         = "shared" // Cross-cutting utilities in internal/pkg
+	layerCmd            = "cmd"
+	layerTest           = "test"
+	layerUnknown        = "unknown"
 )
 
 // packageProvider defines the interface for loading package information.
@@ -224,42 +224,42 @@ func (m *architectureManager) sendHeartbeat(hb chan<- struct{}) {
 
 func (m *architectureManager) classify(pkgPath string) string {
 	if strings.HasSuffix(pkgPath, "_test") || strings.HasSuffix(pkgPath, ".test") {
-		return LayerTest
+		return layerTest
 	}
 
 	rel := strings.TrimPrefix(pkgPath, m.ModulePath)
 	rel = strings.Trim(rel, "/")
 	if rel == "" {
-		return LayerUnknown
+		return layerUnknown
 	}
 
 	segments := strings.Split(rel, "/")
 	if segments[0] == "cmd" {
-		return LayerCmd
+		return layerCmd
 	}
 
 	if segments[0] == "internal" {
 		if len(segments) < 2 {
-			return LayerUnknown
+			return layerUnknown
 		}
 
 		switch segments[1] {
 		case "domain":
-			return LayerDomain
+			return layerDomain
 		case "infrastructure":
-			return LayerInfrastructure
+			return layerInfrastructure
 		case "agent", "cli", "ui", "service", "application":
-			return LayerApplication
+			return layerApplication
 		case "tools":
-			return LayerTools
+			return layerTools
 		case "pkg":
-			return LayerShared
+			return layerShared
 		default:
-			return LayerUnknown
+			return layerUnknown
 		}
 	}
 
-	return LayerUnknown
+	return layerUnknown
 }
 
 func (m *architectureManager) isLayer(pkgPath, layerName string) bool {
@@ -274,23 +274,23 @@ func (m *architectureManager) isCompositionRoot(pkgPath string) bool {
 func (m *architectureManager) checkLayerViolations(pkgs map[string][]string, hb chan<- struct{}) []violation {
 	rules := []rule{
 		{
-			SourceLayer: LayerDomain,
-			Forbidden:   []string{LayerApplication, LayerInfrastructure, LayerTools, LayerCmd},
+			SourceLayer: layerDomain,
+			Forbidden:   []string{layerApplication, layerInfrastructure, layerTools, layerCmd},
 			Reason:      "Domain must not depend on Application, Infrastructure, Tools, or Cmd layers.",
 		},
 		{
-			SourceLayer: LayerApplication,
-			Forbidden:   []string{LayerInfrastructure, LayerTools, LayerCmd},
+			SourceLayer: layerApplication,
+			Forbidden:   []string{layerInfrastructure, layerTools, layerCmd},
 			Reason:      "Application layer must not depend on Infrastructure, Tools, or Cmd layers.",
 		},
 		{
-			SourceLayer: LayerInfrastructure,
-			Forbidden:   []string{LayerApplication, LayerCmd},
+			SourceLayer: layerInfrastructure,
+			Forbidden:   []string{layerApplication, layerCmd},
 			Reason:      "Infrastructure layer must not depend on Application or Cmd layers.",
 		},
 		{
-			SourceLayer: LayerTools,
-			Forbidden:   []string{LayerApplication, LayerCmd},
+			SourceLayer: layerTools,
+			Forbidden:   []string{layerApplication, layerCmd},
 			Reason:      "Tools layer must not depend on Application or Cmd layers.",
 		},
 	}
@@ -359,7 +359,7 @@ func (m *architectureManager) checkGeneralCmdImport(pkg string, imports []string
 	var found []violation
 	shortPkg := m.shorten(pkg)
 	for _, imp := range imports {
-		if m.isLayer(imp, LayerCmd) {
+		if m.isLayer(imp, layerCmd) {
 			candidate := violation{
 				pkg:      shortPkg,
 				category: "[LAYER VIOLATION]",

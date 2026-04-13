@@ -161,13 +161,13 @@ func TestArchitectureManager_IsLayer(t *testing.T) {
 		layer string
 		want  bool
 	}{
-		{"github.com/org/repo/internal/domain", LayerDomain, true},
-		{"github.com/org/repo/internal/domain/sub", LayerDomain, true},
-		{"github.com/org/repo/internal/domain-logic", LayerDomain, false},
-		{"github.com/org/repo/internal/agent/service", LayerApplication, true},
-		{"github.com/org/repo/internal/pkg/stringsutil", LayerShared, true},
-		{"github.com/org/repo/internal/infrastructure/toolchain/compiler", LayerInfrastructure, true},
-		{"github.com/org/repo/pkg/domain", LayerDomain, false},
+		{"github.com/org/repo/internal/domain", layerDomain, true},
+		{"github.com/org/repo/internal/domain/sub", layerDomain, true},
+		{"github.com/org/repo/internal/domain-logic", layerDomain, false},
+		{"github.com/org/repo/internal/agent/service", layerApplication, true},
+		{"github.com/org/repo/internal/pkg/stringsutil", layerShared, true},
+		{"github.com/org/repo/internal/infrastructure/toolchain/compiler", layerInfrastructure, true},
+		{"github.com/org/repo/pkg/domain", layerDomain, false},
 	}
 
 	for _, tt := range tests {
@@ -330,20 +330,20 @@ func TestArchitectureManager_Classify(t *testing.T) {
 		pkg  string
 		want string
 	}{
-		{"github.com/org/repo/internal/domain", LayerDomain},
-		{"github.com/org/repo/internal/infrastructure/db", LayerInfrastructure},
-		{"github.com/org/repo/internal/service/api", LayerApplication},
-		{"github.com/org/repo/internal/tools/checker", LayerTools},
-		{"github.com/org/repo/internal/pkg/utils", LayerShared},
-		{"github.com/org/repo/cmd/server", LayerCmd},
-		{"github.com/org/repo/internal/infrastructure/toolchain/compiler", LayerInfrastructure},
+		{"github.com/org/repo/internal/domain", layerDomain},
+		{"github.com/org/repo/internal/infrastructure/db", layerInfrastructure},
+		{"github.com/org/repo/internal/service/api", layerApplication},
+		{"github.com/org/repo/internal/tools/checker", layerTools},
+		{"github.com/org/repo/internal/pkg/utils", layerShared},
+		{"github.com/org/repo/cmd/server", layerCmd},
+		{"github.com/org/repo/internal/infrastructure/toolchain/compiler", layerInfrastructure},
 		// Edge Cases & Unknowns
-		{"github.com/org/repo", LayerUnknown},                  // Module root
-		{"github.com/org/repo/internal", LayerUnknown},         // Bare internal
-		{"github.com/org/repo/internal/unknown", LayerUnknown}, // Unknown internal segment
-		{"github.com/org/repo/pkg/external", LayerUnknown},     // Outside tracked directories
-		{"github.com/other/module/pkg", LayerUnknown},          // External module
-		{"", LayerUnknown}, // Empty path
+		{"github.com/org/repo", layerUnknown},                  // Module root
+		{"github.com/org/repo/internal", layerUnknown},         // Bare internal
+		{"github.com/org/repo/internal/unknown", layerUnknown}, // Unknown internal segment
+		{"github.com/org/repo/pkg/external", layerUnknown},     // Outside tracked directories
+		{"github.com/other/module/pkg", layerUnknown},          // External module
+		{"", layerUnknown}, // Empty path
 	}
 
 	for _, tt := range tests {
