@@ -247,7 +247,7 @@ func TestNewPathPolicy_Initialization(t *testing.T) {
 	p := newPathPolicy(original)
 
 	original[0] = filepath.Join(os.TempDir(), "hacked")
-	if p.safePaths[0] == filepath.Join(os.TempDir(), "hacked") {
+	if _, ok := p.safePaths[filepath.Join(os.TempDir(), "hacked")]; ok {
 		t.Errorf("safePaths suffered from slice reference leak")
 	}
 
