@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -277,6 +278,16 @@ func (e *Engine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.CostTrack
 
 // NewEngine creates a new Engine with a default pipeline.
 func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...EngineOption) *Engine {
+	backoff := 2 * time.Second
+	rateLimitBackoff := 5 * time.Second
+
+	// Architectural Speed optimization for E2E tests:
+	// Use near-zero backoff when TELL_ME_FAST_RETRY=1 to prevent artificial delays.
+	if os.Getenv("TELL_ME_FAST_RETRY") == "1" {
+		backoff = 1 * time.Millisecond
+		rateLimitBackoff = 1 * time.Millisecond
+	}
+
 	e := &Engine{
 		gateway:      gw,
 		executor:     ex,
@@ -285,7 +296,7 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, r
 		tokenCounter: counter,
 		events:       bus,
 		processors:   make(map[TurnPhase]TurnProcessor),
-		RetryPolicy:  &DefaultRetryPolicy{MaxRetries: 6, Backoff: 2 * time.Second, RateLimitBackoff: 5 * time.Second},
+		RetryPolicy:  &DefaultRetryPolicy{MaxRetries: 6, Backoff: backoff, RateLimitBackoff: rateLimitBackoff},
 		clock:        clock.RealClock{},
 	}
 
