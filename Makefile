@@ -5,13 +5,23 @@ VERSION ?= dev
 
 # Detect if we are running in Windows CMD vs. a POSIX-compliant shell
 ifeq ($(OS),Windows_NT)
-    ifeq ($(findstring sh,$(SHELL)),sh)
-        IS_WINDOWS_CMD := false
+    # On Windows, SHELL might be set to sh.exe even if we are in CMD.
+    # Check for standard POSIX indicators in the SHELL path.
+    ifneq (,$(findstring /sh,$(SHELL)))
+        IS_POSIX := true
+    else ifneq (,$(findstring /bash,$(SHELL)))
+        IS_POSIX := true
+    else ifeq ($(SHELL),sh)
+        # Fallback for systems where SHELL is just 'sh'
+        IS_POSIX := true
+    else ifeq ($(SHELL),bash)
+        # Fallback for systems where SHELL is just 'bash'
+        IS_POSIX := true
     else
-        IS_WINDOWS_CMD := true
+        IS_POSIX := false
     endif
 else
-    IS_WINDOWS_CMD := false
+    IS_POSIX := true
 endif
 
 .PHONY: build test test-race tidy fmt help
@@ -32,22 +42,21 @@ test:
 	go test ./...
 
 # AI-SAFE RACE TEST: 
-# Running 'go test -race ./...' globally times out in AI environments (>60s).
-# This target iterates through packages sequentially to ensure full coverage 
-# and stability in all environments (including Windows with Winlibs).
+# Running 'go test -race ./...' globally can time out in constrained environments.
+# This target iterates through packages sequentially for stability.
 test-race:
-ifeq ($(IS_WINDOWS_CMD),true)
-	@echo "Running race tests package-by-package (Windows CMD mode)..."
-	@for /f "tokens=*" %%p in ('go list ./...') do ( \
-		echo Testing %%p... & \
-		go test -race -timeout 60s %%p || exit /b 1 \
-	)
-else
+ifeq ($(IS_POSIX),true)
 	@echo "Running race tests package-by-package (POSIX mode)..."
 	@for pkg in $$(go list ./...); do \
 		echo "Testing $$pkg..."; \
 		go test -race -timeout 60s $$pkg || exit 1; \
 	done
+else
+	@echo "Running race tests package-by-package (Windows CMD mode)..."
+	@for /f "tokens=*" %%p in ('go list ./...') do ( \
+		echo Testing %%p... & \
+		go test -race -timeout 60s %%p || exit /b 1 \
+	)
 endif
 
 tidy:
@@ -60,9 +69,9 @@ fmt:
 .PHONY: test-coverage
 test-coverage:
 	go test -coverprofile=coverage.raw ./...
-ifeq ($(IS_WINDOWS_CMD),true)
-	@findstr /V /R "mock\.go generated" coverage.raw > coverage.out
-else
+ifeq ($(IS_POSIX),true)
 	@grep -v -E "mock\.go|generated" coverage.raw > coverage.out
+else
+	@findstr /V /R "mock\.go generated" coverage.raw > coverage.out
 endif
 	go tool cover -func=coverage.out
