@@ -207,7 +207,7 @@ func TestExecutionStep_Process(t *testing.T) {
 			State: &TurnState{
 				HasToolCalls: true,
 				Response: &llm.Content{
-					Role: "model",
+					Role:  "model",
 					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
 				},
 				Metrics: &llm.Metrics{},
@@ -239,7 +239,7 @@ func TestExecutionStep_Process(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "exec failed")
 	})
-	
+
 	t.Run("Transient execution error", func(t *testing.T) {
 		ex := &testutil.MockAgentExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
@@ -318,7 +318,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 		step.ValidatePayloadLimits(ctx, turn)
 
 		assert.True(t, bus.AssertEventPublished(reflect.TypeOf(events.SystemMessageEvent{})))
-		
+
 		errVal := turn.State.ToolResponse.Parts[0].FunctionResponse.Response["error"].(string)
 		assert.Contains(t, errVal, "individual tool output is too massive")
 	})
@@ -368,7 +368,7 @@ func TestEngine_StartTelemetry(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
@@ -497,14 +497,14 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 		proc := TurnProcessorFunc(func(ctx context.Context, t *Turn) (ProcessResult, error) {
 			return ProcessResult{NextPhase: PhaseExecuting}, nil
 		})
-		
+
 		// Domain default max loop repetitions is 3? Let's check or just repeat enough.
 		// DefaultMaxLoopRepetitions is 3.
 		for i := 0; i < 3; i++ {
 			_, err := mw(proc).Process(ctx, turn)
 			assert.NoError(t, err)
 		}
-		
+
 		// 4th call: loop detected
 		_, err := mw(proc).Process(ctx, turn)
 		assert.NoError(t, err)
