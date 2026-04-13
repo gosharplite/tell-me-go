@@ -181,15 +181,11 @@ func (b *UIBridge) Cleanup() {
 	b.cleanupOnce.Do(func() {
 		atomic.AddInt32(&b.cleanupInvocations, 1)
 
-		// 1. Signal cancellation to unblock the Listen loop if it's waiting for events.
-		b.mu.RLock()
-		cancel := b.cancel
-		b.mu.RUnlock()
-		if cancel != nil {
-			cancel()
-		}
+		// 1. Ensure input is closed. This allows the Listen() loop to exit 
+		// naturally after processing all remaining events in the channel.
+		b.CloseInput()
 
-		// 2. Set up the wait mechanism
+		// 2. Monitor worker completion via the WaitGroup in a separate goroutine.
 		done := make(chan struct{})
 		go func() {
 			defer func() {
@@ -202,16 +198,29 @@ func (b *UIBridge) Cleanup() {
 			close(done)
 		}()
 
-		// 3. Wait with timeout for the background workers to exit.
+		// 3. Wait for workers to finish gracefully, or force-kill via context after timeout.
 		timer := time.NewTimer(b.cleanupTimeout)
 		defer timer.Stop()
 
 		select {
 		case <-done:
-			// Clean exit: all workers finished draining within the timeout
+			// Graceful exit: all events were drained within the timeout.
 		case <-timer.C:
-			// Timeout reached: The renderer might be deadlocked or too slow.
+			// Hard stop: Drain took too long or became deadlocked. 
+			// Trigger the context cancellation now to unblock the Listen loop.
+			b.mu.RLock()
+			cancel := b.cancel
+			b.mu.RUnlock()
+			if cancel != nil {
+				cancel()
+			}
 			b.logger.Warn("UI Bridge cleanup timed out")
+
+			// Optional: Wait briefly for the loop to acknowledge the cancellation
+			select {
+			case <-done:
+			case <-time.After(100 * time.Millisecond):
+			}
 		}
 	})
 }
@@ -239,9 +248,24 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Forced abort
-			b.stopActiveSpinner()
-			return nil
+			// Forced abort: Drain remaining events if any, but don't block forever.
+			// This ensures that even if cancellation is triggered (e.g., via timeout),
+			// what was already in the channel is processed if the renderer is free.
+			for {
+				select {
+				case e, ok := <-b.eventCh:
+					if !ok {
+						b.stopActiveSpinner()
+						return nil
+					}
+					// Process remaining events with a fresh context to avoid
+					// immediate cancellation during final rendering.
+					b.processRecoverable(context.Background(), e)
+				default:
+					b.stopActiveSpinner()
+					return nil
+				}
+			}
 		case e, ok := <-b.eventCh:
 			if !ok {
 				b.stopActiveSpinner()
