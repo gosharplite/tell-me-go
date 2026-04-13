@@ -279,3 +279,87 @@ func (a *agent) getLogger() ports.Logger {
 	}
 	return slog.Default()
 }
+
+// InternalAccessor provides access to internal agent components for testing.
+// This is used by the agenttest package to bridge access for external integration tests.
+type InternalAccessor interface {
+	ports.Chatter
+	ApplyConfig(ctx context.Context) error
+	GetCtxManager() *session.ContextManager
+	GetEvents() events.EventBus
+	GetConfigWatcher() session.ConfigWatcher
+	SetTracker(t domain_pricing.CostTracker)
+	GetTracker() domain_pricing.CostTracker
+	GetRuntimeConfig() any
+	SetConfigWatcher(cw session.ConfigWatcher)
+	SetEvents(bus events.EventBus)
+	SetLogger(l ports.Logger)
+	SetRuntimeConfig(cfg any)
+	SetCtxManager(cm *session.ContextManager)
+}
+
+// AsInternal wraps a ports.Chatter to provide access to its internal components.
+func AsInternal(c ports.Chatter) InternalAccessor {
+	if a, ok := c.(*agent); ok {
+		return a
+	}
+	return nil
+}
+
+func (a *agent) ApplyConfig(ctx context.Context) error {
+	return a.applyConfig(ctx)
+}
+
+func (a *agent) GetCtxManager() *session.ContextManager {
+	return a.ctxManager
+}
+
+func (a *agent) GetEvents() events.EventBus {
+	return a.events
+}
+
+func (a *agent) GetConfigWatcher() session.ConfigWatcher {
+	return a.configWatcher
+}
+
+func (a *agent) SetTracker(t domain_pricing.CostTracker) {
+	a.tracker = t
+}
+
+func (a *agent) GetTracker() domain_pricing.CostTracker {
+	return a.tracker
+}
+
+func (a *agent) GetRuntimeConfig() any {
+	return a.config.Load()
+}
+
+func (a *agent) SetConfigWatcher(cw session.ConfigWatcher) {
+	a.configWatcher = cw
+}
+
+func (a *agent) SetEvents(bus events.EventBus) {
+	a.events = bus
+}
+
+func (a *agent) SetLogger(l ports.Logger) {
+	a.logger = l
+}
+
+func (a *agent) SetRuntimeConfig(cfg any) {
+	if rc, ok := cfg.(*runtimeConfig); ok {
+		a.config.Store(rc)
+	}
+}
+
+func (a *agent) SetCtxManager(cm *session.ContextManager) {
+	a.ctxManager = cm
+}
+
+// NewAgentInternal returns an InternalAccessor for testing purposes.
+func NewAgentInternal() InternalAccessor {
+	return &agent{}
+}
+
+// RuntimeConfigInternal exports runtimeConfig for testing purposes.
+type RuntimeConfigInternal = runtimeConfig

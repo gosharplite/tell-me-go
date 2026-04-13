@@ -62,14 +62,14 @@ func TestAgentOptions(t *testing.T) {
 		},
 		{
 			name:   "WithLoader",
-			option: withLoader(mockLoader),
+			option: WithLoader(mockLoader),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockLoader, cfg.loader)
 			},
 		},
 		{
 			name:   "WithSessionLoader",
-			option: withSessionLoader(mockSessionLoader),
+			option: WithSessionLoader(mockSessionLoader),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockSessionLoader, cfg.sessionLoader)
 			},

@@ -39,8 +39,8 @@ func WithSessionProvider(sp ports.SessionProvider) Option {
 	}
 }
 
-// withInitContext sets the context for the agent initialization.
-func withInitContext(ctx context.Context) Option {
+// WithInitContext sets the context for the agent initialization.
+func WithInitContext(ctx context.Context) Option {
 	return func(c *agentConfig) {
 		c.initCtx = ctx
 	}
@@ -69,8 +69,8 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// withLoader sets the configuration loader for the agent.
-func withLoader(loader domain_config.ConfigLoader) Option {
+// WithLoader sets the configuration loader for the agent.
+func WithLoader(loader domain_config.ConfigLoader) Option {
 	return func(c *agentConfig) {
 		c.loader = loader
 	}
@@ -83,8 +83,8 @@ func WithSessionCostTracker(tracker domain_pricing.CostTracker) Option {
 	}
 }
 
-// withSessionLoader sets the session configuration loader for the agent.
-func withSessionLoader(loader domain_config.SessionLoader) Option {
+// WithSessionLoader sets the session configuration loader for the agent.
+func WithSessionLoader(loader domain_config.SessionLoader) Option {
 	return func(c *agentConfig) {
 		c.sessionLoader = loader
 	}
