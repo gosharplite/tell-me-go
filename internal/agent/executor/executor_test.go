@@ -206,7 +206,7 @@ func Test_newDispatcher_NilObserver(t *testing.T) {
 	pipeline := &defaultToolPipeline{}
 	_, err := newDispatcher(cfg, pipeline, nil, &ports.NoOpLogger{}, nil)
 	require.Error(t, err)
-	assert.Equal(t, "ExecutionObserver is required", err.Error())
+	assert.Equal(t, "execution observer is required", err.Error())
 }
 
 func Test_newDispatcher_NilRegistry(t *testing.T) {

@@ -102,7 +102,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	// Case 2: Success
 	msg, metrics, err := cm.SummarizeRange(ctx, 1, "focus")
 	assert.NoError(t, err)
-	assert.Contains(t, msg, "Summarized the first 1 turns")
+	assert.Contains(t, msg, "summarized the first 1 turns")
 	assert.NotNil(t, metrics)
 	assert.Equal(t, int32(5), metrics.PromptTokens)
 
@@ -110,7 +110,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	history.SetInternalContents(nil)
 	msg, _, err = cm.SummarizeRange(ctx, 1, "")
 	assert.NoError(t, err)
-	assert.Equal(t, "History is too short to summarize yet.", msg)
+	assert.Equal(t, "history is too short to summarize yet", msg)
 
 	// Case 4: History changed during summarization (shortened)
 	history.SetInternalContents([]*llm.Content{
@@ -328,7 +328,7 @@ func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 	// It should reach the end (windowSize = 25), then cap numTurns to totalTurns - 1 = 1.
 	msg, _, err := cm.SummarizeRange(ctx, 5, "")
 	assert.NoError(t, err)
-	assert.Contains(t, msg, "Summarized the first 1 turns")
+	assert.Contains(t, msg, "summarized the first 1 turns")
 
 	// Verify history was updated (summarized 1 turn = 24 messages replaced by 2 summary messages)
 	// Original: 25 messages. Turn 1 (24 msgs), Turn 2 (1 msg).

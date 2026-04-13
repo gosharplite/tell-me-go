@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -108,7 +109,7 @@ func NewUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *UIBridge {
 		loopCtx:        loopCtx,
 		loopCancel:     loopCancel,
 		renderer:       renderer,
-		logger:         &ports.NoOpLogger{},
+		logger:         slog.Default(),
 		clock:          clock.RealClock{},
 		eventCh:        make(chan events.Event, 100),
 		cleanupTimeout: 5 * time.Second,
@@ -118,7 +119,7 @@ func NewUIBridge(renderer ports.UIRenderer, opts ...bridgeOption) *UIBridge {
 		opt(b)
 	}
 	if b.logger == nil {
-		b.logger = &ports.NoOpLogger{}
+		b.logger = slog.Default()
 	}
 	b.wg.Add(1)
 	return b
@@ -220,7 +221,7 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 		if r := recover(); r != nil {
 			b.logger.Error("panic in UIBridge loop", "error", r, "stack", string(debug.Stack()))
 			b.stopActiveSpinner()
-			err = fmt.Errorf("UIBridge panicked: %v", r)
+			err = fmt.Errorf("uibridge panicked: %v", r)
 		}
 	}()
 	defer b.wg.Done()
@@ -284,7 +285,7 @@ func (b *UIBridge) enqueueEvent(ctx context.Context, e events.Event) error {
 			b.logger.Debug("Caller context cancelled while waiting to queue critical event")
 			return ctx.Err()
 		case <-b.loopCtx.Done(): // NEW: Consumer liveness check
-			return fmt.Errorf("UIBridge actor is dead: %w", b.loopCtx.Err())
+			return fmt.Errorf("uibridge actor is dead: %w", b.loopCtx.Err())
 		}
 	}
 
@@ -295,7 +296,7 @@ func (b *UIBridge) enqueueEvent(ctx context.Context, e events.Event) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-b.loopCtx.Done(): // NEW: Consumer liveness check
-		return fmt.Errorf("UIBridge actor is dead: %w", b.loopCtx.Err())
+		return fmt.Errorf("uibridge actor is dead: %w", b.loopCtx.Err())
 	default:
 		b.logger.Debug("UI Bridge queue full, shedding load/visual event")
 		return nil

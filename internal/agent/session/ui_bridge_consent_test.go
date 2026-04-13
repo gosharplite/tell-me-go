@@ -245,5 +245,5 @@ func TestUIBridge_DeadConsumer_Unblocks(t *testing.T) {
 
 	// Assert it immediately unblocks and returns the specific liveness check error
 	require.Error(t, err, "Expected HandleEvent to fail because the bridge is dead")
-	assert.Contains(t, err.Error(), "UIBridge actor is dead")
+	assert.Contains(t, err.Error(), "uibridge actor is dead")
 }

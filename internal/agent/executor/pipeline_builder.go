@@ -29,13 +29,13 @@ func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, 
 		return nil, errors.New("registry is required")
 	}
 	if bus == nil {
-		return nil, errors.New("EventBus is required")
+		return nil, errors.New("event bus is required")
 	}
 	if sm == nil {
-		return nil, errors.New("SecurityManager is required")
+		return nil, errors.New("security manager is required")
 	}
 	if observer == nil {
-		return nil, errors.New("ExecutionObserver is required")
+		return nil, errors.New("execution observer is required")
 	}
 	if logger == nil {
 		return nil, errors.New("logger is required")

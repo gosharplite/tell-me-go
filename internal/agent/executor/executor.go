@@ -56,7 +56,7 @@ func (p *defaultToolPipeline) ExecuteTool(parentCtx context.Context, call *llm.F
 		if r := recover(); r != nil {
 			result = tools.ToolResult{
 				Text:  "Tool \"" + call.Name + "\" encountered an internal fatal error (panic) and was terminated.",
-				Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
+				Error: fmt.Errorf("%w: tool execution panic: %v", llm.ErrTerminal, r),
 			}
 		}
 	}()
@@ -181,7 +181,7 @@ func validateDispatcherDeps(pipeline ToolPipeline, logger ports.Logger, observer
 		return errors.New("pipeline is required")
 	}
 	if observer == nil {
-		return errors.New("ExecutionObserver is required")
+		return errors.New("execution observer is required")
 	}
 	if logger == nil {
 		return errors.New("logger is required")
@@ -427,7 +427,7 @@ func (e *Dispatcher) executeSerialBatch(ctx context.Context, batch taskBatch, ca
 		defer func() {
 			if r := recover(); r != nil {
 				e.logger.Error("panic in serial execution", "panic", r, "stack", string(debug.Stack()))
-				err := fmt.Errorf("%w: tool execution Panic: %v", llm.ErrTerminal, r)
+				err := fmt.Errorf("%w: tool execution panic: %v", llm.ErrTerminal, r)
 				tr = tools.ToolResult{Text: err.Error(), Error: err}
 			}
 		}()
@@ -476,7 +476,7 @@ func (e *Dispatcher) parallelWorker(ctx context.Context, calls []*llm.FunctionCa
 		if r := recover(); r != nil {
 			e.logger.Error("panic in worker goroutine", "panic", r, "stack", string(debug.Stack()))
 			if currentJobIdx != -1 {
-				err := fmt.Errorf("%w: tool execution Panic: %v", llm.ErrTerminal, r)
+				err := fmt.Errorf("%w: tool execution panic: %v", llm.ErrTerminal, r)
 				resultsCh <- toolExecResult{
 					index: currentJobIdx,
 					name:  currentJobName,
@@ -492,7 +492,7 @@ func (e *Dispatcher) parallelWorker(ctx context.Context, calls []*llm.FunctionCa
 			resultsCh <- toolExecResult{
 				index: -1,
 				name:  "context_cancelled",
-				tr:    tools.ToolResult{Text: "Skipped: Context cancelled", Error: ctx.Err()},
+				tr:    tools.ToolResult{Text: "skipped: context cancelled", Error: ctx.Err()},
 			}
 			return // Graceful exit on cancellation
 		case i, ok := <-jobsCh:
@@ -535,7 +535,7 @@ func (e *Dispatcher) evaluateBatchOutcome(ctx context.Context, batchIdx int, bat
 			e.logger.Debug("Serial batch failed or interrupted, halting execution plan",
 				"batch_idx", batchIdx,
 				"tool_name", calls[batch.tasks[0]].Name)
-			e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
+			e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, results, nil, "skipped: execution halted due to previous serial tool error, timeout or cancellation")
 
 			if ctx.Err() != nil {
 				return true, ctx.Err()

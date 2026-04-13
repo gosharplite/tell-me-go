@@ -183,8 +183,8 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if res.Text != "Summarized the first 1 turns of history." {
-			t.Errorf("expected text 'Summarized the first 1 turns of history.', got '%s'", res.Text)
+		if res.Text != "summarized the first 1 turns of history" {
+			t.Errorf("expected text 'summarized the first 1 turns of history', got '%s'", res.Text)
 		}
 		metrics := res.Metadata["metrics"].(*llm.Metrics)
 		if metrics.ResponseTokens != 10 {

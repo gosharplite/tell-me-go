@@ -200,7 +200,7 @@ func TestDispatcher_Errors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected nil error, got: %v", err)
 		}
-		verifyErrorResponse(t, resp, "Tool \"missing\" is not defined")
+		verifyErrorResponse(t, resp, "tool \"missing\" is not defined")
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -217,7 +217,7 @@ func TestDispatcher_Errors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected nil error, got: %v", err)
 		}
-		verifyErrorResponse(t, resp, "Did you mean \"list_files\"?")
+		verifyErrorResponse(t, resp, "did you mean \"list_files\"?")
 	})
 
 	t.Run("Security Violation", func(t *testing.T) {
@@ -352,7 +352,7 @@ func TestDispatcher_PanicRecovery(t *testing.T) {
 			t.Errorf("expected serial panic error, got %s", res0)
 		}
 		res1 := resp.Parts[1].FunctionResponse.Response["result"].(string)
-		if !strings.Contains(res1, "Skipped: Execution halted") {
+		if !strings.Contains(res1, "skipped: execution halted") {
 			t.Errorf("expected skipped message, got %s", res1)
 		}
 	})

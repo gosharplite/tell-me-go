@@ -93,7 +93,7 @@ func TestSafetyDecorator(t *testing.T) {
 			name:              "Panic caught",
 			nextPanic:         true,
 			timeout:           1 * time.Second,
-			expectedErrSubstr: "Panic detected",
+			expectedErrSubstr: "tool execution panic",
 		},
 		{
 			name:              "Timeout",

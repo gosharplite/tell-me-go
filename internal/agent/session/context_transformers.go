@@ -230,7 +230,7 @@ func (t *HistoryRepairer) Transform(ctx context.Context, req *ports.ContextReque
 				FunctionResponse: &llm.FunctionResponse{
 					ID:       p.FunctionCall.ID, // Copy ID from the function call
 					Name:     p.FunctionCall.Name,
-					Response: map[string]interface{}{"result": "Error: System rebooted or session interrupted during tool execution. Results lost."},
+					Response: map[string]interface{}{"result": "error: system rebooted or session interrupted during tool execution; results lost"},
 				},
 			})
 		}

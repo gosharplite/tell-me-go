@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -72,14 +73,14 @@ func (t *TokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.
 
 	strategy := t.getStrategy()
 	if strategy.Evaluate(tokens) {
-		return t.triggerSummarization(ctx, req, tokens, strategy.GetThreshold(), "High-tier pricing threshold reached")
+		return t.triggerSummarization(ctx, req, tokens, strategy.GetThreshold(), "high-tier pricing threshold reached")
 	}
 	return tokens, nil
 }
 
 func (t *TokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.ContextRequest, tokens int) (int, error) {
 	if t.MaxTokens > 0 && tokens > int(float64(t.MaxTokens)*0.9) {
-		return t.triggerSummarization(ctx, req, tokens, t.MaxTokens, "Safety limit pressure (> 90%)")
+		return t.triggerSummarization(ctx, req, tokens, t.MaxTokens, "safety limit pressure (> 90%)")
 	}
 	return tokens, nil
 }
@@ -152,7 +153,7 @@ func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 			}
 
 			e2 := events.SystemMessageEvent{
-				Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
+				Message: fmt.Sprintf("payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer", tokens, limit),
 				Level:   "error",
 			}
 			if err := events.SafePublish(ctx, t.Events, e2); err != nil {
@@ -186,7 +187,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 
 	// 2. Logging
 	subsetTokens := t.Estimator.EstimateTokens(req.History[start:end])
-	msg := fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens)
+	msg := fmt.Sprintf("auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure", numTurns, start, end, subsetTokens)
 	t.publishSystemEvent(ctx, msg, "info")
 
 	// 3. Service Call
@@ -201,7 +202,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	}
 
 	// Signal completion to the UI
-	t.publishSystemEvent(ctx, "Auto-summarization complete. Context successfully compressed.", "info")
+	t.publishSystemEvent(ctx, "auto-summarization complete; context successfully compressed", "info")
 
 	// 4. State Mutation
 	req.History = applySummaryToHistory(req.History, start, end, summary)
@@ -314,11 +315,11 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 
 	sumUser := &llm.Content{
 		Role:  "user",
-		Parts: []*llm.Part{{Text: "System Auto-Summary (context limit reached):\n\n" + summary}},
+		Parts: []*llm.Part{{Text: "system auto-summary (context limit reached):\n\n" + summary}},
 	}
 	sumModel := &llm.Content{
 		Role:  "model",
-		Parts: []*llm.Part{{Text: "Understood. Context compressed."}},
+		Parts: []*llm.Part{{Text: "understood: context compressed"}},
 	}
 
 	// Handle role alternation at the start of the injection
@@ -356,5 +357,5 @@ func (t *TokenGatekeeper) getLogger() ports.Logger {
 	if t.Logger != nil {
 		return t.Logger
 	}
-	return &ports.NoOpLogger{}
+	return slog.Default()
 }

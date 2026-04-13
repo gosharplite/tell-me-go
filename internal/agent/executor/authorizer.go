@@ -42,7 +42,7 @@ func (a *securityAuthorizer) Authorize(ctx context.Context, tool *tools.ToolDecl
 	a.mu.RUnlock()
 
 	if sm != nil && !sm.IsCommandAllowed(call.Name) {
-		msg := fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name)
+		msg := fmt.Sprintf("security policy: command %q is not allowed", call.Name)
 		return fmt.Errorf("%s: %w", msg, tools.ErrSecurityPolicy)
 	}
 

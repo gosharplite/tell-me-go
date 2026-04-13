@@ -108,7 +108,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	}
 
 	// Index 0 should be the auto-summary user message in the returned context window
-	if !strings.Contains(preparedHistory[0].Parts[0].Text, "System Auto-Summary") {
+	if !strings.Contains(preparedHistory[0].Parts[0].Text, "system auto-summary") {
 		t.Errorf("first message should be auto-summary, got: %s", preparedHistory[0].Parts[0].Text)
 	}
 
@@ -134,7 +134,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	logReceived := make(chan string, 1)
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
 		if msg, ok := e.(events.SystemMessageEvent); ok {
-			if strings.Contains(msg.Message, "Auto-summarizing") {
+			if strings.Contains(strings.ToLower(msg.Message), "auto-summarizing") {
 				logReceived <- msg.Message
 			}
 		}
@@ -265,7 +265,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	}
 
 	// First message should be the auto-summary
-	if !strings.Contains(preparedHistory[0].Parts[0].Text, "System Auto-Summary") {
+	if !strings.Contains(preparedHistory[0].Parts[0].Text, "system auto-summary") {
 		t.Errorf("first message should be auto-summary, got: %s", preparedHistory[0].Parts[0].Text)
 	}
 

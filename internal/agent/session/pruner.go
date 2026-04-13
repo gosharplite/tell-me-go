@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -24,7 +25,7 @@ func (t *HistoryPruner) getLogger() ports.Logger {
 	if t.Logger != nil {
 		return t.Logger
 	}
-	return &ports.NoOpLogger{}
+	return slog.Default()
 }
 
 func (t *HistoryPruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
@@ -66,7 +67,7 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ports.ContextRequest
 }
 
 func (t *HistoryPruner) reportPruning(ctx context.Context, req *ports.ContextRequest, initialTurnCount, prunedCount, keptCount int) error {
-	t.getLogger().Info("History pruning triggered",
+	t.getLogger().Info("history pruning triggered",
 		"initial_turns", initialTurnCount,
 		"pruned_turns", prunedCount,
 		"remaining_turns", keptCount,
@@ -75,7 +76,7 @@ func (t *HistoryPruner) reportPruning(ctx context.Context, req *ports.ContextReq
 
 	if t.Events != nil {
 		evt := events.SystemMessageEvent{
-			Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, keptCount),
+			Message: fmt.Sprintf("history pruned: %d turns removed, %d turns remaining", prunedCount, keptCount),
 			Level:   "info",
 		}
 		if err := events.SafePublish(ctx, t.Events, evt); err != nil {

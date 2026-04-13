@@ -345,7 +345,7 @@ func verifyPinAction(t *testing.T, it *session.InternalTools, h ports.HistoryMan
 		t.Fatalf("ManageHistory failed: %v", err)
 	}
 
-	expectedMsg := fmt.Sprintf("Turn %d has been successfully %sned.", int(index), action)
+	expectedMsg := fmt.Sprintf("turn %d has been successfully %sned", int(index), action)
 	if resp.Text != expectedMsg {
 		t.Errorf("unexpected response: got %q, want %q", resp.Text, expectedMsg)
 	}

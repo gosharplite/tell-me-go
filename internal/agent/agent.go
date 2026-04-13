@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync/atomic"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
@@ -57,7 +58,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(registry))
 	logger := cfg.logger
 	if logger == nil {
-		logger = &ports.NoOpLogger{}
+		logger = slog.Default()
 	}
 	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, logger, &executor.TelemetryLogger{})
 	if err != nil {
@@ -67,7 +68,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	cw := session.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
 
 	if cfg.loader != nil || cfg.sessionLoader != nil {
-		cw = session.NewFileConfigWatcher(cfg.loader, cfg.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, cfg.logger)
+		cw = session.NewFileConfigWatcher(cfg.loader, cfg.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, logger)
 	}
 
 	a := &agent{
@@ -78,7 +79,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 		events:        bus,
 		tracker:       cfg.tracker,
 		turnsLogger:   cfg.turnsLogger,
-		logger:        cfg.logger,
+		logger:        logger,
 	}
 
 	a.config.Store(&runtimeConfig{
@@ -103,7 +104,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	}
 
 	ctxManager := session.NewContextManager(strategy, hManager, bus, factory,
-		session.WithLogger(cfg.logger),
+		session.WithLogger(logger),
 		session.WithSessionProvider(cfg.sessionProvider),
 	)
 	a.ctxManager = ctxManager
@@ -276,5 +277,5 @@ func (a *agent) getLogger() ports.Logger {
 	if a.logger != nil {
 		return a.logger
 	}
-	return &ports.NoOpLogger{}
+	return slog.Default()
 }

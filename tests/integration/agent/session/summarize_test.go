@@ -53,13 +53,13 @@ func TestAgent_SummarizeHistory_Success(t *testing.T) {
 			turns:          100,
 			historyTurns:   2, // 4 messages
 			expectedMsgs:   4, // (4-2)/2 = 1 turn. 4 - 2 + 2 = 4.
-			expectedResult: "Summarized the first 1 turns of history.",
+			expectedResult: "summarized the first 1 turns of history",
 		},
 		{
 			name:           "history too short",
 			turns:          2,
 			historyTurns:   1, // 2 messages
-			expectedResult: "History is too short to summarize yet.",
+			expectedResult: "history is too short to summarize yet",
 		},
 		{
 			name:         "with focus",

@@ -303,7 +303,7 @@ func (m *dynamicMockEstimator) EstimateTokens(contents []*llm.Content) int {
 	// If it contains a summary, return less tokens
 	for _, c := range contents {
 		for _, p := range c.Parts {
-			if strings.Contains(p.Text, "System Auto-Summary") {
+			if strings.Contains(p.Text, "system auto-summary") {
 				return 500
 			}
 		}
@@ -881,14 +881,14 @@ func TestApplySummaryToHistory_ModelMerging(t *testing.T) {
 	foundUnderstood := false
 	foundM1 := false
 	for _, p := range got[1].Parts {
-		if strings.Contains(p.Text, "Understood") {
+		if strings.Contains(p.Text, "understood") {
 			foundUnderstood = true
 		}
 		if strings.Contains(p.Text, "m1") {
 			foundM1 = true
 		}
 	}
-	require.True(t, foundUnderstood, "Understood not found in parts")
+	require.True(t, foundUnderstood, "understood not found in parts")
 	require.True(t, foundM1, "m1 not found in parts")
 }
 
@@ -918,7 +918,7 @@ func TestApplySummaryToHistory_Merging(t *testing.T) {
 		assertHasText(got[0], "u1")
 		assertHasText(got[0], "sum")
 		assertHasText(got[1], "m2")
-		assertHasText(got[1], "Understood")
+		assertHasText(got[1], "understood")
 	})
 }
 
@@ -1094,7 +1094,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	for _, ev := range publishedEvents {
 		if sre, ok := ev.(events.SummarizationRequired); ok {
 			found = true
-			require.Equal(t, "High-tier pricing threshold reached", sre.Reason)
+			require.Equal(t, "high-tier pricing threshold reached", sre.Reason)
 		}
 	}
 	require.True(t, found, "events.SummarizationRequired not found")
@@ -1238,7 +1238,7 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 				last := req.History[len(req.History)-1]
 				require.Equal(t, "user", last.Role)
 				require.NotNil(t, last.Parts[0].FunctionResponse)
-				require.Contains(t, last.Parts[0].FunctionResponse.Response["result"].(string), "System rebooted")
+				require.Contains(t, last.Parts[0].FunctionResponse.Response["result"].(string), "system rebooted")
 			}
 			require.Equal(t, tt.expectPersist, req.PersistHistory)
 		})

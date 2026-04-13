@@ -94,7 +94,7 @@ func TestNewPipelineDispatcher(t *testing.T) {
 			logger:   &ports.NoOpLogger{},
 			observer: &mockLogger{},
 			wantErr:  true,
-			errStr:   "EventBus is required",
+			errStr:   "event bus is required",
 		},
 		{
 			name:     "missing security manager",
@@ -104,7 +104,7 @@ func TestNewPipelineDispatcher(t *testing.T) {
 			logger:   &ports.NoOpLogger{},
 			observer: &mockLogger{},
 			wantErr:  true,
-			errStr:   "SecurityManager is required",
+			errStr:   "security manager is required",
 		},
 		{
 			name:     "missing logger",
@@ -124,7 +124,7 @@ func TestNewPipelineDispatcher(t *testing.T) {
 			logger:   &ports.NoOpLogger{},
 			observer: nil,
 			wantErr:  true,
-			errStr:   "ExecutionObserver is required",
+			errStr:   "execution observer is required",
 		},
 	}
 

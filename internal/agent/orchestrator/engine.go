@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -500,7 +501,7 @@ func (p *GuardStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, err
 
 	maxTurns := Turn.CtxManager.GetLimits().MaxToolTurns
 	if Turn.Index > maxTurns {
-		return ProcessResult{}, NewAgentError(llm.ErrTerminal, fmt.Sprintf("Turn %d exceeds limit %d", Turn.Index, maxTurns), llm.ErrMaxTurnsReached)
+		return ProcessResult{}, NewAgentError(llm.ErrTerminal, fmt.Sprintf("turn %d exceeds limit %d", Turn.Index, maxTurns), llm.ErrMaxTurnsReached)
 	}
 
 	evt := events.TurnStarted{Turn: Turn.Index, MaxTurns: maxTurns}
@@ -841,14 +842,14 @@ func (e *Engine) getLogger() ports.Logger {
 	if cfg != nil && cfg.Logger != nil {
 		return cfg.Logger
 	}
-	return &ports.NoOpLogger{}
+	return slog.Default()
 }
 
 func (t *Turn) getLogger() ports.Logger {
 	if t.Logger != nil {
 		return t.Logger
 	}
-	return &ports.NoOpLogger{}
+	return slog.Default()
 }
 
 // StartTelemetry coordinates the lifecycle of background listeners and telemetry workers.

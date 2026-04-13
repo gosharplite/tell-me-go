@@ -107,7 +107,7 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 	if pinned {
 		status = "pinned"
 	}
-	return tools.ToolResult{Text: fmt.Sprintf("Turn %d has been successfully %s.", index, status)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("turn %d has been successfully %s", index, status)}, nil
 }
 
 // RegisterInternal registers the internal tools with the provided registrar.

@@ -37,7 +37,7 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	fixedTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	mClock.On("Now").Return(fixedTime)
 
-	entropyErr := fmt.Errorf("OS entropy exhaustion")
+	entropyErr := fmt.Errorf("os entropy exhaustion")
 	mEntropy.On("Read", mock.Anything).Return(nil, 0, entropyErr)
 
 	var stderr bytes.Buffer
@@ -67,5 +67,5 @@ func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr.String(), "[WARN] Entropy source failure, degrading to time-based session ID: OS entropy exhaustion")
+	assert.Contains(t, stderr.String(), "[WARN] Entropy source failure, degrading to time-based session ID: os entropy exhaustion")
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -51,7 +52,7 @@ func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, 
 		History:  history,
 		Events:   bus,
 		Factory:  factory,
-		logger:   &ports.NoOpLogger{},
+		logger:   slog.Default(),
 	}
 
 	for _, opt := range opts {
@@ -316,7 +317,7 @@ func (cm *ContextManager) handleSummarizationPrep(subset []*llm.Content, err err
 	if err != nil {
 		return "", nil, err
 	}
-	return "History is too short to summarize yet.", nil, nil
+	return "history is too short to summarize yet", nil, nil
 }
 
 func (cm *ContextManager) wrapSummarizationError(err error) error {
@@ -374,7 +375,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "", nil, err
 	}
 
-	return fmt.Sprintf("Summarized the first %d turns of history.", actualTurns), metrics, nil
+	return fmt.Sprintf("summarized the first %d turns of history", actualTurns), metrics, nil
 }
 
 func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {

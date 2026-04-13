@@ -254,7 +254,7 @@ func (d *safetyDecorator) handlePanic(ctx context.Context, r interface{}, toolNa
 
 	return tools.ToolResult{
 		Text:  fmt.Sprintf("Tool %q encountered an internal fatal error (panic) and was terminated.", toolName),
-		Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
+		Error: fmt.Errorf("%w: tool execution panic: %v", llm.ErrTerminal, r),
 	}
 }
 
