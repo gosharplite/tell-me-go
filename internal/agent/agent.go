@@ -280,8 +280,9 @@ func (a *agent) getLogger() ports.Logger {
 	return slog.Default()
 }
 
-// InternalAccessor provides access to internal agent components for testing.
-// This is used by the agenttest package to bridge access for external integration tests.
+// InternalAccessor provides access to internal agent components for white-box testing.
+// [FOR TESTING ONLY] DO NOT use this interface in production code or main application logic.
+// It is intended solely for the agenttest package to bridge internal state for integration tests.
 type InternalAccessor interface {
 	ports.Chatter
 	ApplyConfig(ctx context.Context) error
@@ -299,6 +300,7 @@ type InternalAccessor interface {
 }
 
 // AsInternal wraps a ports.Chatter to provide access to its internal components.
+// [FOR TESTING ONLY] This is a testing utility and should not be used in production code paths.
 func AsInternal(c ports.Chatter) InternalAccessor {
 	if a, ok := c.(*agent); ok {
 		return a
@@ -357,9 +359,11 @@ func (a *agent) SetCtxManager(cm *session.ContextManager) {
 }
 
 // NewAgentInternal returns an InternalAccessor for testing purposes.
+// [FOR TESTING ONLY] DO NOT use in production code.
 func NewAgentInternal() InternalAccessor {
 	return &agent{}
 }
 
 // RuntimeConfigInternal exports runtimeConfig for testing purposes.
+// [FOR TESTING ONLY]
 type RuntimeConfigInternal = runtimeConfig
