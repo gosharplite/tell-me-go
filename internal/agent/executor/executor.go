@@ -149,7 +149,7 @@ func WithLongRunningTimeout(timeout time.Duration) ExecutorOption {
 	}
 }
 
-func WithZombieTimeout(timeout time.Duration) ExecutorOption {
+func withZombieTimeout(timeout time.Duration) ExecutorOption {
 	return func(cfg *dispatcherConfig) {
 		cfg.ZombieTimeout = timeout
 	}

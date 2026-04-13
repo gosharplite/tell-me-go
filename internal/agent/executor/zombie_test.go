@@ -123,7 +123,7 @@ func TestDispatcher_ZombieTool_LogCritical(t *testing.T) {
 
 	// Use short zombie timeout, but generous enough for -race
 	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, mockLog,
-		WithZombieTimeout(200*time.Millisecond),
+		withZombieTimeout(200*time.Millisecond),
 		WithToolTimeout(200*time.Millisecond),
 	)
 	require.NoError(t, err)

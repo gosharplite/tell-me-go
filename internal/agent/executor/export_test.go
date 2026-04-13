@@ -10,4 +10,3 @@ type PanicRegistry = panicRegistry
 type MockEventBus = mockEventBus
 type MockLogger = mockLogger
 
-const CISafeTimeout = ciSafeTimeout
