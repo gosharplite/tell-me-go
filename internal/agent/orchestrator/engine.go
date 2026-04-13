@@ -252,32 +252,27 @@ func (e *Engine) ApplyOptions(opts ...EngineOption) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	for {
-		oldCfg := e.config.Load()
-		newCfg := *oldCfg // shallow copy
-		for _, opt := range opts {
-			opt(e, &newCfg)
-		}
-		if e.config.CompareAndSwap(oldCfg, &newCfg) {
-			break
-		}
+	oldCfg := e.config.Load()
+	newCfg := *oldCfg
+	for _, opt := range opts {
+		opt(e, &newCfg)
 	}
+	e.config.Store(&newCfg)
 }
 
 // Reconfigure propagates configuration changes to the engine.
 func (e *Engine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.CostTracker) {
-	for {
-		oldCfg := e.config.Load()
-		newCfg := *oldCfg
-		newCfg.ProviderName = cfg.ProviderName
-		newCfg.Model = cfg.Model
-		newCfg.Mode = cfg.Mode
-		newCfg.PricingOverrides = cfg.PricingOverrides
-		newCfg.CostTracker = tracker
-		if e.config.CompareAndSwap(oldCfg, &newCfg) {
-			break
-		}
-	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	oldCfg := e.config.Load()
+	newCfg := *oldCfg
+	newCfg.ProviderName = cfg.ProviderName
+	newCfg.Model = cfg.Model
+	newCfg.Mode = cfg.Mode
+	newCfg.PricingOverrides = cfg.PricingOverrides
+	newCfg.CostTracker = tracker
+	e.config.Store(&newCfg)
 }
 
 // NewEngine creates a new Engine with a default pipeline.
