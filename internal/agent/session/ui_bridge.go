@@ -77,6 +77,7 @@ const (
 
 // UIBridge translates domain events into UI updates.
 type UIBridge struct {
+	mu                 sync.RWMutex
 	loopCtx            context.Context
 	loopCancel         context.CancelFunc
 	cancel             context.CancelFunc
@@ -180,7 +181,15 @@ func (b *UIBridge) Cleanup() {
 	b.cleanupOnce.Do(func() {
 		atomic.AddInt32(&b.cleanupInvocations, 1)
 
-		// 1. Set up the wait mechanism
+		// 1. Signal cancellation to unblock the Listen loop if it's waiting for events.
+		b.mu.RLock()
+		cancel := b.cancel
+		b.mu.RUnlock()
+		if cancel != nil {
+			cancel()
+		}
+
+		// 2. Set up the wait mechanism
 		done := make(chan struct{})
 		go func() {
 			defer func() {
@@ -193,7 +202,7 @@ func (b *UIBridge) Cleanup() {
 			close(done)
 		}()
 
-		// 2. Wait with timeout
+		// 3. Wait with timeout for the background workers to exit.
 		timer := time.NewTimer(b.cleanupTimeout)
 		defer timer.Stop()
 
@@ -202,20 +211,18 @@ func (b *UIBridge) Cleanup() {
 			// Clean exit: all workers finished draining within the timeout
 		case <-timer.C:
 			// Timeout reached: The renderer might be deadlocked or too slow.
-			b.logger.Warn("UI Bridge cleanup timed out, forcing context cancellation")
-		}
-
-		// Ensure the context is cancelled to unblock the Listen loop.
-		if b.cancel != nil {
-			b.cancel()
+			b.logger.Warn("UI Bridge cleanup timed out")
 		}
 	})
 }
 func (b *UIBridge) Listen(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
+	b.mu.Lock()
 	b.cancel = cancel
+	b.mu.Unlock()
 	defer cancel()
 
+	defer b.wg.Done()
 	defer b.loopCancel()
 	defer func() {
 		if r := recover(); r != nil {
@@ -224,7 +231,6 @@ func (b *UIBridge) Listen(ctx context.Context) (err error) {
 			err = fmt.Errorf("uibridge panicked: %v", r)
 		}
 	}()
-	defer b.wg.Done()
 
 	b.startOnce.Do(func() {
 		close(b.started)

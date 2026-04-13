@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -191,6 +192,7 @@ type Turn struct {
 
 // Engine manages the "Think -> Act -> Observe" cycle using a state machine.
 type Engine struct {
+	mu           sync.RWMutex
 	config       atomic.Pointer[engineConfig]
 	ctxManager   *session.ContextManager
 	gateway      llm.LLMGateway
@@ -243,6 +245,9 @@ func WithEngineLogger(l ports.Logger) EngineOption {
 
 // ApplyOptions applies new options to the engine.
 func (e *Engine) ApplyOptions(opts ...EngineOption) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	for {
 		oldCfg := e.config.Load()
 		newCfg := *oldCfg // shallow copy
@@ -385,13 +390,21 @@ func (e *Engine) CreateTurn(index int, startTime time.Time) *Turn {
 }
 
 func (e *Engine) notifyBeforeTurn(Turn *Turn) {
-	for _, h := range e.hooks {
+	e.mu.RLock()
+	hooks := make([]TurnHook, len(e.hooks))
+	copy(hooks, e.hooks)
+	e.mu.RUnlock()
+	for _, h := range hooks {
 		h.BeforeTurn(Turn)
 	}
 }
 
 func (e *Engine) notifyAfterTurn(Turn *Turn, err error) {
-	for _, h := range e.hooks {
+	e.mu.RLock()
+	hooks := make([]TurnHook, len(e.hooks))
+	copy(hooks, e.hooks)
+	e.mu.RUnlock()
+	for _, h := range hooks {
 		h.AfterTurn(Turn, err)
 	}
 }
@@ -449,7 +462,10 @@ func (e *Engine) finalizeTurnTrace(trace *telemetry.TurnTrace, err error) {
 
 func (e *Engine) EmergencySave(Turn *Turn) {
 	if Turn.State.Response != nil && len(Turn.State.Response.Parts) > 0 {
-		if p, ok := e.processors[PhasePersisting]; ok {
+		e.mu.RLock()
+		p, ok := e.processors[PhasePersisting]
+		e.mu.RUnlock()
+		if ok {
 			saveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			_, _ = p.Process(saveCtx, Turn)
@@ -458,7 +474,10 @@ func (e *Engine) EmergencySave(Turn *Turn) {
 }
 
 func (e *Engine) ExecutePhase(ctx context.Context, Turn *Turn) (ProcessResult, error) {
+	e.mu.RLock()
 	processor, ok := e.processors[Turn.State.Phase]
+	e.mu.RUnlock()
+
 	if !ok {
 		Turn.State.Phase = PhaseComplete // Force exit to prevent infinite loop in runPhaseLoop
 		return ProcessResult{}, NewAgentError(ErrLogic, fmt.Sprintf("no processor for phase: %s", Turn.State.Phase), nil)
@@ -487,7 +506,11 @@ func (e *Engine) determineNextPhase(current TurnPhase, res ProcessResult, err er
 }
 
 func (e *Engine) notifyTransition(from, to TurnPhase, state *TurnState) {
-	for _, h := range e.hooks {
+	e.mu.RLock()
+	hooks := make([]TurnHook, len(e.hooks))
+	copy(hooks, e.hooks)
+	e.mu.RUnlock()
+	for _, h := range hooks {
 		h.OnPhaseTransition(from, to, state)
 	}
 }
