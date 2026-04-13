@@ -15,8 +15,16 @@ import (
 )
 
 var (
-	reRateLimit = regexp.MustCompile(`(?i)(HTTP 429|STATUS: 429|RATE_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|QUOTA|RESOURCE EXHAUSTED)`)
-	reTransient = regexp.MustCompile(`(?i)(HTTP 50[0234]|STATUS: 50[0234]|HTTP 499|STATUS: 499|CANCELLED|INTERNAL_SERVER_ERROR|INTERNAL SERVER ERROR|BAD_GATEWAY|BAD GATEWAY|SERVICE_UNAVAILABLE|SERVICE UNAVAILABLE|GATEWAY_TIMEOUT|GATEWAY TIMEOUT|DEADLINE_EXCEEDED|UNAVAILABLE|(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[_ ]TIMEOUT)`)
+	// reRateLimit identifies standard rate limiting signals from providers.
+	reRateLimit = regexp.MustCompile(`(?i)(\b(?:HTTP|STATUS|CODE|ERROR|ERR|STATUS_CODE)[\s_:]*(?:429)\b|[:]\s*(?:429)\b|RATE[\s_:]*LIMIT|RESOURCE[\s_:]*EXHAUSTED|QUOTA)`)
+
+	// reTransient matches infrastructure errors that should trigger an automatic retry.
+	// Design: Permissive but non-greedy.
+	// 1. Match 5xx/499/408 codes with various prefixes (HTTP, Status, Error, Code, etc) or common delimiters (:).
+	// 2. Uses word boundaries (\b) and specific prefix requirements to avoid greedy false positives
+	//    like "500 tokens" or "context window: 128000".
+	// 3. Delimiters are flexible (space, underscore, colon) to handle varied SDK logging formats.
+	reTransient = regexp.MustCompile(`(?i)(\b(?:HTTP|STATUS|CODE|ERROR|ERR|STATUS_CODE)[\s_:]*(?:5\d{2}|499|408)\b|[:]\s*(?:5\d{2}|499|408)\b|CANCELLED|INTERNAL[\s_:]+SERVER[\s_:]+ERROR|BAD[\s_:]+GATEWAY|SERVICE[\s_:]+UNAVAILABLE|DEADLINE[\s_:]+EXCEEDED|UNAVAILABLE|\b(?:CONNECTION|REQUEST|GATEWAY|OPERATION)[\s_:]+TIMEOUT\b)`)
 )
 
 // APIError represents an error returned by an LLM provider's API.
@@ -97,7 +105,7 @@ func classifyHTTP(err error) (error, bool) {
 			return fmt.Errorf("%w: %w", llm.ErrAuth, err), true
 		case status == 429:
 			return fmt.Errorf("%w: %w", llm.ErrRateLimit, err), true
-		case status == 499:
+		case status == 499 || status == 408:
 			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
 		case status >= 500:
 			return fmt.Errorf("%w: %w", llm.ErrTransient, err), true
