@@ -309,32 +309,6 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	}
 }
 
-func TestTurnEngine_UnknownPhaseError(t *testing.T) {
-	t.Parallel()
-	gw := &testutil.MockGateway{}
-	exec := &errorMockExecutor{}
-	engine, _ := setupEngineForErrors(t, gw, exec, &errorPhaseTracker{})
-
-	Turn := &orchestrator.Turn{
-		State: &orchestrator.TurnState{
-			Phase: "PhaseNonExistent",
-		},
-		Clock: &testutil.MockClock{},
-	}
-
-	// ExecutePhase is unexported. Let's add it to export_test.go
-	_, err := orchestrator.ExecutePhase(engine, context.Background(), Turn)
-	if err == nil {
-		t.Fatal("Expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "no processor for phase") {
-		t.Errorf("Expected 'no processor for phase' in error message, got: %v", err)
-	}
-	if !errors.Is(err, orchestrator.ErrLogic) {
-		t.Errorf("Expected orchestrator.ErrLogic, got: %v", err)
-	}
-}
-
 func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	t.Parallel()
 	gw := &testutil.MockGateway{

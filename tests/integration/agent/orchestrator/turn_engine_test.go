@@ -1071,30 +1071,25 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	tracker := &testutil.MockEngineCostTracker{}
 	reg := &testutil.MockToolRegistry{}
 	hManager := &testutil.MockHistoryManager{}
+	// Seed history
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	cm := orchestratortest.NewTestContextManager(strategy, hManager, bus)
+	gw := &testutil.MockGateway{}
 
-	e := orchestrator.NewEngine(&testutil.MockGateway{}, &testutil.MockAgentExecutor{}, cm, reg, bus, strategy, orchestrator.WithEngineCostTracker(tracker))
+	e := orchestrator.NewEngine(gw, &testutil.MockAgentExecutor{}, cm, reg, bus, strategy, orchestrator.WithEngineCostTracker(tracker))
 
-	t.Run("Cost tracking via middleware", func(t *testing.T) {
+	t.Run("Cost tracking via Run", func(t *testing.T) {
 		t.Parallel()
 		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100}
-		tn := &orchestrator.Turn{
-			State: &orchestrator.TurnState{
-				Phase:   orchestrator.PhaseInference,
-				Metrics: metrics,
-			},
-			CostTracker: tracker,
-			StartTime:   time.Now(),
+
+		// Mock the gateway to return specific metrics
+		gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, metrics, nil
 		}
 
-		// Use the engine's middleware directly
-		middleware := e.WithMetrics()
-		finalProcessor := orchestrator.TurnProcessorFunc(func(ctx context.Context, t *orchestrator.Turn) (orchestrator.ProcessResult, error) {
-			return orchestrator.ProcessResult{}, nil
-		})
-
-		if _, err := middleware(finalProcessor).Process(context.Background(), tn); err != nil {
+		if err := e.Run(context.Background(), time.Now()); err != nil {
 			t.Fatal(err)
 		}
 

@@ -162,7 +162,7 @@ func TestEngine_PrepareNextTurn(t *testing.T) {
 		},
 	}
 
-	e.PrepareNextTurn(turn)
+	e.prepareNextTurn(turn)
 
 	assert.Equal(t, 1, turn.Index)
 	assert.Equal(t, 1, turn.State.CurrentTurns)
@@ -284,7 +284,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 			},
 		}
 
-		step.ValidatePayloadLimits(ctx, turn)
+		step.validatePayloadLimits(ctx, turn)
 
 		for _, e := range bus.GetEvents() {
 			assert.NotEqual(t, "SystemMessageEvent", e.Type())
@@ -315,7 +315,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 			},
 		}
 
-		step.ValidatePayloadLimits(ctx, turn)
+		step.validatePayloadLimits(ctx, turn)
 
 		assert.True(t, bus.AssertEventPublished(reflect.TypeOf(events.SystemMessageEvent{})))
 
@@ -347,7 +347,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 			},
 		}
 
-		step.ValidatePayloadLimits(ctx, turn)
+		step.validatePayloadLimits(ctx, turn)
 
 		assert.True(t, bus.AssertEventPublished(reflect.TypeOf(events.SystemMessageEvent{})))
 

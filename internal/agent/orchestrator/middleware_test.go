@@ -20,7 +20,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 	t.Run("Scenario A: Inference Header", func(t *testing.T) {
 		bus := &testutil.MockEventBus{}
 		engine := &Engine{events: bus}
-		mw := engine.WithStatusReporter()
+		mw := engine.withStatusReporter()
 
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 			return ProcessResult{NextPhase: PhaseComplete}, nil
@@ -52,7 +52,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 	t.Run("Scenario B: Persisting Footer and Metrics", func(t *testing.T) {
 		bus := &testutil.MockEventBus{}
 		engine := &Engine{events: bus}
-		mw := engine.WithStatusReporter()
+		mw := engine.withStatusReporter()
 
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 			return ProcessResult{NextPhase: PhaseComplete}, nil
@@ -91,7 +91,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 	t.Run("Scenario C: Error handling", func(t *testing.T) {
 		bus := &testutil.MockEventBus{}
 		engine := &Engine{events: bus}
-		mw := engine.WithStatusReporter()
+		mw := engine.withStatusReporter()
 
 		expectedErr := errors.New("processor failed")
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
@@ -115,7 +115,7 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 	t.Run("Scenario A: Processor returns metrics", func(t *testing.T) {
 		bus := &testutil.MockEventBus{}
 		engine := &Engine{events: bus}
-		mw := engine.WithMetrics()
+		mw := engine.withMetrics()
 
 		metrics := &llm.Metrics{PromptTokens: 100, ResponseTokens: 50}
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
@@ -146,7 +146,7 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 	t.Run("Scenario B: Processor returns nil metrics", func(t *testing.T) {
 		bus := &testutil.MockEventBus{}
 		engine := &Engine{events: bus}
-		mw := engine.WithMetrics()
+		mw := engine.withMetrics()
 
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 			turn.State.Metrics = nil
@@ -170,7 +170,7 @@ func TestWithMetrics_Scenarios(t *testing.T) {
 		bus := &testutil.MockEventBus{}
 		tracker := &testutil.MockCostTracker{}
 		engine := &Engine{events: bus}
-		mw := engine.WithMetrics()
+		mw := engine.withMetrics()
 
 		metrics := &llm.Metrics{PromptTokens: 100}
 		next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {

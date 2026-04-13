@@ -324,8 +324,8 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, r
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
 		e.middleware = append(e.middleware,
-			e.WithMetrics(),
-			e.WithStatusReporter(),
+			e.withMetrics(),
+			e.withStatusReporter(),
 			withLoopDetector(),
 		)
 	}
@@ -358,12 +358,12 @@ func (e *Engine) Run(ctx context.Context, startTime time.Time) error {
 		}
 
 		// Prepare for next Turn
-		e.PrepareNextTurn(Turn)
+		e.prepareNextTurn(Turn)
 	}
 	return nil
 }
 
-func (e *Engine) PrepareNextTurn(Turn *Turn) {
+func (e *Engine) prepareNextTurn(Turn *Turn) {
 	Turn.Index++
 	Turn.State.CurrentTurns = Turn.Index
 	Turn.State.Phase = PhaseGuard
@@ -449,9 +449,9 @@ func (e *Engine) ExecuteTurn(parentCtx context.Context, Turn *Turn) error {
 
 func (e *Engine) runPhaseLoop(ctx context.Context, Turn *Turn) error {
 	for Turn.State.Phase != PhaseComplete {
-		res, err := e.ExecutePhase(ctx, Turn)
+		res, err := e.executePhase(ctx, Turn)
 		if err != nil && Turn.State.Phase == PhaseComplete {
-			e.EmergencySave(Turn)
+			e.emergencySave(Turn)
 			return err
 		}
 		if res.Stop {
@@ -470,7 +470,7 @@ func (e *Engine) finalizeTurnTrace(trace *telemetry.TurnTrace, err error) {
 	}
 }
 
-func (e *Engine) EmergencySave(Turn *Turn) {
+func (e *Engine) emergencySave(Turn *Turn) {
 	if Turn.State.Response != nil && len(Turn.State.Response.Parts) > 0 {
 		e.mu.RLock()
 		p, ok := e.processors[PhasePersisting]
@@ -483,7 +483,7 @@ func (e *Engine) EmergencySave(Turn *Turn) {
 	}
 }
 
-func (e *Engine) ExecutePhase(ctx context.Context, Turn *Turn) (ProcessResult, error) {
+func (e *Engine) executePhase(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 	e.mu.RLock()
 	processor, ok := e.processors[Turn.State.Phase]
 	e.mu.RUnlock()
@@ -507,11 +507,6 @@ func (e *Engine) ExecutePhase(ctx context.Context, Turn *Turn) (ProcessResult, e
 
 func (e *Engine) Processors() map[TurnPhase]TurnProcessor {
 	return e.processors
-}
-
-// ExecutePhase is a package-level bridge for testing.
-func ExecutePhase(e *Engine, ctx context.Context, turn *Turn) (ProcessResult, error) {
-	return e.ExecutePhase(ctx, turn)
 }
 
 func (e *Engine) determineNextPhase(current TurnPhase, res ProcessResult, err error) TurnPhase {
@@ -706,7 +701,7 @@ func (p *ExecutionStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 
 	if toolResponse != nil {
 		Turn.State.ToolResponse = toolResponse
-		p.ValidatePayloadLimits(ctx, Turn)
+		p.validatePayloadLimits(ctx, Turn)
 	}
 
 	if err != nil {
@@ -830,7 +825,7 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, Turn *Turn, delay time.
 	return ProcessResult{NextPhase: PhaseRefining}, nil
 }
 
-func (p *ExecutionStep) ValidatePayloadLimits(ctx context.Context, Turn *Turn) {
+func (p *ExecutionStep) validatePayloadLimits(ctx context.Context, Turn *Turn) {
 	if Turn.State.ToolResponse == nil || Turn.CtxManager == nil || Turn.CtxManager.Strategy == nil {
 		return
 	}
@@ -846,11 +841,6 @@ func (p *ExecutionStep) ValidatePayloadLimits(ctx context.Context, Turn *Turn) {
 	if isTooLarge {
 		p.handleOversizedPayload(ctx, Turn, toolTokens, instruction)
 	}
-}
-
-// ValidatePayloadLimits is a package-level bridge for testing.
-func ValidatePayloadLimits(p *ExecutionStep, ctx context.Context, turn *Turn) {
-	p.ValidatePayloadLimits(ctx, turn)
 }
 
 func (p *ExecutionStep) checkTokenBudget(Turn *Turn, toolTokens int, limits events.Limits) (bool, string) {

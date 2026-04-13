@@ -183,23 +183,29 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 
 			bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 			events.CleanupBus(t, bus)
+
+			exec := &limitMockExecutor{}
+			// ExecutionStep.Process calls Execute, then validatePayloadLimits.
+			// We mock Execute to return our toolResponse.
+			exec.On("Execute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(toolResponse, nil)
+
 			Turn := &orchestrator.Turn{
 				CtxManager:   cm,
 				TokenCounter: counter,
+				Executor:     exec,
 				State: &orchestrator.TurnState{
 					Tokens:       tt.existingTokens,
-					ToolResponse: toolResponse,
+					HasToolCalls: true,
+					Response: &llm.Content{
+						Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test_tool"}}},
+					},
 				},
 				Events: bus,
+				Clock:  &testutil.MockClock{},
 			}
 
 			p := &orchestrator.ExecutionStep{}
-			// validatePayloadLimits is unexported but we need it.
-			// Actually, Process calls it. Or we can export it.
-			// Let's add it to export_test.go if we really want to test it in isolation.
-			// Looking at engine.go, executionStep.Process calls validatePayloadLimits.
-			// I'll add a wrapper to export_test.go.
-			orchestrator.ValidatePayloadLimits(p, context.Background(), Turn)
+			_, _ = p.Process(context.Background(), Turn)
 
 			if tt.expectedTruncated {
 				assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response, "error")

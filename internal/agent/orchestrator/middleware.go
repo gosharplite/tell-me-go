@@ -17,8 +17,8 @@ import (
 
 const LoopWarning = "SYSTEM WARNING: Infinite loop detected. You are repeating the exact same tool call or response. The previous action was aborted. Please analyze your previous steps and try a DIFFERENT tool or strategy."
 
-// WithStatusReporter returns a middleware that publishes Turn status events.
-func (e *Engine) WithStatusReporter() TurnMiddleware {
+// withStatusReporter returns a middleware that publishes Turn status events.
+func (e *Engine) withStatusReporter() TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 			// 1. Header: Trigger session boundary header at the absolute start of every LLM generation cycle.
@@ -99,8 +99,8 @@ func (e *Engine) publishTurnStatus(ctx context.Context, Turn *Turn, isPostCall b
 	}
 }
 
-// WithMetrics returns a middleware that publishes usage metrics.
-func (e *Engine) WithMetrics() TurnMiddleware {
+// withMetrics returns a middleware that publishes usage metrics.
+func (e *Engine) withMetrics() TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 			phase := Turn.State.Phase
