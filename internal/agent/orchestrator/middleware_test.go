@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator/orchestratortest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -45,7 +46,7 @@ func TestWithStatusReporter(t *testing.T) {
 	next := &localMockProcessor{}
 
 	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
-	cm := orchestrator.NewTestContextManager(strategy, &testutil.MockHistoryManager{}, bus)
+	cm := orchestratortest.NewTestContextManager(strategy, &testutil.MockHistoryManager{}, bus)
 	Turn := &orchestrator.Turn{
 		State:      &orchestrator.TurnState{Phase: orchestrator.PhaseInference},
 		CtxManager: cm,

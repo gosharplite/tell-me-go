@@ -48,16 +48,16 @@ func NewAgentError(category error, message string, err error) error {
 	}
 }
 
-// isTransient checks if the error should trigger a retry.
-func isTransient(err error) bool {
+// IsTransient checks if the error should trigger a retry.
+func IsTransient(err error) bool {
 	if err == nil {
 		return false
 	}
 	return llm.IsTransient(err)
 }
 
-// isFatal checks if the error should halt the current Turn and session.
-func isFatal(err error) bool {
+// IsFatal checks if the error should halt the current Turn and session.
+func IsFatal(err error) bool {
 	if err == nil {
 		return false
 	}

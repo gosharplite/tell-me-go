@@ -81,10 +81,10 @@ func (p *DefaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int, 
 	if attempt >= p.MaxRetries {
 		return 0, false
 	}
-	if isFatal(err) {
+	if IsFatal(err) {
 		return 0, false
 	}
-	if isTransient(err) {
+	if IsTransient(err) {
 		base := p.Backoff
 
 		// Use the severe backoff if we have been rate-limited at any point during this Turn's
@@ -318,8 +318,8 @@ func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, r
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
 		e.middleware = append(e.middleware,
-			e.withMetrics(),
-			e.withStatusReporter(),
+			e.WithMetrics(),
+			e.WithStatusReporter(),
 			withLoopDetector(),
 		)
 	}
@@ -499,6 +499,15 @@ func (e *Engine) ExecutePhase(ctx context.Context, Turn *Turn) (ProcessResult, e
 	return res, err
 }
 
+func (e *Engine) Processors() map[TurnPhase]TurnProcessor {
+	return e.processors
+}
+
+// ExecutePhase is a package-level bridge for testing.
+func ExecutePhase(e *Engine, ctx context.Context, turn *Turn) (ProcessResult, error) {
+	return e.ExecutePhase(ctx, turn)
+}
+
 func (e *Engine) determineNextPhase(current TurnPhase, res ProcessResult, err error) TurnPhase {
 	if (err != nil || res.Recovery) && current != PhaseRecovering {
 		return PhaseRecovering
@@ -552,7 +561,7 @@ func (p *ContextRefiner) Process(ctx context.Context, Turn *Turn) (ProcessResult
 	history, metadata, err := Turn.CtxManager.Prepare(ctx, Turn.Index)
 	if err != nil {
 		category := llm.ErrTerminal
-		if isTransient(err) {
+		if IsTransient(err) {
 			category = llm.ErrTransient
 		}
 		return ProcessResult{}, NewAgentError(category, "context preparation failed", err)
@@ -569,7 +578,7 @@ type InferenceStep struct{}
 
 func (p *InferenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, error) {
 	start := Turn.Clock.Now()
-	respContent, metrics, err := p.invokeModel(ctx, Turn)
+	respContent, metrics, err := p.InvokeModel(ctx, Turn)
 	inferenceDuration := Turn.Clock.Now().Sub(start)
 
 	if trace := telemetry.TraceFromContext(ctx); trace != nil {
@@ -582,7 +591,7 @@ func (p *InferenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 
 	if err != nil {
 		category := llm.ErrTerminal
-		if isTransient(err) {
+		if IsTransient(err) {
 			category = llm.ErrTransient
 		}
 		return ProcessResult{}, NewAgentError(category, "inference failed", err)
@@ -591,7 +600,7 @@ func (p *InferenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 	return p.routeBasedOnContent(respContent), nil
 }
 
-func (p *InferenceStep) invokeModel(ctx context.Context, Turn *Turn) (respContent *llm.Content, metrics *llm.Metrics, err error) {
+func (p *InferenceStep) InvokeModel(ctx context.Context, Turn *Turn) (respContent *llm.Content, metrics *llm.Metrics, err error) {
 	_ = events.SafePublish(ctx, Turn.Events, events.InferenceStartedEvent{Model: Turn.Model})
 
 	defer func() {
@@ -633,7 +642,7 @@ func (p *InferenceStep) updateState(Turn *Turn, content *llm.Content, metrics *l
 		metrics.Provider = Turn.ProviderName
 		Turn.State.Tokens = int(metrics.PromptTokens)
 	}
-	Turn.State.HasToolCalls = p.hasToolCalls(content)
+	Turn.State.HasToolCalls = p.HasToolCalls(content)
 	if Turn.State.HasToolCalls {
 		// Preallocate capacity based on the number of parts in the response
 		Turn.State.ToolReasons = make([]string, 0, len(content.Parts))
@@ -648,13 +657,13 @@ func (p *InferenceStep) updateState(Turn *Turn, content *llm.Content, metrics *l
 }
 
 func (p *InferenceStep) routeBasedOnContent(content *llm.Content) ProcessResult {
-	if p.hasToolCalls(content) {
+	if p.HasToolCalls(content) {
 		return ProcessResult{NextPhase: PhaseExecuting}
 	}
 	return ProcessResult{NextPhase: PhasePersisting}
 }
 
-func (p *InferenceStep) hasToolCalls(content *llm.Content) bool {
+func (p *InferenceStep) HasToolCalls(content *llm.Content) bool {
 	if content == nil {
 		return false
 	}
@@ -691,7 +700,7 @@ func (p *ExecutionStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 
 	if toolResponse != nil {
 		Turn.State.ToolResponse = toolResponse
-		p.validatePayloadLimits(ctx, Turn)
+		p.ValidatePayloadLimits(ctx, Turn)
 	}
 
 	if err != nil {
@@ -709,7 +718,7 @@ func (p *ExecutionStep) Process(ctx context.Context, Turn *Turn) (ProcessResult,
 
 func (p *ExecutionStep) handleToolExecutionError(err error) error {
 	category := llm.ErrTerminal
-	if isTransient(err) {
+	if IsTransient(err) {
 		category = llm.ErrTransient
 	}
 	return NewAgentError(category, "tool execution failed", err)
@@ -722,7 +731,7 @@ func (p *PersistenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResul
 	if Turn.State.Response != nil {
 		if err := Turn.CtxManager.AddContent(ctx, Turn.State.Response); err != nil {
 			category := llm.ErrTerminal
-			if isTransient(err) {
+			if IsTransient(err) {
 				category = llm.ErrTransient
 			}
 			return ProcessResult{}, NewAgentError(category, "history error", err)
@@ -732,7 +741,7 @@ func (p *PersistenceStep) Process(ctx context.Context, Turn *Turn) (ProcessResul
 	if Turn.State.ToolResponse != nil {
 		if err := Turn.CtxManager.AddContent(ctx, Turn.State.ToolResponse); err != nil {
 			category := llm.ErrTerminal
-			if isTransient(err) {
+			if IsTransient(err) {
 				category = llm.ErrTransient
 			}
 			return ProcessResult{}, NewAgentError(category, "failed to persist tool results", err)
@@ -768,7 +777,7 @@ func (p *RecoveryStep) Process(ctx context.Context, Turn *Turn) (ProcessResult, 
 }
 
 func (p *RecoveryStep) handleFailure(err error) (ProcessResult, error) {
-	if isTransient(err) {
+	if IsTransient(err) {
 		return ProcessResult{NextPhase: PhaseComplete}, fmt.Errorf("max retries reached: %w", err)
 	}
 	return ProcessResult{NextPhase: PhaseComplete}, err
@@ -815,7 +824,7 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, Turn *Turn, delay time.
 	return ProcessResult{NextPhase: PhaseRefining}, nil
 }
 
-func (p *ExecutionStep) validatePayloadLimits(ctx context.Context, Turn *Turn) {
+func (p *ExecutionStep) ValidatePayloadLimits(ctx context.Context, Turn *Turn) {
 	if Turn.State.ToolResponse == nil || Turn.CtxManager == nil || Turn.CtxManager.Strategy == nil {
 		return
 	}
@@ -831,6 +840,11 @@ func (p *ExecutionStep) validatePayloadLimits(ctx context.Context, Turn *Turn) {
 	if isTooLarge {
 		p.handleOversizedPayload(ctx, Turn, toolTokens, instruction)
 	}
+}
+
+// ValidatePayloadLimits is a package-level bridge for testing.
+func ValidatePayloadLimits(p *ExecutionStep, ctx context.Context, turn *Turn) {
+	p.ValidatePayloadLimits(ctx, turn)
 }
 
 func (p *ExecutionStep) checkTokenBudget(Turn *Turn, toolTokens int, limits events.Limits) (bool, string) {
@@ -850,7 +864,7 @@ func (p *ExecutionStep) checkTokenBudget(Turn *Turn, toolTokens int, limits even
 
 func (p *ExecutionStep) handleOversizedPayload(ctx context.Context, Turn *Turn, toolTokens int, instruction string) {
 	// Delegate mutation to the utility with context-aware instruction
-	truncateOversizedResponse(Turn.State.ToolResponse, toolTokens, instruction)
+	TruncateOversizedResponse(Turn.State.ToolResponse, toolTokens, instruction)
 
 	evt := events.SystemMessageEvent{
 		Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
