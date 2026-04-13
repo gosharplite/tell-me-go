@@ -94,22 +94,30 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 
 	// Retry loop for Windows "Access is denied" during rename, which can be transient (e.g. anti-virus).
 	var lastErr error
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 5; i++ { // Reduced from 50 to 5 attempts
 		if err := fs.Rename(ctx, tmpPath, targetPath); err != nil {
 			// Implement fallback for EXDEV (cross-device link) errors
 			if isCrossDeviceError(err) {
 				return fallbackCopy(ctx, fs, tmpPath, targetPath, perm)
 			}
 			lastErr = err
+
 			// If it's a transient error on Windows (like Access is denied), retry after a short delay.
-			if strings.Contains(err.Error(), "Access is denied") || strings.Contains(err.Error(), "used by another process") {
+			msg := err.Error()
+			if strings.Contains(msg, "Access is denied") || strings.Contains(msg, "used by another process") {
+				// OPTIMIZATION: On Windows, "Access is denied" can occur when targetPath is a directory.
+				// This is a permanent error. Check for it to avoid useless retries.
+				if info, statErr := fs.Stat(ctx, targetPath); statErr == nil && info.IsDir() {
+					return fmt.Errorf("failed to rename temp file: target path %s is a directory: %w", targetPath, err)
+				}
+
 				if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "atomic") {
 					fmt.Printf("DEBUG: retrying rename due to lock (attempt %d): %s\n", i+1, targetPath)
 				}
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-time.After(100 * time.Millisecond):
+				case <-time.After(time.Duration(i+1) * 100 * time.Millisecond): // Linear backoff
 				}
 				continue
 			}
@@ -117,7 +125,7 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 		}
 		return nil
 	}
-	return fmt.Errorf("failed to rename temp file after 50 retries: %w", lastErr)
+	return fmt.Errorf("failed to rename temp file after 5 retries: %w", lastErr)
 }
 
 func isCrossDeviceError(err error) bool {
