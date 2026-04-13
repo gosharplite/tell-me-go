@@ -188,8 +188,8 @@ func (sm *SecurityManager) getSafetyService() *domain.SafetyService {
 	return sm.safety
 }
 
-// GetInteractor returns the user interactor.
-func (sm *SecurityManager) GetInteractor() domain.UserInteractor {
+// getInteractor returns the user interactor.
+func (sm *SecurityManager) getInteractor() domain.UserInteractor {
 	return sm.interaction.interactor
 }
 

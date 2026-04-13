@@ -170,8 +170,8 @@ func TestSecurityManager_Misc(t *testing.T) {
 	_ = sm.removeReadOnlyPath(roPath)
 
 	// Interactor methods
-	if sm.GetInteractor() == nil {
-		t.Error("GetInteractor returned nil")
+	if sm.getInteractor() == nil {
+		t.Error("getInteractor returned nil")
 	}
 
 	sm.TerminalLock()

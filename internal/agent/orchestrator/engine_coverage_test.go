@@ -137,7 +137,7 @@ func TestContextRefiner_Errors(t *testing.T) {
 		_, err := step.Process(ctx, turn)
 
 		assert.Error(t, err)
-		var agentErr *AgentError
+		var agentErr *agentError
 		if assert.True(t, errors.As(err, &agentErr)) {
 			assert.Equal(t, llm.ErrTerminal, agentErr.Category)
 		}
@@ -156,7 +156,7 @@ func TestContextRefiner_Errors(t *testing.T) {
 		_, err := step.Process(ctx, turn)
 
 		assert.Error(t, err)
-		var agentErr *AgentError
+		var agentErr *agentError
 		if assert.True(t, errors.As(err, &agentErr)) {
 			assert.Equal(t, llm.ErrTransient, agentErr.Category)
 		}

@@ -91,13 +91,6 @@ func (m *MockSecurityManager) SetBypassActive(active bool) {
 	m.BypassActive = active
 }
 
-func (m *MockSecurityManager) GetInteractor() security.UserInteractor {
-	if m.Interactor != nil {
-		return m.Interactor
-	}
-	return &MockInteractor{}
-}
-
 func (m *MockSecurityManager) SetInteractor(i security.UserInteractor) {
 	m.Interactor = i
 }
