@@ -166,7 +166,7 @@ func TestArchitectureManager_IsLayer(t *testing.T) {
 		{"github.com/org/repo/internal/domain-logic", LayerDomain, false},
 		{"github.com/org/repo/internal/agent/service", LayerApplication, true},
 		{"github.com/org/repo/internal/pkg/stringsutil", LayerShared, true},
-		{"github.com/org/repo/internal/service/toolchain/compiler", LayerInfrastructure, true},
+		{"github.com/org/repo/internal/infrastructure/toolchain/compiler", LayerInfrastructure, true},
 		{"github.com/org/repo/pkg/domain", LayerDomain, false},
 	}
 
@@ -336,8 +336,7 @@ func TestArchitectureManager_Classify(t *testing.T) {
 		{"github.com/org/repo/internal/tools/checker", LayerTools},
 		{"github.com/org/repo/internal/pkg/utils", LayerShared},
 		{"github.com/org/repo/cmd/server", LayerCmd},
-		// Special Case: internal/service/toolchain maps to Infrastructure
-		{"github.com/org/repo/internal/service/toolchain/compiler", LayerInfrastructure},
+		{"github.com/org/repo/internal/infrastructure/toolchain/compiler", LayerInfrastructure},
 		// Edge Cases & Unknowns
 		{"github.com/org/repo", LayerUnknown},                  // Module root
 		{"github.com/org/repo/internal", LayerUnknown},         // Bare internal

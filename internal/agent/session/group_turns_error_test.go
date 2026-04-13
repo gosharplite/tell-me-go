@@ -10,6 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,9 +52,9 @@ func TestTokenGatekeeper_GroupTurnsErrorPropagation(t *testing.T) {
 	ctx := context.Background()
 	tg := &TokenGatekeeper{
 		MaxTokens: 1000,
-		Estimator: &mockEstimator{tokens: 1100}, // Trigger autoSummarize
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		Estimator: &testutil.MockTokenCounter{Tokens: 1100}, // Trigger autoSummarize
+		Summarizer: &testutil.MockSummarizer{
+			SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				return "summary", &llm.Metrics{}, nil
 			},
 		},
@@ -88,10 +89,10 @@ func TestContextManager_GroupTurnsErrorPropagation(t *testing.T) {
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		{Role: "", Parts: []*llm.Part{{Text: "invalid"}}},
 	}
-	mockHistory := &mockHistoryManager{contents: history}
+	mockHistory := &testutil.MockHistoryManager{Contents: history}
 
-	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), mockHistory, nil, nil)
-	cm.Summarizer = &mockSummarizer{}
+	cm := NewContextManager(NewContextStrategy(&testutil.MockTokenCounter{}), mockHistory, nil, nil)
+	cm.Summarizer = &testutil.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")
 	require.Error(t, err)
@@ -139,7 +140,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 		history[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "u"}}}
 		history[i+1] = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "m"}}}
 	}
-	mockHistory := &mockHistoryManager{contents: history}
+	mockHistory := &testutil.MockHistoryManager{Contents: history}
 
 	// Create a counter that sabotages the history to trigger groupTurns failure at line 251
 	mockCounter := &mockTokenCounterWithFn{
@@ -152,7 +153,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 	}
 
 	cm := NewContextManager(NewContextStrategy(mockCounter), mockHistory, nil, nil)
-	cm.Summarizer = &mockSummarizer{}
+	cm.Summarizer = &testutil.MockSummarizer{}
 
 	subset, _, _, err := cm.prepareSummarizationMetadata(ctx, 2)
 	require.NoError(t, err)
@@ -173,11 +174,11 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 		history[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "u"}}}
 		history[i+1] = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "m"}}}
 	}
-	mockHistory := &mockHistoryManager{contents: history}
+	mockHistory := &testutil.MockHistoryManager{Contents: history}
 
 	// Mock summarizer that sabotages the subset to trigger validation failure
-	mockSumm := &mockSummarizer{
-		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+	mockSumm := &testutil.MockSummarizer{
+		SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 			if len(subset) > 0 {
 				subset[0].Parts[0].Text = "changed" // Sabotage!
 			}
@@ -185,7 +186,7 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), mockHistory, nil, nil)
+	cm := NewContextManager(NewContextStrategy(&testutil.MockTokenCounter{}), mockHistory, nil, nil)
 	cm.Summarizer = mockSumm
 
 	_, _, err := cm.SummarizeRange(ctx, 2, "")

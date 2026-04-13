@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -212,7 +213,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	t.Run("Under limit", func(t *testing.T) {
 		tg := &TokenGatekeeper{
 			MaxTokens: 1000,
-			Estimator: &mockEstimator{tokens: 500},
+			Estimator: &testutil.MockTokenCounter{Tokens: 500},
 		}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
@@ -223,9 +224,9 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	t.Run("Exceeds limit after summarization", func(t *testing.T) {
 		tg := &TokenGatekeeper{
 			MaxTokens: 1000,
-			Estimator: &mockEstimator{tokens: 1100}, // Always returns 1100
-			Summarizer: &mockSummarizer{
-				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			Estimator: &testutil.MockTokenCounter{Tokens: 1100}, // Always returns 1100
+			Summarizer: &testutil.MockSummarizer{
+				SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 					return "summary", &llm.Metrics{}, nil
 				},
 			},
@@ -243,9 +244,9 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	t.Run("Summarization failure", func(t *testing.T) {
 		tg := &TokenGatekeeper{
 			MaxTokens: 2000,
-			Estimator: &mockEstimator{tokens: 950},
-			Summarizer: &mockSummarizer{
-				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			Estimator: &testutil.MockTokenCounter{Tokens: 950},
+			Summarizer: &testutil.MockSummarizer{
+				SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 					return "", nil, errors.New("summarize error")
 				},
 			},
@@ -264,7 +265,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 
 func TestWarningInjector_Transform(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &WarningInjector{Strategy: strategy}
@@ -316,8 +317,8 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	tg := &TokenGatekeeper{
 		MaxTokens: 10000,
 		Estimator: &dynamicMockEstimator{tokens: 9500},
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		Summarizer: &testutil.MockSummarizer{
+			SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				summarizerCalled = true
 				return "summary", &llm.Metrics{}, nil
 			},
@@ -342,7 +343,7 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 
 func TestWarningInjector_Transform_Clogged(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &WarningInjector{Strategy: strategy}
@@ -378,8 +379,8 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 	tg := &TokenGatekeeper{
 		MaxTokens: 10000,
 		Estimator: &dynamicMockEstimator{tokens: 9500},
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		Summarizer: &testutil.MockSummarizer{
+			SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				return "summary", &llm.Metrics{}, nil
 			},
 		},
@@ -398,7 +399,7 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 	ctx := context.Background()
 	tg := &TokenGatekeeper{
 		MaxTokens: 2000,
-		Estimator: &mockEstimator{tokens: 1900}, // > 90%
+		Estimator: &testutil.MockTokenCounter{Tokens: 1900}, // > 90%
 	}
 
 	// Create history where all messages are pinned
@@ -421,7 +422,7 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 
 func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &WarningInjector{Strategy: strategy}
@@ -470,7 +471,7 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tg := &TokenGatekeeper{
 				MaxTokens: tt.maxTokens,
-				Estimator: &mockEstimator{tokens: tt.tokens},
+				Estimator: &testutil.MockTokenCounter{Tokens: tt.tokens},
 			}
 			req := &request{History: []*llm.Content{{Role: "user"}}}
 			err := tg.Transform(ctx, req)
@@ -522,13 +523,13 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	t.Run("10 percent cap", func(t *testing.T) {
 		tg := &TokenGatekeeper{
 			MaxTokens: 1000,
-			Estimator: &mockEstimator{tokens: 901},
+			Estimator: &testutil.MockTokenCounter{Tokens: 901},
 		}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		require.ErrorIs(t, err, llm.ErrContextLimitExceeded, "expected ErrContextLimitExceeded for 901 tokens (limit 900)")
 
-		tg.Estimator.(*mockEstimator).tokens = 900
+		tg.Estimator.(*testutil.MockTokenCounter).Tokens = 900
 		err = tg.Transform(ctx, req)
 		require.NoError(t, err)
 	})
@@ -536,13 +537,13 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	t.Run("Capped by SystemContextBuffer", func(t *testing.T) {
 		tg := &TokenGatekeeper{
 			MaxTokens: 10000,
-			Estimator: &mockEstimator{tokens: 9001},
+			Estimator: &testutil.MockTokenCounter{Tokens: 9001},
 		}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		require.ErrorIs(t, err, llm.ErrContextLimitExceeded, "expected ErrContextLimitExceeded for 9001 tokens (limit 9000)")
 
-		tg.Estimator.(*mockEstimator).tokens = 9000
+		tg.Estimator.(*testutil.MockTokenCounter).Tokens = 9000
 		err = tg.Transform(ctx, req)
 		require.NoError(t, err)
 	})
@@ -672,7 +673,7 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 }
 
 func TestFinalContextValidator_Transform(t *testing.T) {
-	counter := &mockTokenCounter{}
+	counter := &testutil.MockTokenCounter{}
 	strategy := NewContextStrategy(counter)
 	validator := &finalContextValidator{Strategy: strategy}
 
@@ -690,7 +691,7 @@ func TestFinalContextValidator_Transform(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			strategy.SetLimits(tt.maxTokens, 10, 20)
-			counter.tokens = tt.tokens
+			counter.Tokens = tt.tokens
 
 			req := &request{
 				History: []*llm.Content{
@@ -947,7 +948,7 @@ func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 
 func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	ctx := context.Background()
-	counter := &mockTokenCounter{tokens: 1000}
+	counter := &testutil.MockTokenCounter{Tokens: 1000}
 	strategy := NewContextStrategy(counter)
 	strategy.SetTieredThreshold(0)
 	tg := &TokenGatekeeper{Estimator: strategy}
@@ -961,7 +962,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 
 func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 	ctx := context.Background()
-	counter := &mockTokenCounter{tokens: 1000}
+	counter := &testutil.MockTokenCounter{Tokens: 1000}
 	strategy := NewContextStrategy(counter)
 	strategy.SetTieredThreshold(2000)
 	tg := &TokenGatekeeper{Estimator: strategy}
@@ -974,15 +975,15 @@ func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 
 func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
 	ctx := context.Background()
-	counter := &mockTokenCounter{tokens: 1000}
+	counter := &testutil.MockTokenCounter{Tokens: 1000}
 	strategy := NewContextStrategy(counter)
 	strategy.SetTieredThreshold(500)
 
 	summarizerCalled := false
 	tg := &TokenGatekeeper{
 		Estimator: strategy,
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		Summarizer: &testutil.MockSummarizer{
+			SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				summarizerCalled = true
 				return "summary", &llm.Metrics{}, nil
 			},
@@ -1003,7 +1004,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
 
 func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 	ctx := context.Background()
-	counter := &mockTokenCounter{tokens: 1000}
+	counter := &testutil.MockTokenCounter{Tokens: 1000}
 	strategy := NewContextStrategy(counter)
 	strategy.SetTieredThreshold(500)
 
@@ -1017,8 +1018,8 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 	t.Run("Critical error", func(t *testing.T) {
 		tg := &TokenGatekeeper{
 			Estimator: strategy,
-			Summarizer: &mockSummarizer{
-				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			Summarizer: &testutil.MockSummarizer{
+				SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 					return "", nil, errors.New("boom")
 				},
 			},
@@ -1058,7 +1059,7 @@ func (m *mockTransformerEventBus) Listen(ctx context.Context) error { <-ctx.Done
 
 func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	ctx := context.Background()
-	counter := &mockTokenCounter{tokens: 1000}
+	counter := &testutil.MockTokenCounter{Tokens: 1000}
 	strategy := NewContextStrategy(counter)
 	strategy.SetTieredThreshold(500)
 
@@ -1072,8 +1073,8 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	tg := &TokenGatekeeper{
 		Estimator: strategy,
 		Events:    mockEvents,
-		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		Summarizer: &testutil.MockSummarizer{
+			SummarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				return "summary", &llm.Metrics{}, nil
 			},
 		},
@@ -1103,7 +1104,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 
 func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 	ctx := context.Background()
-	counter := &mockTokenCounter{tokens: 1000}
+	counter := &testutil.MockTokenCounter{Tokens: 1000}
 	strategy := NewContextStrategy(counter)
 	strategy.SetTieredThreshold(500)
 
@@ -1128,7 +1129,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 }
 
 func setupTestPipeline(maxTokens int) (*ContextPipeline, *ContextStrategy) {
-	counter := NewHeuristicTokenCounter(&mockToolRegistry{})
+	counter := NewHeuristicTokenCounter(&testutil.MockToolRegistry{})
 	strategy := NewContextStrategy(counter)
 	strategy.SetLimits(maxTokens, 10, 20)
 

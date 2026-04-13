@@ -8,39 +8,9 @@ import (
 	"fmt"
 	"sync"
 
-	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/skills"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
-
-type mockGateway struct {
-	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	sendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-}
-
-func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	if m.GenerateFunc != nil {
-		return m.GenerateFunc(ctx, input, tools, resolver)
-	}
-	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
-}
-
-func (m *mockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	if m.sendChatFn != nil {
-		return m.sendChatFn(ctx, history, tools, resolver)
-	}
-	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
-}
-
-func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return [][]byte{}, nil
-}
-
-func (m *mockGateway) RefreshAuth() error { return nil }
 
 type MockSecurityManager struct {
 	domain_security.Manager
@@ -55,50 +25,6 @@ func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
 }
 
 func (m *MockSecurityManager) Close() error { return nil }
-
-type mockSummarizer struct {
-	ports.Summarizer
-}
-
-type mockLoader struct {
-	domain_config.ConfigLoader
-}
-
-type mockTracker struct {
-	mu sync.Mutex
-}
-
-func (m *mockTracker) CalculateCost(mt llm.Metrics) float64 {
-	return 0.05
-}
-
-func (m *mockTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
-	return 0.05
-}
-
-func (m *mockTracker) Accumulate(mt llm.Metrics) {}
-
-func (m *mockTracker) GetTotalCost(ctx context.Context) float64 {
-	return 0.05
-}
-
-func (m *mockTracker) GetDailyCost(ctx context.Context) float64 {
-	return 0.05
-}
-
-func (m *mockTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
-	return domain_pricing.UsageStats{}, 0.05
-}
-
-func (m *mockTracker) Warmup() {}
-
-type mockSessionLoader struct {
-	domain_config.SessionLoader
-}
-
-type mockSkillSelector struct {
-	skills.SkillSelector
-}
 
 // MockHistoryManager implements ports.HistoryManager for testing.
 type MockHistoryManager struct {
@@ -226,50 +152,6 @@ func (m *MockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 }
 
 func (m *MockHistoryManager) GetFilePath() string { return "" }
-
-type mockExecutor struct {
-	ExecuteFunc func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
-}
-
-func (m *mockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-	return m.ExecuteFunc(ctx, respContent, turn, maxToolTurns)
-}
-
-type mockEngineCostTracker struct {
-	mu               sync.Mutex
-	accumulatedCount int
-}
-
-func (m *mockEngineCostTracker) CalculateCost(mt llm.Metrics) float64 {
-	return 0.05
-}
-
-func (m *mockEngineCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.accumulatedCount++
-	return 0.05
-}
-
-func (m *mockEngineCostTracker) Accumulate(mt llm.Metrics) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.accumulatedCount++
-}
-
-func (m *mockEngineCostTracker) GetTotalCost(ctx context.Context) float64 {
-	return 0
-}
-
-func (m *mockEngineCostTracker) GetDailyCost(ctx context.Context) float64 {
-	return 0
-}
-
-func (m *mockEngineCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
-	return domain_pricing.UsageStats{}, 0
-}
-
-func (m *mockEngineCostTracker) Warmup() {}
 
 func (m *MockHistoryManager) Sync(ctx context.Context) error {
 	return nil

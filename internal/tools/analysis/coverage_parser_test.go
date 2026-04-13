@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
 
 func TestUncoveredBlock_Classify(t *testing.T) {

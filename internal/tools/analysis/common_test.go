@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"golang.org/x/tools/go/packages"
 )
 

@@ -46,8 +46,8 @@ func runFinalizeSummarizationErrorTest(t *testing.T, archiveErr, setContentsErr 
 	h.archiveErr = archiveErr
 	h.setContentsErr = setContentsErr
 
-	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}), h, nil, nil)
-	cm.Summarizer = &mockSummarizer{}
+	cm := NewContextManager(NewContextStrategy(&testutil.MockTokenCounter{}), h, nil, nil)
+	cm.Summarizer = &testutil.MockSummarizer{}
 
 	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err == nil {

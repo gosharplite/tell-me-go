@@ -19,7 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
 
 type releaseGoRunner interface {

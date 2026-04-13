@@ -156,8 +156,8 @@ func (m *MockInteractor) ReadLine(ctx context.Context) (string, error) {
 
 // MockCommandValidator is a mock implementation of security.CommandValidator.
 type MockCommandValidator struct {
-	IsSafeFunc           func(command string) (bool, string)
-	SplitFunc            func(cmd string) ([]string, error)
+	IsSafeFunc            func(command string) (bool, string)
+	SplitFunc             func(cmd string) ([]string, error)
 	ValidateStructureFunc func(parts []string) error
 	CheckPathSafetyFunc   func(parts []string) (bool, string)
 	HasShellFeaturesFunc  func(parts []string) bool

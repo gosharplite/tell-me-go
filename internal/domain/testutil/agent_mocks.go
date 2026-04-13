@@ -19,25 +19,25 @@ import (
 
 // MockToolRegistry is a mock implementation of tools.Registry for testing.
 type MockToolRegistry struct {
-	declarations []*tools.ToolDeclaration
-	toolkitMap   map[string][]*tools.ToolDeclaration
-	handlers     map[string]tools.ToolFunc
-	options      map[string]tools.ToolOptions
-	registerErr  error
-	failAfter    int
-	callCount    int
+	Declarations []*tools.ToolDeclaration
+	ToolkitMap   map[string][]*tools.ToolDeclaration
+	Handlers     map[string]tools.ToolFunc
+	Options      map[string]tools.ToolOptions
+	RegisterErr  error
+	FailAfter    int
+	CallCount    int
 }
 
 func NewMockToolRegistry() *MockToolRegistry {
 	return &MockToolRegistry{
-		toolkitMap: make(map[string][]*tools.ToolDeclaration),
-		handlers:   make(map[string]tools.ToolFunc),
-		options:    make(map[string]tools.ToolOptions),
+		ToolkitMap: make(map[string][]*tools.ToolDeclaration),
+		Handlers:   make(map[string]tools.ToolFunc),
+		Options:    make(map[string]tools.ToolOptions),
 	}
 }
 
 func (m *MockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	return m.declarations
+	return m.Declarations
 }
 
 func (m *MockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) error {
@@ -49,22 +49,22 @@ func (m *MockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handl
 }
 
 func (m *MockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	if handler, ok := m.handlers[name]; ok {
+	if handler, ok := m.Handlers[name]; ok {
 		return handler(ctx, args, hb)
 	}
 	return tools.ToolResult{}, nil
 }
 
 func (m *MockToolRegistry) IsSerial(name string) bool {
-	return m.options[name].Serial
+	return m.Options[name].Serial
 }
 
 func (m *MockToolRegistry) IsLongRunning(name string) bool {
-	return m.options[name].LongRunning
+	return m.Options[name].LongRunning
 }
 
 func (m *MockToolRegistry) GetOptions(name string) tools.ToolOptions {
-	return m.options[name]
+	return m.Options[name]
 }
 
 func (m *MockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
@@ -72,37 +72,37 @@ func (m *MockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDecl
 }
 
 func (m *MockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
-	m.callCount++
-	if m.registerErr != nil && (m.failAfter == 0 || m.callCount > m.failAfter) {
-		return m.registerErr
+	m.CallCount++
+	if m.RegisterErr != nil && (m.FailAfter == 0 || m.CallCount > m.FailAfter) {
+		return m.RegisterErr
 	}
-	m.declarations = append(m.declarations, def)
-	if m.toolkitMap == nil {
-		m.toolkitMap = make(map[string][]*tools.ToolDeclaration)
+	m.Declarations = append(m.Declarations, def)
+	if m.ToolkitMap == nil {
+		m.ToolkitMap = make(map[string][]*tools.ToolDeclaration)
 	}
-	m.toolkitMap[toolkit] = append(m.toolkitMap[toolkit], def)
-	if m.handlers == nil {
-		m.handlers = make(map[string]tools.ToolFunc)
+	m.ToolkitMap[toolkit] = append(m.ToolkitMap[toolkit], def)
+	if m.Handlers == nil {
+		m.Handlers = make(map[string]tools.ToolFunc)
 	}
-	m.handlers[def.Name] = handler
-	if m.options == nil {
-		m.options = make(map[string]tools.ToolOptions)
+	m.Handlers[def.Name] = handler
+	if m.Options == nil {
+		m.Options = make(map[string]tools.ToolOptions)
 	}
-	m.options[def.Name] = opts
+	m.Options[def.Name] = opts
 	return nil
 }
 
 func (m *MockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
-	return m.toolkitMap["core"]
+	return m.ToolkitMap["core"]
 }
 
 func (m *MockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
 	dedup := make(map[string]*tools.ToolDeclaration)
-	for _, d := range m.toolkitMap["core"] {
+	for _, d := range m.ToolkitMap["core"] {
 		dedup[d.Name] = d
 	}
 	for _, tk := range toolkits {
-		for _, d := range m.toolkitMap[tk] {
+		for _, d := range m.ToolkitMap[tk] {
 			dedup[d.Name] = d
 		}
 	}
@@ -114,30 +114,30 @@ func (m *MockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools
 }
 
 func (m *MockToolRegistry) ListAvailableToolkits() []string {
-	toolkits := make([]string, 0, len(m.toolkitMap))
-	for tk := range m.toolkitMap {
+	toolkits := make([]string, 0, len(m.ToolkitMap))
+	for tk := range m.ToolkitMap {
 		toolkits = append(toolkits, tk)
 	}
 	return toolkits
 }
 
-func (m *MockToolRegistry) SetRegisterErr(err error) { m.registerErr = err }
-func (m *MockToolRegistry) SetFailAfter(n int)       { m.failAfter = n }
+func (m *MockToolRegistry) SetRegisterErr(err error) { m.RegisterErr = err }
+func (m *MockToolRegistry) SetFailAfter(n int)       { m.FailAfter = n }
 
 // MockSummarizer is a mock implementation of ports.Summarizer.
 type MockSummarizer struct {
-	summarizeFn func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error)
+	SummarizeFn func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error)
 }
 
 func (m *MockSummarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-	if m.summarizeFn != nil {
-		return m.summarizeFn(ctx, subset, focus)
+	if m.SummarizeFn != nil {
+		return m.SummarizeFn(ctx, subset, focus)
 	}
 	return "summary", &llm.Metrics{}, nil
 }
 
 func (m *MockSummarizer) SetSummarizeFn(fn func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error)) {
-	m.summarizeFn = fn
+	m.SummarizeFn = fn
 }
 
 // MockTokenCounter is a mock implementation of llm.TokenCounter.
@@ -656,4 +656,28 @@ func (m *MockTurnsLogger) Close() error {
 
 func (m *MockHistoryManager) SetRollbackErr(err error) {
 	m.RollbackErr = err
+}
+
+func (m *MockTokenCounter) EstimateTokens(contents []*llm.Content) int {
+	return m.Count(contents)
+}
+
+// MockPruningPolicy is a mock implementation of ports.PruningPolicy.
+type MockPruningPolicy struct {
+	MarkTurnsFn func(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error)
+	NameFn      func() string
+}
+
+func (m *MockPruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) (int, error) {
+	if m.MarkTurnsFn != nil {
+		return m.MarkTurnsFn(ctx, turns, keep)
+	}
+	return 0, nil
+}
+
+func (m *MockPruningPolicy) Name() string {
+	if m.NameFn != nil {
+		return m.NameFn()
+	}
+	return "MockPolicy"
 }

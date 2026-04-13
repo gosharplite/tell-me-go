@@ -14,9 +14,9 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
-	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
 type devOption func(*devManager)

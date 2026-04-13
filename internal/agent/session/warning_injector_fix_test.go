@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestWarningInjector_SequenceBreak(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &WarningInjector{Strategy: strategy}
@@ -62,7 +63,7 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 
 func TestWarningInjector_Idempotency(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	strategy.SetLimits(100, 10, 10) // 100 token limit
 	injector := &WarningInjector{Strategy: strategy}
 

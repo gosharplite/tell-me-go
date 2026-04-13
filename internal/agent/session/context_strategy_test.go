@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 )
@@ -17,11 +18,11 @@ func contains(s, substr string) bool {
 }
 
 func TestContextStrategy_EstimateTokens(t *testing.T) {
-	registry := &mockToolRegistry{}
+	registry := &testutil.MockToolRegistry{}
 	cs := NewContextStrategy(NewHeuristicTokenCounter(registry))
 
 	t.Run("Base overhead", func(t *testing.T) {
-		registry.declarations = nil
+		registry.Declarations = nil
 		// base = 300
 		got := cs.EstimateTokens(nil)
 		if got != 300 {
@@ -30,7 +31,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 	})
 
 	t.Run("Tool Declarations", func(t *testing.T) {
-		registry.declarations = []*tools.ToolDeclaration{
+		registry.Declarations = []*tools.ToolDeclaration{
 			{
 				Name:        "my_tool",
 				Description: "does something",
@@ -43,7 +44,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 		if got != 355 {
 			t.Errorf("expected 355 tokens, got %d", got)
 		}
-		registry.declarations = nil // reset
+		registry.Declarations = nil // reset
 	})
 
 	t.Run("Blob Handling", func(t *testing.T) {
@@ -94,7 +95,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 }
 
 func setupWarningTest() *ContextStrategy {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 	cs.SetLimits(1000, 10, 100)
 	return cs
 }
@@ -166,7 +167,7 @@ func TestContextStrategy_Warnings_TurnCountLimits(t *testing.T) {
 }
 
 func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
@@ -256,7 +257,7 @@ func verifyWarningContains(t *testing.T, turns int, warnings []warning, expected
 }
 
 func TestContextStrategy_SetTieredThresholdZero(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&testutil.MockToolRegistry{}))
 
 	// First set to a non-zero value
 	cs.SetTieredThreshold(100)
@@ -450,7 +451,7 @@ func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
 }
 
 func TestContextStrategy_Count(t *testing.T) {
-	mockCounter := &mockTokenCounter{tokens: 42}
+	mockCounter := &testutil.MockTokenCounter{Tokens: 42}
 	cs := NewContextStrategy(mockCounter)
 
 	contents := []*llm.Content{{Parts: []*llm.Part{{Text: "hello"}}}}

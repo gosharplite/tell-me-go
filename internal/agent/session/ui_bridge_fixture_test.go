@@ -11,13 +11,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 )
 
 // controllableUIRenderer provides synchronization hooks for testing bridge backpressure.
 type controllableUIRenderer struct {
-	mockUIRenderer
+	testutil.MockUIRenderer
 	reachedCh chan struct{}
 	blockCh   chan struct{}
 }
@@ -35,32 +36,32 @@ func (m *controllableUIRenderer) maybeBlock(ctx context.Context) {
 
 func (m *controllableUIRenderer) LogTurnStatus(ctx context.Context, status events.TurnStatus) {
 	m.maybeBlock(ctx)
-	m.mockUIRenderer.LogTurnStatus(ctx, status)
+	m.MockUIRenderer.LogTurnStatus(ctx, status)
 }
 
 func (m *controllableUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
 	m.maybeBlock(ctx)
-	m.mockUIRenderer.LogSystemMessage(ctx, msg, level)
+	m.MockUIRenderer.LogSystemMessage(ctx, msg, level)
 }
 
 func (m *controllableUIRenderer) RenderResponse(ctx context.Context, content *llm.Content, showThoughts, rawOutput bool) {
 	m.maybeBlock(ctx)
-	m.mockUIRenderer.RenderResponse(ctx, content, showThoughts, rawOutput)
+	m.MockUIRenderer.RenderResponse(ctx, content, showThoughts, rawOutput)
 }
 
 func (m *controllableUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 	m.maybeBlock(ctx)
-	m.mockUIRenderer.LogUsage(ctx, metrics, logFile, startTime)
+	m.MockUIRenderer.LogUsage(ctx, metrics, logFile, startTime)
 }
 
 func (m *controllableUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 	m.maybeBlock(ctx)
-	m.mockUIRenderer.LogToolCall(ctx, calls, turn, maxTurns, showTools)
+	m.MockUIRenderer.LogToolCall(ctx, calls, turn, maxTurns, showTools)
 }
 
 func (m *controllableUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
 	m.maybeBlock(ctx)
-	m.mockUIRenderer.LogToolResult(ctx, name, result, showTools)
+	m.MockUIRenderer.LogToolResult(ctx, name, result, showTools)
 }
 
 // uiBridgeFixture encapsulates the bridge under test and its lifecycle.

@@ -13,7 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 )
 
 type mockDeadCodeAnalyzer struct {

@@ -37,7 +37,7 @@ func SetupTurnEngineTest(t interface {
 	reg := &testutil.MockToolRegistry{}
 	// Use synchronous event bus for deterministic test results
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	t.Cleanup(func() { bus.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	hManager := &testutil.MockHistoryManager{}

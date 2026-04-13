@@ -13,13 +13,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
 func TestUIBridge_StressConcurrency(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(mockUIRenderer)
+	mRenderer := new(testutil.MockUIRenderer)
 	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -78,7 +79,7 @@ func TestUIBridge_LogicalStateVerification(t *testing.T) {
 	t.Parallel()
 	testCtx := context.Background()
 
-	mRenderer := new(mockUIRenderer)
+	mRenderer := new(testutil.MockUIRenderer)
 	bridge := NewUIBridge(mRenderer, WithBridgeThoughts(true), WithBridgeTools(true), WithBridgeRawOutput(false), WithBridgeColor(true), WithBridgeLogFile("log.txt"), WithBridgeLogger(slog.Default()))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

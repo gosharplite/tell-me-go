@@ -12,12 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(mockUIRenderer)
+	mRenderer := new(testutil.MockUIRenderer)
 	bridge := NewUIBridge(mRenderer,
 		WithBridgeThoughts(true),
 		WithBridgeTools(true),

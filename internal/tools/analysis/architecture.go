@@ -243,11 +243,6 @@ func (m *architectureManager) classify(pkgPath string) string {
 			return LayerUnknown
 		}
 
-		// Special Case: internal/service/toolchain
-		if segments[1] == "service" && len(segments) > 2 && segments[2] == "toolchain" {
-			return LayerInfrastructure
-		}
-
 		switch segments[1] {
 		case "domain":
 			return LayerDomain
