@@ -7,11 +7,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestShellTool_ExecuteCommand_Validation_Windows(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &windowsTranslator{}, &windowsShellWrapper{})
 	ctx := context.Background()

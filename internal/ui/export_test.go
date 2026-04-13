@@ -16,15 +16,15 @@ func RenderHistory(w io.Writer, h ports.HistoryManager, limit int, opts ports.Hi
 }
 
 const (
-	ColorBlue = colorBlue
+	ColorBlue     = colorBlue
 	TermClearLine = termClearLine
 )
 
 type (
 	StdUIRenderer = stdUIRenderer
-	MockLocker = mockLocker
-	MockClock = mockClock
-	UIState = uiState
+	MockLocker    = mockLocker
+	MockClock     = mockClock
+	UIState       = uiState
 )
 
 func NewMockLocker() *MockLocker {

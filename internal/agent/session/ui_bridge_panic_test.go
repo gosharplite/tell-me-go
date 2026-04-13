@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	inframock "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -66,7 +67,7 @@ func TestUIBridge_PanicResilience(t *testing.T) {
 
 	// Synchronous bus for deterministic testing
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
-	inframock.CleanupBus(t, bus)
+	events.CleanupBus(t, bus)
 
 	// Silence noise in test output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -116,7 +117,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	logBuffer := inframock.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mockRenderer := new(session.MockUIRenderer)
+	mockRenderer := new(testutil.MockUIRenderer)
 	// This mock will panic when StartSpinnerWithStatus is called
 	mockRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("intentional test panic")
@@ -150,7 +151,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 	}
 
 	output := logBuffer.String()
-	assert.Contains(t, output, "uiBridge actor recovered from panic")
+	assert.Contains(t, output, "UIBridge actor recovered from panic")
 	assert.Contains(t, output, "intentional test panic")
 	assert.Contains(t, output, "stack")
 }
@@ -160,7 +161,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mRenderer := new(session.MockUIRenderer)
+	mRenderer := new(testutil.MockUIRenderer)
 	// Mock the renderer to return a closure that panics when called.
 	// We use .Maybe() because SyncBridge might trigger resumeActiveSpinner which calls this again.
 	mRenderer.On("StartSpinnerWithStatus", mock.Anything, mock.Anything).Return(func() {
@@ -201,7 +202,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 
 	_ = bridge.HandleEvent(ctx, events.TurnStatusEvent{Status: events.TurnStatus{Mode: "test"}})
 
-	// 4. Assert that the uiBridge survives and cancels successfully.
+	// 4. Assert that the UIBridge survives and cancels successfully.
 	select {
 	case <-done:
 		// Success: Bridge cancelled gracefully despite double-panic
@@ -218,7 +219,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 	logBuffer := inframock.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	mRenderer := new(session.MockUIRenderer)
+	mRenderer := new(testutil.MockUIRenderer)
 	// First event panics
 	mRenderer.On("LogTurnStatus", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 		panic("first panic")
@@ -246,7 +247,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 
 	output := logBuffer.String()
 	// Should contain the first panic
-	assert.Contains(t, output, "uiBridge actor recovered from panic")
+	assert.Contains(t, output, "UIBridge actor recovered from panic")
 	assert.Contains(t, output, "first panic")
 
 	// Verify that RenderResponse was NOT called (it was the second event in the queue)
@@ -255,7 +256,7 @@ func TestUIBridge_PoisonPill(t *testing.T) {
 
 func TestUIBridge_SendToClosedChannel(t *testing.T) {
 	t.Parallel()
-	mRenderer := new(session.MockUIRenderer)
+	mRenderer := new(testutil.MockUIRenderer)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	bridge := session.NewUIBridge(mRenderer, session.WithBridgeThoughts(true), session.WithBridgeTools(true), session.WithBridgeRawOutput(false), session.WithBridgeColor(true), session.WithBridgeLogFile("test.log"), session.WithBridgeLogger(logger))

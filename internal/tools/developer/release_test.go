@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,16 +55,17 @@ func (m *mockReleaseRunner) BuildCode(ctx context.Context, outputBinary, path st
 
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
-	sm.RegisterSafePath(".")
-	absCwdRaw, _ := sm.IsPathSafe(".")
-	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
+	root := "/test/project"
+	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return root, nil
+	}
 
 	fs := persistence.NewMockFileSystem()
 	ctx := context.Background()
 
-	require.NoError(t, fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), 0644))
-	require.NoError(t, fs.WriteFile(ctx, absCwd+"/main.go", []byte("package main\nfunc main() {}"), 0644))
+	require.NoError(t, fs.WriteFile(ctx, root+"/go.mod", []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), 0644))
+	require.NoError(t, fs.WriteFile(ctx, root+"/main.go", []byte("package main\nfunc main() {}"), 0644))
 
 	runner := &mockReleaseRunner{}
 
@@ -89,10 +90,11 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 
 func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
-	sm.RegisterSafePath(".")
-	absCwdRaw, _ := sm.IsPathSafe(".")
-	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
+	root := "/test/project"
+	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return root, nil
+	}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -104,8 +106,8 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Secret found",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
-				_ = fs.WriteFile(ctx, absCwd+"/secret.go", []byte("package p\nvar k = \"sk-12345678901234567890123456789012\""), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/secret.go", []byte("package p\nvar k = \"sk-12345678901234567890123456789012\""), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
 			wantSubstr:  "Potential secret in",
@@ -113,8 +115,8 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Secret found (masked)",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
-				_ = fs.WriteFile(ctx, absCwd+"/env.go", []byte("package p\nvar k = \"ANTHROPIC_API_KEY\""), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/env.go", []byte("package p\nvar k = \"ANTHROPIC_API_KEY\""), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
 			wantSubstr:  "found `ANTH..._KEY`",
@@ -122,7 +124,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Replace directive",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test\nreplace foo => ../foo"), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test\nreplace foo => ../foo"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
 			wantSubstr:  "contains 'replace' directives",
@@ -130,7 +132,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Build failure",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner {
 				return &mockReleaseRunner{
@@ -144,7 +146,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Linter failure",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner {
 				return &mockReleaseRunner{
@@ -158,7 +160,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		{
 			name: "Architecture violation",
 			setupFiles: func(fs persistence.FileSystem) {
-				_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+				_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			},
 			setupRunner: func() *mockReleaseRunner { return &mockReleaseRunner{} },
 			wantSubstr:  "Layer violations",
@@ -193,10 +195,11 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 
 func TestLinterChecker_Fallbacks(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
-	sm.RegisterSafePath(".")
-	absCwdRaw, _ := sm.IsPathSafe(".")
-	absCwd := strings.ReplaceAll(absCwdRaw, "\\", "/")
+	root := "/test/project"
+	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm.IsSafeFunc = func(path string) (string, error) {
+		return root, nil
+	}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -243,7 +246,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fs := persistence.NewMockFileSystem()
-			_ = fs.WriteFile(ctx, absCwd+"/go.mod", []byte("module test"), 0644)
+			_ = fs.WriteFile(ctx, root+"/go.mod", []byte("module test"), 0644)
 			runner := tt.setupRunner()
 			m := &releaseManager{
 				sm:     sm,
@@ -261,7 +264,7 @@ func TestLinterChecker_Fallbacks(t *testing.T) {
 }
 
 func TestVerifyReleaseReadiness_Parallelism(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.RegisterSafePath(".")
 
 	m := &releaseManager{

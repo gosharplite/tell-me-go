@@ -36,12 +36,12 @@ func TestPipelineFactory_BuildStandardPipeline_PrunerInclusion(t *testing.T) {
 
 			hasPruner := false
 			for _, tr := range pipeline.transformers {
-				if _, ok := tr.(*historyPruner); ok {
+				if _, ok := tr.(*HistoryPruner); ok {
 					hasPruner = true
 					break
 				}
 			}
-			assert.Equal(t, tt.expectPruner, hasPruner, "historyPruner inclusion state mismatch")
+			assert.Equal(t, tt.expectPruner, hasPruner, "HistoryPruner inclusion state mismatch")
 
 			// Ensure the constructed pipeline is valid and executable
 			ctx := context.Background()

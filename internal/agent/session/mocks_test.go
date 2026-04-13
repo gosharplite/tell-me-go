@@ -127,7 +127,7 @@ type mockEstimator struct {
 	tokens int
 }
 
-func (m *mockEstimator) estimateTokens(contents []*llm.Content) int {
+func (m *mockEstimator) EstimateTokens(contents []*llm.Content) int {
 	return m.tokens
 }
 

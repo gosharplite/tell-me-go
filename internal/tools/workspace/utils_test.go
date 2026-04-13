@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestIsIgnoredDir(t *testing.T) {
@@ -67,8 +67,14 @@ func TestWalkAndProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: false}
 	sm.RegisterSafePath(tempDir)
+	sm.IsSafeFunc = func(path string) (string, error) {
+		if strings.HasPrefix(path, tempDir) {
+			return path, nil
+		}
+		return "", os.ErrPermission
+	}
 
 	ctx := context.Background()
 	var seen []string

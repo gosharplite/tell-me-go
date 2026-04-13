@@ -46,8 +46,8 @@ func emitHeartbeats(done <-chan struct{}, hb chan<- struct{}) {
 	}
 }
 
-// summarizeHistory wraps ContextManager.SummarizeRange as a tool.
-func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+// SummarizeHistory wraps ContextManager.SummarizeRange as a tool.
+func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Turns float64 `json:"turns"`
 		Focus string  `json:"focus"`
@@ -131,7 +131,7 @@ func RegisterInternal(r tools.ToolRegistrar, cm *ContextManager) error {
 			},
 			Required: []string{"turns"},
 		},
-	}, it.summarizeHistory, tools.ToolOptions{
+	}, it.SummarizeHistory, tools.ToolOptions{
 		LongRunning: true,
 		Serial:      true,
 	}); err != nil {

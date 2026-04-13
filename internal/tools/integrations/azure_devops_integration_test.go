@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,7 +21,7 @@ func TestAdoManager_LiveNetwork_Integration(t *testing.T) {
 	}
 
 	// 2. Initialize with defaults (hits real dev.azure.com by default)
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	m := newADOManager(sm, withToken(pat))
 
 	// 3. Execute real network call (Example: listing PRs in a public or accessible repo)

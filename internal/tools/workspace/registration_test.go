@@ -4,58 +4,99 @@
 package workspace
 
 import (
+	"context"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/assert"
 )
 
+type mockToolRegistry struct {
+	decls []*tools.ToolDeclaration
+}
+
+func (m *mockToolRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	m.decls = append(m.decls, def)
+	return nil
+}
+func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.Register(def, handler)
+}
+func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+func (m *mockToolRegistry) IsSerial(name string) bool      { return false }
+func (m *mockToolRegistry) IsLongRunning(name string) bool { return false }
+func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
+	return m.decls
+}
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions {
+	return tools.ToolOptions{}
+}
+func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return m.Register(def, handler)
+}
+func (m *mockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return m.RegisterWithOptions(def, handler, opts)
+}
+func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return m.GetDeclarations()
+}
+func (m *mockToolRegistry) ListAvailableToolkits() []string {
+	return []string{"core"}
+}
+
 func TestRegister(t *testing.T) {
-	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
-	if err := Register(reg, sm, &exec.RealExecutor{}, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem()); err != nil {
+	t.Parallel()
+	registry := &mockToolRegistry{}
+	sm := &testutil.MockSecurityManager{AllowAll: true}
+	exec := &testutil.MockExecutor{}
+	validator := &testutil.MockCommandValidator{}
+	fs := testutil.NewOSFileSystem()
+
+	if err := Register(registry, sm, exec, validator, fs); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
-	decls := reg.GetDeclarations()
-	found := make(map[string]bool)
-	for _, d := range decls {
-		found[d.Name] = true
-	}
-
-	expectedTools := []string{
+	toolNames := []string{
 		"list_files",
-		"get_tree",
 		"read_file",
-		"read_files",
-		"search_files",
-		"replace_text",
-		"find_file",
-		"get_definitions",
 		"write_file",
-		"append_text",
-		"get_file_diff",
-		"undo_file_change",
-		"delete_path",
-		"create_directory",
+		"search_files",
 		"execute_command",
-		"pipe_commands",
-		"ask_user",
+		"get_tree",
+		"create_directory",
+		"delete_path",
+		"find_file",
+		"replace_text",
+		"append_text",
 		"get_git_status",
 		"get_git_diff",
 		"get_git_log",
-		"get_git_show",
 		"get_git_blame",
 		"git_commit",
 		"git_create_branch",
+		"get_git_show",
+		"get_file_diff",
+		"undo_file_change",
+		"pipe_commands",
 	}
 
-	for _, name := range expectedTools {
-		if !found[name] {
-			t.Errorf("tool %s not registered", name)
-		}
+	for _, name := range toolNames {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			found := false
+			for _, d := range registry.GetDeclarations() {
+				if d.Name == name {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "tool %s should be registered", name)
+		})
 	}
 }

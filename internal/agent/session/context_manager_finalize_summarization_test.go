@@ -10,10 +10,11 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 type errorMockHistoryManager struct {
-	mockHistoryManager
+	testutil.MockHistoryManager
 	archiveErr        error
 	setContentsErr    error
 	archiveCalled     bool
@@ -41,7 +42,7 @@ func runFinalizeSummarizationErrorTest(t *testing.T, archiveErr, setContentsErr 
 	}
 
 	h := &errorMockHistoryManager{}
-	h.contents = cloneContentSlice(content)
+	h.Contents = cloneContentSlice(content)
 	h.archiveErr = archiveErr
 	h.setContentsErr = setContentsErr
 

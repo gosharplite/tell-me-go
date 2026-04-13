@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 type benchmarkSearchSecurityManager struct {

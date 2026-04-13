@@ -45,7 +45,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 	}
 
 	transformers := []ports.ContextTransformer{
-		&historyRepairer{},
+		&HistoryRepairer{},
 		&skillInjector{Selector: f.SkillSelector},
 		&toolResponseCleaner{}, // Remove tool responses with empty IDs
 		&emptyMessagePruner{},  // Explicitly drop messages with 0 parts
@@ -53,14 +53,14 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 		&thoughtSignaturePropagator{},
 	}
 
-	// Only add the historyPruner if turn limits are actually configured.
+	// Only add the HistoryPruner if turn limits are actually configured.
 	// If limits.MaxHistoryTurns <= 0, turn-based pruning is disabled entirely.
 	if limits.MaxHistoryTurns > 0 {
-		transformers = append(transformers, &historyPruner{
+		transformers = append(transformers, &HistoryPruner{
 			Policy: &compositePruningPolicy{
 				Policies: []ports.PruningPolicy{
 					// 2. Use the profile-adjusted window size
-					&slidingWindowPolicy{MaxTurns: windowTurns},
+					&SlidingWindowPolicy{MaxTurns: windowTurns},
 					&pinningPolicy{},
 					&importanceRankPolicy{},
 				},
@@ -71,18 +71,18 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 	}
 
 	transformers = append(transformers,
-		&tokenGatekeeper{
+		&TokenGatekeeper{
 			MaxTokens:  limits.MaxHistoryTokens,
-			Estimator:  f.Estimator.(tokenEstimator),
+			Estimator:  f.Estimator.(TokenEstimator),
 			Summarizer: f.Summarizer,
 			Events:     f.Events,
 			Logger:     f.Logger,
 		},
 		&emptyTurnFilter{},
-		&warningInjector{
+		&WarningInjector{
 			Strategy: f.Estimator.(*ContextStrategy),
 		},
-		&transientMerger{},
+		&TransientMerger{},
 		&finalContextValidator{
 			Strategy: f.Estimator.(*ContextStrategy),
 		},

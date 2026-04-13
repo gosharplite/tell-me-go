@@ -33,7 +33,7 @@ type ConfigWatcher interface {
 }
 
 // fileConfigWatcher monitors configuration files for changes and caches values.
-type fileConfigWatcher struct {
+type FileConfigWatcher struct {
 	mu                   sync.RWMutex
 	Loader               config.ConfigLoader
 	SessionLoader        config.SessionLoader
@@ -68,7 +68,7 @@ func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.S
 		}
 	}
 
-	return &fileConfigWatcher{
+	return &FileConfigWatcher{
 		Loader:               mainLoader,
 		SessionLoader:        sessionLoader,
 		FS:                   realFileStat{},
@@ -87,7 +87,7 @@ func NewFileConfigWatcher(mainLoader config.ConfigLoader, sessionLoader config.S
 }
 
 // SetPaths sets the configuration file paths.
-func (cw *fileConfigWatcher) SetPaths(main, session string) {
+func (cw *FileConfigWatcher) SetPaths(main, session string) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	cw.mainPath = main
@@ -95,7 +95,7 @@ func (cw *fileConfigWatcher) SetPaths(main, session string) {
 }
 
 // Refresh checks for file changes and updates cached values if necessary.
-func (cw *fileConfigWatcher) Refresh(model string) {
+func (cw *FileConfigWatcher) Refresh(model string) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 
@@ -103,7 +103,7 @@ func (cw *fileConfigWatcher) Refresh(model string) {
 	cw.updateFromSession(changed)
 }
 
-func (cw *fileConfigWatcher) updateFromMain(model string) bool {
+func (cw *FileConfigWatcher) updateFromMain(model string) bool {
 	if cw.mainPath == "" {
 		return false
 	}
@@ -142,7 +142,7 @@ func (cw *fileConfigWatcher) updateFromMain(model string) bool {
 	return true
 }
 
-func (cw *fileConfigWatcher) updateFromSession(forceUpdate bool) {
+func (cw *FileConfigWatcher) updateFromSession(forceUpdate bool) {
 	if cw.sessionPath == "" {
 		return
 	}
@@ -158,7 +158,7 @@ func (cw *fileConfigWatcher) updateFromSession(forceUpdate bool) {
 	}
 }
 
-func (cw *fileConfigWatcher) loadSessionConfig() {
+func (cw *FileConfigWatcher) loadSessionConfig() {
 	if cw.SessionLoader == nil {
 		return
 	}
@@ -184,7 +184,7 @@ func (cw *fileConfigWatcher) loadSessionConfig() {
 }
 
 // SetLimits updates the cached limits manually.
-func (cw *fileConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
+func (cw *FileConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	if tokens > 0 {
@@ -199,14 +199,14 @@ func (cw *fileConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 }
 
 // GetLimits returns the current cached limits.
-func (cw *fileConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns, threshold int) {
+func (cw *FileConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns, threshold int) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns, cw.tieredThreshold
 }
 
 // ApplyLimits updates the cached limits from an events.Limits struct.
-func (cw *fileConfigWatcher) ApplyLimits(l events.Limits) {
+func (cw *FileConfigWatcher) ApplyLimits(l events.Limits) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	if l.MaxHistoryTokens > 0 {
@@ -224,13 +224,13 @@ func (cw *fileConfigWatcher) ApplyLimits(l events.Limits) {
 }
 
 // SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
-func (cw *fileConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
+func (cw *FileConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	if cs != nil {
 		cs.SetLimits(cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns)
-		cs.setContextWindow(cw.contextWindow)
-		cs.setTieredThreshold(cw.tieredThreshold)
+		cs.SetContextWindow(cw.contextWindow)
+		cs.SetTieredThreshold(cw.tieredThreshold)
 	}
 }
 
@@ -316,7 +316,17 @@ func (cw *noOpConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
 	defer cw.mu.RUnlock()
 	if cs != nil {
 		cs.SetLimits(cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns)
-		cs.setContextWindow(cw.contextWindow)
-		cs.setTieredThreshold(cw.tieredThreshold)
+		cs.SetContextWindow(cw.contextWindow)
+		cs.SetTieredThreshold(cw.tieredThreshold)
 	}
+}
+
+func (cw *FileConfigWatcher) GetContextWindow() int {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.contextWindow
+}
+
+func (cw *FileConfigWatcher) GetDefaultWindow() int {
+	return cw.defaultWindow
 }

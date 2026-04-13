@@ -63,7 +63,7 @@ func TestNewPipelineDispatcher(t *testing.T) {
 		bus      events.EventBus
 		logger   ports.Logger
 		observer tools.ExecutionObserver
-		opts     []executorOption
+		opts     []ExecutorOption
 		wantErr  bool
 		errStr   string
 	}{

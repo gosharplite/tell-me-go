@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/service/toolchain"
 )
 
@@ -138,7 +138,7 @@ func (m *mockHealthExecutor) CombinedOutput(ctx context.Context, name string, ar
 
 func TestHealthManager_GetCodeHealth(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
@@ -171,7 +171,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 
 func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}

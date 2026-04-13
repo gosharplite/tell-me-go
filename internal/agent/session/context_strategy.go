@@ -52,8 +52,8 @@ func NewContextStrategy(counter llm.TokenCounter) *ContextStrategy {
 	return cs
 }
 
-// setContextWindow updates the model's absolute context window limit.
-func (cs *ContextStrategy) setContextWindow(window int) {
+// SetContextWindow updates the model's absolute context window limit.
+func (cs *ContextStrategy) SetContextWindow(window int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if window > 0 {
@@ -83,7 +83,7 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 	}
 }
 
-func (cs *ContextStrategy) setTieredThreshold(threshold int) {
+func (cs *ContextStrategy) SetTieredThreshold(threshold int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if threshold >= 0 {
@@ -104,14 +104,14 @@ func (cs *ContextStrategy) GetTieredThreshold() int {
 	return cs.tieredThreshold
 }
 
-// estimateTokens provides a heuristic-based token count with incremental caching.
-func (cs *ContextStrategy) estimateTokens(contents []*llm.Content) int {
+// EstimateTokens provides a heuristic-based token count with incremental caching.
+func (cs *ContextStrategy) EstimateTokens(contents []*llm.Content) int {
 	return cs.counter.Count(contents)
 }
 
 // Count implements llm.TokenCounter.
 func (cs *ContextStrategy) Count(contents []*llm.Content) int {
-	return cs.estimateTokens(contents)
+	return cs.EstimateTokens(contents)
 }
 
 // getWarnings generates safety and financial warnings based on current state.
@@ -205,4 +205,28 @@ func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns, prunedTurns
 // getCloggedWarning returns a warning message for when summarization fails to reduce context.
 func (cs *ContextStrategy) getCloggedWarning() string {
 	return "[CRITICAL SYSTEM NOTICE: A recent summarization failed to significantly reduce context size. This is likely due to too many 'Pinned' turns or massive active file buffers. You MUST unpin non-essential turns using 'manage_history' (unpin) or move architectural findings to 'manage_tasks' immediately to avoid a session crash.]"
+}
+
+func (cs *ContextStrategy) GetContextWindow() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.contextWindow
+}
+
+func (cs *ContextStrategy) GetMaxHistoryTokens() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.maxHistoryTokens
+}
+
+func (cs *ContextStrategy) GetMaxToolTurns() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.maxToolTurns
+}
+
+func (cs *ContextStrategy) GetMaxHistoryTurns() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.maxHistoryTurns
 }

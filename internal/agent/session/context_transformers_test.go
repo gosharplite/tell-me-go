@@ -33,7 +33,7 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &slidingWindowPolicy{MaxTurns: tt.maxTurns}
+			p := &SlidingWindowPolicy{MaxTurns: tt.maxTurns}
 			turns := make([][]*llm.Content, tt.historyLen)
 			keep := make([]bool, tt.historyLen)
 
@@ -59,7 +59,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 	}{
 		{
 			name:   "Pruning occurred",
-			policy: &slidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
+			policy: &SlidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
 			history: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 				{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
@@ -78,7 +78,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 		},
 		{
 			name:   "No pruning",
-			policy: &slidingWindowPolicy{MaxTurns: 10},
+			policy: &SlidingWindowPolicy{MaxTurns: 10},
 			history: []*llm.Content{
 				{Role: "user"},
 			},
@@ -88,7 +88,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 		},
 		{
 			name:   "Immediate Cancellation",
-			policy: &slidingWindowPolicy{MaxTurns: 1},
+			policy: &SlidingWindowPolicy{MaxTurns: 1},
 			history: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 				{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
@@ -98,7 +98,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 		},
 		{
 			name:   "Unbalanced history",
-			policy: &slidingWindowPolicy{MaxTurns: 1},
+			policy: &SlidingWindowPolicy{MaxTurns: 1},
 			history: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 				{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
@@ -114,7 +114,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pruner := &historyPruner{
+			pruner := &HistoryPruner{
 				Policy: tt.policy,
 			}
 			req := &ports.ContextRequest{
@@ -185,7 +185,7 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
 	p := &compositePruningPolicy{
 		Policies: []ports.PruningPolicy{
-			&slidingWindowPolicy{MaxTurns: 1},
+			&SlidingWindowPolicy{MaxTurns: 1},
 			&pinningPolicy{},
 		},
 	}
@@ -210,7 +210,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Under limit", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+		tg := &TokenGatekeeper{
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 500},
 		}
@@ -221,7 +221,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	})
 
 	t.Run("Exceeds limit after summarization", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+		tg := &TokenGatekeeper{
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 1100}, // Always returns 1100
 			Summarizer: &mockSummarizer{
@@ -241,7 +241,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 	})
 
 	t.Run("Summarization failure", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+		tg := &TokenGatekeeper{
 			MaxTokens: 2000,
 			Estimator: &mockEstimator{tokens: 950},
 			Summarizer: &mockSummarizer{
@@ -267,7 +267,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
-	injector := &warningInjector{Strategy: strategy}
+	injector := &WarningInjector{Strategy: strategy}
 
 	t.Run("Inject turn warning", func(t *testing.T) {
 		req := &request{
@@ -298,7 +298,7 @@ type dynamicMockEstimator struct {
 	tokens int
 }
 
-func (m *dynamicMockEstimator) estimateTokens(contents []*llm.Content) int {
+func (m *dynamicMockEstimator) EstimateTokens(contents []*llm.Content) int {
 	// If it contains a summary, return less tokens
 	for _, c := range contents {
 		for _, p := range c.Parts {
@@ -313,7 +313,7 @@ func (m *dynamicMockEstimator) estimateTokens(contents []*llm.Content) int {
 func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	ctx := context.Background()
 	summarizerCalled := false
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		MaxTokens: 10000,
 		Estimator: &dynamicMockEstimator{tokens: 9500},
 		Summarizer: &mockSummarizer{
@@ -345,7 +345,7 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
-	injector := &warningInjector{Strategy: strategy}
+	injector := &WarningInjector{Strategy: strategy}
 
 	t.Run("Inject clogged warning", func(t *testing.T) {
 		req := &request{
@@ -375,7 +375,7 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 
 func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 	ctx := context.Background()
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		MaxTokens: 10000,
 		Estimator: &dynamicMockEstimator{tokens: 9500},
 		Summarizer: &mockSummarizer{
@@ -396,7 +396,7 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 
 func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 	ctx := context.Background()
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		MaxTokens: 2000,
 		Estimator: &mockEstimator{tokens: 1900}, // > 90%
 	}
@@ -424,7 +424,7 @@ func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}))
 	strategy.SetLimits(1000, 10, 20)
 
-	injector := &warningInjector{Strategy: strategy}
+	injector := &WarningInjector{Strategy: strategy}
 
 	t.Run("Blocked triggers clogged warning", func(t *testing.T) {
 		req := &request{
@@ -468,7 +468,7 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tg := &tokenGatekeeper{
+			tg := &TokenGatekeeper{
 				MaxTokens: tt.maxTokens,
 				Estimator: &mockEstimator{tokens: tt.tokens},
 			}
@@ -501,7 +501,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	// Second run with higher limit to trigger clogged warning instead of error
 	maxTokens = 20000
 	strategy.SetLimits(maxTokens, 10, 20)
-	tg := pipeline.transformers[0].(*tokenGatekeeper) // tokenGatekeeper is first after sorting (80)
+	tg := pipeline.transformers[0].(*TokenGatekeeper) // TokenGatekeeper is first after sorting (80)
 	tg.MaxTokens = maxTokens
 
 	req2 := &request{
@@ -520,7 +520,7 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("10 percent cap", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+		tg := &TokenGatekeeper{
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 901},
 		}
@@ -534,7 +534,7 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	})
 
 	t.Run("Capped by SystemContextBuffer", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+		tg := &TokenGatekeeper{
 			MaxTokens: 10000,
 			Estimator: &mockEstimator{tokens: 9001},
 		}
@@ -739,7 +739,7 @@ func TestIsTurnEmpty_Helper(t *testing.T) {
 			got, err := isTurnEmpty(tt.turn)
 			if tt.wantErr {
 				require.Error(t, err)
-				require.ErrorIs(t, err, errInvalidPayload)
+				require.ErrorIs(t, err, ErrInvalidPayload)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.expected, got)
@@ -787,7 +787,7 @@ func TestIsToolCall_Helper(t *testing.T) {
 			got, err := isToolCall(tt.msg)
 			if tt.wantErr {
 				require.Error(t, err)
-				require.ErrorIs(t, err, errInvalidPayload)
+				require.ErrorIs(t, err, ErrInvalidPayload)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.expected, got)
@@ -797,7 +797,7 @@ func TestIsToolCall_Helper(t *testing.T) {
 }
 
 func TestFindSummarizableRange_Helper(t *testing.T) {
-	tg := &tokenGatekeeper{}
+	tg := &TokenGatekeeper{}
 
 	t.Run("No pins", func(t *testing.T) {
 		history := generateMessageHistory(20)
@@ -949,8 +949,8 @@ func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter)
-	strategy.setTieredThreshold(0)
-	tg := &tokenGatekeeper{Estimator: strategy}
+	strategy.SetTieredThreshold(0)
+	tg := &TokenGatekeeper{Estimator: strategy}
 	req := &request{History: []*llm.Content{{Role: "user"}}}
 
 	tokens, err := tg.handleTieredThreshold(ctx, req)
@@ -963,8 +963,8 @@ func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter)
-	strategy.setTieredThreshold(2000)
-	tg := &tokenGatekeeper{Estimator: strategy}
+	strategy.SetTieredThreshold(2000)
+	tg := &TokenGatekeeper{Estimator: strategy}
 	req := &request{History: []*llm.Content{{Role: "user"}}}
 
 	tokens, err := tg.handleTieredThreshold(ctx, req)
@@ -976,10 +976,10 @@ func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter)
-	strategy.setTieredThreshold(500)
+	strategy.SetTieredThreshold(500)
 
 	summarizerCalled := false
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		Estimator: strategy,
 		Summarizer: &mockSummarizer{
 			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
@@ -1005,17 +1005,17 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter)
-	strategy.setTieredThreshold(500)
+	strategy.SetTieredThreshold(500)
 
 	t.Run("Not enough history", func(t *testing.T) {
-		tg := &tokenGatekeeper{Estimator: strategy}
+		tg := &TokenGatekeeper{Estimator: strategy}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		_, _ = tg.handleTieredThreshold(ctx, req)
 		require.True(t, req.Metadata.MaintenanceBlocked)
 	})
 
 	t.Run("Critical error", func(t *testing.T) {
-		tg := &tokenGatekeeper{
+		tg := &TokenGatekeeper{
 			Estimator: strategy,
 			Summarizer: &mockSummarizer{
 				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
@@ -1060,7 +1060,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter)
-	strategy.setTieredThreshold(500)
+	strategy.SetTieredThreshold(500)
 
 	var publishedEvents []events.Event
 	mockEvents := &mockTransformerEventBus{
@@ -1069,7 +1069,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 		},
 	}
 
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		Estimator: strategy,
 		Events:    mockEvents,
 		Summarizer: &mockSummarizer{
@@ -1105,9 +1105,9 @@ func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter)
-	strategy.setTieredThreshold(500)
+	strategy.SetTieredThreshold(500)
 
-	tg := &tokenGatekeeper{
+	tg := &TokenGatekeeper{
 		Estimator: strategy,
 	}
 
@@ -1133,13 +1133,13 @@ func setupTestPipeline(maxTokens int) (*ContextPipeline, *ContextStrategy) {
 	strategy.SetLimits(maxTokens, 10, 20)
 
 	pipeline := NewContextPipeline(
-		&historyPruner{Policy: &slidingWindowPolicy{MaxTurns: 10}},
-		&tokenGatekeeper{
+		&HistoryPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}},
+		&TokenGatekeeper{
 			MaxTokens: maxTokens,
 			Estimator: strategy,
 		},
-		&warningInjector{Strategy: strategy},
-		&transientMerger{},
+		&WarningInjector{Strategy: strategy},
+		&TransientMerger{},
 	)
 	return pipeline, strategy
 }
@@ -1183,7 +1183,7 @@ func generateMessageHistory(n int) []*llm.Content {
 
 func TestHistoryRepairer_Transform(t *testing.T) {
 	ctx := context.Background()
-	repairer := &historyRepairer{}
+	repairer := &HistoryRepairer{}
 
 	tests := []struct {
 		name          string
@@ -1250,7 +1250,7 @@ func TestContextPipeline_NilSafety(t *testing.T) {
 	pipeline := NewContextPipeline(
 		&contentCleaner{},
 		&thoughtSignaturePropagator{},
-		&transientMerger{},
+		&TransientMerger{},
 		&toolResponseCleaner{},
 	)
 
@@ -1306,7 +1306,7 @@ func TestContextPipeline_NilSafety(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err, "expected error for malformed payload")
-				require.ErrorIs(t, err, errInvalidPayload, "expected errInvalidPayload sentinel")
+				require.ErrorIs(t, err, ErrInvalidPayload, "expected ErrInvalidPayload sentinel")
 			} else {
 				require.NoError(t, err)
 			}
@@ -1327,55 +1327,55 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 			name:        "groupTurns with nil history",
 			transformer: nil, // special case
 			history:     nil,
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "groupTurns with nil message",
 			transformer: nil,
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "thoughtSignaturePropagator with nil message",
 			transformer: &thoughtSignaturePropagator{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "contentCleaner with nil message",
 			transformer: &contentCleaner{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "toolResponseCleaner with nil message",
 			transformer: &toolResponseCleaner{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "emptyTurnFilter with nil message",
 			transformer: &emptyTurnFilter{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
-			name:        "historyRepairer with nil message at end",
-			transformer: &historyRepairer{},
+			name:        "HistoryRepairer with nil message at end",
+			transformer: &HistoryRepairer{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
-			name:        "transientMerger with nil message",
-			transformer: &transientMerger{},
+			name:        "TransientMerger with nil message",
+			transformer: &TransientMerger{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 		{
 			name:        "emptyMessagePruner with nil message",
 			transformer: &emptyMessagePruner{},
 			history:     []*llm.Content{nil},
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 	}
 
@@ -1399,8 +1399,8 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 			input   *llm.Content
 			wantErr error
 		}{
-			{"nil content", nil, errInvalidPayload},
-			{"nil part", &llm.Content{Parts: []*llm.Part{nil}}, errInvalidPayload},
+			{"nil content", nil, ErrInvalidPayload},
+			{"nil part", &llm.Content{Parts: []*llm.Part{nil}}, ErrInvalidPayload},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -1416,9 +1416,9 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 			input   *llm.Content
 			wantErr error
 		}{
-			{"nil content", nil, errInvalidPayload},
-			{"nil part first pass", &llm.Content{Role: "model", Parts: []*llm.Part{nil}}, errInvalidPayload},
-			{"nil part second pass", &llm.Content{Role: "model", Parts: []*llm.Part{{ThoughtSignature: []byte("sig")}, nil}}, errInvalidPayload},
+			{"nil content", nil, ErrInvalidPayload},
+			{"nil part first pass", &llm.Content{Role: "model", Parts: []*llm.Part{nil}}, ErrInvalidPayload},
+			{"nil part second pass", &llm.Content{Role: "model", Parts: []*llm.Part{{ThoughtSignature: []byte("sig")}, nil}}, ErrInvalidPayload},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -1431,11 +1431,11 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 	t.Run("isTurnBoundary boundary cases", func(t *testing.T) {
 		// Test last == nil in current turn
 		_, err := isTurnBoundary(&llm.Content{Role: "user"}, []*llm.Content{nil})
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 
 		// Test isToolCall returning error
 		_, err = isTurnBoundary(&llm.Content{Role: "user"}, []*llm.Content{{Role: "model", Parts: []*llm.Part{nil}}})
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 	})
 
 	t.Run("transformer error propagation", func(t *testing.T) {
@@ -1446,11 +1446,11 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 			{Role: "user", Parts: []*llm.Part{nil}},
 			{Role: "user"},
 		}})
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 
 		// groupTurns error from validateTurnContent (empty role)
 		_, err = groupTurns(ctx, []*llm.Content{{Role: ""}})
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 
 		// groupTurns error from validateTurnContent (context cancelled)
 		cancelledCtx, cancel := context.WithCancel(ctx)
@@ -1463,28 +1463,28 @@ func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 			{Role: "model", Parts: []*llm.Part{nil}},
 			{Role: "user"},
 		})
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 
-		// historyRepairer error from nil part
-		hr := &historyRepairer{}
+		// HistoryRepairer error from nil part
+		hr := &HistoryRepairer{}
 		err = hr.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
 			{Role: "model", Parts: []*llm.Part{nil}},
 		}})
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 
 		// contentCleaner error from cleanContent
 		cc := &contentCleaner{}
 		err = cc.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{nil}},
 		}})
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 
 		// thoughtSignaturePropagator error from propagateSignatureToMessage
 		tsp := &thoughtSignaturePropagator{}
 		err = tsp.Transform(ctx, &ports.ContextRequest{History: []*llm.Content{
 			{Role: "model", Parts: []*llm.Part{nil}},
 		}})
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 	})
 }
 
@@ -1534,7 +1534,7 @@ func TestContentCleaner_Transform(t *testing.T) {
 
 func TestTransientMerger_Transform(t *testing.T) {
 	ctx := context.Background()
-	merger := &transientMerger{}
+	merger := &TransientMerger{}
 
 	req := &request{
 		History: []*llm.Content{
@@ -1556,7 +1556,7 @@ func TestTransientMerger_Transform(t *testing.T) {
 func TestCleanContent_NilSafety(t *testing.T) {
 	t.Run("nil content", func(t *testing.T) {
 		_, err := cleanContent(nil)
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 	})
 
 	t.Run("nil part in content", func(t *testing.T) {
@@ -1565,7 +1565,7 @@ func TestCleanContent_NilSafety(t *testing.T) {
 			Parts: []*llm.Part{{Text: "valid"}, nil},
 		}
 		_, err := cleanContent(msg)
-		require.ErrorIs(t, err, errInvalidPayload)
+		require.ErrorIs(t, err, ErrInvalidPayload)
 		require.Contains(t, err.Error(), "nil part at index 1")
 	})
 }
@@ -1765,7 +1765,7 @@ func TestThoughtSignaturePropagator_Transform(t *testing.T) {
 
 func TestTransientMerger_NilSafety(t *testing.T) {
 	t.Parallel()
-	merger := &transientMerger{}
+	merger := &TransientMerger{}
 	req := &ports.ContextRequest{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "a"}}, TransientParts: []*llm.Part{{Text: "b"}}},
@@ -1808,7 +1808,7 @@ func TestCleanContent_Table(t *testing.T) {
 				nil,
 			},
 			wantChanged: false,
-			wantErr:     errInvalidPayload,
+			wantErr:     ErrInvalidPayload,
 		},
 	}
 

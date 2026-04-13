@@ -14,15 +14,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// tokenEstimator interface defines the method for estimating tokens.
-type tokenEstimator interface {
-	estimateTokens(contents []*llm.Content) int
+// TokenEstimator interface defines the method for estimating tokens.
+type TokenEstimator interface {
+	EstimateTokens(contents []*llm.Content) int
 }
 
-// tokenGatekeeper estimates tokens and triggers auto-summarization if needed.
-type tokenGatekeeper struct {
+// TokenGatekeeper estimates tokens and triggers auto-summarization if needed.
+type TokenGatekeeper struct {
 	MaxTokens   int
-	Estimator   tokenEstimator
+	Estimator   TokenEstimator
 	Summarizer  ports.Summarizer
 	Events      events.EventBus
 	Strategies  map[string]ThresholdStrategy
@@ -30,7 +30,7 @@ type tokenGatekeeper struct {
 	Logger      ports.Logger
 }
 
-func (t *tokenGatekeeper) getStrategy() ThresholdStrategy {
+func (t *TokenGatekeeper) getStrategy() ThresholdStrategy {
 	if t.Strategies != nil {
 		if s, ok := t.Strategies[t.DefaultTier]; ok {
 			return s
@@ -39,7 +39,7 @@ func (t *tokenGatekeeper) getStrategy() ThresholdStrategy {
 	return &dynamicThresholdStrategy{Estimator: t.Estimator}
 }
 
-func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *TokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	// 0. Domain Boundary Validation: Ensure history is structurally sound before processing
 	if _, err := groupTurns(ctx, req.History); err != nil {
 		return fmt.Errorf("gatekeeper validation failed: %w", err)
@@ -66,8 +66,8 @@ func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextReque
 	return nil
 }
 
-func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.ContextRequest) (int, error) {
-	tokens := t.Estimator.estimateTokens(req.History)
+func (t *TokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.ContextRequest) (int, error) {
+	tokens := t.Estimator.EstimateTokens(req.History)
 	req.Metadata.OriginalTokenCount = tokens
 
 	strategy := t.getStrategy()
@@ -77,14 +77,14 @@ func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.
 	return tokens, nil
 }
 
-func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.ContextRequest, tokens int) (int, error) {
+func (t *TokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.ContextRequest, tokens int) (int, error) {
 	if t.MaxTokens > 0 && tokens > int(float64(t.MaxTokens)*0.9) {
 		return t.triggerSummarization(ctx, req, tokens, t.MaxTokens, "Safety limit pressure (> 90%)")
 	}
 	return tokens, nil
 }
 
-func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.ContextRequest, tokens, limit int, reason string) (int, error) {
+func (t *TokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.ContextRequest, tokens, limit int, reason string) (int, error) {
 	if t.Events != nil {
 		evt := events.SummarizationRequired{
 			Tokens:   tokens,
@@ -108,7 +108,7 @@ func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 	n, err := t.autoSummarize(ctx, req)
 	if err != nil {
 		// Propagate critical errors, but continue if blocked
-		if errors.Is(err, errInvalidPayload) {
+		if errors.Is(err, ErrInvalidPayload) {
 			return tokens, err
 		}
 		if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
@@ -117,12 +117,12 @@ func (t *tokenGatekeeper) triggerSummarization(ctx context.Context, req *ports.C
 		return tokens, err
 	}
 
-	newTokens := t.Estimator.estimateTokens(req.History)
+	newTokens := t.Estimator.EstimateTokens(req.History)
 	req.Metadata.SummarizedTurns = n
 	return newTokens, nil
 }
 
-func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {
+func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {
 	if t.MaxTokens <= 0 {
 		return nil
 	}
@@ -169,9 +169,9 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.Con
 	return nil
 }
 
-func (t *tokenGatekeeper) Priority() int { return 80 }
+func (t *TokenGatekeeper) Priority() int { return 80 }
 
-func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextRequest) (int, error) {
+func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextRequest) (int, error) {
 	if len(req.History) < 10 {
 		req.Metadata.MaintenanceBlocked = true
 		return 0, fmt.Errorf("not enough history to auto-summarize (got %d)", len(req.History))
@@ -185,7 +185,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	}
 
 	// 2. Logging
-	subsetTokens := t.Estimator.estimateTokens(req.History[start:end])
+	subsetTokens := t.Estimator.EstimateTokens(req.History[start:end])
 	msg := fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens)
 	t.publishSystemEvent(ctx, msg, "info")
 
@@ -210,7 +210,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextR
 	return numTurns, nil
 }
 
-func (t *tokenGatekeeper) publishSystemEvent(ctx context.Context, message, level string) {
+func (t *TokenGatekeeper) publishSystemEvent(ctx context.Context, message, level string) {
 	if t.Events == nil {
 		return
 	}
@@ -227,7 +227,11 @@ func (t *tokenGatekeeper) publishSystemEvent(ctx context.Context, message, level
 	}
 }
 
-func (t *tokenGatekeeper) findSummarizableRange(ctx context.Context, history []*llm.Content) (int, int, int, error) {
+func (t *TokenGatekeeper) FindSummarizableRange(ctx context.Context, history []*llm.Content) (int, int, int, error) {
+	return t.findSummarizableRange(ctx, history)
+}
+
+func (t *TokenGatekeeper) findSummarizableRange(ctx context.Context, history []*llm.Content) (int, int, int, error) {
 	turns, err := groupTurns(ctx, history)
 	if err != nil {
 		return 0, 0, 0, err
@@ -252,7 +256,7 @@ func (t *tokenGatekeeper) findSummarizableRange(ctx context.Context, history []*
 	return startIdx, endIdx, numTurns, nil
 }
 
-func (t *tokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int) (int, int) {
+func (t *TokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*llm.Content, target int) (int, int) {
 	startTurn := -1
 	numTurns := 0
 
@@ -287,7 +291,7 @@ func (t *tokenGatekeeper) locateCandidateBlock(ctx context.Context, turns [][]*l
 	return startTurn, numTurns
 }
 
-func (t *tokenGatekeeper) countMessages(turns [][]*llm.Content) int {
+func (t *TokenGatekeeper) countMessages(turns [][]*llm.Content) int {
 	count := 0
 	for _, turn := range turns {
 		count += len(turn)
@@ -295,7 +299,7 @@ func (t *tokenGatekeeper) countMessages(turns [][]*llm.Content) int {
 	return count
 }
 
-func (t *tokenGatekeeper) isTurnPinned(turn []*llm.Content) bool {
+func (t *TokenGatekeeper) isTurnPinned(turn []*llm.Content) bool {
 	for _, msg := range turn {
 		if msg.Pinned {
 			return true
@@ -348,7 +352,7 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 	return updated
 }
 
-func (t *tokenGatekeeper) getLogger() ports.Logger {
+func (t *TokenGatekeeper) getLogger() ports.Logger {
 	if t.Logger != nil {
 		return t.Logger
 	}

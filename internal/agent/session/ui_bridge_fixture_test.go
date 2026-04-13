@@ -65,7 +65,7 @@ func (m *controllableUIRenderer) LogToolResult(ctx context.Context, name string,
 
 // uiBridgeFixture encapsulates the bridge under test and its lifecycle.
 type uiBridgeFixture struct {
-	bridge   *uiBridge
+	bridge   *UIBridge
 	renderer *controllableUIRenderer
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -83,9 +83,9 @@ func newUIBridgeFixture(t *testing.T, opts ...bridgeOption) *uiBridgeFixture {
 	logger := slog.New(slog.NewTextHandler(logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	// Append logger to opts to ensure it captures output for assertions.
-	opts = append(opts, withBridgeLogger(logger))
+	opts = append(opts, WithBridgeLogger(logger))
 
-	bridge := newUIBridge(renderer, opts...)
+	bridge := NewUIBridge(renderer, opts...)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	f := &uiBridgeFixture{
@@ -116,7 +116,7 @@ func (f *uiBridgeFixture) BlockLoop(t *testing.T) {
 	t.Helper()
 	f.renderer.On("LogTurnStatus", mock.Anything, mock.Anything).Return().Maybe()
 
-	if err := f.bridge.handleEvent(context.Background(), events.TurnStatusEvent{}); err != nil {
+	if err := f.bridge.HandleEvent(context.Background(), events.TurnStatusEvent{}); err != nil {
 		t.Fatalf("failed to send blocking event: %v", err)
 	}
 
@@ -141,18 +141,18 @@ func (f *uiBridgeFixture) UnblockLoop() {
 // FillQueue pushes 100 events into the bridge to saturate its internal channel.
 func (f *uiBridgeFixture) FillQueue(event events.Event) {
 	for i := 0; i < 100; i++ {
-		_ = f.bridge.handleEvent(context.Background(), event)
+		_ = f.bridge.HandleEvent(context.Background(), event)
 	}
 }
 
-// AssertEventBlocks verifies that sending the event to handleEvent blocks until the renderer is unblocked.
+// AssertEventBlocks verifies that sending the event to HandleEvent blocks until the renderer is unblocked.
 func (f *uiBridgeFixture) AssertEventBlocks(t *testing.T, ctx context.Context, event events.Event, timeout time.Duration, name string) {
 	t.Helper()
 	done := make(chan struct{})
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_ = f.bridge.handleEvent(ctx, event)
+		_ = f.bridge.HandleEvent(ctx, event)
 		close(done)
 	}()
 
@@ -175,12 +175,12 @@ func (f *uiBridgeFixture) AssertEventBlocks(t *testing.T, ctx context.Context, e
 	}
 }
 
-// AssertEventDoesNotBlock verifies that sending the event to handleEvent returns immediately.
+// AssertEventDoesNotBlock verifies that sending the event to HandleEvent returns immediately.
 func (f *uiBridgeFixture) AssertEventDoesNotBlock(t *testing.T, ctx context.Context, event events.Event, timeout time.Duration, name string) {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
-		_ = f.bridge.handleEvent(ctx, event)
+		_ = f.bridge.HandleEvent(ctx, event)
 		close(done)
 	}()
 

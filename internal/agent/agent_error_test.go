@@ -14,7 +14,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestAgent_ConfigFailure(t *testing.T) {
@@ -32,8 +31,8 @@ func TestAgent_ConfigFailure(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	inframock.CleanupBus(t, bus)
-	a := &agent.AgentInternal{}
+	events.CleanupBus(t, bus)
+	a := agent.NewAgentInternal()
 	a.SetEvents(bus)
 	a.SetCtxManager(&session.ContextManager{
 		History: hm,

@@ -18,14 +18,14 @@ import (
 func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 	t.Parallel()
 	mRenderer := new(mockUIRenderer)
-	bridge := newUIBridge(mRenderer,
-		withBridgeThoughts(true),
-		withBridgeTools(true),
-		withBridgeRawOutput(false),
-		withBridgeColor(true),
-		withBridgeLogFile("log.txt"),
-		withBridgeLogger(slog.Default()),
-		withBridgeCleanupTimeout(10*time.Millisecond),
+	bridge := NewUIBridge(mRenderer,
+		WithBridgeThoughts(true),
+		WithBridgeTools(true),
+		WithBridgeRawOutput(false),
+		WithBridgeColor(true),
+		WithBridgeLogFile("log.txt"),
+		WithBridgeLogger(slog.Default()),
+		WithBridgeCleanupTimeout(10*time.Millisecond),
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

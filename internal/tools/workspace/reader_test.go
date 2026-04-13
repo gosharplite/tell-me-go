@@ -11,9 +11,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestListFiles(t *testing.T) {
@@ -28,7 +28,7 @@ func TestListFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -58,7 +58,7 @@ func TestReadFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -80,7 +80,7 @@ func TestGetTree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -110,7 +110,7 @@ func TestFindFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -166,7 +166,7 @@ func TestGetFileDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{
 		sm:       sm,
 		fs:       infrapersistence.NewOSFileSystem(),
@@ -204,7 +204,7 @@ func TestReadFile_Truncation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -228,7 +228,7 @@ func TestReadFile_Binary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -248,7 +248,7 @@ func TestGetFileDiff_Errors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{
 		sm:       sm,
 		fs:       infrapersistence.NewOSFileSystem(),
@@ -285,7 +285,7 @@ func TestReadFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -354,7 +354,7 @@ func TestReadFile_UTF8Truncation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -390,7 +390,7 @@ func TestReadFiles_UTF8Truncation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -423,7 +423,7 @@ func TestReadFile_Directory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -442,7 +442,7 @@ func TestReadFiles_Directory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
@@ -456,7 +456,7 @@ func TestReadFiles_Directory(t *testing.T) {
 }
 
 func TestReadFiles_Limit(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 

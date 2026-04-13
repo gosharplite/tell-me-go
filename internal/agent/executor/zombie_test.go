@@ -71,7 +71,7 @@ func TestDispatcher_GoroutineLeak(t *testing.T) {
 		},
 	}
 
-	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, withToolTimeout(200*time.Millisecond))
+	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, &mockLogger{CriticalLogs: make(chan string, 10)}, WithToolTimeout(200*time.Millisecond))
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -123,8 +123,8 @@ func TestDispatcher_ZombieTool_LogCritical(t *testing.T) {
 
 	// Use short zombie timeout, but generous enough for -race
 	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, mockLog,
-		withZombieTimeout(200*time.Millisecond),
-		withToolTimeout(200*time.Millisecond),
+		WithZombieTimeout(200*time.Millisecond),
+		WithToolTimeout(200*time.Millisecond),
 	)
 	require.NoError(t, err)
 
@@ -201,7 +201,7 @@ func TestDispatcher_ZombieHeartbeatDetection(t *testing.T) {
 
 	// Dispatcher with long global timeout (5s) but short liveness threshold (100ms)
 	exec, err := NewPipelineDispatcher(reg, &mockSecurityManager{AllowAll: true}, &mockEventBus{}, &ports.NoOpLogger{}, mockLog,
-		withToolTimeout(5*time.Second),
+		WithToolTimeout(5*time.Second),
 		WithLongRunningTimeout(5*time.Second),
 	)
 	require.NoError(t, err)

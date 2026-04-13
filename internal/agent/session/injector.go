@@ -11,12 +11,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// warningInjector adds safety warnings to the context.
-type warningInjector struct {
+// WarningInjector adds safety warnings to the context.
+type WarningInjector struct {
 	Strategy *ContextStrategy
 }
 
-func (t *warningInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
+func (t *WarningInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	tokens := req.Metadata.FinalTokenCount
 	// Count logical conversational turns by counting messages with RoleUser.
 	// This prevents tool-call loops from artificially inflating the turn count.
@@ -49,7 +49,7 @@ func (t *warningInjector) Transform(ctx context.Context, req *ports.ContextReque
 	return nil
 }
 
-func (t *warningInjector) gatherWarnings(req *ports.ContextRequest, tokens, turns int) (string, []string) {
+func (t *WarningInjector) gatherWarnings(req *ports.ContextRequest, tokens, turns int) (string, []string) {
 	var combined string
 	var list []string
 	maxTokens, _, _ := t.Strategy.getLimits()
@@ -75,7 +75,7 @@ func (t *warningInjector) gatherWarnings(req *ports.ContextRequest, tokens, turn
 	return combined, list
 }
 
-func (t *warningInjector) injectWarning(req *ports.ContextRequest, combined string) {
+func (t *WarningInjector) injectWarning(req *ports.ContextRequest, combined string) {
 	if len(req.History) == 0 {
 		return
 	}
@@ -113,4 +113,4 @@ func (t *warningInjector) injectWarning(req *ports.ContextRequest, combined stri
 	req.History[lastIdx] = cloned
 }
 
-func (t *warningInjector) Priority() int { return priorityTransientThreshold }
+func (t *WarningInjector) Priority() int { return priorityTransientThreshold }

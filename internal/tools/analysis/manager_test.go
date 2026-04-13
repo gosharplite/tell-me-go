@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func setupAnalysisManager(t *testing.T) (*analysisManager, string) {

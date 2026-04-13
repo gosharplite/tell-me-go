@@ -5,12 +5,13 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -103,7 +104,7 @@ func TestListTodos(t *testing.T) {
 }
 
 func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, string) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
@@ -123,7 +124,7 @@ func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, 
 
 func TestSearchUsagesGlobally(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
@@ -175,13 +176,21 @@ func TestSearchUsagesGlobally(t *testing.T) {
 
 func TestSearchManager_Errors(t *testing.T) {
 	t.Parallel()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: false}
 	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 
 	// Setup for success case
 	sm.RegisterSafePath(".")
+
+	// Set up security error for /etc/passwd
+	sm.IsSafeFunc = func(path string) (string, error) {
+		if path == "/etc/passwd" {
+			return "", errors.New("security violation")
+		}
+		return path, nil
+	}
 
 	tests := []struct {
 		name    string

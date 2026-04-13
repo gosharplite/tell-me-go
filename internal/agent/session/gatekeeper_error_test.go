@@ -1,8 +1,12 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
 package session_test
 
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"crypto/rand"
@@ -16,8 +20,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"github.com/stretchr/testify/require"
 )
@@ -49,10 +53,10 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 
 	gatekeeper := &session.TokenGatekeeper{
 		MaxTokens:  100,
-		Estimator:  &session.MockEstimator{},
+		Estimator:  &testutil.MockEstimator{},
 		Summarizer: &mockFailingSummarizer{},
 	}
-	gatekeeper.Estimator.(*session.MockEstimator).SetTokens(95)
+	gatekeeper.Estimator.(*testutil.MockEstimator).SetTokens(95)
 
 	err := gatekeeper.Transform(ctx, req)
 	if err == nil || err.Error() != "summarizer failed" {
@@ -71,7 +75,7 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 		req2.History[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	tc := &session.MockTokenCounter{}
+	tc := &testutil.MockTokenCounter{}
 	tc.SetTokens(95)
 	cs := session.NewContextStrategy(tc)
 	cs.SetTieredThreshold(10)
@@ -89,10 +93,10 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 }
 
 func TestContextManager_FirstMessageRoleError(t *testing.T) {
-	tc := &session.MockTokenCounter{}
+	tc := &testutil.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
-	hm := &session.MockHistoryManager{}
+	hm := &testutil.MockHistoryManager{}
 	cm := session.NewContextManager(cs, hm, nil, nil)
 
 	err := cm.AddContent(context.Background(), &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "first"}}})
@@ -111,17 +115,17 @@ func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 }
 
 func TestInternalTools_Errors(t *testing.T) {
-	tc := &session.MockTokenCounter{}
+	tc := &testutil.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
-	hm := &session.MockHistoryManager{}
+	hm := &testutil.MockHistoryManager{}
 	cm := session.NewContextManager(cs, hm, nil, nil)
 
 	it := session.NewInternalTools(cm)
 
 	_, err := it.SummarizeHistory(context.Background(), map[string]interface{}{"turns": "invalid"}, nil)
 	if err == nil {
-		t.Error("Expected error from unmarshal in summarizeHistory")
+		t.Error("Expected error from unmarshal in SummarizeHistory")
 	}
 
 	_, err = it.SummarizeHistory(context.Background(), map[string]interface{}{"turns": float64(1)}, nil)
@@ -192,7 +196,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 		return &mockFailingChatter{err: errors.New("config failed")}, nil
 	}
 
-	o := session.NewSessionManager("", "", nil, nil, nil, nil, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
+	o := session.NewSessionManager("", "", nil, nil, io.Discard, io.Discard, agentFactory, nil, &mockFailingUIRenderer{}, clock.RealClock{}, rand.Reader)
 
 	cfg := &config.Config{
 		SelectedProvider: "test",
@@ -200,7 +204,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	sc := session.NewSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(session.MockSessionProvider))
+	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider))
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
@@ -210,11 +214,11 @@ func TestSessionManager_ConfigError(t *testing.T) {
 
 func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 	// Create a mock event bus that always returns an error
-	mockBus := &inframock.TestEventBus{}
+	mockBus := &testutil.TestEventBus{}
 	mockBus.SetPublishErr(context.Canceled)
 
 	// Create a strategy that will trigger warnings to force event publishing
-	counter := &session.MockTokenCounter{}
+	counter := &testutil.MockTokenCounter{}
 	counter.SetTokens(200)
 	strategy := session.NewContextStrategy(counter)
 	strategy.SetTieredThreshold(100) // Trigger tiered threshold
@@ -244,7 +248,7 @@ func TestTokenGatekeeper_EventPublish_Errors(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ContextCancellation(t *testing.T) {
-	tc := &session.MockTokenCounter{}
+	tc := &testutil.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 
 	gatekeeper := &session.TokenGatekeeper{

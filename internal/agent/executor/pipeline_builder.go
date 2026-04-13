@@ -13,7 +13,7 @@ import (
 // NewPipelineDispatcher is the primary production constructor for the execution pipeline.
 // It assembles all necessary decorators (authorization, tracing, safety, circuit breaker)
 // and returns a fully configured Dispatcher ready for domain use.
-func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...executorOption) (*Dispatcher, error) {
+func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, bus events.EventBus, logger ports.Logger, observer tools.ExecutionObserver, opts ...ExecutorOption) (*Dispatcher, error) {
 	cfg := dispatcherConfig{
 		MaxConcurrentTools: 5,
 		ToolTimeout:        30 * time.Second,

@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -22,7 +23,7 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 		Backoff:          1 * time.Second,
 		RateLimitBackoff: 5 * time.Second,
 	}
-	c := &orchestrator.MockClock{}
+	c := &testutil.MockClock{}
 
 	// Test exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 120s (cap)
 	// attempt 0: delay = 1s
@@ -95,14 +96,14 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 
 	t.Run("Transient error triggers retry state (Refining)", func(t *testing.T) {
 		t.Parallel()
-		turn := &orchestrator.Turn{
+		Turn := &orchestrator.Turn{
 			State: &orchestrator.TurnState{
 				LastError:  llm.ErrTransient,
 				RetryCount: 0,
 			},
-			Clock: &orchestrator.MockClock{},
+			Clock: &testutil.MockClock{},
 		}
-		res, err := step.Process(context.Background(), turn)
+		res, err := step.Process(context.Background(), Turn)
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
@@ -113,13 +114,13 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 
 	t.Run("Terminal error breaks loop immediately (Complete)", func(t *testing.T) {
 		t.Parallel()
-		turn := &orchestrator.Turn{
+		Turn := &orchestrator.Turn{
 			State: &orchestrator.TurnState{
 				LastError: llm.ErrTerminal,
 			},
-			Clock: &orchestrator.MockClock{},
+			Clock: &testutil.MockClock{},
 		}
-		res, err := step.Process(context.Background(), turn)
+		res, err := step.Process(context.Background(), Turn)
 		if !errors.Is(err, llm.ErrTerminal) {
 			t.Errorf("Expected ErrTerminal, got %v", err)
 		}
@@ -133,20 +134,20 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	gw := &orchestrator.MockGateway{
+	gw := &testutil.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, ctx.Err()
 		},
 	}
 
 	step := &orchestrator.InferenceStep{}
-	turn := &orchestrator.Turn{
+	Turn := &orchestrator.Turn{
 		Gateway:  gw,
 		State:    &orchestrator.TurnState{},
-		Clock:    &orchestrator.MockClock{},
-		Registry: &orchestrator.MockToolRegistry{},
+		Clock:    &testutil.MockClock{},
+		Registry: &testutil.MockToolRegistry{},
 		CtxManager: &session.ContextManager{
-			History: &orchestrator.MockHistoryManager{},
+			History: &testutil.MockHistoryManager{},
 		},
 	}
 
@@ -156,13 +157,13 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = step.Process(ctx, turn)
+		_, _ = step.Process(ctx, Turn)
 	}()
 
 	select {
 	case <-done:
 		// Success
 	case <-time.After(500 * time.Millisecond):
-		t.Error("Deadlock: inferenceStep.process hung on cancelled context with unclosed channel")
+		t.Error("Deadlock: InferenceStep.process hung on cancelled context with unclosed channel")
 	}
 }

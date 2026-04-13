@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestTurnEngine_ExecutionStep_NoToolCalls(t *testing.T) {
@@ -17,7 +18,7 @@ func TestTurnEngine_ExecutionStep_NoToolCalls(t *testing.T) {
 		State: &orchestrator.TurnState{
 			HasToolCalls: false,
 		},
-		Clock: &orchestrator.MockClock{},
+		Clock: &testutil.MockClock{},
 	}
 
 	res, err := step.Process(context.Background(), tn)
@@ -37,7 +38,7 @@ func TestTurnEngine_RecoveryStep_NoLastError(t *testing.T) {
 		State: &orchestrator.TurnState{
 			LastError: nil,
 		},
-		Clock: &orchestrator.MockClock{},
+		Clock: &testutil.MockClock{},
 	}
 
 	res, err := step.Process(context.Background(), tn)

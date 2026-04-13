@@ -15,18 +15,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 func TestTurnEngine_EventPublishFailure(t *testing.T) {
 	var buf bytes.Buffer
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
-	badBus := &orchestrator.MockEventBusFail{PublishErr: errors.New("simulated publish failure")}
+	badBus := &testutil.MockEventBusFail{PublishErr: errors.New("simulated publish failure")}
 
-	strategy := session.NewContextStrategy(&orchestrator.MockTokenCounter{})
+	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
 	cm := session.NewContextManager(strategy, nil, badBus, nil)
 
-	turn := &orchestrator.Turn{
+	Turn := &orchestrator.Turn{
 		Events:     badBus,
 		Logger:     testLogger,
 		CtxManager: cm,
@@ -36,9 +37,9 @@ func TestTurnEngine_EventPublishFailure(t *testing.T) {
 
 	// Test Recovery Step (simulating a transient error so it attempts a retry)
 	transientErr := orchestrator.NewAgentError(llm.ErrTransient, "transient issue", nil)
-	turn.State.LastError = transientErr
+	Turn.State.LastError = transientErr
 	rs := &orchestrator.RecoveryStep{Policy: &orchestrator.DefaultRetryPolicy{MaxRetries: 3, Backoff: 1 * time.Millisecond}}
-	_, _ = rs.Process(context.Background(), turn)
+	_, _ = rs.Process(context.Background(), Turn)
 
 	if !strings.Contains(buf.String(), "event_publish_failed") {
 		t.Errorf("RecoveryStep expected event_publish_failed log, got: %s", buf.String())
@@ -48,7 +49,7 @@ func TestTurnEngine_EventPublishFailure(t *testing.T) {
 
 	// Test Guard Step
 	gs := &orchestrator.GuardStep{}
-	_, _ = gs.Process(context.Background(), turn)
+	_, _ = gs.Process(context.Background(), Turn)
 
 	if !strings.Contains(buf.String(), "event_publish_failed") {
 		t.Errorf("GuardStep expected event_publish_failed log, got: %s", buf.String())

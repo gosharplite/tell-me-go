@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 type localMockEventBus struct {
@@ -31,7 +32,7 @@ type localMockProcessor struct {
 	called bool
 }
 
-func (m *localMockProcessor) Process(ctx context.Context, turn *orchestrator.Turn) (orchestrator.ProcessResult, error) {
+func (m *localMockProcessor) Process(ctx context.Context, Turn *orchestrator.Turn) (orchestrator.ProcessResult, error) {
 	m.called = true
 	return orchestrator.ProcessResult{}, nil
 }
@@ -43,15 +44,15 @@ func TestWithStatusReporter(t *testing.T) {
 	mw := engine.WithStatusReporter()
 	next := &localMockProcessor{}
 
-	strategy := session.NewContextStrategy(&orchestrator.MockTokenCounter{})
-	cm := orchestrator.NewTestContextManager(strategy, &orchestrator.MockHistoryManager{}, bus)
-	turn := &orchestrator.Turn{
+	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
+	cm := orchestrator.NewTestContextManager(strategy, &testutil.MockHistoryManager{}, bus)
+	Turn := &orchestrator.Turn{
 		State:      &orchestrator.TurnState{Phase: orchestrator.PhaseInference},
 		CtxManager: cm,
-		Clock:      &orchestrator.MockClock{},
+		Clock:      &testutil.MockClock{},
 	}
 
-	_, _ = mw(next).Process(context.Background(), turn)
+	_, _ = mw(next).Process(context.Background(), Turn)
 
 	if !next.called {
 		t.Error("Next processor was not called")
@@ -68,11 +69,11 @@ func TestWithMetrics(t *testing.T) {
 	mw := engine.WithMetrics()
 	next := &localMockProcessor{}
 
-	turn := &orchestrator.Turn{
+	Turn := &orchestrator.Turn{
 		State: &orchestrator.TurnState{Phase: orchestrator.PhaseInference, Metrics: &llm.Metrics{}},
 	}
 
-	_, _ = mw(next).Process(context.Background(), turn)
+	_, _ = mw(next).Process(context.Background(), Turn)
 
 	if !next.called {
 		t.Error("Next processor was not called")

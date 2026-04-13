@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	inframock "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestRunPipeline_TableDriven(t *testing.T) {

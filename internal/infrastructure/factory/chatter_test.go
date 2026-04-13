@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -138,7 +136,7 @@ func TestNewChatter(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	inframock.CleanupBus(t, bus)
+	events.CleanupBus(t, bus)
 
 	deps := &mockSessionDeps{
 		gw:       &mockGateway{},

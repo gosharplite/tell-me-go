@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestShellTool_UTF8SafeTruncation(t *testing.T) {
@@ -77,9 +77,9 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 
 func setupTruncationTest(t *testing.T) (*shellTool, context.Context, map[string]interface{}) {
 	t.Helper()
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, &testutil.MockCommandValidator{}, &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 	// Use forward slashes for the helper path to avoid POSIX parser errors on Windows
 	cmd := fmt.Sprintf("%s printf 世界", filepath.ToSlash(helperPath))
@@ -118,9 +118,9 @@ func verifyTruncationResult(t *testing.T, res tools.ToolResult, expected, forbid
 }
 
 func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, &testutil.MockCommandValidator{}, &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	t.Run("Empty command", func(t *testing.T) {
@@ -138,6 +138,15 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("Invalid output path", func(t *testing.T) {
+		// Set up security error for the invalid path
+		sm.AllowAll = false
+		sm.SetBypassActive(false)
+		sm.IsWritableFunc = func(path string) (string, error) {
+			if strings.Contains(path, "secret.txt") {
+				return "", errors.New("security violation")
+			}
+			return path, nil
+		}
 		res, err := tool.ExecuteCommand(ctx, map[string]interface{}{
 			"command":     "ls",
 			"output_file": "/root/secret.txt",
@@ -149,9 +158,9 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 }
 
 func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, &testutil.MockCommandValidator{}, &posixTranslator{}, &posixShellWrapper{})
 
 	tests := []struct {
 		name     string
@@ -212,9 +221,10 @@ func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 }
 
 func TestShellTool_PipeCommands(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
+	validator := &testutil.MockCommandValidator{}
+	tool := newshellTool(sm, validator, &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	helperSlash := filepath.ToSlash(helperPath)
@@ -245,6 +255,14 @@ func TestShellTool_PipeCommands(t *testing.T) {
 	})
 
 	t.Run("Pipe with shell operators (denied)", func(t *testing.T) {
+		sm.AllowAll = false
+		sm.SetBypassActive(false)
+		validator.IsSafeFunc = func(cmd string) (bool, string) {
+			if strings.Contains(cmd, ">") {
+				return false, "redirection not allowed"
+			}
+			return true, ""
+		}
 		args := map[string]interface{}{
 			"commands": []interface{}{fmt.Sprintf("%s echo hello", helperSlash), "grep hi > out.txt"},
 			"reason":   "test pipe security",
@@ -271,11 +289,11 @@ func TestShellTool_PipeCommands(t *testing.T) {
 }
 
 func TestShellTool_SecurityVisibility(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true) // So we don't block on Authorize
 
-	mockSM := &mockShellSecurity{SecurityManager: sm}
-	validator := security.NewCommandValidator(sm, nil)
+	mockSM := &mockShellSecurity{MockSecurityManager: sm}
+	validator := &testutil.MockCommandValidator{}
 	tool := newshellTool(mockSM, validator, &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
@@ -364,7 +382,7 @@ func assertAuditField(t *testing.T, args []any, key string, want any) {
 }
 
 type mockShellSecurity struct {
-	*security.SecurityManager
+	*testutil.MockSecurityManager
 	LastDetail      string
 	LastAuditAction string
 	LastAuditArgs   []any
@@ -376,13 +394,13 @@ func (m *mockShellSecurity) Authorize(ctx context.Context, label, detail, reason
 	if m.AuthorizeFunc != nil {
 		return m.AuthorizeFunc(ctx, label, detail, reason, isSafe)
 	}
-	return m.SecurityManager.Authorize(ctx, label, detail, reason, isSafe)
+	return m.MockSecurityManager.Authorize(ctx, label, detail, reason, isSafe)
 }
 
 func (m *mockShellSecurity) LogAudit(action string, args ...any) {
 	m.LastAuditAction = action
 	m.LastAuditArgs = args
-	m.SecurityManager.LogAudit(action, args...)
+	m.MockSecurityManager.LogAudit(action, args...)
 }
 
 func TestShellTool_Authorization_Denials(t *testing.T) {
@@ -412,16 +430,16 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				sm := security.NewSecurityManager(nil)
+				sm := &testutil.MockSecurityManager{AllowAll: true}
 				// 1. Setup the mock to return the table's simulated auth result
 				mockSec := &mockShellSecurity{
-					SecurityManager: sm,
+					MockSecurityManager: sm,
 					AuthorizeFunc: func(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 						return tt.authResult, tt.authErr
 					},
 				}
 
-				validator := security.NewCommandValidator(sm, nil)
+				validator := &testutil.MockCommandValidator{}
 				// 2. Initialize the tool with the mock
 				tool := newshellTool(mockSec, validator, &posixTranslator{}, &posixShellWrapper{})
 
@@ -452,9 +470,9 @@ func TestShellTool_Authorization_Denials(t *testing.T) {
 }
 
 func TestShellTool_TimeoutParameter(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil), &posixTranslator{}, &posixShellWrapper{})
+	tool := newshellTool(sm, &testutil.MockCommandValidator{}, &posixTranslator{}, &posixShellWrapper{})
 	ctx := context.Background()
 
 	helperSlash := filepath.ToSlash(helperPath)
@@ -485,9 +503,9 @@ func TestShellTool_TimeoutParameter(t *testing.T) {
 }
 
 func TestShellTool_PrepareCommand_ShellSelection(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
-	validator := security.NewCommandValidator(sm, nil)
+	validator := &testutil.MockCommandValidator{}
 	wrapper := &windowsShellWrapper{}
 	_ = newshellTool(sm, validator, &posixTranslator{}, wrapper)
 
