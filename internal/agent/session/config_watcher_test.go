@@ -295,5 +295,5 @@ MAX_TURNS: 5
 }
 
 func TestConfigWatcher_ManualLimits(t *testing.T) {
-	// mockSessionLoader is unexported. I'll use exported testutil.MockSessionLoader.
+	// Not implemented
 }

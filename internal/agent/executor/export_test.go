@@ -3,10 +3,5 @@
 
 package executor
 
-// Exported for external tests
-type MockSecurityManager = mockSecurityManager
-type MockConsentSecurityManager = mockConsentSecurityManager
-type PanicRegistry = panicRegistry
-type MockEventBus = mockEventBus
-type MockLogger = mockLogger
-
+// No exported wrappers for private types.
+// Use unexported types directly from within the same package.

@@ -90,7 +90,7 @@ func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	turn.State.Phase = PhaseExecuting
 	turn.State.Response = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Partial response"}}}
 
-	// Mock a processor that fails and transitions to Complete (triggering EmergencySave)
+	// Mock a processor that fails and transitions to Complete (triggering emergencySave)
 	engine.processors[PhaseExecuting] = TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 		return ProcessResult{NextPhase: PhaseComplete}, errors.New("terminal failure")
 	})
@@ -98,7 +98,7 @@ func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	err := engine.runPhaseLoop(context.Background(), turn)
 
 	assert.Error(t, err)
-	assert.True(t, saveCalled, "EmergencySave should have triggered PhasePersisting")
+	assert.True(t, saveCalled, "emergencySave should have triggered PhasePersisting")
 }
 
 func TestRunPhaseLoop_StopSignal(t *testing.T) {
@@ -620,7 +620,7 @@ func TestEngineRun_Error(t *testing.T) {
 
 	engine := NewEngine(gw, ex, cm, reg, bus, counter)
 	
-	// Force failure in ExecutePhase which is called inside ExecuteTurn inside Run
+	// Force failure in executePhase which is called inside ExecuteTurn inside Run
 	engine.processors[PhaseGuard] = TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 		return ProcessResult{}, errors.New("turn execution failed")
 	})
@@ -630,7 +630,7 @@ func TestEngineRun_Error(t *testing.T) {
 	assert.Equal(t, "turn execution failed", err.Error())
 }
 
-func TestExecutePhase_Bridge(t *testing.T) {
+func TestExecutePhase_Private(t *testing.T) {
 	engine := &Engine{
 		processors: map[TurnPhase]TurnProcessor{
 			PhaseGuard: TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
@@ -639,6 +639,6 @@ func TestExecutePhase_Bridge(t *testing.T) {
 		},
 	}
 	turn := &Turn{State: &TurnState{Phase: PhaseGuard}}
-	_, err := ExecutePhase(engine, context.Background(), turn)
+	_, err := engine.executePhase(context.Background(), turn)
 	assert.NoError(t, err)
 }
