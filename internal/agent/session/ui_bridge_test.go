@@ -733,7 +733,7 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 
 	// Initialize bridge with a very small timeout via functional option
 	bridge := NewUIBridge(mRenderer,
-		WithBridgeCleanupTimeout(10*time.Millisecond),
+		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
 	errChan := make(chan error, 1)
 	go func() {
@@ -743,7 +743,7 @@ func TestUIBridge_CleanupTimeout(t *testing.T) {
 		close(errChan)
 	}()
 	bridge.WaitStarted()
-	bridgeCtx := bridge.GetLoopContext() // Use the internal loop context for verification
+	bridgeCtx := bridge.getLoopContext() // Use the internal loop context for verification
 
 	// Force a waitgroup hang to simulate a deadlocked renderer or long-running loop
 	bridge.wg.Add(1)

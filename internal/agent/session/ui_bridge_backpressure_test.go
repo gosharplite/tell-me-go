@@ -242,7 +242,7 @@ func TestUIBridge_HandleEvent_AlreadyShutdown(t *testing.T) {
 	bridge.Cleanup()
 
 	// Assert internal loop context is cancelled
-	assert.Error(t, bridge.GetLoopContext().Err())
+	assert.Error(t, bridge.getLoopContext().Err())
 
 	// Attempt to send a critical event. It should hit the early return.
 	assert.NotPanics(t, func() {

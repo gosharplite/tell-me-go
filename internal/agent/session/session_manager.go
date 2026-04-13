@@ -286,7 +286,7 @@ func (o *sessionManager) setupUIRendering(ctx context.Context, chatAgent ports.C
 		WithBridgeColor(useColor),
 		WithBridgeLogFile(logPath),
 		WithBridgeLogger(logger),
-		WithBridgeClock(o.Clock),
+		withBridgeClock(o.Clock),
 	)
 	chatAgent.Subscribe(func(ctx context.Context, e events.Event) {
 		if err := bridge.HandleEvent(ctx, e); err != nil {

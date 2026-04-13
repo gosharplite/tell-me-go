@@ -51,13 +51,13 @@ func WithBridgeLogger(l ports.Logger) bridgeOption {
 	return func(b *UIBridge) { b.logger = l }
 }
 
-// WithBridgeClock sets the clock for deterministic timestamps.
-func WithBridgeClock(c clock.Clock) bridgeOption {
+// withBridgeClock sets the clock for deterministic timestamps.
+func withBridgeClock(c clock.Clock) bridgeOption {
 	return func(b *UIBridge) { b.clock = c }
 }
 
-// WithBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
-func WithBridgeCleanupTimeout(d time.Duration) bridgeOption {
+// withBridgeCleanupTimeout sets the duration to wait for the bridge to drain events during cleanup.
+func withBridgeCleanupTimeout(d time.Duration) bridgeOption {
 	return func(b *UIBridge) { b.cleanupTimeout = d }
 }
 
@@ -484,7 +484,7 @@ func getSpinnerInfo(e events.Event) (spinnerInfo, bool) {
 		return spinnerInfo{}, false
 	}
 }
-func (b *UIBridge) GetLoopContext() context.Context {
+func (b *UIBridge) getLoopContext() context.Context {
 	return b.loopCtx
 }
 

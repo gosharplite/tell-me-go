@@ -26,7 +26,7 @@ func TestUIBridge_Cleanup_Idempotent(t *testing.T) {
 		WithBridgeColor(true),
 		WithBridgeLogFile("log.txt"),
 		WithBridgeLogger(slog.Default()),
-		WithBridgeCleanupTimeout(10*time.Millisecond),
+		withBridgeCleanupTimeout(10*time.Millisecond),
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
