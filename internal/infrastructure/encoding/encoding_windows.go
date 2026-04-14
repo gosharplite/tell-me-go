@@ -100,6 +100,20 @@ func (s *sniffingReader) Read(p []byte) (int, error) {
 		return 0, s.err
 	}
 
+	if err := s.fillBuffer(); err != nil && err != io.EOF {
+		s.err = err
+		return 0, err
+	}
+
+	if s.buf.Len() > 0 {
+		s.decoded = s.initializeDecoder()
+		return s.decoded.Read(p)
+	}
+
+	return 0, io.EOF
+}
+
+func (s *sniffingReader) fillBuffer() error {
 	for s.buf.Len() < 4096 {
 		tmp := make([]byte, 4096-s.buf.Len())
 		n, err := s.r.Read(tmp)
@@ -107,35 +121,36 @@ func (s *sniffingReader) Read(p []byte) (int, error) {
 			s.buf.Write(tmp[:n])
 		}
 		if err != nil {
-			if err != io.EOF {
-				s.err = err
-				return 0, err
-			}
-			break // EOF reached, decide with what we have
+			return err // Return EOF or other read errors
 		}
 
-		// Heuristic: If we find a non-ASCII byte that makes the buffer invalid UTF-8,
-		// we can decide immediately.
-		if containsNonASCII(s.buf.Bytes()) && !utf8.Valid(s.buf.Bytes()) {
-			break
-		}
-
-		// If we found non-ASCII but it IS valid UTF-8, we can also decide immediately.
-		if containsUTF8MultiByte(s.buf.Bytes()) {
+		// Heuristic: Stop early if we have a definitive signal
+		if s.isDefinitive(s.buf.Bytes()) {
 			break
 		}
 	}
+	return nil
+}
 
-	if s.buf.Len() > 0 {
-		if utf8.Valid(s.buf.Bytes()) {
-			s.decoded = io.MultiReader(bytes.NewReader(s.buf.Bytes()), s.r)
-		} else {
-			s.decoded = getReaderForCP(io.MultiReader(bytes.NewReader(s.buf.Bytes()), s.r), s.fallbackCP)
-		}
-		return s.decoded.Read(p)
+func (s *sniffingReader) isDefinitive(data []byte) bool {
+	// UTF-8 signal: Found multi-byte sequence
+	if containsUTF8MultiByte(data) {
+		return true
 	}
+	// Fallback signal: Found non-ASCII that is NOT valid UTF-8
+	if containsNonASCII(data) && !utf8.Valid(data) {
+		return true
+	}
+	return false
+}
 
-	return 0, io.EOF
+func (s *sniffingReader) initializeDecoder() io.Reader {
+	fullReader := io.MultiReader(bytes.NewReader(s.buf.Bytes()), s.r)
+
+	if utf8.Valid(s.buf.Bytes()) {
+		return fullReader
+	}
+	return getReaderForCP(fullReader, s.fallbackCP)
 }
 
 func containsNonASCII(b []byte) bool {

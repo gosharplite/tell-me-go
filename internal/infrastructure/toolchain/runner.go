@@ -113,7 +113,7 @@ func (r *goRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 	report.TestOutput = outStr
 
 	if testErr != nil {
-		if strings.Contains(outStr, "no Go files") || strings.Contains(outStr, "[no test files]") || strings.Contains(outStr, "no packages to test") {
+		if r.isNoGoFiles(outStr) {
 			report.NoGoFiles = true
 			report.CoveragePct = "0.0%"
 			return report, nil
@@ -121,13 +121,7 @@ func (r *goRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 		return report, fmt.Errorf("test execution failed: %w (output: %s)", testErr, outStr)
 	}
 
-	// Count packages
-	lines := strings.Split(strings.TrimSpace(outStr), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "ok") {
-			report.PassedCount++
-		}
-	}
+	report.PassedCount = r.countPassedPackages(outStr)
 
 	// Get summary
 	sumOut, summaryErr := r.combinedOutput(ctx, "go", "tool", "cover", "-func="+tempName)
@@ -136,15 +130,35 @@ func (r *goRunner) RunTestsWithCoverage(ctx context.Context, path string, short 
 	}
 
 	report.SummaryOutput = string(sumOut)
-	re := regexp.MustCompile(`total:\s+\(statements\)\s+(\d+\.\d+)%`)
-	matches := re.FindStringSubmatch(report.SummaryOutput)
-	if len(matches) > 1 {
-		report.CoveragePct = matches[1] + "%"
-	} else {
-		report.CoveragePct = "N/A"
-	}
+	report.CoveragePct = r.parseCoveragePct(report.SummaryOutput)
 
 	return report, nil
+}
+
+func (r *goRunner) countPassedPackages(output string) int {
+	var count int
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "ok") {
+			count++
+		}
+	}
+	return count
+}
+
+func (r *goRunner) isNoGoFiles(output string) bool {
+	return strings.Contains(output, "no Go files") ||
+		strings.Contains(output, "[no test files]") ||
+		strings.Contains(output, "no packages to test")
+}
+
+func (r *goRunner) parseCoveragePct(summaryOutput string) string {
+	re := regexp.MustCompile(`total:\s+\(statements\)\s+(\d+\.\d+)%`)
+	matches := re.FindStringSubmatch(summaryOutput)
+	if len(matches) > 1 {
+		return matches[1] + "%"
+	}
+	return "N/A"
 }
 
 // RunBenchmarks runs standard Go benchmarks in the target path.
