@@ -181,7 +181,7 @@ func TestPromptCapturer_CapturePrompt_TUI_Empty(t *testing.T) {
 	svc := &mockSuggestionService{}
 
 	var in bytes.Buffer
-	in.WriteString("\r") // Just press Enter to submit empty input
+	in.WriteString("\x03") // Send Ctrl+C to abort/exit
 
 	capturer := NewPromptCapturer(
 		base,
