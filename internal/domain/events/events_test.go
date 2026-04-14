@@ -381,12 +381,86 @@ func TestEventTypes(t *testing.T) {
 		events.RetryWaitingEvent{},
 		events.ConsentStartedEvent{},
 		events.ConsentFinishedEvent{},
+		events.ConfigUpdated{},
+		events.TurnStatusEvent{},
+		events.ToolExecutionStartedEvent{},
 	}
 
 	for _, e := range events_list {
 		if e.Type() == "" {
 			t.Errorf("empty type for %T", e)
 		}
+	}
+}
+
+func TestSimpleEventBus_SubscriptionRouting(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	// Use synchronous bus for deterministic results
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+	events.CleanupBus(t, bus)
+
+	var (
+		globalReceived      []events.Event
+		statusReceived      []events.Event
+		turnStartedReceived []events.Event
+		mu                  sync.Mutex
+	)
+
+	// Subscriber for all events
+	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+		mu.Lock()
+		globalReceived = append(globalReceived, e)
+		mu.Unlock()
+		return nil
+	}})
+
+	// Subscriber for specific event type "StatusUpdate"
+	bus.SubscribeSubscriber("StatusUpdate", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+		mu.Lock()
+		statusReceived = append(statusReceived, e)
+		mu.Unlock()
+		return nil
+	}})
+
+	// Subscriber for specific event type "TurnStarted"
+	bus.SubscribeSubscriber("TurnStarted", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+		mu.Lock()
+		turnStartedReceived = append(turnStartedReceived, e)
+		mu.Unlock()
+		return nil
+	}})
+
+	// Publish multiple types
+	_ = bus.Publish(ctx, events.StatusUpdate{Message: "status 1"})
+	_ = bus.Publish(ctx, events.TurnStarted{Turn: 1})
+	_ = bus.Publish(ctx, events.StatusUpdate{Message: "status 2"})
+	_ = bus.Publish(ctx, testEvent{typeName: "Other"})
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Verify global received everything
+	if len(globalReceived) != 4 {
+		t.Errorf("expected global to receive 4 events, got %d", len(globalReceived))
+	}
+
+	// Verify status subscriber
+	if len(statusReceived) != 2 {
+		t.Errorf("expected status subscriber to receive 2 events, got %d", len(statusReceived))
+	}
+	for _, e := range statusReceived {
+		if e.Type() != "StatusUpdate" {
+			t.Errorf("status subscriber received wrong event type: %s", e.Type())
+		}
+	}
+
+	// Verify turn started subscriber
+	if len(turnStartedReceived) != 1 {
+		t.Errorf("expected turn started subscriber to receive 1 event, got %d", len(turnStartedReceived))
+	}
+	if turnStartedReceived[0].Type() != "TurnStarted" {
+		t.Errorf("turn started subscriber received wrong event type: %s", turnStartedReceived[0].Type())
 	}
 }
 

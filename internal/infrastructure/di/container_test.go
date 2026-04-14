@@ -26,6 +26,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -916,4 +917,100 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	assert.ErrorIs(t, err, logErr)
 	assert.Contains(t, err.Error(), "bus shutdown failed")
 	assert.Contains(t, err.Error(), "log flush failed")
+}
+
+func TestBootstrapper_GetPricingOverrides(t *testing.T) {
+	b := &Bootstrapper{}
+	cfg := &config.Config{
+		Models: map[string]config.ModelConfig{
+			"model1": {
+				Pricing: pricing.ModelPricing{Comp: 0.1},
+			},
+			"model2": {
+				Pricing: pricing.ModelPricing{Comp: 0}, // Should be skipped
+			},
+			"model3": {
+				Pricing: pricing.ModelPricing{Comp: 0.2},
+			},
+		},
+	}
+
+	overrides := b.getPricingOverrides(cfg)
+	assert.Len(t, overrides, 2)
+	assert.Contains(t, overrides, "model1")
+	assert.Contains(t, overrides, "model3")
+	assert.NotContains(t, overrides, "model2")
+	assert.Equal(t, 0.1, overrides["model1"].Comp)
+	assert.Equal(t, 0.2, overrides["model3"].Comp)
+}
+
+func TestGetUnifiedHistoryProvider_Failure(t *testing.T) {
+	tmpDir := t.TempDir()
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	// Create a file where a directory should be to cause EnsureDirectories to fail
+	conflictFile := filepath.Join(tmpDir, "output")
+	if err := os.WriteFile(conflictFile, []byte("not a dir"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	cfg := &config.Config{Mode: "assistant"}
+
+	provider, err := b.GetUnifiedHistoryProvider(context.Background(), cfg, nil)
+	assert.Error(t, err)
+	assert.Nil(t, provider)
+}
+
+func TestGetSuggestionService_Failure(t *testing.T) {
+	tmpDir := t.TempDir()
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	// Conflict to make suggestion service init fail if it tried to do something,
+	// but currently it only logs warning and uses no-op tracker if NewGlobalPromptTracker fails.
+	// Let's trigger NewGlobalPromptTracker failure.
+	conflictFile := filepath.Join(tmpDir, "output")
+	if err := os.WriteFile(conflictFile, []byte("not a dir"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+
+	svc, err := b.GetSuggestionService(context.Background(), nil)
+	// Suggestion service itself doesn't fail, it just uses NoOpTracker
+	assert.NoError(t, err)
+	assert.NotNil(t, svc)
+}
+
+func TestGetHistoryManager_Failure(t *testing.T) {
+	tmpDir := t.TempDir()
+	sm := new(mockConfigurableSecurityManager)
+	setupDefaultSMExpectations(sm)
+
+	// Conflict to make EnsureDirectories fail
+	conflictFile := filepath.Join(tmpDir, "output")
+	if err := os.WriteFile(conflictFile, []byte("not a dir"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewBootstrapper(tmpDir, sm, "1.0.0", io.Discard, io.Discard, nil, nil, nil)
+	cfg := &config.Config{Mode: "assistant"}
+
+	hManager, err := b.GetHistoryManager(context.Background(), cfg)
+	assert.Error(t, err)
+	assert.Nil(t, hManager)
+}
+
+func TestSessionDeps_GetRegistry_Failure(t *testing.T) {
+	deps := &sessionDeps{
+		regFactory: func() (tools.Registry, error) {
+			return nil, errors.New("registry failed")
+		},
+		logger: telemetry.NewSlogLogger(nil),
+	}
+	reg, err := deps.GetRegistry()
+	assert.Error(t, err)
+	assert.Nil(t, reg)
 }
