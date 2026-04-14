@@ -37,6 +37,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		Path    string `json:"path"`
 		Query   string `json:"query"`
 		IsRegex bool   `json:"is_regex"`
+		Reason  string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -102,8 +103,9 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 
 func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
-		Path  string `json:"path"`
-		Query string `json:"query"`
+		Path   string `json:"path"`
+		Query  string `json:"query"`
+		Reason string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
