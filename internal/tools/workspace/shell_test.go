@@ -632,7 +632,7 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 			"timeout": 1,
 		}
 		res, err := tool.ExecuteCommand(ctx, args, nil)
-		
+
 		// The error can be in the return value or the ToolResult
 		isTimeout := errors.Is(err, context.DeadlineExceeded) || errors.Is(res.Error, context.DeadlineExceeded)
 		if !isTimeout {
@@ -648,7 +648,7 @@ func TestShellTool_TimeoutEnforcement(t *testing.T) {
 			"timeout":  1,
 		}
 		res, err := tool.PipeCommands(ctx, args, nil)
-		
+
 		isTimeout := errors.Is(err, context.DeadlineExceeded) || errors.Is(res.Error, context.DeadlineExceeded)
 		if !isTimeout {
 			t.Errorf("Expected timeout error (context.DeadlineExceeded), got err=%v, res.Error=%v", err, res.Error)

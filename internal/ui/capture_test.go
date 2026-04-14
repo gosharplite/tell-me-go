@@ -1011,7 +1011,7 @@ func TestPrompt_InteractiveEmpty(t *testing.T) {
 	t.Cleanup(func() {
 		_ = capturer.Close(context.Background())
 	})
-	
+
 	// Override IsTTY to true
 	isTTY := true
 	capturer.isTTYOverride = &isTTY
