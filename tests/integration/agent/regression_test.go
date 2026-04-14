@@ -42,7 +42,11 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	a, err := agent.NewAgent(client, bus, h, "test-provider", registry, sm)
+	a, err := agent.NewAgent(client, bus, registry,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 
 	// Prepare should trigger the contentCleaner transformer
@@ -77,7 +81,11 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	a, err := agent.NewAgent(client, bus, h, "test-provider", registry, sm)
+	a, err := agent.NewAgent(client, bus, registry,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
@@ -118,7 +126,11 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	a, err := agent.NewAgent(mockClient, bus, h, "test-provider", registry, sm)
+	a, err := agent.NewAgent(mockClient, bus, registry,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 	sess := ports.NewSession("regression-multimodal", h)
 	ctx := context.Background()

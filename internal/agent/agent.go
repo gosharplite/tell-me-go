@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/skills"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	"golang.org/x/sync/errgroup"
@@ -33,8 +34,8 @@ type runtimeConfig struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 }
 
-// agent represents the chat orchestration logic (Stateless Service).
-type agent struct {
+// Agent represents the chat orchestration logic (Stateless Service).
+type Agent struct {
 	gateway       domain_llm.LLMGateway
 	engine        *orchestrator.Engine
 	ctxManager    *session.ContextManager
@@ -46,52 +47,79 @@ type agent struct {
 	turnsLogger   ports.TurnsLogger
 	logger        ports.Logger
 
+	// Dependencies held for initialization
+	hManager         ports.HistoryManager
+	registry         tools.Registry
+	sm               domain_security.Manager
+	providerName     string
+	clock            clock.Clock
+	summarizer       ports.Summarizer
+	skillSelector    skills.SkillSelector
+	sessionProvider  ports.SessionProvider
+	model            string
+	mode             string
+	pricingOverrides map[string]domain_pricing.ModelPricing
+	loader           domain_config.ConfigLoader
+	sessionLoader    domain_config.SessionLoader
+	registerInternal bool
+	initCtx          context.Context
+
 	config atomic.Pointer[runtimeConfig]
 }
 
 // NewAgent creates a new agent with required dependencies.
-func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.Registry, sm domain_security.Manager, opts ...Option) (ports.Chatter, error) {
-	cfg := &agentConfig{}
-	for _, opt := range opts {
-		opt(cfg)
+func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, registry tools.Registry, opts ...AgentOption) (ports.Chatter, error) {
+	a := &Agent{
+		gateway:  client,
+		events:   bus,
+		registry: registry,
+		// Defaults
+		logger:  slog.Default(),
+		clock:   clock.RealClock{},
+		initCtx: context.Background(),
 	}
 
-	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(registry))
-	logger := cfg.logger
-	if logger == nil {
-		logger = slog.Default()
+	for _, opt := range opts {
+		opt(a)
 	}
-	clk := cfg.clock
-	if clk == nil {
-		clk = clock.RealClock{}
+
+	if err := a.initComponents(); err != nil {
+		return nil, err
 	}
-	exec, err := executor.NewPipelineDispatcher(registry, sm, bus, logger, &executor.TelemetryLogger{})
+
+	if a.registerInternal {
+		if err := session.RegisterInternal(a.registry, a.ctxManager); err != nil {
+			return nil, fmt.Errorf("failed to register internal tools: %w", err)
+		}
+	}
+
+	if err := a.applyConfig(a.initCtx); err != nil {
+		a.emit(context.Background(), events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
+	}
+	return a, nil
+}
+
+func (a *Agent) initComponents() error {
+	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(a.registry))
+	a.strategy = strategy
+
+	exec, err := executor.NewPipelineDispatcher(a.registry, a.sm, a.events, a.logger, &executor.TelemetryLogger{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create tool executor: %w", err)
+		return fmt.Errorf("failed to create tool executor: %w", err)
 	}
+	a.executor = exec
 
 	cw := session.NewNoOpConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns)
-
-	if cfg.loader != nil || cfg.sessionLoader != nil {
-		cw = session.NewFileConfigWatcher(cfg.loader, cfg.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, logger)
+	if a.loader != nil || a.sessionLoader != nil {
+		cw = session.NewFileConfigWatcher(a.loader, a.sessionLoader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns, a.logger)
 	}
-
-	a := &agent{
-		gateway:       client,
-		configWatcher: cw,
-		strategy:      strategy,
-		executor:      exec,
-		events:        bus,
-		tracker:       cfg.tracker,
-		turnsLogger:   cfg.turnsLogger,
-		logger:        logger,
-	}
+	a.configWatcher = cw
 
 	a.config.Store(&runtimeConfig{
-		ProviderName:     providerName,
-		Model:            cfg.model,
-		Mode:             cfg.mode,
-		PricingOverrides: cfg.pricingOverrides,
+		ProviderName:     a.providerName,
+		Model:            a.model,
+		Mode:             a.mode,
+		PricingOverrides: a.pricingOverrides,
 		Limits: events.Limits{
 			MaxHistoryTokens: domain_config.DefaultMaxHistoryTokens,
 			MaxToolTurns:     domain_config.DefaultMaxToolTurns,
@@ -100,48 +128,33 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.
 	})
 
 	factory := &session.PipelineFactory{
-		Registry:      registry,
-		History:       hManager,
-		Summarizer:    cfg.summarizer,
-		SkillSelector: cfg.skillSelector,
+		Registry:      a.registry,
+		History:       a.hManager,
+		Summarizer:    a.summarizer,
+		SkillSelector: a.skillSelector,
 		Estimator:     strategy,
-		Events:        bus,
+		Events:        a.events,
 	}
 
-	ctxManager := session.NewContextManager(strategy, hManager, bus, factory,
-		session.WithLogger(logger),
-		session.WithSessionProvider(cfg.sessionProvider),
+	a.ctxManager = session.NewContextManager(strategy, a.hManager, a.events, factory,
+		session.WithLogger(a.logger),
+		session.WithSessionProvider(a.sessionProvider),
 	)
-	a.ctxManager = ctxManager
 
 	// Initialize engine
 	initialCfg := a.config.Load()
-	a.engine = orchestrator.NewEngine(client, exec, ctxManager, registry, bus, strategy,
-		orchestrator.WithEngineConfig(sm, initialCfg.ProviderName, initialCfg.Model, initialCfg.Mode, initialCfg.PricingOverrides),
+	a.engine = orchestrator.NewEngine(a.gateway, exec, a.ctxManager, a.registry, a.events, strategy,
+		orchestrator.WithEngineConfig(a.sm, initialCfg.ProviderName, initialCfg.Model, initialCfg.Mode, initialCfg.PricingOverrides),
 		orchestrator.WithEngineCostTracker(a.tracker),
 		orchestrator.WithEngineLogger(a.logger),
 		orchestrator.WithEngineTurnsLogger(a.turnsLogger),
-		orchestrator.WithEngineClock(clk),
+		orchestrator.WithEngineClock(a.clock),
 	)
 
-	if cfg.registerInternal {
-		if err := session.RegisterInternal(registry, ctxManager); err != nil {
-			return nil, fmt.Errorf("failed to register internal tools: %w", err)
-		}
-	}
-
-	initCtx := cfg.initCtx
-	if initCtx == nil {
-		initCtx = context.Background()
-	}
-
-	if err := a.applyConfig(initCtx); err != nil {
-		a.emit(context.Background(), events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
-	}
-	return a, nil
+	return nil
 }
 
-func (a *agent) applyConfig(ctx context.Context) error {
+func (a *Agent) applyConfig(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -188,11 +201,11 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	return nil
 }
 
-func (a *agent) Subscribe(sub func(context.Context, events.Event)) {
+func (a *Agent) Subscribe(sub func(context.Context, events.Event)) {
 	a.events.Subscribe(sub)
 }
 
-func (a *agent) emit(ctx context.Context, e events.Event) {
+func (a *Agent) emit(ctx context.Context, e events.Event) {
 	// [SCALABILITY FIX] Always use a bounded context for publishing events
 	// to prevent cascading system deadlocks if a subscriber stalls.
 	if err := events.SafePublish(ctx, a.events, e); err != nil {
@@ -206,20 +219,20 @@ func (a *agent) emit(ctx context.Context, e events.Event) {
 
 // SetLimits sets the operational limits for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+func (a *Agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 	return a.applyConfig(ctx)
 }
 
 // SetTieredThreshold sets the tiered threshold for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
+func (a *Agent) SetTieredThreshold(ctx context.Context, threshold int) error {
 	a.configWatcher.ApplyLimits(events.Limits{TieredThreshold: threshold})
 	return a.applyConfig(ctx)
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
+func (a *Agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},
@@ -255,7 +268,7 @@ func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 }
 
 // Shutdown gracefully stops the agent and its components.
-func (a *agent) Shutdown(ctx context.Context) error {
+func (a *Agent) Shutdown(ctx context.Context) error {
 	var errs []error
 
 	if a.turnsLogger != nil {
@@ -279,7 +292,7 @@ func (a *agent) Shutdown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func (a *agent) getLogger() ports.Logger {
+func (a *Agent) getLogger() ports.Logger {
 	if a.logger != nil {
 		return a.logger
 	}
@@ -308,66 +321,66 @@ type InternalAccessor interface {
 // AsInternal wraps a ports.Chatter to provide access to its internal components.
 // [FOR TESTING ONLY] This is a testing utility and should not be used in production code paths.
 func AsInternal(c ports.Chatter) InternalAccessor {
-	if a, ok := c.(*agent); ok {
+	if a, ok := c.(*Agent); ok {
 		return a
 	}
 	return nil
 }
 
-func (a *agent) ApplyConfig(ctx context.Context) error {
+func (a *Agent) ApplyConfig(ctx context.Context) error {
 	return a.applyConfig(ctx)
 }
 
-func (a *agent) GetCtxManager() *session.ContextManager {
+func (a *Agent) GetCtxManager() *session.ContextManager {
 	return a.ctxManager
 }
 
-func (a *agent) GetEvents() events.EventBus {
+func (a *Agent) GetEvents() events.EventBus {
 	return a.events
 }
 
-func (a *agent) GetConfigWatcher() session.ConfigWatcher {
+func (a *Agent) GetConfigWatcher() session.ConfigWatcher {
 	return a.configWatcher
 }
 
-func (a *agent) SetTracker(t domain_pricing.CostTracker) {
+func (a *Agent) SetTracker(t domain_pricing.CostTracker) {
 	a.tracker = t
 }
 
-func (a *agent) GetTracker() domain_pricing.CostTracker {
+func (a *Agent) GetTracker() domain_pricing.CostTracker {
 	return a.tracker
 }
 
-func (a *agent) GetRuntimeConfig() any {
+func (a *Agent) GetRuntimeConfig() any {
 	return a.config.Load()
 }
 
-func (a *agent) SetConfigWatcher(cw session.ConfigWatcher) {
+func (a *Agent) SetConfigWatcher(cw session.ConfigWatcher) {
 	a.configWatcher = cw
 }
 
-func (a *agent) SetEvents(bus events.EventBus) {
+func (a *Agent) SetEvents(bus events.EventBus) {
 	a.events = bus
 }
 
-func (a *agent) SetLogger(l ports.Logger) {
+func (a *Agent) SetLogger(l ports.Logger) {
 	a.logger = l
 }
 
-func (a *agent) SetRuntimeConfig(cfg any) {
+func (a *Agent) SetRuntimeConfig(cfg any) {
 	if rc, ok := cfg.(*runtimeConfig); ok {
 		a.config.Store(rc)
 	}
 }
 
-func (a *agent) SetCtxManager(cm *session.ContextManager) {
+func (a *Agent) SetCtxManager(cm *session.ContextManager) {
 	a.ctxManager = cm
 }
 
 // NewAgentInternal returns an InternalAccessor for testing purposes.
 // [FOR TESTING ONLY] DO NOT use in production code.
 func NewAgentInternal() InternalAccessor {
-	return &agent{}
+	return &Agent{}
 }
 
 // RuntimeConfigInternal exports runtimeConfig for testing purposes.

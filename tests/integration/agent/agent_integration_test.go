@@ -40,7 +40,11 @@ func TestAgent_New_Failure(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 
 	// Passing nil registry should force NewToolExecutor to fail
-	a, err := agent.NewAgent(client, bus, h, "test-provider", nil, sm)
+	a, err := agent.NewAgent(client, bus, nil,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 
 	require.Error(t, err)
 	require.Nil(t, a)
@@ -57,7 +61,11 @@ func TestAgent_SetLimits(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
@@ -90,7 +98,11 @@ func TestAgent_Chat(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	a, err := agent.NewAgent(mockClient, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(mockClient, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 	sess := ports.NewSession("test-chat", h)
 
@@ -124,7 +136,13 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm, agent.WithLoader(&config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()}), agent.WithSessionLoader(&config.JSONSessionLoader{}))
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+		agent.WithLoader(&config.YAMLConfigLoader{Finder: config.NewDefaultConfigFinder()}),
+		agent.WithSessionLoader(&config.JSONSessionLoader{}),
+	)
 	require.NoError(t, err)
 
 	// Re-injecting path configuration for integration test
@@ -151,7 +169,11 @@ func TestAgent_TieredThreshold(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 
 	// Subscribe to track updates
@@ -203,7 +225,12 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	mockClock := &testutil.MockClock{}
-	a, err := agent.NewAgent(mockClient, bus, h, "test-provider", reg, sm, agent.WithClock(mockClock))
+	a, err := agent.NewAgent(mockClient, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+		agent.WithClock(mockClock),
+	)
 	require.NoError(t, err)
 	sess := ports.NewSession("test-retry", h)
 
@@ -225,7 +252,11 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		events.CleanupBus(t, bus)
 		tmpDir := t.TempDir()
 		h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
-		a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, h, "test-provider", reg, sm)
+		a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
+			agent.WithHistoryManager(h),
+			agent.WithProviderName("test-provider"),
+			agent.WithSecurityManager(sm),
+		)
 		require.NoError(t, err)
 		_ = a
 
@@ -245,7 +276,12 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		events.CleanupBus(t, bus)
 		tmpDir := t.TempDir()
 		h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history2.json"), filepath.Join(tmpDir, "history2.archive.jsonl"))
-		a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, h, "test-provider", reg, sm, agent.WithInternalTools())
+		a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
+			agent.WithHistoryManager(h),
+			agent.WithProviderName("test-provider"),
+			agent.WithSecurityManager(sm),
+			agent.WithInternalTools(),
+		)
 		require.NoError(t, err)
 		_ = a
 
@@ -285,7 +321,11 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	a, err := agent.NewAgent(mockClient, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(mockClient, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 	sess := ports.NewSession("test-exhaustion", h)
 
@@ -308,7 +348,11 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	tmpDir := t.TempDir()
 	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_pipeline.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
-	a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 
 	// Build pipeline
@@ -382,7 +426,12 @@ func setupPinningFlowTest(t *testing.T) (ports.Chatter, ports.HistoryManager, co
 	}
 
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, h, "test-provider", reg, sm, agent.WithInternalTools())
+	a, err := agent.NewAgent(&testutil.MockLLMClient{}, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+		agent.WithInternalTools(),
+	)
 	require.NoError(t, err)
 	return a, h, ctx
 }
@@ -432,7 +481,12 @@ func setupPinningTest(t *testing.T) (ports.Chatter, ports.HistoryManager, contex
 
 	mockClient := &testutil.MockLLMClient{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
-	a, err := agent.NewAgent(mockClient, bus, h, "test-provider", reg, sm, agent.WithInternalTools())
+	a, err := agent.NewAgent(mockClient, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+		agent.WithInternalTools(),
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -479,7 +533,10 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	tracker1 := &testutil.MockCostTracker{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm,
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
 		agent.WithSessionCostTracker(tracker1),
 	)
 	require.NoError(t, err)
@@ -512,7 +569,10 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_pricing.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm,
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
 		agent.WithPricing("test-model", "chat", overrides),
 	)
 	require.NoError(t, err)
@@ -548,7 +608,11 @@ func TestAgent_Subscribe(t *testing.T) {
 		}
 	})
 
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 
 	// Trigger limits update
@@ -592,7 +656,10 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	h := history.NewManager(testutil.NewOSFileSystem(), filepath.Join(tmpDir, "history_cost.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
 	// 1. Test passing during New
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm,
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
 		agent.WithSessionCostTracker(tracker),
 	)
 	require.NoError(t, err)
@@ -622,7 +689,11 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 	sess := ports.NewSession("test-config-application", h)
 
@@ -648,7 +719,11 @@ func TestAgent_Shutdown(t *testing.T) {
 	events.CleanupBus(t, bus)
 
 	// 2. Initialize Agent
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 
 	// 3. Define a timeout context for shutdown
@@ -691,7 +766,11 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm)
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+	)
 	require.NoError(t, err)
 	sess := ports.NewSession("test-cancel", h)
 
@@ -717,7 +796,10 @@ func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
 	events.CleanupBus(t, bus)
 	mockSumm := &testutil.MockSummarizer{}
 
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm,
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
 		agent.WithInternalTools(),
 		agent.WithSummarizer(mockSumm),
 	)
@@ -796,7 +878,12 @@ func TestNewAgent_ToolRegistrationFailure(t *testing.T) {
 	mockRegistry.On("RegisterInternal", mock.Anything).Return(expectedErr)
 
 	// Attempt to create the agent (adjust parameters to match your actual constructor)
-	agentObj, err := agent.NewAgent(mockClient, bus, h, "test-provider", mockRegistry, sm, agent.WithInternalTools())
+	agentObj, err := agent.NewAgent(mockClient, bus, mockRegistry,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+		agent.WithInternalTools(),
+	)
 
 	// Architectural mandate: Ensure initialization fails fast and propagates the error
 	assert.ErrorIs(t, err, expectedErr)
