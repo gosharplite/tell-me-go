@@ -67,33 +67,43 @@ func (l *asyncTurnsLogger) Listen(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			// Drain the channel one last time to avoid dropping telemetry
-			for {
-				select {
-				case msg := <-l.ch:
-					if _, err := l.file.Write([]byte(msg)); err != nil {
-						l.logger.Warn("failed to write to turns log on shutdown", "error", err)
-					}
-				default:
-					// Ensure everything is persisted before exiting
-					if err := l.file.Sync(); err != nil {
-						l.logger.Warn("failed to sync turns log on shutdown", "error", err)
-					}
-					return nil
-				}
-			}
+			l.drainAndSync()
+			return nil
 		case msg, ok := <-l.ch:
 			if !ok {
 				return nil
 			}
+			l.processMessage(msg)
+		}
+	}
+}
+
+func (l *asyncTurnsLogger) processMessage(msg string) {
+	if _, err := l.file.Write([]byte(msg)); err != nil {
+		l.logger.Warn("failed to write to turns log", "error", err)
+		return
+	}
+	// Smart batching: only fsync when the channel buffer is fully drained
+	if len(l.ch) == 0 {
+		if err := l.file.Sync(); err != nil {
+			l.logger.Warn("failed to sync turns log", "error", err)
+		}
+	}
+}
+
+func (l *asyncTurnsLogger) drainAndSync() {
+	for {
+		select {
+		case msg := <-l.ch:
 			if _, err := l.file.Write([]byte(msg)); err != nil {
-				l.logger.Warn("failed to write to turns log", "error", err)
-			} else if len(l.ch) == 0 {
-				// Smart batching: only fsync when the channel buffer is fully drained
-				if err := l.file.Sync(); err != nil {
-					l.logger.Warn("failed to sync turns log", "error", err)
-				}
+				l.logger.Warn("failed to write to turns log on shutdown", "error", err)
 			}
+		default:
+			// Ensure everything is persisted before exiting
+			if err := l.file.Sync(); err != nil {
+				l.logger.Warn("failed to sync turns log on shutdown", "error", err)
+			}
+			return
 		}
 	}
 }
@@ -164,84 +174,96 @@ func (l *asyncTurnsLogger) formatTurnStatusForLog(status events.TurnStatus, now 
 	timestamp := status.Timestamp.Format("15:04:05")
 
 	if !status.IsPostCall && !status.IsFinal {
-		// Header
-		sb.WriteString("────────────────────────────────────────────────────────────────────────────────\n")
-		modeStr := ""
-		if status.Mode != "" {
-			modeStr = fmt.Sprintf(" - %s", status.Mode)
-		}
-		if status.MaxHistoryTurns > 0 {
-			fmt.Fprintf(&sb, "╭─⠿ Turn %d/%d%s\n", status.SessionTurns+1, status.MaxHistoryTurns, modeStr)
-		} else {
-			fmt.Fprintf(&sb, "╭─⠿ Turn %d%s\n", status.SessionTurns+1, modeStr)
-		}
-
-		// Token line
-		prefix := "~"
-		fmt.Fprintf(&sb, "[%s] Payload: %s%d/%d tokens%s\n", timestamp, prefix, status.Tokens, status.MaxHistoryTokens, modeStr)
+		l.renderTurnHeader(&sb, status, timestamp)
 	}
 
 	if status.IsPostCall && status.Metrics != nil {
-		m := status.Metrics
-		// Token line (actual)
-		modeStr := ""
-		if status.Mode != "" {
-			modeStr = fmt.Sprintf(" - %s", status.Mode)
-		}
-		fmt.Fprintf(&sb, "[%s] Payload: %d/%d tokens%s\n", timestamp, m.PromptTokens, status.MaxHistoryTokens, modeStr)
-
-		// Metrics line
-		miss := m.PromptTokens - m.CachedTokens
-		modelStr := ""
-		displayName := m.Provider
-		if displayName == "" {
-			displayName = m.Model
-		}
-		if m.TrafficType == "ON_DEMAND_PRIORITY" {
-			displayName = fmt.Sprintf("%s-priority", displayName)
-		}
-		if displayName != "" {
-			modelStr = fmt.Sprintf(" [%s]", displayName)
-		}
-
-		totalTurnLatency := m.Duration + m.ToolDuration
-		timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
-		if !status.StartTime.IsZero() {
-			totalSessionDuration := now.Sub(status.StartTime).Seconds()
-			if status.CurrentTurns+1 > 0 {
-				timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(status.CurrentTurns+1))
-			} else {
-				timingRaw = fmt.Sprintf("%s / %.2fs", timingRaw, totalSessionDuration)
-			}
-		}
-
-		if m.Cost > 0 {
-			fmt.Fprintf(&sb, "[%s]%s M: %d H: %d C: %d Th: %d ($%.4f) [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, m.Cost, timingRaw)
-		} else {
-			fmt.Fprintf(&sb, "[%s]%s M: %d H: %d C: %d Th: %d [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, timingRaw)
-		}
+		l.renderTurnMetrics(&sb, status, now, timestamp)
 	}
 
 	if status.IsFinal {
-		hitRate := 0.0
-		if total := status.TotalM + status.TotalH; total > 0 {
-			hitRate = float64(status.TotalH) / float64(total) * 100
-		}
-
-		turnCost := 0.0
-		if status.Metrics != nil {
-			turnCost = status.Metrics.Cost
-		}
-
-		fmt.Fprintf(&sb, "╰─⠿ Ready ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)\n",
-			turnCost, status.TaskCost,
-			status.SessionCost,
-			status.DailyCost,
-			status.TotalM,
-			status.TotalH,
-			hitRate,
-			status.TotalO)
+		l.renderTurnFooter(&sb, status)
 	}
 
 	return sb.String()
+}
+
+func (l *asyncTurnsLogger) renderTurnHeader(sb *strings.Builder, status events.TurnStatus, timestamp string) {
+	// Header
+	sb.WriteString("────────────────────────────────────────────────────────────────────────────────\n")
+	modeStr := ""
+	if status.Mode != "" {
+		modeStr = fmt.Sprintf(" - %s", status.Mode)
+	}
+	if status.MaxHistoryTurns > 0 {
+		fmt.Fprintf(sb, "╭─⠿ Turn %d/%d%s\n", status.SessionTurns+1, status.MaxHistoryTurns, modeStr)
+	} else {
+		fmt.Fprintf(sb, "╭─⠿ Turn %d%s\n", status.SessionTurns+1, modeStr)
+	}
+
+	// Token line
+	prefix := "~"
+	fmt.Fprintf(sb, "[%s] Payload: %s%d/%d tokens%s\n", timestamp, prefix, status.Tokens, status.MaxHistoryTokens, modeStr)
+}
+
+func (l *asyncTurnsLogger) renderTurnMetrics(sb *strings.Builder, status events.TurnStatus, now time.Time, timestamp string) {
+	m := status.Metrics
+	// Token line (actual)
+	modeStr := ""
+	if status.Mode != "" {
+		modeStr = fmt.Sprintf(" - %s", status.Mode)
+	}
+	fmt.Fprintf(sb, "[%s] Payload: %d/%d tokens%s\n", timestamp, m.PromptTokens, status.MaxHistoryTokens, modeStr)
+
+	// Metrics line
+	miss := m.PromptTokens - m.CachedTokens
+	modelStr := ""
+	displayName := m.Provider
+	if displayName == "" {
+		displayName = m.Model
+	}
+	if m.TrafficType == "ON_DEMAND_PRIORITY" {
+		displayName = fmt.Sprintf("%s-priority", displayName)
+	}
+	if displayName != "" {
+		modelStr = fmt.Sprintf(" [%s]", displayName)
+	}
+
+	totalTurnLatency := m.Duration + m.ToolDuration
+	timingRaw := fmt.Sprintf("%.2fs (ΣT: %.2fs)", totalTurnLatency, m.CumulativeToolDuration)
+	if !status.StartTime.IsZero() {
+		totalSessionDuration := now.Sub(status.StartTime).Seconds()
+		if status.CurrentTurns+1 > 0 {
+			timingRaw = fmt.Sprintf("%s / %.2fs (%.2f)", timingRaw, totalSessionDuration, totalSessionDuration/float64(status.CurrentTurns+1))
+		} else {
+			timingRaw = fmt.Sprintf("%s / %.2fs", timingRaw, totalSessionDuration)
+		}
+	}
+
+	if m.Cost > 0 {
+		fmt.Fprintf(sb, "[%s]%s M: %d H: %d C: %d Th: %d ($%.4f) [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, m.Cost, timingRaw)
+	} else {
+		fmt.Fprintf(sb, "[%s]%s M: %d H: %d C: %d Th: %d [%s]\n", timestamp, modelStr, miss, m.CachedTokens, m.ResponseTokens, m.ThinkingTokens, timingRaw)
+	}
+}
+
+func (l *asyncTurnsLogger) renderTurnFooter(sb *strings.Builder, status events.TurnStatus) {
+	hitRate := 0.0
+	if total := status.TotalM + status.TotalH; total > 0 {
+		hitRate = float64(status.TotalH) / float64(total) * 100
+	}
+
+	turnCost := 0.0
+	if status.Metrics != nil {
+		turnCost = status.Metrics.Cost
+	}
+
+	fmt.Fprintf(sb, "╰─⠿ Ready ($%.4f $%.4f $%.4f $%.4f M: %d H: %d %.1f%% O: %d)\n",
+		turnCost, status.TaskCost,
+		status.SessionCost,
+		status.DailyCost,
+		status.TotalM,
+		status.TotalH,
+		hitRate,
+		status.TotalO)
 }

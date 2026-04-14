@@ -2,6 +2,8 @@ package analysis
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -151,4 +153,16 @@ func (m *mockAnalysisGoRunner) RunLinter(ctx context.Context) (string, string, e
 		return m.runLinterFunc(ctx)
 	}
 	return "", "", nil
+}
+
+// setupMockGoFile creates a temporary Go file for testing purposes.
+// It returns the temporary directory and the absolute path to the Go file.
+func setupMockGoFile(t *testing.T, content string) (string, string) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test_file.go")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	return tmpDir, path
 }

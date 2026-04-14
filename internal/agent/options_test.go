@@ -34,65 +34,65 @@ func TestAgentOptions(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		option   Option
-		validate func(t *testing.T, cfg *agentConfig)
+		option   AgentOption
+		validate func(t *testing.T, a *Agent)
 	}{
 		{
 			name:   "WithSummarizer",
 			option: WithSummarizer(mockSummarizer),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockSummarizer, cfg.summarizer)
+			validate: func(t *testing.T, a *Agent) {
+				require.Equal(t, mockSummarizer, a.summarizer)
 			},
 		},
 		{
 			name:   "WithInternalTools",
 			option: WithInternalTools(),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.True(t, cfg.registerInternal)
+			validate: func(t *testing.T, a *Agent) {
+				require.True(t, a.registerInternal)
 			},
 		},
 		{
 			name:   "WithPricing",
 			option: WithPricing("model-a", "mode-b", overrides),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, "model-a", cfg.model)
-				require.Equal(t, "mode-b", cfg.mode)
-				require.Equal(t, overrides, cfg.pricingOverrides)
+			validate: func(t *testing.T, a *Agent) {
+				require.Equal(t, "model-a", a.model)
+				require.Equal(t, "mode-b", a.mode)
+				require.Equal(t, overrides, a.pricingOverrides)
 			},
 		},
 		{
 			name:   "WithLoader",
 			option: WithLoader(mockLoader),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockLoader, cfg.loader)
+			validate: func(t *testing.T, a *Agent) {
+				require.Equal(t, mockLoader, a.loader)
 			},
 		},
 		{
 			name:   "WithSessionLoader",
 			option: WithSessionLoader(mockSessionLoader),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockSessionLoader, cfg.sessionLoader)
+			validate: func(t *testing.T, a *Agent) {
+				require.Equal(t, mockSessionLoader, a.sessionLoader)
 			},
 		},
 		{
 			name:   "WithSessionCostTracker",
 			option: WithSessionCostTracker(mockTracker),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockTracker, cfg.tracker)
+			validate: func(t *testing.T, a *Agent) {
+				require.Equal(t, mockTracker, a.tracker)
 			},
 		},
 		{
 			name:   "WithLogger",
 			option: WithLogger(mockLogger),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockLogger, cfg.logger)
+			validate: func(t *testing.T, a *Agent) {
+				require.Equal(t, mockLogger, a.logger)
 			},
 		},
 		{
 			name:   "WithSkillSelector",
 			option: WithSkillSelector(mockSkillSelector),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockSkillSelector, cfg.skillSelector)
+			validate: func(t *testing.T, a *Agent) {
+				require.Equal(t, mockSkillSelector, a.skillSelector)
 			},
 		},
 	}
@@ -100,9 +100,9 @@ func TestAgentOptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			cfg := &agentConfig{}
-			tt.option(cfg)
-			tt.validate(t, cfg)
+			a := &Agent{}
+			tt.option(a)
+			tt.validate(t, a)
 		})
 	}
 }

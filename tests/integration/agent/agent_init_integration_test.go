@@ -42,7 +42,12 @@ func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	})
 
 	// New should not crash even if applyConfig fails
-	a, err := agent.NewAgent(client, bus, h, "test-provider", reg, sm, agent.WithInitContext(ctx))
+	a, err := agent.NewAgent(client, bus, reg,
+		agent.WithHistoryManager(h),
+		agent.WithProviderName("test-provider"),
+		agent.WithSecurityManager(sm),
+		agent.WithInitContext(ctx),
+	)
 	require.NoError(t, err)
 
 	if a == nil {

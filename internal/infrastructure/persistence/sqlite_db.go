@@ -8,9 +8,11 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	_ "modernc.org/sqlite"
 )
 
@@ -82,36 +84,40 @@ func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem,
 
 func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string) error {
 	stat, err := fs.Stat(ctx, tasksPath)
-	if err != nil || stat == nil || stat.IsDir() {
-		return nil // Nothing to migrate, or not a file
+	if err != nil || stat.IsDir() {
+		return nil
 	}
 
 	oldTasks := newTaskRepository(fs, tasksPath)
 	tasks, err := oldTasks.ReadAll(ctx)
-	if err != nil {
-		return fmt.Errorf("reading legacy tasks: %w", err)
-	}
-	if len(tasks) == 0 {
-		return nil
+	if err != nil || len(tasks) == 0 {
+		return err
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("starting tasks migration transaction: %w", err)
+		return err
 	}
-	// Defer rollback to ensure it's called on error
 	defer func() {
 		_ = tx.Rollback()
 	}()
 
-	// 1. Map Domain to DTO
-	type taskRow struct {
-		ID        int64
-		Content   string
-		Status    string
-		CreatedAt string
+	rows := mapTasksToRows(tasks)
+	if err := executeBatchInsert(ctx, tx, rows); err != nil {
+		return err
 	}
 
+	return tx.Commit()
+}
+
+type taskRow struct {
+	ID        int64
+	Content   string
+	Status    string
+	CreatedAt string
+}
+
+func mapTasksToRows(tasks []ports.Task) []taskRow {
 	rows := make([]taskRow, len(tasks))
 	for i, t := range tasks {
 		rows[i] = taskRow{
@@ -121,8 +127,10 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 			CreatedAt: t.CreatedAt.Format(time.RFC3339Nano),
 		}
 	}
+	return rows
+}
 
-	// 2. Execute Bulk Insert (batching to respect SQLite limits)
+func executeBatchInsert(ctx context.Context, tx *sql.Tx, rows []taskRow) error {
 	batchSize := 200
 	for i := 0; i < len(rows); i += batchSize {
 		end := i + batchSize
@@ -131,24 +139,21 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 		}
 		batch := rows[i:end]
 
-		query := "INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES "
+		var queryBuilder strings.Builder
+		queryBuilder.WriteString("INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES ")
 		var args []interface{}
 
 		for j, r := range batch {
 			if j > 0 {
-				query += ", "
+				queryBuilder.WriteString(", ")
 			}
-			query += "(?, ?, ?, ?)"
+			queryBuilder.WriteString("(?, ?, ?, ?)")
 			args = append(args, r.ID, r.Content, r.Status, r.CreatedAt)
 		}
 
-		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		if _, err := tx.ExecContext(ctx, queryBuilder.String(), args...); err != nil {
 			return fmt.Errorf("bulk inserting legacy tasks: %w", err)
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing tasks migration: %w", err)
 	}
 	return nil
 }

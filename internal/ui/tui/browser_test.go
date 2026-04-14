@@ -329,14 +329,19 @@ func TestFetchHistoryCmd(t *testing.T) {
 }
 
 func TestWatchHistoryFileCmd(t *testing.T) {
+	mockModifier := &mockHistoryModifier{}
+	m := NewRootBrowserModel(context.Background(), nil, mockModifier)
+
 	// 1. Empty filepath
-	cmd := watchHistoryFileCmd(context.Background(), "")
+	mockModifier.GetFilePathFunc = func() string { return "" }
+	cmd := m.watchHistoryFileCmd()
 	if cmd() != nil {
 		t.Error("expected nil msg for empty filepath")
 	}
 
 	// 2. Non-existent file
-	cmd = watchHistoryFileCmd(context.Background(), "non-existent")
+	mockModifier.GetFilePathFunc = func() string { return "non-existent" }
+	cmd = m.watchHistoryFileCmd()
 	if cmd() != nil {
 		t.Error("expected nil msg for non-existent file")
 	}
@@ -351,7 +356,9 @@ func TestWatchHistoryFileCmd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd = watchHistoryFileCmd(ctx, tmpFilePath)
+	m.ctx = ctx
+	mockModifier.GetFilePathFunc = func() string { return tmpFilePath }
+	cmd = m.watchHistoryFileCmd()
 	if cmd() != nil {
 		t.Error("expected nil msg for cancelled context")
 	}

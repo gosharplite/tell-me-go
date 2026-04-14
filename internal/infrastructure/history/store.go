@@ -229,21 +229,19 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 	return s.fs.AtomicWrite(ctx, s.filePath, buf.Bytes(), 0644)
 }
 
-// Append appends multiple content entries to the history file.
-func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) (err error) {
-	if len(contents) == 0 {
-		return nil
-	}
-
+func (s *jsonlStore) withAppendFile(ctx context.Context, path string, fn func(persistence.File) error) (err error) {
 	if err := s.ensureDirectory(ctx); err != nil {
 		return err
 	}
 
-	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, oerr := s.fs.OpenFile(ctx, path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if oerr != nil {
 		return oerr
 	}
+
 	defer func() {
+		// Priority: preserve the error from the operation (fn),
+		// but catch sync/close errors if they occur.
 		if serr := f.Sync(); serr != nil && err == nil {
 			err = serr
 		}
@@ -252,12 +250,23 @@ func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) (err e
 		}
 	}()
 
-	for _, content := range contents {
-		if err = s.appendSingleContent(ctx, f, content); err != nil {
-			return err
-		}
+	return fn(f)
+}
+
+// Append appends multiple content entries to the history file.
+func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) (err error) {
+	if len(contents) == 0 {
+		return nil
 	}
-	return nil
+
+	return s.withAppendFile(ctx, s.filePath, func(f persistence.File) error {
+		for _, content := range contents {
+			if err := s.appendSingleContent(ctx, f, content); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Archive appends content entries to the history.archive.jsonl file.
@@ -266,29 +275,14 @@ func (s *jsonlStore) Archive(ctx context.Context, contents []*llm.Content) (err 
 		return nil
 	}
 
-	if err := s.ensureDirectory(ctx); err != nil {
-		return err
-	}
-
-	f, oerr := s.fs.OpenFile(ctx, s.archivePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if oerr != nil {
-		return oerr
-	}
-	defer func() {
-		if serr := f.Sync(); serr != nil && err == nil {
-			err = serr
+	return s.withAppendFile(ctx, s.archivePath, func(f persistence.File) error {
+		for _, content := range contents {
+			if err := s.appendSingleContent(ctx, f, content); err != nil {
+				return err
+			}
 		}
-		if cerr := f.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	for _, content := range contents {
-		if err = s.appendSingleContent(ctx, f, content); err != nil {
-			return err
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func (s *jsonlStore) ensureDirectory(ctx context.Context) error {
@@ -353,41 +347,27 @@ func (s *jsonlStore) prepareForStorage(ctx context.Context, c *llm.Content) (*ll
 
 // UpdateMetadata appends a patch to update metadata of an existing entry.
 func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) (err error) {
-	if err := s.ensureDirectory(ctx); err != nil {
+	return s.withAppendFile(ctx, s.filePath, func(f persistence.File) error {
+		patch := historyPatch{
+			IsPatch:  true,
+			Index:    index,
+			Metadata: metadata,
+		}
+		line, merr := json.Marshal(patch)
+		if merr != nil {
+			return merr
+		}
+		line = append(line, '\n')
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		_, err = f.Write(line)
 		return err
-	}
-	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if oerr != nil {
-		return oerr
-	}
-	defer func() {
-		if serr := f.Sync(); serr != nil && err == nil {
-			err = serr
-		}
-		if cerr := f.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	patch := historyPatch{
-		IsPatch:  true,
-		Index:    index,
-		Metadata: metadata,
-	}
-	line, merr := json.Marshal(patch)
-	if merr != nil {
-		return merr
-	}
-	line = append(line, '\n')
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	_, err = f.Write(line)
-	return err
+	})
 }
 
 // Compact reads the patched history and overwrites the file without patches.
@@ -401,51 +381,37 @@ func (s *jsonlStore) Compact(ctx context.Context) error {
 
 // AppendParts appends a patch to add parts to an existing entry.
 func (s *jsonlStore) AppendParts(ctx context.Context, index int, parts []*llm.Part) (err error) {
-	if err := s.ensureDirectory(ctx); err != nil {
+	return s.withAppendFile(ctx, s.filePath, func(f persistence.File) error {
+		preparedParts := make([]*llm.Part, len(parts))
+		for i, p := range parts {
+			dummy := &llm.Content{Parts: []*llm.Part{p}}
+			prepared, err := s.prepareForStorage(ctx, dummy)
+			if err != nil {
+				return err
+			}
+			preparedParts[i] = prepared.Parts[0]
+		}
+
+		patch := historyPatch{
+			IsPatch:     true,
+			Index:       index,
+			AppendParts: preparedParts,
+		}
+		line, merr := json.Marshal(patch)
+		if merr != nil {
+			return merr
+		}
+		line = append(line, '\n')
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		_, err = f.Write(line)
 		return err
-	}
-	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if oerr != nil {
-		return oerr
-	}
-	defer func() {
-		if serr := f.Sync(); serr != nil && err == nil {
-			err = serr
-		}
-		if cerr := f.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	preparedParts := make([]*llm.Part, len(parts))
-	for i, p := range parts {
-		dummy := &llm.Content{Parts: []*llm.Part{p}}
-		prepared, err := s.prepareForStorage(ctx, dummy)
-		if err != nil {
-			return err
-		}
-		preparedParts[i] = prepared.Parts[0]
-	}
-
-	patch := historyPatch{
-		IsPatch:     true,
-		Index:       index,
-		AppendParts: preparedParts,
-	}
-	line, merr := json.Marshal(patch)
-	if merr != nil {
-		return merr
-	}
-	line = append(line, '\n')
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	_, err = f.Write(line)
-	return err
+	})
 }
 
 // Sync ensures the history file is synchronized to disk.

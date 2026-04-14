@@ -234,32 +234,35 @@ func (m *architectureManager) classify(pkgPath string) string {
 	}
 
 	segments := strings.Split(rel, "/")
-	if segments[0] == "cmd" {
+	switch segments[0] {
+	case "cmd":
 		return layerCmd
+	case "internal":
+		return m.classifyInternal(segments)
+	default:
+		return layerUnknown
+	}
+}
+
+func (m *architectureManager) classifyInternal(segments []string) string {
+	if len(segments) < 2 {
+		return layerUnknown
 	}
 
-	if segments[0] == "internal" {
-		if len(segments) < 2 {
-			return layerUnknown
-		}
-
-		switch segments[1] {
-		case "domain":
-			return layerDomain
-		case "infrastructure":
-			return layerInfrastructure
-		case "agent", "cli", "ui", "service", "application":
-			return layerApplication
-		case "tools":
-			return layerTools
-		case "pkg":
-			return layerShared
-		default:
-			return layerUnknown
-		}
+	switch segments[1] {
+	case "domain":
+		return layerDomain
+	case "infrastructure":
+		return layerInfrastructure
+	case "agent", "cli", "ui", "service", "application":
+		return layerApplication
+	case "tools":
+		return layerTools
+	case "pkg":
+		return layerShared
+	default:
+		return layerUnknown
 	}
-
-	return layerUnknown
 }
 
 func (m *architectureManager) isLayer(pkgPath, layerName string) bool {

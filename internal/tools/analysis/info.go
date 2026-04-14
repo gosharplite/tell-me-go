@@ -37,8 +37,84 @@ type projectStats struct {
 	totalLOC   int
 }
 
-func (m *infoManager) shouldSkipDir(name string) bool {
-	return name == ".git" || name == "vendor" || name == "node_modules"
+func (m *infoManager) isIgnoredDir(name string, isDir bool) bool {
+	if !isDir {
+		return false
+	}
+	// Skip hidden directories, testdata, vendor, and node_modules
+	return name != "." && (strings.HasPrefix(name, ".") || name == "testdata" || name == "vendor" || name == "node_modules")
+}
+
+func (m *infoManager) isTargetSourceFile(name string, isDir bool) bool {
+	if isDir {
+		return false
+	}
+	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
+}
+
+func (m *infoManager) recordGoStats(ctx context.Context, path string, info os.FileInfo, stats *projectStats) {
+	// Normalize package paths to use forward slashes for consistent test output across OSes
+	stats.packages[filepath.ToSlash(filepath.Dir(path))] = true
+
+	// Try cache first to avoid redundant disk I/O
+	var loc int
+	var ok bool
+	if m.Cache != nil {
+		loc, ok = m.Cache.GetCachedLineCount(path, info)
+	}
+
+	if ok {
+		stats.totalLOC += loc
+	} else if loc, err := m.countLines(ctx, path); err == nil {
+		stats.totalLOC += loc
+	}
+}
+
+func (m *infoManager) sendHeartbeat(hb chan<- struct{}, count int) {
+	if count%50 == 0 && hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (m *infoManager) getFileExtension(path string) string {
+	ext := filepath.Ext(path)
+	if ext == "" {
+		return "(no ext)"
+	}
+	return ext
+}
+
+func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats, hb chan<- struct{}) persistence.WalkFunc {
+	count := 0
+	return func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		name := info.Name()
+		isDir := info.IsDir()
+		if m.isIgnoredDir(name, isDir) {
+			return filepath.SkipDir
+		}
+
+		if isDir {
+			return nil
+		}
+
+		count++
+		m.sendHeartbeat(hb, count)
+
+		ext := m.getFileExtension(path)
+		stats.fileCounts[ext]++
+
+		if m.isTargetSourceFile(name, isDir) {
+			m.recordGoStats(ctx, path, info, stats)
+		}
+		return nil
+	}
 }
 
 var genericSkeletonPatterns = []*regexp.Regexp{
@@ -82,54 +158,6 @@ func (m *infoManager) collectFileStats(ctx context.Context, hb chan<- struct{}) 
 	return stats.fileCounts, stats.packages, stats.totalLOC, err
 }
 
-func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats, hb chan<- struct{}) persistence.WalkFunc {
-	count := 0
-	return func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
-			if m.shouldSkipDir(info.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		count++
-		if count%50 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
-
-		ext := filepath.Ext(path)
-		if ext == "" {
-			ext = "(no ext)"
-		}
-		stats.fileCounts[ext]++
-
-		if ext == ".go" {
-			// Normalize package paths to use forward slashes for consistent test output across OSes
-			stats.packages[filepath.ToSlash(filepath.Dir(path))] = true
-
-			// Try cache first to avoid redundant disk I/O
-			var count int
-			var ok bool
-			if m.Cache != nil {
-				count, ok = m.Cache.GetCachedLineCount(path, info)
-			}
-
-			if ok {
-				stats.totalLOC += count
-			} else if count, err := m.countLines(ctx, path); err == nil {
-				stats.totalLOC += count
-			}
-		}
-		return nil
-	}
-}
-
 func (m *infoManager) renderProjectSummary(modInfo string, fileCounts map[string]int, packages map[string]bool, totalLOC int) string {
 	var sb strings.Builder
 	sb.WriteString("Project Summary:\n")
@@ -168,21 +196,35 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}, hb
 	}
 
 	symbol := params.Symbol
-	if m.Events != nil {
-		evt := events.SystemMessageEvent{
-			Message: fmt.Sprintf("[Tool Action] Running go doc %s", symbol),
-			Level:   "info",
-		}
-		if err := events.SafePublish(ctx, m.Events, evt); err != nil {
-			if !errors.Is(err, events.ErrBusNotInitialized) {
-				slog.Default().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
-			}
-		}
-	}
+	m.publishGoDocEvent(ctx, symbol)
 
 	// Heartbeat while running go doc
+	done := m.startGoDocHeartbeat(hb)
+
+	out, err := m.Runner.GetGoDoc(ctx, symbol)
+	close(done)
+
+	return m.formatDocOutput(out, err), nil
+}
+
+func (m *infoManager) publishGoDocEvent(ctx context.Context, symbol string) {
+	if m.Events == nil {
+		return
+	}
+	evt := events.SystemMessageEvent{
+		Message: fmt.Sprintf("[Tool Action] Running go doc %s", symbol),
+		Level:   "info",
+	}
+	if err := events.SafePublish(ctx, m.Events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			slog.Default().Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
+		}
+	}
+}
+
+func (m *infoManager) startGoDocHeartbeat(hb chan<- struct{}) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -201,14 +243,14 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}, hb
 			}
 		}
 	}()
+	return done
+}
 
-	out, err := m.Runner.GetGoDoc(ctx, symbol)
-	close(done)
+func (m *infoManager) formatDocOutput(out []byte, err error) tools.ToolResult {
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}
 	}
-
-	return tools.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: string(out)}
 }
 
 func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -260,21 +302,17 @@ func (m *infoManager) extractGenericSkeleton(ctx context.Context, path string) (
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
-			lastComments = append(lastComments, line)
-			continue
-		}
-
-		if trimmed == "" {
-			lastComments = nil
+		if m.isCommentOrEmpty(trimmed) {
+			if trimmed == "" {
+				lastComments = nil
+			} else {
+				lastComments = append(lastComments, line)
+			}
 			continue
 		}
 
 		if m.isDefinitionLine(line) {
-			for _, c := range lastComments {
-				sb.WriteString(c + "\n")
-			}
-			sb.WriteString(line + "\n\n")
+			m.writeDefinitionWithComments(&sb, line, lastComments)
 		}
 		lastComments = nil
 	}
@@ -284,6 +322,17 @@ func (m *infoManager) extractGenericSkeleton(ctx context.Context, path string) (
 		return tools.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
 	}
 	return tools.ToolResult{Text: res}, nil
+}
+
+func (m *infoManager) isCommentOrEmpty(trimmed string) bool {
+	return trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#")
+}
+
+func (m *infoManager) writeDefinitionWithComments(sb *strings.Builder, line string, lastComments []string) {
+	for _, c := range lastComments {
+		sb.WriteString(c + "\n")
+	}
+	sb.WriteString(line + "\n\n")
 }
 
 func (m *infoManager) isDefinitionLine(line string) bool {

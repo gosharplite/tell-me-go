@@ -38,52 +38,65 @@ func (t *persistenceTools) handleLoadToolkit(ctx context.Context, args map[strin
 
 	info := t.state.GetInfo()
 	available := t.reg.ListAvailableToolkits()
+
+	status := t.resolveToolkitStatus(params.Names, available, info.ActiveToolkits)
+
+	if len(status.loaded) > 0 {
+		info.ActiveToolkits = append(info.ActiveToolkits, status.loaded...)
+		t.state.SetInfo(info)
+	}
+
+	responseText := t.formatLoadToolkitResponse(status)
+	if responseText == "" {
+		return tools.ToolResult{Text: "No toolkits were loaded."}, nil
+	}
+
+	return tools.ToolResult{Text: responseText}, nil
+}
+
+type toolkitStatus struct {
+	loaded        []string
+	missing       []string
+	alreadyActive []string
+}
+
+func (t *persistenceTools) resolveToolkitStatus(requested []string, available []string, active []string) toolkitStatus {
 	availableMap := make(map[string]bool)
 	for _, tk := range available {
 		availableMap[tk] = true
 	}
 
 	activeMap := make(map[string]bool)
-	for _, tk := range info.ActiveToolkits {
+	for _, tk := range active {
 		activeMap[tk] = true
 	}
 
-	var loaded []string
-	var missing []string
-	var alreadyActive []string
-
-	for _, name := range params.Names {
+	var status toolkitStatus
+	for _, name := range requested {
 		if !availableMap[name] {
-			missing = append(missing, name)
+			status.missing = append(status.missing, name)
 			continue
 		}
 		if activeMap[name] {
-			alreadyActive = append(alreadyActive, name)
+			status.alreadyActive = append(status.alreadyActive, name)
 			continue
 		}
-		info.ActiveToolkits = append(info.ActiveToolkits, name)
-		activeMap[name] = true
-		loaded = append(loaded, name)
+		status.loaded = append(status.loaded, name)
+		activeMap[name] = true // prevent duplicates if requested multiple times in the same call
 	}
+	return status
+}
 
-	if len(loaded) > 0 {
-		t.state.SetInfo(info)
-	}
-
+func (t *persistenceTools) formatLoadToolkitResponse(status toolkitStatus) string {
 	var sb strings.Builder
-	if len(loaded) > 0 {
-		fmt.Fprintf(&sb, "Successfully loaded toolkits: [%s]. You now have access to those tools. ", strings.Join(loaded, ", "))
+	if len(status.loaded) > 0 {
+		fmt.Fprintf(&sb, "Successfully loaded toolkits: [%s]. You now have access to those tools. ", strings.Join(status.loaded, ", "))
 	}
-	if len(alreadyActive) > 0 {
-		fmt.Fprintf(&sb, "Toolkits already active: [%s]. ", strings.Join(alreadyActive, ", "))
+	if len(status.alreadyActive) > 0 {
+		fmt.Fprintf(&sb, "Toolkits already active: [%s]. ", strings.Join(status.alreadyActive, ", "))
 	}
-	if len(missing) > 0 {
-		fmt.Fprintf(&sb, "Warning: Unknown toolkits requested and skipped: [%s]. ", strings.Join(missing, ", "))
+	if len(status.missing) > 0 {
+		fmt.Fprintf(&sb, "Warning: Unknown toolkits requested and skipped: [%s]. ", strings.Join(status.missing, ", "))
 	}
-
-	if sb.Len() == 0 {
-		return tools.ToolResult{Text: "No toolkits were loaded."}, nil
-	}
-
-	return tools.ToolResult{Text: strings.TrimSpace(sb.String())}, nil
+	return strings.TrimSpace(sb.String())
 }

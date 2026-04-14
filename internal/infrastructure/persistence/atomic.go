@@ -97,25 +97,19 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	// Retry loop for Windows "Access is denied" during rename, which can be transient (e.g. anti-virus).
+	return renameWithRetry(ctx, fs, tmpPath, targetPath, perm)
+}
+
+func renameWithRetry(ctx context.Context, fs FileSystem, tmpPath, targetPath string, perm os.FileMode) error {
 	var lastErr error
 	for i := 0; i < maxRenameAttempts; i++ {
 		if err := fs.Rename(ctx, tmpPath, targetPath); err != nil {
-			// Implement fallback for EXDEV (cross-device link) errors
 			if isCrossDeviceError(err) {
 				return fallbackCopy(ctx, fs, tmpPath, targetPath, perm)
 			}
 			lastErr = err
 
-			// If it's a transient error on Windows (like Access is denied), retry after a short delay.
-			msg := err.Error()
-			if strings.Contains(msg, "Access is denied") || strings.Contains(msg, "used by another process") {
-				// OPTIMIZATION: On Windows, "Access is denied" can occur when targetPath is a directory.
-				// This is a permanent error. Check for it to avoid useless retries.
-				if info, statErr := fs.Stat(ctx, targetPath); statErr == nil && info.IsDir() {
-					return fmt.Errorf("failed to rename temp file: target path %s is a directory: %w", targetPath, err)
-				}
-
+			if isTransientRenameError(ctx, fs, err, targetPath) {
 				if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "atomic") {
 					fmt.Printf("DEBUG: retrying rename due to lock (attempt %d/%d): %s\n", i+1, maxRenameAttempts, targetPath)
 				}
@@ -131,6 +125,21 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 		return nil
 	}
 	return fmt.Errorf("failed to rename temp file after %d attempts: %w", maxRenameAttempts, lastErr)
+}
+
+func isTransientRenameError(ctx context.Context, fs FileSystem, err error, targetPath string) bool {
+	msg := err.Error()
+	if !strings.Contains(msg, "Access is denied") && !strings.Contains(msg, "used by another process") {
+		return false
+	}
+
+	// On Windows, "Access is denied" can occur when targetPath is a directory.
+	// This is a permanent error.
+	if info, statErr := fs.Stat(ctx, targetPath); statErr == nil && info.IsDir() {
+		return false
+	}
+
+	return true
 }
 
 func isCrossDeviceError(err error) bool {

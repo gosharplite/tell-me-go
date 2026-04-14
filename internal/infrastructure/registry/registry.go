@@ -60,55 +60,18 @@ func (r *registry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration,
 
 // RegisterToToolkitWithOptions adds a tool to a specific toolkit with options.
 func (r *registry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) error {
-	if def.Name == "" {
-		return fmt.Errorf("cannot register tool with empty name")
-	}
-	if toolkit == "" {
-		toolkit = "core"
+	var err error
+	toolkit, err = validateRegistration(toolkit, def)
+	if err != nil {
+		return err
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	// Check for existing tool to avoid duplicates in entries
-	if entry, exists := r.entries[def.Name]; exists {
-		// Update existing entry
-		entry.Declaration = def
-		entry.Handler = handler
-		entry.Options = opts
-		r.entries[def.Name] = entry
-
-		// Update in declarations list
-		for i, d := range r.declarations {
-			if d.Name == def.Name {
-				r.declarations[i] = def
-				break
-			}
-		}
-
-		// Update in toolkitMap
-		// Note: we don't know which toolkit it was originally in.
-		// For now, we'll just update it in the requested toolkit if it exists there.
-		for tk, toolsList := range r.toolkitMap {
-			for i, d := range toolsList {
-				if d.Name == def.Name {
-					r.toolkitMap[tk][i] = def
-				}
-			}
-		}
-
-		// If it's not in the target toolkit, add it
-		foundInToolkit := false
-		for _, d := range r.toolkitMap[toolkit] {
-			if d.Name == def.Name {
-				foundInToolkit = true
-				break
-			}
-		}
-		if !foundInToolkit {
-			r.toolkitMap[toolkit] = append(r.toolkitMap[toolkit], def)
-		}
-
+	if _, exists := r.entries[def.Name]; exists {
+		r.updateExistingRegistration(toolkit, def, handler, opts)
 		return nil
 	}
 
@@ -120,6 +83,59 @@ func (r *registry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolD
 	}
 	r.toolkitMap[toolkit] = append(r.toolkitMap[toolkit], def)
 	return nil
+}
+
+func validateRegistration(toolkit string, def *tools.ToolDeclaration) (string, error) {
+	if def.Name == "" {
+		return "", fmt.Errorf("cannot register tool with empty name")
+	}
+	if toolkit == "" {
+		toolkit = "core"
+	}
+	return toolkit, nil
+}
+
+func (r *registry) updateExistingRegistration(toolkit string, def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) {
+	// Update existing entry
+	entry := r.entries[def.Name]
+	entry.Declaration = def
+	entry.Handler = handler
+	entry.Options = opts
+	r.entries[def.Name] = entry
+
+	r.updateDeclarationsList(def)
+	r.updateToolkitMap(toolkit, def)
+}
+
+func (r *registry) updateDeclarationsList(def *tools.ToolDeclaration) {
+	for i, d := range r.declarations {
+		if d.Name == def.Name {
+			r.declarations[i] = def
+			break
+		}
+	}
+}
+
+func (r *registry) updateToolkitMap(toolkit string, def *tools.ToolDeclaration) {
+	for tk, toolsList := range r.toolkitMap {
+		for i, d := range toolsList {
+			if d.Name == def.Name {
+				r.toolkitMap[tk][i] = def
+			}
+		}
+	}
+
+	// If it's not in the target toolkit, add it
+	foundInToolkit := false
+	for _, d := range r.toolkitMap[toolkit] {
+		if d.Name == def.Name {
+			foundInToolkit = true
+			break
+		}
+	}
+	if !foundInToolkit {
+		r.toolkitMap[toolkit] = append(r.toolkitMap[toolkit], def)
+	}
 }
 
 // GetDeclarations returns the list of all function declarations.

@@ -61,75 +61,59 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 		&testRunner{runner: m.runner},
 	}
 
-	var report strings.Builder
-	report.WriteString("### Release Readiness Report\n\n")
+	results := m.runPipeline(ctx, pipeline, hb)
+	report := m.generateReport(pipeline, results)
 
-	// Heartbeat while waiting for all parallel health checks
+	return tools.ToolResult{Text: report}, nil
+}
+
+func (m *releaseManager) runPipeline(ctx context.Context, pipeline []readinessCheck, hb chan<- struct{}) []checkResult {
+	results := make([]checkResult, len(pipeline))
+
+	// Manage Heartbeat
 	done := make(chan struct{})
 	defer close(done)
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	go m.startHeartbeat(hb, done)
 
-	results := make([]checkResult, len(pipeline))
+	// Execute checks with semaphore
 	g, gCtx := errgroup.WithContext(ctx)
-
-	// Limit concurrent execution to prevent CPU/RAM exhaustion
-	// and avoid build cache locking collisions in CI.
 	sem := semaphore.NewWeighted(m.getParallelism())
 
 	for i, check := range pipeline {
-		i, c := i, check // Captured for closure
+		i, c := i, check
 		g.Go(func() error {
 			slog.Debug("verify_release_readiness: enqueued check", slog.String("check", c.Name()))
 
-			// Acquire semaphore before executing heavy checks
 			if err := sem.Acquire(gCtx, 1); err != nil {
-				results[i] = checkResult{
-					OK:      false,
-					Message: fmt.Sprintf("failed to acquire semaphore: %v", err),
-				}
+				results[i] = checkResult{OK: false, Message: fmt.Sprintf("failed to acquire semaphore: %v", err)}
 				return err
 			}
 			defer sem.Release(1)
 
 			slog.Debug("verify_release_readiness: running check", slog.String("check", c.Name()))
-			res := c.Run(gCtx)
-			// Both success and failure of a check are normal operational info, not system warnings.
+			results[i] = c.Run(gCtx)
 			slog.Info("verify_release_readiness: check finished",
 				slog.String("check", c.Name()),
-				slog.Bool("ok", res.OK),
+				slog.Bool("ok", results[i].OK),
 			)
-
-			results[i] = res
 			return nil
 		})
 	}
+	_ = g.Wait()
+	return results
+}
 
-	_ = g.Wait() // Wait for all checks to finish (even if some return an error due to context cancellation)
-
+func (m *releaseManager) generateReport(pipeline []readinessCheck, results []checkResult) string {
+	var report strings.Builder
+	report.WriteString("### Release Readiness Report\n\n")
 	allOK := true
 	for i, result := range results {
 		check := pipeline[i]
-		_, _ = fmt.Fprintf(&report, "#### %d. %s\n", i+1, check.Name())
+		fmt.Fprintf(&report, "#### %d. %s\n", i+1, check.Name())
 		if result.OK {
-			_, _ = fmt.Fprintf(&report, "- [OK] %s\n", result.Message)
+			fmt.Fprintf(&report, "- [OK] %s\n", result.Message)
 		} else {
-			_, _ = fmt.Fprintf(&report, "- [FAIL] %s\n", result.Message)
+			fmt.Fprintf(&report, "- [FAIL] %s\n", result.Message)
 			allOK = false
 		}
 		report.WriteString("\n")
@@ -140,8 +124,25 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	} else {
 		report.WriteString("**Status: NOT READY**\n")
 	}
+	return report.String()
+}
 
-	return tools.ToolResult{Text: report.String()}, nil
+func (m *releaseManager) startHeartbeat(hb chan<- struct{}, done <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if hb != nil {
+				select {
+				case hb <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
 }
 
 // secretScanner implementation
