@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestAtomicWrite(t *testing.T) {
@@ -137,7 +138,8 @@ func TestAtomicWrite_RenameFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	err = AtomicWrite(ctx, &OSFileSystem{}, path, []byte("data"), 0644)
 	if err == nil {
 		t.Fatal("expected error when renaming to a directory")

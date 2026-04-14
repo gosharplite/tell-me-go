@@ -116,6 +116,18 @@ func TestAtomicWrite_ErrorHandling(t *testing.T) {
 			wantErr:    true,
 			errPattern: "failed to rename temp file: rename denied",
 		},
+		{
+			name: "Rename exhausted retries",
+			setupMock: func() *mockFileSystem {
+				m := newMockFS()
+				m.RenameFunc = func(ctx context.Context, oldpath, newpath string) error {
+					return errors.New("Access is denied")
+				}
+				return m
+			},
+			wantErr:    true,
+			errPattern: "failed to rename temp file after 5 attempts: Access is denied",
+		},
 	}
 
 	for _, tt := range tests {
