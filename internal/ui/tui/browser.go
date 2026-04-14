@@ -422,44 +422,58 @@ func (m *rootBrowserModel) View() string {
 	return sb.String()
 }
 
-func (m *rootBrowserModel) renderHistory() (string, []int) {
-	if len(m.history) == 0 && m.isLoading {
-		return "Loading history...", nil
+func (m *rootBrowserModel) renderEmptyState() string {
+	if m.isLoading {
+		return "Loading history..."
 	}
-	if len(m.history) == 0 && m.cursor == "EOF" {
-		return "No history found.", nil
+	if m.cursor == "EOF" {
+		return "No history found."
 	}
+	return ""
+}
 
-	turnOffsets := make([]int, 0, len(m.history))
-	var sb strings.Builder
-
+func (m *rootBrowserModel) renderHistoryStatus(sb *strings.Builder) {
 	if m.isLoading {
 		sb.WriteString(thoughtStyle.Render("Loading more messages...") + "\n\n")
 	} else if m.cursor == "EOF" && len(m.history) > 0 {
 		sb.WriteString(archivedStyle.Render("─── Start of History ───") + "\n\n")
 	}
+}
 
+func (m *rootBrowserModel) renderTurn(sb *strings.Builder, i int, dto ports.HistoryViewDTO, offset int) {
+	prefix := "  "
+	if i == m.selectedTurn {
+		prefix = "> "
+	}
+
+	sb.WriteString(m.renderTurnHeader(dto, i == m.selectedTurn, offset))
+
+	if m.showThoughts && dto.ThoughtProcess != "" {
+		sb.WriteString(m.renderThoughts(dto, prefix))
+	}
+
+	if len(dto.ToolCalls) > 0 {
+		sb.WriteString(m.renderToolCalls(dto, prefix))
+	}
+
+	sb.WriteString(m.renderContent(dto, prefix))
+}
+
+func (m *rootBrowserModel) renderHistory() (string, []int) {
+	if len(m.history) == 0 {
+		return m.renderEmptyState(), nil
+	}
+
+	turnOffsets := make([]int, 0, len(m.history))
+	var sb strings.Builder
+
+	m.renderHistoryStatus(&sb)
 	offset := m.getSystemOffset()
 
 	for i, dto := range m.history {
 		turnOffsets = append(turnOffsets, strings.Count(sb.String(), "\n"))
 
-		prefix := "  "
-		if i == m.selectedTurn {
-			prefix = "> "
-		}
-
-		sb.WriteString(m.renderTurnHeader(dto, i == m.selectedTurn, offset))
-
-		if m.showThoughts && dto.ThoughtProcess != "" {
-			sb.WriteString(m.renderThoughts(dto, prefix))
-		}
-
-		if len(dto.ToolCalls) > 0 {
-			sb.WriteString(m.renderToolCalls(dto, prefix))
-		}
-
-		sb.WriteString(m.renderContent(dto, prefix))
+		m.renderTurn(&sb, i, dto, offset)
 
 		if i < len(m.history)-1 {
 			sb.WriteString(m.renderSeparator())

@@ -67,33 +67,43 @@ func (l *asyncTurnsLogger) Listen(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			// Drain the channel one last time to avoid dropping telemetry
-			for {
-				select {
-				case msg := <-l.ch:
-					if _, err := l.file.Write([]byte(msg)); err != nil {
-						l.logger.Warn("failed to write to turns log on shutdown", "error", err)
-					}
-				default:
-					// Ensure everything is persisted before exiting
-					if err := l.file.Sync(); err != nil {
-						l.logger.Warn("failed to sync turns log on shutdown", "error", err)
-					}
-					return nil
-				}
-			}
+			l.drainAndSync()
+			return nil
 		case msg, ok := <-l.ch:
 			if !ok {
 				return nil
 			}
+			l.processMessage(msg)
+		}
+	}
+}
+
+func (l *asyncTurnsLogger) processMessage(msg string) {
+	if _, err := l.file.Write([]byte(msg)); err != nil {
+		l.logger.Warn("failed to write to turns log", "error", err)
+		return
+	}
+	// Smart batching: only fsync when the channel buffer is fully drained
+	if len(l.ch) == 0 {
+		if err := l.file.Sync(); err != nil {
+			l.logger.Warn("failed to sync turns log", "error", err)
+		}
+	}
+}
+
+func (l *asyncTurnsLogger) drainAndSync() {
+	for {
+		select {
+		case msg := <-l.ch:
 			if _, err := l.file.Write([]byte(msg)); err != nil {
-				l.logger.Warn("failed to write to turns log", "error", err)
-			} else if len(l.ch) == 0 {
-				// Smart batching: only fsync when the channel buffer is fully drained
-				if err := l.file.Sync(); err != nil {
-					l.logger.Warn("failed to sync turns log", "error", err)
-				}
+				l.logger.Warn("failed to write to turns log on shutdown", "error", err)
 			}
+		default:
+			// Ensure everything is persisted before exiting
+			if err := l.file.Sync(); err != nil {
+				l.logger.Warn("failed to sync turns log on shutdown", "error", err)
+			}
+			return
 		}
 	}
 }

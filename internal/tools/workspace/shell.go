@@ -177,62 +177,31 @@ func newshellTool(sm shellSecurity, validator domain_security.CommandValidator, 
 	}
 }
 
+type executeParams struct {
+	Command    string            `json:"command"`
+	Args       []string          `json:"args"`
+	Env        map[string]string `json:"env"`
+	Reason     string            `json:"reason"`
+	OutputFile string            `json:"output_file"`
+	Append     bool              `json:"append"`
+	Timeout    int               `json:"timeout"`
+}
+
 func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
-	var params struct {
-		Command    string            `json:"command"`
-		Args       []string          `json:"args"`
-		Env        map[string]string `json:"env"`
-		Reason     string            `json:"reason"`
-		OutputFile string            `json:"output_file"`
-		Append     bool              `json:"append"`
-		Timeout    int               `json:"timeout"`
-	}
+	var params executeParams
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if params.Command == "" && len(params.Args) == 0 {
-		return tools.ToolResult{Error: fmt.Errorf("command or args is required"), Text: "command or args is required"}, nil
-	}
-
-	var parts []string
-	var displayCommand string
-	var err error
-
-	if len(params.Args) > 0 {
-		parts = make([]string, len(params.Args))
-		for i, arg := range params.Args {
-			parts[i] = filepath.FromSlash(arg)
-		}
-		parts = t.translator.Translate(parts)
-		displayCommand = strings.Join(params.Args, " ")
-	} else {
-		parts, err = t.prepareCommand(params.Command)
-		if err != nil {
-			return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
-		}
-		displayCommand = params.Command
-	}
-
-	outputFile, err := t.resolveOutputFile(params.OutputFile)
+	parts, displayCmd, err := t.prepareExecutionParts(params)
 	if err != nil {
 		return tools.ToolResult{Error: err, Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	// For structured args, we validate the first part as the base command.
-	safe := false
-	if len(params.Args) > 0 {
-		safe, _ = t.validator.IsSafe(params.Args[0])
-	} else {
-		safe, _ = t.validator.IsSafe(params.Command)
-	}
-
-	approved, err := t.authorize(ctx, "Command", displayCommand, params.Reason, safe, outputFile, params.Append)
+	outputFile, approved, err := t.authorizeAndAudit(ctx, params, displayCmd)
 	if err != nil || !approved {
-		return t.handleAuthResult(approved, err, "command: "+displayCommand)
+		return t.handleAuthResult(approved, err, "command: "+displayCmd)
 	}
-
-	t.auditExecution(displayCommand, params.Reason, params.OutputFile, params.Append)
 
 	stopHB := t.startHeartbeat(hb)
 	defer stopHB()
@@ -262,6 +231,42 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	}
 
 	return tools.ToolResult{Text: t.formatResult(res, false)}, nil
+}
+
+func (t *shellTool) prepareExecutionParts(params executeParams) ([]string, string, error) {
+	if len(params.Args) > 0 {
+		parts := make([]string, len(params.Args))
+		for i, arg := range params.Args {
+			parts[i] = filepath.FromSlash(arg)
+		}
+		return t.translator.Translate(parts), strings.Join(params.Args, " "), nil
+	}
+
+	if params.Command == "" {
+		return nil, "", fmt.Errorf("command or args is required")
+	}
+
+	parts, err := t.prepareCommand(params.Command)
+	if err != nil {
+		return nil, "", err
+	}
+	return parts, params.Command, nil
+}
+
+func (t *shellTool) authorizeAndAudit(ctx context.Context, params executeParams, displayCommand string) (string, bool, error) {
+	outputFile, err := t.resolveOutputFile(params.OutputFile)
+	if err != nil {
+		return "", false, err
+	}
+
+	safe, _ := t.validator.IsSafe(displayCommand)
+	approved, err := t.authorize(ctx, "Command", displayCommand, params.Reason, safe, outputFile, params.Append)
+	if err != nil || !approved {
+		return outputFile, approved, err
+	}
+
+	t.auditExecution(displayCommand, params.Reason, params.OutputFile, params.Append)
+	return outputFile, true, nil
 }
 
 func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

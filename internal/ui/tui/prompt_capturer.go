@@ -69,30 +69,39 @@ func (c *promptCapturer) CapturePrompt(ctx context.Context, args []string, opts 
 		opt(options)
 	}
 
-	// Fallback to base capturer if:
-	// 1. TUI is not requested
-	// 2. Not a TTY
-	// 3. Positional arguments are provided (e.g. tell-me-go "hello")
-	// 4. History command is provided (SkipTTYWait is true)
-	if !options.UseTUIPrompt || !c.IsTTY(os.Stdin) || len(args) > 0 || options.SkipTTYWait {
+	if c.shouldFallback(args, options) {
 		return c.base.CapturePrompt(ctx, args, opts...)
 	}
 
-	// Initialize TUI Model
+	finalPrompt, err := c.runTUI(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if finalPrompt == "" && !options.SkipTTYWait {
+		return "", context.Canceled
+	}
+
+	c.provideFeedback(ctx, finalPrompt)
+	return finalPrompt, nil
+}
+
+// shouldFallback encapsulates the routing logic that determines if the TUI should be skipped.
+func (c *promptCapturer) shouldFallback(args []string, options *ports.CaptureOptions) bool {
+	return !options.UseTUIPrompt || !c.IsTTY(os.Stdin) || len(args) > 0 || options.SkipTTYWait
+}
+
+// runTUI moves the Bubble Tea initialization, logging, and execution into a dedicated method.
+func (c *promptCapturer) runTUI(ctx context.Context) (string, error) {
 	model := prompt.NewModel(c.svc, prompt.DefaultDebounceDuration)
 	defer model.Destroy()
 
-	// Initialize background logger for TUI
+	// Handle TUI logger lifecycle
 	if closer, err := InitLogger(); err == nil {
-		defer func() {
-			if closeErr := closer.Close(); closeErr != nil {
-				log.Printf("failed to close tui logger: %v", closeErr)
-			}
-		}()
+		defer closer.Close()
 	}
 
 	p := tea.NewProgram(model, c.programOpts...)
-
 	resModel, err := p.Run()
 	if err != nil {
 		return "", fmt.Errorf("tui prompt error: %w", err)
@@ -103,26 +112,23 @@ func (c *promptCapturer) CapturePrompt(ctx context.Context, args []string, opts 
 		return "", context.Canceled
 	}
 
-	finalPrompt := strings.TrimSpace(finalModel.FinalPrompt())
+	return strings.TrimSpace(finalModel.FinalPrompt()), nil
+}
 
-	// Record the prompt for future suggestions
-	if finalPrompt != "" {
-		if err := c.svc.RecordPrompt(ctx, finalPrompt); err != nil {
-			log.Printf("failed to record prompt for suggestions: %v", err)
-		}
-
-		// Provide visual feedback after the TUI closes so the user knows what was sent.
-		// This uses the base capturer's Prompt method to stay consistent with the tool's theme.
-		timestamp := time.Now().Format("15:04:05")
-		c.base.Prompt(fmt.Sprintf("[%s] Input captured:\n", timestamp))
-		fmt.Fprintln(os.Stderr, finalPrompt)
-		c.base.Prompt(fmt.Sprintf("[%s] Processing...\n", timestamp))
-	} else if !options.SkipTTYWait {
-		// Return context.Canceled for empty prompt to allow silent exit
-		return "", context.Canceled
+// provideFeedback moves the logic for recording the prompt and displaying the "Input captured" footer into a helper.
+func (c *promptCapturer) provideFeedback(ctx context.Context, finalPrompt string) {
+	if finalPrompt == "" {
+		return
 	}
 
-	return finalPrompt, nil
+	if err := c.svc.RecordPrompt(ctx, finalPrompt); err != nil {
+		log.Printf("failed to record prompt for suggestions: %v", err)
+	}
+
+	timestamp := time.Now().Format("15:04:05")
+	c.base.Prompt(fmt.Sprintf("[%s] Input captured:\n", timestamp))
+	fmt.Fprintln(os.Stderr, finalPrompt)
+	c.base.Prompt(fmt.Sprintf("[%s] Processing...\n", timestamp))
 }
 
 // Confirm delegates to the base capturer.
