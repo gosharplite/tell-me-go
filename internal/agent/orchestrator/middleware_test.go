@@ -208,7 +208,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 			State: &TurnState{
 				Phase: PhaseInference,
 				// Ensure clean state
-				RecentResponseHashes: nil, 
+				RecentResponseHashes: nil,
 				ToolCallCount:        make(map[string]int),
 			},
 			CtxManager: cm,
@@ -225,7 +225,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 		_, err = mw(next).Process(context.Background(), turn)
 		assert.NoError(t, err)
 		assert.Nil(t, turn.State.Response, "Response should be cleared on loop detection (2nd call)")
-		
+
 		found := false
 		for _, e := range bus.GetEvents() {
 			if evt, ok := e.(events.SystemMessageEvent); ok {
@@ -260,7 +260,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 
 		turn := &Turn{
 			State: &TurnState{
-				Phase: PhaseInference,
+				Phase:                PhaseInference,
 				RecentResponseHashes: nil,
 				ToolCallCount:        make(map[string]int),
 			},
@@ -280,7 +280,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 
 func TestHandleLoopBreak_Error_Internal(t *testing.T) {
 	bus := &testutil.MockEventBus{}
-	
+
 	hMock := &testutil.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
 	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
@@ -327,19 +327,19 @@ func TestTruncateSafe_Middleware(t *testing.T) {
 func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
 	bus := &testutil.MockEventBus{}
 	engine := &Engine{events: bus}
-	
+
 	hMock := &testutil.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
-	
+
 	turn := &Turn{
-		State:      &TurnState{},
-		CtxManager: cm,
-		Clock:      &testutil.MockClock{},
+		State:       &TurnState{},
+		CtxManager:  cm,
+		Clock:       &testutil.MockClock{},
 		CostTracker: nil,
 	}
-	
+
 	engine.publishTurnStatus(context.Background(), turn, false, false)
-	
+
 	found := false
 	for _, e := range bus.GetEvents() {
 		if _, ok := e.(events.TurnStatusEvent); ok {
@@ -351,11 +351,11 @@ func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
 
 func TestHandleLoopBreak_Error_Warning(t *testing.T) {
 	bus := &testutil.MockEventBus{}
-	
+
 	hMock := &testutil.MockHistoryManager{}
 	// Seed history
 	hMock.SetInternalContents([]*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}})
-	
+
 	callCount := 0
 	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
 		callCount++

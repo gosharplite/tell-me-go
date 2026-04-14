@@ -181,7 +181,7 @@ func (b *UIBridge) Cleanup() {
 	b.cleanupOnce.Do(func() {
 		atomic.AddInt32(&b.cleanupInvocations, 1)
 
-		// 1. Ensure input is closed. This allows the Listen() loop to exit 
+		// 1. Ensure input is closed. This allows the Listen() loop to exit
 		// naturally after processing all remaining events in the channel.
 		b.CloseInput()
 
@@ -206,7 +206,7 @@ func (b *UIBridge) Cleanup() {
 		case <-done:
 			// Graceful exit: all events were drained within the timeout.
 		case <-timer.C:
-			// Hard stop: Drain took too long or became deadlocked. 
+			// Hard stop: Drain took too long or became deadlocked.
 			// Trigger the context cancellation now to unblock the Listen loop.
 			b.mu.RLock()
 			cancel := b.cancel

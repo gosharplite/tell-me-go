@@ -508,7 +508,7 @@ func TestPersistenceStep_ToolPersistenceError(t *testing.T) {
 	ctx := context.Background()
 	hMock := &testutil.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
-	
+
 	// Fail only on the second call (tool response)
 	callCount := 0
 	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
@@ -518,7 +518,7 @@ func TestPersistenceStep_ToolPersistenceError(t *testing.T) {
 		}
 		return nil
 	}
-	
+
 	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
 	turn := &Turn{
 		CtxManager: cm,
@@ -527,10 +527,10 @@ func TestPersistenceStep_ToolPersistenceError(t *testing.T) {
 			ToolResponse: &llm.Content{Role: "tool", Parts: []*llm.Part{{Text: "tool"}}},
 		},
 	}
-	
+
 	step := &PersistenceStep{}
 	_, err := step.Process(ctx, turn)
-	
+
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to persist tool results")
 }
@@ -538,14 +538,14 @@ func TestPersistenceStep_ToolPersistenceError(t *testing.T) {
 func TestRecoveryStep_MaxRetriesReached(t *testing.T) {
 	policy := &DefaultRetryPolicy{MaxRetries: 1}
 	step := &RecoveryStep{Policy: policy}
-	
+
 	turn := &Turn{
 		State: &TurnState{
 			LastError:  llm.ErrTransient,
 			RetryCount: 1, // Already at max
 		},
 	}
-	
+
 	_, err := step.Process(context.Background(), turn)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "max retries reached")
@@ -554,7 +554,7 @@ func TestRecoveryStep_MaxRetriesReached(t *testing.T) {
 func TestRecoveryStep_AttemptRetry_ContextCancelled(t *testing.T) {
 	policy := &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Hour} // Long backoff
 	step := &RecoveryStep{Policy: policy}
-	
+
 	bus := &testutil.MockEventBus{}
 	turn := &Turn{
 		State: &TurnState{
@@ -563,10 +563,10 @@ func TestRecoveryStep_AttemptRetry_ContextCancelled(t *testing.T) {
 		Clock:  &testutil.MockClock{}, // Mock clock to control time if needed, but we'll cancel ctx
 		Events: bus,
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
-	
+
 	_, err := step.Process(ctx, turn)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -575,18 +575,19 @@ type blockingClock struct {
 	clock.Clock
 	ch chan time.Time
 }
+
 func (c *blockingClock) After(d time.Duration) <-chan time.Time {
 	return c.ch
 }
-func (c *blockingClock) Now() time.Time { return time.Now() }
+func (c *blockingClock) Now() time.Time              { return time.Now() }
 func (c *blockingClock) Jitter(base float64) float64 { return base }
 
 func TestRecoveryStep_AttemptRetry_SelectContextCancelled(t *testing.T) {
 	policy := &DefaultRetryPolicy{MaxRetries: 5, Backoff: 1 * time.Hour}
 	step := &RecoveryStep{Policy: policy}
-	
+
 	clk := &blockingClock{ch: make(chan time.Time)}
-	
+
 	bus := &testutil.MockEventBus{}
 	turn := &Turn{
 		State: &TurnState{
@@ -595,15 +596,15 @@ func TestRecoveryStep_AttemptRetry_SelectContextCancelled(t *testing.T) {
 		Clock:  clk,
 		Events: bus,
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Trigger cancellation in the background
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		cancel()
 	}()
-	
+
 	_, err := step.Process(ctx, turn)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -619,7 +620,7 @@ func TestEngineRun_Error(t *testing.T) {
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 
 	engine := NewEngine(gw, ex, cm, reg, bus, counter)
-	
+
 	// Force failure in executePhase which is called inside ExecuteTurn inside Run
 	engine.processors[PhaseGuard] = TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
 		return ProcessResult{}, errors.New("turn execution failed")
