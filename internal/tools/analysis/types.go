@@ -253,39 +253,42 @@ func (m *defaultTypeManager) parseInterfaceMethods(list *ast.FieldList) []string
 func (m *defaultTypeManager) findMethodsInPackage(ctx context.Context, dir, typeName string, hb chan<- struct{}) ([]string, error) {
 	var methods []string
 	count := 0
-	err := filepath.Walk(dir, func(p string, i os.FileInfo, e error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+	walkFn := m.makeMethodWalkFunc(ctx, typeName, hb, &methods, &count)
+	err := filepath.Walk(dir, walkFn)
+	return methods, err
+}
+
+func (m *defaultTypeManager) makeMethodWalkFunc(ctx context.Context, typeName string, hb chan<- struct{}, methods *[]string, count *int) filepath.WalkFunc {
+	return func(p string, i os.FileInfo, e error) error {
+		if err := m.checkCancellation(ctx); err != nil {
+			return err
 		}
-		if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
+		if m.shouldSkipFile(p, i, e) {
 			return nil
 		}
 
-		count++
-		if count%10 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
+		m.handleHeartbeat(hb, count)
 
 		ff, _, err := m.Cache.Get(p)
 		if err != nil {
 			return nil
 		}
-		for _, d := range ff.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
-				recvType := exprToString(fd.Recv.List[0].Type)
-				if strings.TrimPrefix(recvType, "*") == typeName {
-					methods = append(methods, getFuncSignature(fd))
-				}
+		*methods = append(*methods, m.extractMethodsFromFile(ff, typeName)...)
+		return nil
+	}
+}
+
+func (m *defaultTypeManager) extractMethodsFromFile(f *ast.File, typeName string) []string {
+	var methods []string
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
+			recvType := exprToString(fd.Recv.List[0].Type)
+			if strings.TrimPrefix(recvType, "*") == typeName {
+				methods = append(methods, getFuncSignature(fd))
 			}
 		}
-		return nil
-	})
-	return methods, err
+	}
+	return methods
 }
 
 func (m *defaultTypeManager) renderTypeInfo(def typeDefinition, receivers []string) string {
@@ -391,22 +394,14 @@ func (m *defaultTypeManager) collectSymbols(ctx context.Context, root, query str
 	var results []string
 	count := 0
 	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		if err := m.checkCancellation(ctx); err != nil {
+			return err
 		}
-		if err != nil || info.IsDir() || filepath.Ext(p) != ".go" {
+		if m.shouldSkipFile(p, info, err) {
 			return nil
 		}
 
-		count++
-		if count%10 == 0 && hb != nil {
-			select {
-			case hb <- struct{}{}:
-			default:
-			}
-		}
+		m.handleHeartbeat(hb, &count)
 
 		f, fset, err := m.Cache.Get(p)
 		if err != nil {
@@ -430,4 +425,27 @@ func (m *defaultTypeManager) wrapResults(results []string, notFoundMsg string) t
 		return tools.ToolResult{Text: notFoundMsg}
 	}
 	return tools.ToolResult{Text: strings.Join(results, "\n")}
+}
+
+func (m *defaultTypeManager) checkCancellation(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
+}
+
+func (m *defaultTypeManager) shouldSkipFile(p string, info os.FileInfo, err error) bool {
+	return err != nil || info.IsDir() || filepath.Ext(p) != ".go"
+}
+
+func (m *defaultTypeManager) handleHeartbeat(hb chan<- struct{}, count *int) {
+	*count++
+	if *count%10 == 0 && hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
+	}
 }

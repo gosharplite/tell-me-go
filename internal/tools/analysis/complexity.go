@@ -63,65 +63,77 @@ func (a *defaultComplexityAnalyzer) Analyze(ctx context.Context, args map[string
 
 func (a *defaultComplexityAnalyzer) GatherComplexities(ctx context.Context, root string, hb chan<- struct{}) ([]funcComplexity, error) {
 	g, gCtx := errgroup.WithContext(ctx)
+	sem := semaphore.NewWeighted(a.getConcurrencyLimit())
+
+	var complexities []funcComplexity
+	var mu sync.Mutex
+	count := 0
+
+	walkFn := a.makeWalkFunc(g, gCtx, sem, hb, &complexities, &mu, &count)
+	if err := filepath.Walk(root, walkFn); err != nil {
+		return nil, err
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return complexities, nil
+}
+
+func (a *defaultComplexityAnalyzer) getConcurrencyLimit() int64 {
 	limit := int64(runtime.NumCPU())
 	if limit < 1 {
 		limit = 1
 	}
-	sem := semaphore.NewWeighted(limit)
+	return limit
+}
 
-	var complexities []funcComplexity
-	var mu sync.Mutex
-
-	count := 0
-	err := filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
+func (a *defaultComplexityAnalyzer) makeWalkFunc(g *errgroup.Group, ctx context.Context, sem *semaphore.Weighted, hb chan<- struct{}, complexities *[]funcComplexity, mu *sync.Mutex, count *int) filepath.WalkFunc {
+	return func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		select {
-		case <-gCtx.Done():
-			return gCtx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
 		if info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
+		*count++
+		counter := *count
 		path := filePath
-		count++
-		c := count
+
 		g.Go(func() error {
-			if err := sem.Acquire(gCtx, 1); err != nil {
-				return err
-			}
-			defer sem.Release(1)
-
-			if c%10 == 0 && hb != nil {
-				select {
-				case hb <- struct{}{}:
-				default:
-				}
-			}
-
-			fileComplexities := a.analyzeFile(path)
-			if len(fileComplexities) > 0 {
-				mu.Lock()
-				complexities = append(complexities, fileComplexities...)
-				mu.Unlock()
-			}
-			return nil
+			return a.processFileTask(ctx, sem, path, hb, counter, complexities, mu)
 		})
 		return nil
-	})
+	}
+}
 
-	if err != nil {
-		return nil, err
+func (a *defaultComplexityAnalyzer) processFileTask(ctx context.Context, sem *semaphore.Weighted, path string, hb chan<- struct{}, counter int, complexities *[]funcComplexity, mu *sync.Mutex) error {
+	if err := sem.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer sem.Release(1)
+
+	if counter%10 == 0 && hb != nil {
+		select {
+		case hb <- struct{}{}:
+		default:
+		}
 	}
 
-	if waitErr := g.Wait(); waitErr != nil {
-		return nil, waitErr
+	fileComplexities := a.analyzeFile(path)
+	if len(fileComplexities) > 0 {
+		mu.Lock()
+		*complexities = append(*complexities, fileComplexities...)
+		mu.Unlock()
 	}
-
-	return complexities, nil
+	return nil
 }
 
 func (a *defaultComplexityAnalyzer) analyzeFile(filePath string) []funcComplexity {

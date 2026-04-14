@@ -331,43 +331,50 @@ func (v *commandValidator) CheckPathSafety(parts []string) (bool, string) {
 // HasShellFeatures checks if the command parts contain any shell operators,
 // wildcards, or interpolation characters that require a shell interpreter.
 func (v *commandValidator) HasShellFeatures(parts []string) bool {
-	if len(parts) == 0 {
+	if len(parts) == 0 || v.isExplicitShell(parts[0]) {
 		return false
 	}
 
-	// 1. Skip if already calling a shell explicitly as the primary command
-	switch parts[0] {
-	case "sh", "bash", "zsh", "ksh", "csh", "cmd.exe", "cmd", "powershell", "pwsh":
-		return false
-	}
-
-	// 2. Check for standalone shell operators (e.g. &&, ||, ;, |, >, <)
+	// Check for standalone operators (&&, ||, |, etc)
 	if ok, _ := v.safety.HasForbiddenOperators(parts); ok {
 		return true
 	}
 
 	for i, part := range parts {
-		// 3. Check for shell interpolation ($ or `) and wildcards (*, ?, [])
-		if v.safety.HasUnsafeInterpolation(part) || strings.ContainsAny(part, "*?[]") {
+		if v.hasShellSpecialChars(part) {
 			return true
 		}
-
-		// 4. Check for attached operators in the command token (e.g. "ls;echo")
-		if i == 0 && v.safety.HasForbiddenCharsInCommand(part) {
-			return true
-		}
-
-		// 5. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
-		if i == 0 && v.isPowerShellCmdlet(part) {
-			return true
-		}
-
-		// 6. Check for Windows shell built-in commands (e.g. "del", "dir")
-		if i == 0 && v.goos == "windows" && v.isWindowsBuiltIn(part) {
+		// First token specific checks
+		if i == 0 && v.isComplexCommandToken(part) {
 			return true
 		}
 	}
 
+	return false
+}
+
+func (v *commandValidator) isExplicitShell(token string) bool {
+	switch token {
+	case "sh", "bash", "zsh", "ksh", "csh", "cmd.exe", "cmd", "powershell", "pwsh":
+		return true
+	}
+	return false
+}
+
+func (v *commandValidator) hasShellSpecialChars(token string) bool {
+	return v.safety.HasUnsafeInterpolation(token) || strings.ContainsAny(token, "*?[]")
+}
+
+func (v *commandValidator) isComplexCommandToken(token string) bool {
+	if v.safety.HasForbiddenCharsInCommand(token) {
+		return true
+	}
+	if v.isPowerShellCmdlet(token) {
+		return true
+	}
+	if v.goos == "windows" && v.isWindowsBuiltIn(token) {
+		return true
+	}
 	return false
 }
 

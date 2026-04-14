@@ -39,42 +39,58 @@ func (w *windowsTranslator) Translate(parts []string) []string {
 	case "ls":
 		return w.translateLS(args)
 	case "rm":
-		isRecursive := false
-		for _, arg := range args {
-			if arg == "-r" || arg == "-rf" {
-				isRecursive = true
-				break
-			}
-		}
-
-		filteredArgs := make([]string, 0, len(args))
-		for _, arg := range args {
-			if arg == "-r" || arg == "-rf" || arg == "-f" || arg == "-v" {
-				continue
-			}
-			filteredArgs = append(filteredArgs, arg)
-		}
-
-		if isRecursive {
-			return append([]string{"cmd", "/c", "rd", "/s", "/q"}, filteredArgs...)
-		}
-		return append([]string{"cmd", "/c", "del", "/f", "/q"}, filteredArgs...)
+		return w.translateRM(args)
 	case "mkdir":
-		filteredArgs := make([]string, 0, len(args))
-		for _, arg := range args {
-			if arg == "-p" {
-				continue
-			}
-			filteredArgs = append(filteredArgs, arg)
-		}
-		return append([]string{"cmd", "/c", "mkdir"}, filteredArgs...)
+		return w.translateMkdir(args)
 	case "cp":
-		return append([]string{"cmd", "/c", "copy"}, args...)
+		return w.translateCP(args)
 	case "mv":
-		return append([]string{"cmd", "/c", "move"}, args...)
+		return w.translateMV(args)
 	}
 
 	return parts
+}
+
+func (w *windowsTranslator) translateRM(args []string) []string {
+	isRecursive := false
+	for _, arg := range args {
+		if arg == "-r" || arg == "-rf" {
+			isRecursive = true
+			break
+		}
+	}
+
+	filteredArgs := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "-r" || arg == "-rf" || arg == "-f" || arg == "-v" {
+			continue
+		}
+		filteredArgs = append(filteredArgs, arg)
+	}
+
+	if isRecursive {
+		return append([]string{"cmd", "/c", "rd", "/s", "/q"}, filteredArgs...)
+	}
+	return append([]string{"cmd", "/c", "del", "/f", "/q"}, filteredArgs...)
+}
+
+func (w *windowsTranslator) translateMkdir(args []string) []string {
+	filteredArgs := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "-p" {
+			continue
+		}
+		filteredArgs = append(filteredArgs, arg)
+	}
+	return append([]string{"cmd", "/c", "mkdir"}, filteredArgs...)
+}
+
+func (w *windowsTranslator) translateCP(args []string) []string {
+	return append([]string{"cmd", "/c", "copy"}, args...)
+}
+
+func (w *windowsTranslator) translateMV(args []string) []string {
+	return append([]string{"cmd", "/c", "move"}, args...)
 }
 
 type shellWrapper interface {

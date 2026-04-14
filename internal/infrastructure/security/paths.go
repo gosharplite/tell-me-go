@@ -154,52 +154,64 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 	absPath = p.resolveSymlinks(absPath)
 	absPath = filepath.ToSlash(absPath)
 
-	// Explicitly exempt CWD and its children
-	if cwd, err := os.Getwd(); err == nil {
-		if ok, _ := p.checkBoundary(absPath, cwd); ok {
-			return nil
-		}
-	}
-
-	// 1. Explicitly exempt the evaluated OS temporary directory
-	if p.resolvedTempDir != "" {
-		temp := filepath.ToSlash(p.resolvedTempDir)
-		if !isCaseSensitive() {
-			temp = strings.ToLower(temp)
-			abs := strings.ToLower(absPath)
-			if strings.HasPrefix(abs, temp) {
-				return nil
-			}
-		} else if strings.HasPrefix(absPath, temp) {
-			return nil
-		}
+	if p.isExemptedDirectory(absPath) {
+		return nil
 	}
 
 	sensitive := getSystemDirectories()
 	caseSensitive := isCaseSensitive()
 
 	for _, s := range sensitive {
-		sNormalized := filepath.ToSlash(s)
-		sTarget := sNormalized
-		sPrefix := sNormalized
-		if !strings.HasSuffix(sPrefix, "/") {
-			sPrefix += "/"
-		}
-
-		if !caseSensitive {
-			sTarget = strings.ToLower(sTarget)
-			sPrefix = strings.ToLower(sPrefix)
-			absLower := strings.ToLower(absPath)
-			if absLower == sTarget || strings.HasPrefix(absLower, sPrefix) {
-				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
-			}
-		} else {
-			if absPath == sTarget || strings.HasPrefix(absPath, sPrefix) {
-				return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
-			}
+		if p.checkSystemDirectoryMatch(absPath, s, caseSensitive) {
+			return fmt.Errorf("%w: access to system directory '%s' is forbidden", domain_security.ErrSandboxViolation, s)
 		}
 	}
 	return nil
+}
+
+// isExemptedDirectory checks if the path is in the CWD or Temp directory.
+func (p *pathPolicy) isExemptedDirectory(absPath string) bool {
+	// Explicitly exempt CWD and its children
+	if cwd, err := os.Getwd(); err == nil {
+		if ok, _ := p.checkBoundary(absPath, cwd); ok {
+			return true
+		}
+	}
+
+	// Explicitly exempt the evaluated OS temporary directory
+	if p.resolvedTempDir != "" {
+		temp := filepath.ToSlash(p.resolvedTempDir)
+		if !isCaseSensitive() {
+			temp = strings.ToLower(temp)
+			abs := strings.ToLower(absPath)
+			if strings.HasPrefix(abs, temp) {
+				return true
+			}
+		} else if strings.HasPrefix(absPath, temp) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// checkSystemDirectoryMatch normalizes a system directory and compares it against absPath.
+func (p *pathPolicy) checkSystemDirectoryMatch(absPath, sysDir string, caseSensitive bool) bool {
+	sNormalized := filepath.ToSlash(sysDir)
+	sTarget := sNormalized
+	sPrefix := sNormalized
+	if !strings.HasSuffix(sPrefix, "/") {
+		sPrefix += "/"
+	}
+
+	if !caseSensitive {
+		sTarget = strings.ToLower(sTarget)
+		sPrefix = strings.ToLower(sPrefix)
+		absLower := strings.ToLower(absPath)
+		return absLower == sTarget || strings.HasPrefix(absLower, sPrefix)
+	}
+
+	return absPath == sTarget || strings.HasPrefix(absPath, sPrefix)
 }
 
 // RegisterPath adds a path to the allowed boundaries.

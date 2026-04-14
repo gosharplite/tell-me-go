@@ -616,25 +616,7 @@ func (m *rootBrowserModel) calculateFooterHeight() int {
 		return 1
 	}
 
-	offset := m.getSystemOffset()
-	activeTurns := 0
-	pinnedTurns := 0
-	lastTurnIdx := -1
-	for _, dto := range m.history {
-		if !dto.IsArchived {
-			if dto.OriginalIndex < offset && dto.Role == "system" {
-				continue
-			}
-			turnIdx := (dto.OriginalIndex - offset) / 2
-			if turnIdx != lastTurnIdx {
-				activeTurns++
-				if dto.IsPinned {
-					pinnedTurns++
-				}
-				lastTurnIdx = turnIdx
-			}
-		}
-	}
+	activeTurns, pinnedTurns := m.getPinningMetrics()
 
 	if pinnedTurns > 5 || (activeTurns > 0 && float64(pinnedTurns)/float64(activeTurns) > 0.5) {
 		return 2
@@ -645,26 +627,7 @@ func (m *rootBrowserModel) calculateFooterHeight() int {
 func (m *rootBrowserModel) renderFooter() string {
 	var sb strings.Builder
 
-	// Calculate Pinning Pressure
-	offset := m.getSystemOffset()
-	activeTurns := 0
-	pinnedTurns := 0
-	lastTurnIdx := -1
-	for _, dto := range m.history {
-		if !dto.IsArchived {
-			if dto.OriginalIndex < offset && dto.Role == "system" {
-				continue
-			}
-			turnIdx := (dto.OriginalIndex - offset) / 2
-			if turnIdx != lastTurnIdx {
-				activeTurns++
-				if dto.IsPinned {
-					pinnedTurns++
-				}
-				lastTurnIdx = turnIdx
-			}
-		}
-	}
+	activeTurns, pinnedTurns := m.getPinningMetrics()
 
 	if pinnedTurns > 5 || (activeTurns > 0 && float64(pinnedTurns)/float64(activeTurns) > 0.5) {
 		sb.WriteString(warningStyle.Render("⚠️ High Pinning Pressure: Auto-summarization may fail."))
@@ -725,6 +688,28 @@ func (m *rootBrowserModel) getSystemOffset() int {
 		}
 	}
 	return 0
+}
+
+func (m *rootBrowserModel) getPinningMetrics() (activeTurns int, pinnedTurns int) {
+	offset := m.getSystemOffset()
+	lastTurnIdx := -1
+	for _, dto := range m.history {
+		if dto.IsArchived {
+			continue
+		}
+		if dto.OriginalIndex < offset && dto.Role == "system" {
+			continue
+		}
+		turnIdx := (dto.OriginalIndex - offset) / 2
+		if turnIdx != lastTurnIdx {
+			activeTurns++
+			if dto.IsPinned {
+				pinnedTurns++
+			}
+			lastTurnIdx = turnIdx
+		}
+	}
+	return activeTurns, pinnedTurns
 }
 
 func (m *rootBrowserModel) togglePin() {
