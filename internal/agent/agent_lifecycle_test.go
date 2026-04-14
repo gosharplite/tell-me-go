@@ -47,7 +47,7 @@ func TestNewAgent_Initialization(t *testing.T) {
 
 	assert.NotNil(t, a.GetCtxManager())
 	assert.NotNil(t, a.GetConfigWatcher())
-	
+
 	assert.Equal(t, bus, a.GetEvents())
 }
 
@@ -169,15 +169,15 @@ func TestAgent_Shutdown(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	
+
 	t.Run("Normal shutdown", func(t *testing.T) {
 		sm := &MockSecurityManager{AllowAll: true}
 		tl := &testutil.MockTurnsLogger{}
 		tl.On("Close").Return(nil)
-		
+
 		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl))
 		require.NoError(t, err)
-		
+
 		err = chatter.Shutdown(ctx)
 		assert.NoError(t, err)
 		tl.AssertCalled(t, "Close")
@@ -186,11 +186,11 @@ func TestAgent_Shutdown(t *testing.T) {
 	t.Run("Graceful handling of nil components", func(t *testing.T) {
 		// Create an agent manually with some nil components
 		a := &Agent{
-			logger: nil, // Should default to slog.Default()
-			events: nil,
+			logger:      nil, // Should default to slog.Default()
+			events:      nil,
 			turnsLogger: nil,
 		}
-		
+
 		err := a.Shutdown(ctx)
 		assert.NoError(t, err)
 	})
@@ -199,10 +199,10 @@ func TestAgent_Shutdown(t *testing.T) {
 		sm := &MockSecurityManager{AllowAll: true}
 		tl := &testutil.MockTurnsLogger{}
 		tl.On("Close").Return(assert.AnError)
-		
+
 		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithTurnsLogger(tl))
 		require.NoError(t, err)
-		
+
 		err = chatter.Shutdown(ctx)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), assert.AnError.Error())
@@ -213,11 +213,11 @@ func TestAgent_Shutdown(t *testing.T) {
 		// Use a cancelled context to force Flush to fail
 		cancelCtx, cancel := context.WithCancel(ctx)
 		cancel()
-		
+
 		bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
 		require.NoError(t, err)
-		
+
 		err = chatter.Shutdown(cancelCtx)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
@@ -227,10 +227,10 @@ func TestAgent_Shutdown(t *testing.T) {
 		sm := &MockSecurityManager{AllowAll: true}
 		bus := &testutil.MockEventBus{}
 		bus.SetShutdownErr(assert.AnError)
-		
+
 		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
 		require.NoError(t, err)
-		
+
 		err = chatter.Shutdown(ctx)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), assert.AnError.Error())
@@ -264,7 +264,7 @@ func TestNewAgent_Errors(t *testing.T) {
 		// Use a cancelled context to force applyConfig to fail
 		cancelCtx, cancel := context.WithCancel(ctx)
 		cancel()
-		
+
 		chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithInitContext(cancelCtx))
 		// NewAgent doesn't return error if applyConfig fails, it just emits a warning
 		assert.NoError(t, err)
@@ -285,7 +285,7 @@ func TestAgent_InternalAccessor_Remaining(t *testing.T) {
 	a.SetLogger(logger)
 	// getLogger is private, but we can call it via other methods if needed
 	assert.Equal(t, logger, chatter.getLogger())
-	
+
 	rc := &runtimeConfig{Model: "test-model"}
 	a.SetRuntimeConfig(rc)
 	assert.Equal(t, rc, a.GetRuntimeConfig())
@@ -310,7 +310,7 @@ func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 	loader := &testutil.MockConfigLoader{}
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithLoader(loader))
 	require.NoError(t, err)
-	
+
 	a := AsInternal(chatter)
 	assert.NotNil(t, a.GetConfigWatcher())
 	// Verify it's not the no-op one if we can, but at least we covered the branch

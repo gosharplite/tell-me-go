@@ -657,7 +657,6 @@ func TestGlobalPromptTracker_CompactionFailToTrigger(t *testing.T) {
 	// Should not trigger compaction because already compacting
 }
 
-
 func TestGlobalPromptTracker_ProcessReversedLines_EmptyPromptInJSON(t *testing.T) {
 	tracker := &globalPromptTracker{}
 	lines := [][]byte{
@@ -678,7 +677,7 @@ func TestGlobalPromptTracker_PerformCompactionPass_CreateTempFailure(t *testing.
 	tracker := tr.(*globalPromptTracker)
 
 	_ = tracker.Append(context.Background(), "test")
-	
+
 	// Make output dir read-only to cause CreateTemp to fail
 	outputDir := filepath.Join(tmpDir, "output")
 	if err := os.Chmod(outputDir, 0555); err != nil {

@@ -96,7 +96,7 @@ func TestAgent_Chat_EngineFailure(t *testing.T) {
 
 	ctx := context.Background()
 	session := &ports.Session{StartTime: time.Now()}
-	
+
 	err = a.Chat(ctx, session, "fail")
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("expected error %v, got %v", expectedErr, err)
@@ -155,7 +155,7 @@ func TestAgent_Chat_TelemetryFailure(t *testing.T) {
 	// applyConfig uses events.SafePublish which logs error but doesn't return it if it's not a real error?
 	// Wait, applyConfig:
 	// if err := events.SafePublish(ctx, a.events, events.ConfigUpdated{Limits: newCfg.Limits}); err != nil { ... return err }
-	
+
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
 	if err != nil {
 		// If NewAgent fails because of telemetry, that's fine for this test if we can still test Chat
@@ -168,7 +168,7 @@ func TestAgent_Chat_TelemetryFailure(t *testing.T) {
 	// testutil.MockEventBusFail implements Listen
 	// Wait, MockEventBusFail Listen:
 	/*
-	func (m *MockEventBusFail) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
+		func (m *MockEventBusFail) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
 	*/
 	// That doesn't fail.
 
@@ -229,7 +229,7 @@ func TestAgent_Chat_AddContentFailure(t *testing.T) {
 
 	ctx := context.Background()
 	session := &ports.Session{StartTime: time.Now()}
-	
+
 	err = a.Chat(ctx, session, "hello")
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("expected error %v, got %v", expectedErr, err)
@@ -251,7 +251,7 @@ func TestAgent_Chat_ApplyConfigFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel before call
 	session := &ports.Session{StartTime: time.Now()}
-	
+
 	// Chat will call AddContent first, then applyConfig.
 	// AddContent might check context too.
 	err = a.Chat(ctx, session, "hello")

@@ -45,7 +45,6 @@ func TestRealExecutor(t *testing.T) {
 	})
 }
 
-
 func TestRealExecutor_LookPath(t *testing.T) {
 	e := &RealExecutor{}
 

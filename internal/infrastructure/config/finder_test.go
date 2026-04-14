@@ -97,7 +97,6 @@ func TestDefaultConfigFinder_Find(t *testing.T) {
 	}
 }
 
-
 func TestDefaultConfigFinder_GetBaseDir(t *testing.T) {
 	t.Run("with baseDir", func(t *testing.T) {
 		f := &defaultConfigFinder{baseDir: "/custom/path"}

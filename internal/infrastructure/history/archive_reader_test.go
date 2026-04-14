@@ -561,9 +561,9 @@ func TestJSONLArchiveReader_ReadPrevious_NonExistent(t *testing.T) {
 
 type mockFile struct {
 	domainpersistence.File
-	name      string
-	data      *bytes.Buffer
-	readFunc  func(p []byte) (n int, err error)
+	name       string
+	data       *bytes.Buffer
+	readFunc   func(p []byte) (n int, err error)
 	readAtFunc func(p []byte, off int64) (n int, err error)
 }
 
