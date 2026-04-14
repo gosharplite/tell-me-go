@@ -196,21 +196,35 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}, hb
 	}
 
 	symbol := params.Symbol
-	if m.Events != nil {
-		evt := events.SystemMessageEvent{
-			Message: fmt.Sprintf("[Tool Action] Running go doc %s", symbol),
-			Level:   "info",
-		}
-		if err := events.SafePublish(ctx, m.Events, evt); err != nil {
-			if !errors.Is(err, events.ErrBusNotInitialized) {
-				slog.Default().Error("event_publish_failed",
-					slog.String("event_type", string(evt.Type())),
-					slog.Any("error", err))
-			}
-		}
-	}
+	m.publishGoDocEvent(ctx, symbol)
 
 	// Heartbeat while running go doc
+	done := m.startGoDocHeartbeat(hb)
+
+	out, err := m.Runner.GetGoDoc(ctx, symbol)
+	close(done)
+
+	return m.formatDocOutput(out, err), nil
+}
+
+func (m *infoManager) publishGoDocEvent(ctx context.Context, symbol string) {
+	if m.Events == nil {
+		return
+	}
+	evt := events.SystemMessageEvent{
+		Message: fmt.Sprintf("[Tool Action] Running go doc %s", symbol),
+		Level:   "info",
+	}
+	if err := events.SafePublish(ctx, m.Events, evt); err != nil {
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			slog.Default().Error("event_publish_failed",
+				slog.String("event_type", string(evt.Type())),
+				slog.Any("error", err))
+		}
+	}
+}
+
+func (m *infoManager) startGoDocHeartbeat(hb chan<- struct{}) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -229,14 +243,14 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}, hb
 			}
 		}
 	}()
+	return done
+}
 
-	out, err := m.Runner.GetGoDoc(ctx, symbol)
-	close(done)
+func (m *infoManager) formatDocOutput(out []byte, err error) tools.ToolResult {
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}
 	}
-
-	return tools.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: string(out)}
 }
 
 func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -288,21 +302,17 @@ func (m *infoManager) extractGenericSkeleton(ctx context.Context, path string) (
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
-			lastComments = append(lastComments, line)
-			continue
-		}
-
-		if trimmed == "" {
-			lastComments = nil
+		if m.isCommentOrEmpty(trimmed) {
+			if trimmed == "" {
+				lastComments = nil
+			} else {
+				lastComments = append(lastComments, line)
+			}
 			continue
 		}
 
 		if m.isDefinitionLine(line) {
-			for _, c := range lastComments {
-				sb.WriteString(c + "\n")
-			}
-			sb.WriteString(line + "\n\n")
+			m.writeDefinitionWithComments(&sb, line, lastComments)
 		}
 		lastComments = nil
 	}
@@ -312,6 +322,17 @@ func (m *infoManager) extractGenericSkeleton(ctx context.Context, path string) (
 		return tools.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
 	}
 	return tools.ToolResult{Text: res}, nil
+}
+
+func (m *infoManager) isCommentOrEmpty(trimmed string) bool {
+	return trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#")
+}
+
+func (m *infoManager) writeDefinitionWithComments(sb *strings.Builder, line string, lastComments []string) {
+	for _, c := range lastComments {
+		sb.WriteString(c + "\n")
+	}
+	sb.WriteString(line + "\n\n")
 }
 
 func (m *infoManager) isDefinitionLine(line string) bool {

@@ -47,31 +47,44 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("query argument is required")
 	}
 
-	path := params.Path
-	if path == "" {
-		path = "."
-	}
-
-	var matcher func(string, string) (string, bool)
-	if params.IsRegex {
-		re, err := regexp.Compile(params.Query)
-		if err != nil {
-			return tools.ToolResult{}, fmt.Errorf("invalid regex: %w (if you intended a literal text search, set 'is_regex' to false)", err)
-		}
-		matcher = func(_, line string) (string, bool) {
-			return "", re.MatchString(line)
-		}
-	} else {
-		matcher = func(_, line string) (string, bool) {
-			return "", strings.Contains(line, params.Query)
-		}
+	path := s.getPathOrDefault(params.Path)
+	matcher, err := s.createSearchMatcher(params.Query, params.IsRegex)
+	if err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher)
+	results, truncated := s.collectSearchResults(resChan, cancel)
 
+	if err := s.checkConcurrentSearchError(errChan); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if len(results) == 0 {
+		return tools.ToolResult{Text: fmt.Sprintf("0 matches found for literal string/regex '%s' in '%s'. If you are searching for a Go symbol, use 'get_definitions' or 'list_symbols' instead.", params.Query, path)}, nil
+	}
+	return s.formatSearchResults(results, truncated, "")
+}
+
+func (s *fileSearcher) createSearchMatcher(query string, isRegex bool) (func(string, string) (string, bool), error) {
+	if isRegex {
+		re, err := regexp.Compile(query)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex: %w (if you intended a literal text search, set 'is_regex' to false)", err)
+		}
+		return func(_, line string) (string, bool) {
+			return "", re.MatchString(line)
+		}, nil
+	}
+	return func(_, line string) (string, bool) {
+		return "", strings.Contains(line, query)
+	}, nil
+}
+
+func (s *fileSearcher) collectSearchResults(resChan <-chan string, cancel context.CancelFunc) ([]string, bool) {
 	var results []string
 	limit := 100
 	truncated := false
@@ -83,22 +96,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		}
 		results = append(results, res)
 	}
-
-	// Check for errors
-	var finalErr error
-	select {
-	case err := <-errChan:
-		finalErr = err
-	default:
-	}
-	if finalErr != nil {
-		return tools.ToolResult{}, finalErr
-	}
-
-	if len(results) == 0 {
-		return tools.ToolResult{Text: fmt.Sprintf("0 matches found for literal string/regex '%s' in '%s'. If you are searching for a Go symbol, use 'get_definitions' or 'list_symbols' instead.", params.Query, path)}, nil
-	}
-	return s.formatSearchResults(results, truncated, "")
+	return results, truncated
 }
 
 func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
@@ -111,11 +109,7 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, err
 	}
 
-	path := params.Path
-	if path == "" {
-		path = "."
-	}
-
+	path := s.getPathOrDefault(params.Path)
 	var reQuery *regexp.Regexp
 	if params.Query != "" {
 		reQuery, _ = regexp.Compile("(?i)" + params.Query)
@@ -127,30 +121,29 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 	defer cancel()
 
 	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, hb, matcher)
+	results, truncated := s.collectSearchResults(resChan, cancel)
 
-	var results []string
-	limit := 100
-	truncated := false
-	for res := range resChan {
-		if len(results) >= limit {
-			truncated = true
-			cancel()
-			break
-		}
-		results = append(results, res)
-	}
-
-	var finalErr error
-	select {
-	case err := <-errChan:
-		finalErr = err
-	default:
-	}
-	if finalErr != nil {
-		return tools.ToolResult{}, finalErr
+	if err := s.checkConcurrentSearchError(errChan); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	return s.formatSearchResults(results, truncated, "No definitions found.")
+}
+
+func (s *fileSearcher) getPathOrDefault(path string) string {
+	if path == "" {
+		return "."
+	}
+	return path
+}
+
+func (s *fileSearcher) checkConcurrentSearchError(errChan <-chan error) error {
+	select {
+	case err := <-errChan:
+		return err
+	default:
+		return nil
+	}
 }
 
 func getCompiledPatterns() []*regexp.Regexp {

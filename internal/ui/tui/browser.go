@@ -92,12 +92,13 @@ func (m *rootBrowserModel) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		fetchHistoryCmd(m.provider, ""),
-		watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath()),
+		m.watchHistoryFileCmd(),
 	)
 }
 
-func watchHistoryFileCmd(ctx context.Context, filepath string) tea.Cmd {
+func (m *rootBrowserModel) watchHistoryFileCmd() tea.Cmd {
 	return func() tea.Msg {
+		filepath := m.cmdService.GetFilePath()
 		if filepath == "" {
 			return nil
 		}
@@ -118,24 +119,37 @@ func watchHistoryFileCmd(ctx context.Context, filepath string) tea.Cmd {
 			return nil
 		}
 
-		select {
-		case <-ctx.Done():
-			return nil
-		case event, ok := <-watcher.Events:
-			if !ok {
-				return nil
-			}
-			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
-				return fileChangedMsg{}
-			}
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return nil
-			}
-			log.Printf("history file watcher error: %v", err)
-		}
+		return m.processWatcherEvents(watcher)
+	}
+}
+
+func (m *rootBrowserModel) processWatcherEvents(watcher *fsnotify.Watcher) tea.Msg {
+	select {
+	case <-m.ctx.Done():
+		return nil
+	case event, ok := <-watcher.Events:
+		return m.handleWatcherEvent(event, ok)
+	case err, ok := <-watcher.Errors:
+		return m.handleWatcherError(err, ok)
+	}
+}
+
+func (m *rootBrowserModel) handleWatcherEvent(event fsnotify.Event, ok bool) tea.Msg {
+	if !ok {
 		return nil
 	}
+	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+		return fileChangedMsg{}
+	}
+	return nil
+}
+
+func (m *rootBrowserModel) handleWatcherError(err error, ok bool) tea.Msg {
+	if !ok {
+		return nil
+	}
+	log.Printf("history file watcher error: %v", err)
+	return nil
 }
 
 func (m *rootBrowserModel) updateViewportHeight() {
@@ -332,7 +346,7 @@ func (m *rootBrowserModel) handleHistoryLoadedMsg(msg historyLoadedMsg) (tea.Mod
 func (m *rootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, tea.Cmd) {
 	// Debounce: ignore changes if we just mutated the file
 	if time.Since(m.lastMutationTime) < 500*time.Millisecond {
-		return m, watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath())
+		return m, m.watchHistoryFileCmd()
 	}
 	// Refresh active memory
 	m.history = nil
@@ -340,7 +354,7 @@ func (m *rootBrowserModel) handleFileChangedMsg(msg fileChangedMsg) (tea.Model, 
 	m.isLoading = true
 	return m, tea.Batch(
 		fetchHistoryCmd(m.provider, ""),
-		watchHistoryFileCmd(m.ctx, m.cmdService.GetFilePath()),
+		m.watchHistoryFileCmd(),
 	)
 }
 
@@ -490,28 +504,9 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 		prefix = "> "
 	}
 
-	roleLabel := strings.ToUpper(dto.Role)
-	if dto.Role == "assistant" {
-		roleLabel = "MODEL"
-	}
-
-	turnStr := ""
-	if !dto.IsArchived {
-		turnIdx := m.getTurnIndex(dto)
-		if turnIdx >= 0 {
-			turnStr = fmt.Sprintf(" - %d", turnIdx+1)
-		}
-	}
-
-	var styledLabel string
-	switch dto.Role {
-	case "user":
-		styledLabel = userStyle.Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
-	case "assistant", "model":
-		styledLabel = modelStyle.Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
-	default:
-		styledLabel = lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s]%s", roleLabel, turnStr))
-	}
+	roleLabel := m.getRoleLabel(dto)
+	turnStr := m.getTurnLabelSuffix(dto)
+	styledLabel := m.getStyledRoleLabel(dto.Role, roleLabel, turnStr)
 
 	if dto.IsArchived {
 		styledLabel += archivedStyle.Render(" (archived)")
@@ -521,6 +516,35 @@ func (m *rootBrowserModel) renderTurnHeader(dto ports.HistoryViewDTO, isSelected
 	}
 
 	return prefix + styledLabel + "\n"
+}
+
+func (m *rootBrowserModel) getRoleLabel(dto ports.HistoryViewDTO) string {
+	roleLabel := strings.ToUpper(dto.Role)
+	if dto.Role == "assistant" {
+		roleLabel = "MODEL"
+	}
+	return roleLabel
+}
+
+func (m *rootBrowserModel) getTurnLabelSuffix(dto ports.HistoryViewDTO) string {
+	if !dto.IsArchived {
+		turnIdx := m.getTurnIndex(dto)
+		if turnIdx >= 0 {
+			return fmt.Sprintf(" - %d", turnIdx+1)
+		}
+	}
+	return ""
+}
+
+func (m *rootBrowserModel) getStyledRoleLabel(role, label, suffix string) string {
+	switch role {
+	case "user":
+		return userStyle.Render(fmt.Sprintf("[%s]%s", label, suffix))
+	case "assistant", "model":
+		return modelStyle.Render(fmt.Sprintf("[%s]%s", label, suffix))
+	default:
+		return lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s]%s", label, suffix))
+	}
 }
 
 func (m *rootBrowserModel) renderThoughts(dto ports.HistoryViewDTO, prefix string) string {
@@ -749,18 +773,9 @@ func (m *rootBrowserModel) getPinningMetrics() (activeTurns int, pinnedTurns int
 }
 
 func (m *rootBrowserModel) togglePin() {
-	if m.selectedTurn == -1 || m.selectedTurn >= len(m.history) {
+	dto, turnIdx, ok := m.getTurnForPinning()
+	if !ok {
 		return
-	}
-
-	dto := m.history[m.selectedTurn]
-	if dto.IsArchived {
-		return
-	}
-
-	turnIdx := m.getTurnIndex(dto)
-	if turnIdx < 0 {
-		return // System message or something invalid
 	}
 
 	// Toggle pin state
@@ -770,17 +785,36 @@ func (m *rootBrowserModel) togglePin() {
 		return
 	}
 
-	// Update local DTOs for the turn to reflect toggle
-	newPinState := !dto.IsPinned
+	m.updateLocalPinState(dto, !dto.IsPinned)
+	m.lastMutationTime = time.Now()
+	m.updateViewportContent()
+	m.updateViewportHeight()
+}
+
+func (m *rootBrowserModel) getTurnForPinning() (ports.HistoryViewDTO, int, bool) {
+	if m.selectedTurn == -1 || m.selectedTurn >= len(m.history) {
+		return ports.HistoryViewDTO{}, 0, false
+	}
+
+	dto := m.history[m.selectedTurn]
+	if dto.IsArchived {
+		return ports.HistoryViewDTO{}, 0, false
+	}
+
+	turnIdx := m.getTurnIndex(dto)
+	if turnIdx < 0 {
+		return ports.HistoryViewDTO{}, 0, false
+	}
+	return dto, turnIdx, true
+}
+
+func (m *rootBrowserModel) updateLocalPinState(dto ports.HistoryViewDTO, newPinState bool) {
 	turnStartIdx := m.getTurnStartOriginalIndex(dto)
 	for idx := range m.history {
 		if !m.history[idx].IsArchived && m.getTurnStartOriginalIndex(m.history[idx]) == turnStartIdx {
 			m.history[idx].IsPinned = newPinState
 		}
 	}
-	m.lastMutationTime = time.Now()
-	m.updateViewportContent()
-	m.updateViewportHeight()
 }
 
 func (m *rootBrowserModel) rollbackToSelected() tea.Cmd {
