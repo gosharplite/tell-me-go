@@ -28,7 +28,8 @@ type fileReader struct {
 
 func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Reason string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -66,6 +67,7 @@ func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}, h
 	var params struct {
 		Path     string `json:"path"`
 		MaxDepth int    `json:"max_depth"`
+		Reason   string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -163,6 +165,7 @@ func (r *fileReader) readBoundedContent(ctx context.Context, path string) ([]byt
 func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
+		Reason   string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -248,6 +251,7 @@ func (r *fileReader) processSingleFile(ctx context.Context, path string, sb *str
 func (r *fileReader) readFiles(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePaths []string `json:"filepaths"`
+		Reason    string   `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
@@ -280,6 +284,7 @@ func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}, 
 	var params struct {
 		Path    string `json:"path"`
 		Pattern string `json:"pattern"`
+		Reason  string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -333,8 +338,9 @@ func (r *fileReader) validateDiffPrerequisites(ctx context.Context, resolved1, r
 
 func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
-		File1 string `json:"file1"`
-		File2 string `json:"file2"`
+		File1  string `json:"file1"`
+		File2  string `json:"file2"`
+		Reason string `json:"reason"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
