@@ -117,3 +117,36 @@ func TestIsUTF8Env(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		expected []byte
+	}{
+		{
+			name:     "valid UTF-8",
+			input:    []byte("hello world"),
+			expected: []byte("hello world"),
+		},
+		{
+			name:     "empty slice",
+			input:    []byte{},
+			expected: []byte{},
+		},
+		{
+			name:     "invalid UTF-8 sequence",
+			input:    []byte{0xff, 0xfe, 0xfd},
+			expected: []byte{0xff, 0xfe, 0xfd}, // On non-Windows, it returns as-is
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DecodeBytes(tt.input)
+			if string(got) != string(tt.expected) {
+				t.Errorf("got %v; want %v", got, tt.expected)
+			}
+		})
+	}
+}
