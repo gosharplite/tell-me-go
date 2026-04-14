@@ -16,8 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// TaskRepository manages a list of tasks with persistence.
-// It implements ports.ListStore[ports.Task].
+// taskRepository manages a list of tasks for migration from legacy storage.
 type taskRepository struct {
 	mu       sync.RWMutex
 	filePath string
@@ -85,77 +84,4 @@ func (r *taskRepository) ReadAll(ctx context.Context) ([]ports.Task, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.readAllInternal(ctx)
-}
-
-func (r *taskRepository) writeAllInternal(ctx context.Context, tasks []ports.Task) error {
-	// Write as JSONL
-	var sb strings.Builder
-	for _, t := range tasks {
-		data, err := json.Marshal(t)
-		if err != nil {
-			return err
-		}
-		sb.Write(data)
-		sb.WriteByte('\n')
-	}
-	return r.fs.AtomicWrite(ctx, r.filePath, []byte(sb.String()), 0644)
-}
-
-// Append adds a new task.
-func (r *taskRepository) Append(ctx context.Context, item ports.Task) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	tasks, err := r.readAllInternal(ctx)
-	if err != nil {
-		return err
-	}
-
-	tasks = append(tasks, item)
-	return r.writeAllInternal(ctx, tasks)
-}
-
-// Update modifies an existing task.
-func (r *taskRepository) Update(ctx context.Context, id float64, item ports.Task) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	tasks, err := r.readAllInternal(ctx)
-	if err != nil {
-		return err
-	}
-
-	for i, t := range tasks {
-		if t.ID == id {
-			tasks[i] = item
-			return r.writeAllInternal(ctx, tasks)
-		}
-	}
-	return ports.ErrTaskNotFound
-}
-
-// Delete removes a task.
-func (r *taskRepository) Delete(ctx context.Context, id float64) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	tasks, err := r.readAllInternal(ctx)
-	if err != nil {
-		return err
-	}
-
-	for i, t := range tasks {
-		if t.ID == id {
-			tasks = append(tasks[:i], tasks[i+1:]...)
-			return r.writeAllInternal(ctx, tasks)
-		}
-	}
-	return ports.ErrTaskNotFound
-}
-
-// DeleteAll clears all tasks.
-func (r *taskRepository) DeleteAll(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.fs.AtomicWrite(ctx, r.filePath, []byte(""), 0644)
 }
