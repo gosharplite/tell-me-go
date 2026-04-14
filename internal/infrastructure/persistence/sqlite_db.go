@@ -98,7 +98,9 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	rows := mapTasksToRows(tasks)
 	if err := executeBatchInsert(ctx, tx, rows); err != nil {
