@@ -92,7 +92,8 @@ func TestAgent_Subscribe(t *testing.T) {
 		capturedEvent = e
 	})
 
-	bus.Publish(ctx, events.StatusUpdate{Message: "test"})
+	err = bus.Publish(ctx, events.StatusUpdate{Message: "test"})
+	require.NoError(t, err)
 	assert.NotNil(t, capturedEvent)
 }
 
