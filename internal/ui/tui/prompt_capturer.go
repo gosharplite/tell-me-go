@@ -98,7 +98,7 @@ func (c *promptCapturer) runTUI(ctx context.Context) (string, error) {
 
 	// Handle TUI logger lifecycle
 	if closer, err := InitLogger(); err == nil {
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 	}
 
 	p := tea.NewProgram(model, c.programOpts...)

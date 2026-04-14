@@ -399,7 +399,7 @@ func TestMockFile_ReadDir(t *testing.T) {
 	t.Run("ReadDir all", func(t *testing.T) {
 		f, err := fs.Open(ctx, "dir")
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		entries, err := f.ReadDir(-1)
 		require.NoError(t, err)
@@ -409,7 +409,7 @@ func TestMockFile_ReadDir(t *testing.T) {
 	t.Run("ReadDir incremental", func(t *testing.T) {
 		f, err := fs.Open(ctx, "dir")
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		// Read 1
 		entries, err := f.ReadDir(1)
@@ -435,7 +435,7 @@ func TestMockFile_ReadDir(t *testing.T) {
 	t.Run("ReadDir 0 returns all remaining", func(t *testing.T) {
 		f, err := fs.Open(ctx, "dir")
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		entries, err := f.ReadDir(0)
 		require.NoError(t, err)
@@ -446,7 +446,7 @@ func TestMockFile_ReadDir(t *testing.T) {
 		_ = fs.WriteFile(ctx, "file.txt", []byte("data"), 0644)
 		f, err := fs.Open(ctx, "file.txt")
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		entries, err := f.ReadDir(1)
 		require.Error(t, err)

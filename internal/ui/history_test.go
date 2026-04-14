@@ -113,7 +113,7 @@ func TestStdHistoryRenderer_Render(t *testing.T) {
 	tmp := t.TempDir()
 	historyPath := filepath.Join(tmp, "history.json")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
-	
+
 	var r ui.StdHistoryRenderer
 	var buf bytes.Buffer
 	r.Render(&buf, h, 10, ports.HistoryRenderOptions{Raw: true})
