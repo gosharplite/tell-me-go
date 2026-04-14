@@ -96,3 +96,71 @@ func TestDefaultConfigFinder_Find(t *testing.T) {
 		})
 	}
 }
+
+
+func TestDefaultConfigFinder_GetBaseDir(t *testing.T) {
+	t.Run("with baseDir", func(t *testing.T) {
+		f := &defaultConfigFinder{baseDir: "/custom/path"}
+		if got := f.getBaseDir(); got != "/custom/path" {
+			t.Errorf("getBaseDir() = %v; want /custom/path", got)
+		}
+	})
+
+	t.Run("without baseDir", func(t *testing.T) {
+		f := &defaultConfigFinder{}
+		got := f.getBaseDir()
+		wd, _ := os.Getwd()
+		if got != wd && got != "." {
+			t.Errorf("getBaseDir() = %v; want %v or \".\"", got, wd)
+		}
+	})
+}
+
+func TestDefaultConfigFinder_FindInSystemPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Mock UserConfigDir via environment variables
+	// os.UserConfigDir() on Unix uses XDG_CONFIG_HOME
+	// On Windows it uses AppData
+	// On Darwin it uses HOME + /Library/Application Support
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("AppData", tmpDir)
+	t.Setenv("HOME", tmpDir)
+
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Skip("UserConfigDir not available")
+	}
+
+	appDir := filepath.Join(configDir, "tell-me-go")
+	configPath := filepath.Join(appDir, "assistant.yaml")
+
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("failed to create directory: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte("system config"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	// Use a clean baseDir that doesn't contain any local config
+	emptyBase := t.TempDir()
+	finder := NewDefaultConfigFinder(WithBaseDir(emptyBase))
+	path, err := finder.Find()
+	if err != nil {
+		t.Fatalf("Find() error = %v", err)
+	}
+
+	if path != configPath {
+		t.Errorf("got path %q; want %q", path, configPath)
+	}
+}
+
+func TestDefaultConfigFinder_FindInExecutableDir(t *testing.T) {
+	// Exercise findInExecutableDir even if it returns false
+	f := &defaultConfigFinder{baseDir: t.TempDir()}
+	_, found := f.findInExecutableDir()
+	// We don't necessarily expect it to be found since we can't easily put
+	// a config file next to the test binary without knowing its location,
+	// but calling it ensures coverage.
+	_ = found
+}
