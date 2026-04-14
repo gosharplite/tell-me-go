@@ -60,9 +60,16 @@ func (e *realExecutor) Execute(ctx context.Context, name string, args ...string)
 func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	var params struct {
 		Command string `json:"command"`
+		Timeout int    `json:"timeout"`
 	}
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
+	}
+
+	// Set default timeout if not provided
+	timeout := params.Timeout
+	if timeout <= 0 {
+		timeout = 15
 	}
 
 	parts, err := m.validateTestCommand(params.Command)
@@ -77,7 +84,10 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, 
 		params.Command,
 		"Executing project tests",
 		func() ([]byte, error) {
-			return m.executor.Execute(ctx, parts[0], parts[1:]...)
+			// Enforce timeout during execution phase
+			tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+			defer cancel()
+			return m.executor.Execute(tCtx, parts[0], parts[1:]...)
 		},
 	)
 
@@ -87,6 +97,9 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}, 
 
 	res := formatExecutionResult("Test execution", output, err, 100, "")
 	if res.Error != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return tools.ToolResult{Text: res.Error.Error()}, nil
+		}
 		return tools.ToolResult{}, res.Error
 	}
 	return res, nil

@@ -728,3 +728,39 @@ func TestDevManager_Options(t *testing.T) {
 		t.Errorf("expected interval %v, got %v", customInterval, m.heartbeatInterval)
 	}
 }
+
+func TestRunTests_Timeout(t *testing.T) {
+	t.Parallel()
+	m, executor, _ := setupDevManager(t)
+
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+			return []byte("PASS"), nil
+		}
+	}
+
+	// Test with a very short timeout that should trigger
+	res, err := m.runTests(context.Background(), map[string]interface{}{
+		"command": "go test ./...",
+		"timeout": 1, // 1 second is plenty for the 100ms mock, but let's test the trigger
+	}, nil)
+	assert.NoError(t, err)
+	assert.Contains(t, res.Text, "PASS")
+
+	// Test actual trigger by making mock wait longer
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	res, err = m.runTests(context.Background(), map[string]interface{}{
+		"command": "go test ./...",
+		"timeout": 1,
+	}, nil)
+
+	// formatExecutionResult will catch the context error
+	assert.NoError(t, err)
+	assert.Contains(t, res.Text, "context deadline exceeded")
+}

@@ -27,6 +27,10 @@ func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandEx
 					Type:        "STRING",
 					Description: "The test command to execute (e.g., 'go test ./...', 'npm test').",
 				},
+				"timeout": {
+					Type:        "INTEGER",
+					Description: "Execution timeout in seconds. Default is 15.",
+				},
 			},
 			Required: []string{"command"},
 		},
