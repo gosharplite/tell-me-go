@@ -70,11 +70,17 @@ func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config
 	truncated := e.captureOutput(&sb, stdout, stderr, config, file)
 
 	waitErr := cmd.Wait()
+	if ctx.Err() != nil {
+		return executionResult{Output: sb.String(), ExitCode: 1}, ctx.Err()
+	}
+
 	exitCode := 0
 	if waitErr != nil {
 		exitCode = 1
 		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
+		} else {
+			return executionResult{Output: sb.String(), ExitCode: exitCode}, waitErr
 		}
 	}
 
@@ -237,6 +243,10 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	stdoutStr, stderrStr, truncated := p.capture(config, file)
 	exitCode, waitErr := p.wait()
 
+	if ctx.Err() != nil {
+		return e.formatPipelineResult(stdoutStr, stderrStr, truncated, 1, ctx.Err())
+	}
+
 	return e.formatPipelineResult(stdoutStr, stderrStr, truncated, exitCode, waitErr)
 }
 
@@ -249,6 +259,16 @@ func (e *processExecutor) formatPipelineResult(stdoutStr, stderrStr string, trun
 	// Ensure exit code is non-zero if waitErr occurred
 	if waitErr != nil && exitCode == 0 {
 		exitCode = 1
+	}
+
+	if waitErr != nil {
+		if _, ok := waitErr.(*exec.ExitError); !ok {
+			return executionResult{
+				Output:    output,
+				ExitCode:  exitCode,
+				Truncated: truncated,
+			}, waitErr
+		}
 	}
 
 	return executionResult{

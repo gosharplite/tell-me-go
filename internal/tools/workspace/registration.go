@@ -333,7 +333,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 				},
 				"timeout": {
 					Type:        "INTEGER",
-					Description: "Optional: Execution timeout in seconds. Default is 300.",
+					Description: "Optional: Execution timeout in seconds. Default is 15.",
 				},
 				"reason": {
 					Type:        "STRING",
@@ -370,7 +370,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 				},
 				"timeout": {
 					Type:        "INTEGER",
-					Description: "Optional: Execution timeout in seconds. Default is 300.",
+					Description: "Optional: Execution timeout in seconds. Default is 15.",
 				},
 				"reason": {
 					Type:        "STRING",
