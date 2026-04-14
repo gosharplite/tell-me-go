@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
@@ -827,6 +828,7 @@ func TestNewClient_Options(t *testing.T) {
 		WithHeaders(map[string]string{"X-Test": "val"}),
 		WithPersona("test-persona"),
 		WithThinkingBudget(100),
+		WithLogger(&ports.NoOpLogger{}),
 	)
 
 	if c.timeout != 10*time.Second {
@@ -840,6 +842,9 @@ func TestNewClient_Options(t *testing.T) {
 	}
 	if c.thinkingBudget != 100 {
 		t.Errorf("expected thinking budget 100, got %d", c.thinkingBudget)
+	}
+	if _, ok := c.logger.(*ports.NoOpLogger); !ok {
+		t.Error("expected logger to be NoOpLogger")
 	}
 }
 

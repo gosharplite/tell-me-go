@@ -6,6 +6,7 @@ package persistence
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -386,4 +387,76 @@ func TestMockFileSystem_WindowsPaths(t *testing.T) {
 			t.Errorf("expected to see %s in walk, got %v", expectedFile, seen)
 		}
 	})
+}
+
+func TestMockFile_ReadDir(t *testing.T) {
+	ctx := context.Background()
+	fs := NewMockFileSystem()
+	_ = fs.WriteFile(ctx, "dir/f1.txt", []byte("1"), 0644)
+	_ = fs.WriteFile(ctx, "dir/f2.txt", []byte("2"), 0644)
+	_ = fs.WriteFile(ctx, "dir/f3.txt", []byte("3"), 0644)
+
+	t.Run("ReadDir all", func(t *testing.T) {
+		f, err := fs.Open(ctx, "dir")
+		require.NoError(t, err)
+		defer f.Close()
+
+		entries, err := f.ReadDir(-1)
+		require.NoError(t, err)
+		require.Equal(t, 3, len(entries))
+	})
+
+	t.Run("ReadDir incremental", func(t *testing.T) {
+		f, err := fs.Open(ctx, "dir")
+		require.NoError(t, err)
+		defer f.Close()
+
+		// Read 1
+		entries, err := f.ReadDir(1)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(entries))
+
+		// Read next 2
+		entries, err = f.ReadDir(2)
+		require.NoError(t, err)
+		require.Equal(t, 2, len(entries))
+
+		// EOF
+		entries, err = f.ReadDir(1)
+		require.ErrorIs(t, err, io.EOF)
+		require.Nil(t, entries)
+
+		// Call again with n <= 0 at the end
+		entries, err = f.ReadDir(0)
+		require.NoError(t, err)
+		require.Nil(t, entries)
+	})
+
+	t.Run("ReadDir 0 returns all remaining", func(t *testing.T) {
+		f, err := fs.Open(ctx, "dir")
+		require.NoError(t, err)
+		defer f.Close()
+
+		entries, err := f.ReadDir(0)
+		require.NoError(t, err)
+		require.Equal(t, 3, len(entries))
+	})
+
+	t.Run("ReadDir on regular file", func(t *testing.T) {
+		_ = fs.WriteFile(ctx, "file.txt", []byte("data"), 0644)
+		f, err := fs.Open(ctx, "file.txt")
+		require.NoError(t, err)
+		defer f.Close()
+
+		entries, err := f.ReadDir(1)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "not a directory")
+		require.Nil(t, entries)
+	})
+}
+
+func TestMockFile_Sync(t *testing.T) {
+	f := &mockFile{}
+	err := f.Sync()
+	require.NoError(t, err)
 }

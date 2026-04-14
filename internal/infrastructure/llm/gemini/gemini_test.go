@@ -17,6 +17,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"google.golang.org/genai"
@@ -746,6 +747,7 @@ func TestNewClient_Options(t *testing.T) {
 		WithHeaders(map[string]string{"X-Test": "val"}),
 		WithSearch(true),
 		WithThinking(100, "high", 200),
+		WithLogger(&ports.NoOpLogger{}),
 	)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
@@ -762,5 +764,8 @@ func TestNewClient_Options(t *testing.T) {
 	}
 	if c.thinkingBudget != 100 || c.thinkingLevel != "high" || c.maxThinkingBudget != 200 {
 		t.Errorf("unexpected thinking config: budget=%d, level=%s, max=%d", c.thinkingBudget, c.thinkingLevel, c.maxThinkingBudget)
+	}
+	if _, ok := c.logger.(*ports.NoOpLogger); !ok {
+		t.Error("expected logger to be NoOpLogger")
 	}
 }
