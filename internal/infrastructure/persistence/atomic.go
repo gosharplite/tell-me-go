@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+const (
+	maxRenameAttempts = 5
+	renameRetryDelay  = 100 * time.Millisecond
+)
+
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
 // This ensures that the target file is either fully updated or not updated at all.
 // It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
@@ -94,7 +99,7 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 
 	// Retry loop for Windows "Access is denied" during rename, which can be transient (e.g. anti-virus).
 	var lastErr error
-	for i := 0; i < 5; i++ { // Reduced from 50 to 5 attempts
+	for i := 0; i < maxRenameAttempts; i++ {
 		if err := fs.Rename(ctx, tmpPath, targetPath); err != nil {
 			// Implement fallback for EXDEV (cross-device link) errors
 			if isCrossDeviceError(err) {
@@ -112,12 +117,12 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 				}
 
 				if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "atomic") {
-					fmt.Printf("DEBUG: retrying rename due to lock (attempt %d): %s\n", i+1, targetPath)
+					fmt.Printf("DEBUG: retrying rename due to lock (attempt %d/%d): %s\n", i+1, maxRenameAttempts, targetPath)
 				}
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-time.After(time.Duration(i+1) * 100 * time.Millisecond): // Linear backoff
+				case <-time.After(time.Duration(i+1) * renameRetryDelay): // Linear backoff
 				}
 				continue
 			}
@@ -125,7 +130,7 @@ func commitTempFile(ctx context.Context, fs FileSystem, f File, tmpPath, targetP
 		}
 		return nil
 	}
-	return fmt.Errorf("failed to rename temp file after 5 retries: %w", lastErr)
+	return fmt.Errorf("failed to rename temp file after %d attempts: %w", maxRenameAttempts, lastErr)
 }
 
 func isCrossDeviceError(err error) bool {
