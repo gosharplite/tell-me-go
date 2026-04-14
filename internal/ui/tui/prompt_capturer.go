@@ -118,8 +118,8 @@ func (c *promptCapturer) CapturePrompt(ctx context.Context, args []string, opts 
 		fmt.Fprintln(os.Stderr, finalPrompt)
 		c.base.Prompt(fmt.Sprintf("[%s] Processing...\n", timestamp))
 	} else if !options.SkipTTYWait {
-		// Return an error for empty prompt to match the base capturer's behavior
-		return "", fmt.Errorf("empty prompt")
+		// Return context.Canceled for empty prompt to allow silent exit
+		return "", context.Canceled
 	}
 
 	return finalPrompt, nil

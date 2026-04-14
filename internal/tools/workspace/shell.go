@@ -221,8 +221,18 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	stopHB := t.startHeartbeat(hb)
 	defer stopHB()
 
+	// Set default timeout to 15s if not provided
+	timeout := params.Timeout
+	if timeout <= 0 {
+		timeout = 15
+	}
+
 	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
-		return t.executor.RunCommand(ctx, parts, executionConfig{
+		// Enforce timeout via context
+		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		defer cancel()
+
+		return t.executor.RunCommand(tCtx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   &warnWriter{sm: t.sm},
@@ -285,9 +295,19 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	stopHB := t.startHeartbeat(hb)
 	defer stopHB()
 
+	// Set default timeout to 15s if not provided
+	timeout := params.Timeout
+	if timeout <= 0 {
+		timeout = 15
+	}
+
 	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
+		// Enforce timeout via context
+		tCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		defer cancel()
+
 		feedback := &warnWriter{sm: t.sm}
-		return t.executor.RunPipeline(ctx, pipedParts, executionConfig{
+		return t.executor.RunPipeline(tCtx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   feedback,

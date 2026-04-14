@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -110,7 +111,11 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 	// 3. Setup Capturer
 	capturer, cleanup := c.buildCapturer(ctx, cfg, opts)
 	defer func() {
-		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), ports.DefaultShutdownTimeout)
+		timeout := ports.DefaultShutdownTimeout
+		if !opts.tuiPrompt {
+			timeout = 100 * time.Millisecond
+		}
+		shutdownCtx, cancel := stdctx.WithTimeout(stdctx.Background(), timeout)
 		defer cancel()
 		_ = cleanup(shutdownCtx)
 	}()

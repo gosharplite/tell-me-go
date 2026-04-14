@@ -76,6 +76,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{helperPath, "cat"},
 			},
 			timeout:          500 * time.Millisecond,
+			wantErr:          true,
 			expectedExitCode: -1, // non-zero
 		},
 		{
@@ -155,7 +156,7 @@ func verifyError(t *testing.T, name string, err error, wantErr bool) bool {
 		t.Errorf("%s: RunPipeline() error = %v, wantErr %v", name, err, wantErr)
 		return false
 	}
-	return err == nil
+	return true
 }
 
 func assertExitCode(t *testing.T, name string, actual int, expected int) {

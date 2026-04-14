@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 
@@ -172,5 +173,27 @@ func TestPromptCapturer_CapturePrompt_TUI(t *testing.T) {
 				t.Error("expected prompt to be recorded in suggestion service")
 			}
 		})
+	}
+}
+
+func TestPromptCapturer_CapturePrompt_TUI_Empty(t *testing.T) {
+	base := &mockBaseCapturerWithTTY{isTTY: true}
+	svc := &mockSuggestionService{}
+
+	var in bytes.Buffer
+	in.WriteString("\x03") // Send Ctrl+C to abort/exit
+
+	capturer := NewPromptCapturer(
+		base,
+		svc,
+		withProgramOptions(
+			tea.WithInput(&in),
+			tea.WithOutput(io.Discard),
+		),
+	)
+
+	_, err := capturer.CapturePrompt(context.Background(), nil, ports.WithTUIPrompt(true))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled for empty TUI prompt, got %v", err)
 	}
 }

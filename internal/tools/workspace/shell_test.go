@@ -615,3 +615,43 @@ func TestWindowsTranslator_Translate_LS(t *testing.T) {
 		})
 	}
 }
+
+func TestShellTool_TimeoutEnforcement(t *testing.T) {
+	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	tool := newTestShellTool(sm, &testutil.MockCommandValidator{})
+	ctx := context.Background()
+
+	helperSlash := filepath.ToSlash(helperPath)
+
+	t.Run("ExecuteCommand timeout enforcement", func(t *testing.T) {
+		// Sleep for 2 seconds with a 1 second timeout
+		args := map[string]interface{}{
+			"command": fmt.Sprintf("%s sleep 2", helperSlash),
+			"reason":  "testing timeout enforcement",
+			"timeout": 1,
+		}
+		res, err := tool.ExecuteCommand(ctx, args, nil)
+
+		// The error can be in the return value or the ToolResult
+		isTimeout := errors.Is(err, context.DeadlineExceeded) || errors.Is(res.Error, context.DeadlineExceeded)
+		if !isTimeout {
+			t.Errorf("Expected timeout error (context.DeadlineExceeded), got err=%v, res.Error=%v", err, res.Error)
+		}
+	})
+
+	t.Run("PipeCommands timeout enforcement", func(t *testing.T) {
+		// Sleep for 2 seconds with a 1 second timeout
+		args := map[string]interface{}{
+			"commands": []interface{}{fmt.Sprintf("%s sleep 2", helperSlash), fmt.Sprintf("%s echo done", helperSlash)},
+			"reason":   "testing pipe timeout enforcement",
+			"timeout":  1,
+		}
+		res, err := tool.PipeCommands(ctx, args, nil)
+
+		isTimeout := errors.Is(err, context.DeadlineExceeded) || errors.Is(res.Error, context.DeadlineExceeded)
+		if !isTimeout {
+			t.Errorf("Expected timeout error (context.DeadlineExceeded), got err=%v, res.Error=%v", err, res.Error)
+		}
+	})
+}

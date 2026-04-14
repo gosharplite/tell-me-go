@@ -113,7 +113,7 @@ func buildApp(appVersion string, stdin io.Reader, stdout, stderr io.Writer) (*cl
 	ctx := context.Background()
 	shutdown := initTracer(ctx)
 	cleanup := func() {
-		sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		sCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 		if err := shutdown(sCtx); err != nil {
 			_, _ = fmt.Fprintf(stderr, "Error shutting down tracer: %v\n", err)

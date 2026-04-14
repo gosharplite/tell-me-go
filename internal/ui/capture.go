@@ -151,6 +151,9 @@ func (c *capturer) CapturePrompt(ctx context.Context, args []string, opts ...por
 		prompt, err = c.captureFromPipe(ctx, prompt)
 	} else if prompt == "" && !options.SkipTTYWait {
 		prompt, err = c.captureFromTTY(ctx, !options.Raw)
+		if err == nil && strings.TrimSpace(prompt) == "" {
+			return "", context.Canceled
+		}
 	}
 
 	if err != nil {
@@ -167,7 +170,7 @@ func (c *capturer) finalizePrompt(prompt string, options *ports.CaptureOptions) 
 			return "", ErrNoInput
 		}
 		_, _ = fmt.Fprintln(c.Stderr, "Usage: tell-me-go [flags] <prompt>")
-		_, _ = fmt.Fprintln(c.Stderr, "Or use interactive mode: tell-me-go")
+		_, _ = fmt.Fprintln(c.Stderr, "Or use the interactive TUI prompt: tell-me-go -i")
 		return "", fmt.Errorf("empty prompt")
 	}
 
