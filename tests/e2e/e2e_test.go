@@ -78,14 +78,22 @@ func runCommandWithEnv(env []string, stdin string, args ...string) (string, stri
 }
 
 func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...string) (string, string, error) {
+	return runCommandWithEnvInDirEx(dir, env, stdin, true, args...)
+}
+
+func runCommandWithEnvInDirEx(dir string, env []string, stdin string, injectConfig bool, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Ensure absolute path to default config
-	configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs", "assistant.yaml"))
-
-	// Prepend config flag to ensure it's always set to a valid location
-	finalArgs := append([]string{configFlag}, args...)
+	var finalArgs []string
+	if injectConfig {
+		// Ensure absolute path to default config
+		configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs", "assistant.yaml"))
+		// Prepend config flag to ensure it's always set to a valid location
+		finalArgs = append([]string{configFlag}, args...)
+	} else {
+		finalArgs = args
+	}
 
 	cmd := exec.CommandContext(ctx, binPath, finalArgs...)
 	cmd.Dir = dir

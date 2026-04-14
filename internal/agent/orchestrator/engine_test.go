@@ -545,3 +545,60 @@ func (m *mockTurnHook) AfterTurn(turn *Turn, err error) {
 func (m *mockTurnHook) OnPhaseTransition(from, to TurnPhase, state *TurnState) {
 	m.Called(from, to, state)
 }
+
+func TestExecuteTurn_TraceEventBusError(t *testing.T) {
+	bus := &testutil.MockEventBus{}
+	bus.SetPublishErr(errors.New("bus failure"))
+
+	gw := &testutil.MockGateway{}
+	ex := &testutil.MockAgentExecutor{}
+
+	// Properly initialize ContextManager
+	reg := &testutil.MockToolRegistry{}
+	counter := &testutil.MockTokenCounter{}
+	strategy := session.NewContextStrategy(counter)
+	hMock := &testutil.MockHistoryManager{}
+	cm := session.NewContextManager(strategy, hMock, bus, nil)
+
+	e := NewEngine(gw, ex, cm, reg, bus, counter)
+	e.processors[PhaseGuard] = TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+		return ProcessResult{NextPhase: PhaseComplete}, nil
+	})
+
+	turn := e.CreateTurn(0, time.Now())
+
+	// Should not return error just because event bus failed
+	err := e.ExecuteTurn(context.Background(), turn)
+	assert.NoError(t, err)
+}
+
+func TestEngine_Processors(t *testing.T) {
+	e := &Engine{
+		processors: map[TurnPhase]TurnProcessor{
+			PhaseGuard: &GuardStep{},
+		},
+	}
+	procs := e.Processors()
+	assert.Len(t, procs, 1)
+	assert.IsType(t, &GuardStep{}, procs[PhaseGuard])
+}
+
+func TestEngine_GetLoggerFallback(t *testing.T) {
+	e := &Engine{}
+	// engineConfig is nil by default if not initialized via NewEngine or Store
+	logger := e.getLogger()
+	assert.NotNil(t, logger)
+}
+
+func TestEngine_GetLoggerFallback_WithConfig(t *testing.T) {
+	e := &Engine{}
+	e.config.Store(&engineConfig{Logger: nil})
+	logger := e.getLogger()
+	assert.NotNil(t, logger)
+}
+
+func TestNewEngine_FastRetry(t *testing.T) {
+	t.Setenv("TELL_ME_FAST_RETRY", "1")
+	e := NewEngine(nil, nil, nil, nil, nil, nil)
+	assert.Equal(t, 1*time.Millisecond, e.RetryPolicy.(*DefaultRetryPolicy).Backoff)
+}

@@ -108,3 +108,35 @@ func TestHistory_RenderPart_Tool(t *testing.T) {
 		t.Errorf("output should contain tool response")
 	}
 }
+
+func TestStdHistoryRenderer_Render(t *testing.T) {
+	tmp := t.TempDir()
+	historyPath := filepath.Join(tmp, "history.json")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+
+	var r ui.StdHistoryRenderer
+	var buf bytes.Buffer
+	r.Render(&buf, h, 10, ports.HistoryRenderOptions{Raw: true})
+
+	if !strings.Contains(buf.String(), "No history found.") {
+		t.Errorf("expected 'No history found.', got %q", buf.String())
+	}
+}
+
+func TestHistory_NonRaw(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	historyPath := filepath.Join(tmp, "history.json")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "# Hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	ui.RenderHistory(&buf, h, 10, ports.HistoryRenderOptions{Raw: false})
+
+	output := buf.String()
+	if output == "" {
+		t.Errorf("expected some output for non-raw rendering")
+	}
+}

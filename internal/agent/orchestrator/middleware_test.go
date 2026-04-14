@@ -260,22 +260,71 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 
 		turn := &Turn{
 			State: &TurnState{
-				Phase:                PhaseInference,
-				RecentResponseHashes: nil,
+				Phase: PhaseInference,
+				// Populate RecentResponseHashes with different hashes to prevent early text-loop detection
+				RecentResponseHashes: []string{"h1", "h2", "h3", "h4", "h5"},
 				ToolCallCount:        make(map[string]int),
 			},
 			CtxManager: cm,
 			Events:     bus,
 		}
 
-		// First call
-		_, _ = mw(next).Process(context.Background(), turn)
-		assert.NotNil(t, turn.State.Response)
+		// Repeat 5 times (limit is 5)
+		for i := 0; i < 5; i++ {
+			// Change the hash to avoid text loop detection on subsequent calls
+			// Note: mw(next) will calculate hash of current response and add it.
+			// To bypass, we can just ensure the hash of the current response is NOT in RecentResponseHashes yet.
+			_, _ = mw(next).Process(context.Background(), turn)
+			assert.NotNil(t, turn.State.Response, "Should not be nil on attempt %d", i+1)
 
-		// 2nd call - triggers TEXT loop detection because the whole Response JSON is identical.
+			// Manually clear RecentResponseHashes or modify them to keep bypassing text loop detection
+			turn.State.RecentResponseHashes = []string{"unique" + time.Now().String() + string(rune(i))}
+		}
+
+		// 6th call - tool loop detected
 		_, _ = mw(next).Process(context.Background(), turn)
-		assert.Nil(t, turn.State.Response)
+		assert.Nil(t, turn.State.Response, "Should be cleared on 6th call due to tool loop")
 	})
+}
+
+func TestPublishTurnStatus_EventBusError(t *testing.T) {
+	bus := &testutil.MockEventBus{}
+	bus.SetPublishErr(errors.New("bus failure"))
+
+	engine := &Engine{events: bus}
+
+	hMock := &testutil.MockHistoryManager{}
+	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	turn := &Turn{
+		State:      &TurnState{},
+		CtxManager: cm,
+		Clock:      &testutil.MockClock{},
+	}
+
+	// This should not panic and should log the error
+	engine.publishTurnStatus(context.Background(), turn, false, false)
+}
+
+func TestWithMetrics_EventBusError(t *testing.T) {
+	bus := &testutil.MockEventBus{}
+	bus.SetPublishErr(errors.New("bus failure"))
+
+	engine := &Engine{events: bus}
+	mw := engine.withMetrics()
+
+	metrics := &llm.Metrics{PromptTokens: 100}
+	next := TurnProcessorFunc(func(ctx context.Context, turn *Turn) (ProcessResult, error) {
+		turn.State.Metrics = metrics
+		return ProcessResult{}, nil
+	})
+
+	turn := &Turn{
+		State: &TurnState{Phase: PhaseInference},
+	}
+
+	// This should not panic
+	_, err := mw(next).Process(context.Background(), turn)
+	assert.NoError(t, err)
 }
 
 func TestHandleLoopBreak_Error_Internal(t *testing.T) {
@@ -381,4 +430,22 @@ func TestHandleLoopBreak_Error_Warning(t *testing.T) {
 	_, err := handleLoopBreak(context.Background(), turn)
 	assert.Error(t, err)
 	assert.Equal(t, "warning persistence failed", err.Error())
+}
+
+func TestPublishTurnStatus_ErrBusNotInitialized(t *testing.T) {
+	bus := &testutil.MockEventBus{}
+	bus.SetPublishErr(events.ErrBusNotInitialized)
+
+	engine := &Engine{events: bus}
+
+	hMock := &testutil.MockHistoryManager{}
+	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
+	turn := &Turn{
+		State:      &TurnState{},
+		CtxManager: cm,
+		Clock:      &testutil.MockClock{},
+	}
+
+	// This should not panic and should NOT log the error
+	engine.publishTurnStatus(context.Background(), turn, false, false)
 }

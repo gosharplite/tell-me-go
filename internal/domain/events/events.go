@@ -241,15 +241,11 @@ func (b *SimpleEventBus) subscriberLoop(ctx context.Context, w *subscriberWrappe
 	for {
 		select {
 		case <-ctx.Done():
-			// Drain the queue to decrement pending for unhandled events.
-			for {
-				select {
-				case <-w.ch:
-					b.decPending()
-				default:
-					return nil
-				}
-			}
+			b.drain(w)
+			return nil
+		case <-b.ctx.Done():
+			b.drain(w)
+			return nil
 		case event, ok := <-w.ch:
 			if !ok {
 				return nil
@@ -266,6 +262,18 @@ func (b *SimpleEventBus) subscriberLoop(ctx context.Context, w *subscriberWrappe
 			}
 			cancel()
 			b.decPending()
+		}
+	}
+}
+
+func (b *SimpleEventBus) drain(w *subscriberWrapper) {
+	// Drain the queue to decrement pending for unhandled events.
+	for {
+		select {
+		case <-w.ch:
+			b.decPending()
+		default:
+			return
 		}
 	}
 }

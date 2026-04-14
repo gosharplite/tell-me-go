@@ -728,3 +728,253 @@ func TestEventBus_SimpleSnapshot(t *testing.T) {
 		t.Fatal("timed out waiting for event")
 	}
 }
+
+func TestSimpleEventBus_SubscriptionVariations(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
+	events.CleanupBus(t, bus)
+
+	var (
+		globalReceived []events.Event
+		typeReceived   []events.Event
+		funcReceived   []events.Event
+		mu             sync.Mutex
+	)
+
+	// 1. SubscribeGlobal (Subscriber interface)
+	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+		mu.Lock()
+		globalReceived = append(globalReceived, e)
+		mu.Unlock()
+		return nil
+	}})
+
+	// 2. SubscribeSubscriber (Subscriber interface) for specific type
+	bus.SubscribeSubscriber("test_type", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+		mu.Lock()
+		typeReceived = append(typeReceived, e)
+		mu.Unlock()
+		return nil
+	}})
+
+	// 3. Subscribe (func) for same specific type
+	// Note: Subscribe is actually global in current implementation!
+	// Let's re-read events.go:
+	/*
+		func (b *SimpleEventBus) Subscribe(sub func(context.Context, Event)) {
+			// ...
+			w := b.newWrapper(&funcSubscriber{f: sub})
+			b.globalSubscribers = append(b.globalSubscribers, w)
+		}
+	*/
+	// Yes, Subscribe is global. So "multiple subscribers for the same type"
+	// should be tested using SubscribeSubscriber multiple times.
+
+	bus.SubscribeSubscriber("test_type", &funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+		mu.Lock()
+		funcReceived = append(funcReceived, e)
+		mu.Unlock()
+		return nil
+	}})
+
+	// Publish event of specific type
+	ev1 := testEvent{typeName: "test_type", val: "v1"}
+	_ = bus.Publish(ctx, ev1)
+
+	// Publish event of another type
+	ev2 := testEvent{typeName: "other_type", val: "v2"}
+	_ = bus.Publish(ctx, ev2)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(globalReceived) != 2 {
+		t.Errorf("expected global to receive 2 events, got %d", len(globalReceived))
+	}
+
+	if len(typeReceived) != 1 {
+		t.Errorf("expected type subscriber to receive 1 event, got %d", len(typeReceived))
+	}
+	if typeReceived[0].(testEvent).val != "v1" {
+		t.Errorf("expected v1, got %v", typeReceived[0].(testEvent).val)
+	}
+
+	if len(funcReceived) != 1 {
+		t.Errorf("expected second type subscriber to receive 1 event, got %d", len(funcReceived))
+	}
+}
+
+func TestSimpleEventBus_ShutdownAndFlush(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bus := events.NewSimpleEventBus(ctx, events.WithAsync(true), events.WithQueueSize(10))
+
+	// Start background workers
+	g, listenCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return bus.Listen(listenCtx)
+	})
+
+	var processedCount int
+	var mu sync.Mutex
+
+	bus.SubscribeGlobal(&funcSubscriberWithErr{f: func(ctx context.Context, e events.Event) error {
+		// Simulate some work
+		time.Sleep(10 * time.Millisecond)
+		mu.Lock()
+		processedCount++
+		mu.Unlock()
+		return nil
+	}})
+
+	// Publish multiple events
+	numEvents := 5
+	for i := 0; i < numEvents; i++ {
+		if err := bus.Publish(ctx, testEvent{val: i}); err != nil {
+			t.Fatalf("Publish failed: %v", err)
+		}
+	}
+
+	// Call Flush() and verify all pending events were processed
+	flushCtx, flushCancel := context.WithTimeout(ctx, 1*time.Second)
+	defer flushCancel()
+	if err := bus.Flush(flushCtx); err != nil {
+		t.Fatalf("Flush failed: %v", err)
+	}
+
+	mu.Lock()
+	if processedCount != numEvents {
+		t.Errorf("expected %d events to be processed after Flush, got %d", numEvents, processedCount)
+	}
+	mu.Unlock()
+
+	// Call Shutdown() and verify it works
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer shutdownCancel()
+	if err := bus.Shutdown(shutdownCtx); err != nil {
+		t.Errorf("Shutdown failed: %v", err)
+	}
+
+	// Verify it returns context.Canceled if the context is canceled
+	bus2 := events.NewSimpleEventBus(context.Background(), events.WithAsync(true))
+	canceledCtx, canceledCancel := context.WithCancel(context.Background())
+	canceledCancel()
+	if err := bus2.Shutdown(canceledCtx); !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+
+	cancel() // Stop Listen
+	_ = g.Wait()
+}
+
+func TestSimpleEventBus_FlushCancellations(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ContextCanceled", func(t *testing.T) {
+		ctx := context.Background()
+		bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+		events.CleanupBus(t, bus)
+
+		// Create a slow subscriber to keep pendingCount > 0
+		bus.SubscribeGlobal(&uncooperativeSubscriber{block: make(chan struct{})})
+		_ = bus.Publish(ctx, testEvent{typeName: "slow"})
+
+		flushCtx, cancel := context.WithCancel(ctx)
+		cancel() // Cancel immediately
+
+		err := bus.Flush(flushCtx)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+	})
+
+	t.Run("BusClosedDuringFlush", func(t *testing.T) {
+		ctx := context.Background()
+		bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+
+		// Create a slow subscriber to keep pendingCount > 0
+		bus.SubscribeGlobal(&uncooperativeSubscriber{block: make(chan struct{})})
+		_ = bus.Publish(ctx, testEvent{typeName: "slow"})
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- bus.Flush(ctx)
+		}()
+
+		// Give it a moment to start waiting
+		time.Sleep(50 * time.Millisecond)
+
+		_ = bus.Shutdown(ctx)
+
+		err := <-errChan
+		if !errors.Is(err, events.ErrBusClosed) {
+			t.Errorf("expected ErrBusClosed, got %v", err)
+		}
+	})
+}
+
+func TestSimpleEventBus_ListenDefensive(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NilBus", func(t *testing.T) {
+		var bus *events.SimpleEventBus = nil
+		err := bus.Listen(context.Background())
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.Errorf("expected ErrBusNotInitialized, got %v", err)
+		}
+	})
+
+	t.Run("ClosedBus", func(t *testing.T) {
+		ctx := context.Background()
+		bus := events.NewSimpleEventBus(ctx, events.WithAsync(true))
+		_ = bus.Shutdown(ctx)
+
+		err := bus.Listen(ctx)
+		if !errors.Is(err, events.ErrBusClosed) {
+			t.Errorf("expected ErrBusClosed, got %v", err)
+		}
+	})
+}
+
+func TestSimpleEventBus_NilAndClosedSubscriptions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NilBus", func(t *testing.T) {
+		var b *events.SimpleEventBus = nil
+		b.Subscribe(nil)
+		b.SubscribeGlobal(nil)
+		b.SubscribeSubscriber("test", nil)
+		// Should not panic
+	})
+
+	t.Run("NilSubscribers", func(t *testing.T) {
+		ctx := context.Background()
+		b := events.NewSimpleEventBus(ctx)
+		events.CleanupBus(t, b)
+		b.Subscribe(nil)
+		b.SubscribeGlobal(nil)
+		b.SubscribeSubscriber("test", nil)
+		// Should not panic or add nil subscribers
+	})
+
+	t.Run("ClosedBus", func(t *testing.T) {
+		ctx := context.Background()
+		b := events.NewSimpleEventBus(ctx)
+		_ = b.Shutdown(ctx)
+
+		b.Subscribe(func(ctx context.Context, e events.Event) {})
+		b.SubscribeGlobal(&errSubscriber{})
+		b.SubscribeSubscriber("test", &errSubscriber{})
+		// Should not add subscribers
+	})
+
+	t.Run("SafePublishLiteralNil", func(t *testing.T) {
+		err := events.SafePublish(context.Background(), nil, testEvent{})
+		if !errors.Is(err, events.ErrBusNotInitialized) {
+			t.Errorf("expected ErrBusNotInitialized, got %v", err)
+		}
+	})
+}

@@ -717,3 +717,115 @@ func TestStdUIRenderer_SpinnerWithMetrics(t *testing.T) {
 		t.Errorf("expected output to contain MEM: 75.0%%, got %q", output)
 	}
 }
+
+func TestDefaultMetricsProvider(t *testing.T) {
+	locker := ui.NewMockLocker()
+	r := ui.NewRenderer(locker, nil, nil, nil, nil).(*ui.StdUIRenderer)
+	mp := r.GetMetricsProvider()
+
+	total, idle := mp.GetCPUStats()
+	if total != 0 || idle != 0 {
+		t.Errorf("expected 0, 0 from defaultMetricsProvider.GetCPUStats, got %d, %d", total, idle)
+	}
+
+	mem := mp.GetMemoryPercent()
+	if mem != 0.0 {
+		t.Errorf("expected 0.0 from defaultMetricsProvider.GetMemoryPercent, got %f", mem)
+	}
+}
+
+func TestStdUIRenderer_MarkdownRendering(t *testing.T) {
+	var stdout bytes.Buffer
+	locker := ui.NewMockLocker()
+	r := ui.NewRenderer(locker, &stdout, &stdout, nil, nil).(*ui.StdUIRenderer)
+
+	t.Run("NormalMarkdown", func(t *testing.T) {
+		stdout.Reset()
+		r.RenderMarkdown("# Hello")
+		if !strings.Contains(stdout.String(), "Hello") {
+			t.Errorf("expected stdout to contain 'Hello', got %q", stdout.String())
+		}
+	})
+
+	t.Run("NilRendererFallback", func(t *testing.T) {
+		stdout.Reset()
+		r.SetGlamourRenderer(nil)
+		r.RenderMarkdown("Raw Text")
+		if !strings.Contains(stdout.String(), "Raw Text") {
+			t.Errorf("expected stdout to contain 'Raw Text', got %q", stdout.String())
+		}
+	})
+}
+
+func TestStdUIRenderer_Setters(t *testing.T) {
+	stdout1, stderr1 := &bytes.Buffer{}, &bytes.Buffer{}
+	stdout2, stderr2 := &bytes.Buffer{}, &bytes.Buffer{}
+
+	locker := ui.NewMockLocker()
+	mc1 := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	mc2 := ui.NewMockClock(time.Date(2027, 1, 1, 12, 0, 0, 0, time.UTC))
+
+	r := ui.NewRenderer(locker, stdout1, stderr1, mc1, nil).(*ui.StdUIRenderer)
+
+	// Initial state
+	r.LogSystemMessage(context.Background(), "msg1", "info")
+	if !strings.Contains(stderr1.String(), "12:00:00") || !strings.Contains(stderr1.String(), "msg1") {
+		t.Errorf("expected stderr1 to contain timestamp and msg1, got %q", stderr1.String())
+	}
+
+	// Set new writers and clock
+	r.SetWriters(stdout2, stderr2)
+	r.SetClock(mc2)
+
+	r.LogSystemMessage(context.Background(), "msg2", "info")
+	if !strings.Contains(stderr2.String(), "12:00:00") || !strings.Contains(stderr2.String(), "msg2") {
+		// Note: mc2 is set to 2027-01-01 12:00:00, so timestamp should still be 12:00:00 if only time matters,
+		// but let's be more specific.
+		t.Errorf("expected stderr2 to contain 12:00:00 and msg2, got %q", stderr2.String())
+	}
+
+	// Verify stderr1 didn't get msg2
+	if strings.Contains(stderr1.String(), "msg2") {
+		t.Errorf("expected stderr1 NOT to contain msg2")
+	}
+
+	// Test SetClock(nil)
+	r.SetClock(nil)
+	// It should fallback to real clock, which we can't easily predict but it should not panic.
+	r.NowSafe()
+}
+
+func TestStdUIRenderer_InlineData(t *testing.T) {
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	locker := ui.NewMockLocker()
+	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
+
+	content := &llm.Content{
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("xyz")}},
+		},
+	}
+	r.RenderResponse(context.Background(), content, false, false)
+
+	if !strings.Contains(stderr.String(), "[Media] image/png (3 bytes)") {
+		t.Errorf("expected stderr to contain media info, got %q", stderr.String())
+	}
+}
+
+func TestStdUIRenderer_ToolReasons(t *testing.T) {
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	locker := ui.NewMockLocker()
+	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
+
+	r.LogTurnStatus(context.Background(), events.TurnStatus{
+		IsPostCall:  true,
+		Metrics:     &llm.Metrics{PromptTokens: 100},
+		ToolReasons: []string{"thinking about tool"},
+	})
+
+	if !strings.Contains(stderr.String(), "[Tool Reason] thinking about tool") {
+		t.Errorf("expected stderr to contain tool reason, got %q", stderr.String())
+	}
+}

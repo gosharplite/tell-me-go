@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -69,4 +70,14 @@ func (r *stdUIRenderer) GetUIState() UIState {
 
 func (ui *UIState) C(s string) string {
 	return ui.c(s)
+}
+
+func (r *stdUIRenderer) SetGlamourRenderer(tr *glamour.TermRenderer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.renderer = tr
+}
+
+func (r *stdUIRenderer) GetMetricsProvider() ports.SystemMetricsProvider {
+	return r.metricsProvider
 }

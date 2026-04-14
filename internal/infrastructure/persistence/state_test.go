@@ -95,3 +95,19 @@ func TestSessionState_Persistence(t *testing.T) {
 		t.Errorf("restored toolkits missing git or k8s: %v", restoredInfo.ActiveToolkits)
 	}
 }
+
+func TestSessionState_GetSettings(t *testing.T) {
+	tempDir := t.TempDir()
+	ctx := context.Background()
+
+	t.Setenv("STORAGE_TYPE", "memory")
+	state, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.Close() }()
+
+	if state.GetSettings() == nil {
+		t.Error("expected GetSettings() to return a non-nil KVStore")
+	}
+}

@@ -171,3 +171,13 @@ func createTestAsset(t *testing.T, store *AssetStore, content []byte) string {
 	}
 	return id
 }
+
+func TestAssetStore_GetBaseDir(t *testing.T) {
+	tempDir := t.TempDir()
+	fs := NewOSFileSystem()
+	store := NewAssetStore(fs, tempDir)
+
+	if store.GetBaseDir() != tempDir {
+		t.Errorf("expected GetBaseDir() to return %s, got %s", tempDir, store.GetBaseDir())
+	}
+}
