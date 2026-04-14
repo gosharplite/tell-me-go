@@ -534,3 +534,60 @@ func TestAuthInvalidate_Additional(t *testing.T) {
 		}
 	})
 }
+
+func TestVertexAuth_GetToken_ExpiredCache(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	auth := &VertexAuth{
+		CacheDir: tmpDir,
+		tokenCmdFunc: func() ([]byte, error) {
+			return []byte("new-token"), nil
+		},
+	}
+	cachePath := auth.getCachePath()
+	_ = os.MkdirAll(filepath.Dir(cachePath), 0700)
+	_ = os.WriteFile(cachePath, []byte("expired-token"), 0600)
+
+	// Set mod time to 2 hours ago
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(cachePath, past, past); err != nil {
+		t.Fatalf("failed to set cache time: %v", err)
+	}
+
+	token, err := auth.getToken(ctx)
+	if err != nil {
+		t.Fatalf("getToken failed: %v", err)
+	}
+	if token != "new-token" {
+		t.Errorf("got %s, want new-token", token)
+	}
+
+	// Verify it was updated in cache
+	content, _ := os.ReadFile(cachePath)
+	if strings.TrimSpace(string(content)) != "new-token" {
+		t.Errorf("token not updated in cache: %s", string(content))
+	}
+}
+
+func TestVertexAuth_CacheWriteFailure(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	// Create a file where the directory should be, making MkdirAll fail
+	conflictPath := filepath.Join(tmpDir, "tell-me-go-auth-conflict")
+	_ = os.WriteFile(conflictPath, []byte("not a dir"), 0600)
+
+	auth := &VertexAuth{
+		CacheDir: conflictPath,
+		tokenCmdFunc: func() ([]byte, error) {
+			return []byte("resilient-token"), nil
+		},
+	}
+
+	token, err := auth.getToken(ctx)
+	if err != nil {
+		t.Fatalf("getToken failed: %v", err)
+	}
+	if token != "resilient-token" {
+		t.Errorf("got %s, want resilient-token", token)
+	}
+}

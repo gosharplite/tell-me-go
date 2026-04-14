@@ -4,8 +4,10 @@
 package history_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domainpersistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -471,4 +474,154 @@ func TestJSONLArchiveReader_ReadPrevious_EdgeCases(t *testing.T) {
 			t.Errorf("expected startOffset 0, got %d", startOffset)
 		}
 	})
+}
+
+func TestJSONLArchiveReader_LargeLines(t *testing.T) {
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "large_lines.jsonl")
+
+	// Create a line significantly larger than bufio's 4KB default buffer
+	largeText := strings.Repeat("A", 10000)
+	largeLine := `{"role":"user","parts":[{"text":"` + largeText + `"}]}` + "\n"
+	normalLine := `{"role":"assistant","parts":[{"text":"short"}]}` + "\n"
+
+	content := largeLine + normalLine
+	if err := os.WriteFile(archivePath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write large lines file: %v", err)
+	}
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	// ReadPrevious triggers buildIndex
+	dtos, startOffset, err := reader.ReadPrevious(ctx, 10, -1)
+	if err != nil {
+		t.Fatalf("ReadPrevious failed: %v", err)
+	}
+
+	if len(dtos) != 2 {
+		t.Fatalf("expected 2 DTOs, got %d", len(dtos))
+	}
+	if dtos[0].ContentPreview != largeText {
+		t.Errorf("expected large text, got length %d", len(dtos[0].ContentPreview))
+	}
+	if dtos[1].ContentPreview != "short" {
+		t.Errorf("expected 'short', got %q", dtos[1].ContentPreview)
+	}
+	if startOffset != 0 {
+		t.Errorf("expected startOffset 0, got %d", startOffset)
+	}
+}
+
+type errorFileSystem struct {
+	domainpersistence.FileSystem
+	openErr error
+}
+
+func (e *errorFileSystem) Open(ctx context.Context, name string) (domainpersistence.File, error) {
+	return nil, e.openErr
+}
+
+func TestJSONLArchiveReader_IndexingReadError(t *testing.T) {
+	ctx := context.Background()
+	fs := &errorFileSystem{
+		FileSystem: persistence.NewOSFileSystem(),
+		openErr:    fmt.Errorf("injected open error"),
+	}
+	archivePath := "some_path.jsonl"
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+
+	// ReadPrevious triggers buildIndex which should fail
+	_, _, err := reader.ReadPrevious(ctx, 10, -1)
+	if err == nil || !strings.Contains(err.Error(), "injected open error") {
+		t.Errorf("expected injected open error, got %v", err)
+	}
+}
+
+func TestJSONLArchiveReader_ReadPrevious_NonExistent(t *testing.T) {
+	ctx := context.Background()
+	fs := persistence.NewOSFileSystem()
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "does_not_exist.jsonl")
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+	dtos, startOffset, err := reader.ReadPrevious(ctx, 10, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dtos) != 0 {
+		t.Errorf("expected 0 dtos, got %d", len(dtos))
+	}
+	if startOffset != 0 {
+		t.Errorf("expected startOffset 0, got %d", startOffset)
+	}
+}
+
+type mockFile struct {
+	domainpersistence.File
+	name      string
+	data      *bytes.Buffer
+	readFunc  func(p []byte) (n int, err error)
+	readAtFunc func(p []byte, off int64) (n int, err error)
+}
+
+func (f *mockFile) Read(p []byte) (n int, err error) {
+	if f.readFunc != nil {
+		return f.readFunc(p)
+	}
+	return f.data.Read(p)
+}
+
+func (f *mockFile) ReadAt(p []byte, off int64) (n int, err error) {
+	if f.readAtFunc != nil {
+		return f.readAtFunc(p, off)
+	}
+	return 0, fmt.Errorf("ReadAt not implemented in mock")
+}
+
+func (f *mockFile) Close() error {
+	return nil
+}
+
+func (f *mockFile) Name() string {
+	return f.name
+}
+
+type mockFileSystem struct {
+	domainpersistence.FileSystem
+	openFunc func(ctx context.Context, name string) (domainpersistence.File, error)
+}
+
+func (m *mockFileSystem) Open(ctx context.Context, name string) (domainpersistence.File, error) {
+	if m.openFunc != nil {
+		return m.openFunc(ctx, name)
+	}
+	return nil, os.ErrNotExist
+}
+
+func TestJSONLArchiveReader_ReadPage_ReadError(t *testing.T) {
+	ctx := context.Background()
+	archivePath := "read_error.jsonl"
+
+	// Mock file that fails on ReadAt (used by SectionReader in readPageInternal)
+	errorFile := &mockFile{
+		name: archivePath,
+		readAtFunc: func(p []byte, off int64) (n int, err error) {
+			return 0, fmt.Errorf("injected read error")
+		},
+	}
+
+	fs := &mockFileSystem{
+		openFunc: func(ctx context.Context, name string) (domainpersistence.File, error) {
+			return errorFile, nil
+		},
+	}
+
+	reader := history.NewJSONLArchiveReader(fs, archivePath)
+	_, _, err := reader.ReadPage(ctx, 10, 0)
+	if err == nil || !strings.Contains(err.Error(), "injected read error") {
+		t.Errorf("expected injected read error, got %v", err)
+	}
 }
