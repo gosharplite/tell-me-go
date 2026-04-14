@@ -5,4 +5,4 @@
 
 package ui
 
-const multiLineEOFHint = "[Reading multi-line input. Press Ctrl+D to send]"
+const multiLineEOFHint = "[Reading multi-line input. Press Ctrl+C to cancel, or Ctrl+D to send]"

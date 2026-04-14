@@ -1003,3 +1003,24 @@ func TestCapturer_ReadSingleKey_IOError(t *testing.T) {
 		t.Errorf("expected read error, got %v", err)
 	}
 }
+
+func TestPrompt_InteractiveEmpty(t *testing.T) {
+	t.Parallel()
+	// Simulate empty interactive input via TTY
+	capturer := NewCapturer(strings.NewReader(""), io.Discard, io.Discard, nil, &mockClock{now: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}, "", "", true).(*capturer)
+	t.Cleanup(func() {
+		_ = capturer.Close(context.Background())
+	})
+	
+	// Override IsTTY to true
+	isTTY := true
+	capturer.isTTYOverride = &isTTY
+
+	prompt, err := capturer.CapturePrompt(context.Background(), nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if prompt != "" {
+		t.Errorf("expected empty prompt, got %q", prompt)
+	}
+}
