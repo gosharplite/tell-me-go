@@ -52,13 +52,13 @@ func TestMultiTurnToolOrchestration(t *testing.T) {
 		bodyBytes, _ := io.ReadAll(r.Body)
 		// We need to determine if it's a new turn or a continuation of a tool call
 		// In Google provider, tool results are sent in 'parts' as 'functionResponse'
-		
+
 		// Increment turn only when we receive a response from the agent (either tool result or new prompt)
 		// Actually, let's just use the length of the 'contents' array in the request body to decide which response to give.
 		var body map[string]interface{}
 		_ = json.Unmarshal(bodyBytes, &body)
 		contents, _ := body["contents"].([]interface{})
-		
+
 		// For the first message, len(contents) is 1.
 		// After first tool call, the agent sends back the history including the tool call and tool response.
 		// Google provider history management:
@@ -67,14 +67,16 @@ func TestMultiTurnToolOrchestration(t *testing.T) {
 		// [USER: tool response]
 		// So for the second turn, the model sees 3 messages.
 		// For the third turn, it sees 5 messages.
-		
+
 		idx := (len(contents) - 1) / 2
 		if idx >= len(responses) {
 			idx = len(responses) - 1
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, responses[idx](bodyBytes))
+		if _, err := fmt.Fprint(w, responses[idx](bodyBytes)); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
 		turnCount++
 	}))
 	defer server.Close()
@@ -130,13 +132,13 @@ func TestToolExecutionInHistory(t *testing.T) {
 	}
 
 	// 1. Run the command that triggers a tool call
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "list files")
+	_, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "list files")
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}
 
 	// 2. Verify turn.log contains tool execution details
-	stdout, stderr, err = runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "-t")
+	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "-t")
 	if err != nil {
 		t.Fatalf("CLI -t failed: %v\nStderr: %s", err, stderr)
 	}
