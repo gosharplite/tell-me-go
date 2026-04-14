@@ -6,6 +6,7 @@ package history
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -499,5 +500,194 @@ func TestPromptTracker_CompactionWriteFailure(t *testing.T) {
 	success := tracker.writeCompactedTempFile(&errorWriter{}, entries)
 	if success {
 		t.Errorf("Expected writeCompactedTempFile to fail with errorWriter")
+	}
+}
+
+func TestGlobalPromptTracker_LoadTopN_ContextCancelled(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tracker.Close() }()
+
+	_ = tracker.Append(context.Background(), "p1")
+	_ = tracker.Append(context.Background(), "p2")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := tracker.LoadTopN(ctx, 10)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestGlobalPromptTracker_LoadTopN_MalformedJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	tr, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tr.Close() }()
+	tracker := tr.(*globalPromptTracker)
+
+	// Manually write malformed JSON lines
+	malformedContent := `{"timestamp":"2023-01-01T00:00:00Z","prompt":"valid1"}
+this is not json
+{"timestamp":"2023-01-01T00:00:01Z","prompt":"valid2"}
+`
+	if err := os.WriteFile(tracker.filepath, []byte(malformedContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := tracker.LoadTopN(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("LoadTopN failed: %v", err)
+	}
+
+	expected := []string{"valid2", "valid1"}
+	assertPromptsMatch(t, got, expected)
+}
+
+func TestGlobalPromptTracker_Append_EmptyPrompt(t *testing.T) {
+	tmpDir := t.TempDir()
+	tr, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tr.Close() }()
+	tracker := tr.(*globalPromptTracker)
+
+	err := tracker.Append(context.Background(), "")
+	if err != nil {
+		t.Errorf("expected nil error for empty prompt, got %v", err)
+	}
+
+	// Verify file was not created or is empty
+	if _, err := os.Stat(tracker.filepath); err == nil {
+		content, _ := os.ReadFile(tracker.filepath)
+		if len(content) > 0 {
+			t.Errorf("expected empty file, got %d bytes", len(content))
+		}
+	}
+}
+
+func TestNoOpTracker_Close(t *testing.T) {
+	tracker := NewNoOpTracker()
+	if err := tracker.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGlobalPromptTracker_LoadTopN_LimitZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tracker.Close() }()
+
+	got, err := tracker.LoadTopN(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d prompts; want 0", len(got))
+	}
+}
+
+func TestGlobalPromptTracker_LoadTopN_LimitNegative(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tracker.Close() }()
+
+	got, err := tracker.LoadTopN(context.Background(), -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d prompts; want 0", len(got))
+	}
+}
+
+func TestGlobalPromptTracker_Append_WriteError(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tracker.Close() }()
+	tr := tracker.(*globalPromptTracker)
+
+	// Make the file read-only to cause write failure
+	if err := os.WriteFile(tr.filepath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tr.filepath, 0444); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(tr.filepath, 0644) }()
+
+	err := tracker.Append(context.Background(), "p1")
+	if err == nil {
+		t.Errorf("expected error on write to read-only file, got nil")
+	}
+}
+
+func TestGlobalPromptTracker_ScanChunk_EdgeCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	tr, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tr.Close() }()
+	tracker := tr.(*globalPromptTracker)
+
+	// File with no newlines
+	_ = os.WriteFile(tracker.filepath, []byte(`{"prompt":"test"}`), 0644)
+	got, _ := tracker.LoadTopN(context.Background(), 10)
+	if len(got) != 1 || got[0] != "test" {
+		t.Errorf("expected [test], got %v", got)
+	}
+
+	// File with many empty lines
+	_ = os.WriteFile(tracker.filepath, []byte("\n\n\n\n"), 0644)
+	got, _ = tracker.LoadTopN(context.Background(), 10)
+	if len(got) != 0 {
+		t.Errorf("expected empty results, got %v", got)
+	}
+}
+
+func TestGlobalPromptTracker_CompactionFailToTrigger(t *testing.T) {
+	tmpDir := t.TempDir()
+	tr, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tr.Close() }()
+	tracker := tr.(*globalPromptTracker)
+
+	// Force compacting to be true
+	tracker.compacting.Store(true)
+	// Add many entries to trigger compaction threshold
+	largePrompt := string(bytes.Repeat([]byte("A"), 1000))
+	for i := 0; i < 200; i++ {
+		_ = tracker.Append(context.Background(), largePrompt)
+	}
+	// Should not trigger compaction because already compacting
+}
+
+
+func TestGlobalPromptTracker_ProcessReversedLines_EmptyPromptInJSON(t *testing.T) {
+	tracker := &globalPromptTracker{}
+	lines := [][]byte{
+		[]byte(`{"prompt":""}`),
+		[]byte(`{"prompt":"valid"}`),
+	}
+	seen := make(map[string]bool)
+	result := tracker.processReversedLines(lines, seen, nil, 10)
+	if len(result) != 1 || result[0].Prompt != "valid" {
+		t.Errorf("expected 1 valid prompt, got %v", result)
+	}
+}
+
+func TestGlobalPromptTracker_PerformCompactionPass_CreateTempFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	tr, _ := NewGlobalPromptTracker(tmpDir)
+	defer func() { _ = tr.Close() }()
+	tracker := tr.(*globalPromptTracker)
+
+	_ = tracker.Append(context.Background(), "test")
+	
+	// Make output dir read-only to cause CreateTemp to fail
+	outputDir := filepath.Join(tmpDir, "output")
+	if err := os.Chmod(outputDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(outputDir, 0755) }()
+
+	success := tracker.performCompactionPass(context.Background())
+	if success {
+		t.Error("expected performCompactionPass to fail when output dir is read-only")
 	}
 }

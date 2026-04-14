@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -134,4 +135,161 @@ func (m *mockToolchainFactory) BuildRegistry(params toolchainParams) (tools.Regi
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(tools.Registry), args.Error(1)
+}
+
+type mockExtendedClient struct {
+	mock.Mock
+}
+
+func (m *mockExtendedClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	args := m.Called(ctx, input, tools, resolver)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
+}
+
+func (m *mockExtendedClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	args := m.Called(ctx, history, tools, resolver)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*llm.Content), args.Get(1).(*llm.Metrics), args.Error(2)
+}
+
+func (m *mockExtendedClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	args := m.Called(ctx, model, prompt, mimeType)
+	return args.Get(0).([][]byte), args.Error(1)
+}
+
+func (m *mockExtendedClient) RefreshAuth() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *mockExtendedClient) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *mockExtendedClient) GetModel() string {
+	return m.Called().String(0)
+}
+
+func TestLazyLLMProxy_GenerateImages(t *testing.T) {
+	mockClient := new(mockExtendedClient)
+	mockClient.On("GenerateImages", mock.Anything, "test-model", "test-prompt", "image/png").Return([][]byte{{0x01}}, nil)
+
+	deps := &sessionDeps{
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return mockClient, nil
+		},
+	}
+	proxy := &lazyLLMProxy{deps: deps}
+
+	images, err := proxy.GenerateImages(context.Background(), "test-model", "test-prompt", "image/png")
+	assert.NoError(t, err)
+	assert.Len(t, images, 1)
+	mockClient.AssertExpectations(t)
+}
+
+func TestLazyLLMProxy_RefreshAuth(t *testing.T) {
+	mockClient := new(mockExtendedClient)
+	mockClient.On("RefreshAuth").Return(nil)
+
+	deps := &sessionDeps{
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return mockClient, nil
+		},
+	}
+	proxy := &lazyLLMProxy{deps: deps}
+
+	err := proxy.RefreshAuth()
+	assert.NoError(t, err)
+	mockClient.AssertExpectations(t)
+}
+
+func TestSessionDeps_AdditionalGetters(t *testing.T) {
+	deps := &sessionDeps{
+		logger:      telemetry.NewSlogLogger(nil),
+		turnsLogger: nil, // We'll just check if it's there
+	}
+
+	assert.NotNil(t, deps.GetLogger())
+	// Should not panic even if turnsLogger is nil (though production always sets it)
+	assert.Nil(t, deps.GetTurnsLogger())
+}
+
+func TestLazyLLMProxy_Generate(t *testing.T) {
+	mockClient := new(mockExtendedClient)
+	mockClient.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{}, &llm.Metrics{}, nil)
+
+	deps := &sessionDeps{
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return mockClient, nil
+		},
+	}
+	proxy := &lazyLLMProxy{deps: deps}
+
+	_, _, err := proxy.Generate(context.Background(), nil, nil, nil)
+	assert.NoError(t, err)
+	mockClient.AssertExpectations(t)
+}
+
+func TestLazyLLMProxy_SendChat(t *testing.T) {
+	mockClient := new(mockExtendedClient)
+	mockClient.On("SendChat", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&llm.Content{}, &llm.Metrics{}, nil)
+
+	deps := &sessionDeps{
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return mockClient, nil
+		},
+	}
+	proxy := &lazyLLMProxy{deps: deps}
+
+	_, _, err := proxy.SendChat(context.Background(), nil, nil, nil)
+	assert.NoError(t, err)
+	mockClient.AssertExpectations(t)
+}
+
+func TestLazyLLMProxy_InitializationFailure_SendChat(t *testing.T) {
+	simulatedErr := errors.New("llm init failed")
+	deps := &sessionDeps{
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return nil, simulatedErr
+		},
+	}
+	proxy := &lazyLLMProxy{deps: deps}
+
+	_, _, err := proxy.SendChat(context.Background(), nil, nil, nil)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, simulatedErr)
+}
+
+func TestLazyLLMProxy_InitializationFailure_Generate(t *testing.T) {
+	simulatedErr := errors.New("llm init failed")
+	deps := &sessionDeps{
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return nil, simulatedErr
+		},
+	}
+	proxy := &lazyLLMProxy{deps: deps}
+
+	_, _, err := proxy.Generate(context.Background(), nil, nil, nil)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, simulatedErr)
+}
+
+func TestLazyLLMProxy_InitializationFailure_GenerateImages(t *testing.T) {
+	simulatedErr := errors.New("llm init failed")
+	deps := &sessionDeps{
+		clientFactory: func() (llm.ExtendedClient, error) {
+			return nil, simulatedErr
+		},
+	}
+	proxy := &lazyLLMProxy{deps: deps}
+
+	_, err := proxy.GenerateImages(context.Background(), "", "", "")
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, simulatedErr)
 }
