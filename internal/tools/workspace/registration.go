@@ -19,11 +19,11 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem) error {
+func Register(r tools.Registry, sm domain_security.Manager, exec tools.CommandExecutor, validator domain_security.CommandValidator, fs persistence.FileSystem, health ports.HealthCheckManager) error {
 	if err := registerFiles(r, sm, fs, exec); err != nil {
 		return err
 	}
-	if err := registerSystem(r, sm, validator); err != nil {
+	if err := registerSystem(r, sm, validator, health); err != nil {
 		return err
 	}
 	if err := registerGit(r, sm, exec); err != nil {
@@ -308,7 +308,7 @@ func registerFiles(r tools.Registry, sm domain_security.Manager, fs persistence.
 	return nil
 }
 
-func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator) error {
+func registerSystem(r tools.Registry, sm domain_security.Manager, validator domain_security.CommandValidator, health ports.HealthCheckManager) error {
 	var translator commandTranslator
 	var wrapper shellWrapper
 	if runtime.GOOS == "windows" {
@@ -321,6 +321,7 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 
 	shell := newshellTool(sm, validator, translator, wrapper)
 	interaction := newinteractionTool(sm)
+	diagnostic := newDiagnosticTool(health)
 
 	if err := r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:            "execute_command",
@@ -417,6 +418,15 @@ func registerSystem(r tools.Registry, sm domain_security.Manager, validator doma
 		},
 	}, interaction.askUser, tools.ToolOptions{Serial: true, LongRunning: true}); err != nil {
 		return err
+	}
+
+	if health != nil {
+		if err := r.Register(&tools.ToolDeclaration{
+			Name:        "check_system_health",
+			Description: "Performs a comprehensive diagnostic check of the local environment. It verifies database integrity (persistence), LLM provider connectivity, and the availability of required binaries like git and go. Invoke this if you encounter persistent errors or need to verify the system state.",
+		}, diagnostic.checkSystemHealth); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	inframock "github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
@@ -827,5 +828,104 @@ func TestStdUIRenderer_ToolReasons(t *testing.T) {
 
 	if !strings.Contains(stderr.String(), "[Tool Reason] thinking about tool") {
 		t.Errorf("expected stderr to contain tool reason, got %q", stderr.String())
+	}
+}
+
+func TestStdUIRenderer_RenderHealthReport(t *testing.T) {
+	stdout, stderr := inframock.NewSafeBuffer(), inframock.NewSafeBuffer()
+	locker := ui.NewMockLocker()
+	mc := ui.NewMockClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	r := ui.NewRenderer(locker, stdout, stderr, mc, nil).(*ui.StdUIRenderer)
+
+	tests := []struct {
+		name     string
+		report   *ports.HealthReport
+		contains []string
+	}{
+		{
+			name: "Healthy overall report",
+			report: &ports.HealthReport{
+				OverallStatus: ports.StatusHealthy,
+				Timestamp:     mc.Now(),
+				Components: map[ports.Component]ports.ComponentReport{
+					ports.CompPersistence: {
+						Component: ports.CompPersistence,
+						Status:    ports.StatusHealthy,
+						Message:   "SQLite database is healthy",
+						Details: map[string]any{
+							"size_bytes": 1024,
+						},
+					},
+				},
+			},
+			contains: []string{
+				"Overall Status: \033[0;32mHEALTHY",
+				"\033[0;32m[HEALTHY]\033[0m persistence  : SQLite database is healthy",
+				"\033[0;90msize_bytes:\033[0m 1024",
+			},
+		},
+		{
+			name: "Degraded overall report with toolchain binaries",
+			report: &ports.HealthReport{
+				OverallStatus: ports.StatusDegraded,
+				Timestamp:     mc.Now(),
+				Components: map[ports.Component]ports.ComponentReport{
+					ports.CompToolchain: {
+						Component: ports.CompToolchain,
+						Status:    ports.StatusDegraded,
+						Message:   "Some optional tools are missing",
+						Details: map[string]any{
+							"binaries": map[string]any{
+								"git": map[string]any{
+									"version_string": "2.40",
+									"is_required":    true,
+								},
+								"go": map[string]any{
+									"version_string": "1.21",
+									"is_required":    false,
+								},
+							},
+						},
+					},
+				},
+			},
+			contains: []string{
+				"Overall Status: \033[0;33mDEGRADED",
+				"\033[0;33m[DEGRADED]\033[0m toolchain    : Some optional tools are missing",
+				"\033[0;90mgit:\033[0m 2.40 (required)",
+				"\033[0;90mgo:\033[0m 1.21",
+			},
+		},
+		{
+			name: "Unhealthy overall report",
+			report: &ports.HealthReport{
+				OverallStatus: ports.StatusUnhealthy,
+				Timestamp:     mc.Now(),
+				Components: map[ports.Component]ports.ComponentReport{
+					ports.CompLLMProvider: {
+						Component: ports.CompLLMProvider,
+						Status:    ports.StatusUnhealthy,
+						Message:   "LLM provider is down",
+					},
+				},
+			},
+			contains: []string{
+				"Overall Status: \033[0;31mUNHEALTHY",
+				"\033[0;31m[UNHEALTHY]\033[0m llm          : LLM provider is down",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stderr.Reset()
+			r.RenderHealthReport(context.Background(), tt.report)
+			output := stderr.String()
+			for _, s := range tt.contains {
+				if !strings.Contains(output, s) {
+					t.Errorf("expected output to contain %q, got %q", s, output)
+				}
+			}
+		})
 	}
 }

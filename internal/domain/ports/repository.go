@@ -76,6 +76,7 @@ type Initializer interface {
 type PersistenceProvider interface {
 	GetTasks() TaskStore
 	GetSettings() KVStore
+	GetHealthChecker() HealthChecker
 }
 
 // SessionStateProvider manages session-level metadata and state.

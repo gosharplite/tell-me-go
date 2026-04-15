@@ -35,11 +35,12 @@ type ToolRegistrationParams struct {
 	AssetsDir        string
 	EventBus         events.EventBus
 	FileSystem       persistence.FileSystem
+	HealthManager    ports.HealthCheckManager
 }
 
 // RegisterAll registers all available tools into the registry.
 func RegisterAll(params ToolRegistrationParams) error {
-	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem); err != nil {
+	if err := workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, params.HealthManager); err != nil {
 		return err
 	}
 	if params.SessionProvider != nil {

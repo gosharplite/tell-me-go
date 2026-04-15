@@ -105,6 +105,7 @@ type InfrastructureDependencyProvider interface {
 	GetLogger() Logger
 	GetTurnsLogger() TurnsLogger
 	GetSessionProvider() SessionProvider
+	GetHealthManager() HealthCheckManager
 }
 
 // SessionDependencies defines the dependencies required for a session.

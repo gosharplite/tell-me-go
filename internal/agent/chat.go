@@ -50,4 +50,7 @@ type ChatService interface {
 
 	// StreamTurnsLog resolves the turns log path for the current mode and streams it to the provided writer.
 	StreamTurnsLog(ctx context.Context, cfg *config.Config, out io.Writer) error
+
+	// RunDiagnostics performs a comprehensive system health check.
+	RunDiagnostics(ctx context.Context, cfg *config.Config, configPath string, jsonOutput bool) error
 }

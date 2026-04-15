@@ -25,6 +25,7 @@ type ResponseRenderer interface {
 type StatusLogger interface {
 	LogTurnStatus(ctx context.Context, status events.TurnStatus)
 	LogSystemMessage(ctx context.Context, msg string, level string)
+	RenderHealthReport(ctx context.Context, report *HealthReport)
 }
 
 // UsageLogger defines the interface for logging usage metrics.
@@ -42,6 +43,7 @@ type ToolLogger interface {
 type RendererConfigurator interface {
 	SetUseColor(use bool)
 	SetForceSpinner(force bool)
+	IsTerminalContext() bool
 }
 
 // UIRenderer defines the interface for UI feedback.

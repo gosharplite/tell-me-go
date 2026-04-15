@@ -58,7 +58,7 @@ func TestRegister(t *testing.T) {
 	validator := &testutil.MockCommandValidator{}
 	fs := testutil.NewOSFileSystem()
 
-	if err := Register(registry, sm, exec, validator, fs); err != nil {
+	if err := Register(registry, sm, exec, validator, fs, nil); err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
 
@@ -99,4 +99,20 @@ func TestRegister(t *testing.T) {
 			assert.True(t, found, "tool %s should be registered", name)
 		})
 	}
+
+	t.Run("check_system_health", func(t *testing.T) {
+		reg := &mockToolRegistry{}
+		mockHealth := &mockHealthCheckManager{}
+		if err := Register(reg, sm, exec, validator, fs, mockHealth); err != nil {
+			t.Fatalf("Register failed: %v", err)
+		}
+		found := false
+		for _, d := range reg.GetDeclarations() {
+			if d.Name == "check_system_health" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "tool check_system_health should be registered when health manager is provided")
+	})
 }

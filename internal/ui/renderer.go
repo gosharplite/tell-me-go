@@ -374,7 +374,7 @@ func (r *stdUIRenderer) renderInlineDataLocked(ui uiState, part *llm.Part) {
 	}
 }
 
-func (r *stdUIRenderer) isTerminalContext() bool {
+func (r *stdUIRenderer) IsTerminalContext() bool {
 	ui := r.getUIState()
 	if f, ok := ui.stderr.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		return true
@@ -400,7 +400,7 @@ func (r *stdUIRenderer) startSpinnerInternal(ctx context.Context, status string,
 	force := r.forceSpinner
 	r.mu.RUnlock()
 
-	if !r.isTerminalContext() && !force {
+	if !r.IsTerminalContext() && !force {
 		return func() {}
 	}
 
@@ -771,4 +771,76 @@ func (r *stdUIRenderer) renderFinalSummary(ui uiState, status events.TurnStatus)
 	stderr := ui.stderr
 	costStr := r.formatFinalCost(status, ui)
 	_, _ = fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", ui.c(colorGray), ui.c(colorReset), costStr)
+}
+
+func (r *stdUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {
+	if r.locker != nil {
+		r.locker.TerminalLock()
+		defer r.locker.TerminalUnlock()
+	}
+
+	ui := r.getUIState()
+	r.ioMu.Lock()
+	defer r.ioMu.Unlock()
+
+	stderr := ui.stderr
+
+	_, _ = fmt.Fprintf(stderr, "\n%s═══ System Health Diagnostic ═══%s\n\n", ui.c(colorBlue), ui.c(colorReset))
+
+	overallColor := colorGreen
+	switch report.OverallStatus {
+	case ports.StatusUnhealthy:
+		overallColor = colorRed
+	case ports.StatusDegraded:
+		overallColor = colorYellow
+	}
+
+	_, _ = fmt.Fprintf(stderr, "Overall Status: %s%s%s\n", ui.c(overallColor), strings.ToUpper(string(report.OverallStatus)), ui.c(colorReset))
+	_, _ = fmt.Fprintf(stderr, "Timestamp:      %s\n\n", report.Timestamp.Format(time.RFC3339))
+
+	components := []ports.Component{ports.CompPersistence, ports.CompLLMProvider, ports.CompToolchain}
+	for _, comp := range components {
+		cr, ok := report.Components[comp]
+		if !ok {
+			continue
+		}
+
+		statusColor := colorGreen
+		switch cr.Status {
+		case ports.StatusUnhealthy:
+			statusColor = colorRed
+		case ports.StatusDegraded:
+			statusColor = colorYellow
+		}
+
+		_, _ = fmt.Fprintf(stderr, "%s[%s]%s %-12s : %s\n", ui.c(statusColor), strings.ToUpper(string(cr.Status)), ui.c(colorReset), comp, cr.Message)
+
+		if cr.Details != nil {
+			if details, ok := cr.Details.(map[string]any); ok {
+				for k, v := range details {
+					if k == "binaries" {
+						continue // Show binaries separately or handle specially
+					}
+					_, _ = fmt.Fprintf(stderr, "    %s%s:%s %v\n", ui.c(colorGray), k, ui.c(colorReset), v)
+				}
+
+				if bins, ok := details["binaries"].(map[string]any); ok {
+					for name, infoRaw := range bins {
+						if info, ok := infoRaw.(map[string]any); ok {
+							ver := info["version_string"]
+							if ver == nil || ver == "" {
+								ver = "unknown version"
+							}
+							req := ""
+							if r, ok := info["is_required"].(bool); ok && r {
+								req = " (required)"
+							}
+							_, _ = fmt.Fprintf(stderr, "    %s%s:%s %s%s\n", ui.c(colorGray), name, ui.c(colorReset), ver, req)
+						}
+					}
+				}
+			}
+		}
+		_, _ = fmt.Fprintln(stderr)
+	}
 }

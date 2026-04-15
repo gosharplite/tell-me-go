@@ -54,8 +54,10 @@ func (s *stubUIRenderer) LogToolCall(ctx context.Context, calls []*llm.FunctionC
 }
 func (s *stubUIRenderer) LogToolResult(ctx context.Context, name string, result tools.ToolResult, showTools bool) {
 }
-func (s *stubUIRenderer) SetUseColor(use bool)       {}
-func (s *stubUIRenderer) SetForceSpinner(force bool) {}
+func (s *stubUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {}
+func (s *stubUIRenderer) SetUseColor(use bool)                                               {}
+func (s *stubUIRenderer) SetForceSpinner(force bool)                                         {}
+func (s *stubUIRenderer) IsTerminalContext() bool                                            { return false }
 
 // StubUIRenderer is a stub implementation of ports.UIRenderer for testing.
 type StubUIRenderer = stubUIRenderer
@@ -190,6 +192,7 @@ func (m *mockServiceSessionDependencies) GetSessionProvider() ports.SessionProvi
 	}
 	return args.Get(0).(ports.SessionProvider)
 }
+func (m *mockServiceSessionDependencies) GetHealthManager() ports.HealthCheckManager { return nil }
 
 // MockServiceSessionDependencies is a mock of SessionDependencies.
 type MockServiceSessionDependencies = mockServiceSessionDependencies

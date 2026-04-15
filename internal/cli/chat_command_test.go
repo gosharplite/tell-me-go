@@ -53,6 +53,11 @@ func (m *mockChatService) StreamTurnsLog(ctx stdctx.Context, cfg *config.Config,
 	return args.Error(0)
 }
 
+func (m *mockChatService) RunDiagnostics(ctx stdctx.Context, cfg *config.Config, configPath string, jsonOutput bool) error {
+	args := m.Called(ctx, cfg, configPath, jsonOutput)
+	return args.Error(0)
+}
+
 type mockBootstrapper struct {
 	mock.Mock
 }
@@ -618,4 +623,63 @@ func TestChatCommand_Execute_Errors(t *testing.T) {
 			require.ErrorContains(t, err, tt.expectedError)
 		})
 	}
+}
+
+func TestChatCommand_Execute_Diagnostic(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	// Setup Mocks
+	ml.ExpectedCalls = nil
+	cfg := &config.Config{Mode: "assistant"}
+	ml.On("Load", mock.Anything).Return(cfg, nil)
+	mService.On("RunDiagnostics", mock.Anything, cfg, mock.Anything, false).Return(nil)
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"--diagnostic"})
+	require.NoError(t, err, "Execute should not fail")
+	assert.False(t, mService.chatCalled, "expected chat service NOT to be called")
+	mService.AssertExpectations(t)
+}
+
+func TestChatCommand_Execute_Diagnostic_JSON(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+	sm := &mockSM{}
+	mb, ml, mService := setupMocks()
+
+	// Setup Mocks
+	ml.ExpectedCalls = nil
+	cfg := &config.Config{Mode: "assistant"}
+	ml.On("Load", mock.Anything).Return(cfg, nil)
+	mService.On("RunDiagnostics", mock.Anything, cfg, mock.Anything, true).Return(nil)
+
+	cmdCtx := &context{
+		Version:      "1.0.0",
+		Stdin:        strings.NewReader(""),
+		Stdout:       &stdout,
+		Stderr:       &stderr,
+		SM:           sm,
+		ChatService:  mService,
+		Bootstrapper: mb,
+		Loader:       ml,
+	}
+
+	err := executeChatCommand(cmdCtx, []string{"--diagnostic", "--json"})
+	require.NoError(t, err, "Execute should not fail")
+	mService.AssertExpectations(t)
 }

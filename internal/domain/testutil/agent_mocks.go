@@ -451,6 +451,13 @@ func (m *MockSessionProvider) Close() error {
 	args := m.Called()
 	return args.Error(0)
 }
+func (m *MockSessionProvider) GetHealthChecker() ports.HealthChecker {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.HealthChecker)
+}
 
 // MockLLMClient is a flexible mock for testing.
 type MockLLMClient struct {

@@ -68,12 +68,21 @@ func (m *MockUIRenderer) LogSystemMessage(ctx context.Context, msg string, level
 	m.Called(ctx, msg, level)
 }
 
+func (m *MockUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {
+	m.Called(ctx, report)
+}
+
 func (m *MockUIRenderer) SetUseColor(use bool) {
 	m.Called(use)
 }
 
 func (m *MockUIRenderer) SetForceSpinner(force bool) {
 	m.Called(force)
+}
+
+func (m *MockUIRenderer) IsTerminalContext() bool {
+	args := m.Called()
+	return args.Bool(0)
 }
 
 // MockHistoryRenderer is a mock implementation of ports.HistoryRenderer.

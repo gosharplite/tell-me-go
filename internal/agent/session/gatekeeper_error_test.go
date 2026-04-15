@@ -190,6 +190,11 @@ func (m *mockFailingUIRenderer) LogToolResult(ctx context.Context, name string, 
 }
 func (m *mockFailingUIRenderer) LogSystemMessage(ctx context.Context, msg string, level string) {
 }
+func (m *mockFailingUIRenderer) IsTerminalContext() bool {
+	return false
+}
+func (m *mockFailingUIRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {
+}
 
 func TestSessionManager_ConfigError(t *testing.T) {
 	agentFactory := func(ctx context.Context, deps ports.SessionDependencies, cfg ports.ChatterConfig) (ports.Chatter, error) {
@@ -204,7 +209,7 @@ func TestSessionManager_ConfigError(t *testing.T) {
 	sc := session.NewSessionConfig("", false, 0, 0, false, "test prompt", cfg)
 
 	ic := &mockFailingCapturer{}
-	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider))
+	sd := session.NewSessionDependencies(&persistence.Paths{}, nil, nil, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, nil, slog.Default(), &ports.NoOpTurnsLogger{}, new(testutil.MockSessionProvider), nil)
 
 	err := o.Run(context.Background(), sc, sd, ic)
 	if err == nil || err.Error() != "failed to apply configuration: config failed" {
