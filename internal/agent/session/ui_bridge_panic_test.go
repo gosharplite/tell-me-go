@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -56,8 +57,10 @@ func (m *panicMockRenderer) LogSystemMessage(ctx context.Context, msg string, le
 	m.lastMsg = msg
 	m.lastLevel = level
 }
-func (m *panicMockRenderer) SetUseColor(use bool)       {}
-func (m *panicMockRenderer) SetForceSpinner(force bool) {}
+func (m *panicMockRenderer) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {}
+func (m *panicMockRenderer) IsTerminalContext() bool                                            { return false }
+func (m *panicMockRenderer) SetUseColor(use bool)                                               {}
+func (m *panicMockRenderer) SetForceSpinner(force bool)                                         {}
 
 func TestUIBridge_PanicResilience(t *testing.T) {
 	t.Parallel()

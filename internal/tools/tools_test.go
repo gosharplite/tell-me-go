@@ -25,16 +25,18 @@ type mockSessionProvider struct {
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo {
 	return m.Called().Get(0).(ports.SessionInfo)
 }
-func (m *mockSessionProvider) SetInfo(info ports.SessionInfo) { m.Called(info) }
-func (m *mockSessionProvider) Close() error                   { return m.Called().Error(0) }
-func (m *mockSessionProvider) GetTasks() ports.TaskStore      { return nil }
-func (m *mockSessionProvider) GetSettings() ports.KVStore     { return nil }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)        { m.Called(info) }
+func (m *mockSessionProvider) Close() error                          { return m.Called().Error(0) }
+func (m *mockSessionProvider) GetTasks() ports.TaskStore             { return nil }
+func (m *mockSessionProvider) GetSettings() ports.KVStore            { return nil }
+func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker { return nil }
 
 func TestNewToolRegistry(t *testing.T) {
 	t.Parallel()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
+		HealthManager:   nil,
 		Registry:        r,
 		SecurityManager: sm,
 		LogFile:         "tokens.log",
@@ -57,6 +59,7 @@ func TestRegisterAll_WithSessionProvider(t *testing.T) {
 	r := registry.New()
 	sp := &mockSessionProvider{}
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
+		HealthManager:   nil,
 		Registry:        r,
 		SecurityManager: sm,
 		SessionProvider: sp,
@@ -75,6 +78,7 @@ func TestToolExecution(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
+		HealthManager:   nil,
 		Registry:        r,
 		SecurityManager: sm,
 		LogFile:         "tokens.log",
@@ -99,6 +103,7 @@ func TestGenerateMermaidDiagram(t *testing.T) {
 	sm := &testutil.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
+		HealthManager:   nil,
 		Registry:        r,
 		SecurityManager: sm,
 		LogFile:         "tokens.log",
@@ -223,7 +228,8 @@ func TestRegisterAll_Errors(t *testing.T) {
 			t.Parallel()
 			mockReg := &MockRegistry{failAfter: tt.failAfter}
 			params := tools.ToolRegistrationParams{
-				Registry: mockReg,
+				HealthManager: nil,
+				Registry:      mockReg,
 			}
 			if tt.setup != nil {
 				tt.setup(&params)

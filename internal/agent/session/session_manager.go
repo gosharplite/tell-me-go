@@ -83,6 +83,7 @@ type sessionDependencies struct {
 	Logger           ports.Logger
 	TurnsLogger      ports.TurnsLogger
 	SessionProvider  ports.SessionProvider
+	Health           ports.HealthCheckManager
 }
 
 func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gateway }
@@ -109,9 +110,10 @@ func (d *sessionDependencies) GetTracker() domain_pricing.CostTracker { return d
 func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
 	return d.PricingData
 }
+func (d *sessionDependencies) GetHealthManager() ports.HealthCheckManager { return d.Health }
 
 // NewSessionDependencies creates a new sessionDependencies with all required components.
-func NewSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger ports.Logger, turnsLogger ports.TurnsLogger, sessionProvider ports.SessionProvider) ports.SessionDependencies {
+func NewSessionDependencies(paths *persistence.Paths, hManager ports.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.Registry, sm domain_security.Manager, tracker domain_pricing.CostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus, logger ports.Logger, turnsLogger ports.TurnsLogger, sessionProvider ports.SessionProvider, health ports.HealthCheckManager) ports.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -126,6 +128,7 @@ func NewSessionDependencies(paths *persistence.Paths, hManager ports.HistoryMana
 		Logger:           logger,
 		TurnsLogger:      turnsLogger,
 		SessionProvider:  sessionProvider,
+		Health:           health,
 	}
 }
 

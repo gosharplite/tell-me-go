@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -225,5 +226,46 @@ func (s *chatService) StreamTurnsLog(ctx context.Context, cfg *domain_config.Con
 	if _, err := io.Copy(out, ctxReader); err != nil {
 		return fmt.Errorf("failed to stream log: %w", err)
 	}
+	return nil
+}
+
+// RunDiagnostics implements ChatService.
+func (s *chatService) RunDiagnostics(ctx context.Context, cfg *domain_config.Config, configPath string, jsonOutput bool) error {
+	// 1. Build session dependencies
+	deps, _, cleanup, err := s.LifecycleManager.BuildSessionDependencies(ctx, cfg, configPath, false, nil)
+	if err != nil {
+		return err
+	}
+
+	defer s.cleanupSession(deps, cleanup)
+
+	// 2. Perform health check
+	health := deps.GetHealthManager()
+	if health == nil {
+		return errors.New("health check manager not available")
+	}
+
+	report, err := health.CheckAll(ctx)
+	if err != nil {
+		return fmt.Errorf("health check failed: %w", err)
+	}
+
+	// 3. Render report
+	if jsonOutput {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to serialize health report: %w", err)
+		}
+		_, _ = fmt.Fprintln(s.Stdout, string(data))
+	} else {
+		s.UIRenderer.SetUseColor(s.UIRenderer.IsTerminalContext())
+		s.UIRenderer.RenderHealthReport(ctx, report)
+	}
+
+	// 4. Handle exit status
+	if report.OverallStatus == ports.StatusUnhealthy {
+		return errors.New("system health check failed")
+	}
+
 	return nil
 }

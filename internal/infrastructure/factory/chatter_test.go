@@ -41,6 +41,8 @@ func (d *mockSessionDeps) GetPricingData() pricing.PricingData                  
 func (d *mockSessionDeps) GetLogger() ports.Logger                              { return &ports.NoOpLogger{} }
 func (d *mockSessionDeps) GetTurnsLogger() ports.TurnsLogger                    { return nil }
 func (d *mockSessionDeps) GetSessionProvider() ports.SessionProvider            { return d.sessionProvider }
+func (d *mockSessionDeps) GetHealthManager() ports.HealthCheckManager           { return nil }
+func (d *mockSessionDeps) GetClient() llm.LLMClient                             { return nil }
 
 type mockGateway struct {
 	llm.LLMGateway

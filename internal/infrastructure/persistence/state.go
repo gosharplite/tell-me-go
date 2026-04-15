@@ -29,6 +29,12 @@ type sessionState struct {
 
 func (s *sessionState) GetTasks() ports.TaskStore  { return s.Tasks }
 func (s *sessionState) GetSettings() ports.KVStore { return s.Settings }
+func (s *sessionState) GetHealthChecker() ports.HealthChecker {
+	if s.db != nil {
+		return NewSQLiteHealthChecker(s.db, s.Info.Paths["db_file"])
+	}
+	return &noOpHealthChecker{comp: ports.CompPersistence}
+}
 func (s *sessionState) GetInfo() ports.SessionInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

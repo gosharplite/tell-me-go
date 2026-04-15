@@ -40,6 +40,8 @@ type cliOptions struct {
 	configPath   string
 	newSession   bool
 	showTurnsLog bool
+	diagnostic   bool
+	jsonOutput   bool
 	lastN        int
 	backN        int
 	rawOutput    bool
@@ -50,6 +52,8 @@ type cliOptions struct {
 func addChatFlags(fs *pflag.FlagSet, opts *cliOptions) {
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
 	fs.BoolVarP(&opts.showTurnsLog, "turns", "t", false, "Print the contents of the current session's turns.log and exit")
+	fs.BoolVarP(&opts.diagnostic, "diagnostic", "d", false, "Run a comprehensive system health check and exit")
+	fs.BoolVar(&opts.jsonOutput, "json", false, "Output in JSON format (for diagnostics)")
 	fs.IntVarP(&opts.lastN, "last", "l", 0, "Show the last N messages from history")
 	fs.Lookup("last").NoOptDefVal = "1"
 	fs.IntVarP(&opts.backN, "back", "b", 0, "Go back / delete the last N turns from history")
@@ -97,18 +101,27 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 
 // executeChat runs the chat command logic.
 func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []string) error {
-	// 1. Determine if we are just showing logs
+	// 1. Handle Diagnostic mode
+	if opts.diagnostic {
+		cfg, err := c.Loader.Load(opts.configPath)
+		if err != nil {
+			return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
+		}
+		return c.ChatService.RunDiagnostics(ctx, cfg, opts.configPath, opts.jsonOutput)
+	}
+
+	// 2. Determine if we are just showing logs
 	if opts.showTurnsLog {
 		return c.handleStreamLogs(ctx, opts)
 	}
 
-	// 2. Load config and apply TUI override
+	// 3. Load config and apply TUI override
 	cfg, err := c.loadConfig(opts, args)
 	if err != nil {
 		return err
 	}
 
-	// 3. Setup Capturer
+	// 4. Setup Capturer
 	capturer, cleanup := c.buildCapturer(ctx, cfg, opts)
 	defer func() {
 		timeout := ports.DefaultShutdownTimeout
@@ -120,13 +133,13 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 		_ = cleanup(shutdownCtx)
 	}()
 
-	// 4. Capture Prompt
+	// 5. Capture Prompt
 	prompt, err := c.captureInput(ctx, capturer, opts, args)
 	if err != nil {
 		return err
 	}
 
-	// 5. Delegate business logic to ChatService
+	// 6. Delegate business logic to ChatService
 	return c.ChatService.ProcessMessage(ctx, cfg, agent.ChatCommand{
 		ConfigPath:   opts.configPath,
 		NewSession:   opts.newSession,

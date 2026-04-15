@@ -141,3 +141,8 @@ func resolveTimeout(cfg *config.Config) time.Duration {
 	}
 	return timeout
 }
+
+// CreateAuthenticator exposed for toolchain/health checks.
+func CreateAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
+	return createAuthenticator(p)
+}

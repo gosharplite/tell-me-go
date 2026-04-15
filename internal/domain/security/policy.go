@@ -168,6 +168,7 @@ func DefaultPolicy() *Policy {
 			"estimate_cost":            true,
 			"get_cost_summary":         true,
 			"verify_release_readiness": true,
+			"check_system_health":      true,
 			"summarize_history":        true,
 			"manage_history":           true,
 			"update_session_setting":   true,
@@ -186,7 +187,8 @@ func DefaultPolicy() *Policy {
 			"ado_list_branch_policies": true, "ado_get_build_timeline": true,
 			"ado_get_task_log": true, "ado_get_build_changes": true,
 			"ado_create_pipeline": true, "ado_run_pipeline": true,
-			"run_benchmark": true,
+			"run_benchmark":       true,
+			"check_system_health": true,
 		},
 		ForbiddenPatterns: []string{
 			"&&", "||", ";", "|", ">", ">>", "<", "&", "2>", "&>", "|&", "1>", "1>>", "2>>",

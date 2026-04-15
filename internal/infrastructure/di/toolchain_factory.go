@@ -26,6 +26,7 @@ type toolchainFactory interface {
 type toolchainParams struct {
 	Paths            *persistence.Paths
 	SessionProvider  ports.SessionProvider
+	HealthManager    ports.HealthCheckManager
 	Client           llm.ExtendedClient
 	Bus              events.EventBus
 	Model            string
@@ -70,6 +71,7 @@ func (f *defaultToolchainFactory) BuildRegistry(params toolchainParams) (tools.R
 		AssetsDir:        filepath.Join(f.HomeDir, "assets", "generated"),
 		EventBus:         params.Bus,
 		FileSystem:       infra_persistence.NewDomainFS(f.FileSystem),
+		HealthManager:    params.HealthManager,
 	}
 
 	if err := f.RegisterAllTools(regParams); err != nil {

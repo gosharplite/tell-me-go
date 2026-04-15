@@ -22,11 +22,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/factory"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	infra_toolchain "github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 	infra_tools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/ui"
@@ -143,10 +145,21 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		clientFactory:    clientFactory,
 	}
 
+	// Initialize Health Manager
+	p := cfg.GetActiveProvider()
+	authenticator, _ := infra_llm.CreateAuthenticator(&p) // Error is handled in health check itself
+	healthCheckers := map[ports.Component]ports.HealthChecker{
+		ports.CompPersistence: sessionProvider.GetHealthChecker(),
+		ports.CompLLMProvider: infra_llm.NewLLMProviderHealthChecker(p.Type, authenticator, p.URL, &lazyLLMProxy{deps: deps}),
+		ports.CompToolchain:   infra_toolchain.NewToolchainHealthChecker(&exec.RealExecutor{}, []string{"git", "go"}, []string{"make"}),
+	}
+	deps.health = factory.NewHealthCheckManager(healthCheckers)
+
 	regFactory := func() (tools.Registry, error) {
 		return b.toolchainFactory.BuildRegistry(toolchainParams{
 			Paths:            paths,
 			SessionProvider:  sessionProvider,
+			HealthManager:    deps.health,
 			Client:           &lazyLLMProxy{deps: deps},
 			Bus:              bus,
 			Model:            cfg.Model,
@@ -184,6 +197,7 @@ type sessionDeps struct {
 	logger           ports.Logger
 	turnsLogger      ports.TurnsLogger
 	sessionProvider  ports.SessionProvider
+	health           ports.HealthCheckManager
 
 	initOnce      sync.Once
 	clientErr     error
@@ -269,8 +283,9 @@ func (d *sessionDeps) GetSessionProvider() ports.SessionProvider {
 func (d *sessionDeps) GetPricingOverrides() map[string]pricing.ModelPricing {
 	return d.pricingOverrides
 }
-func (d *sessionDeps) GetTracker() pricing.CostTracker     { return d.tracker }
-func (d *sessionDeps) GetPricingData() pricing.PricingData { return d.pricingData }
+func (d *sessionDeps) GetTracker() pricing.CostTracker            { return d.tracker }
+func (d *sessionDeps) GetPricingData() pricing.PricingData        { return d.pricingData }
+func (d *sessionDeps) GetHealthManager() ports.HealthCheckManager { return d.health }
 func (d *sessionDeps) GetClient() llm.LLMClient {
 	return &lazyLLMProxy{deps: d}
 }

@@ -608,6 +608,13 @@ func (m *mockSessionProvider) Close() error {
 	args := m.Called()
 	return args.Error(0)
 }
+func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.HealthChecker)
+}
 
 func TestContainer_InitializationErrors(t *testing.T) {
 	ctx := context.Background()
@@ -661,6 +668,7 @@ func TestContainer_InitializationErrors(t *testing.T) {
 				mockKV := new(mockKVStore)
 				mockKV.On("Get", mock.Anything, mock.Anything).Return("", nil).Maybe()
 				mockSP.On("GetSettings").Return(mockKV).Maybe()
+				mockSP.On("GetHealthChecker").Return(nil).Maybe()
 				mockSP.On("GetInfo").Return(ports.SessionInfo{}).Maybe()
 				mockSP.On("SetInfo", mock.Anything).Return().Maybe()
 				mockSP.On("Close").Return(simulatedErr)
@@ -883,6 +891,7 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 	mockKV := new(mockKVStore)
 	mockKV.On("Get", mock.Anything, mock.Anything).Return("", nil).Maybe()
 	mockSP.On("GetSettings").Return(mockKV).Maybe()
+	mockSP.On("GetHealthChecker").Return(nil).Maybe()
 	mockSP.On("GetInfo").Return(ports.SessionInfo{}).Maybe()
 	mockSP.On("SetInfo", mock.Anything).Return().Maybe()
 	mockSP.On("Close").Return(busErr)
