@@ -64,29 +64,14 @@ func (c *LLMProviderHealthChecker) Check(ctx context.Context) (*ports.ComponentR
 		Details:   details,
 	}
 
-	// Step A: Configuration Check
-	if c.authenticator == nil {
-		report.Status = ports.StatusUnhealthy
-		report.Message = "LLM API key is missing (no authenticator)"
-		return report, nil
-	}
-
+	// Step 1: Configuration validation
 	authReq := &auth.Request{Headers: make(map[string]string)}
-	if err := c.authenticator.Apply(ctx, authReq); err != nil {
-		report.Status = ports.StatusUnhealthy
-		report.Message = "LLM API key is missing or invalid"
-		report.Error = err
-		return report, nil
-	}
-	if len(authReq.Headers) == 0 {
-		report.Status = ports.StatusUnhealthy
-		report.Message = "LLM API key is missing"
-		return report, nil
+	if configReport := c.checkConfiguration(ctx, report, authReq); configReport != nil {
+		return configReport, nil
 	}
 
-	// Step B: Connectivity Check
-	method, url := c.getPingEndpoint()
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	// Step 2: Build request
+	req, err := c.buildRequest(ctx, authReq)
 	if err != nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("failed to create health check request: %v", err)
@@ -94,27 +79,74 @@ func (c *LLMProviderHealthChecker) Check(ctx context.Context) (*ports.ComponentR
 		return report, nil
 	}
 
+	// Step 3: Perform connectivity check
+	resp, err := c.performConnectivityCheck(req, details)
+
+	// Step 4: Handle HTTP response
+	return c.handleHTTPResponse(resp, err, report, details), nil
+}
+
+// checkConfiguration validates authenticator and API key
+func (c *LLMProviderHealthChecker) checkConfiguration(ctx context.Context, report *ports.ComponentReport, authReq *auth.Request) *ports.ComponentReport {
+	if c.authenticator == nil {
+		report.Status = ports.StatusUnhealthy
+		report.Message = "LLM API key is missing (no authenticator)"
+		return report
+	}
+
+	if err := c.authenticator.Apply(ctx, authReq); err != nil {
+		report.Status = ports.StatusUnhealthy
+		report.Message = "LLM API key is missing or invalid"
+		report.Error = err
+		return report
+	}
+	if len(authReq.Headers) == 0 {
+		report.Status = ports.StatusUnhealthy
+		report.Message = "LLM API key is missing"
+		return report
+	}
+
+	return nil
+}
+
+// buildRequest creates the HTTP request for health check
+func (c *LLMProviderHealthChecker) buildRequest(ctx context.Context, authReq *auth.Request) (*http.Request, error) {
+	method, url := c.getPingEndpoint()
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	// Apply authentication headers
 	for k, v := range authReq.Headers {
 		req.Header.Set(k, v)
 	}
 
+	return req, nil
+}
+
+// performConnectivityCheck executes HTTP request and measures latency
+func (c *LLMProviderHealthChecker) performConnectivityCheck(req *http.Request, details map[string]any) (*http.Response, error) {
 	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	latency := time.Since(start)
 	details["latency_ms"] = latency.Milliseconds()
 
+	return resp, err
+}
+
+// handleHTTPResponse analyzes status codes, classifies errors, determines health status
+func (c *LLMProviderHealthChecker) handleHTTPResponse(resp *http.Response, err error, report *ports.ComponentReport, details map[string]any) *ports.ComponentReport {
 	if err != nil {
-		// Step D: Transient Failures (DNS, Timeout, etc.)
+		// Transient Failures (DNS, Timeout, etc.)
 		report.Status = ports.StatusDegraded
 		report.Message = fmt.Sprintf("connectivity issue: %v", err)
 		report.Error = err
-		return report, nil
+		return report
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		// Step C: Auth Check and other API errors
 		classified := llmerr.Classify(&llmerr.APIError{Status: resp.StatusCode})
 
 		if errors.Is(classified, llm.ErrAuth) {
@@ -124,22 +156,28 @@ func (c *LLMProviderHealthChecker) Check(ctx context.Context) (*ports.ComponentR
 			report.Status = ports.StatusDegraded
 			report.Message = "LLM provider is experiencing transient issues"
 		} else {
-			// For some endpoints, 404 or 405 might just mean the ping path is wrong but the server is up.
-			// However, for OpenAI/Gemini /models, we expect 200.
-			// For Anthropic, we might get 404 on the base URL.
-			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-				report.Status = ports.StatusHealthy
-				report.Message = fmt.Sprintf("%s provider reached (ping returned %d)", c.providerName, resp.StatusCode)
-			} else {
-				report.Status = ports.StatusUnhealthy
-				report.Message = fmt.Sprintf("LLM provider returned error status: %d", resp.StatusCode)
-			}
+			report = c.classifyErrorStatus(resp.StatusCode, report)
 		}
 		report.Error = classified
-		return report, nil
+		return report
 	}
 
-	return report, nil
+	return report
+}
+
+// classifyErrorStatus handles provider-specific status code interpretation
+func (c *LLMProviderHealthChecker) classifyErrorStatus(statusCode int, report *ports.ComponentReport) *ports.ComponentReport {
+	// For some endpoints, 404 or 405 might just mean the ping path is wrong but the server is up.
+	// However, for OpenAI/Gemini /models, we expect 200.
+	// For Anthropic, we might get 404 on the base URL.
+	if statusCode == http.StatusNotFound || statusCode == http.StatusMethodNotAllowed {
+		report.Status = ports.StatusHealthy
+		report.Message = fmt.Sprintf("%s provider reached (ping returned %d)", c.providerName, statusCode)
+	} else {
+		report.Status = ports.StatusUnhealthy
+		report.Message = fmt.Sprintf("LLM provider returned error status: %d", statusCode)
+	}
+	return report
 }
 
 func (c *LLMProviderHealthChecker) getPingEndpoint() (string, string) {
