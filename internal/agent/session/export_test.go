@@ -37,4 +37,3 @@ func SyncBridge(t *testing.T, b *UIBridge, m interface {
 
 // ContextPipelineInternal is an alias for contextPipeline for testing purposes.
 type ContextPipelineInternal = contextPipeline
-

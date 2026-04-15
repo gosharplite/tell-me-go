@@ -158,4 +158,3 @@ func (m *mockHistoryManager) Sync(ctx context.Context) error {
 }
 
 func (m *mockHistoryManager) WaitStarted() {}
-

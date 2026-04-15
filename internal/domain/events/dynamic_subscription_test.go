@@ -12,7 +12,7 @@ import (
 func TestSimpleEventBus_DynamicSubscription(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	
+
 	bus := NewSimpleEventBus(ctx)
 
 	// Start the listener in a background goroutine
@@ -50,7 +50,7 @@ func TestSimpleEventBus_DynamicSubscription(t *testing.T) {
 func TestSimpleEventBus_DynamicSubscription_Specific(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	
+
 	bus := NewSimpleEventBus(ctx)
 
 	go func() {

@@ -70,11 +70,11 @@ type SimpleEventBus struct {
 	cancel            context.CancelFunc
 	log               *slog.Logger
 
-	running      bool
-	listenCtx    context.Context
-	listenG      *errgroup.Group
-	started      chan struct{}
-	startOnce    sync.Once
+	running   bool
+	listenCtx context.Context
+	listenG   *errgroup.Group
+	started   chan struct{}
+	startOnce sync.Once
 
 	queueSize     int
 	asyncDispatch bool           // If false, runs synchronously

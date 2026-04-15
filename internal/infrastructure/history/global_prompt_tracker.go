@@ -77,24 +77,24 @@ func NewGlobalPromptTracker(fs persistence.FileSystem, homeDir string) (ports.Pr
 
 		if srcPath != "" {
 			// Perform robust migration (rename or copy+delete)
-			// Note: Rename is not part of FileSystem interface? 
+			// Note: Rename is not part of FileSystem interface?
 			// Wait, FileSystem interface does NOT have Rename.
 			// I should use copy + remove if Rename is not available.
 			// Actually, let's check FileSystem again.
 			/*
-			type FileSystem interface {
-				ReadDir(ctx context.Context, name string) ([]os.DirEntry, error)
-				ReadFile(ctx context.Context, name string) ([]byte, error)
-				WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error
-				AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error
-				MkdirAll(ctx context.Context, path string, perm os.FileMode) error
-				Stat(ctx context.Context, name string) (os.FileInfo, error)
-				Open(ctx context.Context, name string) (File, error)
-				OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error)
-				Remove(ctx context.Context, name string) error
-				RemoveAll(ctx context.Context, path string) error
-				Walk(ctx context.Context, root string, fn WalkFunc) error
-			}
+				type FileSystem interface {
+					ReadDir(ctx context.Context, name string) ([]os.DirEntry, error)
+					ReadFile(ctx context.Context, name string) ([]byte, error)
+					WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error
+					AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error
+					MkdirAll(ctx context.Context, path string, perm os.FileMode) error
+					Stat(ctx context.Context, name string) (os.FileInfo, error)
+					Open(ctx context.Context, name string) (File, error)
+					OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error)
+					Remove(ctx context.Context, name string) error
+					RemoveAll(ctx context.Context, path string) error
+					Walk(ctx context.Context, root string, fn WalkFunc) error
+				}
 			*/
 			// It doesn't have Rename.
 			if err := copyFile(ctx, fs, srcPath, trackerPath); err != nil {
