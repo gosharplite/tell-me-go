@@ -350,7 +350,7 @@ func (b *Bootstrapper) GetUnifiedHistoryProvider(ctx stdctx.Context, cfg *config
 
 // GetSuggestionService initializes and returns the suggestion service.
 func (b *Bootstrapper) GetSuggestionService(ctx stdctx.Context, recentHistory []string) (ports.SuggestionService, error) {
-	tracker, err := history.NewGlobalPromptTracker(b.HomeDir)
+	tracker, err := history.NewGlobalPromptTracker(infra_persistence.NewDomainFS(b.FileSystem), b.HomeDir)
 	if err != nil {
 		b.Logger.Warn("failed to initialize global prompt tracker, falling back to no-op", "error", err)
 		tracker = history.NewNoOpTracker()

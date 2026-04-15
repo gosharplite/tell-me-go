@@ -1,6 +1,3 @@
-// Copyright (c) 2026 gosharplite@gmail.com
-// SPDX-License-Identifier: MIT
-
 package history
 
 import (
@@ -13,6 +10,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func assertPromptsMatch(t *testing.T, got, expected []string) {
@@ -29,7 +28,8 @@ func assertPromptsMatch(t *testing.T, got, expected []string) {
 
 func TestGlobalPromptTracker(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tracker, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tracker.Close() }()
 
 	prompts := []string{"hello", "world", "hello", "foo", "bar", "hello"}
@@ -64,7 +64,8 @@ func TestGlobalPromptTracker(t *testing.T) {
 
 func TestGlobalPromptTrackerNoFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker, _ := NewGlobalPromptTracker(filepath.Join(tmpDir, "non-existent"))
+	fs := persistence.NewOSFileSystem()
+	tracker, _ := NewGlobalPromptTracker(fs, filepath.Join(tmpDir, "non-existent"))
 	defer func() { _ = tracker.Close() }()
 
 	got, err := tracker.LoadTopN(context.Background(), 10)
@@ -78,7 +79,8 @@ func TestGlobalPromptTrackerNoFile(t *testing.T) {
 
 func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tracker, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tracker.Close() }()
 
 	// Create a payload larger than 64KB (e.g., 70,000 chars)
@@ -112,7 +114,8 @@ func TestGlobalPromptTracker_LargePayload_Over64KB(t *testing.T) {
 
 func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tracker, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tracker.Close() }()
 
 	// Add 10 "duplicate" prompts
@@ -126,7 +129,7 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 	uniquePrompts := []string{"p1", "p2", "p3", "p4", "p5"}
 	// We append them first, so they are at the beginning of the file.
 	// But to test that it returns them even if they are far back:
-	tracker2, _ := NewGlobalPromptTracker(t.TempDir()) // Reset
+	tracker2, _ := NewGlobalPromptTracker(fs, t.TempDir()) // Reset
 	defer func() { _ = tracker2.Close() }()
 	for _, p := range uniquePrompts {
 		if err := tracker2.Append(context.Background(), p); err != nil {
@@ -152,7 +155,8 @@ func TestGlobalPromptTracker_LoadTopN_Deduplication(t *testing.T) {
 
 func TestGlobalPromptTracker_Compaction(t *testing.T) {
 	tmpDir := t.TempDir()
-	tr, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tr, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
@@ -195,7 +199,8 @@ func TestGlobalPromptTracker_Compaction(t *testing.T) {
 
 func TestGlobalPromptTracker_AppendTriggersCompaction(t *testing.T) {
 	tmpDir := t.TempDir()
-	tr, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tr, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
@@ -360,7 +365,8 @@ func verifyMigration(t *testing.T, homeDir, legacyRelPath string, expectedConten
 
 func runMigration(t *testing.T, homeDir string) {
 	t.Helper()
-	_, err := NewGlobalPromptTracker(homeDir)
+	fs := persistence.NewOSFileSystem()
+	_, err := NewGlobalPromptTracker(fs, homeDir)
 	if err != nil {
 		t.Fatalf("NewGlobalPromptTracker failed: %v", err)
 	}
@@ -371,6 +377,8 @@ func TestCopyFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	src := filepath.Join(tmpDir, "src.txt")
 	dst := filepath.Join(tmpDir, "dst.txt")
+	fs := persistence.NewOSFileSystem()
+	ctx := context.Background()
 
 	expectedContent := "test content for fallback migration"
 	err := os.WriteFile(src, []byte(expectedContent), 0644)
@@ -379,7 +387,7 @@ func TestCopyFile(t *testing.T) {
 	}
 
 	// Execute the utility directly
-	if err := copyFile(src, dst); err != nil {
+	if err := copyFile(ctx, fs, src, dst); err != nil {
 		t.Fatalf("copyFile failed: %v", err)
 	}
 
@@ -393,13 +401,13 @@ func TestCopyFile(t *testing.T) {
 	}
 
 	// Test non-existent source
-	err = copyFile(filepath.Join(tmpDir, "non-existent"), filepath.Join(tmpDir, "out"))
+	err = copyFile(ctx, fs, filepath.Join(tmpDir, "non-existent"), filepath.Join(tmpDir, "out"))
 	if err == nil {
 		t.Error("expected error for non-existent source, got nil")
 	}
 
-	// Test invalid destination
-	err = copyFile(src, filepath.Join(tmpDir, "non-existent-dir", "out"))
+	// Test invalid destination (empty path)
+	err = copyFile(ctx, fs, src, "")
 	if err == nil {
 		t.Error("expected error for invalid destination, got nil")
 	}
@@ -433,7 +441,8 @@ func TestNewGlobalPromptTracker_MkdirError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tracker, err := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tracker, err := NewGlobalPromptTracker(fs, tmpDir)
 	if err == nil {
 		t.Fatal("expected error when MkdirAll fails, got nil")
 	}
@@ -444,7 +453,8 @@ func TestNewGlobalPromptTracker_MkdirError(t *testing.T) {
 
 func TestGlobalPromptTracker_CompactionIgnoresContextCancellation(t *testing.T) {
 	tmpDir := t.TempDir()
-	tr, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tr, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
@@ -498,15 +508,16 @@ func TestPromptTracker_CompactionWriteFailure(t *testing.T) {
 	entries := []promptEntry{
 		{Timestamp: "now", Prompt: "test"},
 	}
-	success := tracker.writeCompactedTempFile(&errorWriter{}, entries)
+	success := tracker.writeCompactedData(&errorWriter{}, entries)
 	if success {
-		t.Errorf("Expected writeCompactedTempFile to fail with errorWriter")
+		t.Errorf("Expected writeCompactedData to fail with errorWriter")
 	}
 }
 
 func TestGlobalPromptTracker_LoadTopN_ContextCancelled(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tracker, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tracker.Close() }()
 
 	_ = tracker.Append(context.Background(), "p1")
@@ -523,7 +534,8 @@ func TestGlobalPromptTracker_LoadTopN_ContextCancelled(t *testing.T) {
 
 func TestGlobalPromptTracker_LoadTopN_MalformedJSON(t *testing.T) {
 	tmpDir := t.TempDir()
-	tr, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tr, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
@@ -547,7 +559,8 @@ this is not json
 
 func TestGlobalPromptTracker_Append_EmptyPrompt(t *testing.T) {
 	tmpDir := t.TempDir()
-	tr, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tr, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
@@ -574,7 +587,8 @@ func TestNoOpTracker_Close(t *testing.T) {
 
 func TestGlobalPromptTracker_LoadTopN_LimitZero(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tracker, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tracker.Close() }()
 
 	got, err := tracker.LoadTopN(context.Background(), 0)
@@ -588,7 +602,8 @@ func TestGlobalPromptTracker_LoadTopN_LimitZero(t *testing.T) {
 
 func TestGlobalPromptTracker_LoadTopN_LimitNegative(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tracker, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tracker.Close() }()
 
 	got, err := tracker.LoadTopN(context.Background(), -1)
@@ -602,7 +617,8 @@ func TestGlobalPromptTracker_LoadTopN_LimitNegative(t *testing.T) {
 
 func TestGlobalPromptTracker_Append_WriteError(t *testing.T) {
 	tmpDir := t.TempDir()
-	tracker, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tracker, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tracker.Close() }()
 	tr := tracker.(*globalPromptTracker)
 
@@ -623,7 +639,8 @@ func TestGlobalPromptTracker_Append_WriteError(t *testing.T) {
 
 func TestGlobalPromptTracker_ScanChunk_EdgeCases(t *testing.T) {
 	tmpDir := t.TempDir()
-	tr, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tr, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
@@ -644,7 +661,8 @@ func TestGlobalPromptTracker_ScanChunk_EdgeCases(t *testing.T) {
 
 func TestGlobalPromptTracker_CompactionFailToTrigger(t *testing.T) {
 	tmpDir := t.TempDir()
-	tr, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tr, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
@@ -677,13 +695,14 @@ func TestGlobalPromptTracker_PerformCompactionPass_CreateTempFailure(t *testing.
 	}
 
 	tmpDir := t.TempDir()
-	tr, _ := NewGlobalPromptTracker(tmpDir)
+	fs := persistence.NewOSFileSystem()
+	tr, _ := NewGlobalPromptTracker(fs, tmpDir)
 	defer func() { _ = tr.Close() }()
 	tracker := tr.(*globalPromptTracker)
 
 	_ = tracker.Append(context.Background(), "test")
 
-	// Make output dir read-only to cause CreateTemp to fail
+	// Make output dir read-only to cause AtomicWrite to fail
 	outputDir := filepath.Join(tmpDir, "output")
 	if err := os.Chmod(outputDir, 0555); err != nil {
 		t.Fatal(err)

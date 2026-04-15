@@ -15,11 +15,36 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"go.uber.org/goleak"
 )
+
+type mockFileSystem struct {
+	persistence.FileSystem
+}
+
+func (m *mockFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+	return os.MkdirAll(path, perm)
+}
+
+func (m *mockFileSystem) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
+}
+
+func (m *mockFileSystem) AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
+}
+
+func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	return os.ReadFile(name)
+}
+
+func (m *mockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	return os.Stat(name)
+}
 
 type mockLLMClient struct {
 	llm.LLMClient
@@ -127,9 +152,10 @@ func TestMediaTools_CreateImage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sm := newMediaMockSecurityManager()
+			fs := &mockFileSystem{}
 
 			// Capture the mediaManager and set a short heartbeat interval for fast tests
-			m := newMediaManager(sm, tt.client, tt.assetsDir, withMediaHeartbeatInterval(10*time.Millisecond))
+			m := newMediaManager(fs, sm, tt.client, tt.assetsDir, withMediaHeartbeatInterval(10*time.Millisecond))
 
 			res, err := m.createImage(ctx, tt.args, nil)
 			if (err != nil) != tt.wantErr {
@@ -245,7 +271,8 @@ func TestMediaTools_ReadImage(t *testing.T) {
 				}
 				return path, nil
 			}
-			m := newMediaManager(sm, nil, "")
+			fs := &mockFileSystem{}
+			m := newMediaManager(fs, sm, nil, "")
 
 			res, err := m.readImage(ctx, map[string]interface{}{"filepath": tt.filepath}, nil)
 			if (err != nil) != tt.wantErr {
@@ -266,12 +293,16 @@ func TestMediaTools_ReadImage(t *testing.T) {
 
 func TestNewMediaManager(t *testing.T) {
 	sm := newMediaMockSecurityManager()
+	fs := &mockFileSystem{}
 	client := &mockLLMClient{}
 	assetsDir := "test-assets"
 	interval := 5 * time.Second
 
-	m := newMediaManager(sm, client, assetsDir, withMediaHeartbeatInterval(interval))
+	m := newMediaManager(fs, sm, client, assetsDir, withMediaHeartbeatInterval(interval))
 
+	if m.fs != fs {
+		t.Error("filesystem not set correctly")
+	}
 	if m.sm != sm {
 		t.Error("security manager not set correctly")
 	}
@@ -287,7 +318,7 @@ func TestNewMediaManager(t *testing.T) {
 }
 
 func TestMediaManager_DefaultOptions(t *testing.T) {
-	m := newMediaManager(nil, nil, "")
+	m := newMediaManager(nil, nil, nil, "")
 	if m.heartbeatInterval != 2*time.Second {
 		t.Errorf("default heartbeatInterval = %v, want 2s", m.heartbeatInterval)
 	}
