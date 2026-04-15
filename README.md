@@ -14,7 +14,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
 `tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance, provides a rich TUI for history exploration, and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
 
 ## 🚀 Features
-*   **Multi-Provider Reasoning**: Native support for Gemini 1.5/2.0/3.0, GPT-4o/o1/o3/5, DeepSeek R1, and Claude 3.5/3.7/4.
+*   **Multi-Provider Reasoning**: Native support for Gemini 1.5/2.0/3.0/3.1, GPT-4o/o1/o3/5/5.2, DeepSeek R1/Reasoner, and Claude 3.5/3.7/4/4.6.
 *   **Intelligence & Context**:
     *   **Dynamic Skill Injection**: Automatically injects idiomatic Go patterns (`golang-patterns`) and TDD best practices (`golang-testing`) into the context based on task relevance.
     *   **Unified Domain Model**: Optimized for a provider-agnostic `Thought` architecture, ensuring consistent reasoning across models.
@@ -35,7 +35,7 @@ A high-performance CLI assistant unifying the world's most powerful reasoning en
     *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks and authorized paths).
 
 ## 📋 Prerequisites
-*   **Go**: 1.26.1 or higher.
+*   **Go**: 1.26.2 or higher.
 *   **Development Tools** (optional): For building from source, running tests, and contributing, install `golangci-lint`, `staticcheck`, `govulncheck`, `goimports`, and `gh` (GitHub CLI). See the Development section below.
 
 ## 🛠️ Installation
@@ -91,6 +91,12 @@ Skip Markdown rendering (useful for piping to other scripts):
 tell-me-go -r "Write a bash script to list files"
 ```
 
+**System Diagnostics:**
+Run a comprehensive health check:
+```bash
+tell-me-go -d
+```
+
 **Pre-flight Status Log:**
 Before every request, the tool shows your current resource usage relative to configured limits:
 ```text
@@ -133,22 +139,10 @@ PROVIDERS:
     HEADERS:
       reasoning_effort: "high"
 
-# --- Model Overrides ---
-MODELS:
-  gpt-5:
-    MAX_THINKING_BUDGET: 65536
-    CONTEXT_WINDOW: 200000
-    PRICING:
-      HIT: 0.175
-      MISS: 1.75
-      COMP: 14.00
-
 # --- Tools & Features ---
+USE_SEARCH: false
 SHOW_THOUGHTS: false
 SHOW_TOOLS: true
-
-# --- Global Timeouts ---
-HTTP_TIMEOUT: 300
 
 # --- Concurrent Execution ---
 MAX_CONCURRENT_TOOLS: 5
@@ -157,6 +151,13 @@ TOOL_TIMEOUT: 300
 # --- Safety & History ---
 MAX_TURNS: 200
 MAX_HISTORY_TOKENS: 180000
+
+# --- Model Overrides ---
+MODELS:
+  "gemini-3-flash-preview":
+    CONTEXT_WINDOW: 200000
+  "gemini-3.1-pro-preview":
+    CONTEXT_WINDOW: 200000
 ```
 
 ## ⌨️ Shell Integration (Recommended)
