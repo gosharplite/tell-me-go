@@ -36,7 +36,7 @@ func TestAgent_Chat_Success(t *testing.T) {
 	reg := &testutil.MockToolRegistry{}
 	gw := &testutil.MockGateway{}
 	hManager := &testutil.MockHistoryManager{}
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
 	if err != nil {
@@ -83,7 +83,7 @@ func TestAgent_Chat_EngineFailure(t *testing.T) {
 	reg := &testutil.MockToolRegistry{}
 	gw := &testutil.MockGateway{}
 	hManager := &testutil.MockHistoryManager{}
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
 	if err != nil {
@@ -108,7 +108,7 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	reg := &testutil.MockToolRegistry{}
 	gw := &testutil.MockGateway{}
 	hManager := &testutil.MockHistoryManager{}
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
 	if err != nil {
@@ -149,7 +149,7 @@ func TestAgent_Chat_TelemetryFailure(t *testing.T) {
 	reg := &testutil.MockToolRegistry{}
 	gw := &testutil.MockGateway{}
 	hManager := &testutil.MockHistoryManager{}
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	// NewAgent will fail if applyConfig fails because of Publish failure?
 	// applyConfig uses events.SafePublish which logs error but doesn't return it if it's not a real error?
@@ -192,7 +192,7 @@ func TestAgent_Chat_TelemetryFailure_Actual(t *testing.T) {
 	reg := &testutil.MockToolRegistry{}
 	gw := &testutil.MockGateway{}
 	hManager := &testutil.MockHistoryManager{}
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
 	if err != nil {
@@ -220,7 +220,7 @@ func TestAgent_Chat_AddContentFailure(t *testing.T) {
 	hManager := &testutil.MockHistoryManager{AddContentFunc: func(ctx context.Context, content *llm.Content) error {
 		return expectedErr
 	}}
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
 	if err != nil {
@@ -241,7 +241,7 @@ func TestAgent_Chat_ApplyConfigFailure(t *testing.T) {
 	reg := &testutil.MockToolRegistry{}
 	gw := &testutil.MockGateway{}
 	hManager := &testutil.MockHistoryManager{}
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
 	if err != nil {

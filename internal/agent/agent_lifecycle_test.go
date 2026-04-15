@@ -23,13 +23,13 @@ func TestNewAgent_Initialization(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	// Use all options to increase coverage
 	chatter, err := NewAgent(gw, bus, reg,
 		WithSecurityManager(sm),
 		WithInternalTools(),
-		WithHistoryManager(&MockHistoryManager{}),
+		WithHistoryManager(&mockHistoryManager{}),
 		WithSessionProvider(&testutil.MockSessionProvider{}),
 		WithSummarizer(&testutil.MockSummarizer{}),
 		WithPricing("model", "mode", map[string]pricing.ModelPricing{"model": {Hit: 1.0}}),
@@ -56,7 +56,7 @@ func TestAgent_InternalAccessor(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestAgent_Subscribe(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	var capturedEvent events.Event
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
@@ -138,7 +138,7 @@ func TestAgent_SetTieredThreshold(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	var capturedEvent events.Event
 	bus.Subscribe(func(ctx context.Context, e events.Event) {
@@ -172,7 +172,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	reg := testutil.NewMockToolRegistry()
 
 	t.Run("Normal shutdown", func(t *testing.T) {
-		sm := &MockSecurityManager{AllowAll: true}
+		sm := &mockSecurityManager{AllowAll: true}
 		tl := &testutil.MockTurnsLogger{}
 		tl.On("Close").Return(nil)
 
@@ -197,7 +197,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	})
 
 	t.Run("TurnsLogger.Close error", func(t *testing.T) {
-		sm := &MockSecurityManager{AllowAll: true}
+		sm := &mockSecurityManager{AllowAll: true}
 		tl := &testutil.MockTurnsLogger{}
 		tl.On("Close").Return(assert.AnError)
 
@@ -210,7 +210,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	})
 
 	t.Run("EventBus.Flush error", func(t *testing.T) {
-		sm := &MockSecurityManager{AllowAll: true}
+		sm := &mockSecurityManager{AllowAll: true}
 		// Use a cancelled context to force Flush to fail
 		cancelCtx, cancel := context.WithCancel(ctx)
 		cancel()
@@ -225,7 +225,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	})
 
 	t.Run("EventBus.Shutdown error", func(t *testing.T) {
-		sm := &MockSecurityManager{AllowAll: true}
+		sm := &mockSecurityManager{AllowAll: true}
 		bus := &testutil.MockEventBus{}
 		bus.SetShutdownErr(assert.AnError)
 
@@ -243,7 +243,7 @@ func TestNewAgent_Errors(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	t.Run("Missing security manager", func(t *testing.T) {
 		chatter, err := NewAgent(gw, bus, reg)
@@ -306,7 +306,7 @@ func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	loader := &testutil.MockConfigLoader{}
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm), WithLoader(loader))
@@ -322,9 +322,9 @@ func TestAgent_Chat_AddContentError(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
-	hm := &MockHistoryManager{}
+	hm := &mockHistoryManager{}
 	hm.AddContentFunc = func(ctx context.Context, content *domain_llm.Content) error {
 		return assert.AnError
 	}
@@ -342,7 +342,7 @@ func TestAgent_Chat_ApplyConfigError(t *testing.T) {
 	gw := &testutil.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	chatter, err := NewAgent(gw, bus, reg, WithSecurityManager(sm))
 	require.NoError(t, err)

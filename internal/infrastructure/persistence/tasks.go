@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -21,13 +22,18 @@ type taskRepository struct {
 	mu       sync.RWMutex
 	filePath string
 	fs       persistence.FileSystem
+	logger   *slog.Logger
 }
 
 // newTaskRepository creates a new taskRepository.
-func newTaskRepository(fs persistence.FileSystem, filePath string) *taskRepository {
+func newTaskRepository(fs persistence.FileSystem, filePath string, logger *slog.Logger) *taskRepository {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &taskRepository{
 		filePath: filePath,
 		fs:       fs,
+		logger:   logger,
 	}
 }
 
@@ -69,7 +75,10 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]ports.Task, err
 			// This handles cases where log lines or other non-JSON data may have leaked into the file.
 			// [DEBUG] Log corrupted lines to help identify the source of leakage on Windows.
 			if strings.Contains(os.Getenv("TELL_ME_DEBUG"), "migration") {
-				fmt.Printf("DEBUG: corrupted task line in %s: %q (error: %v)\n", r.filePath, line, err)
+				r.logger.Debug("corrupted task line during migration",
+					slog.String("path", r.filePath),
+					slog.String("line", line),
+					slog.Any("error", err))
 			}
 			continue
 		}

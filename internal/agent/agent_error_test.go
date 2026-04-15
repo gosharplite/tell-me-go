@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
+	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestAgent_ConfigFailure(t *testing.T) {
@@ -22,7 +23,7 @@ func TestAgent_ConfigFailure(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	hm := &agent.MockHistoryManager{
+	hm := &testutil.MockHistoryManager{
 		AddContentFunc: func(c context.Context, content *llm.Content) error {
 			// Cancel context right after AddContent succeeds so applyConfig fails
 			cancel()

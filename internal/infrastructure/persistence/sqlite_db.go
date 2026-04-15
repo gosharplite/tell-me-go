@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -66,7 +67,7 @@ func createTables(ctx context.Context, db *sql.DB) error {
 }
 
 // migrateFromJSON migrates data from the old JSON/MD files into the new SQLite DB if the DB is empty.
-func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string) error {
+func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string, logger *slog.Logger) error {
 	var count int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tasks").Scan(&count); err != nil {
 		return fmt.Errorf("checking tasks table: %w", err)
@@ -75,20 +76,20 @@ func migrateFromJSON(ctx context.Context, db *sql.DB, fs persistence.FileSystem,
 		return nil // Already migrated or populated
 	}
 
-	if err := migrateTasks(ctx, db, fs, tasksPath); err != nil {
+	if err := migrateTasks(ctx, db, fs, tasksPath, logger); err != nil {
 		log.Printf("Failed to migrate tasks: %v", err)
 	}
 
 	return nil
 }
 
-func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string) error {
+func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksPath string, logger *slog.Logger) error {
 	stat, err := fs.Stat(ctx, tasksPath)
 	if err != nil || stat.IsDir() {
 		return nil
 	}
 
-	oldTasks := newTaskRepository(fs, tasksPath)
+	oldTasks := newTaskRepository(fs, tasksPath, logger)
 	tasks, err := oldTasks.ReadAll(ctx)
 	if err != nil || len(tasks) == 0 {
 		return err

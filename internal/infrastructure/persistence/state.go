@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -167,7 +168,7 @@ func initRepositories(ctx context.Context, configDir, storageType string) (ports
 	}
 
 	// Perform migration if needed
-	err = migrateFromJSON(ctx, db, fs, tasksPath)
+	err = migrateFromJSON(ctx, db, fs, tasksPath, slog.Default())
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

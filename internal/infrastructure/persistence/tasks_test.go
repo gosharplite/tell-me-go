@@ -40,7 +40,7 @@ func TestTaskRepository_LoadNonExistent(t *testing.T) {
 	_, ctx, _, tempDir := setupTaskRepo(t)
 	fs := NewOSFileSystem()
 
-	repo2 := newTaskRepository(fs, filepath.Join(tempDir, "non-existent.json"))
+	repo2 := newTaskRepository(fs, filepath.Join(tempDir, "non-existent.json"), nil)
 	loaded, err := repo2.ReadAll(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func setupTaskRepo(t *testing.T) (*taskRepository, context.Context, string, stri
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()
 	tasksFile := filepath.Join(tempDir, "tasks.json")
-	repo := newTaskRepository(fs, tasksFile)
+	repo := newTaskRepository(fs, tasksFile, nil)
 	return repo, ctx, tasksFile, tempDir
 }
 

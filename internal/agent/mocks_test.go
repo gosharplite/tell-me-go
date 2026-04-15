@@ -12,22 +12,22 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
-type MockSecurityManager struct {
+type mockSecurityManager struct {
 	domain_security.Manager
 	AllowAll bool
 }
 
-func (m *MockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
-func (m *MockSecurityManager) TerminalLock()                          {}
-func (m *MockSecurityManager) TerminalUnlock()                        {}
-func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
+func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
+func (m *mockSecurityManager) TerminalLock()                          {}
+func (m *mockSecurityManager) TerminalUnlock()                        {}
+func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.AllowAll
 }
 
-func (m *MockSecurityManager) Close() error { return nil }
+func (m *mockSecurityManager) Close() error { return nil }
 
-// MockHistoryManager implements ports.HistoryManager for testing.
-type MockHistoryManager struct {
+// mockHistoryManager implements ports.HistoryManager for testing.
+type mockHistoryManager struct {
 	mu       sync.RWMutex
 	Contents []*llm.Content
 	Backup   []*llm.Content
@@ -37,17 +37,17 @@ type MockHistoryManager struct {
 	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
 }
 
-func (m *MockHistoryManager) GetTotalEntries() int {
+func (m *mockHistoryManager) GetTotalEntries() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.Contents)
 }
 
-func (m *MockHistoryManager) GetLastUserMessage(ctx context.Context) (string, int, error) {
+func (m *mockHistoryManager) GetLastUserMessage(ctx context.Context) (string, int, error) {
 	return "", 0, nil
 }
 
-func (m *MockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -73,7 +73,7 @@ func (m *MockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int
 	return res, nil
 }
 
-func (m *MockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
+func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
 	if m.SetContentsFunc != nil {
 		return m.SetContentsFunc(ctx, contents)
 	}
@@ -83,11 +83,11 @@ func (m *MockHistoryManager) SetContents(ctx context.Context, contents []*llm.Co
 	return nil
 }
 
-func (m *MockHistoryManager) Archive(ctx context.Context, contents []*llm.Content) error {
+func (m *mockHistoryManager) Archive(ctx context.Context, contents []*llm.Content) error {
 	return nil
 }
 
-func (m *MockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
+func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
 	if m.AddContentFunc != nil {
 		return m.AddContentFunc(ctx, content)
 	}
@@ -97,11 +97,11 @@ func (m *MockHistoryManager) AddContent(ctx context.Context, content *llm.Conten
 	return nil
 }
 
-func (m *MockHistoryManager) GetResolver() llm.AssetResolver {
+func (m *mockHistoryManager) GetResolver() llm.AssetResolver {
 	return m.Resolver
 }
 
-func (m *MockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	startIdx := turnIndex * 2
@@ -113,11 +113,11 @@ func (m *MockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinne
 	return nil
 }
 
-func (m *MockHistoryManager) Save(ctx context.Context) error {
+func (m *mockHistoryManager) Save(ctx context.Context) error {
 	return nil
 }
 
-func (m *MockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
+func (m *mockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int, int, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -142,7 +142,7 @@ func (m *MockHistoryManager) RollbackTurns(ctx context.Context, turns int) (int,
 	return actualRemoved, remainingTurns, remainingMsgs, nil
 }
 
-func (m *MockHistoryManager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if index >= 0 && index < len(m.Contents) {
@@ -151,8 +151,11 @@ func (m *MockHistoryManager) AppendParts(ctx context.Context, index int, parts [
 	return nil
 }
 
-func (m *MockHistoryManager) GetFilePath() string { return "" }
+func (m *mockHistoryManager) GetFilePath() string { return "" }
 
-func (m *MockHistoryManager) Sync(ctx context.Context) error {
+func (m *mockHistoryManager) Sync(ctx context.Context) error {
 	return nil
 }
+
+func (m *mockHistoryManager) WaitStarted() {}
+
