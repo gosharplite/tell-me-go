@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -97,14 +98,17 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 		name     string
 		provider string
 		apiKey   string
+		url      string
 		wantErr  bool
 	}{
-		{"openai missing key", "openai", "", true},
-		{"deepseek missing key", "deepseek", "", true},
-		{"anthropic missing key", "anthropic", "", true},
-		{"unknown provider missing key", "unknown", "", true},
-		{"google missing key", "google", "", false},                     // Resolves to VertexAuth
-		{"unknown provider with key", "unknown", "explicit-key", false}, // Resolves to APIKeyAuth
+		{"openai missing key", "openai", "", "", true},
+		{"openai with vertex url", "openai", "", "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gpt-4", false},
+		{"deepseek missing key", "deepseek", "", "", true},
+		{"deepseek with vertex url", "deepseek", "", "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/deepseek-ai/models/deepseek-r1", false},
+		{"anthropic missing key", "anthropic", "", "", true},
+		{"unknown provider missing key", "unknown", "", "", true},
+		{"google missing key", "google", "", "", false},                     // Resolves to VertexAuth
+		{"unknown provider with key", "unknown", "explicit-key", "", false}, // Resolves to APIKeyAuth
 	}
 
 	for _, tt := range tests {
@@ -112,16 +116,25 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 			p := &config.LLMProvider{
 				Type:   tt.provider,
 				APIKey: tt.apiKey,
+				URL:    tt.url,
 			}
 			a, err := createAuthenticator(p)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("createAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			// If it's the unknown provider with a key, verify it uses APIKeyAuth
-			if !tt.wantErr && tt.provider == "unknown" {
-				if _, ok := a.(*auth.APIKeyAuth); !ok {
-					t.Errorf("expected *auth.APIKeyAuth for unknown provider with key, got %T", a)
+			if !tt.wantErr {
+				if tt.url != "" && strings.Contains(tt.url, "aiplatform.googleapis.com") {
+					if _, ok := a.(*auth.VertexAuth); !ok {
+						t.Errorf("expected *auth.VertexAuth for vertex url, got %T", a)
+					}
+				}
+
+				// If it's the unknown provider with a key, verify it uses APIKeyAuth
+				if tt.provider == "unknown" && tt.apiKey != "" {
+					if _, ok := a.(*auth.APIKeyAuth); !ok {
+						t.Errorf("expected *auth.APIKeyAuth for unknown provider with key, got %T", a)
+					}
 				}
 			}
 		})

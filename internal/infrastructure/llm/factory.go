@@ -106,12 +106,18 @@ type authStrategy func(*config.LLMProvider) (auth.Authenticator, error)
 var authStrategies = map[string]authStrategy{
 	"openai": func(p *config.LLMProvider) (auth.Authenticator, error) {
 		if p.APIKey == "" {
+			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
+				return &auth.VertexAuth{}, nil
+			}
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
 		return &auth.BearerAuth{Token: p.APIKey}, nil
 	},
 	"deepseek": func(p *config.LLMProvider) (auth.Authenticator, error) {
 		if p.APIKey == "" {
+			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
+				return &auth.VertexAuth{}, nil
+			}
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
 		return &auth.BearerAuth{Token: p.APIKey}, nil
