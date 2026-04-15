@@ -75,6 +75,7 @@ type SimpleEventBus struct {
 	listenCancel context.CancelFunc
 	listenG      *errgroup.Group
 	started      chan struct{}
+	startOnce    sync.Once
 
 	queueSize     int
 	asyncDispatch bool           // If false, runs synchronously
@@ -141,6 +142,15 @@ func (b *SimpleEventBus) WaitStarted() {
 		return
 	}
 	<-b.started
+}
+
+func (b *SimpleEventBus) signalStarted() {
+	if b == nil {
+		return
+	}
+	b.startOnce.Do(func() {
+		close(b.started)
+	})
 }
 
 func (b *SimpleEventBus) incPending() {
@@ -659,7 +669,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	b.mu.RUnlock()
 
 	if !async {
-		close(b.started)
+		b.signalStarted()
 		return nil
 	}
 
@@ -669,7 +679,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
-		close(b.started)
+		b.signalStarted()
 		return ErrBusClosed
 	}
 
@@ -712,7 +722,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	}
 
 	// Signal that the listener is fully initialized
-	close(b.started)
+	b.signalStarted()
 	b.mu.Unlock()
 
 	err := b.listenG.Wait()

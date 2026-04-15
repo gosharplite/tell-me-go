@@ -24,6 +24,7 @@ func (m *mockEventBusFail) Subscribe(sub func(context.Context, events.Event)) {}
 func (m *mockEventBusFail) Shutdown(ctx context.Context) error                { return m.shutdownErr }
 func (m *mockEventBusFail) Flush(ctx context.Context) error                   { return nil }
 func (m *mockEventBusFail) Listen(ctx context.Context) error                  { <-ctx.Done(); return ctx.Err() }
+func (m *mockEventBusFail) WaitStarted()                                    {}
 
 type mockEvent struct{}
 

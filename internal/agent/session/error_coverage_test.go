@@ -84,6 +84,7 @@ func (m *mockFailingEventBus) Subscribe(f func(context.Context, events.Event)) {
 func (m *mockFailingEventBus) Shutdown(ctx context.Context) error              { return nil }
 func (m *mockFailingEventBus) Flush(ctx context.Context) error                 { return nil }
 func (m *mockFailingEventBus) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
+func (m *mockFailingEventBus) WaitStarted()                                    {}
 
 func TestHistoryPruner_EventPublishError(t *testing.T) {
 	pruner := &HistoryPruner{

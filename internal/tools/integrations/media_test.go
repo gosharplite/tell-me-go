@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"go.uber.org/goleak"
 )
 
@@ -137,24 +138,29 @@ func TestMediaTools_CreateImage(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				if len(res.BinaryData) != tt.wantImages {
-					t.Errorf("got %d images, want %d", len(res.BinaryData), tt.wantImages)
-				}
-				if tt.assetsDir != "" {
-					files, _ := os.ReadDir(tt.assetsDir)
-					found := false
-					for _, f := range files {
-						if strings.HasPrefix(f.Name(), "image_") && strings.HasSuffix(f.Name(), ".png") {
-							found = true
-							break
-						}
-					}
-					if !found {
-						t.Errorf("expected image file to be saved in %s", tt.assetsDir)
-					}
-				}
+				verifyImageCreation(t, res, tt.assetsDir, tt.wantImages)
 			}
 		})
+	}
+}
+
+func verifyImageCreation(t *testing.T, res tools.ToolResult, assetsDir string, wantImages int) {
+	t.Helper()
+	if len(res.BinaryData) != wantImages {
+		t.Errorf("got %d images, want %d", len(res.BinaryData), wantImages)
+	}
+	if assetsDir != "" {
+		files, _ := os.ReadDir(assetsDir)
+		found := false
+		for _, f := range files {
+			if strings.HasPrefix(f.Name(), "image_") && strings.HasSuffix(f.Name(), ".png") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected image file to be saved in %s", assetsDir)
+		}
 	}
 }
 

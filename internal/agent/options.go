@@ -24,13 +24,6 @@ func WithHistoryManager(h ports.HistoryManager) AgentOption {
 	}
 }
 
-// WithSessionManager is an alias for WithHistoryManager as per architectural requirements.
-func WithSessionManager(h ports.HistoryManager) AgentOption {
-	return func(a *Agent) {
-		a.hManager = h
-	}
-}
-
 // WithSecurityManager sets the security manager for the agent.
 func WithSecurityManager(sm security.Manager) AgentOption {
 	return func(a *Agent) {

@@ -1056,6 +1056,7 @@ func (m *mockTransformerEventBus) Shutdown(ctx context.Context) error { return n
 func (m *mockTransformerEventBus) Flush(ctx context.Context) error { return nil }
 
 func (m *mockTransformerEventBus) Listen(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
+func (m *mockTransformerEventBus) WaitStarted() {}
 
 func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	ctx := context.Background()
