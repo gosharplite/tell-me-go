@@ -101,27 +101,32 @@ func newChatCommand(ctx *context, opts *cliOptions) *cobra.Command {
 
 // executeChat runs the chat command logic.
 func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []string) error {
-	// 1. Handle Diagnostic mode
+	// 1. Load config once for all subsequent paths
+	cfg, err := c.Loader.Load(opts.configPath)
+	if err != nil {
+		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
+	}
+
+	// 2. Handle Diagnostic mode
 	if opts.diagnostic {
-		cfg, err := c.Loader.Load(opts.configPath)
-		if err != nil {
-			return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
-		}
 		return c.ChatService.RunDiagnostics(ctx, cfg, opts.configPath, opts.jsonOutput)
 	}
 
-	// 2. Determine if we are just showing logs
+	// 3. Handle Turns Log streaming
 	if opts.showTurnsLog {
-		return c.handleStreamLogs(ctx, opts)
+		return c.ChatService.StreamTurnsLog(ctx, cfg, c.Stdout)
 	}
 
-	// 3. Load config and apply TUI override
-	cfg, err := c.loadConfig(opts, args)
-	if err != nil {
-		return err
+	// 4. Apply TUI overrides and state detection
+	if opts.tuiPrompt {
+		cfg.UseTUIPrompt = true
+	}
+	// Only auto-enable TUI from config if no other actions are requested
+	if cfg != nil && cfg.UseTUIPrompt && len(args) == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
+		opts.tuiPrompt = true
 	}
 
-	// 4. Setup Capturer
+	// 5. Setup Capturer
 	capturer, cleanup := c.buildCapturer(ctx, cfg, opts)
 	defer func() {
 		timeout := ports.DefaultShutdownTimeout
@@ -133,13 +138,13 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 		_ = cleanup(shutdownCtx)
 	}()
 
-	// 5. Capture Prompt
+	// 6. Capture Prompt
 	prompt, err := c.captureInput(ctx, capturer, opts, args)
 	if err != nil {
 		return err
 	}
 
-	// 6. Delegate business logic to ChatService
+	// 7. Delegate business logic to ChatService
 	return c.ChatService.ProcessMessage(ctx, cfg, agent.ChatCommand{
 		ConfigPath:   opts.configPath,
 		NewSession:   opts.newSession,
@@ -150,33 +155,6 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 		Retry:        opts.retry,
 		Prompt:       prompt,
 	}, capturer)
-}
-
-func (c *chatCommand) handleStreamLogs(ctx stdctx.Context, opts *cliOptions) error {
-	cfg, err := c.Loader.Load(opts.configPath)
-	if err != nil {
-		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
-	}
-
-	return c.ChatService.StreamTurnsLog(ctx, cfg, c.Stdout)
-}
-
-func (c *chatCommand) loadConfig(opts *cliOptions, args []string) (*domain_config.Config, error) {
-	cfg, err := c.Loader.Load(opts.configPath)
-	if err != nil {
-		return nil, fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
-	}
-
-	if opts.tuiPrompt {
-		cfg.UseTUIPrompt = true
-	}
-
-	// Only auto-enable TUI from config if no other actions are requested
-	if cfg != nil && cfg.UseTUIPrompt && len(args) == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
-		opts.tuiPrompt = true
-	}
-
-	return cfg, nil
 }
 
 func (c *chatCommand) captureInput(ctx stdctx.Context, capturer agent.CapturerInteractor, opts *cliOptions, args []string) (string, error) {
