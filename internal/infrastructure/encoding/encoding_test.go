@@ -151,8 +151,10 @@ func TestDecodeBytes(t *testing.T) {
 			// so an invalid UTF-8 sequence will be converted to valid UTF-8 if possible,
 			// or replaced with replacement characters.
 			if runtime.GOOS == "windows" && tt.name == "invalid UTF-8 sequence" {
-				if !utf8.Valid(got) {
-					t.Errorf("expected valid UTF-8 output on Windows for invalid input, got %v", got)
+				// On Windows, the output is valid UTF-8 if decoded via a legacy code page, 
+				// or identical to the input if the system already uses UTF-8 (CP 65001).
+				if !utf8.Valid(got) && string(got) != string(tt.expected) {
+					t.Errorf("got %v; want valid UTF-8 or raw input (%v)", got, tt.expected)
 				}
 				return
 			}
