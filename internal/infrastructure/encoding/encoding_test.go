@@ -5,8 +5,10 @@ package encoding
 
 import (
 	"io"
+	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestWrapReader(t *testing.T) {
@@ -144,6 +146,19 @@ func TestDecodeBytes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := DecodeBytes(tt.input)
+
+			// On Windows, DecodeBytes attempts to decode based on the system locale,
+			// so an invalid UTF-8 sequence will be converted to valid UTF-8 if possible,
+			// or replaced with replacement characters.
+			if runtime.GOOS == "windows" && tt.name == "invalid UTF-8 sequence" {
+				// On Windows, the output is valid UTF-8 if decoded via a legacy code page,
+				// or identical to the input if the system already uses UTF-8 (CP 65001).
+				if !utf8.Valid(got) && string(got) != string(tt.expected) {
+					t.Errorf("got %v; want valid UTF-8 or raw input (%v)", got, tt.expected)
+				}
+				return
+			}
+
 			if string(got) != string(tt.expected) {
 				t.Errorf("got %v; want %v", got, tt.expected)
 			}

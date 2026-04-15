@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -671,6 +672,10 @@ func TestGlobalPromptTracker_ProcessReversedLines_EmptyPromptInJSON(t *testing.T
 }
 
 func TestGlobalPromptTracker_PerformCompactionPass_CreateTempFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod on directories is not supported on Windows")
+	}
+
 	tmpDir := t.TempDir()
 	tr, _ := NewGlobalPromptTracker(tmpDir)
 	defer func() { _ = tr.Close() }()
