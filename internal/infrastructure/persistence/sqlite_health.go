@@ -49,16 +49,15 @@ func (c *SQLiteHealthChecker) Check(ctx context.Context) (*ports.ComponentReport
 	}
 
 	// Simple writability check for the directory
-	tempFile := filepath.Join(dir, ".health_check_tmp")
-	if f, err := os.Create(tempFile); err != nil {
+	f, err := os.CreateTemp(dir, "health_check_*.tmp")
+	if err != nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("database directory is not writable: %v", err)
 		report.Error = err
 		return report, nil
-	} else {
-		_ = f.Close()
-		_ = os.Remove(tempFile)
 	}
+	defer os.Remove(f.Name())
+	f.Close()
 
 	// Get file size
 	if dbInfo, err := os.Stat(c.dbPath); err == nil {
@@ -77,7 +76,7 @@ func (c *SQLiteHealthChecker) Check(ctx context.Context) (*ports.ComponentReport
 
 	// Step C: Integrity Check
 	var integrityResult string
-	err := c.db.QueryRowContext(ctx, "PRAGMA integrity_check;").Scan(&integrityResult)
+	err = c.db.QueryRowContext(ctx, "PRAGMA integrity_check;").Scan(&integrityResult)
 	if err != nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = fmt.Sprintf("integrity check failed to execute: %v", err)
