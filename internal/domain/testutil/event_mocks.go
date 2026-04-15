@@ -96,6 +96,9 @@ func (b *TestEventBus) Listen(ctx context.Context) error {
 	return ctx.Err()
 }
 
+// WaitStarted blocks until the listener goroutine is fully initialized.
+func (b *TestEventBus) WaitStarted() {}
+
 // GetEvents returns a copy of all recorded events.
 func (b *TestEventBus) GetEvents() []events.Event {
 	b.mu.RLock()
@@ -158,6 +161,7 @@ func (b *CountingEventBus) Listen(ctx context.Context) error {
 	<-ctx.Done()
 	return ctx.Err()
 }
+func (b *CountingEventBus) WaitStarted() {}
 func (b *CountingEventBus) GetCount() int {
 	return int(atomic.LoadInt32(&b.count))
 }

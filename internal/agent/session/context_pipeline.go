@@ -22,22 +22,22 @@ type Metadata = ports.ContextMetadata
 // request represents the input and state of a context preparation pipeline.
 type request = ports.ContextRequest
 
-// ContextPipeline manages the execution of multiple transformers.
-type ContextPipeline struct {
+// contextPipeline manages the execution of multiple transformers.
+type contextPipeline struct {
 	transformers []ports.ContextTransformer
 }
 
-func NewContextPipeline(transformers ...ports.ContextTransformer) *ContextPipeline {
+func NewContextPipeline(transformers ...ports.ContextTransformer) *contextPipeline {
 	// Sort by priority
 	sort.Slice(transformers, func(i, j int) bool {
 		return transformers[i].Priority() < transformers[j].Priority()
 	})
-	return &ContextPipeline{transformers: transformers}
+	return &contextPipeline{transformers: transformers}
 }
 
 // executeWithPersistence runs the pipeline and calls a persist function
 // after "canonical" modifications but before "transient" injections.
-func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *contextPipeline) executeWithPersistence(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
 	canonical, transient := p.partitionTransformers()
 
 	if err := p.executeTransformers(ctx, req, canonical); err != nil {
@@ -51,7 +51,7 @@ func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *reque
 	return p.executeTransformers(ctx, req, transient)
 }
 
-func (p *ContextPipeline) executeTransformers(ctx context.Context, req *request, transformers []ports.ContextTransformer) error {
+func (p *contextPipeline) executeTransformers(ctx context.Context, req *request, transformers []ports.ContextTransformer) error {
 	for _, t := range transformers {
 		// SCALABLE: Responsive context cancellation between transformer stages
 		select {
@@ -67,7 +67,7 @@ func (p *ContextPipeline) executeTransformers(ctx context.Context, req *request,
 	return nil
 }
 
-func (p *ContextPipeline) partitionTransformers() (canonical, transient []ports.ContextTransformer) {
+func (p *contextPipeline) partitionTransformers() (canonical, transient []ports.ContextTransformer) {
 	canonical = make([]ports.ContextTransformer, 0, len(p.transformers))
 	transient = make([]ports.ContextTransformer, 0, len(p.transformers))
 	for _, t := range p.transformers {
@@ -80,7 +80,7 @@ func (p *ContextPipeline) partitionTransformers() (canonical, transient []ports.
 	return
 }
 
-func (p *ContextPipeline) persistChanges(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *contextPipeline) persistChanges(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
 	if req.PersistHistory && persistFn != nil {
 		return persistFn(ctx, req.History)
 	}

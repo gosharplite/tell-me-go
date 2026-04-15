@@ -28,7 +28,7 @@ type ContextManager struct {
 	Strategy        *ContextStrategy
 	History         ports.HistoryManager
 	Events          events.EventBus
-	Pipeline        *ContextPipeline
+	Pipeline        *contextPipeline
 	Factory         *PipelineFactory
 	Summarizer      ports.Summarizer
 	SessionProvider ports.SessionProvider
@@ -162,7 +162,7 @@ func (cm *ContextManager) tryCache() ([]*llm.Content, *Metadata, bool) {
 	return cm.getCachedView(cm.version)
 }
 
-func (cm *ContextManager) loadHistory(ctx context.Context) (int, []*llm.Content, *ContextPipeline, error) {
+func (cm *ContextManager) loadHistory(ctx context.Context) (int, []*llm.Content, *contextPipeline, error) {
 	if err := cm.checkContext(ctx); err != nil {
 		return 0, nil, nil, err
 	}
@@ -183,7 +183,7 @@ func (cm *ContextManager) loadHistory(ctx context.Context) (int, []*llm.Content,
 	return snapshotVersion, history, cm.Pipeline, nil
 }
 
-func (cm *ContextManager) runPipeline(ctx context.Context, pipeline *ContextPipeline, req *request, snapshotVersion int) (bool, error) {
+func (cm *ContextManager) runPipeline(ctx context.Context, pipeline *contextPipeline, req *request, snapshotVersion int) (bool, error) {
 	if pipeline == nil {
 		return false, nil
 	}
@@ -210,7 +210,7 @@ func validateHistoryBoundaries(history []*llm.Content) error {
 	return nil
 }
 
-func (cm *ContextManager) executePipeline(ctx context.Context, pipeline *ContextPipeline, req *request, snapshotVersion int) (bool, error) {
+func (cm *ContextManager) executePipeline(ctx context.Context, pipeline *contextPipeline, req *request, snapshotVersion int) (bool, error) {
 	// We execute the pipeline to prepare the Read-Model (context window).
 	// We DO NOT persist the pruned/transformed history back to the store,
 	// preserving the user's full Event Sourced history safely on disk.
@@ -268,7 +268,7 @@ func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) 
 }
 
 // SetPipeline sets the context transformation pipeline.
-func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
+func (cm *ContextManager) SetPipeline(p *contextPipeline) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.version++

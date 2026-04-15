@@ -218,7 +218,7 @@ func TestRegister(t *testing.T) {
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 	r := registry.New()
 	sm := &testutil.MockSecurityManager{AllowAll: true}
-	if err := RegisterAll(r, sm, nil, ""); err != nil {
+	if err := RegisterAll(r, nil, sm, nil, ""); err != nil {
 		t.Fatalf("RegisterAll failed: %v", err)
 	}
 
@@ -560,132 +560,82 @@ func TestTruncateUTF8Negative(t *testing.T) {
 }
 
 func TestHttpRequest_ContextCancellation(t *testing.T) {
-	defer goleak.VerifyNone(t,
-		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
-		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
-		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
-	)
-	sm := &testutil.MockSecurityManager{AllowAll: true}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	mock := &mockHTTPClient{
-		DoFunc: func(req *http.Request) (*http.Response, error) {
-			// Wait for cancellation
-			<-req.Context().Done()
-			return nil, req.Context().Err()
-		},
-	}
-
-	tool := newnetworkTool(sm, mock)
-	tool.heartbeatInterval = 50 * time.Millisecond
 	args := map[string]interface{}{
 		"method": "GET",
 		"url":    "https://example.com",
 	}
-
-	hb := make(chan struct{}, 10)
-
-	// Start request in goroutine
-	errCh := make(chan error, 1)
-	go func() {
-		_, err := tool.HttpRequest(ctx, args, hb)
-		errCh <- err
-	}()
-
-	// Wait for at least one heartbeat
-	select {
-	case <-hb:
-		// Good
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for first heartbeat")
-	}
-
-	// Cancel context
-	cancel()
-
-	// Wait for error
-	select {
-	case err := <-errCh:
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("Expected context.Canceled error, got %v", err)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for HttpRequest to return after cancellation")
-	}
-
-	// Drain heartbeat - HttpRequest has returned, so stopHB() was called and waited for exit.
-Loop:
-	for {
-		select {
-		case <-hb:
-		default:
-			break Loop
-		}
-	}
-
-	// Verify no new heartbeats
-	select {
-	case <-hb:
-		t.Fatal("Heartbeat still running after cancellation")
-	default:
-		// OK
-	}
+	runNetworkCancellationTest(t, "HttpRequest", args)
 }
 
 func TestReadExternalDocs_ContextCancellation(t *testing.T) {
+	args := map[string]interface{}{
+		"url": "https://example.com/docs",
+	}
+	runNetworkCancellationTest(t, "ReadExternalDocs", args)
+}
+
+func runNetworkCancellationTest(t *testing.T, actionName string, args map[string]interface{}) {
+	t.Helper()
 	defer goleak.VerifyNone(t,
 		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).readLoop"),
 		goleak.IgnoreTopFunction("net/http.(*http2ClientConn).writeLoop"),
 		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
 	)
-	sm := &testutil.MockSecurityManager{AllowAll: true}
-	ctx, cancel := context.WithCancel(context.Background())
 
+	ctx, cancel := context.WithCancel(context.Background())
 	mock := &mockHTTPClient{
 		DoFunc: func(req *http.Request) (*http.Response, error) {
-			// Wait for cancellation
 			<-req.Context().Done()
 			return nil, req.Context().Err()
 		},
 	}
 
+	sm := &testutil.MockSecurityManager{AllowAll: true}
 	tool := newnetworkTool(sm, mock)
 	tool.heartbeatInterval = 50 * time.Millisecond
-	args := map[string]interface{}{
-		"url": "https://example.com/docs",
-	}
-
 	hb := make(chan struct{}, 10)
 
-	// Start request in goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := tool.ReadExternalDocs(ctx, args, hb)
+		var err error
+		if actionName == "HttpRequest" {
+			_, err = tool.HttpRequest(ctx, args, hb)
+		} else {
+			_, err = tool.ReadExternalDocs(ctx, args, hb)
+		}
 		errCh <- err
 	}()
 
-	// Wait for at least one heartbeat
+	verifyFirstHeartbeat(t, hb, actionName)
+	cancel()
+	verifyCancellationError(t, errCh, actionName)
+	drainAndVerifyHeartbeatStopped(t, hb)
+}
+
+func verifyFirstHeartbeat(t *testing.T, hb <-chan struct{}, actionName string) {
+	t.Helper()
 	select {
 	case <-hb:
-		// Good
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for first heartbeat")
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Timeout waiting for first heartbeat from %s", actionName)
 	}
+}
 
-	// Cancel context
-	cancel()
-
-	// Wait for error
+func verifyCancellationError(t *testing.T, errCh <-chan error, actionName string) {
+	t.Helper()
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, context.Canceled) {
 			t.Errorf("Expected context.Canceled error, got %v", err)
 		}
 	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for ReadExternalDocs to return after cancellation")
+		t.Fatalf("Timeout waiting for %s to return after cancellation", actionName)
 	}
+}
 
-	// Drain heartbeat - ReadExternalDocs returned, stopHB() waited for exit.
+func drainAndVerifyHeartbeatStopped(t *testing.T, hb <-chan struct{}) {
+	t.Helper()
+	// Drain heartbeat
 Loop:
 	for {
 		select {

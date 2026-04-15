@@ -55,7 +55,7 @@ func RegisterAll(params ToolRegistrationParams) error {
 	if err := developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem, archVerify); err != nil {
 		return err
 	}
-	if err := integrations.RegisterAll(params.Registry, params.SecurityManager, params.Client, params.AssetsDir); err != nil {
+	if err := integrations.RegisterAll(params.Registry, params.FileSystem, params.SecurityManager, params.Client, params.AssetsDir); err != nil {
 		return err
 	}
 	return nil

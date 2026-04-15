@@ -211,6 +211,7 @@ func (m *mockServiceEventBus) Subscribe(sub func(context.Context, events.Event))
 func (m *mockServiceEventBus) Shutdown(ctx context.Context) error { return m.Called(ctx).Error(0) }
 func (m *mockServiceEventBus) Flush(ctx context.Context) error    { return m.Called(ctx).Error(0) }
 func (m *mockServiceEventBus) Listen(ctx context.Context) error   { <-ctx.Done(); return ctx.Err() }
+func (m *mockServiceEventBus) WaitStarted()                       { m.Called() }
 
 // MockServiceEventBus is a mock of EventBus.
 type MockServiceEventBus = mockServiceEventBus

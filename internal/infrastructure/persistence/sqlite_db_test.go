@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ func TestSQLiteMigrations(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
+	if err := migrateFromJSON(ctx, db, fs, tasksFile, slog.Default()); err != nil {
 		t.Fatalf("migrateFromJSON failed: %v", err)
 	}
 
@@ -56,7 +57,7 @@ func testTasksMigration(t *testing.T, ctx context.Context, db *sql.DB) {
 
 func testMigrationIdempotency(t *testing.T, ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksFile string) {
 	t.Helper()
-	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
+	if err := migrateFromJSON(ctx, db, fs, tasksFile, slog.Default()); err != nil {
 		t.Fatalf("migrateFromJSON second run failed: %v", err)
 	}
 }
@@ -87,7 +88,7 @@ func TestSQLiteMigrations_MissingFiles(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	// Migration should not fail if files are missing
-	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
+	if err := migrateFromJSON(ctx, db, fs, tasksFile, slog.Default()); err != nil {
 		t.Fatalf("migrateFromJSON failed with missing files: %v", err)
 	}
 }
@@ -113,7 +114,7 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	// Migration should log an error but not fail the boot process
-	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
+	if err := migrateFromJSON(ctx, db, fs, tasksFile, slog.Default()); err != nil {
 		t.Fatalf("migrateFromJSON failed with invalid json: %v", err)
 	}
 
@@ -127,7 +128,7 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 	}
 
 	// Idempotency: second call should still work
-	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
+	if err := migrateFromJSON(ctx, db, fs, tasksFile, slog.Default()); err != nil {
 		t.Fatalf("migrateFromJSON second run failed: %v", err)
 	}
 }
@@ -151,7 +152,7 @@ func TestSQLiteMigrations_DirectoryAsFile(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	// Migration should handle directory as file path gracefully
-	if err := migrateFromJSON(ctx, db, fs, tasksDir); err != nil {
+	if err := migrateFromJSON(ctx, db, fs, tasksDir, slog.Default()); err != nil {
 		t.Fatalf("migrateFromJSON failed with directory as path: %v", err)
 	}
 }
@@ -194,7 +195,7 @@ func TestRepository_BulkInsert(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	if err := migrateFromJSON(ctx, db, fs, tasksFile); err != nil {
+	if err := migrateFromJSON(ctx, db, fs, tasksFile, slog.Default()); err != nil {
 		t.Fatalf("migrateFromJSON failed: %v", err)
 	}
 

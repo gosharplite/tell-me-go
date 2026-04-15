@@ -280,14 +280,8 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		bench = "."
 	}
 
-	// 1. Prevent Flag Injection
-	if strings.HasPrefix(strings.TrimSpace(path), "-") || strings.HasPrefix(strings.TrimSpace(bench), "-") {
-		return tools.ToolResult{}, fmt.Errorf("%w: arguments cannot start with a hyphen", domain_security.ErrSandboxViolation)
-	}
-
-	// 2. Enforce Sandbox
-	if safe, reason := m.validator.CheckPathSafety([]string{"go", path}); !safe {
-		return tools.ToolResult{}, fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
+	if err := m.validateBenchmarkArgs(path, bench); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	fullCmd := fmt.Sprintf("Run benchmarks matching %s in %s", bench, path)
@@ -315,6 +309,20 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, res.Error
 	}
 	return res, nil
+}
+
+func (m *devManager) validateBenchmarkArgs(path, bench string) error {
+	// 1. Prevent Flag Injection
+	if strings.HasPrefix(strings.TrimSpace(path), "-") || strings.HasPrefix(strings.TrimSpace(bench), "-") {
+		return fmt.Errorf("%w: arguments cannot start with a hyphen", domain_security.ErrSandboxViolation)
+	}
+
+	// 2. Enforce Sandbox
+	if safe, reason := m.validator.CheckPathSafety([]string{"go", path}); !safe {
+		return fmt.Errorf("%w: %s", domain_security.ErrSandboxViolation, reason)
+	}
+
+	return nil
 }
 
 func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {

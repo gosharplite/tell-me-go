@@ -350,6 +350,7 @@ func (m *MockEventBusFail) Subscribe(f func(context.Context, events.Event)) {}
 func (m *MockEventBusFail) Shutdown(ctx context.Context) error              { return nil }
 func (m *MockEventBusFail) Flush(ctx context.Context) error                 { return nil }
 func (m *MockEventBusFail) Listen(ctx context.Context) error                { <-ctx.Done(); return ctx.Err() }
+func (m *MockEventBusFail) WaitStarted()                                    {}
 
 // ToolBehavior defines the expected behavior of a tool for testing.
 type ToolBehavior struct {

@@ -253,6 +253,7 @@ func (m *errorEventBus) Subscribe(sub func(context.Context, events.Event)) {}
 func (m *errorEventBus) Shutdown(ctx context.Context) error                { return nil }
 func (m *errorEventBus) Flush(ctx context.Context) error                   { return nil }
 func (m *errorEventBus) Listen(ctx context.Context) error                  { <-ctx.Done(); return ctx.Err() }
+func (m *errorEventBus) WaitStarted()                                      {}
 
 func TestDispatcher_EmitEvent_ErrorLogging(t *testing.T) {
 	// Setup

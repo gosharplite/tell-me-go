@@ -1056,6 +1056,7 @@ func (m *mockTransformerEventBus) Shutdown(ctx context.Context) error { return n
 func (m *mockTransformerEventBus) Flush(ctx context.Context) error { return nil }
 
 func (m *mockTransformerEventBus) Listen(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
+func (m *mockTransformerEventBus) WaitStarted()                     {}
 
 func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	ctx := context.Background()
@@ -1128,7 +1129,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 	require.False(t, req.Metadata.MaintenanceBlocked)
 }
 
-func setupTestPipeline(maxTokens int) (*ContextPipeline, *ContextStrategy) {
+func setupTestPipeline(maxTokens int) (*contextPipeline, *ContextStrategy) {
 	counter := NewHeuristicTokenCounter(&testutil.MockToolRegistry{})
 	strategy := NewContextStrategy(counter)
 	strategy.SetLimits(maxTokens, 10, 20)

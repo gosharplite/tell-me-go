@@ -157,5 +157,5 @@ func (f TurnProcessorFunc) Process(ctx context.Context, Turn *Turn) (ProcessResu
 	return f(ctx, Turn)
 }
 
-// TurnMiddleware wraps a TurnProcessor to inject cross-cutting concerns.
-type TurnMiddleware func(TurnProcessor) TurnProcessor
+// turnMiddleware wraps a TurnProcessor to inject cross-cutting concerns.
+type turnMiddleware func(TurnProcessor) TurnProcessor

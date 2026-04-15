@@ -63,6 +63,10 @@ func (m *mockEventBus) Listen(ctx context.Context) error {
 	return args.Error(0)
 }
 
+func (m *mockEventBus) WaitStarted() {
+	m.Called()
+}
+
 func TestSummarizer_Summarize(t *testing.T) {
 	ctx := context.Background()
 	subset := []*llm.Content{

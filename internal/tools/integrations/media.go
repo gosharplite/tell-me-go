@@ -6,12 +6,12 @@ package integrations
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/telemetry"
@@ -25,8 +25,9 @@ func withMediaHeartbeatInterval(d time.Duration) mediaOption {
 	}
 }
 
-func newMediaManager(sm security.PathValidator, client llm.LLMClient, assetsDir string, opts ...mediaOption) *mediaManager {
+func newMediaManager(fs persistence.FileSystem, sm security.PathValidator, client llm.LLMClient, assetsDir string, opts ...mediaOption) *mediaManager {
 	m := &mediaManager{
+		fs:                fs,
 		sm:                sm,
 		client:            client,
 		assetsDir:         assetsDir,
@@ -39,6 +40,7 @@ func newMediaManager(sm security.PathValidator, client llm.LLMClient, assetsDir 
 }
 
 type mediaManager struct {
+	fs                persistence.FileSystem
 	sm                security.PathValidator
 	client            llm.LLMClient
 	assetsDir         string
@@ -74,7 +76,7 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("generate images: %w", err)
 	}
 
-	return m.saveImagesToDisk(images, req.Prompt)
+	return m.saveImagesToDisk(ctx, images, req.Prompt)
 }
 
 func (m *mediaManager) parseImageArgs(args map[string]interface{}) (*imageRequest, error) {
@@ -98,7 +100,7 @@ func (m *mediaManager) parseImageArgs(args map[string]interface{}) (*imageReques
 	}, nil
 }
 
-func (m *mediaManager) saveImagesToDisk(images [][]byte, prompt string) (tools.ToolResult, error) {
+func (m *mediaManager) saveImagesToDisk(ctx context.Context, images [][]byte, prompt string) (tools.ToolResult, error) {
 	result := tools.ToolResult{
 		Text: fmt.Sprintf("Generated %d images for prompt: %s", len(images), prompt),
 	}
@@ -110,10 +112,10 @@ func (m *mediaManager) saveImagesToDisk(images [][]byte, prompt string) (tools.T
 		// Auto-save to assetsDir
 		if m.assetsDir != "" {
 			filename := filepath.Join(m.assetsDir, fmt.Sprintf("image_%d_%d.png", time.Now().Unix(), i))
-			if err := os.MkdirAll(m.assetsDir, 0755); err != nil {
+			if err := m.fs.MkdirAll(ctx, m.assetsDir, 0755); err != nil {
 				return tools.ToolResult{}, fmt.Errorf("create assets directory: %w", err)
 			}
-			if err := os.WriteFile(filename, data, 0644); err != nil {
+			if err := m.fs.AtomicWrite(ctx, filename, data, 0644); err != nil {
 				return tools.ToolResult{}, fmt.Errorf("write image file %s: %w", filename, err)
 			}
 			result.Text += fmt.Sprintf("\nSaved to %s", filename)
@@ -139,7 +141,7 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, fmt.Errorf("security validation failed for path %s: %w", a.Filepath, err)
 	}
 
-	data, err := os.ReadFile(safePath)
+	data, err := m.fs.ReadFile(ctx, safePath)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("read file %s: %w", safePath, err)
 	}

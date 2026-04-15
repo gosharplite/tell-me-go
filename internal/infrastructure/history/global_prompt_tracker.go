@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
@@ -33,6 +34,7 @@ const (
 
 // globalPromptTracker handles atomic recording of user prompts.
 type globalPromptTracker struct {
+	fs                 persistence.FileSystem
 	filepath           string
 	compacting         atomic.Bool
 	mu                 sync.RWMutex
@@ -41,7 +43,7 @@ type globalPromptTracker struct {
 }
 
 // NewGlobalPromptTracker creates a new tracker pointing to the specified home directory.
-func NewGlobalPromptTracker(homeDir string) (ports.PromptTracker, error) {
+func NewGlobalPromptTracker(fs persistence.FileSystem, homeDir string) (ports.PromptTracker, error) {
 	// 1. Define Paths
 	globalDir := filepath.Join(homeDir, "output")
 	trackerPath := filepath.Join(globalDir, "global_prompts.jsonl")
@@ -51,38 +53,58 @@ func NewGlobalPromptTracker(homeDir string) (ports.PromptTracker, error) {
 	legacyRootPath := filepath.Join(homeDir, "global_prompts.jsonl")
 
 	// 2. Ensure the output directory exists
-	if err := os.MkdirAll(globalDir, 0755); err != nil {
+	ctx := context.Background()
+	if err := fs.MkdirAll(ctx, globalDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory for prompt tracker: %w", err)
 	}
 
 	tracker := &globalPromptTracker{
+		fs:       fs,
 		filepath: trackerPath,
 	}
 
 	// 3. Multi-Stage Migration Logic
-	if _, err := os.Stat(trackerPath); os.IsNotExist(err) {
+	if _, err := fs.Stat(ctx, trackerPath); os.IsNotExist(err) {
 		var srcPath string
 
 		// Check .tellmego/prompts.jsonl first
-		if _, err := os.Stat(legacyHiddenPath); err == nil {
+		if _, err := fs.Stat(ctx, legacyHiddenPath); err == nil {
 			srcPath = legacyHiddenPath
-		} else if _, err := os.Stat(legacyRootPath); err == nil {
+		} else if _, err := fs.Stat(ctx, legacyRootPath); err == nil {
 			// Check global_prompts.jsonl in root second
 			srcPath = legacyRootPath
 		}
 
 		if srcPath != "" {
 			// Perform robust migration (rename or copy+delete)
-			if err := os.Rename(srcPath, trackerPath); err != nil {
-				if copyErr := copyFile(srcPath, trackerPath); copyErr != nil {
-					return tracker, fmt.Errorf("failed to migrate history file from %s: %w", srcPath, copyErr)
+			// Note: Rename is not part of FileSystem interface?
+			// Wait, FileSystem interface does NOT have Rename.
+			// I should use copy + remove if Rename is not available.
+			// Actually, let's check FileSystem again.
+			/*
+				type FileSystem interface {
+					ReadDir(ctx context.Context, name string) ([]os.DirEntry, error)
+					ReadFile(ctx context.Context, name string) ([]byte, error)
+					WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error
+					AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error
+					MkdirAll(ctx context.Context, path string, perm os.FileMode) error
+					Stat(ctx context.Context, name string) (os.FileInfo, error)
+					Open(ctx context.Context, name string) (File, error)
+					OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error)
+					Remove(ctx context.Context, name string) error
+					RemoveAll(ctx context.Context, path string) error
+					Walk(ctx context.Context, root string, fn WalkFunc) error
 				}
-				_ = os.Remove(srcPath)
+			*/
+			// It doesn't have Rename.
+			if err := copyFile(ctx, fs, srcPath, trackerPath); err != nil {
+				return tracker, fmt.Errorf("failed to migrate history file from %s: %w", srcPath, err)
 			}
+			_ = fs.Remove(ctx, srcPath)
 
 			// Cleanup the .tellmego folder if it's now empty
 			if srcPath == legacyHiddenPath {
-				_ = os.Remove(filepath.Dir(legacyHiddenPath))
+				_ = fs.Remove(ctx, filepath.Dir(legacyHiddenPath))
 			}
 		}
 	}
@@ -110,7 +132,7 @@ func (t *globalPromptTracker) Append(ctx context.Context, prompt string) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	f, err := os.OpenFile(t.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := t.fs.OpenFile(ctx, t.filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open global prompts file: %w", err)
 	}
@@ -121,7 +143,7 @@ func (t *globalPromptTracker) Append(ctx context.Context, prompt string) error {
 	}
 
 	var size int64
-	if info, err := f.Stat(); err == nil {
+	if info, err := t.fs.Stat(ctx, t.filepath); err == nil {
 		size = info.Size()
 	}
 
@@ -171,7 +193,7 @@ func (t *globalPromptTracker) loadTopUniqueEntries(ctx context.Context, limit in
 }
 
 func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit int) ([]promptEntry, error) {
-	f, err := os.Open(t.filepath)
+	f, err := t.fs.Open(ctx, t.filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -180,7 +202,7 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 	}
 	defer func() { _ = f.Close() }()
 
-	info, err := f.Stat()
+	info, err := t.fs.Stat(ctx, t.filepath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat global prompts file: %w", err)
 	}
@@ -214,7 +236,7 @@ func (t *globalPromptTracker) doLoadTopUniqueEntries(ctx context.Context, limit 
 }
 
 type reverseScanner struct {
-	file     *os.File
+	file     persistence.File
 	pos      int64
 	leftover []byte
 }
@@ -284,7 +306,7 @@ func (t *globalPromptTracker) compactLog(ctx context.Context) {
 		// If so, loop and try again. This ensures that a burst of appends doesn't
 		// leave the file uncompacted just because the last append arrived while
 		// a previous compaction attempt was finishing.
-		newInfo, err := os.Stat(t.filepath)
+		newInfo, err := t.fs.Stat(ctx, t.filepath)
 		if err != nil || newInfo.Size() <= compactionThresholdBytes {
 			return
 		}
@@ -303,7 +325,7 @@ func (t *globalPromptTracker) compactLog(ctx context.Context) {
 // It returns true if successful, false if aborted due to concurrent writes or errors.
 func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
 	// Capture initial size for optimistic concurrency check
-	info, err := os.Stat(t.filepath)
+	info, err := t.fs.Stat(ctx, t.filepath)
 	if err != nil {
 		return false
 	}
@@ -320,23 +342,9 @@ func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
 		entries[i], entries[j] = entries[j], entries[i]
 	}
 
-	// 2. Write to temp file
-	tmpFile, err := os.CreateTemp(filepath.Dir(t.filepath), filepath.Base(t.filepath)+".tmp-*")
-	if err != nil {
-		return false
-	}
-	tmpPath := tmpFile.Name()
-
-	defer func() {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
-	}()
-
-	if !t.writeCompactedTempFile(tmpFile, entries) {
-		return false
-	}
-
-	if err := tmpFile.Close(); err != nil {
+	// 2. Prepare compacted data in memory (safe for small threshold)
+	var buf bytes.Buffer
+	if !t.writeCompactedData(&buf, entries) {
 		return false
 	}
 
@@ -345,15 +353,15 @@ func (t *globalPromptTracker) performCompactionPass(ctx context.Context) bool {
 	defer t.mu.Unlock()
 
 	// Check if file size has changed (meaning Append was called in the background)
-	newInfo, err := os.Stat(t.filepath)
+	newInfo, err := t.fs.Stat(ctx, t.filepath)
 	if err != nil || newInfo.Size() != initialSize {
 		return false // Abort this pass
 	}
 
-	return os.Rename(tmpPath, t.filepath) == nil
+	return t.fs.AtomicWrite(ctx, t.filepath, buf.Bytes(), 0644) == nil
 }
 
-func (t *globalPromptTracker) writeCompactedTempFile(w io.Writer, entries []promptEntry) bool {
+func (t *globalPromptTracker) writeCompactedData(w io.Writer, entries []promptEntry) bool {
 	for _, entry := range entries {
 		data, err := json.Marshal(entry)
 		if err != nil {
@@ -366,31 +374,12 @@ func (t *globalPromptTracker) writeCompactedTempFile(w io.Writer, entries []prom
 	return true
 }
 
-func copyFile(src, dst string) (err error) {
-	source, openErr := os.Open(src)
-	if openErr != nil {
-		return openErr
-	}
-	defer func() { _ = source.Close() }()
-
-	destination, createErr := os.Create(dst)
-	if createErr != nil {
-		return createErr
-	}
-
-	// Capture Close error for the writable destination
-	defer func() {
-		closeErr := destination.Close()
-		if err == nil {
-			err = closeErr
-		}
-	}()
-
-	if _, err = io.Copy(destination, source); err != nil {
+func copyFile(ctx context.Context, fs persistence.FileSystem, src, dst string) (err error) {
+	data, err := fs.ReadFile(ctx, src)
+	if err != nil {
 		return err
 	}
-
-	return destination.Sync()
+	return fs.AtomicWrite(ctx, dst, data, 0644)
 }
 
 // noOpPromptTracker is a fail-safe implementation that does nothing.

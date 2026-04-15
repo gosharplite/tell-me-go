@@ -153,9 +153,9 @@ func (m *MockRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int, see
 	return 0, m.Retry
 }
 
-// NewCostCapturer creates a new CostCapturer.
-func NewCostCapturer(bus events.EventBus) *CostCapturer {
-	c := &CostCapturer{Bus: bus}
+// NewCostCapturer creates a new costCapturer.
+func NewCostCapturer(bus events.EventBus) *costCapturer {
+	c := &costCapturer{Bus: bus}
 	bus.Subscribe(func(ctx context.Context, ev events.Event) {
 		c.Mu.Lock()
 		defer c.Mu.Unlock()
@@ -171,22 +171,22 @@ func NewCostCapturer(bus events.EventBus) *CostCapturer {
 	return c
 }
 
-// CostCapturer captures usage metrics and Turn status events for assertions.
-type CostCapturer struct {
+// costCapturer captures usage metrics and Turn status events for assertions.
+type costCapturer struct {
 	Mu           sync.Mutex
 	Bus          events.EventBus
 	TurnCosts    []float64
 	LastTaskCost float64
 }
 
-func (c *CostCapturer) Reset() {
+func (c *costCapturer) Reset() {
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
 	c.TurnCosts = nil
 	c.LastTaskCost = 0
 }
 
-func (c *CostCapturer) AssertTaskCost(t interface{ Errorf(string, ...any) }, expected float64) {
+func (c *costCapturer) AssertTaskCost(t interface{ Errorf(string, ...any) }, expected float64) {
 	_ = c.Bus.Flush(context.Background())
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
@@ -195,7 +195,7 @@ func (c *CostCapturer) AssertTaskCost(t interface{ Errorf(string, ...any) }, exp
 	}
 }
 
-func (c *CostCapturer) AssertTurnCosts(t interface{ Errorf(string, ...any) }, expected []float64) {
+func (c *costCapturer) AssertTurnCosts(t interface{ Errorf(string, ...any) }, expected []float64) {
 	_ = c.Bus.Flush(context.Background())
 	c.Mu.Lock()
 	defer c.Mu.Unlock()

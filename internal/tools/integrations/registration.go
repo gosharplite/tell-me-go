@@ -7,14 +7,15 @@ import (
 	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // RegisterAll registers all external integration tools.
-func RegisterAll(r tools.Registry, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
+func RegisterAll(r tools.Registry, fs persistence.FileSystem, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
 	// Register Media Tools
-	if err := registerMedia(r, sm, client, assetsDir); err != nil {
+	if err := registerMedia(r, fs, sm, client, assetsDir); err != nil {
 		return err
 	}
 
@@ -47,8 +48,8 @@ func RegisterAll(r tools.Registry, sm domain_security.Manager, client llm.LLMCli
 	return nil
 }
 
-func registerMedia(r tools.Registry, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
-	m := newMediaManager(sm, client, assetsDir)
+func registerMedia(r tools.Registry, fs persistence.FileSystem, sm domain_security.Manager, client llm.LLMClient, assetsDir string) error {
+	m := newMediaManager(fs, sm, client, assetsDir)
 
 	if err := r.RegisterToToolkitWithOptions("media", &tools.ToolDeclaration{
 		Name:        "create_image",

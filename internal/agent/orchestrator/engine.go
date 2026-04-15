@@ -62,31 +62,31 @@ type Engine struct {
 	events       events.EventBus
 	turnsLogger  ports.TurnsLogger // Optional turns logger for coordinated telemetry
 	processors   map[TurnPhase]TurnProcessor
-	middleware   []TurnMiddleware
+	middleware   []turnMiddleware
 	hooks        []TurnHook
 	RetryPolicy  RetryPolicy
 	clock        clock.Clock
 }
 
-// EngineOption allows configuring the Engine.
-type EngineOption func(*Engine, *engineConfig)
+// engineOption allows configuring the Engine.
+type engineOption func(*Engine, *engineConfig)
 
 // WithEngineClock sets a custom clock implementation.
-func WithEngineClock(c clock.Clock) EngineOption {
+func WithEngineClock(c clock.Clock) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		e.clock = c
 	}
 }
 
 // WithEngineCostTracker sets the cost tracker for the engine.
-func WithEngineCostTracker(tracker domain_pricing.CostTracker) EngineOption {
+func WithEngineCostTracker(tracker domain_pricing.CostTracker) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		cfg.CostTracker = tracker
 	}
 }
 
 // WithEngineConfig sets the security and usage configuration for the engine.
-func WithEngineConfig(sm domain_security.Manager, providerName, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) EngineOption {
+func WithEngineConfig(sm domain_security.Manager, providerName, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		cfg.SM = sm
 		cfg.ProviderName = providerName
@@ -97,14 +97,14 @@ func WithEngineConfig(sm domain_security.Manager, providerName, model, mode stri
 }
 
 // WithEngineLogger sets the logger for the engine.
-func WithEngineLogger(l ports.Logger) EngineOption {
+func WithEngineLogger(l ports.Logger) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		cfg.Logger = l
 	}
 }
 
 // ApplyOptions applies new options to the engine.
-func (e *Engine) ApplyOptions(opts ...EngineOption) {
+func (e *Engine) ApplyOptions(opts ...engineOption) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -132,7 +132,7 @@ func (e *Engine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.CostTrack
 }
 
 // NewEngine creates a new Engine with a default pipeline.
-func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...EngineOption) *Engine {
+func NewEngine(gw llm.LLMGateway, ex ToolExecutor, cm *session.ContextManager, reg tools.Registry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *Engine {
 	backoff := 2 * time.Second
 	rateLimitBackoff := 5 * time.Second
 
@@ -423,35 +423,35 @@ func (e *Engine) StartTelemetry(ctx context.Context) error {
 }
 
 // WithEngineTurnsLogger sets the turns logger for the engine.
-func WithEngineTurnsLogger(tl ports.TurnsLogger) EngineOption {
+func WithEngineTurnsLogger(tl ports.TurnsLogger) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		e.turnsLogger = tl
 	}
 }
 
 // WithEngineMiddleware adds middleware to the engine.
-func WithEngineMiddleware(m ...TurnMiddleware) EngineOption {
+func WithEngineMiddleware(m ...turnMiddleware) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		e.middleware = append(e.middleware, m...)
 	}
 }
 
 // WithEngineProcessor overrides a phase processor.
-func WithEngineProcessor(phase TurnPhase, p TurnProcessor) EngineOption {
+func WithEngineProcessor(phase TurnPhase, p TurnProcessor) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		e.processors[phase] = p
 	}
 }
 
 // WithEngineHook adds a Turn hook to the engine.
-func WithEngineHook(h TurnHook) EngineOption {
+func WithEngineHook(h TurnHook) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		e.hooks = append(e.hooks, h)
 	}
 }
 
 // WithEngineRetryPolicy sets the retry policy for the engine.
-func WithEngineRetryPolicy(p RetryPolicy) EngineOption {
+func WithEngineRetryPolicy(p RetryPolicy) engineOption {
 	return func(e *Engine, cfg *engineConfig) {
 		e.RetryPolicy = p
 	}
