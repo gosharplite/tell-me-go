@@ -50,6 +50,98 @@ type defaultMetricsProvider struct{}
 func (d *defaultMetricsProvider) GetCPUStats() (int64, int64) { return 0, 0 }
 func (d *defaultMetricsProvider) GetMemoryPercent() float64   { return 0.0 }
 
+// healthStatusRenderer handles status-to-color mapping and overall status formatting
+type healthStatusRenderer struct{}
+
+// renderOverallStatus renders the header and overall status section
+func (hsr *healthStatusRenderer) renderOverallStatus(ui uiState, stderr io.Writer, report *ports.HealthReport) {
+	overallColor := colorGreen
+	switch report.OverallStatus {
+	case ports.StatusUnhealthy:
+		overallColor = colorRed
+	case ports.StatusDegraded:
+		overallColor = colorYellow
+	}
+
+	_, _ = fmt.Fprintf(stderr, "Overall Status: %s%s%s\n", ui.c(overallColor), strings.ToUpper(string(report.OverallStatus)), ui.c(colorReset))
+	_, _ = fmt.Fprintf(stderr, "Timestamp:      %s\n\n", report.Timestamp.Format(time.RFC3339))
+}
+
+// componentDetailRenderer handles component message and detail rendering
+type componentDetailRenderer struct{}
+
+// renderComponents iterates through all components and renders each one
+func (cdr *componentDetailRenderer) renderComponents(ui uiState, stderr io.Writer, report *ports.HealthReport) {
+	components := []ports.Component{ports.CompPersistence, ports.CompLLMProvider, ports.CompToolchain}
+	for _, comp := range components {
+		cr, ok := report.Components[comp]
+		if !ok {
+			continue
+		}
+		cdr.renderComponent(ui, stderr, comp, cr)
+		_, _ = fmt.Fprintln(stderr)
+	}
+}
+
+// renderComponent renders a single component with its details
+func (cdr *componentDetailRenderer) renderComponent(ui uiState, stderr io.Writer, comp ports.Component, cr ports.ComponentReport) {
+	statusColor := colorGreen
+	switch cr.Status {
+	case ports.StatusUnhealthy:
+		statusColor = colorRed
+	case ports.StatusDegraded:
+		statusColor = colorYellow
+	}
+
+	_, _ = fmt.Fprintf(stderr, "%s[%s]%s %-12s : %s\n", ui.c(statusColor), strings.ToUpper(string(cr.Status)), ui.c(colorReset), comp, cr.Message)
+
+	if cr.Details != nil {
+		cdr.renderComponentDetails(ui, stderr, cr.Details)
+	}
+}
+
+// renderComponentDetails renders the details map for a component
+func (cdr *componentDetailRenderer) renderComponentDetails(ui uiState, stderr io.Writer, details interface{}) {
+	if detailsMap, ok := details.(map[string]any); ok {
+		for k, v := range detailsMap {
+			if k == "binaries" {
+				continue // Show binaries separately or handle specially
+			}
+			_, _ = fmt.Fprintf(stderr, "    %s%s:%s %v\n", ui.c(colorGray), k, ui.c(colorReset), v)
+		}
+
+		if bins, ok := detailsMap["binaries"].(map[string]any); ok {
+			bdr := &binaryDependencyRenderer{}
+			bdr.renderBinaries(ui, stderr, bins)
+		}
+	}
+}
+
+// binaryDependencyRenderer handles binary version string formatting
+type binaryDependencyRenderer struct{}
+
+// renderBinaryInfo renders a single binary entry
+func (bdr *binaryDependencyRenderer) renderBinaryInfo(ui uiState, stderr io.Writer, name string, info map[string]any) {
+	ver := info["version_string"]
+	if ver == nil || ver == "" {
+		ver = "unknown version"
+	}
+	req := ""
+	if r, ok := info["is_required"].(bool); ok && r {
+		req = " (required)"
+	}
+	_, _ = fmt.Fprintf(stderr, "    %s%s:%s %s%s\n", ui.c(colorGray), name, ui.c(colorReset), ver, req)
+}
+
+// renderBinaries renders the binaries map with version information
+func (bdr *binaryDependencyRenderer) renderBinaries(ui uiState, stderr io.Writer, bins map[string]any) {
+	for name, infoRaw := range bins {
+		if info, ok := infoRaw.(map[string]any); ok {
+			bdr.renderBinaryInfo(ui, stderr, name, info)
+		}
+	}
+}
+
 // NewRenderer creates a new ports.UIRenderer.
 func NewRenderer(locker domain_security.Manager, stdout, stderr io.Writer, clk clock.Clock, metricsProvider ports.SystemMetricsProvider) ports.UIRenderer {
 	if clk == nil {
@@ -787,60 +879,24 @@ func (r *stdUIRenderer) RenderHealthReport(ctx context.Context, report *ports.He
 
 	_, _ = fmt.Fprintf(stderr, "\n%s═══ System Health Diagnostic ═══%s\n\n", ui.c(colorBlue), ui.c(colorReset))
 
-	overallColor := colorGreen
-	switch report.OverallStatus {
-	case ports.StatusUnhealthy:
-		overallColor = colorRed
-	case ports.StatusDegraded:
-		overallColor = colorYellow
-	}
-
-	_, _ = fmt.Fprintf(stderr, "Overall Status: %s%s%s\n", ui.c(overallColor), strings.ToUpper(string(report.OverallStatus)), ui.c(colorReset))
-	_, _ = fmt.Fprintf(stderr, "Timestamp:      %s\n\n", report.Timestamp.Format(time.RFC3339))
-
-	components := []ports.Component{ports.CompPersistence, ports.CompLLMProvider, ports.CompToolchain}
-	for _, comp := range components {
-		cr, ok := report.Components[comp]
-		if !ok {
-			continue
-		}
-
-		statusColor := colorGreen
-		switch cr.Status {
-		case ports.StatusUnhealthy:
-			statusColor = colorRed
-		case ports.StatusDegraded:
-			statusColor = colorYellow
-		}
-
-		_, _ = fmt.Fprintf(stderr, "%s[%s]%s %-12s : %s\n", ui.c(statusColor), strings.ToUpper(string(cr.Status)), ui.c(colorReset), comp, cr.Message)
-
-		if cr.Details != nil {
-			if details, ok := cr.Details.(map[string]any); ok {
-				for k, v := range details {
-					if k == "binaries" {
-						continue // Show binaries separately or handle specially
-					}
-					_, _ = fmt.Fprintf(stderr, "    %s%s:%s %v\n", ui.c(colorGray), k, ui.c(colorReset), v)
-				}
-
-				if bins, ok := details["binaries"].(map[string]any); ok {
-					for name, infoRaw := range bins {
-						if info, ok := infoRaw.(map[string]any); ok {
-							ver := info["version_string"]
-							if ver == nil || ver == "" {
-								ver = "unknown version"
-							}
-							req := ""
-							if r, ok := info["is_required"].(bool); ok && r {
-								req = " (required)"
-							}
-							_, _ = fmt.Fprintf(stderr, "    %s%s:%s %s%s\n", ui.c(colorGray), name, ui.c(colorReset), ver, req)
-						}
-					}
-				}
-			}
-		}
-		_, _ = fmt.Fprintln(stderr)
-	}
+	r.renderOverallStatus(ui, stderr, report)
+	r.renderComponents(ui, stderr, report)
 }
+
+// renderOverallStatus renders the header and overall status section
+func (r *stdUIRenderer) renderOverallStatus(ui uiState, stderr io.Writer, report *ports.HealthReport) {
+	hsr := &healthStatusRenderer{}
+	hsr.renderOverallStatus(ui, stderr, report)
+}
+
+// renderComponents iterates through all components and renders each one
+func (r *stdUIRenderer) renderComponents(ui uiState, stderr io.Writer, report *ports.HealthReport) {
+	cdr := &componentDetailRenderer{}
+	cdr.renderComponents(ui, stderr, report)
+}
+
+
+
+
+
+
