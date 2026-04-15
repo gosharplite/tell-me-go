@@ -282,3 +282,27 @@ func TestGetActiveProvider(t *testing.T) {
 		})
 	}
 }
+
+func TestDeepSeekPricingMatch(t *testing.T) {
+	t.Parallel()
+	pData := DefaultPricing()
+
+	tests := []struct {
+		model    string
+		expected float64
+	}{
+		{"deepseek-reasoner", 0.028},
+		{"deepseek-v3", 0.028},
+		{"deepseek-ai/deepseek-v3", 0.028},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			pricing, found := findBestMatch(pData.Models, tt.model, func(p pricing.ModelPricing) bool {
+				return p.Hit > 0
+			})
+			assert.True(t, found)
+			assert.Equal(t, tt.expected, pricing.Hit)
+		})
+	}
+}

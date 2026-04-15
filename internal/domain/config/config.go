@@ -161,7 +161,7 @@ func DefaultPricing() pricing.PricingData {
 				Miss: 1.75,
 				Comp: 14.00,
 			},
-			"deepseek-reasoner": {
+			"deepseek-": {
 				Hit:      0.028,
 				Miss:     0.28,
 				Comp:     0.42,
