@@ -50,6 +50,8 @@ type EventBus interface {
 	// Listen starts the event bus's internal workers and blocks until the context is canceled.
 	// [ARCHITECTURAL REFACTOR] This replaces the previous fire-and-forget goroutine pattern.
 	Listen(ctx context.Context) error
+	// WaitStarted blocks until the listener goroutine is fully initialized.
+	WaitStarted()
 }
 
 type subscriberWrapper struct {
@@ -67,6 +69,12 @@ type SimpleEventBus struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	log               *slog.Logger
+
+	running      bool
+	listenCtx    context.Context
+	listenCancel context.CancelFunc
+	listenG      *errgroup.Group
+	started      chan struct{}
 
 	queueSize     int
 	asyncDispatch bool           // If false, runs synchronously
@@ -117,6 +125,7 @@ func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 		log:               slog.Default(),
 		asyncDispatch:     defaultAsyncDispatch,
 		queueSize:         defaultQueueSize,
+		started:           make(chan struct{}),
 	}
 	b.cond = sync.NewCond(&b.pendingMu)
 
@@ -125,6 +134,13 @@ func NewSimpleEventBus(ctx context.Context, opts ...busOption) *SimpleEventBus {
 	}
 
 	return b
+}
+
+func (b *SimpleEventBus) WaitStarted() {
+	if b == nil {
+		return
+	}
+	<-b.started
 }
 
 func (b *SimpleEventBus) incPending() {
@@ -325,6 +341,10 @@ func (b *SimpleEventBus) Subscribe(sub func(context.Context, Event)) {
 
 	w := b.newWrapper(&funcSubscriber{f: sub})
 	b.globalSubscribers = append(b.globalSubscribers, w)
+
+	if b.running && b.asyncDispatch {
+		b.startSubscriberLoop(w)
+	}
 }
 
 // SubscribeGlobal registers a Subscriber that receives all events.
@@ -342,6 +362,10 @@ func (b *SimpleEventBus) SubscribeGlobal(sub Subscriber) {
 
 	w := b.newWrapper(sub)
 	b.globalSubscribers = append(b.globalSubscribers, w)
+
+	if b.running && b.asyncDispatch {
+		b.startSubscriberLoop(w)
+	}
 }
 
 // SubscribeSubscriber registers a Subscriber for a specific event type.
@@ -359,6 +383,26 @@ func (b *SimpleEventBus) SubscribeSubscriber(eventType string, sub Subscriber) {
 
 	w := b.newWrapper(sub)
 	b.subscribers[eventType] = append(b.subscribers[eventType], w)
+
+	if b.running && b.asyncDispatch {
+		b.startSubscriberLoop(w)
+	}
+}
+
+// startSubscriberLoop starts the background worker loop for a given subscriber.
+// It assumes b.mu is held by the caller.
+func (b *SimpleEventBus) startSubscriberLoop(w *subscriberWrapper) {
+	b.workerWG.Add(1)
+	b.listenG.Go(func() error {
+		defer func() {
+			if r := recover(); r != nil {
+				b.getLogger().Error("panic in dynamic event bus subscriber loop",
+					slog.Any("error", r),
+					slog.String("stack", string(debug.Stack())))
+			}
+		}()
+		return b.subscriberLoop(b.listenCtx, w)
+	})
 }
 
 // Shutdown gracefully stops the event bus.
@@ -615,18 +659,37 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	b.mu.RUnlock()
 
 	if !async {
+		close(b.started)
 		return nil
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
+	// Create a derived context for the listener
+	g, listenCtx := errgroup.WithContext(ctx)
 
-	// Collect all current subscribers to start their workers
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
+		close(b.started)
 		return ErrBusClosed
 	}
 
+	if b.running {
+		b.mu.Unlock()
+		return nil // Already running
+	}
+
+	b.running = true
+	b.listenCtx = listenCtx
+	b.listenG = g
+
+	// Coordinated shutdown: even if there are no subscribers,
+	// the bus should stay "running" until the context is cancelled.
+	b.listenG.Go(func() error {
+		<-listenCtx.Done()
+		return nil
+	})
+
+	// Collect all current subscribers to start their workers
 	var wrappers []*subscriberWrapper
 	for _, ws := range b.subscribers {
 		wrappers = append(wrappers, ws...)
@@ -636,7 +699,7 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 	for _, w := range wrappers {
 		w := w
 		b.workerWG.Add(1)
-		g.Go(func() error {
+		b.listenG.Go(func() error {
 			defer func() {
 				if r := recover(); r != nil {
 					b.getLogger().Error("panic in event bus subscriber loop",
@@ -644,10 +707,19 @@ func (b *SimpleEventBus) Listen(ctx context.Context) error {
 						slog.String("stack", string(debug.Stack())))
 				}
 			}()
-			return b.subscriberLoop(ctx, w)
+			return b.subscriberLoop(b.listenCtx, w)
 		})
 	}
+
+	// Signal that the listener is fully initialized
+	close(b.started)
 	b.mu.Unlock()
 
-	return g.Wait()
+	err := b.listenG.Wait()
+
+	b.mu.Lock()
+	b.running = false
+	b.mu.Unlock()
+
+	return err
 }
