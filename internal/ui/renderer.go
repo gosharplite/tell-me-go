@@ -894,9 +894,3 @@ func (r *stdUIRenderer) renderComponents(ui uiState, stderr io.Writer, report *p
 	cdr := &componentDetailRenderer{}
 	cdr.renderComponents(ui, stderr, report)
 }
-
-
-
-
-
-
