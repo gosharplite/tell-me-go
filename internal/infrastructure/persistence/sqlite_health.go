@@ -56,8 +56,10 @@ func (c *SQLiteHealthChecker) Check(ctx context.Context) (*ports.ComponentReport
 		report.Error = err
 		return report, nil
 	}
-	defer os.Remove(f.Name())
-	f.Close()
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}()
 
 	// Get file size
 	if dbInfo, err := os.Stat(c.dbPath); err == nil {
