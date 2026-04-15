@@ -30,7 +30,10 @@ func TestSimpleEventBus_DynamicSubscription(t *testing.T) {
 	})
 
 	// Publish an event AFTER starting and subscribing
-	bus.Publish(ctx, StatusUpdate{Message: "test"})
+	err := bus.Publish(ctx, StatusUpdate{Message: "test"})
+	if err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
 
 	select {
 	case <-received:
@@ -50,7 +53,9 @@ func TestSimpleEventBus_DynamicSubscription_Specific(t *testing.T) {
 	
 	bus := NewSimpleEventBus(ctx)
 
-	go bus.Listen(ctx)
+	go func() {
+		_ = bus.Listen(ctx)
+	}()
 	bus.WaitStarted()
 
 	received := make(chan Event, 1)

@@ -72,7 +72,6 @@ type SimpleEventBus struct {
 
 	running      bool
 	listenCtx    context.Context
-	listenCancel context.CancelFunc
 	listenG      *errgroup.Group
 	started      chan struct{}
 	startOnce    sync.Once
