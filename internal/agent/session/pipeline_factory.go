@@ -32,7 +32,7 @@ type PipelineFactory struct {
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.
-func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPipeline {
+func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *contextPipeline {
 	// 1. Calculate window size based on profile
 	windowTurns := limits.MaxHistoryTurns
 	if f.Profile == profilePrecise {
