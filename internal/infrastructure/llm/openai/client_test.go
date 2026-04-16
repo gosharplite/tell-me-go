@@ -1515,3 +1515,55 @@ func TestResponsesAPIRouting(t *testing.T) {
 		}
 	})
 }
+
+func TestVertexPriorityHeader(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		resp := chatResponse{
+			ID: "test-id",
+			Choices: []choice{
+				{
+					Message: message{
+						Role:    "assistant",
+						Content: "Hello world",
+					},
+					FinishReason: "stop",
+				},
+			},
+			Usage: usage{
+				PromptTokens:     10,
+				CompletionTokens: 20,
+				TotalTokens:      30,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+	server := httptest.NewServer(http.HandlerFunc(handler))
+	defer server.Close()
+
+	t.Run("Priority Header Present", func(t *testing.T) {
+		c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"X-Vertex-AI-LLM-Shared-Request-Type": "priority"}))
+
+		_, metrics, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if metrics.TrafficType != "ON_DEMAND_PRIORITY" {
+			t.Errorf("expected TrafficType 'ON_DEMAND_PRIORITY', got %q", metrics.TrafficType)
+		}
+	})
+
+	t.Run("Priority Header Absent", func(t *testing.T) {
+		c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"})
+
+		_, metrics, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if metrics.TrafficType != "" {
+			t.Errorf("expected empty TrafficType, got %q", metrics.TrafficType)
+		}
+	})
+}
