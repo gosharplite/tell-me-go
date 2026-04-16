@@ -376,3 +376,27 @@ func TestDefaultPricing(t *testing.T) {
 		t.Error("expected gpt-5 to be present in default pricing")
 	}
 }
+
+func TestLoad_ModelWithDots(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_dots.yaml")
+	yamlContent := `
+MODELS:
+  "deepseek-ai/deepseek-v3.2-maas":
+    CONTEXT_WINDOW: 163840
+    PRICING:
+      COMP: 5.40
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("failed to load: %v", err)
+	}
+
+	modelName := "deepseek-ai/deepseek-v3.2-maas"
+	if _, ok := cfg.Models[modelName]; !ok {
+		t.Errorf("expected model '%s' to be present, got keys: %v", modelName, cfg.Models)
+	}
+}

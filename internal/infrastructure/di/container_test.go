@@ -929,7 +929,8 @@ func TestBootstrapper_Cleanup_ChainsErrors(t *testing.T) {
 }
 
 func TestBootstrapper_GetPricingOverrides(t *testing.T) {
-	b := &Bootstrapper{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := &Bootstrapper{Logger: logger}
 	cfg := &config.Config{
 		Models: map[string]config.ModelConfig{
 			"model1": {

@@ -3,7 +3,9 @@
 
 package pricing
 
-import "strings"
+import (
+	"strings"
+)
 
 // UsageStats holds aggregated token counts for a session.
 type UsageStats struct {

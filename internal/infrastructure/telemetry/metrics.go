@@ -195,14 +195,34 @@ func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	mtModel := mt.Model
 	if mtModel == "" {
 		mtModel = t.modelName
+		if os.Getenv("TELL_ME_DEBUG") == "1" {
+			fmt.Printf("[DEBUG COST] Metrics.Model is empty, using tracker.modelName: %s\n", mtModel)
+		}
+	} else if os.Getenv("TELL_ME_DEBUG") == "1" {
+		fmt.Printf("[DEBUG COST] Using Metrics.Model: %s\n", mtModel)
 	}
+	
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		fmt.Printf("[DEBUG COST] Token counts - Prompt: %d, Cached: %d, Response: %d, Thinking: %d\n",
+			mt.PromptTokens, mt.CachedTokens, mt.ResponseTokens, mt.ThinkingTokens)
+	}
+	
 	p := GetModelPricing(mtModel, t.pricing)
-
+	
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		fmt.Printf("[DEBUG COST] Retrieved pricing - Hit: %f, Miss: %f, Comp: %f, Thinking: %f\n",
+			p.Hit, p.Miss, p.Comp, p.Thinking)
+	}
+	
 	var dummy domain_pricing.UsageStats
 	turnStats := accumulate(&dummy, mt)
 	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
 	turnCost := calc.Calculate(turnStats).TotalCost
-
+	
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		fmt.Printf("[DEBUG COST] Calculated turn cost: %f\n", turnCost)
+	}
+	
 	accumulate(&t.stats, mt)
 	t.totalCost += turnCost
 

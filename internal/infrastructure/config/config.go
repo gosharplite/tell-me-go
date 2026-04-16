@@ -38,14 +38,38 @@ func (l *YAMLConfigLoader) Load(path string) (*domain_config.Config, error) {
 
 // load reads and parses the configuration file.
 func load(path string) (*domain_config.Config, error) {
-	v := viper.New()
+	// Only show debug output if TELL_ME_DEBUG=1
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		fmt.Printf("[DEBUG CONFIG] ========================================\n")
+		fmt.Printf("[DEBUG CONFIG] Loading configuration file: %s\n", path)
+		
+		fileExists := func(p string) bool {
+			_, err := os.Stat(p)
+			return err == nil
+		}
+		fmt.Printf("[DEBUG CONFIG] File exists: %v\n", fileExists(path))
+	}
+
+	v := viper.NewWithOptions(viper.KeyDelimiter("::"))
 
 	// 1. Read the file content
 	data, err := os.ReadFile(path)
 	if err == nil {
+		if os.Getenv("TELL_ME_DEBUG") == "1" {
+			fmt.Printf("[DEBUG CONFIG] Raw YAML content (first 1000 chars):\n%s\n", string(data[:min(len(data), 1000)]))
+		}
+		
 		v.SetConfigType("yaml")
 		if err := v.ReadConfig(strings.NewReader(string(data))); err != nil {
 			return nil, fmt.Errorf("viper failed to read config: %w", err)
+		}
+		
+		// Debug: Show what Viper parsed
+		if os.Getenv("TELL_ME_DEBUG") == "1" {
+			fmt.Printf("[DEBUG CONFIG] Viper parsed keys:\n")
+			for _, key := range v.AllKeys() {
+				fmt.Printf("  %s = %v\n", key, v.Get(key))
+			}
 		}
 	} else if !os.IsNotExist(err) {
 		// Fail on real errors (like permissions), but allow missing file (12-Factor App)
@@ -54,8 +78,8 @@ func load(path string) (*domain_config.Config, error) {
 
 	// 2. Set Environment Overrides (Standardized to TELL_ME_)
 	v.SetEnvPrefix("TELL_ME")
-	// Replace dots and dashes so TELL_ME_PROVIDERS_GOOGLE_API_KEY maps to Providers.Google.APIKey
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	// Replace custom delimiter and dashes so TELL_ME_PROVIDERS_GOOGLE_API_KEY maps to Providers::Google::APIKey
+	v.SetEnvKeyReplacer(strings.NewReplacer("::", "_", "-", "_"))
 	v.AutomaticEnv()
 
 	// 3. Bind Legacy GOSHARP_* variables for backward compatibility
@@ -83,10 +107,31 @@ func load(path string) (*domain_config.Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal viper config: %w", err)
 	}
 
+	// Debug the Models field after unmarshaling
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		fmt.Printf("[DEBUG CONFIG] After unmarshaling, cfg.Models count: %d\n", len(cfg.Models))
+		for k, v := range cfg.Models {
+			fmt.Printf("[DEBUG CONFIG] Model: %s\n", k)
+			fmt.Printf("[DEBUG CONFIG]   ContextWindow: %d\n", v.ContextWindow)
+			fmt.Printf("[DEBUG CONFIG]   Pricing: %+v\n", v.Pricing)
+			fmt.Printf("[DEBUG CONFIG]   Pricing.Comp: %f\n", v.Pricing.Comp)
+			fmt.Printf("[DEBUG CONFIG]   Pricing.Hit: %f\n", v.Pricing.Hit)
+			fmt.Printf("[DEBUG CONFIG]   Pricing.Miss: %f\n", v.Pricing.Miss)
+			fmt.Printf("[DEBUG CONFIG]   Pricing.Thinking: %f\n", v.Pricing.Thinking)
+		}
+	}
+
 	// 6. Execute legacy fallback synchronization
 	syncLegacyFields(&cfg)
 
 	return &cfg, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func expandEnvHook(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
