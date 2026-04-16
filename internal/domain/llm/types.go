@@ -56,6 +56,7 @@ type Metrics struct {
 	Provider               string  `json:"provider,omitempty"`
 	Model                  string  `json:"model,omitempty"`
 	CachedTokens           int32   `json:"cached_tokens"`
+	CacheWriteTokens       int32   `json:"cache_write_tokens,omitempty"`
 	PromptTokens           int32   `json:"prompt_tokens"`
 	ResponseTokens         int32   `json:"response_tokens"`
 	TotalTokens            int32   `json:"total_tokens"`

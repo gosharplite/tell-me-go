@@ -9,21 +9,23 @@ import (
 
 // UsageStats holds aggregated token counts for a session.
 type UsageStats struct {
-	PromptTokens   int64
-	ResponseTokens int64
-	CachedTokens   int64
-	SearchQueries  int64
-	ThinkingTokens int64
+	PromptTokens     int64
+	ResponseTokens   int64
+	CachedTokens     int64
+	CacheWriteTokens int64
+	SearchQueries    int64
+	ThinkingTokens   int64
 }
 
 // CostBreakdown represents the final financial calculation results.
 type CostBreakdown struct {
-	Stats      UsageStats
-	InputCost  float64
-	CacheCost  float64
-	OutputCost float64
-	SearchCost float64
-	TotalCost  float64
+	Stats          UsageStats
+	InputCost      float64
+	CacheCost      float64
+	CacheWriteCost float64
+	OutputCost     float64
+	SearchCost     float64
+	TotalCost      float64
 }
 
 // ModelPricing represents the cost structure for a specific tier.
@@ -98,9 +100,10 @@ func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 
 	cb.InputCost = float64(inputTokens) * p.Miss / 1e6
 	cb.CacheCost = float64(stats.CachedTokens) * p.Hit / 1e6
+	cb.CacheWriteCost = float64(stats.CacheWriteTokens) * (p.Miss * 1.25) / 1e6
 	cb.OutputCost = (float64(stats.ResponseTokens) * p.Comp / 1e6) + (float64(stats.ThinkingTokens) * thinkingRate / 1e6)
 	cb.SearchCost = float64(stats.SearchQueries) * p.SearchQuery
 
-	cb.TotalCost = cb.InputCost + cb.CacheCost + cb.OutputCost + cb.SearchCost
+	cb.TotalCost = cb.InputCost + cb.CacheCost + cb.CacheWriteCost + cb.OutputCost + cb.SearchCost
 	return cb
 }

@@ -111,12 +111,13 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...
 }
 
 type messagesRequest struct {
-	Model     string      `json:"model"`
-	Messages  []message   `json:"messages"`
-	System    interface{} `json:"system,omitempty"`
-	MaxTokens int         `json:"max_tokens"`
-	Tools     []tool      `json:"tools,omitempty"`
-	Thinking  *thinking   `json:"thinking,omitempty"`
+	Model            string      `json:"model,omitempty"`
+	AnthropicVersion string      `json:"anthropic_version,omitempty"`
+	Messages         []message   `json:"messages"`
+	System           interface{} `json:"system,omitempty"`
+	MaxTokens        int         `json:"max_tokens"`
+	Tools            []tool      `json:"tools,omitempty"`
+	Thinking         *thinking   `json:"thinking,omitempty"`
 }
 
 type systemBlock struct {
@@ -140,15 +141,16 @@ type message struct {
 }
 
 type contentBlock struct {
-	Type      string      `json:"type"`
-	Text      string      `json:"text,omitempty"`
-	Thinking  string      `json:"thinking,omitempty"`
-	Signature string      `json:"signature,omitempty"`
-	ID        string      `json:"id,omitempty"`          // for tool_use
-	Name      string      `json:"name,omitempty"`        // for tool_use
-	Input     interface{} `json:"input,omitempty"`       // for tool_use
-	ToolUseID string      `json:"tool_use_id,omitempty"` // for tool_result
-	Content   interface{} `json:"content,omitempty"`     // for tool_result (string or array)
+	Type         string        `json:"type"`
+	Text         string        `json:"text,omitempty"`
+	Thinking     string        `json:"thinking,omitempty"`
+	Signature    string        `json:"signature,omitempty"`
+	ID           string        `json:"id,omitempty"`          // for tool_use
+	Name         string        `json:"name,omitempty"`        // for tool_use
+	Input        interface{}   `json:"input,omitempty"`       // for tool_use
+	ToolUseID    string        `json:"tool_use_id,omitempty"` // for tool_result
+	Content      interface{}   `json:"content,omitempty"`     // for tool_result (string or array)
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 type tool struct {
@@ -167,11 +169,24 @@ type messagesResponse struct {
 }
 
 type usage struct {
-	InputTokens              int32 `json:"input_tokens"`
-	OutputTokens             int32 `json:"output_tokens"`
-	ThinkingTokens           int32 `json:"thinking_tokens,omitempty"`
-	CacheCreationInputTokens int32 `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     int32 `json:"cache_read_input_tokens,omitempty"`
+	InputTokens              int32            `json:"input_tokens"`
+	OutputTokens             int32            `json:"output_tokens"`
+	ThinkingTokens           int32            `json:"thinking_tokens,omitempty"`
+	CacheCreationInputTokens int32            `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int32            `json:"cache_read_input_tokens,omitempty"`
+	ExtraProperties          *extraProperties `json:"extra_properties,omitempty"`
+}
+
+type extraProperties struct {
+	Google *googleProperties `json:"google,omitempty"`
+}
+
+type googleProperties struct {
+	TrafficType string `json:"traffic_type,omitempty"`
+}
+
+func (c *client) isVertex() bool {
+	return strings.Contains(c.baseURL, "aiplatform.googleapis.com")
 }
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -212,6 +227,11 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	totalDuration := time.Since(startTime)
 
 	// Log platform-aware timing breakdown
+	endpoint := "/messages"
+	if c.isVertex() {
+		endpoint = ":rawPredict"
+	}
+
 	c.logger.Debug("http_timing_breakdown",
 		"platform", runtime.GOOS,
 		"provider", "anthropic",
@@ -219,7 +239,7 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		"ttfb_ms", ttfb.Milliseconds(),
 		"body_read_ms", bodyReadTime.Milliseconds(),
 		"total_ms", totalDuration.Milliseconds(),
-		"endpoint", "/messages",
+		"endpoint", endpoint,
 	)
 
 	return c.fromAnthropicResponse(&msgResp, totalDuration.Seconds())
@@ -244,6 +264,16 @@ func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message,
 		}
 
 		messages = c.appendOrMergeMessage(messages, role, blocks)
+	}
+
+	// Apply cache breakpoint to the last message in history to enable conversation history caching
+	if len(messages) > 0 {
+		lastMsg := &messages[len(messages)-1]
+		if len(lastMsg.Content) > 0 {
+			lastMsg.Content[len(lastMsg.Content)-1].CacheControl = &cacheControl{
+				Type: "ephemeral",
+			}
+		}
 	}
 
 	return system, messages, nil
@@ -272,8 +302,20 @@ func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBloc
 		role = "user"
 	}
 
-	blocks := make([]contentBlock, 0, len(h.Parts))
+	blocks := make([]contentBlock, 0, len(h.Parts)+len(h.TransientParts))
+	// Process standard parts
 	for _, p := range h.Parts {
+		block, ok, err := c.partToContentBlock(p, role)
+		if err != nil {
+			return "", nil, err
+		}
+		if ok {
+			blocks = append(blocks, block)
+		}
+	}
+
+	// Process transient parts
+	for _, p := range h.TransientParts {
 		block, ok, err := c.partToContentBlock(p, role)
 		if err != nil {
 			return "", nil, err
@@ -437,14 +479,38 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 
 	content.Validate() // Final boundary sanitization
 
+	promptTokens := resp.Usage.InputTokens
+	if c.isVertex() {
+		// Vertex AI reports input_tokens as only the newly added tokens (delta).
+		// Total context = input_tokens + cache_creation + cache_read
+		promptTokens += resp.Usage.CacheReadInputTokens + resp.Usage.CacheCreationInputTokens
+	}
+
 	metrics := &llm.Metrics{
-		Model:          c.model,
-		PromptTokens:   resp.Usage.InputTokens,
-		ResponseTokens: resp.Usage.OutputTokens,
-		ThinkingTokens: resp.Usage.ThinkingTokens,
-		CachedTokens:   resp.Usage.CacheReadInputTokens,
-		TotalTokens:    resp.Usage.InputTokens + resp.Usage.OutputTokens,
-		Duration:       duration,
+		Model:            c.model,
+		PromptTokens:     promptTokens,
+		ResponseTokens:   resp.Usage.OutputTokens,
+		ThinkingTokens:   resp.Usage.ThinkingTokens,
+		CachedTokens:     resp.Usage.CacheReadInputTokens,
+		CacheWriteTokens: resp.Usage.CacheCreationInputTokens,
+		TotalTokens:      promptTokens + resp.Usage.OutputTokens,
+		Duration:         duration,
+	}
+
+	// 1. Primary: Source of Truth (Server Response Metadata)
+	if resp.Usage.ExtraProperties != nil && resp.Usage.ExtraProperties.Google != nil && resp.Usage.ExtraProperties.Google.TrafficType != "" {
+		metrics.TrafficType = resp.Usage.ExtraProperties.Google.TrafficType
+	}
+
+	// 2. Secondary: Fallback (Reflected Intent from Headers)
+	if metrics.TrafficType == "" {
+		for k, v := range c.headers {
+			normalizedK := strings.ReplaceAll(strings.ToLower(k), "_", "-")
+			if normalizedK == "x-vertex-ai-llm-shared-request-type" && strings.TrimSpace(strings.ToLower(v)) == "priority" {
+				metrics.TrafficType = "ON_DEMAND_PRIORITY"
+				break
+			}
+		}
 	}
 
 	// Log token throughput for diagnostics
@@ -458,6 +524,7 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 			"duration_sec", metrics.Duration,
 			"tokens_per_sec", tokensPerSec,
 			"cached_tokens", metrics.CachedTokens,
+			"cache_creation_tokens", resp.Usage.CacheCreationInputTokens,
 			"thinking_tokens", metrics.ThinkingTokens,
 		)
 	}
@@ -498,6 +565,11 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 		Tools:     c.toAnthropicTools(toolDecls),
 	}
 
+	if c.isVertex() {
+		reqPayload.AnthropicVersion = "vertex-2023-10-16"
+		reqPayload.Model = "" // Model is in the URL for Vertex
+	}
+
 	if systemStr != "" {
 		reqPayload.System = []systemBlock{
 			{
@@ -530,14 +602,21 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 }
 
 func (c *client) buildHTTPRequest(ctx context.Context, body []byte) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/messages", bytes.NewBuffer(body))
+	url := c.baseURL + "/messages"
+	if c.isVertex() {
+		url = c.baseURL + "/" + c.model + ":rawPredict"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("anthropic-beta", "prompt-caching-2024-07-31")
+	if !c.isVertex() {
+		req.Header.Set("anthropic-version", "2023-06-01")
+		req.Header.Set("anthropic-beta", "prompt-caching-2024-07-31")
+	}
 
 	// Apply custom headers
 	for k, v := range c.headers {
