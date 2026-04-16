@@ -24,6 +24,15 @@ import (
 func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 	p := cfg.GetActiveProvider()
 
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
+
+	logger.Debug("active_provider_config",
+		"name", cfg.SelectedProvider,
+		"type", p.Type,
+		"headers_count", len(p.Headers))
+
 	authenticator, err := createAuthenticator(&p)
 	if err != nil {
 		return nil, err

@@ -252,6 +252,16 @@ type usage struct {
 	// DeepSeek standard
 	PromptCacheHitTokens  int32 `json:"prompt_cache_hit_tokens,omitempty"`
 	PromptCacheMissTokens int32 `json:"prompt_cache_miss_tokens,omitempty"`
+	// Vertex AI standard
+	ExtraProperties *extraProperties `json:"extra_properties,omitempty"`
+}
+
+type extraProperties struct {
+	Google *googleProperties `json:"google,omitempty"`
+}
+
+type googleProperties struct {
+	TrafficType string `json:"traffic_type,omitempty"`
 }
 
 type promptTokensDetails struct {
@@ -799,8 +809,19 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 		metrics.CachedTokens = u.PromptCacheHitTokens
 	}
 
-	if c.headers["X-Vertex-AI-LLM-Shared-Request-Type"] == "priority" {
-		metrics.TrafficType = "ON_DEMAND_PRIORITY"
+	// 1. Priority 1: Source of Truth (Response)
+	if u.ExtraProperties != nil && u.ExtraProperties.Google != nil {
+		metrics.TrafficType = u.ExtraProperties.Google.TrafficType
+	}
+
+	// 2. Priority 2: Reflected Intent (Force override if header is 'priority')
+	for k, v := range c.headers {
+		normalizedK := strings.ReplaceAll(strings.ToLower(k), "_", "-")
+
+		if normalizedK == "x-vertex-ai-llm-shared-request-type" && strings.TrimSpace(strings.ToLower(v)) == "priority" {
+			metrics.TrafficType = "ON_DEMAND_PRIORITY"
+			break
+		}
 	}
 
 	if u.CompletionTokensDetails != nil {
@@ -813,7 +834,7 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 		c.logger.Debug("token_throughput",
 			"platform", runtime.GOOS,
 			"provider", "openai",
-			"model", c.model,
+			"model", metrics.Model,
 			"response_tokens", metrics.ResponseTokens,
 			"duration_sec", metrics.Duration,
 			"tokens_per_sec", tokensPerSec,

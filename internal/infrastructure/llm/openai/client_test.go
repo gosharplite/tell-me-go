@@ -1554,6 +1554,34 @@ func TestVertexPriorityHeader(t *testing.T) {
 		}
 	})
 
+	t.Run("Priority Header Present (Mixed Case)", func(t *testing.T) {
+		c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"x-vertex-ai-llm-shared-request-type": "priority"}))
+
+		_, metrics, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if metrics.TrafficType != "ON_DEMAND_PRIORITY" {
+			t.Errorf("expected TrafficType 'ON_DEMAND_PRIORITY', got %q", metrics.TrafficType)
+		}
+	})
+
+	t.Run("Priority Header Present (Underscores and Spaces)", func(t *testing.T) {
+		c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"},
+			WithHeaders(map[string]string{"x_vertex_ai_llm_shared_request_type": " priority "}))
+
+		_, metrics, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatalf("SendChat failed: %v", err)
+		}
+
+		if metrics.TrafficType != "ON_DEMAND_PRIORITY" {
+			t.Errorf("expected TrafficType 'ON_DEMAND_PRIORITY', got %q", metrics.TrafficType)
+		}
+	})
+
 	t.Run("Priority Header Absent", func(t *testing.T) {
 		c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"})
 
@@ -1566,4 +1594,32 @@ func TestVertexPriorityHeader(t *testing.T) {
 			t.Errorf("expected empty TrafficType, got %q", metrics.TrafficType)
 		}
 	})
+}
+
+func TestVertexTrafficTypeSourceOfTruth(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		resp := chatResponse{
+			Choices: []choice{{Message: message{Role: "assistant", Content: "ok"}}},
+			Usage: usage{
+				ExtraProperties: &extraProperties{
+					Google: &googleProperties{
+						TrafficType: "COLOCATED_BATCH",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+	server := httptest.NewServer(http.HandlerFunc(handler))
+	defer server.Close()
+
+	c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"})
+	_, metrics, err := c.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if metrics.TrafficType != "COLOCATED_BATCH" {
+		t.Errorf("expected TrafficType 'COLOCATED_BATCH', got %q", metrics.TrafficType)
+	}
 }

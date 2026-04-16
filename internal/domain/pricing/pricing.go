@@ -24,17 +24,17 @@ type CostBreakdown struct {
 	TotalCost  float64
 }
 
-// ModelPricing represents the cost structure for a specific model tier.
+// ModelPricing represents the cost structure for a specific tier.
 type ModelPricing struct {
-	Hit             float64 `json:"hit" yaml:"HIT"`
-	Miss            float64 `json:"miss" yaml:"MISS"`
-	Comp            float64 `json:"comp" yaml:"COMP"`
-	Thinking        float64 `json:"thinking,omitempty" yaml:"THINKING,omitempty"`
-	TieredThreshold int64   `json:"tiered_threshold" yaml:"TIERED_THRESHOLD"`
-	TieredMiss      float64 `json:"tiered_miss" yaml:"TIERED_MISS"`
-	TieredComp      float64 `json:"tiered_comp" yaml:"TIERED_COMP"`
-	ThinkingBudget  int     `json:"thinking_budget,omitempty" yaml:"THINKING_BUDGET,omitempty"`
-	SearchQuery     float64 `json:"search_query,omitempty" yaml:"SEARCH_QUERY,omitempty"`
+	Hit             float64 `json:"hit" yaml:"hit"`
+	Miss            float64 `json:"miss" yaml:"miss"`
+	Comp            float64 `json:"comp" yaml:"comp"`
+	Thinking        float64 `json:"thinking,omitempty" yaml:"thinking,omitempty"`
+	TieredThreshold int64   `json:"tiered_threshold" yaml:"tiered_threshold"`
+	TieredMiss      float64 `json:"tiered_miss" yaml:"tiered_miss"`
+	TieredComp      float64 `json:"tiered_comp" yaml:"tiered_comp"`
+	ThinkingBudget  int     `json:"thinking_budget,omitempty" yaml:"thinking_budget,omitempty"`
+	SearchQuery     float64 `json:"search_query,omitempty" yaml:"search_query,omitempty"`
 }
 
 // PricingData represents the global pricing information.
