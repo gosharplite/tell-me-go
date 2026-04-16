@@ -18,6 +18,15 @@ PROVIDERS:
     HEADERS:
       X-Vertex-AI-LLM-Request-Type: "shared"
       X-Vertex-AI-LLM-Shared-Request-Type: "priority"
+  vertex-claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/anthropic/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
+    THINKING_BUDGET: 32768
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
   google:
     TYPE: "gemini"
     MODEL: "gemini-3-flash-preview"
@@ -66,3 +75,17 @@ MODELS:
     CONTEXT_WINDOW: 200000
   "gemini-3.1-pro-preview":
     CONTEXT_WINDOW: 200000
+  "deepseek-ai/deepseek-v3.2-maas":
+    CONTEXT_WINDOW: 163840
+    PRICING:                                                              
+      HIT: 0.135
+      MISS: 1.35
+      COMP: 5.40
+      THINKING: 5.40
+  "claude-opus-4-6":
+    CONTEXT_WINDOW: 200000
+    PRICING:                                                              
+      HIT: 0.50
+      MISS: 5.00
+      COMP: 25.00
+      THINKING: 25.00
