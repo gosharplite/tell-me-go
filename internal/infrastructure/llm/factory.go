@@ -24,6 +24,15 @@ import (
 func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus, logger ports.Logger) (llm.ExtendedClient, error) {
 	p := cfg.GetActiveProvider()
 
+	if logger == nil {
+		logger = &ports.NoOpLogger{}
+	}
+
+	logger.Debug("active_provider_config",
+		"name", cfg.SelectedProvider,
+		"type", p.Type,
+		"headers_count", len(p.Headers))
+
 	authenticator, err := createAuthenticator(&p)
 	if err != nil {
 		return nil, err
@@ -106,12 +115,18 @@ type authStrategy func(*config.LLMProvider) (auth.Authenticator, error)
 var authStrategies = map[string]authStrategy{
 	"openai": func(p *config.LLMProvider) (auth.Authenticator, error) {
 		if p.APIKey == "" {
+			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
+				return &auth.VertexAuth{}, nil
+			}
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
 		return &auth.BearerAuth{Token: p.APIKey}, nil
 	},
 	"deepseek": func(p *config.LLMProvider) (auth.Authenticator, error) {
 		if p.APIKey == "" {
+			if strings.Contains(p.URL, "aiplatform.googleapis.com") {
+				return &auth.VertexAuth{}, nil
+			}
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
 		}
 		return &auth.BearerAuth{Token: p.APIKey}, nil

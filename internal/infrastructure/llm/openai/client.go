@@ -252,6 +252,16 @@ type usage struct {
 	// DeepSeek standard
 	PromptCacheHitTokens  int32 `json:"prompt_cache_hit_tokens,omitempty"`
 	PromptCacheMissTokens int32 `json:"prompt_cache_miss_tokens,omitempty"`
+	// Vertex AI standard
+	ExtraProperties *extraProperties `json:"extra_properties,omitempty"`
+}
+
+type extraProperties struct {
+	Google *googleProperties `json:"google,omitempty"`
+}
+
+type googleProperties struct {
+	TrafficType string `json:"traffic_type,omitempty"`
 }
 
 type promptTokensDetails struct {
@@ -795,6 +805,25 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 	if u.PromptTokensDetails != nil {
 		metrics.CachedTokens = u.PromptTokensDetails.CachedTokens
 	}
+	if u.PromptCacheHitTokens > 0 {
+		metrics.CachedTokens = u.PromptCacheHitTokens
+	}
+
+	// 1. Priority 1: Source of Truth (Response)
+	if u.ExtraProperties != nil && u.ExtraProperties.Google != nil {
+		metrics.TrafficType = u.ExtraProperties.Google.TrafficType
+	}
+
+	// 2. Priority 2: Reflected Intent (Force override if header is 'priority')
+	for k, v := range c.headers {
+		normalizedK := strings.ReplaceAll(strings.ToLower(k), "_", "-")
+
+		if normalizedK == "x-vertex-ai-llm-shared-request-type" && strings.TrimSpace(strings.ToLower(v)) == "priority" {
+			metrics.TrafficType = "ON_DEMAND_PRIORITY"
+			break
+		}
+	}
+
 	if u.CompletionTokensDetails != nil {
 		metrics.ThinkingTokens = u.CompletionTokensDetails.ReasoningTokens
 	}
@@ -805,7 +834,7 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 		c.logger.Debug("token_throughput",
 			"platform", runtime.GOOS,
 			"provider", "openai",
-			"model", c.model,
+			"model", metrics.Model,
 			"response_tokens", metrics.ResponseTokens,
 			"duration_sec", metrics.Duration,
 			"tokens_per_sec", tokensPerSec,
@@ -912,40 +941,7 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 
 	content.Validate() // Final boundary sanitization
 
-	metrics := &llm.Metrics{
-		Model:          c.model,
-		PromptTokens:   resp.Usage.PromptTokens,
-		ResponseTokens: resp.Usage.CompletionTokens,
-		TotalTokens:    resp.Usage.TotalTokens,
-		Duration:       duration,
-	}
-
-	if resp.Usage.PromptTokensDetails != nil {
-		metrics.CachedTokens = resp.Usage.PromptTokensDetails.CachedTokens
-	}
-	if resp.Usage.PromptCacheHitTokens > 0 {
-		metrics.CachedTokens = resp.Usage.PromptCacheHitTokens
-	}
-
-	if resp.Usage.CompletionTokensDetails != nil {
-		metrics.ThinkingTokens = resp.Usage.CompletionTokensDetails.ReasoningTokens
-	}
-
-	// Log token throughput for diagnostics
-	if metrics.ResponseTokens > 0 && metrics.Duration > 0.1 {
-		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
-		c.logger.Debug("token_throughput",
-			"platform", runtime.GOOS,
-			"provider", "openai",
-			"model", c.model,
-			"response_tokens", metrics.ResponseTokens,
-			"duration_sec", metrics.Duration,
-			"tokens_per_sec", tokensPerSec,
-			"cached_tokens", metrics.CachedTokens,
-		)
-	}
-
-	return content, metrics, nil
+	return content, c.calculateFinalMetrics(resp.Usage, duration), nil
 }
 
 func (c *client) parseResponseContent(rawContent interface{}, content *llm.Content) {

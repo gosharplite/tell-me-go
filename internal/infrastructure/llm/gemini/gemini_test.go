@@ -634,7 +634,7 @@ func TestGemini_EdgeCase_FindInParts(t *testing.T) {
 func TestGemini_EdgeCase_DetermineBackend_VertexAI(t *testing.T) {
 	c := &Client{}
 	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-1.5-flash"
-	backend, project, location, baseURL := c.determineBackend(apiURL)
+	backend, project, location, baseURL, publisherPath := c.determineBackend(apiURL)
 	if backend != genai.BackendVertexAI {
 		t.Errorf("expected VertexAI backend, got %v", backend)
 	}
@@ -647,15 +647,47 @@ func TestGemini_EdgeCase_DetermineBackend_VertexAI(t *testing.T) {
 	if !strings.HasPrefix(baseURL, "https://us-central1-aiplatform.googleapis.com/") {
 		t.Errorf("unexpected baseURL %s", baseURL)
 	}
+	expectedPath := "publishers/google/models/gemini-1.5-flash"
+	if publisherPath != expectedPath {
+		t.Errorf("expected publisherPath %q, got %q", expectedPath, publisherPath)
+	}
 }
 
 func TestGemini_EdgeCase_DetermineBackend_MockURL(t *testing.T) {
 	t.Setenv("TELL_ME_MOCK_URL", "http://mock")
 	c := &Client{}
-	_, _, _, baseURL := c.determineBackend("http://localhost")
+	_, _, _, baseURL, _ := c.determineBackend("http://localhost")
 	if baseURL != "http://mock" {
 		t.Errorf("expected mock baseURL, got %s", baseURL)
 	}
+}
+
+func TestGemini_ModelQualification(t *testing.T) {
+	authenticator := &auth.VertexAuth{Token: "test-token"}
+
+	t.Run("Qualify short model name", func(t *testing.T) {
+		apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/deepseek-ai/models"
+		client, err := NewClient(apiURL, "deepseek-r1", authenticator)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+		expected := "publishers/deepseek-ai/models/deepseek-r1"
+		if client.model != expected {
+			t.Errorf("expected qualified model %q, got %q", expected, client.model)
+		}
+	})
+
+	t.Run("Do not double qualify already qualified model", func(t *testing.T) {
+		apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/deepseek-ai/models"
+		qualifiedModel := "publishers/custom/models/model-a"
+		client, err := NewClient(apiURL, qualifiedModel, authenticator)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+		if client.model != qualifiedModel {
+			t.Errorf("expected model %q to remain unchanged, got %q", qualifiedModel, client.model)
+		}
+	})
 }
 
 func TestGemini_EdgeCase_ToSDKContent(t *testing.T) {

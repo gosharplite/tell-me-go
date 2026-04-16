@@ -12,7 +12,7 @@
       "miss": 2.5,
       "comp": 15.00
     },
-    "deepseek-reasoner": {
+    "deepseek-": {
       "hit": 0.028,
       "miss": 0.28,
       "comp": 0.42,

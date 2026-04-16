@@ -109,25 +109,16 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 
 	// 2. Handle Diagnostic mode
 	if opts.diagnostic {
-		return c.ChatService.RunDiagnostics(ctx, cfg, opts.configPath, opts.jsonOutput)
+		return c.handleDiagnosticWorkflow(ctx, cfg, opts)
 	}
 
 	// 3. Handle Turns Log streaming
 	if opts.showTurnsLog {
-		return c.ChatService.StreamTurnsLog(ctx, cfg, c.Stdout)
+		return c.handleTurnsLogWorkflow(ctx, cfg, opts)
 	}
 
-	// 4. Apply TUI overrides and state detection
-	if opts.tuiPrompt {
-		cfg.UseTUIPrompt = true
-	}
-	// Only auto-enable TUI from config if no other actions are requested
-	if cfg != nil && cfg.UseTUIPrompt && len(args) == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry {
-		opts.tuiPrompt = true
-	}
-
-	// 5. Setup Capturer
-	capturer, cleanup := c.buildCapturer(ctx, cfg, opts)
+	// 4. Setup chat session (TUI logic + capturer setup)
+	capturer, cleanup := c.setupChatSession(ctx, cfg, opts, args)
 	defer func() {
 		timeout := ports.DefaultShutdownTimeout
 		if !opts.tuiPrompt {
@@ -138,13 +129,42 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 		_ = cleanup(shutdownCtx)
 	}()
 
-	// 6. Capture Prompt
+	// 5. Process chat request (prompt capture + delegation)
+	return c.processChatRequest(ctx, cfg, opts, args, capturer)
+}
+
+func (c *chatCommand) handleDiagnosticWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) error {
+	return c.ChatService.RunDiagnostics(ctx, cfg, opts.configPath, opts.jsonOutput)
+}
+
+func (c *chatCommand) handleTurnsLogWorkflow(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions) error {
+	return c.ChatService.StreamTurnsLog(ctx, cfg, c.Stdout)
+}
+
+func (c *chatCommand) isTUIConfigured(cfg *domain_config.Config) bool {
+	return cfg != nil && cfg.UseTUIPrompt
+}
+
+func (c *chatCommand) noOtherActionsRequested(opts *cliOptions, args []string) bool {
+	return len(args) == 0 && opts.lastN == 0 && opts.backN == 0 && !opts.retry
+}
+
+func (c *chatCommand) setupChatSession(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string) (agent.CapturerInteractor, func(stdctx.Context) error) {
+	// Apply TUI overrides and state detection
+	if opts.tuiPrompt {
+		cfg.UseTUIPrompt = true
+	}
+	// Only auto-enable TUI from config if no other actions are requested
+	if c.isTUIConfigured(cfg) && c.noOtherActionsRequested(opts, args) {
+		opts.tuiPrompt = true
+	}
+	return c.buildCapturer(ctx, cfg, opts)
+}
+func (c *chatCommand) processChatRequest(ctx stdctx.Context, cfg *domain_config.Config, opts *cliOptions, args []string, capturer agent.CapturerInteractor) error {
 	prompt, err := c.captureInput(ctx, capturer, opts, args)
 	if err != nil {
 		return err
 	}
-
-	// 7. Delegate business logic to ChatService
 	return c.ChatService.ProcessMessage(ctx, cfg, agent.ChatCommand{
 		ConfigPath:   opts.configPath,
 		NewSession:   opts.newSession,
@@ -156,7 +176,6 @@ func (c *chatCommand) executeChat(ctx stdctx.Context, opts *cliOptions, args []s
 		Prompt:       prompt,
 	}, capturer)
 }
-
 func (c *chatCommand) captureInput(ctx stdctx.Context, capturer agent.CapturerInteractor, opts *cliOptions, args []string) (string, error) {
 	if opts.retry {
 		return "", nil

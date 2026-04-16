@@ -10,6 +10,14 @@ SELECTED_PROVIDER: "google"
 
 # --- Provider Registry ---
 PROVIDERS:
+  vertex-deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-ai/deepseek-v3.2-maas"
+    URL: "https://aiplatform.googleapis.com/v1beta1/projects/${GOOGLE_PROJECT_ID}/locations/global/endpoints/openapi"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}"
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
   google:
     TYPE: "gemini"
     MODEL: "gemini-3-flash-preview"
@@ -17,6 +25,9 @@ PROVIDERS:
     API_KEY: '${GOOGLE_APPLICATION_CREDENTIALS}' # Optional - fall back to gcloud auth
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
+    HEADERS:
+      X-Vertex-AI-LLM-Request-Type: "shared"
+      X-Vertex-AI-LLM-Shared-Request-Type: "priority"
   openai:
     TYPE: "openai"
     MODEL: "gpt-5.2"

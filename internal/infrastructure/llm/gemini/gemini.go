@@ -134,7 +134,7 @@ func (c *Client) initSDK(timeout time.Duration) error {
 	apiURL := c.apiURL
 	c.mu.RUnlock()
 
-	backend, project, location, baseURL := c.determineBackend(apiURL)
+	backend, project, location, baseURL, publisherPath := c.determineBackend(apiURL)
 	headers, err := c.prepareAuthHeader(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to prepare auth headers: %w", err)
@@ -179,16 +179,21 @@ func (c *Client) initSDK(timeout time.Duration) error {
 	c.httpTransport = tr
 	c.backend = backend
 	c.sdkClient = sdkClient
+
+	// Qualify the model if a publisher path is present
+	if publisherPath != "" && !strings.Contains(c.model, "/") {
+		c.model = strings.TrimSuffix(publisherPath, "/") + "/" + c.model
+	}
 	c.mu.Unlock()
 	return nil
 }
 
-func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string, string) {
+func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string, string, string) {
 	var backend genai.Backend
-	var project, location, baseURL string
+	var project, location, baseURL, publisherPath string
 
 	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
-		backend, project, location, baseURL = c.parseVertexAI(apiURL)
+		backend, project, location, baseURL, publisherPath = c.parseVertexAI(apiURL)
 	} else {
 		backend = genai.BackendGeminiAPI
 	}
@@ -206,19 +211,33 @@ func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string,
 		}
 	}
 
-	return backend, project, location, baseURL
+	return backend, project, location, baseURL, publisherPath
 }
 
-func (c *Client) parseVertexAI(apiURL string) (genai.Backend, string, string, string) {
+func (c *Client) parseVertexAI(apiURL string) (genai.Backend, string, string, string, string) {
 	parts := strings.Split(apiURL, "/")
 	project := findInParts(parts, "projects")
 	location := findInParts(parts, "locations")
+
+	// Extract publisher path segment appearing after /locations/{location}/
+	var publisherPath string
+	locationKey := "/locations/" + location + "/"
+	if idx := strings.Index(apiURL, locationKey); idx != -1 {
+		pathSegment := apiURL[idx+len(locationKey):]
+		// The segment should end before /v1/ or any query params if they existed,
+		// but typically Vertex AI URLs are project/location focused.
+		if v1Idx := strings.Index(pathSegment, "/v1/"); v1Idx != -1 {
+			publisherPath = pathSegment[:v1Idx]
+		} else {
+			publisherPath = pathSegment
+		}
+	}
 
 	baseURL := ""
 	if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
 		baseURL = apiURL[:idx+1]
 	}
-	return genai.BackendVertexAI, project, location, baseURL
+	return genai.BackendVertexAI, project, location, baseURL, publisherPath
 }
 
 func findInParts(parts []string, key string) string {

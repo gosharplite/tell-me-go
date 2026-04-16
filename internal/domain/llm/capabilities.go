@@ -39,7 +39,7 @@ func ResolveCapabilities(model string) Capabilities {
 		}
 	}
 
-	isDeepSeek := strings.Contains(model, "deepseek-reasoner")
+	isDeepSeek := strings.Contains(model, "deepseek-")
 
 	caps.IsDeepSeek = isDeepSeek
 

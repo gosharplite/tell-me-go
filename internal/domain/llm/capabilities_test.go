@@ -72,6 +72,38 @@ func TestResolveCapabilities(t *testing.T) {
 			useMaxCompletionTokens:  false,
 			isDeepSeek:              true,
 		},
+		{
+			model:                   "deepseek-ai/deepseek-r1-0528-maas",
+			supportsReasoningEffort: false,
+			requiresResponsesAPI:    false,
+			useDeveloperRole:        false,
+			useMaxCompletionTokens:  false,
+			isDeepSeek:              true,
+		},
+		{
+			model:                   "deepseek-r1",
+			supportsReasoningEffort: false,
+			requiresResponsesAPI:    false,
+			useDeveloperRole:        false,
+			useMaxCompletionTokens:  false,
+			isDeepSeek:              true,
+		},
+		{
+			model:                   "deepseek-v3",
+			supportsReasoningEffort: false,
+			requiresResponsesAPI:    false,
+			useDeveloperRole:        false,
+			useMaxCompletionTokens:  false,
+			isDeepSeek:              true,
+		},
+		{
+			model:                   "deepseek-ai/deepseek-v3",
+			supportsReasoningEffort: false,
+			requiresResponsesAPI:    false,
+			useDeveloperRole:        false,
+			useMaxCompletionTokens:  false,
+			isDeepSeek:              true,
+		},
 	}
 
 	for _, tt := range tests {

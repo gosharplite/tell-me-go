@@ -24,7 +24,7 @@ type CostBreakdown struct {
 	TotalCost  float64
 }
 
-// ModelPricing represents the cost structure for a specific model tier.
+// ModelPricing represents the cost structure for a specific tier.
 type ModelPricing struct {
 	Hit             float64 `json:"hit" yaml:"HIT"`
 	Miss            float64 `json:"miss" yaml:"MISS"`

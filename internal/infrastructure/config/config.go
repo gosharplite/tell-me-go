@@ -68,9 +68,11 @@ func load(path string) (*domain_config.Config, error) {
 	var cfg domain_config.Config
 	setDefaults(&cfg) // Populate struct defaults first so Viper only overwrites what it finds
 
-	// 5. Unmarshal using `yaml` tags to avoid modifying domain structs
+	// 5. Unmarshal using `yaml` tags to ensure consistency between YAML files and Viper internal lowercasing
 	err = v.Unmarshal(&cfg, func(c *mapstructure.DecoderConfig) {
-		c.TagName = "yaml" // CRITICAL: Tell Viper to read the yaml tags
+		c.TagName = "yaml"
+		c.WeaklyTypedInput = true
+		c.Squash = true
 		c.DecodeHook = mapstructure.ComposeDecodeHookFunc(
 			expandEnvHook,
 			mapstructure.StringToTimeDurationHookFunc(),

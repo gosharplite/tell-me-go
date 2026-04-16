@@ -222,7 +222,7 @@ func (l *asyncTurnsLogger) renderTurnMetrics(sb *strings.Builder, status events.
 	if displayName == "" {
 		displayName = m.Model
 	}
-	if m.TrafficType == "ON_DEMAND_PRIORITY" {
+	if strings.EqualFold(m.TrafficType, "ON_DEMAND_PRIORITY") {
 		displayName = fmt.Sprintf("%s-priority", displayName)
 	}
 	if displayName != "" {
