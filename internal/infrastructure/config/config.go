@@ -6,6 +6,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"reflect"
 	"strings"
@@ -40,14 +41,14 @@ func (l *YAMLConfigLoader) Load(path string) (*domain_config.Config, error) {
 func load(path string) (*domain_config.Config, error) {
 	// Only show debug output if TELL_ME_DEBUG=1
 	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		fmt.Printf("[DEBUG CONFIG] ========================================\n")
-		fmt.Printf("[DEBUG CONFIG] Loading configuration file: %s\n", path)
+		slog.Debug("========================================")
+		slog.Debug("loading configuration file", slog.String("path", path))
 		
 		fileExists := func(p string) bool {
 			_, err := os.Stat(p)
 			return err == nil
 		}
-		fmt.Printf("[DEBUG CONFIG] File exists: %v\n", fileExists(path))
+		slog.Debug("file status", slog.String("path", path), slog.Bool("exists", fileExists(path)))
 	}
 
 	v := viper.NewWithOptions(viper.KeyDelimiter("::"))
@@ -56,7 +57,7 @@ func load(path string) (*domain_config.Config, error) {
 	data, err := os.ReadFile(path)
 	if err == nil {
 		if os.Getenv("TELL_ME_DEBUG") == "1" {
-			fmt.Printf("[DEBUG CONFIG] Raw YAML content (first 1000 chars):\n%s\n", string(data[:min(len(data), 1000)]))
+			slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
 		}
 		
 		v.SetConfigType("yaml")
@@ -66,9 +67,9 @@ func load(path string) (*domain_config.Config, error) {
 		
 		// Debug: Show what Viper parsed
 		if os.Getenv("TELL_ME_DEBUG") == "1" {
-			fmt.Printf("[DEBUG CONFIG] Viper parsed keys:\n")
+			slog.Debug("viper parsed keys")
 			for _, key := range v.AllKeys() {
-				fmt.Printf("  %s = %v\n", key, v.Get(key))
+				slog.Debug("parsed entry", slog.String("key", key), slog.Any("value", v.Get(key)))
 			}
 		}
 	} else if !os.IsNotExist(err) {
@@ -109,15 +110,15 @@ func load(path string) (*domain_config.Config, error) {
 
 	// Debug the Models field after unmarshaling
 	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		fmt.Printf("[DEBUG CONFIG] After unmarshaling, cfg.Models count: %d\n", len(cfg.Models))
+		slog.Debug("cfg.Models count", slog.Int("count", len(cfg.Models)))
 		for k, v := range cfg.Models {
-			fmt.Printf("[DEBUG CONFIG] Model: %s\n", k)
-			fmt.Printf("[DEBUG CONFIG]   ContextWindow: %d\n", v.ContextWindow)
-			fmt.Printf("[DEBUG CONFIG]   Pricing: %+v\n", v.Pricing)
-			fmt.Printf("[DEBUG CONFIG]   Pricing.Comp: %f\n", v.Pricing.Comp)
-			fmt.Printf("[DEBUG CONFIG]   Pricing.Hit: %f\n", v.Pricing.Hit)
-			fmt.Printf("[DEBUG CONFIG]   Pricing.Miss: %f\n", v.Pricing.Miss)
-			fmt.Printf("[DEBUG CONFIG]   Pricing.Thinking: %f\n", v.Pricing.Thinking)
+			slog.Debug("model detail",
+				slog.String("model", k),
+				slog.Int("context_window", v.ContextWindow),
+				slog.Float64("pricing_comp", v.Pricing.Comp),
+				slog.Float64("pricing_hit", v.Pricing.Hit),
+				slog.Float64("pricing_miss", v.Pricing.Miss),
+				slog.Float64("pricing_thinking", v.Pricing.Thinking))
 		}
 	}
 

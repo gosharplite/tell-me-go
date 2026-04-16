@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -31,7 +31,7 @@ func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir strin
 		var pd domain_pricing.PricingData
 		if err := json.Unmarshal(data, &pd); err == nil {
 			if os.Getenv("TELL_ME_DEBUG") == "1" {
-				fmt.Printf("[DEBUG PRICING] Loaded pricing data from file: %s\n", pricingPath)
+				slog.Debug("loaded pricing data from file", slog.String("path", pricingPath))
 			}
 			return pd
 		}
@@ -39,7 +39,7 @@ func GetPricing(ctx context.Context, sm domain_security.Manager, outputDir strin
 
 	// 2. Fallback to hardcoded defaults
 	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		fmt.Printf("[DEBUG PRICING] Falling back to hardcoded default pricing\n")
+		slog.Debug("falling back to hardcoded default pricing")
 	}
 	return config.DefaultPricing()
 }

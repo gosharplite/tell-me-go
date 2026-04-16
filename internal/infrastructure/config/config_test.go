@@ -400,3 +400,31 @@ MODELS:
 		t.Errorf("expected model '%s' to be present, got keys: %v", modelName, cfg.Models)
 	}
 }
+
+func TestLoad_WithDebugEnabled(t *testing.T) {
+	t.Setenv("TELL_ME_DEBUG", "1")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "debug_test.yaml")
+
+	yamlContent := `
+MODE: "debug-mode"
+MODELS:
+  "debug-model":
+    CONTEXT_WINDOW: 1000
+    PRICING:
+      COMP: 1.0
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := load(configPath)
+	if err != nil {
+		t.Fatalf("load() with debug=1 failed: %v", err)
+	}
+
+	if cfg.Mode != "debug-mode" {
+		t.Errorf("expected Mode 'debug-mode', got '%s'", cfg.Mode)
+	}
+}

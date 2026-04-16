@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -196,22 +197,28 @@ func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	if mtModel == "" {
 		mtModel = t.modelName
 		if os.Getenv("TELL_ME_DEBUG") == "1" {
-			fmt.Printf("[DEBUG COST] Metrics.Model is empty, using tracker.modelName: %s\n", mtModel)
+			slog.Debug("metrics model missing, using tracker model", slog.String("model", mtModel))
 		}
 	} else if os.Getenv("TELL_ME_DEBUG") == "1" {
-		fmt.Printf("[DEBUG COST] Using Metrics.Model: %s\n", mtModel)
+		slog.Debug("using metrics model", slog.String("model", mtModel))
 	}
 	
 	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		fmt.Printf("[DEBUG COST] Token counts - Prompt: %d, Cached: %d, Response: %d, Thinking: %d\n",
-			mt.PromptTokens, mt.CachedTokens, mt.ResponseTokens, mt.ThinkingTokens)
+		slog.Debug("token counts",
+			slog.Int("prompt", int(mt.PromptTokens)),
+			slog.Int("cached", int(mt.CachedTokens)),
+			slog.Int("response", int(mt.ResponseTokens)),
+			slog.Int("thinking", int(mt.ThinkingTokens)))
 	}
 	
 	p := GetModelPricing(mtModel, t.pricing)
 	
 	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		fmt.Printf("[DEBUG COST] Retrieved pricing - Hit: %f, Miss: %f, Comp: %f, Thinking: %f\n",
-			p.Hit, p.Miss, p.Comp, p.Thinking)
+		slog.Debug("retrieved pricing",
+			slog.Float64("hit", p.Hit),
+			slog.Float64("miss", p.Miss),
+			slog.Float64("comp", p.Comp),
+			slog.Float64("thinking", p.Thinking))
 	}
 	
 	var dummy domain_pricing.UsageStats
@@ -220,7 +227,7 @@ func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	turnCost := calc.Calculate(turnStats).TotalCost
 	
 	if os.Getenv("TELL_ME_DEBUG") == "1" {
-		fmt.Printf("[DEBUG COST] Calculated turn cost: %f\n", turnCost)
+		slog.Debug("calculated turn cost", slog.Float64("cost", turnCost))
 	}
 	
 	accumulate(&t.stats, mt)

@@ -49,7 +49,15 @@ func (f *defaultTelemetryFactory) BuildTelemetry(ctx stdctx.Context, paths *pers
 	
 	// Apply pricing overrides from config
 	if len(pricingOverrides) > 0 {
-		f.Logger.Debug("Applying pricing overrides")
+		f.Logger.Debug("Applying pricing overrides", slog.Int("count", len(pricingOverrides)))
+		
+		// Create a defensive copy to avoid mutating shared base pricing
+		newModels := make(map[string]pricing.ModelPricing, len(pricingData.Models)+len(pricingOverrides))
+		for k, v := range pricingData.Models {
+			newModels[k] = v
+		}
+		pricingData.Models = newModels
+
 		for modelName, override := range pricingOverrides {
 			f.Logger.Debug("Pricing override",
 				slog.String("model", modelName),
