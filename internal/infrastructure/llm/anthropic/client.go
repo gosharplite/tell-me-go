@@ -141,15 +141,16 @@ type message struct {
 }
 
 type contentBlock struct {
-	Type      string      `json:"type"`
-	Text      string      `json:"text,omitempty"`
-	Thinking  string      `json:"thinking,omitempty"`
-	Signature string      `json:"signature,omitempty"`
-	ID        string      `json:"id,omitempty"`          // for tool_use
-	Name      string      `json:"name,omitempty"`        // for tool_use
-	Input     interface{} `json:"input,omitempty"`       // for tool_use
-	ToolUseID string      `json:"tool_use_id,omitempty"` // for tool_result
-	Content   interface{} `json:"content,omitempty"`     // for tool_result (string or array)
+	Type         string        `json:"type"`
+	Text         string        `json:"text,omitempty"`
+	Thinking     string        `json:"thinking,omitempty"`
+	Signature    string        `json:"signature,omitempty"`
+	ID           string        `json:"id,omitempty"`          // for tool_use
+	Name         string        `json:"name,omitempty"`        // for tool_use
+	Input        interface{}   `json:"input,omitempty"`       // for tool_use
+	ToolUseID    string        `json:"tool_use_id,omitempty"` // for tool_result
+	Content      interface{}   `json:"content,omitempty"`     // for tool_result (string or array)
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 type tool struct {
@@ -265,6 +266,16 @@ func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message,
 		messages = c.appendOrMergeMessage(messages, role, blocks)
 	}
 
+	// Apply cache breakpoint to the last message in history to enable conversation history caching
+	if len(messages) > 0 {
+		lastMsg := &messages[len(messages)-1]
+		if len(lastMsg.Content) > 0 {
+			lastMsg.Content[len(lastMsg.Content)-1].CacheControl = &cacheControl{
+				Type: "ephemeral",
+			}
+		}
+	}
+
 	return system, messages, nil
 }
 
@@ -291,8 +302,20 @@ func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBloc
 		role = "user"
 	}
 
-	blocks := make([]contentBlock, 0, len(h.Parts))
+	blocks := make([]contentBlock, 0, len(h.Parts)+len(h.TransientParts))
+	// Process standard parts
 	for _, p := range h.Parts {
+		block, ok, err := c.partToContentBlock(p, role)
+		if err != nil {
+			return "", nil, err
+		}
+		if ok {
+			blocks = append(blocks, block)
+		}
+	}
+
+	// Process transient parts
+	for _, p := range h.TransientParts {
 		block, ok, err := c.partToContentBlock(p, role)
 		if err != nil {
 			return "", nil, err
@@ -456,14 +479,22 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 
 	content.Validate() // Final boundary sanitization
 
+	promptTokens := resp.Usage.InputTokens
+	if c.isVertex() {
+		// Vertex AI reports input_tokens as only the newly added tokens (delta).
+		// Total context = input_tokens + cache_creation + cache_read
+		promptTokens += resp.Usage.CacheReadInputTokens + resp.Usage.CacheCreationInputTokens
+	}
+
 	metrics := &llm.Metrics{
-		Model:          c.model,
-		PromptTokens:   resp.Usage.InputTokens,
-		ResponseTokens: resp.Usage.OutputTokens,
-		ThinkingTokens: resp.Usage.ThinkingTokens,
-		CachedTokens:   resp.Usage.CacheReadInputTokens,
-		TotalTokens:    resp.Usage.InputTokens + resp.Usage.OutputTokens,
-		Duration:       duration,
+		Model:            c.model,
+		PromptTokens:     promptTokens,
+		ResponseTokens:   resp.Usage.OutputTokens,
+		ThinkingTokens:   resp.Usage.ThinkingTokens,
+		CachedTokens:     resp.Usage.CacheReadInputTokens,
+		CacheWriteTokens: resp.Usage.CacheCreationInputTokens,
+		TotalTokens:      promptTokens + resp.Usage.OutputTokens,
+		Duration:         duration,
 	}
 
 	// 1. Primary: Source of Truth (Server Response Metadata)
@@ -493,6 +524,7 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 			"duration_sec", metrics.Duration,
 			"tokens_per_sec", tokensPerSec,
 			"cached_tokens", metrics.CachedTokens,
+			"cache_creation_tokens", resp.Usage.CacheCreationInputTokens,
 			"thinking_tokens", metrics.ThinkingTokens,
 		)
 	}
@@ -539,17 +571,13 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 	}
 
 	if systemStr != "" {
-		var cacheCtrl *cacheControl
-		if !c.isVertex() {
-			cacheCtrl = &cacheControl{
-				Type: "ephemeral",
-			}
-		}
 		reqPayload.System = []systemBlock{
 			{
-				Type:         "text",
-				Text:         systemStr,
-				CacheControl: cacheCtrl,
+				Type: "text",
+				Text: systemStr,
+				CacheControl: &cacheControl{
+					Type: "ephemeral",
+				},
 			},
 		}
 	}

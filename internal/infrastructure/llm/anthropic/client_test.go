@@ -720,11 +720,12 @@ func TestVertexAI_Support(t *testing.T) {
 			return
 		}
 
-		// Vertex requires no cache_control
+		// Vertex now supports cache_control in the body, but NOT in headers
 		if sys, ok := req.System.([]interface{}); ok && len(sys) > 0 {
 			block := sys[0].(map[string]interface{})
-			if block["cache_control"] != nil {
-				t.Error("expected NO cache_control in system block for Vertex")
+			cache, ok := block["cache_control"].(map[string]interface{})
+			if !ok || cache["type"] != "ephemeral" {
+				t.Errorf("expected ephemeral cache_control in system block for Vertex, got %v", block["cache_control"])
 			}
 		}
 
@@ -810,4 +811,146 @@ func TestAnthropic_TrafficTypeDetection(t *testing.T) {
 			t.Errorf("expected TrafficType ON_DEMAND_PRIORITY, got %q", metrics.TrafficType)
 		}
 	})
+}
+
+func TestHistoryCaching(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req messagesRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed to decode request body: %v", err)
+			return
+		}
+
+		if len(req.Messages) != 2 {
+			t.Fatalf("expected 2 messages in history, got %d", len(req.Messages))
+		}
+
+		// The last message's last block should have cache_control
+		lastMsg := req.Messages[len(req.Messages)-1]
+		lastBlock := lastMsg.Content[len(lastMsg.Content)-1]
+		if lastBlock.CacheControl == nil || lastBlock.CacheControl.Type != "ephemeral" {
+			t.Errorf("expected ephemeral cache control on last history block, got %+v", lastBlock.CacheControl)
+		}
+
+		// The first message's last block should NOT have cache_control (it's not the last turn)
+		firstMsg := req.Messages[0]
+		firstBlock := firstMsg.Content[len(firstMsg.Content)-1]
+		if firstBlock.CacheControl != nil {
+			t.Errorf("expected NO cache control on first history block, got %+v", firstBlock.CacheControl)
+		}
+
+		resp := messagesResponse{
+			Content: []contentBlock{{Type: "text", Text: "OK"}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"})
+	history := []*llm.Content{
+		{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: "Message 1"}},
+		},
+		{
+			Role:  "assistant",
+			Parts: []*llm.Part{{Text: "Response 1"}},
+		},
+	}
+	_, _, err := client.SendChat(context.Background(), history, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetricsMapping(t *testing.T) {
+	t.Run("Native Anthropic (Total InputTokens)", func(t *testing.T) {
+		c := &client{model: "claude-3-5-sonnet", logger: &ports.NoOpLogger{}, baseURL: "https://api.anthropic.com/v1"}
+		resp := &messagesResponse{
+			Usage: usage{
+				InputTokens:              1500, // Total (1000 hits + 500 misses)
+				OutputTokens:             500,
+				CacheReadInputTokens:     1000,
+				CacheCreationInputTokens: 200,
+				ThinkingTokens:           300,
+			},
+		}
+
+		_, metrics, err := c.fromAnthropicResponse(resp, 2.5)
+		if err != nil {
+			t.Fatalf("fromAnthropicResponse failed: %v", err)
+		}
+
+		if metrics.PromptTokens != 1500 {
+			t.Errorf("expected PromptTokens 1500, got %d", metrics.PromptTokens)
+		}
+		if metrics.CachedTokens != 1000 {
+			t.Errorf("expected CachedTokens 1000, got %d", metrics.CachedTokens)
+		}
+		if metrics.CacheWriteTokens != 200 {
+			t.Errorf("expected CacheWriteTokens 200, got %d", metrics.CacheWriteTokens)
+		}
+	})
+
+	t.Run("Vertex AI (Incremental InputTokens)", func(t *testing.T) {
+		c := &client{model: "claude-3-5-sonnet", logger: &ports.NoOpLogger{}, baseURL: "https://us-central1-aiplatform.googleapis.com/v1"}
+		resp := &messagesResponse{
+			Usage: usage{
+				InputTokens:              500, // Incremental (misses only)
+				OutputTokens:             500,
+				CacheReadInputTokens:     1000,
+				CacheCreationInputTokens: 200,
+				ThinkingTokens:           300,
+			},
+		}
+
+		_, metrics, err := c.fromAnthropicResponse(resp, 2.5)
+		if err != nil {
+			t.Fatalf("fromAnthropicResponse failed: %v", err)
+		}
+
+		// PromptTokens should be normalized to Total (500 delta + 1000 cache_read + 200 cache_creation = 1700)
+		if metrics.PromptTokens != 1700 {
+			t.Errorf("expected normalized PromptTokens 1700 for Vertex, got %d", metrics.PromptTokens)
+		}
+		if metrics.CachedTokens != 1000 {
+			t.Errorf("expected CachedTokens 1000, got %d", metrics.CachedTokens)
+		}
+		if metrics.CacheWriteTokens != 200 {
+			t.Errorf("expected CacheWriteTokens 200, got %d", metrics.CacheWriteTokens)
+		}
+	})
+}
+
+func TestTransientPartsSupport(t *testing.T) {
+	c := &client{}
+	history := &llm.Content{
+		Role: "user",
+		Parts: []*llm.Part{
+			{Text: "Permanent part"},
+		},
+		TransientParts: []*llm.Part{
+			{Text: "Transient part"},
+		},
+	}
+
+	role, blocks, err := c.convertToAnthropicBlocks(history)
+	if err != nil {
+		t.Fatalf("convertToAnthropicBlocks failed: %v", err)
+	}
+
+	if role != "user" {
+		t.Errorf("expected role user, got %s", role)
+	}
+
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+
+	if blocks[0].Text != "Permanent part" {
+		t.Errorf("expected first block text 'Permanent part', got %q", blocks[0].Text)
+	}
+	if blocks[1].Text != "Transient part" {
+		t.Errorf("expected second block text 'Transient part', got %q", blocks[1].Text)
+	}
 }
