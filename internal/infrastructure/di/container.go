@@ -110,6 +110,17 @@ func NewBootstrapper(homeDir string, sm ConfigurableSecurityManager, version str
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
 func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(stdctx.Context) error, error) {
+	b.Logger.Debug("Building session dependencies",
+		slog.String("config_model", cfg.Model),
+		slog.String("config_path", configPath),
+		slog.Int("config_models_count", len(cfg.Models)))
+
+	for k, v := range cfg.Models {
+		b.Logger.Debug("Config model details",
+			slog.String("model", k),
+			slog.Float64("pricing_comp", v.Pricing.Comp))
+	}
+
 	pricingOverrides := b.getPricingOverrides(cfg)
 	sessionProvider, paths, cleanup, err := b.sessionFactory.BuildSession(ctx, cfg, configPath, newSession, pricingOverrides)
 	if err != nil {
@@ -124,7 +135,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 	bus := events.NewSimpleEventBus(ctx, events.WithLogger(b.Logger), events.WithAsync(false))
 
-	pricingData, tracker, turnsLogger, cleanup := b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, cleanup)
+	pricingData, tracker, turnsLogger, cleanup := b.telemetryFactory.BuildTelemetry(ctx, paths, cfg, pricingOverrides, cleanup)
 
 	// Lazy initialization factory for the LLM client.
 	clientFactory := func() (llm.ExtendedClient, error) {
@@ -314,9 +325,15 @@ func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.Histor
 // getPricingOverrides extracts pricing overrides from the configuration.
 func (b *Bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricing.ModelPricing {
 	pricingOverrides := make(map[string]pricing.ModelPricing)
+
 	for k, v := range cfg.Models {
+		// Now that dots are supported, 'k' will correctly be "deepseek-ai/deepseek-v3.2-maas"
+		// and 'v.Pricing' will be fully populated from the YAML.
 		if v.Pricing.Comp > 0 {
 			pricingOverrides[k] = v.Pricing
+			b.Logger.Debug("Added pricing override for model",
+				slog.String("model", k),
+				slog.Float64("comp", v.Pricing.Comp))
 		}
 	}
 	return pricingOverrides

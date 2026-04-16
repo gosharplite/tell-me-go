@@ -122,7 +122,7 @@ func TestBuildTelemetry_Fallback(t *testing.T) {
 	cfg := &config.Config{Model: "test-model"}
 
 	dummyCleanup := func(ctx context.Context) error { return nil }
-	pricingData, tracker, turnsLogger, cleanup := factory.BuildTelemetry(ctx, paths, cfg, dummyCleanup)
+	pricingData, tracker, turnsLogger, cleanup := factory.BuildTelemetry(ctx, paths, cfg, map[string]pricing.ModelPricing{}, dummyCleanup)
 
 	assert.NotNil(t, pricingData)
 	assert.NotNil(t, tracker)

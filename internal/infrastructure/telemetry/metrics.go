@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -195,13 +196,39 @@ func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	mtModel := mt.Model
 	if mtModel == "" {
 		mtModel = t.modelName
+		if os.Getenv("TELL_ME_DEBUG") == "1" {
+			slog.Debug("metrics model missing, using tracker model", slog.String("model", mtModel))
+		}
+	} else if os.Getenv("TELL_ME_DEBUG") == "1" {
+		slog.Debug("using metrics model", slog.String("model", mtModel))
 	}
+
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		slog.Debug("token counts",
+			slog.Int("prompt", int(mt.PromptTokens)),
+			slog.Int("cached", int(mt.CachedTokens)),
+			slog.Int("response", int(mt.ResponseTokens)),
+			slog.Int("thinking", int(mt.ThinkingTokens)))
+	}
+
 	p := GetModelPricing(mtModel, t.pricing)
+
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		slog.Debug("retrieved pricing",
+			slog.Float64("hit", p.Hit),
+			slog.Float64("miss", p.Miss),
+			slog.Float64("comp", p.Comp),
+			slog.Float64("thinking", p.Thinking))
+	}
 
 	var dummy domain_pricing.UsageStats
 	turnStats := accumulate(&dummy, mt)
 	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
 	turnCost := calc.Calculate(turnStats).TotalCost
+
+	if os.Getenv("TELL_ME_DEBUG") == "1" {
+		slog.Debug("calculated turn cost", slog.Float64("cost", turnCost))
+	}
 
 	accumulate(&t.stats, mt)
 	t.totalCost += turnCost
