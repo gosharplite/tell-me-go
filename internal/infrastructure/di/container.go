@@ -114,13 +114,13 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		slog.String("config_model", cfg.Model),
 		slog.String("config_path", configPath),
 		slog.Int("config_models_count", len(cfg.Models)))
-	
+
 	for k, v := range cfg.Models {
 		b.Logger.Debug("Config model details",
 			slog.String("model", k),
 			slog.Float64("pricing_comp", v.Pricing.Comp))
 	}
-	
+
 	pricingOverrides := b.getPricingOverrides(cfg)
 	sessionProvider, paths, cleanup, err := b.sessionFactory.BuildSession(ctx, cfg, configPath, newSession, pricingOverrides)
 	if err != nil {

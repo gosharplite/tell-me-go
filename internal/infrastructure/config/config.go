@@ -43,7 +43,7 @@ func load(path string) (*domain_config.Config, error) {
 	if os.Getenv("TELL_ME_DEBUG") == "1" {
 		slog.Debug("========================================")
 		slog.Debug("loading configuration file", slog.String("path", path))
-		
+
 		fileExists := func(p string) bool {
 			_, err := os.Stat(p)
 			return err == nil
@@ -59,12 +59,12 @@ func load(path string) (*domain_config.Config, error) {
 		if os.Getenv("TELL_ME_DEBUG") == "1" {
 			slog.Debug("raw content", slog.String("content", string(data[:min(len(data), 1000)])))
 		}
-		
+
 		v.SetConfigType("yaml")
 		if err := v.ReadConfig(strings.NewReader(string(data))); err != nil {
 			return nil, fmt.Errorf("viper failed to read config: %w", err)
 		}
-		
+
 		// Debug: Show what Viper parsed
 		if os.Getenv("TELL_ME_DEBUG") == "1" {
 			slog.Debug("viper parsed keys")
