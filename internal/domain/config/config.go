@@ -25,36 +25,36 @@ const (
 
 // LLMProvider represents the configuration for a specific AI service provider.
 type LLMProvider struct {
-	Type           string            `yaml:"type"`            // e.g., "openai", "anthropic", "gemini"
-	URL            string            `yaml:"url"`             // Base API URL
-	APIKey         string            `yaml:"api_key"`         // Secret key (supports ${VAR} expansion in next task)
-	Model          string            `yaml:"model"`           // Default model for this provider
-	ThinkingBudget int               `yaml:"thinking_budget"` // Provider-specific thinking budget
-	ThinkingLevel  string            `yaml:"thinking_level"`  // Provider-specific thinking level
-	Headers        map[string]string `yaml:"headers"`         // Custom HTTP headers
+	Type           string            `yaml:"TYPE"`            // e.g., "openai", "anthropic", "gemini"
+	URL            string            `yaml:"URL"`             // Base API URL
+	APIKey         string            `yaml:"API_KEY"`         // Secret key (supports ${VAR} expansion in next task)
+	Model          string            `yaml:"MODEL"`           // Default model for this provider
+	ThinkingBudget int               `yaml:"THINKING_BUDGET"` // Provider-specific thinking budget
+	ThinkingLevel  string            `yaml:"THINKING_LEVEL"`  // Provider-specific thinking level
+	Headers        map[string]string `yaml:"HEADERS"`         // Custom HTTP headers
 }
 
 // Config represents the application configuration loaded from a YAML file.
 type Config struct {
-	Mode               string                 `yaml:"mode"`
-	Person             string                 `yaml:"person"`
-	URL                string                 `yaml:"aiurl"`
-	Model              string                 `yaml:"aimodel"`
-	UseSearch          bool                   `yaml:"use_search"`
-	MaxToolTurns       int                    `yaml:"max_turns"`          // Recursion limit
-	MaxHistoryTurns    int                    `yaml:"max_history_turns"`  // For pruning turns
-	MaxHistoryTokens   int                    `yaml:"max_history_tokens"` // For safety rollback
-	ThinkingBudget     int                    `yaml:"thinking_budget"`
-	ThinkingLevel      string                 `yaml:"thinking_level"`
-	ShowThoughts       bool                   `yaml:"show_thoughts"`
-	ShowTools          bool                   `yaml:"show_tools"`
-	MaxConcurrentTools int                    `yaml:"max_concurrent_tools"` // Parallel tool execution
-	ToolTimeoutSeconds int                    `yaml:"tool_timeout"`         // Single tool timeout
-	HTTPTimeoutSeconds int                    `yaml:"http_timeout"`         // LLM Client timeout
-	UseTUIPrompt       bool                   `yaml:"use_tui_prompt"`       // Enable TUI prompt with suggestions
-	Models             map[string]ModelConfig `yaml:"models"`               // Model-specific overrides
-	SelectedProvider   string                 `yaml:"selected_provider"`
-	Providers          map[string]LLMProvider `yaml:"providers"`
+	Mode               string                 `yaml:"MODE"`
+	Person             string                 `yaml:"PERSON"`
+	URL                string                 `yaml:"AIURL"`
+	Model              string                 `yaml:"AIMODEL"`
+	UseSearch          bool                   `yaml:"USE_SEARCH"`
+	MaxToolTurns       int                    `yaml:"MAX_TURNS"`          // Recursion limit
+	MaxHistoryTurns    int                    `yaml:"MAX_HISTORY_TURNS"`  // For pruning turns
+	MaxHistoryTokens   int                    `yaml:"MAX_HISTORY_TOKENS"` // For safety rollback
+	ThinkingBudget     int                    `yaml:"THINKING_BUDGET"`
+	ThinkingLevel      string                 `yaml:"THINKING_LEVEL"`
+	ShowThoughts       bool                   `yaml:"SHOW_THOUGHTS"`
+	ShowTools          bool                   `yaml:"SHOW_TOOLS"`
+	MaxConcurrentTools int                    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
+	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
+	HTTPTimeoutSeconds int                    `yaml:"HTTP_TIMEOUT"`         // LLM Client timeout
+	UseTUIPrompt       bool                   `yaml:"USE_TUI_PROMPT"`       // Enable TUI prompt with suggestions
+	Models             map[string]ModelConfig `yaml:"MODELS"`               // Model-specific overrides
+	SelectedProvider   string                 `yaml:"SELECTED_PROVIDER"`
+	Providers          map[string]LLMProvider `yaml:"PROVIDERS"`
 }
 
 // GetActiveProvider returns the configuration for the selected provider.
@@ -76,9 +76,9 @@ func (c *Config) GetActiveProvider() LLMProvider {
 
 // ModelConfig defines capabilities and limits for a specific model.
 type ModelConfig struct {
-	MaxThinkingBudget int                  `yaml:"max_thinking_budget"`
-	ContextWindow     int                  `yaml:"context_window"`
-	Pricing           pricing.ModelPricing `yaml:"pricing"`
+	MaxThinkingBudget int                  `yaml:"MAX_THINKING_BUDGET"`
+	ContextWindow     int                  `yaml:"CONTEXT_WINDOW"`
+	Pricing           pricing.ModelPricing `yaml:"PRICING"`
 }
 
 // ResolveThinkingBudget returns the best matching thinking budget for the model.
