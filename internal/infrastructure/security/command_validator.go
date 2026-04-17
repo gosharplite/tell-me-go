@@ -109,20 +109,28 @@ func (v *commandValidator) Split(cmd string) ([]string, error) {
 	return parts, nil
 }
 
+// isAlphanumeric reports whether b is an ASCII letter or digit.
+func isAlphanumeric(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+// hasBackslashBeforeAlphanumeric reports whether cmd contains a backslash
+// immediately followed by an ASCII letter or digit, a strong indicator of
+// a Windows path component (e.g., `Users\john`).
+func hasBackslashBeforeAlphanumeric(cmd string) bool {
+	for i := 0; i < len(cmd)-1; i++ {
+		if cmd[i] == '\\' && isAlphanumeric(cmd[i+1]) {
+			return true
+		}
+	}
+	return false
+}
+
 func (v *commandValidator) isLikelyWindowsPath(cmd string) bool {
 	if strings.Contains(cmd, ":\\") || strings.Contains(cmd, "\\\\") {
 		return true
 	}
-	for i := 0; i < len(cmd)-1; i++ {
-		if cmd[i] == '\\' {
-			next := cmd[i+1]
-			// Backslash followed by alphanumeric is a strong indicator of a Windows path component
-			if (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || (next >= '0' && next <= '9') {
-				return true
-			}
-		}
-	}
-	return false
+	return hasBackslashBeforeAlphanumeric(cmd)
 }
 
 // ValidateStructure ensures the command does not contain standalone shell operators
