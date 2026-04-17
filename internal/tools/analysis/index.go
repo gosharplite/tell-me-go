@@ -86,21 +86,9 @@ func newIndexer(dir string) (*indexer, error) {
 	}, nil
 }
 
-func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
-	if !idx.needsRefresh() {
-		return nil
-	}
-
-	// Serialize concurrent refresh attempts
-	idx.refreshMu.Lock()
-	defer idx.refreshMu.Unlock()
-
-	// Double check after acquiring lock
-	if !idx.needsRefresh() {
-		return nil
-	}
-
-	// Heartbeat while loading and harvesting packages
+// startHeartbeatTicker starts a background goroutine that periodically sends
+// heartbeats on hb. It returns a stop function that must be called to clean up.
+func startHeartbeatTicker(hb chan<- struct{}) (stop func()) {
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -119,7 +107,23 @@ func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 			}
 		}
 	}()
-	defer close(done)
+	return func() { close(done) }
+}
+
+func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
+	if !idx.needsRefresh() {
+		return nil
+	}
+
+	idx.refreshMu.Lock()
+	defer idx.refreshMu.Unlock()
+
+	if !idx.needsRefresh() {
+		return nil
+	}
+
+	stop := startHeartbeatTicker(hb)
+	defer stop()
 
 	fset := token.NewFileSet()
 	pkgs, err := idx.loadPackages(ctx, fset)
@@ -140,6 +144,23 @@ func (idx *indexer) Refresh(ctx context.Context, hb chan<- struct{}) error {
 type pkgResult struct {
 	symbols map[string][]symbolLocation
 	usages  map[string][]location
+}
+
+// sendResult sends a pkgResult on the results channel, emitting a heartbeat on
+// success. It respects context cancellation.
+func sendResult(ctx context.Context, results chan<- pkgResult, res pkgResult, hb chan<- struct{}) error {
+	select {
+	case results <- res:
+		if hb != nil {
+			select {
+			case hb <- struct{}{}:
+			default:
+			}
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (idx *indexer) harvestPackages(ctx context.Context, fset *token.FileSet, pkgs []*packages.Package, hb chan<- struct{}) (map[string][]symbolLocation, map[string][]location, error) {
@@ -164,18 +185,7 @@ func (idx *indexer) harvestPackages(ctx context.Context, fset *token.FileSet, pk
 			if err != nil {
 				return err
 			}
-			select {
-			case results <- res:
-				if hb != nil {
-					select {
-					case hb <- struct{}{}:
-					default:
-					}
-				}
-			case <-gCtx.Done():
-				return gCtx.Err()
-			}
-			return nil
+			return sendResult(gCtx, results, res, hb)
 		})
 	}
 
