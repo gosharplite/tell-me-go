@@ -63,7 +63,7 @@ func TestToolchainHealthChecker_Check(t *testing.T) {
 		}
 
 		details := report.Details.(map[string]any)
-		binaries := details["binaries"].(map[string]BinaryInfo)
+		binaries := details["binaries"].(map[string]binaryInfo)
 
 		if len(binaries) != 3 {
 			t.Errorf("expected 3 binaries, got %d", len(binaries))

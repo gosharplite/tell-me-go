@@ -17,8 +17,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
-// LLMProviderHealthChecker implements ports.HealthChecker for LLM providers.
-type LLMProviderHealthChecker struct {
+// llmProviderHealthChecker implements ports.HealthChecker for LLM providers.
+type llmProviderHealthChecker struct {
 	providerName  string
 	authenticator auth.Authenticator
 	baseURL       string
@@ -26,8 +26,8 @@ type LLMProviderHealthChecker struct {
 	gateway       llm.LLMGateway
 }
 
-// NewLLMProviderHealthChecker creates a new LLMProviderHealthChecker.
-func NewLLMProviderHealthChecker(providerName string, authenticator auth.Authenticator, baseURL string, gateway llm.LLMGateway) *LLMProviderHealthChecker {
+// NewLLMProviderHealthChecker creates a new llmProviderHealthChecker.
+func NewLLMProviderHealthChecker(providerName string, authenticator auth.Authenticator, baseURL string, gateway llm.LLMGateway) *llmProviderHealthChecker {
 	if baseURL == "" {
 		switch strings.ToLower(providerName) {
 		case "openai", "deepseek":
@@ -39,7 +39,7 @@ func NewLLMProviderHealthChecker(providerName string, authenticator auth.Authent
 		}
 	}
 
-	return &LLMProviderHealthChecker{
+	return &llmProviderHealthChecker{
 		providerName:  providerName,
 		authenticator: authenticator,
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
@@ -49,7 +49,7 @@ func NewLLMProviderHealthChecker(providerName string, authenticator auth.Authent
 }
 
 // Check performs a diagnostic check on the LLM provider.
-func (c *LLMProviderHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, error) {
+func (c *llmProviderHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -87,7 +87,7 @@ func (c *LLMProviderHealthChecker) Check(ctx context.Context) (*ports.ComponentR
 }
 
 // checkConfiguration validates authenticator and API key
-func (c *LLMProviderHealthChecker) checkConfiguration(ctx context.Context, report *ports.ComponentReport, authReq *auth.Request) *ports.ComponentReport {
+func (c *llmProviderHealthChecker) checkConfiguration(ctx context.Context, report *ports.ComponentReport, authReq *auth.Request) *ports.ComponentReport {
 	if c.authenticator == nil {
 		report.Status = ports.StatusUnhealthy
 		report.Message = "LLM API key is missing (no authenticator)"
@@ -110,7 +110,7 @@ func (c *LLMProviderHealthChecker) checkConfiguration(ctx context.Context, repor
 }
 
 // buildRequest creates the HTTP request for health check
-func (c *LLMProviderHealthChecker) buildRequest(ctx context.Context, authReq *auth.Request) (*http.Request, error) {
+func (c *llmProviderHealthChecker) buildRequest(ctx context.Context, authReq *auth.Request) (*http.Request, error) {
 	method, url := c.getPingEndpoint()
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
@@ -126,7 +126,7 @@ func (c *LLMProviderHealthChecker) buildRequest(ctx context.Context, authReq *au
 }
 
 // performConnectivityCheck executes HTTP request and measures latency
-func (c *LLMProviderHealthChecker) performConnectivityCheck(req *http.Request, details map[string]any) (*http.Response, error) {
+func (c *llmProviderHealthChecker) performConnectivityCheck(req *http.Request, details map[string]any) (*http.Response, error) {
 	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	latency := time.Since(start)
@@ -136,7 +136,7 @@ func (c *LLMProviderHealthChecker) performConnectivityCheck(req *http.Request, d
 }
 
 // handleHTTPResponse analyzes status codes, classifies errors, determines health status
-func (c *LLMProviderHealthChecker) handleHTTPResponse(resp *http.Response, err error, report *ports.ComponentReport, details map[string]any) *ports.ComponentReport {
+func (c *llmProviderHealthChecker) handleHTTPResponse(resp *http.Response, err error, report *ports.ComponentReport, details map[string]any) *ports.ComponentReport {
 	if err != nil {
 		// Transient Failures (DNS, Timeout, etc.)
 		report.Status = ports.StatusDegraded
@@ -166,7 +166,7 @@ func (c *LLMProviderHealthChecker) handleHTTPResponse(resp *http.Response, err e
 }
 
 // classifyErrorStatus handles provider-specific status code interpretation
-func (c *LLMProviderHealthChecker) classifyErrorStatus(statusCode int, report *ports.ComponentReport) *ports.ComponentReport {
+func (c *llmProviderHealthChecker) classifyErrorStatus(statusCode int, report *ports.ComponentReport) *ports.ComponentReport {
 	// For some endpoints, 404 or 405 might just mean the ping path is wrong but the server is up.
 	// However, for OpenAI/Gemini /models, we expect 200.
 	// For Anthropic, we might get 404 on the base URL.
@@ -180,7 +180,7 @@ func (c *LLMProviderHealthChecker) classifyErrorStatus(statusCode int, report *p
 	return report
 }
 
-func (c *LLMProviderHealthChecker) getPingEndpoint() (string, string) {
+func (c *llmProviderHealthChecker) getPingEndpoint() (string, string) {
 	p := strings.ToLower(c.providerName)
 	switch p {
 	case "openai", "deepseek":

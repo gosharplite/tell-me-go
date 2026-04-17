@@ -13,23 +13,23 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// BinaryInfo contains diagnostic information for a specific toolchain binary.
-type BinaryInfo struct {
+// binaryInfo contains diagnostic information for a specific toolchain binary.
+type binaryInfo struct {
 	Path       string `json:"path"`
 	Version    string `json:"version_string,omitempty"`
 	IsRequired bool   `json:"is_required"`
 }
 
-// ToolchainHealthChecker implements ports.HealthChecker for the system toolchain.
-type ToolchainHealthChecker struct {
+// toolchainHealthChecker implements ports.HealthChecker for the system toolchain.
+type toolchainHealthChecker struct {
 	exec     tools.CommandExecutor
 	required []string
 	optional []string
 }
 
-// NewToolchainHealthChecker creates a new ToolchainHealthChecker.
-func NewToolchainHealthChecker(exec tools.CommandExecutor, required, optional []string) *ToolchainHealthChecker {
-	return &ToolchainHealthChecker{
+// NewToolchainHealthChecker creates a new toolchainHealthChecker.
+func NewToolchainHealthChecker(exec tools.CommandExecutor, required, optional []string) *toolchainHealthChecker {
+	return &toolchainHealthChecker{
 		exec:     exec,
 		required: required,
 		optional: optional,
@@ -37,8 +37,8 @@ func NewToolchainHealthChecker(exec tools.CommandExecutor, required, optional []
 }
 
 // Check performs a diagnostic check on the system toolchain binaries.
-func (c *ToolchainHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, error) {
-	binaries := make(map[string]BinaryInfo)
+func (c *toolchainHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, error) {
+	binaries := make(map[string]binaryInfo)
 	details := map[string]any{
 		"binaries": binaries,
 	}
@@ -83,8 +83,8 @@ func (c *ToolchainHealthChecker) Check(ctx context.Context) (*ports.ComponentRep
 	return report, nil
 }
 
-func (c *ToolchainHealthChecker) checkBinary(ctx context.Context, name string, required bool) (BinaryInfo, error) {
-	info := BinaryInfo{IsRequired: required}
+func (c *toolchainHealthChecker) checkBinary(ctx context.Context, name string, required bool) (binaryInfo, error) {
+	info := binaryInfo{IsRequired: required}
 
 	// Step A: Path Lookup
 	path, err := c.exec.LookPath(name)
