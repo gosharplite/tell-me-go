@@ -1,4 +1,9 @@
-# ADR 001: JSONL History Persistence
+<!--
+Copyright (c) 2026 gosharplite@gmail.com
+SPDX-License-Identifier: MIT
+-->
+
+# ADR-019: JSONL History Persistence
 
 ## Status
 Accepted

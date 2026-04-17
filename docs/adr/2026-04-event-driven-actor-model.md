@@ -1,4 +1,9 @@
-# ADR: Migrate Orchestrator to Event-Driven Actor Model
+<!--
+Copyright (c) 2026 gosharplite@gmail.com
+SPDX-License-Identifier: MIT
+-->
+
+# ADR-018: Migrate Orchestrator to Event-Driven Actor Model
 
 ## Status
 Accepted

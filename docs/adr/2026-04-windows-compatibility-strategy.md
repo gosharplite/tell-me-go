@@ -1,4 +1,9 @@
-# ADR 002: Windows Compatibility Strategy
+<!--
+Copyright (c) 2026 gosharplite@gmail.com
+SPDX-License-Identifier: MIT
+-->
+
+# ADR-020: Windows Compatibility Strategy
 
 ## Status
 Accepted

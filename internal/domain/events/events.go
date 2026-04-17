@@ -183,47 +183,90 @@ func (b *SimpleEventBus) Publish(ctx context.Context, event Event) error {
 	default:
 	}
 
-	b.mu.RLock()
-	if b.closed {
-		b.mu.RUnlock()
-		return ErrBusClosed
+	wrappers, err := b.acquireDispatchSnapshot(event.Type())
+	if err != nil {
+		return err
 	}
-
-	// Synchronous mode for testing/specific use cases
-	if !b.asyncDispatch {
-		b.mu.RUnlock()
+	// nil wrappers signals synchronous-dispatch mode.
+	if wrappers == nil {
 		return b.dispatchSync(ctx, event)
 	}
 
-	specificSubs := b.subscribers[event.Type()]
+	return b.dispatchAsync(ctx, wrappers, event)
+}
+
+// dispatchAsync enqueues the event onto each subscriber's channel, aborting
+// early if the context is cancelled. Caller MUST NOT hold b.mu.
+func (b *SimpleEventBus) dispatchAsync(ctx context.Context, wrappers []*subscriberWrapper, event Event) error {
+	for _, w := range wrappers {
+		if err := b.enqueueEvent(ctx, w, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// acquireDispatchSnapshot performs the locked precondition check and snapshot
+// for an async Publish.
+//
+// Returns:
+//   - (snapshot, nil): async-mode dispatch; snapshot may be empty but is non-nil.
+//   - (nil, nil):      synchronous-dispatch mode; caller must invoke dispatchSync.
+//   - (nil, err):      bus is closed (ErrBusClosed).
+//
+// On return, b.mu is always released.
+func (b *SimpleEventBus) acquireDispatchSnapshot(eventType string) ([]*subscriberWrapper, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.closed {
+		return nil, ErrBusClosed
+	}
+	if !b.asyncDispatch {
+		// nil signals "use sync dispatch" — distinguishable from an empty async snapshot
+		// which is always non-nil (allocated below).
+		return nil, nil
+	}
+	return b.snapshotSubscribers(eventType), nil
+}
+
+// snapshotSubscribers returns a unified slice of subscribers for the given event type
+// plus all global subscribers. Always returns a non-nil slice (possibly empty).
+// The caller MUST hold b.mu (read or write).
+func (b *SimpleEventBus) snapshotSubscribers(eventType string) []*subscriberWrapper {
+	specificSubs := b.subscribers[eventType]
 	globalSubs := b.globalSubscribers
 
-	// Create unified list of wrappers (snapshot)
 	wrappers := make([]*subscriberWrapper, 0, len(specificSubs)+len(globalSubs))
 	wrappers = append(wrappers, specificSubs...)
 	wrappers = append(wrappers, globalSubs...)
+	return wrappers
+}
 
-	b.mu.RUnlock() // Release lock EARLY
-
-	for _, w := range wrappers {
-		b.incPending()
-		select {
-		case w.ch <- event:
-			// Successfully enqueued
-		case <-ctx.Done():
-			b.decPending()
-			return ctx.Err()
-		default:
-			// Backpressure: Subscriber channel is full.
-			// Shed load and log to avoid blocking the hot path.
-			b.decPending()
-			b.getLogger().Warn("subscriber queue full, dropping event",
-				slog.String("event_type", event.Type()),
-				slog.String("subscriber", fmt.Sprintf("%T", w.sub)))
-		}
+// enqueueEvent attempts to push the event onto a single subscriber's channel.
+// It performs an inc/dec of the pending counter such that the counter is left
+// incremented if and only if the event was successfully enqueued.
+// Returns ctx.Err() if the context is cancelled during enqueue; otherwise nil
+// (including the backpressure-drop case, which is logged but not an error).
+// Caller MUST NOT hold b.mu.
+func (b *SimpleEventBus) enqueueEvent(ctx context.Context, w *subscriberWrapper, event Event) error {
+	b.incPending()
+	select {
+	case w.ch <- event:
+		// Successfully enqueued
+		return nil
+	case <-ctx.Done():
+		b.decPending()
+		return ctx.Err()
+	default:
+		// Backpressure: Subscriber channel is full.
+		// Shed load and log to avoid blocking the hot path.
+		b.decPending()
+		b.getLogger().Warn("subscriber queue full, dropping event",
+			slog.String("event_type", event.Type()),
+			slog.String("subscriber", fmt.Sprintf("%T", w.sub)))
+		return nil
 	}
-
-	return nil
 }
 
 func (b *SimpleEventBus) dispatchSync(ctx context.Context, event Event) error {
@@ -468,39 +511,47 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	done := make(chan struct{})
 	var cancelled bool
 
-	go func() {
-		defer close(done)
-		defer func() {
-			if r := recover(); r != nil {
-				if b.log != nil {
-					b.log.Error("panic in event bus flush wait", "error", r, "stack", string(debug.Stack()))
-				}
-			}
-		}()
-
-		b.pendingMu.Lock()
-		defer b.pendingMu.Unlock()
-		for b.pendingCount > 0 && !cancelled {
-			b.cond.Wait()
-		}
-	}()
+	go b.flushWaiter(done, &cancelled)
 
 	select {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		b.pendingMu.Lock()
-		cancelled = true
-		b.cond.Broadcast()
-		b.pendingMu.Unlock()
-		return ctx.Err()
+		return b.cancelFlushWaiter(&cancelled, ctx.Err())
 	case <-b.ctx.Done():
-		b.pendingMu.Lock()
-		cancelled = true
-		b.cond.Broadcast()
-		b.pendingMu.Unlock()
-		return ErrBusClosed
+		return b.cancelFlushWaiter(&cancelled, ErrBusClosed)
 	}
+}
+
+// flushWaiter blocks on b.cond until pendingCount drops to 0 or the cancelled
+// flag is set by cancelFlushWaiter. It always closes done when it returns.
+// Recovers from any panic in cond.Wait to avoid leaving Flush blocked forever.
+func (b *SimpleEventBus) flushWaiter(done chan<- struct{}, cancelled *bool) {
+	defer close(done)
+	defer func() {
+		if r := recover(); r != nil {
+			if b.log != nil {
+				b.log.Error("panic in event bus flush wait", "error", r, "stack", string(debug.Stack()))
+			}
+		}
+	}()
+
+	b.pendingMu.Lock()
+	defer b.pendingMu.Unlock()
+	for b.pendingCount > 0 && !*cancelled {
+		b.cond.Wait()
+	}
+}
+
+// cancelFlushWaiter signals the flushWaiter goroutine to stop waiting and
+// returns the supplied error. Used by both ctx-cancellation and bus-shutdown
+// branches of Flush.
+func (b *SimpleEventBus) cancelFlushWaiter(cancelled *bool, err error) error {
+	b.pendingMu.Lock()
+	*cancelled = true
+	b.cond.Broadcast()
+	b.pendingMu.Unlock()
+	return err
 }
 
 // SafePublish attempts to publish an event with a forced timeout.
