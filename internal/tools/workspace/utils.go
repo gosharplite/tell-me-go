@@ -220,38 +220,44 @@ func (p *searchPipeline) scanFile(path string) error {
 		}
 	}
 
-	if isBin, err := checkBinary(file); err == nil && !isBin {
-		const maxScannerCapacity = 10 * 1024 * 1024
-		scanner := bufio.NewScanner(file)
-		// Replace sync.Pool with a simple local allocation.
-		// Go's GC handles short-lived 64KB buffers incredibly fast, and this avoids the pointer-growth leak.
-		buf := make([]byte, 64*1024)
-		scanner.Buffer(buf, maxScannerCapacity)
+	isBin, err := checkBinary(file)
+	if err != nil || isBin {
+		return nil
+	}
 
-		lineNum := 0
-		for scanner.Scan() {
-			// Check for cancellation to prevent unbounded CPU burn on large files
-			if p.ctx.Err() != nil {
+	return p.scanLines(path, file)
+}
+
+// scanLines reads a file line-by-line, applies the matcher, and sends results to the pipeline.
+func (p *searchPipeline) scanLines(path string, file persistence.File) error {
+	const maxScannerCapacity = 10 * 1024 * 1024
+	scanner := bufio.NewScanner(file)
+	// Go's GC handles short-lived 64KB buffers incredibly fast, and this avoids the pointer-growth leak.
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxScannerCapacity)
+
+	lineNum := 0
+	for scanner.Scan() {
+		// Check for cancellation to prevent unbounded CPU burn on large files
+		if p.ctx.Err() != nil {
+			return p.ctx.Err()
+		}
+
+		lineNum++
+		line := scanner.Text()
+		if match, ok := p.matcher(path, line); ok {
+			text := line
+			if match != "" {
+				text = match
+			}
+			select {
+			case p.resultsChan <- formatMatch(path, lineNum, text):
+			case <-p.ctx.Done():
 				return p.ctx.Err()
 			}
-
-			lineNum++
-			line := scanner.Text()
-			if match, ok := p.matcher(path, line); ok {
-				text := line
-				if match != "" {
-					text = match
-				}
-				select {
-				case p.resultsChan <- formatMatch(path, lineNum, text):
-				case <-p.ctx.Done():
-					return p.ctx.Err()
-				}
-			}
 		}
-		return scanner.Err()
 	}
-	return nil
+	return scanner.Err()
 }
 
 // checkBinary reads the beginning of the file to check for binary content and rewinds the cursor.

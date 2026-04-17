@@ -290,45 +290,66 @@ func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string
 	p := &pipeline{cmds: make([]*exec.Cmd, len(pipedParts))}
 
 	for i, parts := range pipedParts {
-		if len(parts) == 0 {
-			return nil, fmt.Errorf("empty command at index %d", i)
-		}
-		cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-		p.cmds[i] = cmd
-
-		if runtime.GOOS == "windows" {
-			// Each command in the pipeline needs to be terminated as a tree.
-			cmd.Cancel = func() error {
-				if cmd.Process == nil {
-					return nil
-				}
-				return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
-			}
-		}
-
-		if len(config.Env) > 0 {
-			env := os.Environ()
-			for k, v := range config.Env {
-				env = append(env, fmt.Sprintf("%s=%s", k, v))
-			}
-			p.cmds[i].Env = env
-		}
-
-		stderr, err := p.cmds[i].StderrPipe()
+		cmd, err := e.newPipelineCmd(ctx, parts, i, config)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get stderr pipe for command %d: %w", i, err)
+			return nil, err
+		}
+		p.cmds[i] = cmd
+	}
+
+	if err := p.wirePipes(); err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
+// newPipelineCmd creates and configures a single exec.Cmd for use in a pipeline.
+func (e *processExecutor) newPipelineCmd(ctx context.Context, parts []string, index int, config executionConfig) (*exec.Cmd, error) {
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty command at index %d", index)
+	}
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+
+	if runtime.GOOS == "windows" {
+		cmd.Cancel = func() error {
+			if cmd.Process == nil {
+				return nil
+			}
+			return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+		}
+	}
+
+	if len(config.Env) > 0 {
+		env := os.Environ()
+		for k, v := range config.Env {
+			env = append(env, fmt.Sprintf("%s=%s", k, v))
+		}
+		cmd.Env = env
+	}
+
+	return cmd, nil
+}
+
+// wirePipes connects stderr, stdin, and stdout pipes across all commands in the pipeline.
+func (p *pipeline) wirePipes() error {
+	for i, cmd := range p.cmds {
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			return fmt.Errorf("failed to get stderr pipe for command %d: %w", i, err)
 		}
 		p.stderrPipes = append(p.stderrPipes, stderr)
 		p.pipes = append(p.pipes, stderr)
 
 		if i > 0 {
+			// Connect previous command's stdout to this command's stdin.
 			p.cmds[i].Stdin = p.pipes[len(p.pipes)-2].(io.Reader)
 		}
 
-		if i < len(pipedParts)-1 {
-			stdout, err := p.cmds[i].StdoutPipe()
+		if i < len(p.cmds)-1 {
+			stdout, err := cmd.StdoutPipe()
 			if err != nil {
-				return nil, err
+				return fmt.Errorf("failed to get stdout pipe for command %d: %w", i, err)
 			}
 			p.pipes = append(p.pipes, stdout)
 		}
@@ -337,11 +358,11 @@ func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string
 	var err error
 	p.stdoutPipe, err = p.cmds[len(p.cmds)-1].StdoutPipe()
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to get stdout pipe for last command: %w", err)
 	}
 	p.pipes = append(p.pipes, p.stdoutPipe)
 
-	return p, nil
+	return nil
 }
 
 func (p *pipeline) start() error {
