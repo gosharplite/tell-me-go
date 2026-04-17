@@ -584,7 +584,6 @@ func (m *mockHistoryManagerForRetry) Sync(ctx context.Context) error {
 	return nil
 }
 
-
 // mockHealthCheckManager is a mock of ports.HealthCheckManager for RunDiagnostics tests.
 type mockHealthCheckManager struct {
 	mock.Mock
@@ -793,7 +792,6 @@ func TestRunDiagnostics(t *testing.T) {
 	}
 }
 
-
 // mockHistoryBrowser is a mock implementation of ports.HistoryBrowser for testing.
 type mockHistoryBrowser struct {
 	mock.Mock
@@ -805,21 +803,21 @@ func (m *mockHistoryBrowser) Browse(ctx context.Context, provider ports.UnifiedH
 
 func TestBrowseHistory(t *testing.T) {
 	tests := []struct {
-		name    string
+		name      string
 		browseErr error
-		wantErr bool
-		errMsg  string
+		wantErr   bool
+		errMsg    string
 	}{
 		{
-			name:    "success",
+			name:      "success",
 			browseErr: nil,
-			wantErr: false,
+			wantErr:   false,
 		},
 		{
-			name:    "browser error",
+			name:      "browser error",
 			browseErr: errors.New("browser failed"),
-			wantErr: true,
-			errMsg:  "browser failed",
+			wantErr:   true,
+			errMsg:    "browser failed",
 		},
 	}
 
@@ -870,8 +868,8 @@ func (m *mockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *too
 func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }
-func (m *mockToolRegistry) IsSerial(name string) bool      { return false }
-func (m *mockToolRegistry) IsLongRunning(name string) bool  { return false }
+func (m *mockToolRegistry) IsSerial(name string) bool                { return false }
+func (m *mockToolRegistry) IsLongRunning(name string) bool           { return false }
 func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions { return tools.ToolOptions{} }
 func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return m.declarations
