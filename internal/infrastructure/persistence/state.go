@@ -81,6 +81,35 @@ func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	}
 }
 
+// hydrateInfo loads persisted session info from disk (if available) and ensures
+// all required fields have non-nil defaults.
+func (s *sessionState) hydrateInfo(ctx context.Context, storageType string, repoPaths map[string]string) {
+	if storageType != "memory" {
+		if data, err := s.fs.ReadFile(ctx, s.statePath); err == nil {
+			var loaded ports.SessionInfo
+			if err := json.Unmarshal(data, &loaded); err == nil {
+				s.Info = loaded
+			}
+		}
+	}
+
+	if s.Info.Env == nil {
+		s.Info.Env = make(map[string]string)
+	}
+	s.Info.Env["STORAGE_TYPE"] = storageType
+
+	if s.Info.Paths == nil {
+		s.Info.Paths = make(map[string]string)
+	}
+	for k, v := range repoPaths {
+		s.Info.Paths[k] = v
+	}
+
+	if s.Info.ActiveToolkits == nil {
+		s.Info.ActiveToolkits = []string{}
+	}
+}
+
 func (s *sessionState) Close() error {
 	if s.db != nil {
 		return s.db.Close()
@@ -116,32 +145,7 @@ func NewSessionState(ctx context.Context, configDir string) (ports.SessionProvid
 		fs:        fs,
 	}
 
-	// Try to load existing state
-	if storageType != "memory" {
-		if data, err := fs.ReadFile(ctx, statePath); err == nil {
-			var loaded ports.SessionInfo
-			if err := json.Unmarshal(data, &loaded); err == nil {
-				state.Info = loaded
-			}
-		}
-	}
-
-	// Ensure essential fields are set if not loaded or if missing
-	if state.Info.Env == nil {
-		state.Info.Env = make(map[string]string)
-	}
-	state.Info.Env["STORAGE_TYPE"] = storageType
-
-	if state.Info.Paths == nil {
-		state.Info.Paths = make(map[string]string)
-	}
-	for k, v := range paths {
-		state.Info.Paths[k] = v
-	}
-
-	if state.Info.ActiveToolkits == nil {
-		state.Info.ActiveToolkits = []string{}
-	}
+	state.hydrateInfo(ctx, storageType, paths)
 
 	return state, nil
 }
