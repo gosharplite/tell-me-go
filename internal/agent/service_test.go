@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -788,6 +789,142 @@ func TestRunDiagnostics(t *testing.T) {
 			deps.AssertExpectations(t)
 			hcm.AssertExpectations(t)
 			uir.AssertExpectations(t)
+		})
+	}
+}
+
+
+// mockHistoryBrowser is a mock implementation of ports.HistoryBrowser for testing.
+type mockHistoryBrowser struct {
+	mock.Mock
+}
+
+func (m *mockHistoryBrowser) Browse(ctx context.Context, provider ports.UnifiedHistoryProvider, hManager ports.HistoryManager) error {
+	return m.Called(ctx, provider, hManager).Error(0)
+}
+
+func TestBrowseHistory(t *testing.T) {
+	tests := []struct {
+		name    string
+		browseErr error
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "success",
+			browseErr: nil,
+			wantErr: false,
+		},
+		{
+			name:    "browser error",
+			browseErr: errors.New("browser failed"),
+			wantErr: true,
+			errMsg:  "browser failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			browser := &mockHistoryBrowser{}
+			mockHM := &mockHistoryManagerForRetry{}
+
+			browser.On("Browse", ctx, mock.Anything, mockHM).Return(tt.browseErr)
+
+			service := agent.NewChatService(
+				"home", "v1", io.Discard, io.Discard, nil,
+				nil, nil, nil, nil, browser, nil,
+			)
+
+			err := service.BrowseHistory(ctx, nil, mockHM)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			browser.AssertExpectations(t)
+		})
+	}
+}
+
+// mockToolRegistry is a minimal mock of tools.Registry for testing GetToolNames.
+type mockToolRegistry struct {
+	declarations []*tools.ToolDeclaration
+}
+
+func (m *mockToolRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return nil
+}
+func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return nil
+}
+func (m *mockToolRegistry) RegisterToToolkit(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc) error {
+	return nil
+}
+func (m *mockToolRegistry) RegisterToToolkitWithOptions(toolkit string, def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) error {
+	return nil
+}
+func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+func (m *mockToolRegistry) IsSerial(name string) bool      { return false }
+func (m *mockToolRegistry) IsLongRunning(name string) bool  { return false }
+func (m *mockToolRegistry) GetOptions(name string) tools.ToolOptions { return tools.ToolOptions{} }
+func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
+	return m.declarations
+}
+func (m *mockToolRegistry) GetCoreDeclarations() []*tools.ToolDeclaration { return nil }
+func (m *mockToolRegistry) GetDeclarationsByToolkits(toolkits []string) []*tools.ToolDeclaration {
+	return nil
+}
+func (m *mockToolRegistry) ListAvailableToolkits() []string { return nil }
+
+func TestGetToolNames(t *testing.T) {
+	tests := []struct {
+		name         string
+		declarations []*tools.ToolDeclaration
+		wantNames    []string
+	}{
+		{
+			name: "multiple tools",
+			declarations: []*tools.ToolDeclaration{
+				{Name: "read_file"},
+				{Name: "write_file"},
+				{Name: "execute_command"},
+			},
+			wantNames: []string{"read_file", "write_file", "execute_command"},
+		},
+		{
+			name:         "empty registry",
+			declarations: []*tools.ToolDeclaration{},
+			wantNames:    []string{},
+		},
+		{
+			name: "single tool",
+			declarations: []*tools.ToolDeclaration{
+				{Name: "search"},
+			},
+			wantNames: []string{"search"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			reg := &mockToolRegistry{declarations: tt.declarations}
+
+			service := agent.NewChatService(
+				"home", "v1", io.Discard, io.Discard, nil,
+				nil, nil, nil, nil, nil, nil,
+			)
+
+			names, err := service.GetToolNames(ctx, reg)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantNames, names)
 		})
 	}
 }
