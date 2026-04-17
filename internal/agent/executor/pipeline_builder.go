@@ -45,7 +45,8 @@ func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, 
 
 	var exec ToolExecutor = newBaseRuntime(registry)
 
-	authService := newSecurityAuthorizer(sm, registry)
+	resolver := newToolResolutionService(registry)
+	authService := newSecurityAuthorizer(sm, registry, resolver)
 
 	exec = newAuthDecorator(exec, authService)
 	exec = newTracingDecorator(exec, registry, logger)
@@ -53,7 +54,7 @@ func NewPipelineDispatcher(registry tools.Registry, sm domain_security.Manager, 
 	exec = newSafetyDecorator(exec, registry, logger, bus, zombie, cfg.ToolTimeout, cfg.LongRunningTimeout, cfg.ZombieTimeout)
 
 	basePipeline := &defaultToolPipeline{
-		resolver:   newToolResolutionService(registry),
+		resolver:   resolver,
 		authorizer: authService,
 		runtime:    exec,
 		registry:   registry,

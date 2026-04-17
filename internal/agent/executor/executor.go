@@ -112,7 +112,7 @@ func newDefaultToolPipeline(
 	zombieTimeout time.Duration,
 ) ToolPipeline {
 	resolver := newToolResolutionService(registry)
-	authService := newSecurityAuthorizer(sm, registry)
+	authService := newSecurityAuthorizer(sm, registry, resolver)
 
 	var exec ToolExecutor = newBaseRuntime(registry)
 	exec = newAuthDecorator(exec, authService)

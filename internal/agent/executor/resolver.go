@@ -77,31 +77,3 @@ func suggestTool(hallucinated string, validTools []string) string {
 	return closest
 }
 
-func resolveTool(reg tools.Registry, call *llm.FunctionCall) (*tools.ToolDeclaration, error) {
-	var tool *tools.ToolDeclaration
-	var validTools []string
-	for _, decl := range reg.GetDeclarations() {
-		validTools = append(validTools, decl.Name)
-		if decl.Name == call.Name {
-			tool = decl
-		}
-	}
-
-	if tool == nil {
-		sort.Strings(validTools)
-		errorMessage := fmt.Sprintf(
-			"tool %q is not defined; available tools: [%s]",
-			call.Name, strings.Join(validTools, ", "),
-		)
-
-		if suggestion := suggestTool(call.Name, validTools); suggestion != "" {
-			errorMessage += fmt.Sprintf("; did you mean %q?", suggestion)
-		}
-
-		errorMessage += "; please check the spelling or use a different tool from the authorized list"
-
-		return nil, fmt.Errorf("%s", errorMessage)
-	}
-
-	return tool, nil
-}

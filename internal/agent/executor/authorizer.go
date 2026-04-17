@@ -26,13 +26,15 @@ type securityAuthorizer struct {
 	mu       sync.RWMutex
 	sm       domain_security.Manager
 	registry tools.Registry
+	resolver ToolResolutionService
 }
 
 // newSecurityAuthorizer creates a new ToolAuthService.
-func newSecurityAuthorizer(sm domain_security.Manager, registry tools.Registry) *securityAuthorizer {
+func newSecurityAuthorizer(sm domain_security.Manager, registry tools.Registry, resolver ToolResolutionService) *securityAuthorizer {
 	return &securityAuthorizer{
 		sm:       sm,
 		registry: registry,
+		resolver: resolver,
 	}
 }
 
@@ -62,7 +64,7 @@ func (a *securityAuthorizer) IdentifyConsentItems(calls []*llm.FunctionCall) ([]
 				}
 			}()
 
-			tool, err := resolveTool(a.registry, call)
+			tool, err := a.resolver.Resolve(call)
 			if err == nil && tool.RequiresConsent {
 				consentIndices = append(consentIndices, i)
 			}
