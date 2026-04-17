@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -101,12 +102,10 @@ func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent stri
 		return nil
 	}
 
-	// Check cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	// Emit heartbeat
 	if hb != nil {
 		sendHeartbeat(ctx, hb)
 	}
@@ -117,28 +116,32 @@ func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent stri
 	}
 
 	for i, entry := range entries {
-		connector := "├── "
-		if i == len(entries)-1 {
-			connector = "└── "
-		}
-
-		sb.WriteString(indent + connector + entry.Name() + "\n")
-
-		if entry.IsDir() {
-			newIndent := indent + "│   "
-			if i == len(entries)-1 {
-				newIndent = indent + "    "
-			}
-			// Skip .git
-			if entry.Name() == ".git" {
-				continue
-			}
-			if err := buildTree(ctx, fs, filepath.Join(path, entry.Name()), newIndent, depth+1, maxDepth, sb, hb); err != nil {
-				return err
-			}
+		isLast := i == len(entries)-1
+		if err := writeTreeEntry(ctx, fs, entry, path, indent, isLast, depth, maxDepth, sb, hb); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func writeTreeEntry(ctx context.Context, fs persistence.FileSystem, entry os.DirEntry, parentPath, indent string, isLast bool, depth, maxDepth int, sb *strings.Builder, hb chan<- struct{}) error {
+	connector := "├── "
+	if isLast {
+		connector = "└── "
+	}
+
+	sb.WriteString(indent + connector + entry.Name() + "\n")
+
+	if !entry.IsDir() || entry.Name() == ".git" {
+		return nil
+	}
+
+	newIndent := indent + "│   "
+	if isLast {
+		newIndent = indent + "    "
+	}
+
+	return buildTree(ctx, fs, filepath.Join(parentPath, entry.Name()), newIndent, depth+1, maxDepth, sb, hb)
 }
 
 const maxReadSize = 100000
