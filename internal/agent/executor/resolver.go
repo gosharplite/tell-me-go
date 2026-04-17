@@ -76,4 +76,3 @@ func suggestTool(hallucinated string, validTools []string) string {
 	}
 	return closest
 }
-
