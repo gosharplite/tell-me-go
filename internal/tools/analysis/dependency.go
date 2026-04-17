@@ -138,32 +138,43 @@ func (a *defaultDependencyAnalyzer) startHeartbeat(hb chan<- struct{}, done <-ch
 	}
 }
 
+// isSkippedDir reports whether the named directory should be excluded from package scanning.
+func isSkippedDir(name string) bool {
+	return name == "vendor" || (len(name) > 1 && name[0] == '.')
+}
+
+// containsGoFiles reports whether the directory at path contains at least one .go file.
+func containsGoFiles(path string) (bool, error) {
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".go") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (a *defaultDependencyAnalyzer) listInternalPackages(root string) ([]string, error) {
 	var pkgs []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			name := info.Name()
-			if name == "vendor" || (len(name) > 1 && name[0] == '.') {
-				return filepath.SkipDir
-			}
-			// Check if directory contains .go files
-			hasGo := false
-			files, err := os.ReadDir(path)
-			if err != nil {
-				return err
-			}
-			for _, f := range files {
-				if !f.IsDir() && strings.HasSuffix(f.Name(), ".go") {
-					hasGo = true
-					break
-				}
-			}
-			if hasGo {
-				pkgs = append(pkgs, path)
-			}
+		if !info.IsDir() {
+			return nil
+		}
+		if isSkippedDir(info.Name()) {
+			return filepath.SkipDir
+		}
+		hasGo, err := containsGoFiles(path)
+		if err != nil {
+			return err
+		}
+		if hasGo {
+			pkgs = append(pkgs, path)
 		}
 		return nil
 	})

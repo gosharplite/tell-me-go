@@ -124,6 +124,49 @@ func (c *capturer) IsTTY(v any) bool {
 	return false
 }
 
+// sendRequest enqueues a readRequest to the background worker and waits for
+// the result, respecting context cancellation at both the send and receive stages.
+func (c *capturer) sendRequest(ctx context.Context, req readRequest) (ioResult, error) {
+	c.readerMu.Lock()
+	if c.requestChan == nil {
+		c.readerMu.Unlock()
+		return ioResult{}, errCapturerClosed
+	}
+	select {
+	case c.requestChan <- req:
+		c.readerMu.Unlock()
+	case <-ctx.Done():
+		c.readerMu.Unlock()
+		return ioResult{}, ctx.Err()
+	}
+
+	select {
+	case <-ctx.Done():
+		return ioResult{}, ctx.Err()
+	case res := <-req.resCh:
+		return res, nil
+	}
+}
+
+// resolveInput determines the prompt text by reading from the appropriate input
+// source (pipe or TTY) based on the current environment.
+func (c *capturer) resolveInput(ctx context.Context, prompt string, options *ports.CaptureOptions) (string, error) {
+	if !c.IsTTY(c.Stdin) {
+		return c.captureFromPipe(ctx, prompt)
+	}
+	if prompt == "" && !options.SkipTTYWait {
+		result, err := c.captureFromTTY(ctx, !options.Raw)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(result) == "" {
+			return "", context.Canceled
+		}
+		return result, nil
+	}
+	return prompt, nil
+}
+
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
 func (c *capturer) CapturePrompt(ctx context.Context, args []string, opts ...ports.CaptureOption) (string, error) {
 	options := &ports.CaptureOptions{}
@@ -146,16 +189,7 @@ func (c *capturer) CapturePrompt(ctx context.Context, args []string, opts ...por
 		defer c.SM.TerminalUnlock()
 	}
 
-	var err error
-	if !c.IsTTY(c.Stdin) {
-		prompt, err = c.captureFromPipe(ctx, prompt)
-	} else if prompt == "" && !options.SkipTTYWait {
-		prompt, err = c.captureFromTTY(ctx, !options.Raw)
-		if err == nil && strings.TrimSpace(prompt) == "" {
-			return "", context.Canceled
-		}
-	}
-
+	prompt, err := c.resolveInput(ctx, prompt, options)
 	if err != nil {
 		return "", err
 	}
@@ -185,36 +219,21 @@ func (c *capturer) captureFromPipe(ctx context.Context, prompt string) (string, 
 		return "", err
 	}
 
-	resCh := make(chan ioResult, 1)
-
-	c.readerMu.Lock()
-	if c.requestChan == nil {
-		c.readerMu.Unlock()
-		return "", errCapturerClosed
+	req := readRequest{op: opReadAll, limit: maxPromptSize, resCh: make(chan ioResult, 1)}
+	res, err := c.sendRequest(ctx, req)
+	if err != nil {
+		return "", err
 	}
-	select {
-	case c.requestChan <- readRequest{op: opReadAll, limit: maxPromptSize, resCh: resCh}:
-		c.readerMu.Unlock()
-	case <-ctx.Done():
-		c.readerMu.Unlock()
-		return "", ctx.Err()
+	if res.err != nil {
+		return "", fmt.Errorf("failed to read from pipe: %w", res.err)
 	}
 
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case res := <-resCh:
-		if res.err != nil {
-			return "", fmt.Errorf("failed to read from pipe: %w", res.err)
-		}
-
-		bytes := res.data.([]byte)
-		combined := prompt
-		if len(bytes) > 0 {
-			combined = prompt + "\n" + string(bytes)
-		}
-		return combined, nil
+	bytes := res.data.([]byte)
+	combined := prompt
+	if len(bytes) > 0 {
+		combined = prompt + "\n" + string(bytes)
 	}
+	return combined, nil
 }
 
 func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
@@ -224,30 +243,15 @@ func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 
 	c.printFeedback(c.Stdout, useColor, colorYellow, multiLineEOFHint)
 
-	resCh := make(chan ioResult, 1)
-
-	c.readerMu.Lock()
-	if c.requestChan == nil {
-		c.readerMu.Unlock()
-		return "", errCapturerClosed
+	req := readRequest{op: opReadAll, limit: maxPromptSize, resCh: make(chan ioResult, 1)}
+	res, err := c.sendRequest(ctx, req)
+	if err != nil {
+		return "", err
 	}
-	select {
-	case c.requestChan <- readRequest{op: opReadAll, limit: maxPromptSize, resCh: resCh}:
-		c.readerMu.Unlock()
-	case <-ctx.Done():
-		c.readerMu.Unlock()
-		return "", ctx.Err()
+	if res.err != nil {
+		return "", fmt.Errorf("failed to read from TTY: %w", res.err)
 	}
-
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case res := <-resCh:
-		if res.err != nil {
-			return "", fmt.Errorf("failed to read from TTY: %w", res.err)
-		}
-		return string(res.data.([]byte)), nil
-	}
+	return string(res.data.([]byte)), nil
 }
 
 // printFeedback displays a message with optional color.
@@ -361,36 +365,19 @@ func (c *capturer) readByteFallback(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	resCh := make(chan ioResult, 1)
-
-	// Send request to the singleton worker
-	c.readerMu.Lock()
-	if c.requestChan == nil {
-		c.readerMu.Unlock()
-		return "", errCapturerClosed
+	req := readRequest{op: opReadByte, resCh: make(chan ioResult, 1)}
+	res, err := c.sendRequest(ctx, req)
+	if err != nil {
+		return "", err
 	}
-	select {
-	case c.requestChan <- readRequest{op: opReadByte, resCh: resCh}:
-		c.readerMu.Unlock()
-	case <-ctx.Done():
-		c.readerMu.Unlock()
-		return "", ctx.Err()
+	if res.err != nil {
+		return "", res.err
 	}
-
-	select {
-	case <-ctx.Done():
-		// Background worker stays alive, eventually finishing its read and waiting for the next request.
-		return "", ctx.Err()
-	case res := <-resCh:
-		if res.err != nil {
-			return "", res.err
-		}
-		b := res.data.(byte)
-		if b == 3 { // Ctrl+C (ETX)
-			return "", context.Canceled
-		}
-		return strings.ToLower(string(b)), nil
+	b := res.data.(byte)
+	if b == 3 { // Ctrl+C (ETX)
+		return "", context.Canceled
 	}
+	return strings.ToLower(string(b)), nil
 }
 
 // ReadLine reads a line of input.
@@ -399,37 +386,22 @@ func (c *capturer) ReadLine(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	resCh := make(chan ioResult, 1)
-
-	c.readerMu.Lock()
-	if c.requestChan == nil {
-		c.readerMu.Unlock()
-		return "", errCapturerClosed
+	req := readRequest{op: opReadString, delim: '\n', resCh: make(chan ioResult, 1)}
+	res, err := c.sendRequest(ctx, req)
+	if err != nil {
+		return "", err
 	}
-	select {
-	case c.requestChan <- readRequest{op: opReadString, delim: '\n', resCh: resCh}:
-		c.readerMu.Unlock()
-	case <-ctx.Done():
-		c.readerMu.Unlock()
-		return "", ctx.Err()
-	}
-
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case res := <-resCh:
-		if res.err != nil {
-			s := ""
-			if res.data != nil {
-				s = res.data.(string)
-			}
-			if res.err != io.EOF || s == "" {
-				return "", res.err
-			}
-			return s, nil
+	if res.err != nil {
+		s := ""
+		if res.data != nil {
+			s = res.data.(string)
 		}
-		return res.data.(string), nil
+		if res.err != io.EOF || s == "" {
+			return "", res.err
+		}
+		return s, nil
 	}
+	return res.data.(string), nil
 }
 
 // Close gracefully stops the background worker.
