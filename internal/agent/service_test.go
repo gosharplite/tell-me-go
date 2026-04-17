@@ -466,9 +466,10 @@ func (m *mockFileSystemStream) Open(ctx context.Context, name string) (persisten
 
 type minimalFile struct {
 	io.Reader
+	closeErr error
 }
 
-func (f *minimalFile) Close() error                                  { return nil }
+func (f *minimalFile) Close() error                                  { return f.closeErr }
 func (f *minimalFile) ReadAt(p []byte, off int64) (n int, err error) { return 0, nil }
 func (f *minimalFile) ReadDir(n int) ([]os.DirEntry, error)          { return nil, nil }
 func (f *minimalFile) Seek(offset int64, whence int) (int64, error)  { return 0, nil }
@@ -491,6 +492,7 @@ func TestStreamTurnsLog(t *testing.T) {
 		setupMock   func(mFS *mockFileSystemStream)
 		expectedOut string
 		wantErr     bool
+		errMsg      string
 	}{
 		{
 			name: "Success",
@@ -520,6 +522,7 @@ func TestStreamTurnsLog(t *testing.T) {
 				mFS.On("Open", mock.Anything, logPath).Return(nil, os.ErrPermission)
 			},
 			wantErr: true,
+			errMsg:  "failed to open turns log",
 		},
 		{
 			name: "ReadError",
@@ -529,6 +532,21 @@ func TestStreamTurnsLog(t *testing.T) {
 				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{Reader: &errorReader{}}, nil)
 			},
 			wantErr: true,
+			errMsg:  "failed to stream log",
+		},
+		{
+			name: "CloseError",
+			mode: "assistant",
+			setupMock: func(mFS *mockFileSystemStream) {
+				logPath := persistence.ResolvePaths(homeDir, "assistant").TurnsLogPath
+				mFS.On("Open", mock.Anything, logPath).Return(&minimalFile{
+					Reader:   strings.NewReader("log content"),
+					closeErr: errors.New("close failure"),
+				}, nil)
+			},
+			expectedOut: "log content",
+			wantErr:     true,
+			errMsg:      "failed to close turns log",
 		},
 	}
 
@@ -549,6 +567,9 @@ func TestStreamTurnsLog(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedOut, out.String())
@@ -560,4 +581,213 @@ func TestStreamTurnsLog(t *testing.T) {
 
 func (m *mockHistoryManagerForRetry) Sync(ctx context.Context) error {
 	return nil
+}
+
+
+// mockHealthCheckManager is a mock of ports.HealthCheckManager for RunDiagnostics tests.
+type mockHealthCheckManager struct {
+	mock.Mock
+}
+
+func (m *mockHealthCheckManager) CheckAll(ctx context.Context) (*ports.HealthReport, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*ports.HealthReport), args.Error(1)
+}
+
+func (m *mockHealthCheckManager) CheckComponent(ctx context.Context, comp ports.Component) (*ports.ComponentReport, error) {
+	args := m.Called(ctx, comp)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*ports.ComponentReport), args.Error(1)
+}
+
+// mockUIRendererForDiag embeds StubUIRenderer and overrides methods needed for RunDiagnostics assertions.
+type mockUIRendererForDiag struct {
+	agenttest.StubUIRenderer
+	mock.Mock
+}
+
+func (m *mockUIRendererForDiag) SetUseColor(use bool) {
+	m.Called(use)
+}
+
+func (m *mockUIRendererForDiag) IsTerminalContext() bool {
+	return m.Called().Bool(0)
+}
+
+func (m *mockUIRendererForDiag) RenderHealthReport(ctx context.Context, report *ports.HealthReport) {
+	m.Called(ctx, report)
+}
+
+func TestRunDiagnostics(t *testing.T) {
+	errBuild := errors.New("build error")
+	errCheck := errors.New("check error")
+
+	healthyReport := &ports.HealthReport{
+		OverallStatus: ports.StatusHealthy,
+		Components: map[ports.Component]ports.ComponentReport{
+			ports.CompPersistence: {Component: ports.CompPersistence, Status: ports.StatusHealthy, Message: "OK"},
+		},
+	}
+	unhealthyReport := &ports.HealthReport{
+		OverallStatus: ports.StatusUnhealthy,
+		Components: map[ports.Component]ports.ComponentReport{
+			ports.CompLLMProvider: {Component: ports.CompLLMProvider, Status: ports.StatusUnhealthy, Message: "unreachable"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		jsonOutput bool
+		setupMock  func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag)
+		wantErr    bool
+		errMsg     string
+		checkOut   func(t *testing.T, stdout string)
+	}{
+		{
+			name:       "success UI output",
+			jsonOutput: false,
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetHealthManager").Return(hcm)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				hcm.On("CheckAll", mock.Anything).Return(healthyReport, nil)
+
+				uir.On("IsTerminalContext").Return(false)
+				uir.On("SetUseColor", false).Return()
+				uir.On("RenderHealthReport", mock.Anything, healthyReport).Return()
+			},
+		},
+		{
+			name:       "success JSON output",
+			jsonOutput: true,
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetHealthManager").Return(hcm)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				hcm.On("CheckAll", mock.Anything).Return(healthyReport, nil)
+			},
+			checkOut: func(t *testing.T, stdout string) {
+				t.Helper()
+				assert.Contains(t, stdout, `"overall_status": "healthy"`)
+				assert.Contains(t, stdout, `"persistence"`)
+			},
+		},
+		{
+			name: "build deps error",
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+				cfg := &config.Config{Mode: "assistant"}
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(nil, nil, (func(context.Context) error)(nil), errBuild)
+			},
+			wantErr: true,
+			errMsg:  "build error",
+		},
+		{
+			name: "nil health manager",
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetHealthManager").Return(nil)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+			},
+			wantErr: true,
+			errMsg:  "health check manager not available",
+		},
+		{
+			name: "CheckAll error",
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetHealthManager").Return(hcm)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				hcm.On("CheckAll", mock.Anything).Return(nil, errCheck)
+			},
+			wantErr: true,
+			errMsg:  "health check failed: check error",
+		},
+		{
+			name:       "unhealthy report",
+			jsonOutput: false,
+			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+				cfg := &config.Config{Mode: "assistant"}
+				cleanup := func(context.Context) error { return nil }
+				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
+
+				deps.On("GetEventBus").Return(bus)
+				deps.On("GetHealthManager").Return(hcm)
+				bus.On("Shutdown", mock.Anything).Return(nil)
+
+				hcm.On("CheckAll", mock.Anything).Return(unhealthyReport, nil)
+
+				uir.On("IsTerminalContext").Return(false)
+				uir.On("SetUseColor", false).Return()
+				uir.On("RenderHealthReport", mock.Anything, unhealthyReport).Return()
+			},
+			wantErr: true,
+			errMsg:  "system health check failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			sf := &agenttest.MockSessionLifecycleManager{}
+			deps := &agenttest.MockServiceSessionDependencies{}
+			bus := &agenttest.MockServiceEventBus{}
+			hcm := &mockHealthCheckManager{}
+			uir := &mockUIRendererForDiag{}
+
+			if tt.setupMock != nil {
+				tt.setupMock(sf, deps, bus, hcm, uir)
+			}
+
+			var stdout bytes.Buffer
+			service := agent.NewChatService(
+				"home", "v1", &stdout, io.Discard, nil,
+				sf, nil, uir, nil, nil, nil,
+			)
+
+			cfg := &config.Config{Mode: "assistant"}
+			err := service.RunDiagnostics(ctx, cfg, "config.yaml", tt.jsonOutput)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+
+			if tt.checkOut != nil {
+				tt.checkOut(t, stdout.String())
+			}
+
+			sf.AssertExpectations(t)
+			deps.AssertExpectations(t)
+			hcm.AssertExpectations(t)
+			uir.AssertExpectations(t)
+		})
+	}
 }

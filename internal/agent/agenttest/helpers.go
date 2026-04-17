@@ -192,7 +192,13 @@ func (m *mockServiceSessionDependencies) GetSessionProvider() ports.SessionProvi
 	}
 	return args.Get(0).(ports.SessionProvider)
 }
-func (m *mockServiceSessionDependencies) GetHealthManager() ports.HealthCheckManager { return nil }
+func (m *mockServiceSessionDependencies) GetHealthManager() ports.HealthCheckManager {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(ports.HealthCheckManager)
+}
 
 // MockServiceSessionDependencies is a mock of SessionDependencies.
 type MockServiceSessionDependencies = mockServiceSessionDependencies
