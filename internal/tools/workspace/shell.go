@@ -25,6 +25,16 @@ var psSubstringIndicators = []string{
 	"$env:", "$(", "select-string", "where-object", "foreach-object",
 }
 
+// rmFlagsToStrip is the set of POSIX rm flags that should be removed during Windows translation.
+var rmFlagsToStrip = map[string]bool{
+	"-r": true, "-rf": true, "-f": true, "-v": true,
+}
+
+// rmRecursiveFlags is the subset of rm flags that indicate recursive deletion.
+var rmRecursiveFlags = map[string]bool{
+	"-r": true, "-rf": true,
+}
+
 type commandTranslator interface {
 	Translate(parts []string) []string
 }
@@ -63,16 +73,13 @@ func (w *windowsTranslator) Translate(parts []string) []string {
 
 func (w *windowsTranslator) translateRM(args []string) []string {
 	isRecursive := false
-	for _, arg := range args {
-		if arg == "-r" || arg == "-rf" {
-			isRecursive = true
-			break
-		}
-	}
-
 	filteredArgs := make([]string, 0, len(args))
+
 	for _, arg := range args {
-		if arg == "-r" || arg == "-rf" || arg == "-f" || arg == "-v" {
+		if rmFlagsToStrip[arg] {
+			if rmRecursiveFlags[arg] {
+				isRecursive = true
+			}
 			continue
 		}
 		filteredArgs = append(filteredArgs, arg)
