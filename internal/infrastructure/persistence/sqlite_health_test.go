@@ -28,7 +28,7 @@ func TestSQLiteHealthChecker_Check(t *testing.T) {
 		t.Fatalf("failed to create table: %v", err)
 	}
 
-	checker := NewSQLiteHealthChecker(db, dbPath)
+	checker := newSQLiteHealthChecker(db, dbPath)
 	ctx := context.Background()
 
 	t.Run("Healthy", func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestSQLiteHealthChecker_Check(t *testing.T) {
 
 	t.Run("Unhealthy_DirNotFound", func(t *testing.T) {
 		badPath := filepath.Join(tmpDir, "nonexistent", "test.db")
-		badChecker := NewSQLiteHealthChecker(db, badPath)
+		badChecker := newSQLiteHealthChecker(db, badPath)
 		report, _ := badChecker.Check(ctx)
 
 		if report.Status != ports.StatusUnhealthy {
@@ -92,7 +92,7 @@ func TestSQLiteHealthChecker_Check(t *testing.T) {
 		// Actually, let's close the DB and see how it behaves.
 		db2, _ := sql.Open("sqlite", filepath.Join(tmpDir, "db2.db"))
 		_ = db2.Close()
-		badChecker := NewSQLiteHealthChecker(db2, filepath.Join(tmpDir, "db2.db"))
+		badChecker := newSQLiteHealthChecker(db2, filepath.Join(tmpDir, "db2.db"))
 		report, _ := badChecker.Check(ctx)
 
 		if report.Status != ports.StatusUnhealthy {

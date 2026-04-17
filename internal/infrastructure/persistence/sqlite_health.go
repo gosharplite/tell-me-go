@@ -13,22 +13,22 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// SQLiteHealthChecker implements ports.HealthChecker for SQLite database.
-type SQLiteHealthChecker struct {
+// sqliteHealthChecker implements ports.HealthChecker for SQLite database.
+type sqliteHealthChecker struct {
 	db     *sql.DB
 	dbPath string
 }
 
-// NewSQLiteHealthChecker creates a new SQLiteHealthChecker.
-func NewSQLiteHealthChecker(db *sql.DB, dbPath string) *SQLiteHealthChecker {
-	return &SQLiteHealthChecker{
+// newSQLiteHealthChecker creates a new sqliteHealthChecker.
+func newSQLiteHealthChecker(db *sql.DB, dbPath string) *sqliteHealthChecker {
+	return &sqliteHealthChecker{
 		db:     db,
 		dbPath: dbPath,
 	}
 }
 
 // Check performs a diagnostic check on the SQLite database.
-func (c *SQLiteHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, error) {
+func (c *sqliteHealthChecker) Check(ctx context.Context) (*ports.ComponentReport, error) {
 	details := make(map[string]any)
 	details["path"] = c.dbPath
 

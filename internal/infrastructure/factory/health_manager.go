@@ -12,20 +12,20 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// DefaultHealthCheckManager coordinates system-wide health diagnostics.
-type DefaultHealthCheckManager struct {
+// defaultHealthCheckManager coordinates system-wide health diagnostics.
+type defaultHealthCheckManager struct {
 	checkers map[ports.Component]ports.HealthChecker
 }
 
-// NewHealthCheckManager creates a new DefaultHealthCheckManager.
-func NewHealthCheckManager(checkers map[ports.Component]ports.HealthChecker) *DefaultHealthCheckManager {
-	return &DefaultHealthCheckManager{
+// NewHealthCheckManager creates a new defaultHealthCheckManager.
+func NewHealthCheckManager(checkers map[ports.Component]ports.HealthChecker) *defaultHealthCheckManager {
+	return &defaultHealthCheckManager{
 		checkers: checkers,
 	}
 }
 
 // CheckAll executes health checks for all registered components in parallel.
-func (m *DefaultHealthCheckManager) CheckAll(ctx context.Context) (*ports.HealthReport, error) {
+func (m *defaultHealthCheckManager) CheckAll(ctx context.Context) (*ports.HealthReport, error) {
 	report := &ports.HealthReport{
 		OverallStatus: ports.StatusHealthy,
 		Components:    make(map[ports.Component]ports.ComponentReport),
@@ -82,7 +82,7 @@ func (m *DefaultHealthCheckManager) CheckAll(ctx context.Context) (*ports.Health
 }
 
 // CheckComponent performs a targeted health check for a single component.
-func (m *DefaultHealthCheckManager) CheckComponent(ctx context.Context, comp ports.Component) (*ports.ComponentReport, error) {
+func (m *defaultHealthCheckManager) CheckComponent(ctx context.Context, comp ports.Component) (*ports.ComponentReport, error) {
 	checker, ok := m.checkers[comp]
 	if !ok {
 		return nil, fmt.Errorf("no health checker registered for component: %s", comp)
