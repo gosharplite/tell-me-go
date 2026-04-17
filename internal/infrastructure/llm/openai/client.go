@@ -781,18 +781,7 @@ func (c *client) processOutputItem(content *llm.Content, out *responseOutputItem
 }
 
 func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
-	promptTokens := u.PromptTokens
-	if promptTokens == 0 {
-		promptTokens = u.InputTokens
-	}
-	completionTokens := u.CompletionTokens
-	if completionTokens == 0 {
-		completionTokens = u.OutputTokens
-	}
-	totalTokens := u.TotalTokens
-	if totalTokens == 0 {
-		totalTokens = promptTokens + completionTokens
-	}
+	promptTokens, completionTokens, totalTokens := c.normalizeTokenCounts(u)
 
 	metrics := &llm.Metrics{
 		Model:          c.model,
@@ -800,35 +789,73 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 		ResponseTokens: completionTokens,
 		TotalTokens:    totalTokens,
 		Duration:       duration,
+		CachedTokens:   c.resolveCachedTokens(u),
+		ThinkingTokens: c.resolveThinkingTokens(u),
+		TrafficType:    c.resolveTrafficType(u),
 	}
 
-	if u.PromptTokensDetails != nil {
-		metrics.CachedTokens = u.PromptTokensDetails.CachedTokens
+	c.logTokenThroughput(metrics)
+
+	return metrics
+}
+
+// normalizeTokenCounts resolves prompt, completion, and total tokens from dual-field API responses.
+func (c *client) normalizeTokenCounts(u usage) (prompt, completion, total int32) {
+	prompt = u.PromptTokens
+	if prompt == 0 {
+		prompt = u.InputTokens
 	}
+	completion = u.CompletionTokens
+	if completion == 0 {
+		completion = u.OutputTokens
+	}
+	total = u.TotalTokens
+	if total == 0 {
+		total = prompt + completion
+	}
+	return
+}
+
+// resolveCachedTokens extracts cached token count from OpenAI or DeepSeek response fields.
+func (c *client) resolveCachedTokens(u usage) int32 {
 	if u.PromptCacheHitTokens > 0 {
-		metrics.CachedTokens = u.PromptCacheHitTokens
+		return u.PromptCacheHitTokens
 	}
+	if u.PromptTokensDetails != nil {
+		return u.PromptTokensDetails.CachedTokens
+	}
+	return 0
+}
 
+// resolveThinkingTokens extracts reasoning/thinking token count from completion details.
+func (c *client) resolveThinkingTokens(u usage) int32 {
+	if u.CompletionTokensDetails != nil {
+		return u.CompletionTokensDetails.ReasoningTokens
+	}
+	return 0
+}
+
+// resolveTrafficType determines traffic type via server metadata or header reflection override.
+func (c *client) resolveTrafficType(u usage) string {
 	// 1. Priority 1: Source of Truth (Response)
+	trafficType := ""
 	if u.ExtraProperties != nil && u.ExtraProperties.Google != nil {
-		metrics.TrafficType = u.ExtraProperties.Google.TrafficType
+		trafficType = u.ExtraProperties.Google.TrafficType
 	}
 
 	// 2. Priority 2: Reflected Intent (Force override if header is 'priority')
 	for k, v := range c.headers {
 		normalizedK := strings.ReplaceAll(strings.ToLower(k), "_", "-")
-
 		if normalizedK == "x-vertex-ai-llm-shared-request-type" && strings.TrimSpace(strings.ToLower(v)) == "priority" {
-			metrics.TrafficType = "ON_DEMAND_PRIORITY"
-			break
+			return "ON_DEMAND_PRIORITY"
 		}
 	}
 
-	if u.CompletionTokensDetails != nil {
-		metrics.ThinkingTokens = u.CompletionTokensDetails.ReasoningTokens
-	}
+	return trafficType
+}
 
-	// Log token throughput for diagnostics
+// logTokenThroughput emits diagnostic token throughput metrics.
+func (c *client) logTokenThroughput(metrics *llm.Metrics) {
 	if metrics.ResponseTokens > 0 && metrics.Duration > 0.1 {
 		tokensPerSec := float64(metrics.ResponseTokens) / metrics.Duration
 		c.logger.Debug("token_throughput",
@@ -841,8 +868,6 @@ func (c *client) calculateFinalMetrics(u usage, duration float64) *llm.Metrics {
 			"cached_tokens", metrics.CachedTokens,
 		)
 	}
-
-	return metrics
 }
 
 func (c *client) handleTextBlock(content *llm.Content, cb contentBlock) {

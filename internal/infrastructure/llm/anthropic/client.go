@@ -445,6 +445,13 @@ func toAnthropicSchema(s *tools.Schema) interface{} {
 }
 
 func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
+	content := c.extractContent(resp)
+	metrics := c.buildMetrics(resp, duration)
+	return content, metrics, nil
+}
+
+// extractContent deserializes response content blocks into domain llm.Part objects.
+func (c *client) extractContent(resp *messagesResponse) *llm.Content {
 	content := &llm.Content{
 		Role:  "model",
 		Parts: make([]*llm.Part, 0, len(resp.Content)),
@@ -478,7 +485,11 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 	}
 
 	content.Validate() // Final boundary sanitization
+	return content
+}
 
+// buildMetrics assembles llm.Metrics with Vertex AI-specific token accounting and traffic type resolution.
+func (c *client) buildMetrics(resp *messagesResponse, duration float64) *llm.Metrics {
 	promptTokens := resp.Usage.InputTokens
 	if c.isVertex() {
 		// Vertex AI reports input_tokens as only the newly added tokens (delta).
@@ -495,22 +506,7 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 		CacheWriteTokens: resp.Usage.CacheCreationInputTokens,
 		TotalTokens:      promptTokens + resp.Usage.OutputTokens,
 		Duration:         duration,
-	}
-
-	// 1. Primary: Source of Truth (Server Response Metadata)
-	if resp.Usage.ExtraProperties != nil && resp.Usage.ExtraProperties.Google != nil && resp.Usage.ExtraProperties.Google.TrafficType != "" {
-		metrics.TrafficType = resp.Usage.ExtraProperties.Google.TrafficType
-	}
-
-	// 2. Secondary: Fallback (Reflected Intent from Headers)
-	if metrics.TrafficType == "" {
-		for k, v := range c.headers {
-			normalizedK := strings.ReplaceAll(strings.ToLower(k), "_", "-")
-			if normalizedK == "x-vertex-ai-llm-shared-request-type" && strings.TrimSpace(strings.ToLower(v)) == "priority" {
-				metrics.TrafficType = "ON_DEMAND_PRIORITY"
-				break
-			}
-		}
+		TrafficType:      c.resolveTrafficType(resp),
 	}
 
 	// Log token throughput for diagnostics
@@ -529,7 +525,27 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 		)
 	}
 
-	return content, metrics, nil
+	return metrics
+}
+
+// resolveTrafficType determines the traffic type via a two-tier fallback:
+// 1. Primary: server response metadata (extra_properties.google.traffic_type)
+// 2. Secondary: reflected intent from the x-vertex-ai-llm-shared-request-type header
+func (c *client) resolveTrafficType(resp *messagesResponse) string {
+	// 1. Primary: Source of Truth (Server Response Metadata)
+	if resp.Usage.ExtraProperties != nil && resp.Usage.ExtraProperties.Google != nil && resp.Usage.ExtraProperties.Google.TrafficType != "" {
+		return resp.Usage.ExtraProperties.Google.TrafficType
+	}
+
+	// 2. Secondary: Fallback (Reflected Intent from Headers)
+	for k, v := range c.headers {
+		normalizedK := strings.ReplaceAll(strings.ToLower(k), "_", "-")
+		if normalizedK == "x-vertex-ai-llm-shared-request-type" && strings.TrimSpace(strings.ToLower(v)) == "priority" {
+			return "ON_DEMAND_PRIORITY"
+		}
+	}
+
+	return ""
 }
 
 func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
