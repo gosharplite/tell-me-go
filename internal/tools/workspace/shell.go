@@ -15,6 +15,26 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+// psAliases is the set of command names that indicate PowerShell usage.
+var psAliases = map[string]bool{
+	"ps": true, "kill": true, "cat": true, "curl": true, "wget": true,
+}
+
+// psSubstringIndicators are substrings in the full command that indicate PowerShell usage.
+var psSubstringIndicators = []string{
+	"$env:", "$(", "select-string", "where-object", "foreach-object",
+}
+
+// rmFlagsToStrip is the set of POSIX rm flags that should be removed during Windows translation.
+var rmFlagsToStrip = map[string]bool{
+	"-r": true, "-rf": true, "-f": true, "-v": true,
+}
+
+// rmRecursiveFlags is the subset of rm flags that indicate recursive deletion.
+var rmRecursiveFlags = map[string]bool{
+	"-r": true, "-rf": true,
+}
+
 type commandTranslator interface {
 	Translate(parts []string) []string
 }
@@ -53,16 +73,13 @@ func (w *windowsTranslator) Translate(parts []string) []string {
 
 func (w *windowsTranslator) translateRM(args []string) []string {
 	isRecursive := false
-	for _, arg := range args {
-		if arg == "-r" || arg == "-rf" {
-			isRecursive = true
-			break
-		}
-	}
-
 	filteredArgs := make([]string, 0, len(args))
+
 	for _, arg := range args {
-		if arg == "-r" || arg == "-rf" || arg == "-f" || arg == "-v" {
+		if rmFlagsToStrip[arg] {
+			if rmRecursiveFlags[arg] {
+				isRecursive = true
+			}
 			continue
 		}
 		filteredArgs = append(filteredArgs, arg)
@@ -132,23 +149,21 @@ func (w *windowsShellWrapper) isPowerShellIndicator(command string, parts []stri
 		return false
 	}
 
-	// 1. Check for common PowerShell-specific indicators or aliases.
 	first := parts[0]
-	lowerFirst := strings.ToLower(first)
-	if lowerFirst == "ps" || lowerFirst == "kill" || lowerFirst == "cat" || lowerFirst == "curl" || lowerFirst == "wget" {
+
+	// 1. Check for common PowerShell aliases
+	if psAliases[strings.ToLower(first)] {
 		return true
 	}
 
-	// 2. Check for PowerShell Verb-Noun pattern in the command token (e.g. "Get-ChildItem")
-	dashIdx := strings.Index(first, "-")
-	if dashIdx > 0 && dashIdx < len(first)-1 {
+	// 2. Check for PowerShell Verb-Noun pattern (e.g. "Get-ChildItem")
+	if dashIdx := strings.Index(first, "-"); dashIdx > 0 && dashIdx < len(first)-1 {
 		return true
 	}
 
-	// 3. Check for other PowerShell-specific indicators
+	// 3. Check for PowerShell-specific substrings in the full command
 	lower := strings.ToLower(command)
-	psIndicators := []string{"$env:", "$(", "select-string", "where-object", "foreach-object"}
-	for _, ind := range psIndicators {
+	for _, ind := range psSubstringIndicators {
 		if strings.Contains(lower, ind) {
 			return true
 		}
@@ -503,35 +518,34 @@ func (t *shellTool) auditExecution(command, reason, outputFile string, isAppend 
 	t.sm.LogAudit("EXECUTE_COMMAND", argsAudit...)
 }
 
+// parseLSShortFlags parses combined short flags (e.g., "-laR") and updates the flags.
+func parseLSShortFlags(flags string, recursive, showAll *bool) {
+	for _, c := range flags {
+		switch c {
+		case 'R':
+			*recursive = true
+		case 'a':
+			*showAll = true
+		}
+	}
+}
+
 func (w *windowsTranslator) translateLS(args []string) []string {
 	recursive := false
 	showAll := false
 	var paths []string
 
 	for _, arg := range args {
-		if strings.HasPrefix(arg, "-") {
-			if arg == "--recursive" {
-				recursive = true
-				continue
-			}
-			if arg == "--all" {
-				showAll = true
-				continue
-			}
-			if !strings.HasPrefix(arg, "--") {
-				// Combined short flags
-				for _, c := range arg[1:] {
-					switch c {
-					case 'R':
-						recursive = true
-					case 'a':
-						showAll = true
-					}
-				}
-			}
-			continue
+		switch {
+		case arg == "--recursive":
+			recursive = true
+		case arg == "--all":
+			showAll = true
+		case strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--"):
+			parseLSShortFlags(arg[1:], &recursive, &showAll)
+		case !strings.HasPrefix(arg, "-"):
+			paths = append(paths, arg)
 		}
-		paths = append(paths, arg)
 	}
 
 	translated := []string{"cmd", "/c", "dir"}
