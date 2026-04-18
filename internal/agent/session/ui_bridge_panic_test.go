@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -117,7 +117,7 @@ func TestUIBridge_PanicRecoveryLogging(t *testing.T) {
 
 	// Create a custom slog handler to capture the panic log.
 	// We use LevelDebug to ensure the stack trace log is captured.
-	logBuffer := testutil.NewSafeBuffer()
+	logBuffer := testfixtures.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	mockRenderer := new(agenttest.MockUIRenderer)
@@ -219,7 +219,7 @@ func TestUIBridge_PanicInStopSpinner(t *testing.T) {
 func TestUIBridge_PoisonPill(t *testing.T) {
 	t.Parallel()
 
-	logBuffer := testutil.NewSafeBuffer()
+	logBuffer := testfixtures.NewSafeBuffer()
 	logger := slog.New(slog.NewTextHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	mRenderer := new(agenttest.MockUIRenderer)

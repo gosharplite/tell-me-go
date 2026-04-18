@@ -572,3 +572,90 @@ The SECURITY bucket therefore has **zero genuine occupants**. Per architect-styl
 ### Recommended Session 8 (the finale)
 
 Move `buffer.go` + `buffer_test.go` to a new `internal/pkg/testfixtures/` package per the audit's GENERIC bucket assignment. Lowercase `Buffer` → `buffer` and `SafeBuffer` → `safeBuffer` per the audit's "DEAD as a name" finding (zero external named references; reachable only via `NewSafeBuffer`). Update ~5 consumer files. After Session 8, `internal/domain/testutil/` will be deleted entirely and the refactor is complete.
+
+
+## Session 8 Outcome (GENERIC bucket extraction; testutil deleted; refactor complete)
+
+- **Date**: 2026-04-19
+- **Branch**: `refactor/testutil-finale` (forked from Session 7 commit `0988663a`)
+- **Source files deleted (3)**: `buffer.go`, `buffer_test.go`, **and the `internal/domain/testutil/` directory itself**. The dump is gone.
+- **New sub-package created**: `internal/pkg/testfixtures/` — the **fifth** `*test`-style sub-package and the **first** in the `internal/pkg/` shared-utilities tree. It hosts test primitives that are genuinely cross-cutting (multiple unrelated consumer packages) and not specific to any single production package.
+- **Symbols relocated (4 distinct symbols + 1 test):**
+  - `testutil.Buffer` (interface) → `testfixtures.buffer` — **lowercased** per audit "DEAD as a name" finding (zero external named references)
+  - `testutil.SafeBuffer` (struct) → `testfixtures.safeBuffer` — **lowercased**, same rationale
+  - `testutil.NewSafeBuffer` (constructor) → `testfixtures.NewSafeBuffer` — kept exported (return type is now the unexported `buffer` interface, which deliberately tightens the API surface)
+  - `testutil.SyncWriter` (struct) → `testfixtures.SyncWriter` — **kept exported** because consumers construct it as a struct literal (`&testfixtures.SyncWriter{Writer: ..., OnWrite: ...}`), which requires both the type and its public fields to be accessible
+  - `TestSafeBuffer_Contract` test → `internal/pkg/testfixtures/safebuffer_test.go` (internal `package testfixtures` so it can reference the lowercased types)
+- **Files in destination**: 3 (`safebuffer.go`, `syncwriter.go`, `safebuffer_test.go`); 150 LOC total — exactly matching the source-file LOC. No content lost; only renaming and re-distribution.
+- **Call sites updated**: **6 files**, **~30 references** rewritten in two `sed` passes (one for the unaliased `testutil.X` form, one for the `inframock.X` aliased form):
+  - `internal/agent/session/ui_bridge_panic_test.go`: 2 refs (unaliased)
+  - `internal/agent/session/context_manager_test.go`: 2 refs (unaliased, `SyncWriter`)
+  - `tests/integration/agent/session/spinner_integration_test.go`: 4 refs (unaliased; both symbols)
+  - `internal/domain/events/events_test.go`: 1 ref (aliased as `inframock`)
+  - `internal/tools/workspace/process_executor_test.go`: 3 refs (aliased as `inframock`)
+  - `internal/ui/renderer_test.go`: **17 refs** (aliased as `inframock` — the densest single file)
+- **Tests**: PASS (63 packages — same count as Session 7, even though `testfixtures` is +1 and `testutil` is −1 — the net is zero, and `testfixtures` ships its own test suite from day one).
+- **Race detector**: PASS (`go test -count=1 -race ./...` — full suite, ~17s wall clock).
+- **Architecture verification**: ✅ no new violations.
+- **Architectural lint**: all 6 importers of `testfixtures` are `_test.go` files. Verified via `grep -rn "internal/pkg/testfixtures" --include="*.go" .` — every result row ends in `_test.go`.
+
+### Audit-vs-reality reconciliation
+
+The audit row for `NewSafeBuffer` listed 3 importer packages (session, ui, integration/session, with a "+1 hit in events" footnote). Reality: **6 files across 5 packages**, because the audit did not account for the **3 files using the `inframock` import alias** (flagged in the Session 5 outcome notes but never reconciled into the audit table itself). This is the third confirmation of the **±25% audit accuracy lesson** from Session 2 — and the second confirmation of the specific **alias-grep blind spot** from Session 2's lesson #1. Both `sed` passes (one per qualifier form) caught everything in a single rewrite cycle; no broken-state window exceeded ~30 seconds.
+
+### Closing artifacts shipped
+
+This session's deliverables exceed the strict scope of relocation, by design — the dissolution is complete and the convention now needs guard rails:
+
+1. **ADR-021** (`docs/adr/2026-04-test-doubles-in-pkgtest-subpackages.md`) formalizes the `<pkg>/<pkg>test/` convention. Documents the rules (leaf rule, escape hatch via sibling `<pkg>internal/`, naming convention for fakes vs mocks, no production imports), the alternatives considered, and the enforcement mechanism. The ADR explicitly references this audit doc for the change history. Indexed in `docs/adr/README.md` as ADR-021.
+2. **This retrospective section** captures the final-state metrics, the pattern catalog used across all 8 sessions, and the lessons consolidated for future contributors.
+
+### Pattern catalog (consolidated from Sessions 2–8)
+
+For any future similar refactor, the workflow that emerged is:
+
+1. **Audit the dump** — enumerate every exported symbol with consumer counts. Reconcile two grep modes: (a) the qualifier (`testutil.X`), (b) the import path (`internal/domain/testutil`). Aliases lurk in the latter and are missed by the former.
+2. **Bucket symbols by consumer locality**, not by source-file co-location. The ones the audit said belonged together because they shared a file (`agent_mocks.go` had 21 symbols!) often belonged in different destinations.
+3. **For each session, pick a bucket that won't fight you on the leaf rule.** Domain-layer destinations (`eventstest`) were trivially leaf-safe. Agent-layer destinations (`agenttest`) needed prophylactic checking and Session 3 needed a `agentinternal` escape-hatch package.
+4. **Write per-symbol files** in the destination, in batches of 3–5 with a `go build` checkpoint between each batch. Trivially related primitives (interface + struct + constructor) may share a file, e.g. `safebuffer.go` here.
+5. **Bulk `sed` for the qualifier rewrite**, in one pass. Do not edit by hand — `sed | goimports` is faster, lower-error, and the diff is reviewable.
+6. **Run `goimports -w`** (NOT `go fmt`) — it adds new imports and removes dead ones automatically. Hand-editing imports is the slowest part of the workflow.
+7. **Run `verify_architecture` after every session.** Session 7 caught a layer violation that became visible only because of the rewrite. Session 8 had none.
+8. **Delete source files outright when 100% of their symbols leave** (Session 5 lesson). Git rename detection preserves blame across the move.
+
+### Lessons added (apply to any future similar refactor)
+
+1. **Aliased imports are a tax on every refactor.** `inframock "internal/domain/testutil"` cost extra grep cycles in Sessions 2 (twice), 5 (acknowledged but deferred), and 8 (closed out). Going forward: code review should reject any import alias that names something other than what is actually being imported. An alias is acceptable to disambiguate a name collision, never to lie about the source.
+2. **DEAD-as-a-name is a real category, separate from DEAD-and-deletable.** `Buffer` and `SafeBuffer` were flagged as DEAD by static dead-code tooling because no consumer named them directly. They were ALIVE through `NewSafeBuffer`. The right disposition was lowercase-not-delete, which would have been missed by either an automated dead-code-deletion bot or a literal reading of the audit row. Future audits should distinguish the two categories explicitly.
+3. **Constructor return types can deliberately tighten the API.** `NewSafeBuffer` now returns an unexported `buffer` interface — consumers can call its (exported) methods but cannot type-assert to a named concrete type. This is a feature, not a bug: it forces test code to depend on behavior, not implementation. No consumer broke; the audit's risk-note prediction held.
+4. **A finale session should ship more than relocation.** The convention used across 8 sessions was implicit until Session 8 wrote the ADR. Without the ADR, future contributors looking at 5 `*test` sub-packages and an empty `testutil/` slot might reaggregate. The ADR codifies the rule and the rationale; the retrospective captures the lived experience of arriving at it.
+
+### Final state of the testutil dump (after Session 8)
+
+- **Files in `internal/domain/testutil/`: 0.**
+- **Directory `internal/domain/testutil/`: deleted.**
+- **Symbols remaining in testutil: 0** (all 39 of the original symbols have been relocated, inlined, or collapsed across Sessions 2–8).
+- **Refactor complete.**
+
+### Final metrics (8 sessions, January–April 2026)
+
+| Metric | Baseline (pre-Session 1) | After Session 8 |
+|---|---|---|
+| `internal/domain/testutil/` LOC | 1,664 | **0** |
+| `internal/domain/testutil/` files | 12 | **0** |
+| `internal/domain/testutil/` exported symbols | 39 | **0** |
+| `*test` sub-packages | 0 | **5** (`persistencetest`, `agenttest`, `eventstest`, `toolstest`, `testfixtures`) |
+| Sibling internal helper packages | 0 | **1** (`agentinternal`) |
+| Layer violations (`verify_architecture`) | latent (1 surfaced in Session 7) | **0** |
+| Total refactor sessions | — | 8 |
+| Total references rewritten across all sessions | — | ~700 |
+| Total files modified across all sessions | — | ~85 |
+| Architectural rules enforced | informal | ADR-021 |
+| Domain layer purity | violated | restored |
+
+### Recommended follow-ups (for a future audit, not this session)
+
+1. **Add the ADR-021 grep lint to CI.** A check that fails the build if any new file matches `internal/.*/testutil/.*\.go` would cement the convention.
+2. **Audit `agentinternal/` for unused symbols** now that the AGENT bucket extraction is fully complete. Some helpers may have lost their last consumer during Sessions 4–7.
+3. **Verify the audit's Risk Note #2 was correctly resolved.** `NewOSFileSystem` now exists in two places (`persistence.NewOSFileSystem` for production with retries+atomic writes; `persistencetest.NewPlainOSFileSystem` for tests, plain). If anyone introduces a third "OSFileSystem-ish" thing, that's worth catching early.
+4. **Consider whether `MockEstimator` (preserved in Session 5 against the audit's collapse-suggestion) is now actually unused.** Audit Risk Note #7 flagged it as a candidate for collapse-into-`MockTokenCounter`. The architect rejected the collapse for cohesion reasons; revisit if the gap between the two has grown.

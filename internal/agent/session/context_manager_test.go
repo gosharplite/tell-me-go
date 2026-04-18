@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/pkg/testfixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -187,7 +187,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 
-	var logBuf testutil.SyncWriter
+	var logBuf testfixtures.SyncWriter
 	testLogger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	cm.SetLogger(testLogger)
 	cm.Events = bus
@@ -413,7 +413,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 
 func TestContextManager_WithLogger(t *testing.T) {
 	ctx := context.Background()
-	var buf testutil.SyncWriter
+	var buf testfixtures.SyncWriter
 	// Set level to DEBUG to capture the "skipping summarization event" log.
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
