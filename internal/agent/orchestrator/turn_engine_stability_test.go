@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -134,7 +135,7 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, ctx.Err()
 		},
@@ -147,7 +148,7 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 		Clock:    &testutil.MockClock{},
 		Registry: &testutil.MockToolRegistry{},
 		CtxManager: &session.ContextManager{
-			History: &testutil.MockHistoryManager{},
+			History: &agenttest.MockHistoryManager{},
 		},
 	}
 

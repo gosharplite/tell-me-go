@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/stretchr/testify/assert"
@@ -21,12 +22,12 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		setup   func(sf *agenttest.MockSessionLifecycleManager)
+		setup   func(sf *agentinternal.MockSessionLifecycleManager)
 		wantErr string
 	}{
 		{
 			name: "Build Session Dependencies Failure",
-			setup: func(sf *agenttest.MockSessionLifecycleManager) {
+			setup: func(sf *agentinternal.MockSessionLifecycleManager) {
 				sf.On("BuildSessionDependencies", context.Background(), &config.Config{}, "config.yaml", false, nil).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 			},
 			wantErr: "build error",
@@ -36,7 +37,7 @@ func TestChatService_Initialization_Failures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockSM := &agenttest.MockServiceSecurityManager{}
-			mockSF := &agenttest.MockSessionLifecycleManager{}
+			mockSF := &agentinternal.MockSessionLifecycleManager{}
 			if tt.setup != nil {
 				tt.setup(mockSF)
 			}

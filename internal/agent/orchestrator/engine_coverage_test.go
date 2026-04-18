@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -66,14 +67,14 @@ func TestExecuteTurn_TraceEvent(t *testing.T) {
 
 func TestRunPhaseLoop_EmergencySave(t *testing.T) {
 	// Mock components needed for Engine
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	ex := &mockToolExecutor{}
 	reg := &testutil.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	counter := &testutil.MockTokenCounter{}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 
 	engine := NewEngine(gw, ex, cm, reg, bus, counter)
@@ -125,7 +126,7 @@ func TestContextRefiner_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Terminal Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(errors.New("terminal history failure"))
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
 
@@ -144,7 +145,7 @@ func TestContextRefiner_Errors(t *testing.T) {
 	})
 
 	t.Run("Transient Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(llm.ErrTransient)
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, nil, nil)
 
@@ -221,7 +222,7 @@ func TestGuardStep_TDT(t *testing.T) {
 				bus.SetPublishErr(tt.busErr)
 			}
 
-			hMock := &testutil.MockHistoryManager{}
+			hMock := &agenttest.MockHistoryManager{}
 			cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 			cm.Reconfigure(events.Limits{MaxToolTurns: tt.maxTurns})
 
@@ -303,7 +304,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 				cancel()
 			}
 
-			gw := &testutil.MockGateway{
+			gw := &agenttest.MockGateway{
 				GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 					if tt.cancelCtx {
 						return nil, nil, context.Canceled
@@ -314,7 +315,7 @@ func TestInferenceStep_TDT(t *testing.T) {
 
 			bus := &testutil.MockEventBus{}
 
-			hMock := &testutil.MockHistoryManager{}
+			hMock := &agenttest.MockHistoryManager{}
 			cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 
 			turn := &Turn{
@@ -399,7 +400,7 @@ func TestPersistenceStep_TDT(t *testing.T) {
 				cancel()
 			}
 
-			hMock := &testutil.MockHistoryManager{}
+			hMock := &agenttest.MockHistoryManager{}
 			// Seed with user message to satisfy validation
 			hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial user message"}}}}
 
@@ -465,7 +466,7 @@ func (s *spyHook) OnPhaseTransition(from, to TurnPhase, state *TurnState) {
 }
 
 func TestEngineHooks_Coverage(t *testing.T) {
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Hello"}}}, &llm.Metrics{}, nil
 		},
@@ -475,7 +476,7 @@ func TestEngineHooks_Coverage(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	counter := &testutil.MockTokenCounter{}
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial message"}}}}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 
@@ -506,7 +507,7 @@ func TestEngineHooks_Coverage(t *testing.T) {
 
 func TestPersistenceStep_ToolPersistenceError(t *testing.T) {
 	ctx := context.Background()
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
 
 	// Fail only on the second call (tool response)
@@ -610,13 +611,13 @@ func TestRecoveryStep_AttemptRetry_SelectContextCancelled(t *testing.T) {
 }
 
 func TestEngineRun_Error(t *testing.T) {
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	ex := &mockToolExecutor{}
 	reg := &testutil.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	counter := &testutil.MockTokenCounter{}
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 
 	engine := NewEngine(gw, ex, cm, reg, bus, counter)

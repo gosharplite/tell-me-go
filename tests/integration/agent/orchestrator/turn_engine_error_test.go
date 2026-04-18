@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -76,7 +77,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
@@ -122,7 +123,7 @@ func TestTurnEngine_RateLimitRecovery(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
@@ -173,7 +174,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			return nil, nil, orchestrator.NewAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
@@ -227,7 +228,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	t.Parallel()
 	tracker := &errorPhaseTracker{}
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{
 				Role:  "model",
@@ -272,7 +273,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
 
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			return nil, nil, orchestrator.NewAgentError(llm.ErrTransient, "always transient", nil)
@@ -312,7 +313,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 
 func TestTurnEngine_NilLLMResponse(t *testing.T) {
 	t.Parallel()
-	gw := &testutil.MockGateway{
+	gw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, nil // No error, but nil content
 		},
@@ -320,7 +321,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 
 	step := &orchestrator.InferenceStep{}
 
-	hm := &testutil.MockHistoryManager{}
+	hm := &agenttest.MockHistoryManager{}
 	cm := &session.ContextManager{
 		History: hm,
 	}
@@ -352,7 +353,7 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 	t.Parallel()
 	expectedErr := errors.New("mock db failure")
 
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		AddContentFunc: func(ctx context.Context, content *llm.Content) error {
 			return expectedErr
@@ -384,7 +385,7 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 	t.Parallel()
 	expectedErr := llm.ErrTransient // Use transient error to hit the 'if isTransient' block
 
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "Model"}}},

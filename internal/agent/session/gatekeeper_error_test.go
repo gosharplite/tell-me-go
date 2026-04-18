@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -96,7 +97,7 @@ func TestContextManager_FirstMessageRoleError(t *testing.T) {
 	tc := &testutil.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
-	hm := &testutil.MockHistoryManager{}
+	hm := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(cs, hm, nil, nil)
 
 	err := cm.AddContent(context.Background(), &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "first"}}})
@@ -118,7 +119,7 @@ func TestInternalTools_Errors(t *testing.T) {
 	tc := &testutil.MockTokenCounter{}
 	tc.SetTokens(10)
 	cs := session.NewContextStrategy(tc)
-	hm := &testutil.MockHistoryManager{}
+	hm := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(cs, hm, nil, nil)
 
 	it := session.NewInternalTools(cm)

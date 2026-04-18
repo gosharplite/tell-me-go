@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -34,8 +35,8 @@ func (m *mockProcessor) Process(ctx context.Context, turn *orchestrator.Turn) (o
 func TestAgent_Chat_Success(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
@@ -81,8 +82,8 @@ func TestAgent_Chat_Success(t *testing.T) {
 func TestAgent_Chat_EngineFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
@@ -106,8 +107,8 @@ func TestAgent_Chat_EngineFailure(t *testing.T) {
 func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
@@ -147,8 +148,8 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 func TestAgent_Chat_TelemetryFailure(t *testing.T) {
 	bus := &testutil.MockEventBusFail{PublishErr: errors.New("telemetry failed")}
 	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	// NewAgent will fail if applyConfig fails because of Publish failure?
@@ -190,8 +191,8 @@ func (b *telemetryFailBus) Flush(ctx context.Context) error                   { 
 func TestAgent_Chat_TelemetryFailure_Actual(t *testing.T) {
 	bus := &telemetryFailBus{}
 	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))
@@ -215,9 +216,9 @@ func TestAgent_Chat_TelemetryFailure_Actual(t *testing.T) {
 func TestAgent_Chat_AddContentFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	expectedErr := errors.New("add content failed")
-	hManager := &testutil.MockHistoryManager{AddContentFunc: func(ctx context.Context, content *llm.Content) error {
+	hManager := &agenttest.MockHistoryManager{AddContentFunc: func(ctx context.Context, content *llm.Content) error {
 		return expectedErr
 	}}
 	sm := &mockSecurityManager{AllowAll: true}
@@ -239,8 +240,8 @@ func TestAgent_Chat_AddContentFailure(t *testing.T) {
 func TestAgent_Chat_ApplyConfigFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	reg := &testutil.MockToolRegistry{}
-	gw := &testutil.MockGateway{}
-	hManager := &testutil.MockHistoryManager{}
+	gw := &agenttest.MockGateway{}
+	hManager := &agenttest.MockHistoryManager{}
 	sm := &mockSecurityManager{AllowAll: true}
 
 	a, err := NewAgent(gw, bus, reg, WithHistoryManager(hManager), WithSecurityManager(sm))

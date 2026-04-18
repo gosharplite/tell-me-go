@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -254,7 +255,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	bus := &testutil.TestEventBus{}
 
 	// Use real summarizer but mock gateway
-	mockG := &testutil.MockGateway{}
+	mockG := &agenttest.MockGateway{}
 	mockG.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "summary"}}}, &domain_llm.Metrics{}, nil)
 	summarizerImpl := llm.NewSummarizer(mockG, bus)
 

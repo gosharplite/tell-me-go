@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -27,7 +28,7 @@ import (
 func TestSessionManager_SessionID_DegradationWarning(t *testing.T) {
 	mChatter := new(testutil.MockChatter)
 	mCapturer := new(testutil.MockCapturer)
-	mHistory := new(testutil.MockHistoryManager)
+	mHistory := new(agenttest.MockHistoryManager)
 	mEventBus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, mEventBus)
 

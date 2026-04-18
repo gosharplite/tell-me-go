@@ -9,12 +9,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 type errorMockHistoryManager struct {
-	testutil.MockHistoryManager
+	agenttest.MockHistoryManager
 	archiveErr        error
 	setContentsErr    error
 	archiveCalled     bool

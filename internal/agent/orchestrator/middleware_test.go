@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -26,7 +27,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 			return ProcessResult{NextPhase: PhaseComplete}, nil
 		})
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State:      &TurnState{Phase: PhaseInference, RetryCount: 0},
@@ -58,7 +59,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 			return ProcessResult{NextPhase: PhaseComplete}, nil
 		})
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State: &TurnState{
@@ -98,7 +99,7 @@ func TestWithStatusReporter_Scenarios(t *testing.T) {
 			return ProcessResult{}, expectedErr
 		})
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 		turn := &Turn{
 			State:      &TurnState{Phase: PhaseInference},
@@ -200,7 +201,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 			return ProcessResult{}, nil
 		})
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 
@@ -254,7 +255,7 @@ func TestLoopDetector_Scenarios(t *testing.T) {
 			return ProcessResult{}, nil
 		})
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 
@@ -293,7 +294,7 @@ func TestPublishTurnStatus_EventBusError(t *testing.T) {
 
 	engine := &Engine{events: bus}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 	turn := &Turn{
 		State:      &TurnState{},
@@ -330,7 +331,7 @@ func TestWithMetrics_EventBusError(t *testing.T) {
 func TestHandleLoopBreak_Error_Internal(t *testing.T) {
 	bus := &testutil.MockEventBus{}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}}
 	hMock.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
 		if content.Role == "model" {
@@ -377,7 +378,7 @@ func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
 	bus := &testutil.MockEventBus{}
 	engine := &Engine{events: bus}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 
 	turn := &Turn{
@@ -401,7 +402,7 @@ func TestPublishTurnStatus_NoCostTracker(t *testing.T) {
 func TestHandleLoopBreak_Error_Warning(t *testing.T) {
 	bus := &testutil.MockEventBus{}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	// Seed history
 	hMock.SetInternalContents([]*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "initial"}}}})
 
@@ -438,7 +439,7 @@ func TestPublishTurnStatus_ErrBusNotInitialized(t *testing.T) {
 
 	engine := &Engine{events: bus}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
 	turn := &Turn{
 		State:      &TurnState{},

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -22,7 +23,7 @@ import (
 func TestContextManager_PipelineMethods(t *testing.T) {
 	tc := &testutil.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
-	history := &testutil.MockHistoryManager{}
+	history := &agenttest.MockHistoryManager{}
 	factory := &session.PipelineFactory{Estimator: strategy}
 	cm := session.NewContextManager(strategy, history, nil, factory)
 
@@ -37,7 +38,7 @@ func TestContextManager_GetLimits(t *testing.T) {
 	strategy := session.NewContextStrategy(tc)
 	strategy.SetLimits(1000, 20, 30)
 	strategy.SetTieredThreshold(500)
-	cm := session.NewContextManager(strategy, &testutil.MockHistoryManager{}, nil, nil)
+	cm := session.NewContextManager(strategy, &agenttest.MockHistoryManager{}, nil, nil)
 
 	limits := cm.GetLimits()
 	assert.Equal(t, 1000, limits.MaxHistoryTokens)
@@ -49,7 +50,7 @@ func TestContextManager_GetLimits(t *testing.T) {
 func TestContextManager_Summarize(t *testing.T) {
 	tc := &testutil.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
-	history := &testutil.MockHistoryManager{}
+	history := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(strategy, history, nil, nil)
 
 	ctx := context.Background()
@@ -77,7 +78,7 @@ func TestContextManager_Summarize(t *testing.T) {
 func TestContextManager_SummarizeRange(t *testing.T) {
 	counter := &testutil.MockTokenCounter{}
 	strategy := session.NewContextStrategy(counter)
-	history := &testutil.MockHistoryManager{}
+	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
@@ -236,7 +237,7 @@ func TestContextManager_Prepare_ClonesContent(t *testing.T) {
 		Role:  "user",
 		Parts: []*llm.Part{{Text: "original"}},
 	}
-	history := &testutil.MockHistoryManager{}
+	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{originalContent})
 	cm := session.NewContextManager(strategy, history, nil, nil)
 
@@ -255,7 +256,7 @@ func TestContextManager_Reconfigure_UpdatesPipeline(t *testing.T) {
 	tc := &testutil.MockTokenCounter{}
 	strategy := session.NewContextStrategy(tc)
 	factory := &session.PipelineFactory{Estimator: strategy}
-	cm := session.NewContextManager(strategy, &testutil.MockHistoryManager{}, nil, factory)
+	cm := session.NewContextManager(strategy, &agenttest.MockHistoryManager{}, nil, factory)
 
 	// Initially not nil because NewContextManager builds it with default limits immediately.
 	p0 := cm.Pipeline
@@ -312,7 +313,7 @@ func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 		contents[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
 	}
 
-	history := &testutil.MockHistoryManager{}
+	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents(contents)
 
 	cm := session.NewContextManager(strategy, history, nil, nil)
@@ -359,7 +360,7 @@ func TestContextManager_SummarizeRange_ContextCancellation(t *testing.T) {
 func TestContextManager_Prepare_ContextCancellation_PreventsLeak(t *testing.T) {
 	t.Parallel()
 	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
-	history := &testutil.MockHistoryManager{}
+	history := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(strategy, history, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -385,7 +386,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
 
 	t.Run("fails on nil message in history", func(t *testing.T) {
-		history := &testutil.MockHistoryManager{}
+		history := &agenttest.MockHistoryManager{}
 		history.SetInternalContents([]*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 			nil, // malformed entry
@@ -398,7 +399,7 @@ func TestContextManager_Prepare_BoundaryValidation(t *testing.T) {
 	})
 
 	t.Run("fails on nil part in message", func(t *testing.T) {
-		history := &testutil.MockHistoryManager{}
+		history := &agenttest.MockHistoryManager{}
 		history.SetInternalContents([]*llm.Content{
 			{Role: "user", Parts: []*llm.Part{nil}}, // malformed entry
 		})
@@ -419,7 +420,7 @@ func TestContextManager_WithLogger(t *testing.T) {
 	strategy := session.NewContextStrategy(&testutil.MockTokenCounter{})
 	// Add 2 turns to history so that SummarizeRange(ctx, 1, "") can proceed.
 	// Summarization requires at least (requestedTurns + 1) turns to preserve the last turn.
-	history := &testutil.MockHistoryManager{}
+	history := &agenttest.MockHistoryManager{}
 	history.SetInternalContents([]*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},

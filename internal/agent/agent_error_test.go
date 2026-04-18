@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 )
 
 func TestAgent_ConfigFailure(t *testing.T) {
@@ -23,7 +23,7 @@ func TestAgent_ConfigFailure(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		AddContentFunc: func(c context.Context, content *llm.Content) error {
 			// Cancel context right after AddContent succeeds so applyConfig fails
 			cancel()

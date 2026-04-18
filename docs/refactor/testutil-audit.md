@@ -261,3 +261,65 @@ The architect's verdict was Option B with refinement: **keep both, name them hon
 - Files remaining in `internal/domain/testutil/`: 11 (was 12)
 - Symbols remaining: 38 of original 39 exported symbols
 - Next-easiest candidate (architect to confirm Session 3 scope): a single AGENT-bucket symbol with no naming collision, e.g. `MockGateway` or `MockHistoryManager`.
+
+
+## Session 3 Outcome (MockGateway + MockHistoryManager extraction, with collateral fix)
+
+- **Date**: 2026-04-19
+- **Branch**: `refactor/testutil-extract-agent-gateway-history`
+- **Symbols relocated** (names preserved, no rename):
+  - `testutil.MockGateway` → `agenttest.MockGateway` (file: `internal/agent/agenttest/mock_gateway.go`)
+  - `testutil.MockHistoryManager` → `agenttest.MockHistoryManager` (file: `internal/agent/agenttest/mock_history_manager.go`)
+- **Collateral relocations** (forced by import-cycle resolution — see Lessons):
+  - `agenttest.AgentInternal` → `agentinternal.AgentInternal`
+  - `agenttest.AsAgentInternal` → `agentinternal.AsAgentInternal`
+  - `agenttest.MockSessionLifecycleManager` (and its unexported backing type `mockSessionLifecycleManager`) → `agentinternal.MockSessionLifecycleManager`
+- **New package created**: `internal/agent/agentinternal/` (a regular non-`*test` sibling package). Holds exactly the test helpers that legitimately need to import `internal/agent` (the parent production package).
+- **Source file shrunk**: `internal/domain/testutil/agent_mocks.go` lost 2 types and ~150 LOC; 17 other symbols remain for later sessions.
+- **Helper file restructured**: `internal/agent/agenttest/helpers.go` lost 3 symbols and 2 imports (`internal/agent`, `internal/domain/config`). It is now layer-correct: `agenttest` depends only on `internal/domain/*`, never on `internal/agent`.
+- **Call sites updated**:
+  - 23 test files for `MockGateway`/`MockHistoryManager` (158 references)
+  - 4 test files for `AgentInternal`/`AsAgentInternal`/`MockSessionLifecycleManager`
+  - **27 files total** in this session
+- **Tests**: PASS (61 packages — was 60; +1 for new `agentinternal` package).
+- **Race detector**: PASS (`go test -count=1 -race ./...`).
+- **Architecture verification**: ✅ no new violations; the latent `agenttest → internal/agent` upward dependency is GONE.
+- **Architectural lint**: zero non-test production files import `agenttest` or `agentinternal` (verified via grep).
+
+### Why the collateral relocation was unavoidable
+
+Step 10 of the original Session 3 spec failed with an **import cycle**:
+
+```
+internal/agent (test compile)
+  → internal/agent/agenttest (via *_test.go importing agenttest.MockGateway)
+  → internal/agent (via the pre-existing helpers.go using agent.InternalAccessor / agent.AsInternal / agent.CapturerInteractor)
+```
+
+The cycle affected 9 internal-package test files (those declared `package agent`, `package orchestrator`, `package session` rather than the external `*_test` variants). Files using external `*_test` packages were unaffected.
+
+Diagnosis revealed three symbols in `agenttest/helpers.go` had typed dependencies on `internal/agent` symbols:
+1. `AgentInternal` (embeds `agent.InternalAccessor`)
+2. `AsAgentInternal` (calls `agent.AsInternal`)
+3. `mockSessionLifecycleManager.BuildSessionDependencies` (parameter typed `agent.CapturerInteractor`, a *distinct* interface declared in `internal/agent/chat.go` — not a type alias)
+
+The architect's first remediation proposal (Option E) targeted only #1 and #2. Investigation revealed #3 also kept the `internal/agent` import alive in `helpers.go`. The signature of `BuildSessionDependencies` cannot be widened to `any` because the mock must satisfy the production `internal/agent.SessionLifecycleManager` interface, which is itself defined in `internal/agent` and uses `CapturerInteractor` directly. The choice was therefore between (a) extracting the production interface to `domain/ports` (out of scope) or (b) moving #3 along with #1 and #2. Option (b) was selected as Option E-extended.
+
+### Lessons added (apply in Sessions 4+)
+
+1. **"Destination directory is empty" is an audit assumption that may be wrong.** The audit reported `internal/agent/agenttest/` as empty; it actually contained a 280-line `helpers.go` with hidden upward dependencies. Future sessions targeting a partly-populated destination MUST `read_files` on every existing `.go` file there during Step 1 and inspect the import block for upward dependencies into the parent package.
+
+2. **A `*test` sub-package may not import its parent production package** — this is the architectural rule the architect established this session. Test-only helpers that legitimately need parent-package symbols belong in a *sibling* regular package (e.g. `agentinternal/`), not the `*test` package. Apply the same rule prophylactically when creating future `*test` packages.
+
+3. **`mock.Mock`-based mock signatures must exactly match the production interface they satisfy.** Cannot widen parameter types to `any` to break dependencies. If the production interface itself imports a parent-package type, the mock cannot escape that dependency without first refactoring the production interface (out of scope for testutil dissolution).
+
+4. **The "~6 consumer packages" estimate per AGENT-bucket symbol was decent for `MockGateway` (8 files) but underestimated `MockHistoryManager` (16 files).** Audit estimates remain ±25% as flagged in Session 2.
+
+5. **`grep -rl` substring matches can deceive.** Two files (`spinner_integration_test.go`, `internal_tools_test.go`) were initially missed in my MockGateway-specific grep but appeared in the union grep. Reconciliation between Search A (qualifier-based) and Search B (import-path-based) caught them.
+
+### State of the testutil dump after Session 3
+
+- Files remaining in `internal/domain/testutil/`: 11 (unchanged from Session 2 — `agent_mocks.go` shrank but did not disappear).
+- Symbols remaining: 36 of original 39 exported symbols (was 38 after Session 2, lost MockGateway + MockHistoryManager).
+- New shared sibling package: `internal/agent/agentinternal/` (3 symbols).
+- Next-easiest candidates per the audit's AGENT bucket: `MockToolRegistry`/`NewMockToolRegistry` (~8 consumers), or `MockSummarizer`/`MockTokenCounter`/`MockTransformer` family. Architect to confirm Session 4 scope.

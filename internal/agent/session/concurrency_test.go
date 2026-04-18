@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
@@ -53,7 +54,7 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 	// 1. Setup CM with a blocking transformer (Priority 50)
 
 	strategy := NewContextStrategy(&testutil.MockTokenCounter{})
-	history := &testutil.MockHistoryManager{}
+	history := &agenttest.MockHistoryManager{}
 
 	blockCh := make(chan struct{})
 	enteredCh := make(chan struct{})

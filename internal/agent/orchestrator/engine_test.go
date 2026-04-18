@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -21,7 +22,7 @@ import (
 )
 
 func TestEngine_ConfigurationOptions(t *testing.T) {
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	ex := &testutil.MockAgentExecutor{}
 	cm := &session.ContextManager{}
 	reg := &testutil.MockToolRegistry{}
@@ -195,7 +196,7 @@ func TestExecutionStep_Process(t *testing.T) {
 			},
 		}
 		counter := &testutil.MockTokenCounter{}
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 
 		turn := &Turn{
@@ -270,7 +271,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 		counter := &testutil.MockTokenCounter{}
 		counter.SetTokens(100)
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
@@ -296,7 +297,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 		counter := &testutil.MockTokenCounter{}
 		counter.SetTokens(600)
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
@@ -328,7 +329,7 @@ func TestExecutionStep_PayloadValidation(t *testing.T) {
 		counter := &testutil.MockTokenCounter{}
 		counter.SetTokens(100)
 
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 		cm.Reconfigure(events.Limits{MaxHistoryTokens: 1000})
 
@@ -381,13 +382,13 @@ func TestEngine_StartTelemetry(t *testing.T) {
 }
 
 func TestEngine_Run(t *testing.T) {
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	ex := &testutil.MockAgentExecutor{}
 	reg := &testutil.MockToolRegistry{}
 	bus := &testutil.MockEventBus{}
 	counter := &testutil.MockTokenCounter{}
 
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(session.NewContextStrategy(counter), hMock, bus, nil)
 
 	e := NewEngine(gw, ex, cm, reg, bus, counter)
@@ -439,7 +440,7 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 
 	t.Run("Duplicate Response", func(t *testing.T) {
 		bus := &testutil.MockEventBus{}
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		// Seed history with user message to satisfy validation
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
@@ -474,7 +475,7 @@ func TestMiddleware_LoopDetector(t *testing.T) {
 
 	t.Run("Tool Call Count", func(t *testing.T) {
 		bus := &testutil.MockEventBus{}
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		// Seed history with user message to satisfy validation
 		hMock.Contents = []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
 		cm := session.NewContextManager(session.NewContextStrategy(&testutil.MockTokenCounter{}), hMock, bus, nil)
@@ -550,14 +551,14 @@ func TestExecuteTurn_TraceEventBusError(t *testing.T) {
 	bus := &testutil.MockEventBus{}
 	bus.SetPublishErr(errors.New("bus failure"))
 
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	ex := &testutil.MockAgentExecutor{}
 
 	// Properly initialize ContextManager
 	reg := &testutil.MockToolRegistry{}
 	counter := &testutil.MockTokenCounter{}
 	strategy := session.NewContextStrategy(counter)
-	hMock := &testutil.MockHistoryManager{}
+	hMock := &agenttest.MockHistoryManager{}
 	cm := session.NewContextManager(strategy, hMock, bus, nil)
 
 	e := NewEngine(gw, ex, cm, reg, bus, counter)

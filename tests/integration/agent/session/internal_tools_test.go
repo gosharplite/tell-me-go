@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
@@ -162,7 +163,7 @@ func TestInternalTools_SummarizeHistory(t *testing.T) {
 		Estimator:  session.NewContextStrategy(&testutil.MockTokenCounter{}),
 		Events:     &testutil.MockEventBus{},
 	}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	hManager.SetInternalContents([]*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "U1"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "M1"}}},

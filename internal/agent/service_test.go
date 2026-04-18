@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/agentinternal"
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -31,7 +32,7 @@ func TestProcessMessage(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		setupMock        func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error
+		setupMock        func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error
 		cmd              agent.ChatCommand
 		cfg              *config.Config
 		wantErr          bool
@@ -49,7 +50,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -97,7 +98,7 @@ func TestProcessMessage(t *testing.T) {
 			name: "BuildSessionDepsError",
 			cmd:  agent.ChatCommand{ConfigPath: "config.yaml"},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, cap).Return(nil, nil, func(context.Context) error { return nil }, errBuild)
 				return nil
@@ -116,7 +117,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -173,7 +174,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -198,7 +199,7 @@ func TestProcessMessage(t *testing.T) {
 			name: "RetryNoHistory",
 			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				mockHM := &mockHistoryManagerForRetry{msg: "", turns: 0}
@@ -214,7 +215,7 @@ func TestProcessMessage(t *testing.T) {
 			name: "RetryHistoryError",
 			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				mockHM := &mockHistoryManagerForRetry{err: errors.New("db error")}
@@ -230,7 +231,7 @@ func TestProcessMessage(t *testing.T) {
 			name: "RetryConfirmError",
 			cmd:  agent.ChatCommand{ConfigPath: "config.yaml", Retry: true},
 			cfg:  &config.Config{Mode: "assistant"},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				mockHM := &mockHistoryManagerForRetry{msg: "retry me", turns: 1}
@@ -253,7 +254,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -300,7 +301,7 @@ func TestProcessMessage(t *testing.T) {
 				},
 				SelectedProvider: "test",
 			},
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, sm *agenttest.MockServiceSecurityManager, cap *agenttest.MockServiceCapturer, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, agentMock *agenttest.MockServiceAgent, tl *agenttest.MockTurnsLogger) func(context.Context) error {
 				cfg := &config.Config{
 					Mode: "assistant",
 					Providers: map[string]config.LLMProvider{
@@ -343,7 +344,7 @@ func TestProcessMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			sf := &agenttest.MockSessionLifecycleManager{}
+			sf := &agentinternal.MockSessionLifecycleManager{}
 			sm := &agenttest.MockServiceSecurityManager{}
 			capturer := &agenttest.MockServiceCapturer{}
 			deps := &agenttest.MockServiceSessionDependencies{}
@@ -643,7 +644,7 @@ func TestRunDiagnostics(t *testing.T) {
 	tests := []struct {
 		name       string
 		jsonOutput bool
-		setupMock  func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag)
+		setupMock  func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag)
 		wantErr    bool
 		errMsg     string
 		checkOut   func(t *testing.T, stdout string)
@@ -651,7 +652,7 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name:       "success UI output",
 			jsonOutput: false,
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -670,7 +671,7 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name:       "success JSON output",
 			jsonOutput: true,
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -689,7 +690,7 @@ func TestRunDiagnostics(t *testing.T) {
 		},
 		{
 			name: "build deps error",
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(nil, nil, (func(context.Context) error)(nil), errBuild)
 			},
@@ -698,7 +699,7 @@ func TestRunDiagnostics(t *testing.T) {
 		},
 		{
 			name: "nil health manager",
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -712,7 +713,7 @@ func TestRunDiagnostics(t *testing.T) {
 		},
 		{
 			name: "CheckAll error",
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -729,7 +730,7 @@ func TestRunDiagnostics(t *testing.T) {
 		{
 			name:       "unhealthy report",
 			jsonOutput: false,
-			setupMock: func(sf *agenttest.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
+			setupMock: func(sf *agentinternal.MockSessionLifecycleManager, deps *agenttest.MockServiceSessionDependencies, bus *agenttest.MockServiceEventBus, hcm *mockHealthCheckManager, uir *mockUIRendererForDiag) {
 				cfg := &config.Config{Mode: "assistant"}
 				cleanup := func(context.Context) error { return nil }
 				sf.On("BuildSessionDependencies", mock.Anything, cfg, "config.yaml", false, nil).Return(deps, nil, cleanup, nil)
@@ -752,7 +753,7 @@ func TestRunDiagnostics(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			sf := &agenttest.MockSessionLifecycleManager{}
+			sf := &agentinternal.MockSessionLifecycleManager{}
 			deps := &agenttest.MockServiceSessionDependencies{}
 			bus := &agenttest.MockServiceEventBus{}
 			hcm := &mockHealthCheckManager{}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
@@ -22,7 +23,7 @@ func TestContextManager_FindSummarizationBoundary_Cancelled(t *testing.T) {
 	// but we can at least verify it returns the context error.
 	cancel()
 
-	hm := &testutil.MockHistoryManager{Contents: []*llm.Content{
+	hm := &agenttest.MockHistoryManager{Contents: []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 	}}
 	cm := NewContextManager(nil, hm, nil, nil)
@@ -133,7 +134,7 @@ func TestSkillInjector_SelectorError(t *testing.T) {
 }
 
 func TestContextManager_FinalizeSummarization_ArchiveError(t *testing.T) {
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
@@ -155,7 +156,7 @@ func TestContextManager_FinalizeSummarization_ArchiveError(t *testing.T) {
 }
 
 type archiveFailingHM struct {
-	*testutil.MockHistoryManager
+	*agenttest.MockHistoryManager
 	err error
 }
 
@@ -164,7 +165,7 @@ func (m *archiveFailingHM) Archive(ctx context.Context, contents []*llm.Content)
 }
 
 func TestContextManager_FinalizeSummarization_SetContentsError(t *testing.T) {
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
@@ -185,7 +186,7 @@ func TestContextManager_FinalizeSummarization_SetContentsError(t *testing.T) {
 }
 
 func TestContextManager_FinalizeSummarization_PrunedError(t *testing.T) {
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		},
@@ -278,7 +279,7 @@ func TestContextManager_UpdateCache_VersionMismatch(t *testing.T) {
 }
 
 func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		},
@@ -304,7 +305,7 @@ func TestContextManager_Prepare_PipelineExecutionError(t *testing.T) {
 }
 
 func TestContextManager_AddContent_GetWindowError(t *testing.T) {
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		},
@@ -319,7 +320,7 @@ func TestContextManager_AddContent_GetWindowError(t *testing.T) {
 }
 
 func TestContextManager_Prepare_HistoryGetWindowError(t *testing.T) {
-	hm := &testutil.MockHistoryManager{
+	hm := &agenttest.MockHistoryManager{
 		GetWindowErr: errors.New("get window error"),
 	}
 

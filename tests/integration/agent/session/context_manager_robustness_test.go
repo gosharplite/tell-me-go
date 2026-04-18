@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -386,7 +387,7 @@ func setupSummarizationTest(t *testing.T) (*session.ContextManager, *[]*domain_l
 	historyPath := filepath.Join(tmpDir, "history.json")
 	hManager := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
 	capturedInput := new([]*domain_llm.Content)
-	g := &testutil.MockGateway{}
+	g := &agenttest.MockGateway{}
 	g.SetGenerateFn(func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 		*capturedInput = input
 		return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
@@ -541,7 +542,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	simulatedErr := errors.New("simulated I/O error")
 
 	t.Run("Prepare_Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetGetWindowErr(simulatedErr)
 		cm := session.NewContextManager(nil, hMock, nil, nil)
 		_, _, err := cm.Prepare(ctx, 1)
@@ -551,7 +552,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("AddContent_Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetInternalContents([]*domain_llm.Content{
 			{Role: "user", Parts: []*domain_llm.Part{{Text: "test"}}},
 		})
@@ -564,7 +565,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("SummarizeRange_Metadata_Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetInternalContents([]*domain_llm.Content{
 			{Role: "user", Parts: []*domain_llm.Part{{Text: "msg1"}}},
 			{Role: "model", Parts: []*domain_llm.Part{{Text: "msg2"}}},
@@ -585,7 +586,7 @@ func TestContextManager_GetWindow_Errors(t *testing.T) {
 	})
 
 	t.Run("SummarizeRange_Finalize_Error", func(t *testing.T) {
-		hMock := &testutil.MockHistoryManager{}
+		hMock := &agenttest.MockHistoryManager{}
 		hMock.SetInternalContents([]*domain_llm.Content{
 			{Role: "user", Parts: []*domain_llm.Part{{Text: "msg1"}}},
 			{Role: "model", Parts: []*domain_llm.Part{{Text: "msg2"}}},

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -20,7 +21,7 @@ import (
 
 func TestNewAgent_Initialization(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
@@ -53,7 +54,7 @@ func TestNewAgent_Initialization(t *testing.T) {
 
 func TestAgent_InternalAccessor(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
@@ -79,7 +80,7 @@ func TestAgent_InternalAccessor(t *testing.T) {
 
 func TestAgent_Subscribe(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
@@ -99,7 +100,7 @@ func TestAgent_Subscribe(t *testing.T) {
 
 func TestAgent_SetLimits(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
@@ -135,7 +136,7 @@ func TestAgent_SetLimits(t *testing.T) {
 
 func TestAgent_SetTieredThreshold(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
@@ -167,7 +168,7 @@ func TestAgent_SetTieredThreshold(t *testing.T) {
 
 func TestAgent_Shutdown(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 
@@ -240,7 +241,7 @@ func TestAgent_Shutdown(t *testing.T) {
 
 func TestNewAgent_Errors(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
@@ -303,7 +304,7 @@ func TestAgent_GetLogger_Default(t *testing.T) {
 
 func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
@@ -319,7 +320,7 @@ func TestAgent_InitComponents_FileConfigWatcher(t *testing.T) {
 
 func TestAgent_Chat_AddContentError(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}
@@ -339,7 +340,7 @@ func TestAgent_Chat_AddContentError(t *testing.T) {
 
 func TestAgent_Chat_ApplyConfigError(t *testing.T) {
 	ctx := context.Background()
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 	bus := events.NewSimpleEventBus(ctx, events.WithAsync(false))
 	reg := testutil.NewMockToolRegistry()
 	sm := &mockSecurityManager{AllowAll: true}

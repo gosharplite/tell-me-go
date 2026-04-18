@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
@@ -89,7 +90,7 @@ func TestContextManager_GroupTurnsErrorPropagation(t *testing.T) {
 		{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 		{Role: "", Parts: []*llm.Part{{Text: "invalid"}}},
 	}
-	mockHistory := &testutil.MockHistoryManager{Contents: history}
+	mockHistory := &agenttest.MockHistoryManager{Contents: history}
 
 	cm := NewContextManager(NewContextStrategy(&testutil.MockTokenCounter{}), mockHistory, nil, nil)
 	cm.Summarizer = &testutil.MockSummarizer{}
@@ -140,7 +141,7 @@ func TestSummarizeRange_GroupTurns_ErrorPropagation(t *testing.T) {
 		history[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "u"}}}
 		history[i+1] = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "m"}}}
 	}
-	mockHistory := &testutil.MockHistoryManager{Contents: history}
+	mockHistory := &agenttest.MockHistoryManager{Contents: history}
 
 	// Create a counter that sabotages the history to trigger groupTurns failure at line 251
 	mockCounter := &mockTokenCounterWithFn{
@@ -174,7 +175,7 @@ func TestFinalizeSummarization_Validation_ErrorPropagation(t *testing.T) {
 		history[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "u"}}}
 		history[i+1] = &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "m"}}}
 	}
-	mockHistory := &testutil.MockHistoryManager{Contents: history}
+	mockHistory := &agenttest.MockHistoryManager{Contents: history}
 
 	// Mock summarizer that sabotages the subset to trigger validation failure
 	mockSumm := &testutil.MockSummarizer{

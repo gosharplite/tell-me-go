@@ -8,8 +8,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
@@ -19,20 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 )
-
-// AgentInternal provides a wrapper around the agent's internal accessor.
-type AgentInternal struct {
-	agent.InternalAccessor
-}
-
-// AsAgentInternal wraps a ports.Chatter to provide access to internal components.
-func AsAgentInternal(c ports.Chatter) *AgentInternal {
-	inner := agent.AsInternal(c)
-	if inner == nil {
-		return nil
-	}
-	return &AgentInternal{inner}
-}
 
 // stubUIRenderer is a stub implementation of ports.UIRenderer for testing.
 type stubUIRenderer struct{}
@@ -80,32 +64,6 @@ func (s *stubHistoryBrowser) Browse(ctx context.Context, provider ports.UnifiedH
 
 // StubHistoryBrowser is a stub implementation of ports.HistoryBrowser for testing.
 type StubHistoryBrowser = stubHistoryBrowser
-
-// mockSessionLifecycleManager is a mock of SessionLifecycleManager.
-type mockSessionLifecycleManager struct {
-	mock.Mock
-}
-
-func (m *mockSessionLifecycleManager) BuildSessionDependencies(ctx context.Context, cfg *config.Config, configPath string, newSession bool, capturer agent.CapturerInteractor) (ports.SessionDependencies, ports.HistoryManager, func(context.Context) error, error) {
-	args := m.Called(ctx, cfg, configPath, newSession, capturer)
-	var deps ports.SessionDependencies
-	if args.Get(0) != nil {
-		deps = args.Get(0).(ports.SessionDependencies)
-	}
-	var hManager ports.HistoryManager
-	if args.Get(1) != nil {
-		hManager = args.Get(1).(ports.HistoryManager)
-	}
-	return deps, hManager, args.Get(2).(func(context.Context) error), args.Error(3)
-}
-
-func (m *mockSessionLifecycleManager) FinalizeSession(ctx context.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) error {
-	args := m.Called(ctx, hManager, deps, cfg)
-	return args.Error(0)
-}
-
-// MockSessionLifecycleManager is a mock of SessionLifecycleManager.
-type MockSessionLifecycleManager = mockSessionLifecycleManager
 
 // mockServiceSecurityManager is a mock of Manager.
 type mockServiceSecurityManager struct {

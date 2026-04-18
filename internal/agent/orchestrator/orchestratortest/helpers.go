@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -21,7 +22,7 @@ import (
 
 // TestTurnEnv holds the standard environment for TurnEngine tests.
 type TestTurnEnv struct {
-	Gw       *testutil.MockGateway
+	Gw       *agenttest.MockGateway
 	Reg      *testutil.MockToolRegistry
 	Bus      *events.SimpleEventBus
 	Cm       *session.ContextManager
@@ -39,9 +40,9 @@ func SetupTurnEngineTest(t interface {
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	cm := NewTestContextManager(strategy, hManager, bus)
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 
 	// Default prompt in history
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -80,7 +81,7 @@ func CreateProcessorForPhase(phase orchestrator.TurnPhase) orchestrator.TurnProc
 }
 
 func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestrator.Turn {
-	mockGw := &testutil.MockGateway{}
+	mockGw := &agenttest.MockGateway{}
 	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
 		if hasTools && phase == orchestrator.PhaseInference {
@@ -100,7 +101,7 @@ func SetupTransitionTurn(hasTools bool, phase orchestrator.TurnPhase) *orchestra
 			},
 		},
 		CtxManager: &session.ContextManager{
-			History:  &testutil.MockHistoryManager{},
+			History:  &agenttest.MockHistoryManager{},
 			Strategy: session.NewContextStrategy(session.NewHeuristicTokenCounter(reg)),
 		},
 		Gateway: mockGw,

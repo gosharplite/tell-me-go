@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator/orchestratortest"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
@@ -121,7 +122,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 		}
 	})
 
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}, &llm.Metrics{PromptTokens: 100}, nil
 		},
@@ -129,7 +130,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 
 	reg := &testutil.MockToolRegistry{}
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, bus), reg, bus, strategy)
@@ -162,16 +163,16 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
-		setup   func(gw *testutil.MockGateway, hm ports.HistoryManager)
+		setup   func(gw *agenttest.MockGateway, hm ports.HistoryManager)
 		wantErr string
 	}{
 		{
 			name: "History error in Persistence",
-			setup: func(gw *testutil.MockGateway, hm ports.HistoryManager) {
+			setup: func(gw *agenttest.MockGateway, hm ports.HistoryManager) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 					return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "resp"}}}, &llm.Metrics{}, nil
 				}
-				if h, ok := hm.(*testutil.MockHistoryManager); ok {
+				if h, ok := hm.(*agenttest.MockHistoryManager); ok {
 					h.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
 						if content.Role == "model" {
 							return errors.New("append failed")
@@ -187,11 +188,11 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 		},
 		{
 			name: "Finalize error in Inference",
-			setup: func(gw *testutil.MockGateway, hm ports.HistoryManager) {
+			setup: func(gw *agenttest.MockGateway, hm ports.HistoryManager) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 					return nil, nil, errors.New("generate failed")
 				}
-				if h, ok := hm.(*testutil.MockHistoryManager); ok {
+				if h, ok := hm.(*agenttest.MockHistoryManager); ok {
 					h.AddContentFunc = func(ctx context.Context, content *llm.Content) error { return nil }
 				}
 			},
@@ -202,7 +203,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mockGw := &testutil.MockGateway{}
+			mockGw := &agenttest.MockGateway{}
 			mockEx := &testutil.MockAgentExecutor{
 				ExecuteFunc: func(ctx context.Context, respContent *llm.Content, Turn int, maxToolTurns int) (*llm.Content, error) {
 					return nil, nil
@@ -210,7 +211,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 			}
 			reg := &testutil.MockToolRegistry{}
 			strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-			hManager := &testutil.MockHistoryManager{}
+			hManager := &agenttest.MockHistoryManager{}
 			tt.setup(mockGw, hManager)
 
 			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -236,7 +237,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	t.Parallel()
 	turnCount := 0
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			turnCount++
 			if turnCount == 1 {
@@ -267,7 +268,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 
 	reg := &testutil.MockToolRegistry{}
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	bus1 := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
@@ -289,12 +290,12 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 
 func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{}
+	mockGw := &agenttest.MockGateway{}
 	reg := &testutil.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	var Mu sync.Mutex
@@ -340,12 +341,12 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 
 func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{}
+	mockGw := &agenttest.MockGateway{}
 	reg := &testutil.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	var Mu sync.Mutex
@@ -411,13 +412,13 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 		})
 	}
 
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &testutil.MockToolRegistry{}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
@@ -464,13 +465,13 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 		}
 	})
 
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &testutil.MockToolRegistry{}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
@@ -549,10 +550,10 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 
 func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{}
+	mockGw := &agenttest.MockGateway{}
 	reg := &testutil.MockToolRegistry{}
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	attempts := 0
@@ -580,10 +581,10 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 
 func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{}
+	mockGw := &agenttest.MockGateway{}
 	reg := &testutil.MockToolRegistry{}
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	attempts := 0
@@ -611,13 +612,13 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 
 func TestTurnEngine_WithEngineProcessor(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "custom"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &testutil.MockToolRegistry{}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	customRefinerCalled := false
@@ -644,13 +645,13 @@ func TestTurnEngine_WithEngineProcessor(t *testing.T) {
 
 func TestTurnEngine_Hooks(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &testutil.MockToolRegistry{}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	hook := &orchestratortest.MockHook{}
@@ -676,13 +677,13 @@ func TestTurnEngine_Hooks(t *testing.T) {
 
 func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, errors.New("transient")
 		},
 	}
 	reg := &testutil.MockToolRegistry{}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	policy := &orchestratortest.MockRetryPolicy{Retry: false} // Don't actually retry to keep test fast
@@ -698,13 +699,13 @@ func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 
 func TestTurnEngine_StopSignal(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
 		},
 	}
 	reg := &testutil.MockToolRegistry{}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	stopProcessor := orchestrator.TurnProcessorFunc(func(ctx context.Context, Turn *orchestrator.Turn) (orchestrator.ProcessResult, error) {
@@ -798,10 +799,10 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 
 func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{}
+	mockGw := &agenttest.MockGateway{}
 	reg := &testutil.MockToolRegistry{}
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	attemptsInTurn := 0
@@ -868,12 +869,12 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 	tests := []struct {
 		name      string
 		toolLimit int
-		setup     func(gw *testutil.MockGateway, ex *testutil.MockAgentExecutor, turnCount *int, turnIndex *int)
+		setup     func(gw *agenttest.MockGateway, ex *testutil.MockAgentExecutor, turnCount *int, turnIndex *int)
 	}{
 		{
 			name:      "Calls across exactly 2 turns",
 			toolLimit: 10,
-			setup: func(gw *testutil.MockGateway, ex *testutil.MockAgentExecutor, turnCount *int, turnIndex *int) {
+			setup: func(gw *agenttest.MockGateway, ex *testutil.MockAgentExecutor, turnCount *int, turnIndex *int) {
 				setupTwoTurnRepeatingGateway(gw, turnCount, "test_tool")
 				setupSimpleToolExecutor(ex, "test_tool")
 			},
@@ -881,14 +882,14 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 		{
 			name:      "Calls hitting limit within a single Turn",
 			toolLimit: 10,
-			setup: func(gw *testutil.MockGateway, ex *testutil.MockAgentExecutor, turnCount *int, turnIndex *int) {
+			setup: func(gw *agenttest.MockGateway, ex *testutil.MockAgentExecutor, turnCount *int, turnIndex *int) {
 				setupRepeatingToolGateway(gw, turnCount, 6, "loop_tool")
 			},
 		},
 		{
 			name:      "Different tools sharing session-level counter",
 			toolLimit: 10,
-			setup: func(gw *testutil.MockGateway, ex *testutil.MockAgentExecutor, turnCount *int, turnIndex *int) {
+			setup: func(gw *agenttest.MockGateway, ex *testutil.MockAgentExecutor, turnCount *int, turnIndex *int) {
 				setupMultiToolGateway(gw, turnCount)
 				setupSimpleToolExecutor(ex, "tool_A")
 			},
@@ -913,12 +914,12 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 			err := e.Run(context.Background(), time.Now())
 			assert.NoError(t, err)
 
-			assertLoopWarningInjected(t, env.HManager.(*testutil.MockHistoryManager))
+			assertLoopWarningInjected(t, env.HManager.(*agenttest.MockHistoryManager))
 		})
 	}
 }
 
-func setupRepeatingToolGateway(gw *testutil.MockGateway, turnCount *int, repeatCount int, toolName string) {
+func setupRepeatingToolGateway(gw *agenttest.MockGateway, turnCount *int, repeatCount int, toolName string) {
 	gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		*turnCount++
 		content := &llm.Content{Role: "model"}
@@ -935,7 +936,7 @@ func setupRepeatingToolGateway(gw *testutil.MockGateway, turnCount *int, repeatC
 	}
 }
 
-func setupTwoTurnRepeatingGateway(gw *testutil.MockGateway, turnCount *int, toolName string) {
+func setupTwoTurnRepeatingGateway(gw *agenttest.MockGateway, turnCount *int, toolName string) {
 	gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		*turnCount++
 		content := &llm.Content{Role: "model"}
@@ -954,7 +955,7 @@ func setupTwoTurnRepeatingGateway(gw *testutil.MockGateway, turnCount *int, tool
 	}
 }
 
-func setupMultiToolGateway(gw *testutil.MockGateway, turnCount *int) {
+func setupMultiToolGateway(gw *agenttest.MockGateway, turnCount *int) {
 	gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		*turnCount++
 		content := &llm.Content{Role: "model"}
@@ -994,7 +995,7 @@ func setupSimpleToolExecutor(ex *testutil.MockAgentExecutor, toolName string) {
 	}
 }
 
-func assertLoopWarningInjected(t *testing.T, hm *testutil.MockHistoryManager) {
+func assertLoopWarningInjected(t *testing.T, hm *agenttest.MockHistoryManager) {
 	t.Helper()
 	hm.Mu.Lock()
 	contents := make([]*llm.Content, len(hm.Contents))
@@ -1013,12 +1014,12 @@ func assertLoopWarningInjected(t *testing.T, hm *testutil.MockHistoryManager) {
 
 func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	t.Parallel()
-	mockGw := &testutil.MockGateway{}
+	mockGw := &agenttest.MockGateway{}
 	reg := &testutil.MockToolRegistry{}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 
 	persistedContents := []*llm.Content{}
 	hManager.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
@@ -1070,13 +1071,13 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	events.CleanupBus(t, bus)
 	tracker := &testutil.MockEngineCostTracker{}
 	reg := &testutil.MockToolRegistry{}
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	// Seed history
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
 	cm := orchestratortest.NewTestContextManager(strategy, hManager, bus)
-	gw := &testutil.MockGateway{}
+	gw := &agenttest.MockGateway{}
 
 	e := orchestrator.NewEngine(gw, &testutil.MockAgentExecutor{}, cm, reg, bus, strategy, orchestrator.WithEngineCostTracker(tracker))
 
@@ -1358,7 +1359,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 	})
 
 	attempts := 0
-	mockGw := &testutil.MockGateway{
+	mockGw := &agenttest.MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			attempts++
 			if attempts == 1 {
@@ -1370,7 +1371,7 @@ func TestTurnEngine_Retry_EventSequence(t *testing.T) {
 
 	reg := &testutil.MockToolRegistry{}
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(reg))
-	hManager := &testutil.MockHistoryManager{}
+	hManager := &agenttest.MockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	e := orchestrator.NewEngine(mockGw, nil, orchestratortest.NewTestContextManager(strategy, hManager, bus), reg, bus, strategy, orchestrator.WithEngineClock(&testutil.MockClock{}))
