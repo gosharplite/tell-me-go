@@ -27,6 +27,7 @@ This directory contains Architectural Decision Records (ADRs) documenting signif
 | **ADR-019** | JSONL History Persistence | 2026-04 | Accepted | [2026-04-jsonl-history-persistence.md](2026-04-jsonl-history-persistence.md) |
 | **ADR-020** | Windows Compatibility Strategy | 2026-04 | Accepted | [2026-04-windows-compatibility-strategy.md](2026-04-windows-compatibility-strategy.md) |
 | **ADR-021** | Test Doubles Live in `*test` Sub-Packages, Not a Centralized `testutil` | 2026-04 | Accepted | [2026-04-test-doubles-in-pkgtest-subpackages.md](2026-04-test-doubles-in-pkgtest-subpackages.md) |
+| **ADR-022** | Tool-Result Error Convention | 2026-04 | Accepted | [2026-04-tool-result-error-convention.md](2026-04-tool-result-error-convention.md) |
 
 ## How to Create a New ADR
 
