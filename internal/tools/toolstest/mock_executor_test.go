@@ -1,13 +1,14 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package testutil
+package toolstest_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -15,7 +16,7 @@ func TestMockExecutor(t *testing.T) {
 	t.Parallel()
 	t.Run("Output", func(t *testing.T) {
 		t.Parallel()
-		m := &MockExecutor{
+		m := &toolstest.MockExecutor{
 			OutputBytes: []byte("output"),
 			Error:       nil,
 		}
@@ -30,7 +31,7 @@ func TestMockExecutor(t *testing.T) {
 
 	t.Run("CombinedOutput", func(t *testing.T) {
 		t.Parallel()
-		m := &MockExecutor{
+		m := &toolstest.MockExecutor{
 			OutputBytes: []byte("combined"),
 			Error:       errors.New("failed"),
 		}

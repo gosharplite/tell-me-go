@@ -1,16 +1,23 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package testutil
+// Package toolstest provides test doubles for interfaces consumed by the
+// internal/tools layer (command executors, security managers, command
+// validators, user interactors).
+//
+// Helpers in this package satisfy domain/tools, domain/security, and
+// related domain interfaces. They are intended only for use from
+// _test.go files. Production code must never import this package.
+package toolstest
 
 import (
 	"context"
 )
 
-// MockExecutor implements tools.CommandExecutor for testing.
-//
-// Bucket: TOOLS — slated for relocation into a internal/tools/toolstest
-// helper package in a future session. See docs/refactor/testutil-audit.md.
+// MockExecutor is a test double for tools.CommandExecutor. It captures
+// the most recent command name and argument list it received and
+// returns the pre-set OutputBytes/Error pair from both Output and
+// CombinedOutput. LookPath returns a synthetic /usr/bin/<file> path.
 type MockExecutor struct {
 	OutputBytes []byte
 	Error       error

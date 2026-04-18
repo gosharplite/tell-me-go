@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 type mockGitExecutor struct {
@@ -30,7 +30,7 @@ func (m *mockGitExecutor) CombinedOutput(ctx context.Context, name string, args 
 func TestGitTools(t *testing.T) {
 	// SecurityManager requires a reader for InteractionHandler
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	// Allow all paths for testing
 	sm.SetBypassActive(true)
 
@@ -249,7 +249,7 @@ func TestGitDestructiveActions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sm := &testutil.MockSecurityManager{AllowAll: true}
+			sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 			executor := &mockGitExecutor{
 				handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -280,7 +280,7 @@ func TestGitDestructiveActions(t *testing.T) {
 }
 
 func TestGitBlameSafety(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	sm.IsSafeFunc = func(path string) (string, error) {
 		if strings.Contains(path, "etc") {
 			return "", fmt.Errorf("security violation")

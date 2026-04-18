@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/toolchain"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 type mockDeadCodeAnalyzer struct {
@@ -138,7 +138,7 @@ func (m *mockHealthExecutor) CombinedOutput(ctx context.Context, name string, ar
 
 func TestHealthManager_GetCodeHealth(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
@@ -171,7 +171,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 
 func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}

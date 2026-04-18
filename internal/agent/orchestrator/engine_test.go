@@ -17,7 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -34,7 +34,7 @@ func TestEngine_ConfigurationOptions(t *testing.T) {
 	mockPricing := make(map[string]domain_pricing.ModelPricing)
 	mockRetry := &DefaultRetryPolicy{MaxRetries: 3}
 	mockCostTracker := &agenttest.MockCostTracker{}
-	mockSM := &testutil.MockSecurityManager{}
+	mockSM := &noopSecurityManager{}
 
 	e := NewEngine(gw, ex, cm, reg, nil, counter,
 		WithEngineClock(mockClock),
@@ -604,3 +604,29 @@ func TestNewEngine_FastRetry(t *testing.T) {
 	e := NewEngine(nil, nil, nil, nil, nil, nil)
 	assert.Equal(t, 1*time.Millisecond, e.RetryPolicy.(*DefaultRetryPolicy).Backoff)
 }
+
+// noopSecurityManager is a minimal package-local stub of
+// domain_security.Manager used only to satisfy WithEngineConfig's
+// signature in TestEngine_ConfigurationOptions, which only asserts
+// pointer-equality of the stored SM and never invokes any of its
+// methods. Kept here (rather than importing internal/tools/toolstest)
+// to avoid a cross-layer test import (orchestrator → tools).
+type noopSecurityManager struct{}
+
+var _ domain_security.Manager = (*noopSecurityManager)(nil)
+
+func (*noopSecurityManager) IsPathSafe(string) (string, error)     { return "", nil }
+func (*noopSecurityManager) IsPathWritable(string) (string, error) { return "", nil }
+func (*noopSecurityManager) Authorize(context.Context, string, string, string, bool) (bool, error) {
+	return true, nil
+}
+func (*noopSecurityManager) LogAudit(string, ...any)                       {}
+func (*noopSecurityManager) Close() error                                  { return nil }
+func (*noopSecurityManager) TerminalLock()                                 {}
+func (*noopSecurityManager) TerminalUnlock()                               {}
+func (*noopSecurityManager) Prompt(string)                                 {}
+func (*noopSecurityManager) Warn(string)                                   {}
+func (*noopSecurityManager) Confirm(context.Context, string) (bool, error) { return true, nil }
+func (*noopSecurityManager) ReadLine(context.Context) (string, error)      { return "", nil }
+func (*noopSecurityManager) IsCommandAllowed(string) bool                  { return true }
+func (*noopSecurityManager) IsBypassActive() bool                          { return false }

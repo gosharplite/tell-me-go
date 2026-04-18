@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func TestIsIgnoredDir(t *testing.T) {
@@ -67,7 +67,7 @@ func TestWalkAndProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: false}
+	sm := &toolstest.MockSecurityManager{AllowAll: false}
 	sm.RegisterSafePath(tempDir)
 	sm.IsSafeFunc = func(path string) (string, error) {
 		if strings.HasPrefix(path, tempDir) {

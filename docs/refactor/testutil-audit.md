@@ -516,3 +516,59 @@ Three viable options (architect to pick):
 - **Option γ (GENERIC bundle, leaves the dump completely empty of mocks)**: Extract `NewSafeBuffer`, `SyncWriter` (and unexport `Buffer`/`SafeBuffer`) to a new `internal/pkg/testfixtures/` package. After this, `testutil/` would contain ONLY mocks (TOOLS + SECURITY).
 
 Suggest Option α first — it's the largest remaining bucket and `agent_mocks.go` going to zero LOC is symbolic milestone for the refactor. The SECURITY/GENERIC bundles can be a tidy pair for Session 8.
+
+
+## Session 7 Outcome (TOOLS bucket extraction + SECURITY bucket re-bucketed and collapsed)
+
+- **Date**: 2026-04-19
+- **Branch**: `refactor/testutil-extract-tools-security` (forked from Session 6 commit `f8ef81a6`)
+- **Source files deleted (3)**: `agent_mocks.go`, `exec_test.go`, `security_mocks.go` — all symbols and tests moved.
+- **New sub-package created**: `internal/tools/toolstest/` — the **fourth** `*test` sub-package and the first one in the **tools** layer. After this session the convention is established across all four architectural rings (`infrastructure`, `agent`, `domain/events`, `tools`).
+- **Symbols relocated (4 distinct types, names preserved):**
+  - `testutil.MockExecutor` → `toolstest.MockExecutor` (`mock_executor.go`)
+  - `testutil.MockSecurityManager` → `toolstest.MockSecurityManager` (`mock_security_manager.go`) per audit Risk Note #1
+  - `testutil.MockCommandValidator` → `toolstest.MockCommandValidator` (`mock_command_validator.go`)
+  - `testutil.MockInteractor` → `toolstest.MockInteractor` (`mock_interactor.go`) — **re-bucketed from SECURITY → TOOLS** (see audit revision below)
+- **Tests moved**: `TestMockExecutor` → `internal/tools/toolstest/mock_executor_test.go` (external `package toolstest_test`).
+- **Cross-layer test cleanup**: `internal/agent/orchestrator/engine_test.go` had a single `testutil.MockSecurityManager` call site. The naive rewrite to `toolstest.MockSecurityManager` introduced a layer violation (`agent → tools`) flagged by `verify_architecture`. Replaced with a 14-line package-local `noopSecurityManager` stub at the bottom of the same file. This stub satisfies `domain_security.Manager` with all-zero-value methods and is sufficient because the only assertion in that test is pointer equality of the stored SM. Audit doc adds Lesson #1 below.
+- **Call sites updated**: 37 files, **~145 references** rewritten in a single sed pass (`testutil.(MockExecutor|MockSecurityManager|MockCommandValidator|MockInteractor) → toolstest.\1`). Per-symbol rough counts:
+  - `MockSecurityManager`: ~125 refs across 33 files (the densest)
+  - `MockCommandValidator`: ~17 refs in 7 files
+  - `MockInteractor`: 4 refs in 2 files
+  - `MockExecutor`: 1 real ref + 2 comment refs in 2 files
+- **Tests**: PASS (63 packages — was 62; +1 for the new `toolstest` package, which ships its own test suite).
+- **Race detector**: PASS (`go test -count=1 -race ./...`).
+- **Architecture verification**: ✅ no new violations (after the noopSecurityManager remediation).
+- **Architectural lint**: zero non-test files import `toolstest`.
+- **Leaf rule preserved**: `toolstest/` does NOT import `internal/tools` or any of its sub-packages. Verified via grep.
+
+### Audit revision: SECURITY bucket has zero genuine occupants
+
+The original audit (Session 1 row at line 144) routed `MockInteractor` to the SECURITY bucket on the basis of "3 references across `infrastructure/security` and `tools/{workspace,developer}`". Step 3 conflict-detection in this session proved this row was incorrect:
+
+- `internal/infrastructure/security/` has its **own**, package-private `MockInteractor` declared in `interaction_mock_test.go` (`package security`). All 32 in-package references inside `infrastructure/security/` (across `auditor_test.go`, `interaction_test.go`, `manager_test.go`, `policy_test.go`) resolve to **that** local type, not `testutil.MockInteractor`.
+- The two types are **NOT functionally equivalent** — they differ in concurrency (`sync.Mutex` vs none), context-cancellation handling (`select { case <-ctx.Done(): }` checks vs none), `ReadSingleKey` semantics (lowercased first char vs full Answer), and the presence of a `Prompts` slice (absent vs present).
+- The actual consumers of `testutil.MockInteractor` are exclusively in `internal/tools/`: `internal/tools/workspace/interaction_test.go` (3 sites) and `internal/tools/developer/dev_test.go` (1 interface-assertion line).
+
+The SECURITY bucket therefore has **zero genuine occupants**. Per architect-style judgment matching Session 6's framing ("avoid spinning up half-empty packages"), `MockInteractor` was moved to TOOLS alongside the other three mocks rather than getting its own otherwise-empty `internal/infrastructure/security/securitytest/` sub-package. The audit row at line 144 is now superseded by this section.
+
+### Notable details
+
+1. **Layer violation surfaced by the rewrite, not by prior code.** The pre-Session 7 `testutil.MockSecurityManager` import in `internal/agent/orchestrator/engine_test.go` flowed through the **domain** layer (`internal/domain/testutil`), which `verify_architecture` permits from the `agent` layer. Renaming the qualifier to `toolstest` re-routed the import through the **tools** layer, which the verifier forbids from `agent`. The fix (a 14-line package-local stub) preserves test intent without the cross-layer dep. **Lesson for Session 8 and beyond**: when a relocation moves a symbol *upward in the layer stack* (here: domain → tools), every cross-layer caller must be re-evaluated; running `verify_architecture` is mandatory after each session.
+2. **`agent_mocks.go` reaches LOC 0 and is deleted** — symbolic milestone. The file shrank 508 → 38 in Session 4 and is now gone. Three source files deleted in this session (matching Session 5's clean-deletion pattern).
+3. **No type-aliases dangled** (Session 4 lesson #2) — none of the four moved symbols had aliases pointing at them.
+4. **Two `MockInteractor` types with the same name now coexist legitimately**, one in `package security` (visible only inside `internal/infrastructure/security` tests) and one in `package toolstest` (consumed by `internal/tools/*` tests). They never appear in the same scope, so there is no ambiguity. The `mock_interactor.go` GoDoc explicitly documents the divergence so future readers don't try to fold them.
+
+### State of the testutil dump after Session 7
+
+- Files remaining in `internal/domain/testutil/`: **2** (was 5):
+  - `buffer.go` (108 LOC) — GENERIC bucket: `Buffer`, `SafeBuffer`, `NewSafeBuffer`, `SyncWriter`
+  - `buffer_test.go` (42 LOC) — GENERIC bucket: `TestSafeBuffer_Contract`
+- **Total `testutil` LOC: 150** (was 432 after Session 6; baseline was 1,664). Net reduction since baseline: **−91%.**
+- Symbols remaining in testutil: **4** of original 39 (down from 7 after Session 6). 2 of those 4 are unexported (`Buffer`, `SafeBuffer`) and slated to be lowercased during the Session 8 relocation.
+- Bucket remaining: **GENERIC** only.
+- Sub-package count: **4** `*test` sub-packages (`persistencetest`, `agenttest`, `eventstest`, `toolstest`) + **1** sibling-internal package (`agentinternal`). The convention is fully proven across the codebase.
+
+### Recommended Session 8 (the finale)
+
+Move `buffer.go` + `buffer_test.go` to a new `internal/pkg/testfixtures/` package per the audit's GENERIC bucket assignment. Lowercase `Buffer` → `buffer` and `SafeBuffer` → `safeBuffer` per the audit's "DEAD as a name" finding (zero external named references; reachable only via `NewSafeBuffer`). Update ~5 consumer files. After Session 8, `internal/domain/testutil/` will be deleted entirely and the refactor is complete.

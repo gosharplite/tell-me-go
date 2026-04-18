@@ -11,8 +11,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func TestListFiles(t *testing.T) {
@@ -27,7 +27,7 @@ func TestListFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -57,7 +57,7 @@ func TestReadFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -79,7 +79,7 @@ func TestGetTree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -109,7 +109,7 @@ func TestFindFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -165,7 +165,7 @@ func TestGetFileDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{
 		sm:       sm,
 		fs:       persistencetest.NewPlainOSFileSystem(),
@@ -203,7 +203,7 @@ func TestReadFile_Truncation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -227,7 +227,7 @@ func TestReadFile_Binary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -247,7 +247,7 @@ func TestGetFileDiff_Errors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{
 		sm:       sm,
 		fs:       persistencetest.NewPlainOSFileSystem(),
@@ -284,7 +284,7 @@ func TestReadFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -353,7 +353,7 @@ func TestReadFile_UTF8Truncation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -389,7 +389,7 @@ func TestReadFiles_UTF8Truncation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -422,7 +422,7 @@ func TestReadFile_Directory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -441,7 +441,7 @@ func TestReadFiles_Directory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 
@@ -455,7 +455,7 @@ func TestReadFiles_Directory(t *testing.T) {
 }
 
 func TestReadFiles_Limit(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := &fileReader{sm: sm, fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
 

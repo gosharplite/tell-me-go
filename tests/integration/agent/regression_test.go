@@ -16,11 +16,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +41,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 
 	registry := internaltools.New()
 	client := &agenttest.MockLLMClient{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	a, err := agent.NewAgent(client, bus, registry,
@@ -80,7 +80,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	}
 
 	client := &agenttest.MockLLMClient{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus(context.Background(), events.WithAsync(false))
 	events.CleanupBus(t, bus)
 	a, err := agent.NewAgent(client, bus, registry,
@@ -121,7 +121,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 	historyPath := filepath.Join(t.TempDir(), "history.json")
 	h := history.NewManager(persistencetest.NewPlainOSFileSystem(), historyPath, historyPath+".archive")
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool
 	mockClient := newMultiModalMockClient()

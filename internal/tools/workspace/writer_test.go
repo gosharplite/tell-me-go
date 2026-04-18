@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func TestReplaceText_Uniqueness(t *testing.T) {
@@ -30,7 +30,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.RegisterSafePath(tmpDir)
 	sm.SetBypassActive(true) // Avoid interactive prompts
 
@@ -67,7 +67,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 
 func TestWriteFile(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
@@ -91,7 +91,7 @@ func TestWriteFile(t *testing.T) {
 
 func TestAppendText(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
@@ -157,7 +157,7 @@ func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 }
 
 func TestWriteFile_Failures(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath("/tmp")
 	sm.RegisterSafePath("/private/tmp") // For macOS symlinks
@@ -202,7 +202,7 @@ func TestUndoFileChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
 	w := &fileWriter{sm: sm, bm: bm, fs: persistencetest.NewPlainOSFileSystem()}
@@ -247,7 +247,7 @@ func TestReplaceText_NotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10), fs: persistencetest.NewPlainOSFileSystem()}
 	ctx := context.Background()
@@ -264,7 +264,7 @@ func TestReplaceText_NotFound(t *testing.T) {
 }
 
 func TestAppendText_Failures(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath("/tmp")
 	sm.RegisterSafePath("/private/tmp")
@@ -294,7 +294,7 @@ func (m *mockFS_Append) OpenFile(ctx context.Context, name string, flag int, per
 }
 
 func TestUndoFileChange_Errors(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	bm := newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10)
 	w := &fileWriter{sm: sm, bm: bm, fs: persistencetest.NewPlainOSFileSystem()}
@@ -316,7 +316,7 @@ func TestUndoFileChange_Errors(t *testing.T) {
 }
 
 func TestAppendText_WriteError(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	tempDir := t.TempDir()
 	sm.RegisterSafePath(tempDir)
@@ -381,7 +381,7 @@ func (m *mockFileWriter) ReadDir(n int) ([]os.DirEntry, error) {
 
 func TestDeletePath(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
 	fs := persistencetest.NewPlainOSFileSystem()
@@ -455,7 +455,7 @@ func TestDeletePath(t *testing.T) {
 
 func TestCreateDirectory(t *testing.T) {
 	tempDir := t.TempDir()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
 	fs := persistencetest.NewPlainOSFileSystem()
@@ -515,7 +515,7 @@ func TestDeletePath_Undo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
 	fs := persistencetest.NewPlainOSFileSystem()
@@ -559,7 +559,7 @@ func TestDeletePath_RecursiveWarning(t *testing.T) {
 	dir := filepath.Join(tempDir, "recursive_delete")
 	_ = os.MkdirAll(dir, 0755)
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
 	fs := persistencetest.NewPlainOSFileSystem()
@@ -586,7 +586,7 @@ func TestDeletePath_DirectoryWithoutRecursive(t *testing.T) {
 	_ = os.MkdirAll(dir, 0755)
 	_ = os.WriteFile(filepath.Join(dir, "file.txt"), []byte("test"), 0644)
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(tempDir)
 	fs := persistencetest.NewPlainOSFileSystem()
@@ -618,7 +618,7 @@ func TestDeletePath_RecursiveAuthorization(t *testing.T) {
 	dir := filepath.Join(tempDir, "auth_delete")
 	_ = os.MkdirAll(dir, 0755)
 
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	sm.SetBypassActive(false) // Trigger authorization check
 	sm.RegisterSafePath(tempDir)
 

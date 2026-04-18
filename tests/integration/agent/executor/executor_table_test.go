@@ -18,9 +18,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events/eventstest"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,9 +59,9 @@ func setupTestRegistry(t *testing.T, toolsMap map[string]agenttest.ToolBehavior)
 	return reg, behaviors
 }
 
-func setupMockSecurityManager(allowedTools []string) *testutil.MockSecurityManager {
+func setupMockSecurityManager(allowedTools []string) *toolstest.MockSecurityManager {
 	if allowedTools != nil {
-		sm := &testutil.MockSecurityManager{
+		sm := &toolstest.MockSecurityManager{
 			AllowedCommands: make(map[string]bool),
 		}
 		for _, tool := range allowedTools {
@@ -69,7 +69,7 @@ func setupMockSecurityManager(allowedTools []string) *testutil.MockSecurityManag
 		}
 		return sm
 	}
-	return &testutil.MockSecurityManager{AllowAll: true}
+	return &toolstest.MockSecurityManager{AllowAll: true}
 }
 
 func setupTestExecutor(t *testing.T, toolsMap map[string]agenttest.ToolBehavior, allowedTools []string, opts ...executor.ExecutorOption) (*executor.Dispatcher, *eventstest.MockEventBus, map[string]*agenttest.ToolBehavior) {
@@ -506,7 +506,7 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 func TestDispatcher_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	reg := agenttest.NewMockToolRegistry()
-	e, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{})
+	e, err := executor.NewPipelineDispatcher(reg, &toolstest.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{})
 	require.NoError(t, err)
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
@@ -584,7 +584,7 @@ func TestDispatcher_EventPublishing(t *testing.T) {
 	require.NoError(t, err)
 
 	bus := &eventstest.MockEventBus{}
-	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
+	exec, err := executor.NewPipelineDispatcher(reg, &toolstest.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	content := &llm.Content{
@@ -610,7 +610,7 @@ func TestDispatcher_EventPublishing(t *testing.T) {
 func TestDispatcher_Strategies(t *testing.T) {
 	t.Parallel()
 	reg := agenttest.NewMockToolRegistry()
-	e, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
+	e, err := executor.NewPipelineDispatcher(reg, &toolstest.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 	require.NoError(t, err)
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
@@ -628,7 +628,7 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &agenttest.PanicRegistry{PanicOnExec: true, Serial: true}
 		bus := &eventstest.MockEventBus{}
-		exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := executor.NewPipelineDispatcher(reg, &toolstest.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -647,7 +647,7 @@ func TestDispatcher_InternalPanicRecovery(t *testing.T) {
 		t.Parallel()
 		reg := &agenttest.PanicRegistry{PanicOnExec: true, Serial: false}
 		bus := &eventstest.MockEventBus{}
-		exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
+		exec, err := executor.NewPipelineDispatcher(reg, &toolstest.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)})
 		require.NoError(t, err)
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -780,7 +780,7 @@ func TestDispatcher_ZombieTool(t *testing.T) {
 	}, tools.ToolOptions{LongRunning: true})
 	require.NoError(t, err)
 
-	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(50*time.Millisecond))
+	exec, err := executor.NewPipelineDispatcher(reg, &toolstest.MockSecurityManager{AllowAll: true}, &eventstest.MockEventBus{}, &ports.NoOpLogger{}, &agenttest.MockLogger{CriticalLogs: make(chan string, 10)}, executor.WithLongRunningTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		close(zombieProceed)

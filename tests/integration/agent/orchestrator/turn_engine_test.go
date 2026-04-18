@@ -76,7 +76,7 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	env.Gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "t"}}}}, &llm.Metrics{}, nil
 	}
-	// Need to cast executor to testutil.MockExecutor
+	// Need to cast executor to toolstest.MockExecutor
 	// ex := e.Processors()[orchestrator.PhaseExecuting] // this might be wrapped in middleware.
 	// Actually env env has its own mocks.
 	// Let's use the env.executor if we had it.
@@ -766,7 +766,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 
 	e.ApplyOptions(orchestrator.WithEngineCostTracker(tracker)) // ensure it uses it
 	// Actually we used WithEngineCostTracker in NewEngine.
-	// But we need the reference to testutil.MockExecutor
+	// But we need the reference to toolstest.MockExecutor
 	mEx := &agenttest.MockAgentExecutor{}
 	e = orchestrator.NewEngine(env.Gw, mEx, env.Cm, env.Reg, env.Bus, env.Cm.Strategy, orchestrator.WithEngineCostTracker(tracker))
 

@@ -7,9 +7,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -54,9 +54,9 @@ func (m *mockToolRegistry) ListAvailableToolkits() []string {
 func TestRegister(t *testing.T) {
 	t.Parallel()
 	registry := &mockToolRegistry{}
-	sm := &testutil.MockSecurityManager{AllowAll: true}
-	exec := &testutil.MockExecutor{}
-	validator := &testutil.MockCommandValidator{}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	exec := &toolstest.MockExecutor{}
+	validator := &toolstest.MockCommandValidator{}
 	fs := persistencetest.NewPlainOSFileSystem()
 
 	if err := Register(registry, sm, exec, validator, fs, nil); err != nil {

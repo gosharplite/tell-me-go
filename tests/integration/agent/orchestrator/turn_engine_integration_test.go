@@ -13,13 +13,13 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/agenttest"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestrator"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/session"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
@@ -304,7 +304,7 @@ func TestTurnEngine_CancellationIntegration(t *testing.T) {
 
 	gw := &integrationMockLLMGateway{}
 	// Real executor
-	exec, err := executor.NewPipelineDispatcher(reg, &testutil.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
+	exec, err := executor.NewPipelineDispatcher(reg, &toolstest.MockSecurityManager{AllowAll: true}, bus, &ports.NoOpLogger{}, &executor.TelemetryLogger{})
 	require.NoError(t, err)
 
 	engine := orchestrator.NewEngine(gw, exec, cm, reg, bus, counter)

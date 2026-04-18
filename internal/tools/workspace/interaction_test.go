@@ -8,16 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 )
 
 func TestInteractionTool(t *testing.T) {
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	it := newinteractionTool(sm)
 	ctx := context.Background()
 
 	t.Run("Ask User", func(t *testing.T) {
-		sm.SetInteractor(&testutil.MockInteractor{Answer: "The answer is 42\n"})
+		sm.SetInteractor(&toolstest.MockInteractor{Answer: "The answer is 42\n"})
 		res, err := it.askUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
 		}, nil)
@@ -30,7 +30,7 @@ func TestInteractionTool(t *testing.T) {
 	})
 
 	t.Run("Ask User EOF", func(t *testing.T) {
-		sm.SetInteractor(&testutil.MockInteractor{Answer: ""}) // Immediate EOF
+		sm.SetInteractor(&toolstest.MockInteractor{Answer: ""}) // Immediate EOF
 		res, err := it.askUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
 		}, nil)
@@ -43,7 +43,7 @@ func TestInteractionTool(t *testing.T) {
 	})
 
 	t.Run("Ask User Read Error", func(t *testing.T) {
-		sm.SetInteractor(&testutil.MockInteractor{Err: context.DeadlineExceeded})
+		sm.SetInteractor(&toolstest.MockInteractor{Err: context.DeadlineExceeded})
 		_, err := it.askUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
 		}, nil)

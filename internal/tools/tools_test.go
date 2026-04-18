@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/ports"
-	"github.com/gosharplite/tell-me-go/internal/domain/testutil"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence/persistencetest"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/toolstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -34,7 +34,7 @@ func (m *mockSessionProvider) GetHealthChecker() ports.HealthChecker { return ni
 
 func TestNewToolRegistry(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		HealthManager:   nil,
@@ -56,7 +56,7 @@ func TestNewToolRegistry(t *testing.T) {
 
 func TestRegisterAll_WithSessionProvider(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	sp := &mockSessionProvider{}
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
@@ -76,7 +76,7 @@ func TestRegisterAll_WithSessionProvider(t *testing.T) {
 
 func TestToolExecution(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		HealthManager:   nil,
@@ -101,7 +101,7 @@ func TestToolExecution(t *testing.T) {
 
 func TestGenerateMermaidDiagram(t *testing.T) {
 	t.Parallel()
-	sm := &testutil.MockSecurityManager{AllowAll: true}
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
 	r := registry.New()
 	if err := tools.RegisterAll(tools.ToolRegistrationParams{
 		HealthManager:   nil,
