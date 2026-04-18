@@ -34,8 +34,8 @@ type runtimeConfig struct {
 	PricingOverrides map[string]domain_pricing.ModelPricing
 }
 
-// Agent represents the chat orchestration logic (Stateless Service).
-type Agent struct {
+// agent represents the chat orchestration logic (Stateless Service).
+type agent struct {
 	gateway       domain_llm.LLMGateway
 	engine        *orchestrator.Engine
 	ctxManager    *session.ContextManager
@@ -69,7 +69,7 @@ type Agent struct {
 
 // NewAgent creates a new agent with required dependencies.
 func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, registry tools.Registry, opts ...AgentOption) (ports.Chatter, error) {
-	a := &Agent{
+	a := &agent{
 		gateway:  client,
 		events:   bus,
 		registry: registry,
@@ -99,7 +99,7 @@ func NewAgent(client domain_llm.LLMGateway, bus events.EventBus, registry tools.
 	return a, nil
 }
 
-func (a *Agent) initComponents() error {
+func (a *agent) initComponents() error {
 	strategy := session.NewContextStrategy(session.NewHeuristicTokenCounter(a.registry))
 	a.strategy = strategy
 
@@ -154,7 +154,7 @@ func (a *Agent) initComponents() error {
 	return nil
 }
 
-func (a *Agent) applyConfig(ctx context.Context) error {
+func (a *agent) applyConfig(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -201,11 +201,11 @@ func (a *Agent) applyConfig(ctx context.Context) error {
 	return nil
 }
 
-func (a *Agent) Subscribe(sub func(context.Context, events.Event)) {
+func (a *agent) Subscribe(sub func(context.Context, events.Event)) {
 	a.events.Subscribe(sub)
 }
 
-func (a *Agent) emit(ctx context.Context, e events.Event) {
+func (a *agent) emit(ctx context.Context, e events.Event) {
 	// [SCALABILITY FIX] Always use a bounded context for publishing events
 	// to prevent cascading system deadlocks if a subscriber stalls.
 	if err := events.SafePublish(ctx, a.events, e); err != nil {
@@ -219,20 +219,20 @@ func (a *Agent) emit(ctx context.Context, e events.Event) {
 
 // SetLimits sets the operational limits for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 	return a.applyConfig(ctx)
 }
 
 // SetTieredThreshold sets the tiered threshold for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetTieredThreshold(ctx context.Context, threshold int) error {
+func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
 	a.configWatcher.ApplyLimits(events.Limits{TieredThreshold: threshold})
 	return a.applyConfig(ctx)
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *Agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
+func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},
@@ -268,7 +268,7 @@ func (a *Agent) Chat(ctx context.Context, s *ports.Session, prompt string) error
 }
 
 // Shutdown gracefully stops the agent and its components.
-func (a *Agent) Shutdown(ctx context.Context) error {
+func (a *agent) Shutdown(ctx context.Context) error {
 	var errs []error
 
 	if a.turnsLogger != nil {
@@ -292,7 +292,7 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func (a *Agent) getLogger() ports.Logger {
+func (a *agent) getLogger() ports.Logger {
 	if a.logger != nil {
 		return a.logger
 	}
@@ -321,66 +321,66 @@ type InternalAccessor interface {
 // AsInternal wraps a ports.Chatter to provide access to its internal components.
 // [FOR TESTING ONLY] This is a testing utility and should not be used in production code paths.
 func AsInternal(c ports.Chatter) InternalAccessor {
-	if a, ok := c.(*Agent); ok {
+	if a, ok := c.(*agent); ok {
 		return a
 	}
 	return nil
 }
 
-func (a *Agent) ApplyConfig(ctx context.Context) error {
+func (a *agent) ApplyConfig(ctx context.Context) error {
 	return a.applyConfig(ctx)
 }
 
-func (a *Agent) GetCtxManager() *session.ContextManager {
+func (a *agent) GetCtxManager() *session.ContextManager {
 	return a.ctxManager
 }
 
-func (a *Agent) GetEvents() events.EventBus {
+func (a *agent) GetEvents() events.EventBus {
 	return a.events
 }
 
-func (a *Agent) GetConfigWatcher() session.ConfigWatcher {
+func (a *agent) GetConfigWatcher() session.ConfigWatcher {
 	return a.configWatcher
 }
 
-func (a *Agent) SetTracker(t domain_pricing.CostTracker) {
+func (a *agent) SetTracker(t domain_pricing.CostTracker) {
 	a.tracker = t
 }
 
-func (a *Agent) GetTracker() domain_pricing.CostTracker {
+func (a *agent) GetTracker() domain_pricing.CostTracker {
 	return a.tracker
 }
 
-func (a *Agent) GetRuntimeConfig() any {
+func (a *agent) GetRuntimeConfig() any {
 	return a.config.Load()
 }
 
-func (a *Agent) SetConfigWatcher(cw session.ConfigWatcher) {
+func (a *agent) SetConfigWatcher(cw session.ConfigWatcher) {
 	a.configWatcher = cw
 }
 
-func (a *Agent) SetEvents(bus events.EventBus) {
+func (a *agent) SetEvents(bus events.EventBus) {
 	a.events = bus
 }
 
-func (a *Agent) SetLogger(l ports.Logger) {
+func (a *agent) SetLogger(l ports.Logger) {
 	a.logger = l
 }
 
-func (a *Agent) SetRuntimeConfig(cfg any) {
+func (a *agent) SetRuntimeConfig(cfg any) {
 	if rc, ok := cfg.(*runtimeConfig); ok {
 		a.config.Store(rc)
 	}
 }
 
-func (a *Agent) SetCtxManager(cm *session.ContextManager) {
+func (a *agent) SetCtxManager(cm *session.ContextManager) {
 	a.ctxManager = cm
 }
 
 // NewAgentInternal returns an InternalAccessor for testing purposes.
 // [FOR TESTING ONLY] DO NOT use in production code.
 func NewAgentInternal() InternalAccessor {
-	return &Agent{}
+	return &agent{}
 }
 
 // RuntimeConfigInternal exports runtimeConfig for testing purposes.

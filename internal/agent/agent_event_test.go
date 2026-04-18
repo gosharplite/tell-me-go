@@ -35,7 +35,7 @@ func TestAgent_Emit_PublishFailureLogsError(t *testing.T) {
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	badBus := &mockEventBusFail{publishErr: errors.New("simulated publish failure")}
-	a := &Agent{events: badBus, logger: testLogger}
+	a := &agent{events: badBus, logger: testLogger}
 	a.emit(context.Background(), mockEvent{})
 
 	if !strings.Contains(buf.String(), "event_publish_failed") {
@@ -48,7 +48,7 @@ func TestAgent_Emit_ErrBusNotInitialized_NoLog(t *testing.T) {
 	testLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	badBus := &mockEventBusFail{publishErr: events.ErrBusNotInitialized}
-	a := &Agent{events: badBus, logger: testLogger}
+	a := &agent{events: badBus, logger: testLogger}
 	a.emit(context.Background(), mockEvent{})
 
 	if strings.Contains(buf.String(), "event_publish_failed") {
@@ -58,7 +58,7 @@ func TestAgent_Emit_ErrBusNotInitialized_NoLog(t *testing.T) {
 
 func TestAgent_Shutdown_ErrBusNotInitialized(t *testing.T) {
 	badBus := &mockEventBusFail{shutdownErr: events.ErrBusNotInitialized}
-	a := &Agent{events: badBus}
+	a := &agent{events: badBus}
 
 	err := a.Shutdown(context.Background())
 	if err != nil {

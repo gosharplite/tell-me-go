@@ -53,7 +53,7 @@ func TestAgent_Chat_Success(t *testing.T) {
 	})
 
 	// Override engine processor to finish immediately
-	agent := a.(*Agent)
+	agent := a.(*agent)
 	agent.engine.ApplyOptions(orchestrator.WithEngineProcessor(orchestrator.PhaseGuard, &mockProcessor{}))
 
 	ctx := context.Background()
@@ -91,7 +91,7 @@ func TestAgent_Chat_EngineFailure(t *testing.T) {
 	}
 
 	expectedErr := errors.New("engine failed")
-	agent := a.(*Agent)
+	agent := a.(*agent)
 	agent.engine.ApplyOptions(orchestrator.WithEngineProcessor(orchestrator.PhaseGuard, &mockProcessor{err: expectedErr}))
 
 	ctx := context.Background()
@@ -127,7 +127,7 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	agent := a.(*Agent)
+	agent := a.(*agent)
 	agent.engine.ApplyOptions(orchestrator.WithEngineProcessor(orchestrator.PhaseGuard, slowProc))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -162,7 +162,7 @@ func TestAgent_Chat_TelemetryFailure(t *testing.T) {
 		t.Skip("NewAgent failed due to telemetry, skipping Chat telemetry failure test")
 	}
 
-	_ = a.(*Agent)
+	_ = a.(*agent)
 	// Mock telemetry failure
 	// StartTelemetry calls events.Listen
 	// agenttest.MockEventBusFail implements Listen
@@ -199,7 +199,7 @@ func TestAgent_Chat_TelemetryFailure_Actual(t *testing.T) {
 		t.Fatalf("failed to create agent: %v", err)
 	}
 
-	agent := a.(*Agent)
+	agent := a.(*agent)
 	_ = agent
 	agent.engine.ApplyOptions(orchestrator.WithEngineProcessor(orchestrator.PhaseGuard, &mockProcessor{}))
 

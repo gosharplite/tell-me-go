@@ -187,7 +187,7 @@ func TestAgent_Shutdown(t *testing.T) {
 
 	t.Run("Graceful handling of nil components", func(t *testing.T) {
 		// Create an agent manually with some nil components
-		a := &Agent{
+		a := &agent{
 			logger:      nil, // Should default to slog.Default()
 			events:      nil,
 			turnsLogger: nil,
@@ -275,7 +275,7 @@ func TestNewAgent_Errors(t *testing.T) {
 }
 
 func TestAgent_InternalAccessor_Remaining(t *testing.T) {
-	chatter := &Agent{}
+	chatter := &agent{}
 	a := AsInternal(chatter)
 	require.NotNil(t, a)
 
@@ -298,7 +298,7 @@ func TestAsInternal_Nil(t *testing.T) {
 }
 
 func TestAgent_GetLogger_Default(t *testing.T) {
-	a := &Agent{}
+	a := &agent{}
 	assert.NotNil(t, a.getLogger())
 }
 
