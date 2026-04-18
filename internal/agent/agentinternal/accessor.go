@@ -27,18 +27,18 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// AgentInternal provides a wrapper around the agent's internal accessor.
-type AgentInternal struct {
+// agentInternal provides a wrapper around the agent's internal accessor.
+type agentInternal struct {
 	agent.InternalAccessor
 }
 
 // AsAgentInternal wraps a ports.Chatter to provide access to internal components.
-func AsAgentInternal(c ports.Chatter) *AgentInternal {
+func AsAgentInternal(c ports.Chatter) *agentInternal {
 	inner := agent.AsInternal(c)
 	if inner == nil {
 		return nil
 	}
-	return &AgentInternal{inner}
+	return &agentInternal{inner}
 }
 
 // mockSessionLifecycleManager is a mock of agent.SessionLifecycleManager.
