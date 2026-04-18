@@ -966,7 +966,33 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 
 	content.Validate() // Final boundary sanitization
 
-	return content, c.calculateFinalMetrics(resp.Usage, duration), nil
+	metrics := c.calculateFinalMetrics(resp.Usage, duration)
+
+	// Detect output-budget truncation. OpenAI returns
+	// finish_reason="length" when the response was cut off because the
+	// max_tokens (or max_completion_tokens) cap was reached. The
+	// downstream impact is the same as Anthropic's max_tokens stop:
+	// tool-call argument JSON may be cut mid-string, partial reasoning
+	// may mislead the agent. Surfacing as an error lets the caller
+	// decide whether to retry with a larger budget.
+	//
+	// In OpenAI's case, mid-string truncation typically also makes the
+	// tool-call args JSON unparseable, which appendToolCall already
+	// surfaces as a JSON unmarshal error. This finish_reason check
+	// covers the residual class where truncation lands at a JSON
+	// object boundary AND between keys, producing a partial-but-
+	// well-formed args object.
+	if choice.FinishReason == "length" {
+		return content, metrics, fmt.Errorf(
+			"response truncated at max_tokens (finish_reason=%q): "+
+				"output budget was exhausted before the model "+
+				"finished. Increase the max_tokens budget or shorten "+
+				"the prompt/response.",
+			choice.FinishReason,
+		)
+	}
+
+	return content, metrics, nil
 }
 
 func (c *client) parseResponseContent(rawContent interface{}, content *llm.Content) {

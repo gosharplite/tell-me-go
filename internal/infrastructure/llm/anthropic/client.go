@@ -23,6 +23,37 @@ import (
 
 const maxResponseBytes = 10 * 1024 * 1024 // 10 MB safety limit for LLM responses (prevents OOM from malformed/malicious payloads)
 
+// defaultMaxTokens is the per-request output budget when the caller has
+// not explicitly set one via WithMaxTokens. It must be large enough to
+// comfortably emit a single tool call whose JSON arguments may include
+// multi-KB content payloads (e.g., write_file with a 10 KB Go source
+// file as the `content` argument).
+//
+// History: the previous default was 4096, which routinely truncated
+// large tool calls mid-`input`-emission. Anthropic's serializer closed
+// the outer braces, so client-side json.Unmarshal succeeded — but the
+// resulting args map was missing whichever keys hadn't been emitted
+// yet (typically the largest, last-emitted key like `content`). The
+// downstream symptom was the tool registry rejecting the call with
+// `missing required parameters [content reason] for tool "write_file"`,
+// which the model then "retried" with the same payload, looping
+// indefinitely and burning real LLM dollars per retry.
+//
+// 16384 is a conservative floor that:
+//   - Sits comfortably below every modern Claude model's hard ceiling
+//     (Claude 3 Sonnet/Opus: 4096 hard cap [intentionally above for
+//     newer models only]; Claude 3.5 Sonnet: 8192; Claude 3.7 Sonnet:
+//     64000; Claude 4 Sonnet/Opus: 64000+). For older models that
+//     reject this value, the API returns 400 invalid_request_error
+//     with a clear message, surfaced via APIError, and the caller
+//     should set WithMaxTokens explicitly. This is preferable to the
+//     prior behavior of silently truncating without any signal.
+//   - Costs the caller nothing if the model emits less — MaxTokens is
+//     a budget cap, not a target.
+//
+// Pinned by TestDefaultMaxTokens_IsGenerous in truncation_test.go.
+const defaultMaxTokens = 16384
+
 // client implements the llm.LLMClient interface for the Anthropic Messages API.
 type client struct {
 	httpClient     *http.Client
@@ -32,6 +63,7 @@ type client struct {
 	model          string
 	headers        map[string]string
 	thinkingBudget int
+	maxTokens      int
 	persona        string
 	logger         ports.Logger
 	timeout        time.Duration
@@ -68,6 +100,26 @@ func WithThinkingBudget(budget int) anthropicOption {
 	}
 }
 
+// WithMaxTokens sets the per-request output-token budget. The Anthropic
+// API requires a positive max_tokens value on every request; this
+// option lets callers raise or lower the per-client budget without
+// touching the package-level default.
+//
+// A budget of 0 is treated as "unset" — the caller likely passed
+// through an unset config field by accident, and the API would reject
+// max_tokens=0 as invalid_request_error. The package default
+// (defaultMaxTokens) applies in that case.
+//
+// Pinned by TestWithMaxTokens_Override and
+// TestWithMaxTokens_ZeroFallsBackToDefault in truncation_test.go.
+func WithMaxTokens(n int) anthropicOption {
+	return func(c *client) {
+		if n > 0 {
+			c.maxTokens = n
+		}
+	}
+}
+
 // WithLogger sets the logger for the Anthropic Client.
 func WithLogger(l ports.Logger) anthropicOption {
 	return func(c *client) {
@@ -86,6 +138,7 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, opts ...
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		model:         model,
 		logger:        &ports.NoOpLogger{},
+		maxTokens:     defaultMaxTokens,
 	}
 
 	for _, opt := range opts {
@@ -447,7 +500,70 @@ func toAnthropicSchema(s *tools.Schema) interface{} {
 func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
 	content := c.extractContent(resp)
 	metrics := c.buildMetrics(resp, duration)
+
+	// Detect output-budget truncation. Anthropic returns
+	// stop_reason="max_tokens" when the response was cut off because
+	// the request's max_tokens cap was reached. For tool_use blocks,
+	// this means the JSON `input` object was emitted only partially —
+	// the outer braces are well-formed (Anthropic closes them) so
+	// json.Unmarshal succeeds, but keys that hadn't been emitted yet
+	// (often the largest, last-emitted key like `content`) are missing.
+	//
+	// Surfacing this as an error lets the caller decide whether to
+	// retry with a larger MaxTokens budget (via WithMaxTokens) or to
+	// break the call into smaller pieces. The alternative — silently
+	// passing the truncated content downstream — caused the registry
+	// to reject calls with cryptic "missing required parameters"
+	// errors that the model would then "retry" identically, looping
+	// indefinitely.
+	//
+	// The check is universal (not tool_use-specific): even text-only
+	// responses can be cut mid-thought in ways that mislead the agent
+	// into acting on incomplete reasoning. Conservative policy: any
+	// truncation is an error; the caller decides recovery.
+	//
+	// Pinned by TestStopReasonMaxTokens_ProducesError,
+	// TestStopReasonMaxTokens_TextOnlyStillReturnsError,
+	// TestStopReasonEndTurn_NoError, and TestStopReasonToolUse_NoError
+	// in truncation_test.go.
+	if err := checkTruncation(resp); err != nil {
+		return content, metrics, err
+	}
+
 	return content, metrics, nil
+}
+
+// checkTruncation reports whether the response was cut off by the
+// output-token budget. See fromAnthropicResponse for the rationale.
+//
+// The error message intentionally avoids any substring that
+// llmerr.Classify treats as transient (HTTP status patterns, "rate
+// limit", "503", etc.) so the resilient client falls into Classify's
+// terminal default branch and does not auto-retry. Pinned by
+// TestTruncationError_IsTerminal.
+func checkTruncation(resp *messagesResponse) error {
+	if resp == nil || resp.StopReason != "max_tokens" {
+		return nil
+	}
+
+	// Provide a tool_use-aware diagnostic when we can identify it as
+	// the truncation site, since that is the most common and most
+	// damaging case.
+	for _, block := range resp.Content {
+		if block.Type == "tool_use" {
+			return fmt.Errorf(
+				"response truncated at max_tokens during tool_use "+
+					"(tool=%q): the tool arguments are incomplete and "+
+					"cannot be safely dispatched. Increase MaxTokens "+
+					"via WithMaxTokens, or break the tool call into "+
+					"smaller pieces.",
+				block.Name,
+			)
+		}
+	}
+	return fmt.Errorf("response truncated at max_tokens: output budget " +
+		"was exhausted before the model finished. Increase MaxTokens " +
+		"via WithMaxTokens, or shorten the prompt/response.")
 }
 
 // extractContent deserializes response content blocks into domain llm.Part objects.
@@ -577,7 +693,7 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 	reqPayload := messagesRequest{
 		Model:     c.model,
 		Messages:  messages,
-		MaxTokens: 4096, // Default for now
+		MaxTokens: c.maxTokens, // Default: defaultMaxTokens; override via WithMaxTokens.
 		Tools:     c.toAnthropicTools(toolDecls),
 	}
 
