@@ -22,6 +22,18 @@ type fileWriter struct {
 }
 
 func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (tools.ToolResult, error) {
+	// Presence guard: the schema declares `content` as Required, but
+	// tools.UnmarshalArgs (json.Unmarshal under the hood) does not enforce
+	// required-field semantics — a missing key silently yields the zero
+	// value (""). Without this guard, a caller that forgets to emit the
+	// `content` parameter would have a 0-byte file written and receive
+	// "File written successfully.", masking the bug. We distinguish
+	// "intentionally empty" (key present, value "") from "forgotten"
+	// (key absent) by inspecting the raw map before unmarshal.
+	if _, ok := args["content"]; !ok {
+		return tools.ToolResult{}, fmt.Errorf("required parameter 'content' is missing (to write an empty file, pass content=\"\" explicitly)")
+	}
+
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`
@@ -105,6 +117,13 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 }
 
 func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}, hb chan<- struct{}) (res tools.ToolResult, err error) {
+	// Same presence guard as writeFile — see that function's comment for
+	// rationale. Appending zero bytes is a no-op and almost certainly
+	// indicates a malformed call rather than intent.
+	if _, ok := args["content"]; !ok {
+		return tools.ToolResult{}, fmt.Errorf("required parameter 'content' is missing (to append nothing, pass content=\"\" explicitly)")
+	}
+
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`

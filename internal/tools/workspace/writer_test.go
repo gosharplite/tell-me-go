@@ -650,3 +650,133 @@ func TestDeletePath_RecursiveAuthorization(t *testing.T) {
 		}
 	})
 }
+
+// TestWriteFile_MissingContent pins the contract that writeFile rejects
+// calls in which the `content` parameter is absent from the args map. This
+// guard distinguishes "intentionally write empty file" (key present, value
+// "") from "caller forgot to emit content" (key absent).
+//
+// MOTIVATION: tools.UnmarshalArgs uses encoding/json under the hood, which
+// does not enforce required-field semantics declared in the tool schema.
+// Without the presence guard added in writer.go, a malformed tool call
+// missing `content` would silently produce a 0-byte file and return
+// "File written successfully." — a confusing failure mode that masks the
+// caller's bug. This test ensures the guard never regresses.
+//
+// FAILURE MEANING: If this test fails, the writeFile presence guard has
+// been removed or weakened. Restore it; do not "fix" by deleting this
+// test.
+func TestWriteFile_MissingContent(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	w := &fileWriter{
+		sm: sm,
+		bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10),
+		fs: persistencetest.NewPlainOSFileSystem(),
+	}
+	ctx := context.Background()
+
+	path := filepath.Join(tempDir, "should_not_exist.txt")
+
+	// Args map deliberately omits "content" — simulating a malformed
+	// tool call from the model.
+	_, err := w.writeFile(ctx, map[string]interface{}{
+		"filepath": path,
+		"reason":   "missing content guard",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected error when 'content' is absent, got nil")
+	}
+	if !strings.Contains(err.Error(), "content") {
+		t.Errorf("error should mention 'content', got: %v", err)
+	}
+
+	// Critical secondary assertion: NO file should have been created.
+	// If this fails, the guard returned an error AFTER writing — wrong
+	// order of operations.
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Errorf("file must not exist after rejected write; stat err = %v", statErr)
+	}
+
+	// Sanity contrast: explicitly passing content="" must succeed and
+	// produce a 0-byte file. This proves the guard distinguishes
+	// "absent" from "explicitly empty".
+	_, err = w.writeFile(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "",
+		"reason":   "intentionally empty",
+	}, nil)
+	if err != nil {
+		t.Fatalf("explicit empty content must succeed, got: %v", err)
+	}
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		t.Fatalf("file must exist after explicit empty write: %v", statErr)
+	}
+	if info.Size() != 0 {
+		t.Errorf("expected 0-byte file, got %d bytes", info.Size())
+	}
+}
+
+// TestAppendText_MissingContent is the appendText counterpart of
+// TestWriteFile_MissingContent. See that test's doc-comment for the
+// rationale; the same guard is mirrored in appendText for the same
+// reason (silent no-op append is almost certainly a malformed call).
+func TestAppendText_MissingContent(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := &toolstest.MockSecurityManager{AllowAll: true}
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(tempDir)
+
+	w := &fileWriter{
+		sm: sm,
+		bm: newBackupManager(sm, persistencetest.NewPlainOSFileSystem(), 10),
+		fs: persistencetest.NewPlainOSFileSystem(),
+	}
+	ctx := context.Background()
+
+	path := filepath.Join(tempDir, "append_target.txt")
+	// Pre-create the target so we can assert appendText didn't touch it.
+	if err := os.WriteFile(path, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := w.appendText(ctx, map[string]interface{}{
+		"filepath": path,
+		"reason":   "missing content guard",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("expected error when 'content' is absent, got nil")
+	}
+	if !strings.Contains(err.Error(), "content") {
+		t.Errorf("error should mention 'content', got: %v", err)
+	}
+
+	// File must be untouched — guard fires before any I/O.
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("target file should still be readable: %v", readErr)
+	}
+	if string(got) != "original" {
+		t.Errorf("file was modified despite rejected append; got %q, want %q", string(got), "original")
+	}
+
+	// Sanity: explicit empty append succeeds and is a true no-op.
+	_, err = w.appendText(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "",
+		"reason":   "intentionally empty",
+	}, nil)
+	if err != nil {
+		t.Fatalf("explicit empty content must succeed, got: %v", err)
+	}
+	got, _ = os.ReadFile(path)
+	if string(got) != "original" {
+		t.Errorf("explicit empty append must be a no-op; got %q, want %q", string(got), "original")
+	}
+}
